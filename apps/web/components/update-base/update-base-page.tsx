@@ -40,6 +40,8 @@ type AppState =
   | "idle"
   | "confirming"
   | "running"
+  | "cancelling"
+  | "cancelled"
   | "completed"
   | "source_unavailable"
   | "no_permission"
@@ -453,9 +455,28 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
   const logRef = useRef<HTMLDivElement | null>(null);
   const lastLogCountRef = useRef(0);
 
+  const isCancelling = appState === "cancelling";
+  const isCancelled = appState === "cancelled";
+  const isActiveJob = appState === "running" || appState === "already_running" || isCancelling;
   const isRunning = appState === "running" || appState === "already_running";
   const isCompleted = appState === "completed";
   const canRun = appState === "idle";
+  const canReset = isCompleted || isCancelled;
+  const progressTone = isCancelling || isCancelled ? "warning" : isCompleted ? "success" : "running";
+  const progressLabel = isCancelling
+    ? "Cancelando..."
+    : isCancelled
+      ? "Cancelado"
+      : isCompleted
+        ? "Concluido"
+        : "Em execucao...";
+  const progressBadge = isCancelling
+    ? "Cancelando"
+    : isCancelled
+      ? "Cancelado"
+      : isCompleted
+        ? "Concluido"
+        : "Executando";
   const total = totalFromJob || UPDATE_TYPE_META[updateType].affected;
   const sectorOptions = useMemo(
     () => [
@@ -492,11 +513,11 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
     () => [
       { id: "status", label: "Estado da base", icon: BarChart3Icon },
       { id: "controls", label: "Controles", icon: SlidersHorizontalIcon },
-      ...(isRunning || isCompleted ? [{ id: "progress", label: "Progresso", icon: Clock3Icon }] : []),
+      ...(isActiveJob || isCompleted || isCancelled ? [{ id: "progress", label: "Progresso", icon: Clock3Icon }] : []),
       ...(isCompleted ? [{ id: "results", label: "Resultados", icon: CheckCircle2Icon }] : []),
       { id: "history", label: "Historico", icon: HistoryIcon },
     ],
-    [isCompleted, isRunning],
+    [isActiveJob, isCancelled, isCompleted],
   );
 
   function addLog(message: string, type: LogType = "info") {
@@ -617,11 +638,13 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
         if (TERMINAL.has(status.state)) {
           clearTimer();
           setProgress(status.state === "success" ? 100 : pct);
-          setAppState(status.state === "cancelled" ? "idle" : "completed");
+          setAppState(status.state === "cancelled" ? "cancelled" : "completed");
           addLog(
             status.state === "success"
               ? `Atualizacao concluida: ${status.processed} processadas.`
-              : (status.error ?? `Atualizacao finalizada com estado: ${status.state}.`),
+              : status.state === "cancelled"
+                ? "Atualizacao cancelada pelo backend."
+                : (status.error ?? `Atualizacao finalizada com estado: ${status.state}.`),
             status.state === "success" ? "success" : "warning",
           );
         }
@@ -629,18 +652,34 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
     }, 2500);
   }
 
-  function handleCancel() {
+  async function handleCancel() {
     if (appState === "confirming") {
       setAppState("idle");
       return;
     }
 
     if (appState === "running" || appState === "already_running") {
-      clearTimer();
-      setAppState("idle");
-      addLog("Operacao cancelada pelo usuario.", "warning");
-      if (jobId) {
-        void cancelBatchJob(jobId).catch(() => undefined);
+      if (!jobId) {
+        addLog("Cancelamento indisponivel: job ainda nao identificado.", "error");
+        return;
+      }
+
+      const previousState = appState;
+      setAppState("cancelling");
+      addLog("Solicitando cancelamento do job...", "warning");
+
+      try {
+        const result = await cancelBatchJob(jobId);
+        addLog(
+          result.message || "Cancelamento solicitado. Aguardando confirmacao do backend.",
+          "warning",
+        );
+      } catch (error) {
+        setAppState(previousState);
+        addLog(
+          error instanceof Error ? error.message : "Falha ao solicitar cancelamento.",
+          "error",
+        );
       }
     }
   }
@@ -781,13 +820,17 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              {isRunning ? (
-                <Button variant="outline" onClick={handleCancel}>
-                  <CircleStopIcon className="size-4" />
-                  Cancelar
+              {isRunning || isCancelling ? (
+                <Button variant="outline" onClick={handleCancel} disabled={isCancelling}>
+                  {isCancelling ? (
+                    <RefreshCwIcon className="size-4 animate-spin" />
+                  ) : (
+                    <CircleStopIcon className="size-4" />
+                  )}
+                  {isCancelling ? "Cancelando" : "Cancelar"}
                 </Button>
               ) : null}
-              {isCompleted ? (
+              {canReset ? (
                 <Button variant="ghost" onClick={handleReset}>
                   <RefreshCwIcon className="size-4" />
                   Nova operacao
@@ -929,29 +972,31 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
             ) : null}
           </section>
 
-          {(isRunning || isCompleted) ? (
+          {(isActiveJob || isCompleted || isCancelled) ? (
             <section id="section-progress" className="scroll-mt-24">
               <SectionTitle icon={Clock3Icon} title="Progresso" />
               <Card className="rounded-[1.15rem] bg-card/92">
                 <CardContent className="space-y-5 px-5">
                   <div className="flex flex-wrap items-center justify-between gap-4">
                     <div className="flex items-center gap-3">
-                      {isRunning ? (
+                      {isActiveJob ? (
                         <RefreshCwIcon className="size-5 animate-spin text-primary" />
+                      ) : isCancelled ? (
+                        <CircleStopIcon className="size-5 text-amber-300" />
                       ) : (
                         <CheckCircle2Icon className="size-5 text-emerald-300" />
                       )}
-                      <span className="font-medium">{isRunning ? "Em execucao..." : "Concluido"}</span>
-                      <StatusBadge tone={isRunning ? "running" : "success"}>
-                        {isRunning ? "Executando" : "Concluido"}
+                      <span className="font-medium">{progressLabel}</span>
+                      <StatusBadge tone={progressTone}>
+                        {progressBadge}
                       </StatusBadge>
                     </div>
-                    <span className={cn("font-heading text-3xl font-semibold tabular-nums", isCompleted && "text-emerald-300")}>
+                    <span className={cn("font-heading text-3xl font-semibold tabular-nums", isCompleted && "text-emerald-300", isCancelled && "text-amber-300")}>
                       {progress}%
                     </span>
                   </div>
 
-                  <Progress value={progress} indicatorClassName={cn(isRunning && "animate-pulse")} />
+                  <Progress value={progress} indicatorClassName={cn(isActiveJob && "animate-pulse")} />
 
                   <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                     {[
@@ -967,7 +1012,7 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
                     ))}
                   </div>
 
-                  {isRunning ? (
+                  {isActiveJob ? (
                     <div className="grid gap-4 border-t border-border/60 pt-5 lg:grid-cols-[1fr_1.3fr_auto] lg:items-center">
                       <div>
                         <Eyebrow className="mb-1">Empresa atual</Eyebrow>
