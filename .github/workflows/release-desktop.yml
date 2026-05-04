@@ -59,10 +59,15 @@ jobs:
         run: |
           $ver  = "${{ steps.ver.outputs.VERSION }}"
           $zip  = "CVMAnalytics-windows-v$ver.zip"
+          $latestZip = "CVMAnalytics-windows.zip"
           Compress-Archive -Path dist\CVMAnalytics -DestinationPath $zip
+          Copy-Item $zip $latestZip
           $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
           "$hash  $zip" | Out-File -FilePath "$zip.sha256" -Encoding utf8 -NoNewline
+          $latestHash = (Get-FileHash $latestZip -Algorithm SHA256).Hash.ToLower()
+          "$latestHash  $latestZip" | Out-File -FilePath "$latestZip.sha256" -Encoding utf8 -NoNewline
           echo "ZIP=$zip" >> $env:GITHUB_OUTPUT
+          echo "LATEST_ZIP=$latestZip" >> $env:GITHUB_OUTPUT
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -73,5 +78,7 @@ jobs:
           files: |
             ${{ steps.pkg.outputs.ZIP }}
             ${{ steps.pkg.outputs.ZIP }}.sha256
+            ${{ steps.pkg.outputs.LATEST_ZIP }}
+            ${{ steps.pkg.outputs.LATEST_ZIP }}.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
