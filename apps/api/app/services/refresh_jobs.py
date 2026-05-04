@@ -19,6 +19,7 @@ class ApiRefreshJobManager:
 
     VALID_MODES = {"full", "missing", "outdated", "failed"}
     ACTIVE_STATES = {"queued", "running"}
+    TERMINAL_STATES = {"success", "error", "cancelled"}
     DEFAULT_START_YEAR = 2010
     MAX_LOG_LINES = 200
 
@@ -37,6 +38,7 @@ class ApiRefreshJobManager:
         self._lock = threading.RLock()
         self._jobs: dict[str, dict[str, Any]] = {}
         self._threads: dict[str, threading.Thread] = {}
+        self._cancel_events: dict[str, threading.Event] = {}
 
     def request_refresh(self, params: dict[str, Any] | None = None) -> dict[str, Any]:
         request_params = dict(params or {})
@@ -134,17 +136,85 @@ class ApiRefreshJobManager:
         jobs.sort(key=lambda row: str(row.get("updated_at") or ""), reverse=True)
         return jobs
 
+    def cancel_job(self, job_id: str) -> dict[str, Any] | None:
+        resolved_job_id = str(job_id or "")
+        if not resolved_job_id:
+            return None
+
+        with self._lock:
+            job = self._jobs.get(resolved_job_id)
+            if job is None:
+                return None
+
+            state = str(job.get("state") or "")
+            if state in self.TERMINAL_STATES:
+                return {
+                    "ok": False,
+                    "job_id": resolved_job_id,
+                    "state": state,
+                    "status": state,
+                    "message": f"Job de refresh {resolved_job_id} ja esta finalizado como {state}.",
+                    "status_reason_code": "already_terminal",
+                    "is_retry_allowed": False,
+                }
+
+            cancel_event = self._cancel_events.get(resolved_job_id)
+            if cancel_event is not None:
+                cancel_event.set()
+
+            if state == "queued" and resolved_job_id not in self._threads:
+                now = self._now_iso()
+                job["state"] = "cancelled"
+                job["status"] = "cancelled"
+                job["finished_at"] = now
+                job["updated_at"] = now
+                self._append_log_locked(job, "Refresh em lote cancelado antes da execucao.")
+                return {
+                    "ok": True,
+                    "job_id": resolved_job_id,
+                    "state": "cancelled",
+                    "status": "cancelled",
+                    "message": "Refresh em lote cancelado antes da execucao.",
+                    "status_reason_code": "cancelled",
+                    "is_retry_allowed": False,
+                }
+
+            self._append_log_locked(job, "Cancelamento solicitado.")
+            job["updated_at"] = self._now_iso()
+            return {
+                "ok": True,
+                "job_id": resolved_job_id,
+                "state": str(job.get("state") or state),
+                "status": str(job.get("status") or job.get("state") or state),
+                "message": "Cancelamento solicitado para o refresh em lote.",
+                "status_reason_code": "cancel_requested",
+                "is_retry_allowed": False,
+            }
+
     def _start_job(self, job_id: str) -> None:
+        cancel_event = threading.Event()
         thread = threading.Thread(
             target=self._run_job,
-            args=(job_id,),
+            args=(job_id, cancel_event),
             name=f"api-refresh-{job_id[:8]}",
             daemon=True,
         )
+        self._cancel_events[job_id] = cancel_event
         self._threads[job_id] = thread
         thread.start()
 
-    def _run_job(self, job_id: str) -> None:
+    def _run_job(self, job_id: str, cancel_event: threading.Event) -> None:
+        if cancel_event.is_set():
+            self._update_job(
+                job_id,
+                state="cancelled",
+                status="cancelled",
+                finished_at=self._now_iso(),
+                log_line="Refresh em lote cancelado antes da execucao.",
+            )
+            self._cleanup_job_runtime(job_id)
+            return
+
         self._update_job(
             job_id,
             state="running",
@@ -176,6 +246,7 @@ class ApiRefreshJobManager:
                     message=message,
                 ),
                 stage_callback=lambda update: self._handle_stage(job_id, update),
+                should_cancel=cancel_event.is_set,
             )
         except Exception as exc:
             self._update_job(
@@ -186,7 +257,7 @@ class ApiRefreshJobManager:
                 error=f"{exc.__class__.__name__}: {exc}",
                 log_line=f"Falha no refresh em lote: {exc}",
             )
-            self._threads.pop(job_id, None)
+            self._cleanup_job_runtime(job_id)
             return
 
         state = "cancelled" if result.cancelled else "success"
@@ -201,9 +272,17 @@ class ApiRefreshJobManager:
             failures=failures,
             finished_at=self._now_iso(),
             result=result.to_dict(),
-            log_line="Refresh em lote finalizado.",
+            log_line=(
+                "Refresh em lote cancelado."
+                if state == "cancelled"
+                else "Refresh em lote finalizado."
+            ),
         )
+        self._cleanup_job_runtime(job_id)
+
+    def _cleanup_job_runtime(self, job_id: str) -> None:
         self._threads.pop(job_id, None)
+        self._cancel_events.pop(job_id, None)
 
     def _resolve_batch_selection(self, params: dict[str, Any], *, mode: str):
         from src.read_service import resolve_refresh_batch_selection  # noqa: PLC0415

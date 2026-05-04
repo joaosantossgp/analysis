@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import threading
+import time
 from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
 
 from apps.api.app.services.refresh_jobs import ApiRefreshJobManager, RefreshBatchRequestError
+from src.contracts import RefreshResult
 from src.settings import AppSettings
 
 
@@ -55,6 +58,27 @@ class FakeRefreshJobManager:
     def list_jobs(self, *, active_only: bool = True) -> list[dict[str, object]]:
         self.active_only_args.append(active_only)
         return list(self.jobs.values())
+
+    def cancel_job(self, job_id: str) -> dict[str, object] | None:
+        job = self.jobs.get(job_id)
+        if job is None:
+            return None
+        job.update(
+            {
+                "state": "cancelled",
+                "status": "cancelled",
+                "finished_at": "2026-05-03T10:00:03",
+            }
+        )
+        return {
+            "ok": True,
+            "job_id": job_id,
+            "state": "cancelled",
+            "status": "cancelled",
+            "message": "Refresh em lote cancelado.",
+            "status_reason_code": "cancelled",
+            "is_retry_allowed": False,
+        }
 
 
 def test_refresh_batch_dispatch_returns_202(client: TestClient) -> None:
@@ -161,6 +185,30 @@ def test_refresh_job_polling_unknown_id_returns_404(client: TestClient) -> None:
     assert response.json()["error"]["code"] == "not_found"
 
 
+def test_refresh_job_cancel_returns_cancelled_payload(client: TestClient) -> None:
+    manager = FakeRefreshJobManager()
+    client.app.state.refresh_job_manager = manager
+
+    response = client.post("/refresh/jobs/job-batch-1/cancel")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["job_id"] == "job-batch-1"
+    assert payload["state"] == "cancelled"
+    assert payload["status_reason_code"] == "cancelled"
+
+
+def test_refresh_job_cancel_unknown_id_returns_404(client: TestClient) -> None:
+    manager = FakeRefreshJobManager()
+    client.app.state.refresh_job_manager = manager
+
+    response = client.post("/refresh/jobs/missing-job/cancel")
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "not_found"
+
+
 class FakeReadService:
     def __init__(
         self,
@@ -221,6 +269,59 @@ class FakeReadService:
         }
 
 
+class CancellableRefreshService:
+    def __init__(self) -> None:
+        self.requests = []
+        self.started = threading.Event()
+        self.cancel_seen = threading.Event()
+
+    def execute(
+        self,
+        request,
+        *,
+        progress_callback=None,
+        stage_callback=None,
+        should_cancel=None,
+        persist_refresh_status=True,
+    ) -> RefreshResult:
+        del progress_callback, stage_callback, persist_refresh_status
+        self.requests.append(request)
+        self.started.set()
+        deadline = time.time() + 3
+        while time.time() < deadline:
+            if should_cancel is not None and should_cancel():
+                self.cancel_seen.set()
+                return RefreshResult(
+                    request=request,
+                    companies=(),
+                    planning_stats={"cancelled": 1},
+                    synced_companies=0,
+                    cancelled=True,
+                )
+            time.sleep(0.01)
+        return RefreshResult(
+            request=request,
+            companies=(),
+            planning_stats={"cancelled": 0},
+            synced_companies=0,
+            cancelled=False,
+        )
+
+
+def _wait_for_job_state(
+    manager: ApiRefreshJobManager,
+    job_id: str,
+    expected_state: str,
+) -> dict[str, object]:
+    deadline = time.time() + 3
+    while time.time() < deadline:
+        job = manager.get_job(job_id)
+        if job is not None and job["state"] == expected_state:
+            return job
+        time.sleep(0.01)
+    raise AssertionError(f"job {job_id} did not reach {expected_state}")
+
+
 def test_refresh_job_manager_reuses_bridge_filter_semantics(api_settings: AppSettings) -> None:
     read_service = FakeReadService()
     manager = ApiRefreshJobManager(
@@ -260,6 +361,90 @@ def test_refresh_job_manager_rejects_invalid_mode(api_settings: AppSettings) -> 
 
     with pytest.raises(RefreshBatchRequestError):
         manager.request_refresh({"mode": "unknown"})
+
+
+def test_refresh_job_manager_cancels_queued_job(api_settings: AppSettings) -> None:
+    manager = ApiRefreshJobManager(
+        settings=api_settings,
+        read_service=FakeReadService(),
+        autostart=False,
+    )
+    dispatch = manager.request_refresh({"mode": "full", "cd_cvm": 9512})
+
+    result = manager.cancel_job(str(dispatch["job_id"]))
+
+    assert result is not None
+    assert result["ok"] is True
+    assert result["state"] == "cancelled"
+    job = manager.get_job(str(dispatch["job_id"]))
+    assert job is not None
+    assert job["state"] == "cancelled"
+    assert job["status"] == "cancelled"
+    assert job["finished_at"] is not None
+    assert "cancelado antes da execucao" in job["log_lines"][-1]
+
+
+def test_refresh_job_manager_cancels_running_job(api_settings: AppSettings) -> None:
+    refresh_service = CancellableRefreshService()
+    manager = ApiRefreshJobManager(
+        settings=api_settings,
+        read_service=FakeReadService(),
+        refresh_service=refresh_service,
+    )
+    dispatch = manager.request_refresh({"mode": "full", "cd_cvm": 9512})
+    job_id = str(dispatch["job_id"])
+    assert refresh_service.started.wait(timeout=3)
+
+    result = manager.cancel_job(job_id)
+
+    assert result is not None
+    assert result["ok"] is True
+    assert result["status_reason_code"] == "cancel_requested"
+    assert refresh_service.cancel_seen.wait(timeout=3)
+    job = _wait_for_job_state(manager, job_id, "cancelled")
+    assert job["status"] == "cancelled"
+    assert job["finished_at"] is not None
+    assert "Cancelamento solicitado." in job["log_lines"]
+    assert job["log_lines"][-1] == "Refresh em lote cancelado."
+    assert refresh_service.requests[0].companies == ("9512",)
+
+
+def test_refresh_job_manager_cancel_unknown_job_returns_none(
+    api_settings: AppSettings,
+) -> None:
+    manager = ApiRefreshJobManager(
+        settings=api_settings,
+        read_service=FakeReadService(),
+        autostart=False,
+    )
+
+    assert manager.cancel_job("missing-job") is None
+
+
+def test_refresh_job_manager_cancel_terminal_job_is_noop(
+    api_settings: AppSettings,
+) -> None:
+    manager = ApiRefreshJobManager(
+        settings=api_settings,
+        read_service=FakeReadService(),
+        autostart=False,
+    )
+    dispatch = manager.request_refresh({"mode": "full", "cd_cvm": 9512})
+    job_id = str(dispatch["job_id"])
+    manager.cancel_job(job_id)
+    before = manager.get_job(job_id)
+
+    result = manager.cancel_job(job_id)
+    after = manager.get_job(job_id)
+
+    assert result is not None
+    assert result["ok"] is False
+    assert result["state"] == "cancelled"
+    assert result["status_reason_code"] == "already_terminal"
+    assert before is not None
+    assert after is not None
+    assert after["finished_at"] == before["finished_at"]
+    assert after["log_lines"] == before["log_lines"]
 
 
 def test_refresh_job_manager_resolves_missing_from_real_coverage(
