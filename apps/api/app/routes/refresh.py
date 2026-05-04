@@ -65,6 +65,16 @@ class RefreshJobListPayload(BaseModel):
     items: list[RefreshJobPayload]
 
 
+class RefreshJobCancelPayload(BaseModel):
+    ok: bool
+    job_id: str
+    state: str
+    status: str
+    message: str
+    status_reason_code: str | None = None
+    is_retry_allowed: bool = False
+
+
 def get_refresh_job_manager(request: Request) -> ApiRefreshJobManager:
     manager = getattr(request.app.state, "refresh_job_manager", None)
     if manager is None:
@@ -119,3 +129,20 @@ def get_refresh_job(
     if job is None:
         raise NotFoundError(f"Job de refresh {job_id} nao encontrado.")
     return RefreshJobPayload(**job)
+
+
+@router.post(
+    "/jobs/{job_id}/cancel",
+    response_model=RefreshJobCancelPayload,
+    summary="Cancela um job ativo de refresh em lote.",
+)
+def cancel_refresh_job(
+    request: Request,
+    job_id: str = Path(...),
+    manager: ApiRefreshJobManager = Depends(get_refresh_job_manager),
+) -> RefreshJobCancelPayload:
+    ensure_api_ready(get_settings(request))
+    result = manager.cancel_job(job_id)
+    if result is None:
+        raise NotFoundError(f"Job de refresh {job_id} nao encontrado.")
+    return RefreshJobCancelPayload(**result)

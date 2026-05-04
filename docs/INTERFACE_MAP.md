@@ -238,6 +238,7 @@ lote disponivel para consumo.
 | `POST /refresh/batch` | body `{mode, sector_slug?, cvm_range?, status_filter?, search?, cd_cvm?, start_year?, end_year?, limit?}` | Dispara refresh em lote; `full`, `missing`, `outdated` e `failed` resolvem exatamente as empresas elegiveis antes de enfileirar |
 | `GET /refresh/jobs` | - | Lista jobs ativos do refresh em lote |
 | `GET /refresh/jobs/{job_id}` | - | Polling de progresso, falhas, CVM atual e logs |
+| `POST /refresh/jobs/{job_id}/cancel` | path `job_id` | Solicita cancelamento real de job batch ativo e expõe `cancelled` no polling |
 
 **Notas de implementacao**:
 - a pagina recria o handoff `Update Base.html` como componente React client;
@@ -245,7 +246,7 @@ lote disponivel para consumo.
   na propria tela ate existir contrato dedicado de auth/roles;
 - a API de batch exposta nesta fase cobre start, lista de jobs ativos e polling
   de progresso; tambem aceita os aliases do bridge desktop (`sector`,
-  `cvm_from`, `cvm_to`); cancelamento e historico ficam para contrato futuro.
+  `cvm_from`, `cvm_to`) e cancelamento via HTTP; historico fica para contrato futuro.
 
 ---
 
@@ -277,6 +278,7 @@ de produto. Nao consome endpoints de API.
 | `POST /refresh/batch` | `/atualizar-base` |
 | `GET /refresh/jobs` | `/atualizar-base` |
 | `GET /refresh/jobs/{job_id}` | `/atualizar-base` |
+| `POST /refresh/jobs/{job_id}/cancel` | `/atualizar-base` |
 | `GET /base-health` | `/` (parcialmente, se trust strip expandir) |
 
 ---

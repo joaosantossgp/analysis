@@ -273,6 +273,33 @@ Regras do endpoint:
 - campos minimos de progresso: `state`, `processed`, `failures`, `current_cvm`, `log_lines`
 - `state` usa `queued | running | success | error | cancelled`
 
+### `POST /refresh/jobs/{job_id}/cancel`
+
+Uso:
+- solicita cancelamento real de um job de refresh em lote iniciado por `POST /refresh/batch`
+
+Resposta exemplo:
+
+```json
+{
+  "ok": true,
+  "job_id": "9d2e08f7bb8e4ef6a9918d859b5ccf5d",
+  "state": "running",
+  "status": "running",
+  "message": "Cancelamento solicitado para o refresh em lote.",
+  "status_reason_code": "cancel_requested",
+  "is_retry_allowed": false
+}
+```
+
+Regras do endpoint:
+- `200` para job conhecido, inclusive quando o job ja esta em estado terminal
+- `404` quando o `job_id` nao existe no processo atual
+- jobs em `queued` sem worker iniciado passam imediatamente para `cancelled`, com `finished_at` preenchido
+- jobs em `running` recebem sinal de cancelamento via `should_cancel`; o polling passa para `cancelled` quando o worker confirma o encerramento
+- cancelar job terminal retorna `ok = false`, `status_reason_code = already_terminal` e nao reinicia nem altera o job
+- apos cancelamento confirmado, `GET /refresh/jobs/{job_id}` retorna `state = cancelled`, log de cancelamento e `finished_at`
+
 ### `GET /sectors`
 
 Uso:
