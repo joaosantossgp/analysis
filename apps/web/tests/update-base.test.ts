@@ -159,20 +159,49 @@ test("fetchBatchJobStatus (web) fetches from /api/refresh-jobs/:id", async () =>
 });
 
 // ---------------------------------------------------------------------------
-// cancelBatchJob — web mode (no-op)
+// cancelBatchJob — web mode
 // ---------------------------------------------------------------------------
 
-test("cancelBatchJob (web) returns ok without making a network request", async () => {
-  let fetchCalled = false;
-  const restore = withFetchMock((async () => {
-    fetchCalled = true;
-    return new Response("{}", { status: 200 });
+test("cancelBatchJob (web) posts to the real cancel route", async () => {
+  let capturedUrl = "";
+  let capturedMethod = "";
+  const restore = withFetchMock((async (input: RequestInfo | URL, init?: RequestInit) => {
+    capturedUrl = String(input);
+    capturedMethod = init?.method ?? "GET";
+    return new Response(JSON.stringify({ ok: true, message: "Cancelamento solicitado." }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
   }) as FetchMock);
 
   try {
-    const result = await cancelBatchJob("any-job-id");
+    const result = await cancelBatchJob("job 123");
+    assert.ok(capturedUrl.endsWith("/api/refresh-jobs/job%20123/cancel"), `unexpected url: ${capturedUrl}`);
+    assert.equal(capturedMethod, "POST");
     assert.equal(result.ok, true);
-    assert.equal(fetchCalled, false);
+    assert.equal(result.message, "Cancelamento solicitado.");
+  } finally {
+    restore();
+  }
+});
+
+test("cancelBatchJob (web) throws when cancel route rejects the request", async () => {
+  const restore = withFetchMock((async () => {
+    return new Response(JSON.stringify({ error: { code: "cancel_failed", message: "Job ja finalizado." } }), {
+      status: 409,
+      headers: { "content-type": "application/json" },
+    });
+  }) as FetchMock);
+
+  try {
+    await assert.rejects(
+      () => cancelBatchJob("finished-job"),
+      (err: unknown) => {
+        assert.ok(err instanceof Error);
+        assert.match(err.message, /Job ja finalizado/);
+        return true;
+      },
+    );
   } finally {
     restore();
   }

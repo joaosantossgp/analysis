@@ -1380,6 +1380,11 @@ export async function cancelBatchJob(
   jobId: string,
 ): Promise<{ ok: boolean; message: string }> {
   if (isDesktopMode()) return bridgeCancelRefresh(jobId);
-  // Web mode: no cancel endpoint in current API; best-effort no-op
-  return { ok: true, message: "" };
+  return (await routeFetch<{ ok: boolean; message: string }>(
+    `/api/refresh-jobs/${encodeURIComponent(jobId)}/cancel`,
+    {
+      method: "POST",
+    },
+    { invalidResponseMessage: "A rota interna retornou um cancelamento invalido para o batch job." },
+  )) as { ok: boolean; message: string };
 }
