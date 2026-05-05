@@ -9,8 +9,10 @@ import {
   bridgeFetchCompanyInfo,
   bridgeFetchCompanyYears,
   bridgeFetchHealth,
+  bridgeFetchBaseHealth,
   bridgeTrackCompanyView,
   bridgeFetchRefreshStatus,
+  bridgeFetchBatchJobs,
   bridgeRequestRefresh,
 } from "../lib/desktop-bridge.ts";
 
@@ -202,6 +204,42 @@ test("bridgeFetchHealth returns ok status", async () => {
   }
 });
 
+test("bridgeFetchBaseHealth calls the desktop base-health bridge with years", async () => {
+  let captured: Record<string, unknown> = {};
+  const fake = {
+    generated_at: "2026-05-04T15:00:00",
+    start_year: 2024,
+    end_year: 2025,
+    total_cells: 10,
+    completed_cells: 7,
+    missing_cells: 3,
+    pct: 70,
+    health_score: 78,
+    health_status: "atencao",
+    eta_hours: null,
+    throughput_per_hour: null,
+    throughput_confidence: "low",
+    per_year: [],
+    prioritized_companies: [],
+    raw: {},
+  };
+  const restore = withPywebview({
+    get_base_health: async (params: Record<string, unknown>) => {
+      captured = params;
+      return fake;
+    },
+  } as unknown as PyApi);
+
+  try {
+    const result = await bridgeFetchBaseHealth({ startYear: 2024, endYear: 2025 });
+    assert.equal(captured.start_year, 2024);
+    assert.equal(captured.end_year, 2025);
+    assert.equal(result.missing_cells, 3);
+  } finally {
+    restore();
+  }
+});
+
 // ---------------------------------------------------------------------------
 // bridgeTrackCompanyView — fire-and-forget, no throw
 // ---------------------------------------------------------------------------
@@ -222,6 +260,31 @@ test("bridgeFetchRefreshStatus returns empty array in desktop mode", async () =>
   try {
     const items = await bridgeFetchRefreshStatus(9512);
     assert.deepEqual(items, []);
+  } finally {
+    restore();
+  }
+});
+
+test("bridgeFetchBatchJobs returns the desktop refresh job list", async () => {
+  const restore = withPywebview({
+    get_refresh_status: async () => ({
+      items: [
+        {
+          job_id: "job-1",
+          state: "running",
+          queued: 2,
+          processed: 1,
+          failures: 0,
+          log_lines: [],
+        },
+      ],
+    }),
+  } as unknown as PyApi);
+
+  try {
+    const result = await bridgeFetchBatchJobs();
+    assert.equal(result.items.length, 1);
+    assert.equal(result.items[0]?.job_id, "job-1");
   } finally {
     restore();
   }
