@@ -23,8 +23,11 @@ import type {
   HealthResponse,
   RefreshDispatchResponse,
   RefreshStatusItem,
+  BaseHealthRequest,
+  BaseHealthSnapshot,
   BatchRefreshRequest,
   BatchDispatchResponse,
+  BatchJobListResponse,
   BatchJobStatus,
 } from "./api.ts";
 
@@ -55,6 +58,7 @@ interface PywebviewApi {
   get_sectors(params?: Record<string, unknown>): Promise<unknown>;
   get_sector_detail(params: Record<string, unknown>): Promise<unknown>;
   get_health(params?: Record<string, unknown>): Promise<unknown>;
+  get_base_health(params: Record<string, unknown>): Promise<unknown>;
   get_refresh_status(params?: Record<string, unknown>): Promise<unknown>;
   request_refresh(params: Record<string, unknown>): Promise<unknown>;
   cancel_refresh(params: Record<string, unknown>): Promise<unknown>;
@@ -211,6 +215,16 @@ export async function bridgeFetchHealth(): Promise<HealthResponse> {
   return callBridge<HealthResponse>("get_health", {});
 }
 
+export async function bridgeFetchBaseHealth(
+  params: BaseHealthRequest,
+): Promise<BaseHealthSnapshot> {
+  return callBridge<BaseHealthSnapshot>("get_base_health", {
+    start_year: params.startYear,
+    end_year: params.endYear,
+    force_refresh: params.forceRefresh ?? false,
+  });
+}
+
 export function bridgeTrackCompanyView(cdCvm: number): void {
   if (!isDesktopMode()) return;
   const api = typeof window !== "undefined" ? window.pywebview?.api : undefined;
@@ -257,6 +271,10 @@ export async function bridgeRequestBatchRefresh(
 
 export async function bridgeFetchBatchStatus(jobId: string): Promise<BatchJobStatus> {
   return callBridge<BatchJobStatus>("get_refresh_status", { job_id: jobId });
+}
+
+export async function bridgeFetchBatchJobs(): Promise<BatchJobListResponse> {
+  return callBridge<BatchJobListResponse>("get_refresh_status", {});
 }
 
 export async function bridgeCancelRefresh(

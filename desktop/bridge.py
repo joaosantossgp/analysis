@@ -361,6 +361,26 @@ class CVMBridge:
     # Health / diagnostico
     # ------------------------------------------------------------------
 
+    def get_base_health(self, params=None) -> dict:
+        p = params or {}
+        try:
+            start_year = int(p.get("start_year"))
+            end_year = int(p.get("end_year"))
+            force_raw = p.get("force_refresh", False)
+            force_refresh = (
+                force_raw.strip().lower() in {"1", "true", "yes", "sim"}
+                if isinstance(force_raw, str)
+                else bool(force_raw)
+            )
+            result = self._svc().get_health_snapshot(
+                start_year=start_year,
+                end_year=end_year,
+                force_refresh=force_refresh,
+            )
+            return dataclasses.asdict(result)
+        except Exception as exc:
+            return {"error": str(exc)}
+
     def get_health(self, params=None) -> dict:
         try:
             from src.read_service import CVMReadService  # noqa: PLC0415

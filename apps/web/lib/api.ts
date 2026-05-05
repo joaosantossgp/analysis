@@ -229,18 +229,71 @@ export type BatchDispatchResponse = {
 export type BatchJobStatus = {
   job_id: string;
   state: "queued" | "running" | "success" | "error" | "cancelled" | "interrupted";
+  mode?: BatchRefreshMode | null;
   stage?: string | null;
   queued: number;
   processed: number;
   failures: number;
   current_cvm?: number | null;
   log_lines?: string[];
+  accepted_at?: string | null;
   started_at?: string | null;
   finished_at?: string | null;
+  updated_at?: string | null;
   error?: string | null;
 };
 
 export type BatchRefreshMode = "full" | "missing" | "outdated" | "failed";
+
+export type BatchJobListResponse = {
+  items: BatchJobStatus[];
+};
+
+export type BaseHealthYearCoverage = {
+  year: number;
+  total_companies: number;
+  completed: number;
+  missing: number;
+  pct: number;
+  eta_hours: number | null;
+};
+
+export type BaseHealthPriority = {
+  cd_cvm: number;
+  company_name: string;
+  sector_name: string;
+  sector_slug: string;
+  priority_score: number;
+  missing_years_count: number;
+  gap_to_leader_years: number;
+  years_missing: number[];
+  recommended_action: string;
+  reason: string;
+};
+
+export type BaseHealthSnapshot = {
+  generated_at: string | null;
+  start_year: number;
+  end_year: number;
+  total_cells: number;
+  completed_cells: number;
+  missing_cells: number;
+  pct: number;
+  health_score: number;
+  health_status: string;
+  eta_hours: number | null;
+  throughput_per_hour: number | null;
+  throughput_confidence: string;
+  per_year: BaseHealthYearCoverage[];
+  prioritized_companies: BaseHealthPriority[];
+  raw: Record<string, unknown>;
+};
+
+export type BaseHealthRequest = {
+  startYear: number;
+  endYear: number;
+  forceRefresh?: boolean;
+};
 
 export type BatchRefreshCvmRange = {
   start?: number;
@@ -407,6 +460,8 @@ import {
   bridgeRequestRefresh,
   bridgeRequestBatchRefresh,
   bridgeFetchBatchStatus,
+  bridgeFetchBatchJobs,
+  bridgeFetchBaseHealth,
   bridgeCancelRefresh,
 } from "./desktop-bridge.ts";
 
@@ -554,6 +609,34 @@ function isCompanyFiltersResponse(value: unknown): value is CompanyFiltersRespon
   return (
     isRecord(value) &&
     Array.isArray(value.sectors)
+  );
+}
+
+function isBaseHealthSnapshot(value: unknown): value is BaseHealthSnapshot {
+  return (
+    isRecord(value) &&
+    isNullableString(value.generated_at) &&
+    typeof value.start_year === "number" &&
+    typeof value.end_year === "number" &&
+    typeof value.total_cells === "number" &&
+    typeof value.completed_cells === "number" &&
+    typeof value.missing_cells === "number" &&
+    typeof value.pct === "number" &&
+    typeof value.health_score === "number" &&
+    typeof value.health_status === "string" &&
+    isNullableNumber(value.eta_hours) &&
+    isNullableNumber(value.throughput_per_hour) &&
+    typeof value.throughput_confidence === "string" &&
+    Array.isArray(value.per_year) &&
+    Array.isArray(value.prioritized_companies) &&
+    isRecord(value.raw)
+  );
+}
+
+function isBatchJobListResponse(value: unknown): value is BatchJobListResponse {
+  return (
+    isRecord(value) &&
+    Array.isArray(value.items)
   );
 }
 
@@ -1334,6 +1417,25 @@ export async function fetchCompanyFreshness(
   return items[0] ? normalizeRefreshStatusItem(items[0]) : null;
 }
 
+export async function fetchBaseHealth(
+  params: BaseHealthRequest,
+): Promise<BaseHealthSnapshot> {
+  if (isDesktopMode()) return bridgeFetchBaseHealth(params);
+  return (await routeFetch<BaseHealthSnapshot>(
+    `/api/base-health${buildQuery({
+      start_year: params.startYear,
+      end_year: params.endYear,
+      force_refresh: params.forceRefresh ? "1" : null,
+    })}`,
+    undefined,
+    {
+      validate: isBaseHealthSnapshot,
+      invalidResponseMessage:
+        "A rota interna retornou um snapshot de saude invalido.",
+    },
+  )) as BaseHealthSnapshot;
+}
+
 function buildBatchRefreshBody(params: BatchRefreshRequest): Record<string, unknown> {
   const cvmRange =
     params.cvmRange &&
@@ -1374,6 +1476,19 @@ export async function fetchBatchJobStatus(jobId: string): Promise<BatchJobStatus
     undefined,
     { invalidResponseMessage: "A rota interna retornou um status invalido para o batch job." },
   )) as BatchJobStatus;
+}
+
+export async function fetchBatchJobs(): Promise<BatchJobListResponse> {
+  if (isDesktopMode()) return bridgeFetchBatchJobs();
+  return (await routeFetch<BatchJobListResponse>(
+    "/api/refresh-jobs",
+    undefined,
+    {
+      validate: isBatchJobListResponse,
+      invalidResponseMessage:
+        "A rota interna retornou uma lista de batch jobs invalida.",
+    },
+  )) as BatchJobListResponse;
 }
 
 export async function cancelBatchJob(

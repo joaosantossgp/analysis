@@ -29,11 +29,23 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import {
   cancelBatchJob,
+  fetchBaseHealth,
+  fetchBatchJobs,
   type CompanySectorFilter,
   fetchBatchJobStatus,
   fetchBatchRefresh,
+  fetchCompanyFilters,
   resolveBatchRefreshCvmRange,
 } from "@/lib/api";
+import {
+  buildBaseHealthSummary,
+  buildHistoryRows,
+  buildUpdateModeEstimates,
+  getDefaultBaseHealthWindow,
+  getHistoryState,
+  isActiveBatchJob,
+  type DataLoadState,
+} from "@/lib/update-base-admin";
 import { cn } from "@/lib/utils";
 
 type AppState =
@@ -57,9 +69,9 @@ type LogLine = {
 };
 
 type HistoryItem = {
+  id: string;
   date: string;
-  type: UpdateType;
-  trigger: string;
+  typeLabel: string;
   status: "success" | "partial" | "failed" | "cancelled";
   duration: string;
   processed: number;
@@ -72,8 +84,6 @@ type NavItem = {
   icon: LucideIcon;
 };
 
-const HISTORY: HistoryItem[] = [];
-
 const REFRESH_STAGES = [
   "planning",
   "download_extract",
@@ -84,38 +94,26 @@ const REFRESH_STAGES = [
 
 const UPDATE_TYPE_META: Record<
   UpdateType,
-  { label: string; shortLabel: string; description: string; affected: number; duration: string; icon: LucideIcon }
+  { label: string; shortLabel: string; icon: LucideIcon }
 > = {
   full: {
     label: "Atualizacao completa",
     shortLabel: "Completa",
-    description: "Todas as 449 empresas",
-    affected: 449,
-    duration: "~1h 20m",
     icon: RefreshCwIcon,
   },
   missing: {
     label: "Empresas faltantes",
     shortLabel: "Faltantes",
-    description: "31 sem dados locais",
-    affected: 31,
-    duration: "~8m",
     icon: Building2Icon,
   },
   outdated: {
     label: "Dados desatualizados",
     shortLabel: "Desatualizadas",
-    description: "87 acima do limiar",
-    affected: 87,
-    duration: "~22m",
     icon: FileClockIcon,
   },
   failed: {
     label: "Reprocessar falhas",
     shortLabel: "Com falha",
-    description: "12 com erro anterior",
-    affected: 12,
-    duration: "~4m",
     icon: RotateCcwIcon,
   },
 };
@@ -130,6 +128,24 @@ const STATUS_OPTIONS = [
 
 function formatNumber(value: number) {
   return value.toLocaleString("pt-BR");
+}
+
+function formatPercent(value: number | null) {
+  if (value == null || !Number.isFinite(value)) return "n/d";
+  return `${value.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
+}
+
+function formatDateTimeLabel(value: string | null) {
+  if (!value) return "Nao verificada";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function nowAsLogTime() {
@@ -336,7 +352,7 @@ function HistoryRow({ item }: { item: HistoryItem }) {
   return (
     <div className="grid min-w-[760px] grid-cols-[160px_115px_110px_90px_110px_75px_36px] items-center gap-3 border-b border-border/45 px-5 py-3 last:border-b-0">
       <span className="font-mono text-xs text-foreground/86">{item.date}</span>
-      <span className="text-sm text-muted-foreground">{UPDATE_TYPE_META[item.type].shortLabel}</span>
+      <span className="text-sm text-muted-foreground">{item.typeLabel}</span>
       <StatusBadge tone={tone[item.status]}>
         {item.status === "partial" ? "Parcial" : item.status === "failed" ? "Falhou" : item.status === "cancelled" ? "Cancelada" : "Sucesso"}
       </StatusBadge>
@@ -354,11 +370,15 @@ function HistoryRow({ item }: { item: HistoryItem }) {
 
 function ConfirmationDialog({
   updateType,
+  impactLabel,
+  durationLabel,
   filters,
   onCancel,
   onConfirm,
 }: {
   updateType: UpdateType;
+  impactLabel: string;
+  durationLabel: string;
   filters: string[];
   onCancel: () => void;
   onConfirm: () => void;
@@ -391,11 +411,11 @@ function ConfirmationDialog({
             </div>
             <div className="rounded-[0.95rem] border border-border/60 bg-background/70 p-4">
               <Eyebrow>Impacto estimado</Eyebrow>
-              <p className="mt-2 font-mono font-medium">{formatNumber(meta.affected)} empresas</p>
+              <p className="mt-2 font-mono font-medium">{impactLabel}</p>
             </div>
             <div className="rounded-[0.95rem] border border-border/60 bg-background/70 p-4">
               <Eyebrow>Duracao prevista</Eyebrow>
-              <p className="mt-2 font-mono font-medium">{meta.duration}</p>
+              <p className="mt-2 font-mono font-medium">{durationLabel}</p>
             </div>
             <div className="rounded-[0.95rem] border border-border/60 bg-background/70 p-4">
               <Eyebrow>Filtros</Eyebrow>
@@ -451,6 +471,14 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
   const [activeSection, setActiveSection] = useState("status");
   const [jobId, setJobId] = useState<string | null>(null);
   const [totalFromJob, setTotalFromJob] = useState(0);
+  const [baseHealth, setBaseHealth] = useState<Awaited<ReturnType<typeof fetchBaseHealth>> | null>(null);
+  const [baseHealthState, setBaseHealthState] = useState<DataLoadState>("loading");
+  const [sectors, setSectors] = useState<CompanySectorFilter[]>(initialSectors);
+  const [sectorState, setSectorState] = useState<DataLoadState>(
+    initialSectors.length ? "available" : "loading",
+  );
+  const [batchJobs, setBatchJobs] = useState<Awaited<ReturnType<typeof fetchBatchJobs>>["items"]>([]);
+  const [jobsState, setJobsState] = useState<DataLoadState>("loading");
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const logRef = useRef<HTMLDivElement | null>(null);
   const lastLogCountRef = useRef(0);
@@ -477,20 +505,51 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
       : isCompleted
         ? "Concluido"
         : "Executando";
-  const total = totalFromJob || UPDATE_TYPE_META[updateType].affected;
+  const baseSummary = useMemo(
+    () => buildBaseHealthSummary(baseHealth, sectors),
+    [baseHealth, sectors],
+  );
   const sectorOptions = useMemo(
     () => [
       { value: "all", label: "Todos os setores" },
-      ...initialSectors.map((sector) => ({
+      ...sectors.map((sector) => ({
         value: sector.sector_slug,
         label: `${sector.sector_name} (${formatNumber(sector.company_count)})`,
       })),
     ],
-    [initialSectors],
+    [sectors],
   );
-  const selectedSector = initialSectors.find(
+  const selectedSector = sectors.find(
     (sector) => sector.sector_slug === filterSector,
   );
+  const updateModeEstimates = useMemo(
+    () =>
+      buildUpdateModeEstimates({
+        health: baseHealth,
+        sectors,
+        selectedSectorSlug: filterSector !== "all" ? filterSector : null,
+      }),
+    [baseHealth, filterSector, sectors],
+  );
+  const selectedModeEstimate = updateModeEstimates[updateType];
+  const total = totalFromJob || selectedModeEstimate.affected || 0;
+  const selectedImpactLabel =
+    selectedModeEstimate.affected != null
+      ? `${formatNumber(selectedModeEstimate.affected)} ${selectedModeEstimate.unitLabel}`
+      : "Resolvido ao iniciar";
+  const activeBatchJobCount = batchJobs.filter(isActiveBatchJob).length;
+  const historyItems: HistoryItem[] = buildHistoryRows(batchJobs);
+  const historyState = getHistoryState({
+    jobsState,
+    activeJobCount: activeBatchJobCount,
+    historyCount: historyItems.length,
+  });
+  const sourceHealthStatus =
+    appState === "source_unavailable" || baseHealthState === "unavailable"
+      ? "offline"
+      : baseHealthState === "loading" || sectorState === "loading"
+        ? "partial"
+        : "available";
   const resolvedCvmRange = useMemo(
     () => resolveBatchRefreshCvmRange(filterCvmFrom, filterCvmTo),
     [filterCvmFrom, filterCvmTo],
@@ -531,6 +590,14 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
     }
   }
 
+  function upsertBatchJob(job: (typeof batchJobs)[number]) {
+    setBatchJobs((current) => {
+      const next = current.filter((item) => item.job_id !== job.job_id);
+      return [job, ...next];
+    });
+    setJobsState("available");
+  }
+
   async function handleConfirm() {
     const currentRange = resolveBatchRefreshCvmRange(filterCvmFrom, filterCvmTo);
 
@@ -568,6 +635,11 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
       });
     } catch (error) {
       setAppState("source_unavailable");
+      setDispatchError(
+        error instanceof Error
+          ? error.message
+          : "Falha ao conectar ao servico de atualizacao.",
+      );
       addLog(
         error instanceof Error
           ? error.message
@@ -582,6 +654,15 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
       addLog("Ja existe uma atualizacao em andamento.", "warning");
       if (dispatch.job_id) {
         setJobId(dispatch.job_id);
+        upsertBatchJob({
+          job_id: dispatch.job_id,
+          state: "running",
+          mode: updateType,
+          queued: dispatch.queued ?? selectedModeEstimate.affected ?? 0,
+          processed: 0,
+          failures: 0,
+          log_lines: [],
+        });
         startPolling(dispatch.job_id);
       }
       return;
@@ -595,14 +676,27 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
 
     if (dispatch.status === "error") {
       setAppState("source_unavailable");
+      setDispatchError(dispatch.message ?? "Erro ao iniciar atualizacao.");
       addLog(dispatch.message ?? "Erro ao iniciar atualizacao.", "error");
       return;
     }
 
     const jid = dispatch.job_id ?? "";
-    const queuedCount = dispatch.queued ?? UPDATE_TYPE_META[updateType].affected;
+    const queuedCount = dispatch.queued ?? selectedModeEstimate.affected ?? 0;
     setJobId(jid);
     setTotalFromJob(queuedCount);
+    if (jid) {
+      upsertBatchJob({
+        job_id: jid,
+        state: "queued",
+        mode: updateType,
+        queued: queuedCount,
+        processed: 0,
+        failures: 0,
+        accepted_at: new Date().toISOString(),
+        log_lines: [],
+      });
+    }
     addLog(`Job ${jid.slice(0, 8)} enfileirado (${queuedCount} empresas).`, "dim");
     startPolling(jid);
   }
@@ -620,6 +714,7 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
 
         const queued = status.queued || 1;
         const pct = Math.min(Math.round((status.processed / queued) * 100), 99);
+        upsertBatchJob({ ...status, mode: status.mode ?? updateType });
 
         setProcessed(status.processed);
         setProgress(pct);
@@ -696,6 +791,8 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
     setCurrentStep("");
     setElapsed(0);
     setLogs([]);
+    setJobId(null);
+    setTotalFromJob(0);
   }
 
   function handleStartRequest() {
@@ -715,6 +812,69 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
     });
   }
 
+  useEffect(() => {
+    let alive = true;
+    const window = getDefaultBaseHealthWindow();
+
+    void fetchBaseHealth(window)
+      .then((health) => {
+        if (!alive) return;
+        setBaseHealth(health);
+        setBaseHealthState("available");
+      })
+      .catch(() => {
+        if (!alive) return;
+        setBaseHealth(null);
+        setBaseHealthState("unavailable");
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (initialSectors.length) {
+      return;
+    }
+
+    let alive = true;
+    void fetchCompanyFilters()
+      .then((filters) => {
+        if (!alive) return;
+        setSectors(filters.sectors);
+        setSectorState("available");
+      })
+      .catch(() => {
+        if (!alive) return;
+        setSectors([]);
+        setSectorState("unavailable");
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [initialSectors]);
+
+  useEffect(() => {
+    let alive = true;
+    void fetchBatchJobs()
+      .then((payload) => {
+        if (!alive) return;
+        setBatchJobs(payload.items);
+        setJobsState("available");
+      })
+      .catch(() => {
+        if (!alive) return;
+        setBatchJobs([]);
+        setJobsState("unavailable");
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   useEffect(() => () => clearTimer(), []);
 
   useEffect(() => {
@@ -722,6 +882,24 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
       logRef.current.scrollTop = logRef.current.scrollHeight;
     }
   }, [logs]);
+
+  const sourcePanel =
+    baseHealthState === "unavailable" ? (
+      <Card className="animate-in rounded-[1.15rem] border-destructive/20 bg-destructive/5">
+        <CardContent className="flex flex-col gap-4 px-5 sm:flex-row sm:items-center">
+          <div className="flex size-11 shrink-0 items-center justify-center rounded-[0.9rem] border border-destructive/25 bg-destructive/10 text-destructive">
+            <CloudOffIcon className="size-5" />
+          </div>
+          <div>
+            <h3 className="font-heading font-semibold">Fonte indisponivel</h3>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">
+              Nao foi possivel carregar `/base-health`. Os controles continuam
+              visiveis, mas os totais da base ficam indisponiveis ate a fonte responder.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    ) : null;
 
   const specialPanel =
     appState === "source_unavailable" ? (
@@ -731,9 +909,10 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
             <CloudOffIcon className="size-5" />
           </div>
           <div className="flex-1">
-            <h3 className="font-heading font-semibold">Fonte indisponivel</h3>
+            <h3 className="font-heading font-semibold">Erro operacional</h3>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
-              O servico de dados da CVM esta inacessivel no momento. Verifique a conectividade e tente novamente em alguns minutos.
+              {dispatchError ??
+                "O servico de atualizacao nao conseguiu iniciar a operacao. Verifique a API e tente novamente."}
             </p>
           </div>
           <Button variant="outline" onClick={() => setAppState("idle")}>
@@ -770,6 +949,29 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
       </Card>
     ) : null;
 
+  const historyEmptyCopy = {
+    loading: {
+      title: "Carregando jobs",
+      description: "Consultando a fonte de refresh para separar historico e job ativo.",
+    },
+    has_history: {
+      title: "",
+      description: "",
+    },
+    active_jobs_no_history: {
+      title: "Sem historico finalizado",
+      description: `${activeBatchJobCount} job ativo detectado. O historico aparece quando a fonte expuser jobs finalizados.`,
+    },
+    no_history_no_active_job: {
+      title: "Sem historico",
+      description: "Nao ha historico persistente de jobs finalizados e tambem nao ha job ativo agora.",
+    },
+    source_unavailable: {
+      title: "Fonte indisponivel",
+      description: "Nao foi possivel consultar os jobs de refresh. O historico pode existir, mas a fonte nao respondeu.",
+    },
+  }[historyState];
+
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-background">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 py-6 sm:px-6 lg:flex-row lg:px-10">
@@ -803,7 +1005,7 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
           </nav>
           <div className="mt-4 rounded-[1rem] border border-border/55 bg-muted/25 p-3">
             <Eyebrow className="mb-2">Fonte CVM</Eyebrow>
-            <SourceHealth status={appState === "source_unavailable" ? "offline" : "available"} />
+            <SourceHealth status={sourceHealthStatus} />
           </div>
         </aside>
 
@@ -839,15 +1041,42 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
             </div>
           </header>
 
+          {sourcePanel}
           {specialPanel}
 
           <section id="section-status" className="scroll-mt-24">
             <SectionTitle icon={BarChart3Icon} title="Estado da base" />
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <StatTile label="Total de empresas" value="449" icon={Building2Icon} />
-              <StatTile label="Ultima atualizacao" value="01/05" subvalue="14:32 - ha 18h" icon={Clock3Icon} />
-              <StatTile label="Dados completos" value="418" subvalue="93,1% da base" icon={CheckCircle2Icon} tone="success" />
-              <StatTile label="Incompletos / desatualizados" value="31" subvalue="6,9% da base" icon={AlertTriangleIcon} tone="warning" />
+              <StatTile
+                label="Total de empresas"
+                value={baseSummary.totalCompanies != null ? formatNumber(baseSummary.totalCompanies) : "n/d"}
+                subvalue={sectorState === "loading" ? "Carregando filtros" : "Cadastro atual"}
+                icon={Building2Icon}
+              />
+              <StatTile
+                label="Ultima verificacao"
+                value={formatDateTimeLabel(baseSummary.generatedAt)}
+                subvalue={
+                  baseSummary.startYear != null && baseSummary.endYear != null
+                    ? `Janela ${baseSummary.startYear}-${baseSummary.endYear}`
+                    : "Aguardando /base-health"
+                }
+                icon={Clock3Icon}
+              />
+              <StatTile
+                label="Celulas completas"
+                value={baseSummary.completedCells != null ? formatNumber(baseSummary.completedCells) : "n/d"}
+                subvalue={`${formatPercent(baseSummary.coveragePct)} da janela`}
+                icon={CheckCircle2Icon}
+                tone="success"
+              />
+              <StatTile
+                label="Lacunas pendentes"
+                value={baseSummary.missingCells != null ? formatNumber(baseSummary.missingCells) : "n/d"}
+                subvalue={baseSummary.healthStatus ?? "Fonte indisponivel"}
+                icon={AlertTriangleIcon}
+                tone="warning"
+              />
             </div>
 
             <Card className="mt-3 rounded-[1.15rem] bg-card/92">
@@ -857,21 +1086,21 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
                   <div className="flex flex-wrap gap-6">
                     <div>
                       <p className="mb-1 text-xs text-muted-foreground">CVM DFP/ITR</p>
-                      <SourceHealth status={appState === "source_unavailable" ? "offline" : "available"} />
+                      <SourceHealth status={sourceHealthStatus} />
                     </div>
                     <div>
                       <p className="mb-1 text-xs text-muted-foreground">Dados cadastrais</p>
-                      <SourceHealth status="available" />
+                      <SourceHealth status={sectorState === "unavailable" ? "offline" : sectorState === "loading" ? "partial" : "available"} />
                     </div>
                     <div>
                       <p className="mb-1 text-xs text-muted-foreground">API auxiliar</p>
-                      <SourceHealth status="partial" />
+                      <SourceHealth status={jobsState === "unavailable" ? "offline" : jobsState === "loading" ? "partial" : "available"} />
                     </div>
                   </div>
                 </div>
                 <div>
                   <Eyebrow className="mb-1">Ultima verificacao</Eyebrow>
-                  <p className="font-mono text-sm tabular-nums">02/05/2026 08:01</p>
+                  <p className="font-mono text-sm tabular-nums">{formatDateTimeLabel(baseSummary.generatedAt)}</p>
                 </div>
               </CardContent>
             </Card>
@@ -886,6 +1115,7 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
               <CardContent className="grid gap-3 px-5 sm:grid-cols-2 xl:grid-cols-4">
                 {(Object.keys(UPDATE_TYPE_META) as UpdateType[]).map((type) => {
                   const item = UPDATE_TYPE_META[type];
+                  const estimate = updateModeEstimates[type];
                   const Icon = item.icon;
                   const active = updateType === type;
                   return (
@@ -905,7 +1135,7 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
                       <Icon className={cn("size-5", active ? "text-primary" : "text-muted-foreground")} strokeWidth={1.8} />
                       <div>
                         <p className="font-medium text-foreground">{item.label}</p>
-                        <p className="mt-1 text-xs leading-5 text-muted-foreground">{item.description}</p>
+                        <p className="mt-1 text-xs leading-5 text-muted-foreground">{estimate.description}</p>
                       </div>
                     </button>
                   );
@@ -956,7 +1186,7 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
                   Iniciar atualizacao
                 </Button>
                 <p className="text-xs text-muted-foreground">
-                  {formatNumber(total)} empresas - {UPDATE_TYPE_META[updateType].duration}
+                  {selectedImpactLabel} - {selectedModeEstimate.duration}
                 </p>
               </div>
             ) : appState === "source_unavailable" ? (
@@ -1128,15 +1358,37 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
           <section id="section-history" className="scroll-mt-24">
             <SectionTitle icon={HistoryIcon} title="Historico de atualizacoes" />
             <Card className="rounded-[1.15rem] bg-card/92">
+              <CardHeader className="flex-row items-center justify-between border-b border-border/55 pb-4">
+                <div>
+                  <Eyebrow>Jobs de refresh</Eyebrow>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {activeBatchJobCount > 0
+                      ? `${activeBatchJobCount} job ativo`
+                      : "Sem job ativo"}
+                  </p>
+                </div>
+                <StatusBadge tone={historyState === "source_unavailable" ? "error" : activeBatchJobCount > 0 ? "running" : "neutral"}>
+                  {historyState === "source_unavailable" ? "Fonte indisponivel" : activeBatchJobCount > 0 ? "Job ativo" : "Sem job ativo"}
+                </StatusBadge>
+              </CardHeader>
               <div className="overflow-x-auto">
                 <div className="grid min-w-[760px] grid-cols-[160px_115px_110px_90px_110px_75px_36px] gap-3 border-b border-border/55 bg-muted/30 px-5 py-3">
                   {["Data/hora", "Tipo", "Status", "Duracao", "Processadas", "Falhas", ""].map((heading) => (
                     <Eyebrow key={heading}>{heading}</Eyebrow>
                   ))}
                 </div>
-                {HISTORY.map((item) => (
-                  <HistoryRow key={`${item.date}-${item.type}`} item={item} />
-                ))}
+                {historyItems.length ? (
+                  historyItems.map((item) => (
+                    <HistoryRow key={item.id} item={item} />
+                  ))
+                ) : (
+                  <div className="min-w-[760px] px-5 py-8">
+                    <div className="rounded-[1rem] border border-border/60 bg-muted/20 p-4">
+                      <h3 className="font-heading text-sm font-semibold">{historyEmptyCopy.title}</h3>
+                      <p className="mt-1 text-sm leading-6 text-muted-foreground">{historyEmptyCopy.description}</p>
+                    </div>
+                  </div>
+                )}
               </div>
             </Card>
           </section>
@@ -1144,7 +1396,14 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
       </div>
 
       {appState === "confirming" ? (
-        <ConfirmationDialog updateType={updateType} filters={activeFilters} onCancel={handleCancel} onConfirm={handleConfirm} />
+        <ConfirmationDialog
+          updateType={updateType}
+          impactLabel={selectedImpactLabel}
+          durationLabel={selectedModeEstimate.duration}
+          filters={activeFilters}
+          onCancel={handleCancel}
+          onConfirm={handleConfirm}
+        />
       ) : null}
     </div>
   );

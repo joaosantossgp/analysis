@@ -2,11 +2,19 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  fetchBaseHealth,
   fetchBatchRefresh,
+  fetchBatchJobs,
   fetchBatchJobStatus,
   cancelBatchJob,
   resolveBatchRefreshCvmRange,
 } from "../lib/api.ts";
+import {
+  buildBaseHealthSummary,
+  buildHistoryRows,
+  buildUpdateModeEstimates,
+  getHistoryState,
+} from "../lib/update-base-admin.ts";
 import {
   bridgeRequestBatchRefresh,
   bridgeFetchBatchStatus,
@@ -39,6 +47,126 @@ function withPywebview(api: Partial<PyApi>) {
     win.window = prev;
   };
 }
+
+// ---------------------------------------------------------------------------
+// base health / jobs loading
+// ---------------------------------------------------------------------------
+
+const baseHealthPayload = {
+  generated_at: "2026-05-04T15:00:00",
+  start_year: 2024,
+  end_year: 2025,
+  total_cells: 10,
+  completed_cells: 7,
+  missing_cells: 3,
+  pct: 70,
+  health_score: 78,
+  health_status: "atencao",
+  eta_hours: 1.5,
+  throughput_per_hour: 2,
+  throughput_confidence: "medium",
+  per_year: [
+    { year: 2024, total_companies: 5, completed: 4, missing: 1, pct: 80, eta_hours: 0.5 },
+    { year: 2025, total_companies: 6, completed: 3, missing: 3, pct: 50, eta_hours: 1 },
+  ],
+  prioritized_companies: [],
+  raw: {},
+};
+
+test("fetchBaseHealth (web) loads the same-origin base-health route with the real window", async () => {
+  let capturedUrl = "";
+  const restore = withFetchMock((async (input: RequestInfo | URL) => {
+    capturedUrl = String(input);
+    return new Response(JSON.stringify(baseHealthPayload), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }) as FetchMock);
+
+  try {
+    const result = await fetchBaseHealth({ startYear: 2024, endYear: 2025 });
+    assert.ok(
+      capturedUrl.endsWith("/api/base-health?start_year=2024&end_year=2025"),
+      `unexpected url: ${capturedUrl}`,
+    );
+    assert.equal(result.missing_cells, 3);
+  } finally {
+    restore();
+  }
+});
+
+test("fetchBatchJobs (web) distinguishes no active job with an empty real list", async () => {
+  let capturedUrl = "";
+  const restore = withFetchMock((async (input: RequestInfo | URL) => {
+    capturedUrl = String(input);
+    return new Response(JSON.stringify({ items: [] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }) as FetchMock);
+
+  try {
+    const result = await fetchBatchJobs();
+    assert.ok(capturedUrl.endsWith("/api/refresh-jobs"), `unexpected url: ${capturedUrl}`);
+    assert.deepEqual(result.items, []);
+  } finally {
+    restore();
+  }
+});
+
+test("update-base summaries derive cards and mode estimates from health and filters", () => {
+  const sectors = [
+    { sector_name: "Energia", sector_slug: "energia", company_count: 2 },
+    { sector_name: "Financeiro", sector_slug: "financeiro", company_count: 4 },
+  ];
+
+  const summary = buildBaseHealthSummary(baseHealthPayload, sectors);
+  const estimates = buildUpdateModeEstimates({
+    health: baseHealthPayload,
+    sectors,
+    selectedSectorSlug: "energia",
+  });
+
+  assert.equal(summary.totalCompanies, 6);
+  assert.equal(summary.completedCells, 7);
+  assert.equal(summary.missingCells, 3);
+  assert.equal(estimates.full.affected, 2);
+  assert.match(estimates.full.description, /2 empresas no setor Energia/);
+  assert.equal(estimates.missing.affected, 3);
+  assert.match(estimates.missing.description, /3 lacunas na janela 2024-2025/);
+  assert.equal(estimates.outdated.affected, null);
+});
+
+test("update-base history exposes explicit empty and terminal states", () => {
+  assert.deepEqual(buildHistoryRows([]), []);
+  assert.equal(
+    getHistoryState({ jobsState: "available", activeJobCount: 0, historyCount: 0 }),
+    "no_history_no_active_job",
+  );
+
+  const rows = buildHistoryRows([
+    {
+      job_id: "job-1",
+      state: "success",
+      mode: "missing",
+      queued: 3,
+      processed: 3,
+      failures: 0,
+      started_at: "2026-05-04T15:00:00",
+      finished_at: "2026-05-04T15:02:05",
+      log_lines: [],
+    },
+  ]);
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]?.typeLabel, "Faltantes");
+  assert.equal(rows[0]?.status, "success");
+  assert.equal(rows[0]?.duration, "2m 5s");
+  assert.equal(
+    getHistoryState({ jobsState: "available", activeJobCount: 1, historyCount: 0 }),
+    "active_jobs_no_history",
+  );
+});
 
 // ---------------------------------------------------------------------------
 // fetchBatchRefresh — web mode
