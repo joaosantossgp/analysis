@@ -225,33 +225,28 @@ Defaults:
 ### PG-11 - `/atualizar-base` (Atualizar Base Admin) `live`
 
 **Objetivo**: painel administrativo para acompanhar o estado da base empresarial
-e executar o fluxo de atualizacao em massa por tipo, filtros, confirmacao,
+e simular o fluxo de atualizacao em massa por tipo, filtros, confirmacao,
 progresso, logs, resultados e historico.
 
-**Status**: rota frontend consome health, filtros e jobs reais disponiveis. O
-historico persistente ainda depende de contrato futuro; enquanto isso a tela
-mostra estado vazio explicito quando nao ha jobs finalizados expostos.
+**Status**: rota frontend entregue com dados simulados. Backend de refresh em
+lote disponivel para consumo.
 
 **Endpoints disponiveis para consumo**:
 
 | Endpoint | Params | Para que serve |
 |---|---|---|
-| `GET /base-health` | `start_year=`, `end_year=`, `force_refresh=` | Alimenta cards de estado da base, cobertura e lacunas reais |
-| `GET /companies/filters` | - | Alimenta lista real de setores e slugs dos filtros |
 | `POST /refresh/batch` | body `{mode, sector_slug?, cvm_range?, status_filter?, search?, cd_cvm?, start_year?, end_year?, limit?}` | Dispara refresh em lote; `full`, `missing`, `outdated` e `failed` resolvem exatamente as empresas elegiveis antes de enfileirar |
 | `GET /refresh/jobs` | - | Lista jobs ativos do refresh em lote |
 | `GET /refresh/jobs/{job_id}` | - | Polling de progresso, falhas, CVM atual e logs |
-| `POST /refresh/jobs/{job_id}/cancel` | path `job_id` | Solicita cancelamento real de job batch ativo e expoe `cancelled` no polling |
+| `POST /refresh/jobs/{job_id}/cancel` | path `job_id` | Solicita cancelamento real de job batch ativo e expõe `cancelled` no polling |
 
 **Notas de implementacao**:
 - a pagina recria o handoff `Update Base.html` como componente React client;
-- o estado de fonte indisponivel vem das leituras reais; permissao insuficiente
-  continua reservado para contrato futuro de auth/roles;
+- os estados de fonte indisponivel e permissao insuficiente seguem simulados
+  na propria tela ate existir contrato dedicado de auth/roles;
 - a API de batch exposta nesta fase cobre start, lista de jobs ativos e polling
   de progresso; tambem aceita os aliases do bridge desktop (`sector`,
-  `cvm_from`, `cvm_to`) e cancelamento via HTTP;
-- historico persistente fica para contrato futuro; a UI diferencia sem
-  historico, sem job ativo, fonte indisponivel e erro operacional.
+  `cvm_from`, `cvm_to`) e cancelamento via HTTP; historico fica para contrato futuro.
 
 ---
 
@@ -269,7 +264,7 @@ de produto. Nao consome endpoints de API.
 | `GET /health` | `/` |
 | `GET /companies` | `/`, `/empresas`, `/comparar` |
 | `GET /companies/suggestions` | `/` |
-| `GET /companies/filters` | `/empresas`, `/atualizar-base` |
+| `GET /companies/filters` | `/empresas` |
 | `GET /companies/{cd_cvm}` | `/empresas/[cd_cvm]`, `/comparar` |
 | `GET /companies/{cd_cvm}/years` | `/empresas/[cd_cvm]`, `/comparar` |
 | `GET /companies/{cd_cvm}/statements` | `/empresas/[cd_cvm]` |
@@ -284,7 +279,7 @@ de produto. Nao consome endpoints de API.
 | `GET /refresh/jobs` | `/atualizar-base` |
 | `GET /refresh/jobs/{job_id}` | `/atualizar-base` |
 | `POST /refresh/jobs/{job_id}/cancel` | `/atualizar-base` |
-| `GET /base-health` | `/`, `/atualizar-base` |
+| `GET /base-health` | `/` (parcialmente, se trust strip expandir) |
 
 ---
 
