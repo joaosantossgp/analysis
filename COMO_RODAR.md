@@ -152,6 +152,15 @@ python scripts/batch_completo.py --dry-run
 python scripts/atualizar_todos.py --anos 2024 2025
 ```
 
+Smoke seguro do fluxo web/API + bridge da pagina **Atualizar base** (default
+`mode=missing`, `limit=1`; live so com `--confirm-live`):
+
+```powershell
+python scripts/update_base_smoke.py --dry-run --mode missing --limit 1
+```
+
+Detalhes: `docs/governance/on-demand-release-evidence.md` (secao Smoke Atualizar Base).
+
 Os logs ficam em `output/logs/`.
 
 ---
