@@ -148,10 +148,35 @@ try {
 }
 
 # ---------------------------------------------------------------------------
+# Passo 4.5 — Copiar SQLite local para a pasta distribuivel
+# ---------------------------------------------------------------------------
+Write-Host "[5.5/5] Copiando SQLite local para o distribuivel..." -ForegroundColor Yellow
+
+$DistDir = Join-Path $Root "dist\CVMAnalytics"
+$SourceDb = Join-Path $Root "data\db\cvm_financials.db"
+$TargetDbDir = Join-Path $DistDir "data\db"
+$TargetDb = Join-Path $TargetDbDir "cvm_financials.db"
+
+if (-not (Test-Path $SourceDb)) {
+    throw "SQLite local nao encontrado em $SourceDb. Rode scripts/seed_web_smoke_db.py ou restaure data/db/cvm_financials.db antes de empacotar."
+}
+
+New-Item -ItemType Directory -Force $TargetDbDir | Out-Null
+Copy-Item -Force $SourceDb $TargetDb
+
+foreach ($suffix in @("-wal", "-shm")) {
+    $sidecar = "$SourceDb$suffix"
+    if (Test-Path $sidecar) {
+        Copy-Item -Force $sidecar "$TargetDb$suffix"
+    }
+}
+
+Write-Host "  OK: SQLite copiado para $TargetDb" -ForegroundColor Green
+
+# ---------------------------------------------------------------------------
 # Resultado
 # ---------------------------------------------------------------------------
 $ExePath  = Join-Path $Root "dist\CVMAnalytics\CVMAnalytics.exe"
-$DistDir  = Join-Path $Root "dist\CVMAnalytics"
 
 if (Test-Path $ExePath) {
     $SizeMB = [math]::Round((Get-ChildItem $DistDir -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB, 0)
