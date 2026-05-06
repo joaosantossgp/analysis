@@ -9,12 +9,11 @@ import {
 import type { CompaniesDirectoryQueryState } from "@/lib/companies-directory-query";
 import type { CompaniesPageData } from "@/lib/companies-page-data";
 import {
-  fetchCompanies,
-  fetchCompanyFilters,
-  fetchCompanySuggestions,
-  getUserFacingErrorMessage,
   isDesktopMode,
-} from "@/lib/api";
+  bridgeFetchCompanies,
+  bridgeFetchCompanyFilters,
+  bridgeFetchCompanySuggestions,
+} from "@/lib/desktop-bridge";
 
 type CompaniesDirectoryDesktopLoaderProps = Pick<
   CompaniesDirectoryQueryState,
@@ -33,6 +32,12 @@ function emptyDesktopData(error: string): CompaniesPageData {
     filtersError: null,
     fallbackSuggestionsError: null,
   };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error
+    ? error.message
+    : "Nao foi possivel carregar os dados locais agora.";
 }
 
 export function CompaniesDirectoryDesktopLoader({
@@ -76,10 +81,10 @@ export function CompaniesDirectoryDesktopLoader({
         search.trim().length >= 2 && !sector;
       const [directoryResult, filtersResult, fallbackSuggestionsResult] =
         await Promise.allSettled([
-          fetchCompanies({ search, sector, page, pageSize }),
-          fetchCompanyFilters(),
+          bridgeFetchCompanies({ search, sector, page, pageSize }),
+          bridgeFetchCompanyFilters(),
           shouldFetchFallbackSuggestions
-            ? fetchCompanySuggestions(search, 6)
+            ? bridgeFetchCompanySuggestions(search, 6)
             : Promise.resolve({ items: [] }),
         ]);
 
@@ -98,15 +103,15 @@ export function CompaniesDirectoryDesktopLoader({
               : null,
           directoryError:
             directoryResult.status === "rejected"
-              ? getUserFacingErrorMessage(directoryResult.reason)
+              ? errorMessage(directoryResult.reason)
               : null,
           filtersError:
             filtersResult.status === "rejected"
-              ? getUserFacingErrorMessage(filtersResult.reason)
+              ? errorMessage(filtersResult.reason)
               : null,
           fallbackSuggestionsError:
             fallbackSuggestionsResult.status === "rejected"
-              ? getUserFacingErrorMessage(fallbackSuggestionsResult.reason)
+              ? errorMessage(fallbackSuggestionsResult.reason)
               : null,
         },
       });
