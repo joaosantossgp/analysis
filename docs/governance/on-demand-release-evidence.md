@@ -23,6 +23,55 @@ O smoke cobre entrada por busca, sugestoes same-origin, detalhe sem historico e
 navegacao mobile critica. Os unitarios cobrem polling/wait, handoff de sucesso,
 outcomes terminais e cenarios mistos de dados legiveis.
 
+## Smoke Atualizar Base (`/atualizar-base`)
+
+PRs que alterem o fluxo de atualizacao em lote da pagina **Atualizar base**, a API
+`POST /refresh/batch`, jobs `GET /refresh/jobs/{job_id}` ou o bridge desktop
+(`request_refresh` / `get_refresh_status` / `cancel_refresh`) devem anexar
+evidencia do CLI dedicado **sem** disparar um batch amplo por engano.
+
+Script: `scripts/update_base_smoke.py`.
+
+### Comportamento seguro (default)
+
+- Sem `--confirm-live`, o script **nao** chama API nem bridge; use `--dry-run`
+  explicitamente para imprimir o payload (`mode=missing`, `limit=1` por padrao).
+- Execucao real exige `--confirm-live`. `limit` acima de **50** exige tambem
+  `--allow-large-batch`.
+- Variavel `API_BASE_URL` (ou `--api-base`) define a base da FastAPI local/remota.
+
+### Comandos recomendados
+
+Dry-run (somente evidencia do body; nenhuma chamada HTTP):
+
+```powershell
+python scripts/update_base_smoke.py --dry-run --mode missing --limit 1
+```
+
+Live minimo contra API local (ajuste `--cd-cvm` para um codigo real da sua base):
+
+```powershell
+python scripts/update_base_smoke.py --profile web --confirm-live --limit 1 --cd-cvm 9512
+```
+
+Mesmo escopo via bridge desktop (Python, sem abrir pywebview):
+
+```powershell
+python scripts/update_base_smoke.py --profile desktop --confirm-live --limit 1 --cd-cvm 9512
+```
+
+Saida JSON para colar em PR/issue:
+
+```powershell
+python scripts/update_base_smoke.py --dry-run --json
+```
+
+Validacao automatizada local dos guardrails e fluxos mockados:
+
+```powershell
+python -m pytest scripts/test_update_base_smoke.py -q
+```
+
 ## Checklist de aceitacao
 
 - Search/entry: busca da home ou do compare chega ao destino certo sem CORS ou
