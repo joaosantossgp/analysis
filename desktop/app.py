@@ -44,6 +44,28 @@ def _repo_root() -> Path:
     return Path(__file__).parent.parent
 
 
+def _runtime_dir() -> Path:
+    if _bundled():
+        return Path(sys.executable).resolve().parent
+    return _repo_root()
+
+
+def _configure_bundled_data_paths() -> None:
+    if not _bundled():
+        return
+
+    runtime_dir = _runtime_dir()
+    data_dir = runtime_dir / "data"
+    db_dir = data_dir / "db"
+    output_dir = runtime_dir / "output"
+
+    os.environ.setdefault("CVM_DATA_DIR", str(data_dir))
+    os.environ.setdefault("CVM_DB_DIR", str(db_dir))
+    os.environ.setdefault("SQLITE_PATH", str(db_dir / "cvm_financials.db"))
+    os.environ.setdefault("CVM_OUTPUT_DIR", str(output_dir))
+    os.environ.setdefault("CVM_LOG_DIR", str(output_dir / "logs"))
+
+
 def _web_dir() -> Path:
     return _repo_root() / "apps" / "web"
 
@@ -137,6 +159,7 @@ def main() -> None:
     dev_mode = "--dev" in args
     debug_mode = "--debug" in args
 
+    _configure_bundled_data_paths()
     bridge = CVMBridge()
     server_proc: subprocess.Popen[bytes] | None = None
 
