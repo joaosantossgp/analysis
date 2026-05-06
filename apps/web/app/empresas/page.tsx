@@ -5,8 +5,10 @@ import {
   CompaniesDirectoryPageContent,
   CompaniesDirectoryLoadingState,
 } from "@/components/companies/companies-directory-client";
+import { CompaniesDirectoryDesktopLoader } from "@/components/companies/companies-directory-desktop-loader";
 import { readCompaniesDirectoryQueryFromRecord } from "@/lib/companies-directory-query";
 import { loadCompaniesPageData } from "@/lib/companies-page-data";
+import { isDesktopServerMode } from "@/lib/desktop-mode";
 
 export const metadata: Metadata = {
   title: "Empresas",
@@ -30,6 +32,19 @@ export default function EmpresasPage({ searchParams }: EmpresasPageProps) {
 
 async function EmpresasPageContent({ searchParams }: EmpresasPageProps) {
   const directoryQuery = readCompaniesDirectoryQueryFromRecord(await searchParams);
+
+  if (isDesktopServerMode()) {
+    return (
+      <CompaniesDirectoryDesktopLoader
+        page={directoryQuery.page}
+        pageSize={directoryQuery.pageSize}
+        search={directoryQuery.search}
+        sector={directoryQuery.sector}
+        viewMode={directoryQuery.viewMode}
+      />
+    );
+  }
+
   const data = await loadCompaniesPageData({
     search: directoryQuery.search,
     sector: directoryQuery.sector,

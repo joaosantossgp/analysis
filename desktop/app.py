@@ -95,6 +95,7 @@ def _start_dev_server() -> tuple[subprocess.Popen[bytes], int]:
     if not (web_dir / "package.json").exists():
         sys.exit(f"[desktop] Web app nao encontrado em {web_dir}.")
 
+    env = {**os.environ, "BROWSER": "none", "ANALISYS_DESKTOP_MODE": "1"}
     proc = subprocess.Popen(
         [
             _npm_cmd(),
@@ -107,7 +108,7 @@ def _start_dev_server() -> tuple[subprocess.Popen[bytes], int]:
             str(_DEV_PORT),
         ],
         cwd=str(web_dir),
-        env={**os.environ, "BROWSER": "none"},
+        env=env,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
@@ -116,9 +117,15 @@ def _start_dev_server() -> tuple[subprocess.Popen[bytes], int]:
 
 def _start_standalone_server(standalone: Path) -> tuple[subprocess.Popen[bytes], int]:
     port = _free_port()
+    env = {
+        **os.environ,
+        "PORT": str(port),
+        "HOSTNAME": "127.0.0.1",
+        "ANALISYS_DESKTOP_MODE": "1",
+    }
     proc = subprocess.Popen(
         [_node_exe(), str(standalone)],
-        env={**os.environ, "PORT": str(port), "HOSTNAME": "127.0.0.1"},
+        env=env,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )

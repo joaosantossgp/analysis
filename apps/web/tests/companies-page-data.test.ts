@@ -8,6 +8,7 @@ import {
   readCompaniesDirectoryQueryFromRecord,
 } from "../lib/companies-directory-query.ts";
 import { loadCompaniesPageData } from "../lib/companies-page-data.ts";
+import { isDesktopServerMode } from "../lib/desktop-mode.ts";
 
 test("loadCompaniesPageData keeps filters when the directory request fails", async () => {
   const result = await loadCompaniesPageData(
@@ -159,4 +160,10 @@ test("buildCompaniesDirectoryApiHref keeps only the params used by the directory
   });
 
   assert.equal(href, "/api/companies-directory?busca=PETR4&setor=energia&pagina=3&pageSize=20");
+});
+
+test("isDesktopServerMode is enabled only by the desktop runtime flag", () => {
+  assert.equal(isDesktopServerMode({ ANALISYS_DESKTOP_MODE: "1" }), true);
+  assert.equal(isDesktopServerMode({ ANALISYS_DESKTOP_MODE: "0" }), false);
+  assert.equal(isDesktopServerMode({}), false);
 });
