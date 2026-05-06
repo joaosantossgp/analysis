@@ -69,7 +69,7 @@ python scripts/update_base_smoke.py --dry-run --json
 Validacao automatizada local dos guardrails e fluxos mockados:
 
 ```powershell
-python -m pytest tests/test_update_base_smoke.py -q
+python -m pytest scripts/test_update_base_smoke.py -q
 ```
 
 ## Checklist de aceitacao
