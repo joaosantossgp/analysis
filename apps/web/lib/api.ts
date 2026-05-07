@@ -431,6 +431,7 @@ type ApiFetchOptions<T> = {
   validate?: (payload: unknown) => payload is T;
   invalidResponseMessage?: string;
   request?: ApiReadRequestInit;
+  timeoutMs?: number;
 };
 
 type ApiReadRequestInit = {
@@ -438,6 +439,7 @@ type ApiReadRequestInit = {
   next?: {
     revalidate: number;
   };
+  timeoutMs?: number;
 };
 
 export { isDesktopMode } from "./desktop-bridge.ts";
@@ -491,41 +493,54 @@ export class ApiClientError extends Error {
 }
 
 const DEFAULT_API_BASE_URL = "http://127.0.0.1:8000";
+const PAGE_LEVEL_FETCH_TIMEOUT_MS = 8_000;
+const SUGGESTIONS_FETCH_TIMEOUT_MS = 5_000;
 const UNCACHED_API_READ: ApiReadRequestInit = {
   cache: "no-store",
+  timeoutMs: PAGE_LEVEL_FETCH_TIMEOUT_MS,
 };
 
 // Keep these frontend data-cache TTLs aligned with the backend Cache-Control
 // contract delivered by the API layer.
 const COMPANY_DIRECTORY_API_READ: ApiReadRequestInit = {
   next: { revalidate: 300 },
+  timeoutMs: PAGE_LEVEL_FETCH_TIMEOUT_MS,
 };
 const COMPANY_POPULARES_API_READ: ApiReadRequestInit = {
   next: { revalidate: 3600 },
+  timeoutMs: PAGE_LEVEL_FETCH_TIMEOUT_MS,
 };
 const COMPANY_DESTAQUE_API_READ: ApiReadRequestInit = {
   next: { revalidate: 300 },
+  timeoutMs: PAGE_LEVEL_FETCH_TIMEOUT_MS,
 };
 const COMPANY_FILTERS_API_READ: ApiReadRequestInit = {
   next: { revalidate: 3600 },
+  timeoutMs: PAGE_LEVEL_FETCH_TIMEOUT_MS,
 };
 const COMPANY_SUGGESTIONS_API_READ: ApiReadRequestInit = {
   next: { revalidate: 60 },
+  timeoutMs: SUGGESTIONS_FETCH_TIMEOUT_MS,
 };
 const COMPANY_INFO_API_READ: ApiReadRequestInit = {
   next: { revalidate: 3600 },
+  timeoutMs: PAGE_LEVEL_FETCH_TIMEOUT_MS,
 };
 const COMPANY_YEARS_API_READ: ApiReadRequestInit = {
   next: { revalidate: 86400 },
+  timeoutMs: PAGE_LEVEL_FETCH_TIMEOUT_MS,
 };
 const COMPANY_DATA_API_READ: ApiReadRequestInit = {
   next: { revalidate: 600 },
+  timeoutMs: PAGE_LEVEL_FETCH_TIMEOUT_MS,
 };
 const SECTOR_DIRECTORY_API_READ: ApiReadRequestInit = {
   next: { revalidate: 3600 },
+  timeoutMs: PAGE_LEVEL_FETCH_TIMEOUT_MS,
 };
 const SECTOR_DETAIL_API_READ: ApiReadRequestInit = {
   next: { revalidate: 3600 },
+  timeoutMs: PAGE_LEVEL_FETCH_TIMEOUT_MS,
 };
 
 export function getApiBaseUrl(): string {
@@ -545,7 +560,15 @@ export function buildApiUrlFromBase(baseUrl: string, path: string): string {
 function resolveApiReadRequest(
   request: ApiReadRequestInit | undefined,
 ): ApiReadRequestInit {
-  return request ?? UNCACHED_API_READ;
+  return {
+    ...UNCACHED_API_READ,
+    ...request,
+    timeoutMs: request?.timeoutMs ?? PAGE_LEVEL_FETCH_TIMEOUT_MS,
+  };
+}
+
+function resolveAbortSignal(timeoutMs: number): AbortSignal {
+  return AbortSignal.timeout(timeoutMs);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1031,8 +1054,10 @@ async function apiFetch<T>(
   let response: Response;
 
   try {
+    const request = resolveApiReadRequest(options?.request);
     response = await fetch(buildApiUrl(path), {
-      ...resolveApiReadRequest(options?.request),
+      ...request,
+      signal: resolveAbortSignal(request.timeoutMs ?? PAGE_LEVEL_FETCH_TIMEOUT_MS),
       headers: {
         Accept: "application/json",
       },
@@ -1088,10 +1113,12 @@ async function routeFetch<T>(
   try {
     const headers = new Headers(init?.headers);
     headers.set("Accept", "application/json");
+    const timeoutMs = options?.timeoutMs ?? PAGE_LEVEL_FETCH_TIMEOUT_MS;
 
     response = await fetch(path, {
       ...init,
       cache: "no-store",
+      signal: resolveAbortSignal(timeoutMs),
       headers,
     });
   } catch (error) {
@@ -1270,6 +1297,7 @@ export async function fetchCompanySuggestionsRoute(
     })}`,
     undefined,
     {
+      timeoutMs: SUGGESTIONS_FETCH_TIMEOUT_MS,
       validate: isCompanySuggestionsResponse,
       invalidResponseMessage:
         "A rota interna retornou sugestoes invalidas para a busca de empresas.",
