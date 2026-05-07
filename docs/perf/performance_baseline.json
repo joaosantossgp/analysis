@@ -31,12 +31,12 @@
       "/empresas/[cd_cvm]": {
         "rendering_mode": "dynamic",
         "revalidate_seconds": null,
-        "first_load_uncompressed_js_bytes": 716426,
+        "first_load_uncompressed_js_bytes": 800009,
         "first_load_chunk_count": 15,
         "guardrail": {
           "required_rendering_mode": "dynamic",
           "required_revalidate_seconds": null,
-          "max_first_load_uncompressed_js_bytes": 773740
+          "max_first_load_uncompressed_js_bytes": 806500
         }
       },
       "/comparar": {

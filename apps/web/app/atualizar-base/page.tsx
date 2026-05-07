@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { UpdateBasePage } from "@/components/update-base/update-base-page";
 import { fetchCompanyFilters } from "@/lib/api";
+import { isDesktopServerMode } from "@/lib/desktop-mode";
 
 export const metadata: Metadata = {
   title: "Atualizar base",
@@ -10,6 +11,8 @@ export const metadata: Metadata = {
 };
 
 export default async function AtualizarBaseRoute() {
-  const filters = await fetchCompanyFilters().catch(() => null);
+  const filters = isDesktopServerMode()
+    ? null
+    : await fetchCompanyFilters().catch(() => null);
   return <UpdateBasePage initialSectors={filters?.sectors ?? []} />;
 }

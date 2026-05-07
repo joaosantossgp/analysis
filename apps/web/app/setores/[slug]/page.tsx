@@ -4,6 +4,7 @@ import { ChevronRightIcon } from "lucide-react";
 import { notFound } from "next/navigation";
 
 import { SectorCompanyTable } from "@/components/sectors/sector-company-table";
+import { SectorDetailDesktopLoader } from "@/components/sectors/sector-detail-desktop-loader";
 import { SectorDetailTracker } from "@/components/sectors/sector-detail-tracker";
 import { SectorOverview } from "@/components/sectors/sector-overview";
 import { SectorUrlTabs } from "@/components/sectors/sector-url-tabs";
@@ -18,6 +19,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
 import { fetchSectorDetail } from "@/lib/api";
 import { formatCompactInteger } from "@/lib/formatters";
+import { isDesktopServerMode } from "@/lib/desktop-mode";
 import { getFirstParam } from "@/lib/search-params";
 import { loadSectorDetailPageData } from "@/lib/sectors-page-data";
 import { cn } from "@/lib/utils";
@@ -79,6 +81,14 @@ export async function generateMetadata({
 }: SectorDetailPageProps): Promise<Metadata> {
   const { slug } = await params;
 
+  if (isDesktopServerMode()) {
+    return {
+      title: `Setor ${slug}`,
+      description:
+        "Leitura setorial local via bridge desktop com serie anual agregada e ranking de empresas.",
+    };
+  }
+
   try {
     const detail = await fetchSectorDetail(slug);
 
@@ -108,6 +118,12 @@ export default async function SectorDetailPage({
   const rawYear = getFirstParam(resolvedSearchParams.ano);
   const rawTab = getFirstParam(resolvedSearchParams.aba);
   const pathname = `/setores/${slug}`;
+
+  if (isDesktopServerMode()) {
+    return (
+      <SectorDetailDesktopLoader slug={slug} rawYear={rawYear} rawTab={rawTab} />
+    );
+  }
 
   const { detail, currentTab, detailError } = await loadSectorDetailPageData(
     slug,

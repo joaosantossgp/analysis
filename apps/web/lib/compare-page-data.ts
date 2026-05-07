@@ -54,7 +54,7 @@ function toCompareOption(company: CompanyInfo): CompareCompanyOption {
   };
 }
 
-const EMPTY_RESULT: ComparePageData = {
+export const EMPTY_COMPARE_PAGE_DATA: ComparePageData = {
   selectedCompanies: [],
   comparedCompanies: [],
   availableYears: [],
@@ -72,7 +72,7 @@ export async function loadComparePageData(
 ): Promise<ComparePageData> {
   const ids = parseCompanyIdsCsv(rawIds);
   if (ids.length === 0) {
-    return EMPTY_RESULT;
+    return EMPTY_COMPARE_PAGE_DATA;
   }
 
   const fetchInfo = loaders.fetchCompanyInfo ?? fetchCompanyInfo;
@@ -100,7 +100,7 @@ export async function loadComparePageData(
 
   if (selectedCompanyInfo.length === 0) {
     return {
-      ...EMPTY_RESULT,
+      ...EMPTY_COMPARE_PAGE_DATA,
       dataError: "Nao foi possivel carregar as empresas selecionadas.",
       partialErrors,
     };
@@ -110,7 +110,7 @@ export async function loadComparePageData(
 
   if (selectedCompanies.length < 2) {
     return {
-      ...EMPTY_RESULT,
+      ...EMPTY_COMPARE_PAGE_DATA,
       selectedCompanies,
       partialErrors,
     };
@@ -146,7 +146,7 @@ export async function loadComparePageData(
 
   if (yearCapableCompanies.length < 2) {
     return {
-      ...EMPTY_RESULT,
+      ...EMPTY_COMPARE_PAGE_DATA,
       selectedCompanies,
       availableYears,
       selectedYears,
@@ -158,7 +158,7 @@ export async function loadComparePageData(
 
   if (availableYears.length === 0) {
     return {
-      ...EMPTY_RESULT,
+      ...EMPTY_COMPARE_PAGE_DATA,
       selectedCompanies,
       availableYears,
       selectedYears,
@@ -170,7 +170,7 @@ export async function loadComparePageData(
 
   if (selectedYears.length === 0) {
     return {
-      ...EMPTY_RESULT,
+      ...EMPTY_COMPARE_PAGE_DATA,
       selectedCompanies,
       availableYears,
       selectedYears,
@@ -203,7 +203,7 @@ export async function loadComparePageData(
 
   if (comparedBundles.length < 2) {
     return {
-      ...EMPTY_RESULT,
+      ...EMPTY_COMPARE_PAGE_DATA,
       selectedCompanies,
       availableYears,
       selectedYears,
@@ -221,7 +221,7 @@ export async function loadComparePageData(
 
   if (!hasComparableKpiValues(rows)) {
     return {
-      ...EMPTY_RESULT,
+      ...EMPTY_COMPARE_PAGE_DATA,
       selectedCompanies,
       comparedCompanies: comparedBundles.map((entry) => toCompareOption(entry.company)),
       availableYears,
@@ -234,7 +234,7 @@ export async function loadComparePageData(
   }
 
   return {
-    ...EMPTY_RESULT,
+    ...EMPTY_COMPARE_PAGE_DATA,
     selectedCompanies,
     comparedCompanies: comparedBundles.map((entry) => toCompareOption(entry.company)),
     availableYears,

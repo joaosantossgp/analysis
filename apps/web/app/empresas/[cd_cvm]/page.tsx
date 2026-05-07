@@ -1,22 +1,10 @@
-import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
-import { CompanyDetailTracker } from "@/components/company/company-detail-tracker";
-import { CompanyHeader } from "@/components/company/company-header";
+import { CompanyDetailBody } from "@/components/company/company-detail-body";
+import { CompanyDetailDesktopLoader } from "@/components/company/company-detail-desktop-loader";
+import { CompanyDetailErrorPage } from "@/components/company/company-detail-error";
 import { CompanyNoDataPage } from "@/components/company/company-no-data";
-import { CompanyOverview } from "@/components/company/company-overview";
-import { CompanyPeriodPreset } from "@/components/company/company-period-preset";
-import { CompanyStatementsLazy } from "@/components/company/company-statements-lazy";
-import { CompanyUrlTabs } from "@/components/company/company-url-tabs";
-import {
-  InfoChip,
-  PageShell,
-  SectionHeading,
-  SurfaceCard,
-} from "@/components/shared/design-system-recipes";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { buttonVariants } from "@/components/ui/button";
 import {
   type CompanyInfo,
   fetchCompanyInfo,
@@ -27,14 +15,13 @@ import {
   isApiClientError,
 } from "@/lib/api";
 import { getReadableCompanyYears } from "@/lib/company-detail-handoff";
-import { DETAIL_TABS, STATEMENT_OPTIONS } from "@/lib/constants";
+import { isDesktopServerMode } from "@/lib/desktop-mode";
 import {
   coerceDetailTab,
   coerceStatement,
   getFirstParam,
   normalizeSelectedYears,
 } from "@/lib/search-params";
-import { cn } from "@/lib/utils";
 
 type EmpresaDetailPageProps = {
   params: Promise<{ cd_cvm: string }>;
@@ -47,44 +34,19 @@ const DETAIL_PAGE_MUTABLE_API_READ = {
   cache: "no-store",
 } as const;
 
-function DetailPageError({
-  message,
-}: {
-  message: string;
-}) {
-  return (
-    <PageShell density="relaxed" className="max-w-4xl">
-      <SurfaceCard tone="default" padding="lg" className="space-y-6">
-        <div className="flex flex-wrap items-center gap-2">
-          <InfoChip tone="brand">Detalhe da companhia</InfoChip>
-        </div>
-        <SectionHeading
-          title="Detalhes indisponiveis"
-          titleAs="h1"
-          description="Nao foi possivel carregar os dados desta companhia agora."
-        />
-        <Alert variant="destructive-soft">
-          <AlertTitle>Falha na leitura detalhada</AlertTitle>
-          <AlertDescription>{message}</AlertDescription>
-        </Alert>
-        <Link
-          href="/empresas"
-          className={cn(
-            buttonVariants({ variant: "outline", size: "lg" }),
-            "w-fit rounded-full px-5",
-          )}
-        >
-          Voltar para o diretorio
-        </Link>
-      </SurfaceCard>
-    </PageShell>
-  );
-}
-
 export async function generateMetadata({
   params,
 }: EmpresaDetailPageProps): Promise<Metadata> {
   const { cd_cvm } = await params;
+
+  if (isDesktopServerMode()) {
+    return {
+      title: `Empresa ${cd_cvm}`,
+      description:
+        "Leitura detalhada local via bridge desktop com KPIs anuais e demonstracoes financeiras.",
+    };
+  }
+
   let company = null;
 
   try {
@@ -114,6 +76,16 @@ export default async function EmpresaDetailPage({
   const { cd_cvm } = await params;
   const resolvedSearchParams = await searchParams;
   const cdCvm = Number(cd_cvm);
+
+  if (isDesktopServerMode()) {
+    return (
+      <CompanyDetailDesktopLoader
+        cdCvm={cdCvm}
+        searchParams={resolvedSearchParams}
+      />
+    );
+  }
+
   const pathname = `/empresas/${cdCvm}`;
 
   let company: CompanyInfo | null = null;
@@ -136,7 +108,7 @@ export default async function EmpresaDetailPage({
     if (isApiClientError(error) && error.code === "not_found") {
       notFound();
     }
-    return <DetailPageError message={getUserFacingErrorMessage(error)} />;
+    return <CompanyDetailErrorPage message={getUserFacingErrorMessage(error)} />;
   }
 
   if (!company) {
@@ -184,79 +156,16 @@ export default async function EmpresaDetailPage({
   }
 
   return (
-    <PageShell density="default">
-      <CompanyDetailTracker
-        cdCvm={company.cd_cvm}
-        companyName={company.company_name}
-        years={selectedYears}
-        tab={currentTab}
-        statementType={currentStatement}
-      />
-
-      <CompanyHeader company={company} selectedYears={selectedYears} />
-
-      <CompanyUrlTabs
-        pathname={pathname}
-        currentValue={currentTab}
-        paramName="aba"
-        options={Array.from(DETAIL_TABS)}
-      />
-
-      {currentTab === "visao-geral" ? (
-        bundle ? (
-          <CompanyOverview
-            company={company}
-            bundle={bundle}
-            pathname={pathname}
-            availableYears={readableYears}
-            selectedYears={selectedYears}
-          />
-        ) : (
-          <Alert variant="destructive-soft">
-            <AlertTitle>Visao geral indisponivel</AlertTitle>
-            <AlertDescription>
-              {contentError ??
-                "Nao foi possivel carregar os KPIs desta empresa agora."}
-            </AlertDescription>
-          </Alert>
-        )
-      ) : (
-        <SurfaceCard tone="default" padding="lg" className="space-y-5">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <SectionHeading
-              eyebrow="Tipo de demonstracao"
-              title="Escolha a visao contabil"
-              titleAs="h3"
-              description="A tabela respeita os anos selecionados e troca apenas a demonstracao ativa."
-              descriptionClassName="text-sm leading-7"
-            />
-            <CompanyUrlTabs
-              pathname={pathname}
-              currentValue={currentStatement}
-              paramName="stmt"
-              options={Array.from(STATEMENT_OPTIONS)}
-              eventName="company_statement_changed"
-            />
-          </div>
-          <CompanyPeriodPreset
-            pathname={pathname}
-            availableYears={readableYears}
-            selectedYears={selectedYears}
-            variant="custom-only"
-          />
-          {statement ? (
-            <CompanyStatementsLazy matrix={statement} />
-          ) : (
-            <Alert variant="destructive-soft">
-              <AlertTitle>Demonstracao indisponivel</AlertTitle>
-              <AlertDescription>
-                {contentError ??
-                  "Nao foi possivel carregar esta demonstracao agora."}
-              </AlertDescription>
-            </Alert>
-          )}
-        </SurfaceCard>
-      )}
-    </PageShell>
+    <CompanyDetailBody
+      company={company}
+      pathname={pathname}
+      currentTab={currentTab}
+      currentStatement={currentStatement}
+      readableYears={readableYears}
+      selectedYears={selectedYears}
+      bundle={bundle}
+      statement={statement}
+      contentError={contentError}
+    />
   );
 }
