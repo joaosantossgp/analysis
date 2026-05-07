@@ -518,7 +518,7 @@ const COMPANY_DESTAQUE_API_READ: ApiReadRequestInit = {
   timeoutMs: PAGE_LEVEL_FETCH_TIMEOUT_MS,
 };
 const COMPANY_FILTERS_API_READ: ApiReadRequestInit = {
-  next: { revalidate: STABLE_LOOKUP_REVALIDATE_SECONDS },
+  next: { revalidate: 3600 },
   timeoutMs: PAGE_LEVEL_FETCH_TIMEOUT_MS,
 };
 const COMPANY_SUGGESTIONS_API_READ: ApiReadRequestInit = {
