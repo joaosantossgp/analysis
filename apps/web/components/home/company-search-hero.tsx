@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { ArrowRightIcon, SearchIcon, XIcon } from "lucide-react";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition, type KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
 
 import { buttonVariants } from "@/components/ui/button";
@@ -33,6 +33,7 @@ export function CompanySearchHero() {
   const [suggestionError, setSuggestionError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const suggestionsCacheRef = useRef(new Map<string, CompanySuggestionItem[]>());
+  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
 
   useEffect(() => {
     const normalized = query.trim();
@@ -40,6 +41,7 @@ export function CompanySearchHero() {
       setSuggestions([]);
       setLoadingSuggestions(false);
       setSuggestionError(null);
+      setActiveSuggestionIndex(-1);
       return;
     }
 
@@ -53,6 +55,7 @@ export function CompanySearchHero() {
         if (cached) {
           if (active) {
             setSuggestions(cached);
+            setActiveSuggestionIndex(cached.length > 0 ? 0 : -1);
           }
           return;
         }
@@ -62,6 +65,7 @@ export function CompanySearchHero() {
           const items = payload.items ?? [];
           suggestionsCacheRef.current.set(normalized, items);
           setSuggestions(items);
+          setActiveSuggestionIndex(items.length > 0 ? 0 : -1);
         }
       } catch (error) {
         if (active) {
@@ -69,6 +73,7 @@ export function CompanySearchHero() {
           setSuggestionError(
             `${getUserFacingErrorMessage(error)} Pressione Enter para abrir o diretorio completo.`,
           );
+          setActiveSuggestionIndex(-1);
         }
       } finally {
         if (active) {
@@ -100,6 +105,45 @@ export function CompanySearchHero() {
     startTransition(() =>
       router.push(q ? `/empresas?busca=${encodeURIComponent(q)}` : "/empresas"),
     );
+  }
+
+  function handleInputKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "ArrowDown") {
+      if (suggestions.length === 0) {
+        return;
+      }
+      event.preventDefault();
+      setActiveSuggestionIndex((current) =>
+        current < suggestions.length - 1 ? current + 1 : 0,
+      );
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      if (suggestions.length === 0) {
+        return;
+      }
+      event.preventDefault();
+      setActiveSuggestionIndex((current) =>
+        current > 0 ? current - 1 : suggestions.length - 1,
+      );
+      return;
+    }
+
+    if (event.key === "Escape") {
+      setFocused(false);
+      setActiveSuggestionIndex(-1);
+      return;
+    }
+
+    if (event.key === "Enter") {
+      if (activeSuggestionIndex >= 0 && suggestions[activeSuggestionIndex]) {
+        event.preventDefault();
+        navigateToCompany(suggestions[activeSuggestionIndex]!);
+        return;
+      }
+      submit();
+    }
   }
 
   return (
@@ -136,10 +180,18 @@ export function CompanySearchHero() {
             onChange={(event) => setQuery(event.target.value)}
             onFocus={() => setFocused(true)}
             onBlur={() => setTimeout(() => setFocused(false), 150)}
-            onKeyDown={(event) => event.key === "Enter" && submit()}
+            onKeyDown={handleInputKeyDown}
             placeholder="Petrobras, VALE3, setor financeiro..."
             className="flex-1 border-none bg-transparent py-[0.85rem] text-[1.125rem] text-foreground outline-none placeholder:text-muted-foreground"
             aria-label="Buscar empresa"
+            role="combobox"
+            aria-expanded={showDropdown}
+            aria-controls="home-company-suggestions"
+            aria-activedescendant={
+              activeSuggestionIndex >= 0
+                ? `home-company-suggestion-${suggestions[activeSuggestionIndex]?.cd_cvm ?? "none"}`
+                : undefined
+            }
           />
           {query ? (
             <button
@@ -166,7 +218,11 @@ export function CompanySearchHero() {
         </div>
 
         {showDropdown ? (
-          <div className="absolute inset-x-0 top-full z-20 overflow-hidden rounded-[0_0_1.25rem_1.25rem] border border-t-0 border-ring/50 bg-card shadow-[0_20px_60px_-30px_rgba(16,30,24,0.25)]">
+          <div
+            id="home-company-suggestions"
+            role="listbox"
+            className="absolute inset-x-0 top-full z-20 overflow-hidden rounded-[0_0_1.25rem_1.25rem] border border-t-0 border-ring/50 bg-card shadow-[0_20px_60px_-30px_rgba(16,30,24,0.25)]"
+          >
             <div className="border-t border-border bg-muted/30 px-5 py-1.5 text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">
               {loadingSuggestions
                 ? "Buscando..."
@@ -181,16 +237,23 @@ export function CompanySearchHero() {
               </div>
             ) : null}
 
-            {suggestions.map((item) => {
+            {suggestions.map((item, index) => {
               const sectorName = getSectorNameFromSlug(item.sector_slug);
               const color = getSectorColor(sectorName);
               const initials = (item.ticker_b3 ?? item.company_name).slice(0, 2).toUpperCase();
               return (
                 <button
                   key={item.cd_cvm}
+                  id={`home-company-suggestion-${item.cd_cvm}`}
+                  role="option"
+                  aria-selected={activeSuggestionIndex === index}
                   type="button"
                   onMouseDown={() => navigateToCompany(item)}
-                  className="flex w-full items-center gap-4 border-t border-border/50 px-5 py-3.5 text-left transition-colors hover:bg-accent/60"
+                  onMouseEnter={() => setActiveSuggestionIndex(index)}
+                  className={cn(
+                    "flex w-full items-center gap-4 border-t border-border/50 px-5 py-3.5 text-left transition-colors hover:bg-accent/60",
+                    activeSuggestionIndex === index && "bg-accent/60",
+                  )}
                 >
                   <div
                     className="flex size-10 shrink-0 items-center justify-center rounded-[10px] font-heading text-sm font-semibold"

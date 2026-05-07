@@ -13,8 +13,8 @@ import { isDesktopServerMode } from "@/lib/desktop-mode";
 export const revalidate = 300;
 
 type PopularesState = "loading" | "empty" | "error" | "ready";
-
 export default async function HomePage() {
+
   if (isDesktopServerMode()) {
     return <HomeDesktopLoader />;
   }
