@@ -2,15 +2,21 @@ import { BentoFeatures } from "@/components/home/bento-features";
 import { CompanySearchHero } from "@/components/home/company-search-hero";
 import { CtaSection } from "@/components/home/cta-section";
 import { DiscoverySectionLazy } from "@/components/home/discovery-section-lazy";
+import { HomeDesktopLoader } from "@/components/home/home-desktop-loader";
 import { HomeTrustStrip } from "@/components/home/home-trust-strip";
 import { StatsStrip } from "@/components/home/stats-strip";
 import { PageShell } from "@/components/shared/design-system-recipes";
 import { fetchCompanies, fetchEmDestaqueCompanies, fetchPopularesCompanies } from "@/lib/api";
+import { isDesktopServerMode } from "@/lib/desktop-mode";
 
 // Keep at 300 to match the perf baseline.
 export const revalidate = 300;
 
 export default async function HomePage() {
+  if (isDesktopServerMode()) {
+    return <HomeDesktopLoader />;
+  }
+
   const [popularesResult, destaqueResult, statsResult] = await Promise.allSettled([
     fetchPopularesCompanies(),
     fetchEmDestaqueCompanies(),

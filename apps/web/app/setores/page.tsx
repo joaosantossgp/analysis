@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 
 import { SectorDirectoryList } from "@/components/sectors/sector-directory-list";
 import { SectorHubTracker } from "@/components/sectors/sector-hub-tracker";
+import { SectorsDirectoryDesktopLoader } from "@/components/sectors/sectors-directory-desktop-loader";
 import {
   InfoChip,
   PageShell,
@@ -12,6 +13,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
 import { formatCompactInteger } from "@/lib/formatters";
+import { isDesktopServerMode } from "@/lib/desktop-mode";
 import { loadSectorsPageData } from "@/lib/sectors-page-data";
 import { cn } from "@/lib/utils";
 
@@ -24,6 +26,10 @@ export const metadata: Metadata = {
 export const revalidate = 3600;
 
 export default async function SetoresPage() {
+  if (isDesktopServerMode()) {
+    return <SectorsDirectoryDesktopLoader />;
+  }
+
   const { directory, directoryError } = await loadSectorsPageData();
 
   if (!directory) {
