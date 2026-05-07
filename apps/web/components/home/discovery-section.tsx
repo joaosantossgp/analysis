@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { ArrowRightIcon, TrendingUpIcon } from "lucide-react";
 
+import { ApiUnavailableState } from "@/components/ui/api-unavailable-state";
 import type { CompanyDirectoryItem } from "@/lib/api";
 import { getCompanyAvailability } from "@/lib/company-discovery";
 import { SECTOR_COLOR, getSectorColor } from "@/lib/constants";
@@ -241,17 +242,12 @@ export function DiscoverySection({
           {popularesState === "ready" ? (
             popularesCompanies.map((co) => <CompanyCard key={co.cd_cvm} co={co} />)
           ) : popularesState === "error" ? (
-            <div className="col-span-full rounded-[1rem] border border-destructive/30 bg-destructive/5 px-4 py-5">
-              <p className="text-sm font-medium text-destructive">
-                A lista de empresas populares esta indisponivel no momento.
-              </p>
-              <button
-                type="button"
-                onClick={() => window.location.reload()}
-                className="mt-3 inline-flex items-center rounded-md border border-border bg-card px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-accent"
-              >
-                Tentar novamente
-              </button>
+            <div className="col-span-full">
+              <ApiUnavailableState
+                title="Populares indisponivel"
+                description="A lista de empresas populares esta indisponivel no momento."
+                onRetry={() => window.location.reload()}
+              />
             </div>
           ) : popularesState === "empty" ? (
             <p className="col-span-full px-2 py-4 text-sm text-muted-foreground">

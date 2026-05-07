@@ -12,8 +12,8 @@ import {
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { InfoChip, SurfaceCard } from "@/components/shared/design-system-recipes";
+import { ApiUnavailableState } from "@/components/ui/api-unavailable-state";
 import { ExcelDownloadButton } from "@/components/shared/excel-download-button";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { serializeCompanyIds } from "@/lib/compare-utils";
@@ -253,10 +253,15 @@ export function CompareSelector({
         ) : null}
 
         {suggestionError ? (
-          <Alert className="rounded-2xl border border-destructive/20 bg-destructive/6 px-4 py-3">
-            <AlertTitle>Busca de empresa indisponivel</AlertTitle>
-            <AlertDescription>{suggestionError}</AlertDescription>
-          </Alert>
+          <ApiUnavailableState
+            title="Busca de empresa indisponivel"
+            description={suggestionError}
+            onRetry={() => {
+              startTransition(() => {
+                router.refresh();
+              });
+            }}
+          />
         ) : null}
 
         {suggestions.length > 0 ? (
