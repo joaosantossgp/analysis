@@ -10,7 +10,7 @@ import {
   SectionHeading,
   SurfaceCard,
 } from "@/components/shared/design-system-recipes";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { ApiUnavailableState } from "@/components/ui/api-unavailable-state";
 import { buttonVariants } from "@/components/ui/button";
 import { formatCompactInteger } from "@/lib/formatters";
 import { isDesktopServerMode } from "@/lib/desktop-mode";
@@ -42,20 +42,16 @@ export default async function SetoresPage() {
             titleAs="h1"
             description="O hub de setores nao respondeu agora. O restante da navegacao publica continua disponivel."
           />
-          <Alert variant="destructive-soft">
-            <AlertTitle>Falha controlada do hub setorial</AlertTitle>
-            <AlertDescription>
-              {directoryError ??
-                "Nao foi possivel carregar os setores agora. Tente novamente em instantes."}
-            </AlertDescription>
-          </Alert>
+          <ApiUnavailableState
+            title="Falha controlada do hub setorial"
+            description={
+              directoryError ??
+              "Nao foi possivel carregar os setores agora. Tente novamente em instantes."
+            }
+            retryHref="/setores"
+            retryClassName="rounded-full px-5"
+          />
           <div className="flex flex-wrap gap-3">
-            <Link
-              href="/setores"
-              className={cn(buttonVariants({ size: "lg" }), "rounded-full px-5")}
-            >
-              Tentar novamente
-            </Link>
             <Link
               href="/"
               className={cn(

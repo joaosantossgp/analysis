@@ -15,7 +15,7 @@ import {
   SectionHeading,
   SurfaceCard,
 } from "@/components/shared/design-system-recipes";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { ApiUnavailableState } from "@/components/ui/api-unavailable-state";
 import { DETAIL_TABS, STATEMENT_OPTIONS } from "@/lib/constants";
 
 type CompanyDetailBodyProps = {
@@ -70,13 +70,14 @@ export function CompanyDetailBody({
             selectedYears={selectedYears}
           />
         ) : (
-          <Alert variant="destructive-soft">
-            <AlertTitle>Visao geral indisponivel</AlertTitle>
-            <AlertDescription>
-              {contentError ??
-                "Nao foi possivel carregar os KPIs desta empresa agora."}
-            </AlertDescription>
-          </Alert>
+          <ApiUnavailableState
+            title="Visao geral indisponivel"
+            description={
+              contentError ??
+              "Nao foi possivel carregar os KPIs desta empresa agora."
+            }
+            retryHref={pathname}
+          />
         )
       ) : (
         <SurfaceCard tone="default" padding="lg" className="space-y-5">
@@ -105,13 +106,14 @@ export function CompanyDetailBody({
           {statement ? (
             <CompanyStatementsLazy matrix={statement} />
           ) : (
-            <Alert variant="destructive-soft">
-              <AlertTitle>Demonstracao indisponivel</AlertTitle>
-              <AlertDescription>
-                {contentError ??
-                  "Nao foi possivel carregar esta demonstracao agora."}
-              </AlertDescription>
-            </Alert>
+            <ApiUnavailableState
+              title="Demonstracao indisponivel"
+              description={
+                contentError ??
+                "Nao foi possivel carregar esta demonstracao agora."
+              }
+              retryHref={pathname}
+            />
           )}
         </SurfaceCard>
       )}
