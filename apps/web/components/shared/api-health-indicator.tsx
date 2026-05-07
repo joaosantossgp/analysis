@@ -7,12 +7,8 @@ import { isDesktopMode } from "@/lib/api";
 const HEALTH_RETRY_MS = 30_000;
 
 export function ApiHealthIndicator() {
-  const [desktopMode, setDesktopMode] = useState(false);
+  const [desktopMode] = useState(() => isDesktopMode());
   const [apiUnavailable, setApiUnavailable] = useState(false);
-
-  useEffect(() => {
-    setDesktopMode(isDesktopMode());
-  }, []);
 
   useEffect(() => {
     if (desktopMode) {
