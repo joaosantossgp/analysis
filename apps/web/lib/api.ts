@@ -560,8 +560,11 @@ export function buildApiUrlFromBase(baseUrl: string, path: string): string {
 function resolveApiReadRequest(
   request: ApiReadRequestInit | undefined,
 ): ApiReadRequestInit {
+  if (!request) {
+    return UNCACHED_API_READ;
+  }
+
   return {
-    ...UNCACHED_API_READ,
     ...request,
     timeoutMs: request?.timeoutMs ?? PAGE_LEVEL_FETCH_TIMEOUT_MS,
   };
