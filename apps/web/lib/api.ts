@@ -1,3 +1,5 @@
+import { cache } from "react";
+
 export type HealthResponse = {
   status: string;
   version: string;
@@ -495,6 +497,7 @@ export class ApiClientError extends Error {
 const DEFAULT_API_BASE_URL = "http://127.0.0.1:8000";
 const PAGE_LEVEL_FETCH_TIMEOUT_MS = 8_000;
 const SUGGESTIONS_FETCH_TIMEOUT_MS = 5_000;
+const STABLE_LOOKUP_REVALIDATE_SECONDS = 300;
 const UNCACHED_API_READ: ApiReadRequestInit = {
   cache: "no-store",
   timeoutMs: PAGE_LEVEL_FETCH_TIMEOUT_MS,
@@ -507,7 +510,7 @@ const COMPANY_DIRECTORY_API_READ: ApiReadRequestInit = {
   timeoutMs: PAGE_LEVEL_FETCH_TIMEOUT_MS,
 };
 const COMPANY_POPULARES_API_READ: ApiReadRequestInit = {
-  next: { revalidate: 3600 },
+  next: { revalidate: STABLE_LOOKUP_REVALIDATE_SECONDS },
   timeoutMs: PAGE_LEVEL_FETCH_TIMEOUT_MS,
 };
 const COMPANY_DESTAQUE_API_READ: ApiReadRequestInit = {
@@ -515,7 +518,7 @@ const COMPANY_DESTAQUE_API_READ: ApiReadRequestInit = {
   timeoutMs: PAGE_LEVEL_FETCH_TIMEOUT_MS,
 };
 const COMPANY_FILTERS_API_READ: ApiReadRequestInit = {
-  next: { revalidate: 3600 },
+  next: { revalidate: STABLE_LOOKUP_REVALIDATE_SECONDS },
   timeoutMs: PAGE_LEVEL_FETCH_TIMEOUT_MS,
 };
 const COMPANY_SUGGESTIONS_API_READ: ApiReadRequestInit = {
@@ -1222,12 +1225,17 @@ export async function fetchCompanies(params: {
 
 export async function fetchPopularesCompanies(): Promise<CompanyDirectoryPage> {
   if (isDesktopMode()) return bridgeFetchPopulares();
+  return fetchPopularesCompaniesCached();
+}
+
+const fetchPopularesCompaniesCached = cache(async (): Promise<CompanyDirectoryPage> => {
   return (await apiFetch<CompanyDirectoryPage>("/companies/populares", {
     request: COMPANY_POPULARES_API_READ,
     validate: isCompanyDirectoryPage,
-    invalidResponseMessage: "A API retornou um formato invalido para as empresas populares.",
+    invalidResponseMessage:
+      "A API retornou um formato invalido para as empresas populares.",
   })) as CompanyDirectoryPage;
-}
+});
 
 export async function fetchEmDestaqueCompanies(): Promise<CompanyDirectoryPage> {
   if (isDesktopMode()) return bridgeFetchEmDestaque();
@@ -1256,15 +1264,16 @@ export function trackCompanyView(cdCvm: number): void {
 
 export async function fetchCompanyFilters(): Promise<CompanyFiltersResponse> {
   if (isDesktopMode()) return bridgeFetchCompanyFilters();
-  return (await apiFetch<CompanyFiltersResponse>(
-    "/companies/filters",
-    {
-      request: COMPANY_FILTERS_API_READ,
-      validate: isCompanyFiltersResponse,
-      invalidResponseMessage: "A API retornou filtros de empresas invalidos.",
-    },
-  )) as CompanyFiltersResponse;
+  return fetchCompanyFiltersCached();
 }
+
+const fetchCompanyFiltersCached = cache(async (): Promise<CompanyFiltersResponse> => {
+  return (await apiFetch<CompanyFiltersResponse>("/companies/filters", {
+    request: COMPANY_FILTERS_API_READ,
+    validate: isCompanyFiltersResponse,
+    invalidResponseMessage: "A API retornou filtros de empresas invalidos.",
+  })) as CompanyFiltersResponse;
+});
 
 export async function fetchCompanySuggestions(
   q: string,
