@@ -45,6 +45,7 @@
     ],
     "master": [
       "apps/web/**",
+      "docs/perf/**",
       "apps/api/**",
       "src/**",
       "desktop/**",
