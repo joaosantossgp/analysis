@@ -13,25 +13,7 @@ import { isDesktopServerMode } from "@/lib/desktop-mode";
 export const revalidate = 300;
 
 type PopularesState = "loading" | "empty" | "error" | "ready";
-type HomeTab = "populares" | "destaque" | "setores";
-
-type HomePageProps = {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-};
-
-function resolveInitialTab(
-  rawTab: string | string[] | undefined,
-): HomeTab {
-  const value = Array.isArray(rawTab) ? rawTab[0] : rawTab;
-  if (value === "destaque" || value === "setores") {
-    return value;
-  }
-  return "populares";
-}
-
-export default async function HomePage({ searchParams }: HomePageProps) {
-  const resolvedSearchParams = await searchParams;
-  const initialTab = resolveInitialTab(resolvedSearchParams.tab);
+export default async function HomePage() {
 
   if (isDesktopServerMode()) {
     return <HomeDesktopLoader />;
@@ -80,7 +62,6 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         popularesCompanies={popularesCompanies}
         popularesState={popularesState}
         destaqueCompanies={destaqueCompanies}
-        initialTab={initialTab}
       />
 
       {/* Compare CTA */}

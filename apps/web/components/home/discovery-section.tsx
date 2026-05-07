@@ -1,7 +1,6 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
 import { ArrowRightIcon, TrendingUpIcon } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
@@ -202,19 +201,19 @@ export function DiscoverySection({
   popularesCompanies,
   popularesState,
   destaqueCompanies,
-  initialTab = "populares",
+  initialTab,
 }: DiscoverySectionProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [activeTab, setActiveTab] = useState<Tab>(initialTab);
-
-  useEffect(() => {
-    setActiveTab(initialTab);
-  }, [initialTab]);
+  const tabParam = searchParams.get("tab");
+  const activeTab: Tab =
+    initialTab ??
+    (tabParam === "destaque" || tabParam === "setores"
+      ? tabParam
+      : "populares");
 
   function selectTab(tab: Tab) {
-    setActiveTab(tab);
     const nextParams = new URLSearchParams(searchParams.toString());
     nextParams.set("tab", tab);
     router.replace(`${pathname}?${nextParams.toString()}`, { scroll: false });
