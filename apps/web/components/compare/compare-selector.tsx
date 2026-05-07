@@ -4,9 +4,9 @@ import Link from "next/link";
 import { PlusIcon, SearchIcon, XIcon } from "lucide-react";
 import {
   startTransition,
-  useDeferredValue,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -68,7 +68,7 @@ export function CompareSelector({
   const [suggestions, setSuggestions] = useState<CompareCompanyOption[]>([]);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [suggestionError, setSuggestionError] = useState<string | null>(null);
-  const deferredQuery = useDeferredValue(query);
+  const suggestionsCacheRef = useRef(new Map<string, CompareCompanyOption[]>());
 
   const selectedIds = useMemo(
     () => selectedCompanies.map((company) => company.cd_cvm),
@@ -77,7 +77,7 @@ export function CompareSelector({
   const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
   useEffect(() => {
-    const normalized = deferredQuery.trim();
+    const normalized = query.trim();
 
     if (normalized.length < 2 || selectedCompanies.length >= maxCompanies) {
       setSuggestions([]);
@@ -87,11 +87,22 @@ export function CompareSelector({
     }
 
     let active = true;
-    const timer = window.setTimeout(async () => {
-      setLoadingSuggestions(true);
-      setSuggestionError(null);
+    setLoadingSuggestions(true);
+    setSuggestionError(null);
 
+    const timer = window.setTimeout(async () => {
       try {
+        const cacheKey = `${normalized}::ready_only`;
+        const cached = suggestionsCacheRef.current.get(cacheKey);
+        if (cached) {
+          if (active) {
+            setSuggestions(
+              cached.filter((item) => !selectedIdSet.has(item.cd_cvm)),
+            );
+          }
+          return;
+        }
+
         const payload = (await fetchCompanySuggestionsRoute(
           normalized,
           6,
@@ -106,6 +117,7 @@ export function CompareSelector({
           .map(toCompareOption)
           .filter((item) => !selectedIdSet.has(item.cd_cvm));
 
+        suggestionsCacheRef.current.set(cacheKey, payload.items?.map(toCompareOption) ?? []);
         setSuggestions(nextSuggestions);
       } catch (error) {
         if (!active) {
@@ -118,13 +130,13 @@ export function CompareSelector({
           setLoadingSuggestions(false);
         }
       }
-    }, 180);
+    }, 250);
 
     return () => {
       active = false;
       window.clearTimeout(timer);
     };
-  }, [deferredQuery, maxCompanies, selectedCompanies.length, selectedIdSet]);
+  }, [maxCompanies, query, selectedCompanies.length, selectedIdSet]);
 
   function pushSelection(nextIds: number[], nextYears: number[] | null) {
     const queryString = mergeSearchParams(searchParams.toString(), {
@@ -287,7 +299,7 @@ export function CompareSelector({
         ) : null}
 
         {!loadingSuggestions &&
-        deferredQuery.trim().length >= 2 &&
+        query.trim().length >= 2 &&
         suggestions.length === 0 &&
         !suggestionError ? (
           <p className="text-sm text-muted-foreground">
@@ -322,7 +334,7 @@ export function CompareSelector({
 
         {quickOptions.length === 0 &&
         selectedCompanies.length === 0 &&
-        deferredQuery.trim().length < 2 ? (
+        query.trim().length < 2 ? (
           <div className="rounded-[1.15rem] border border-dashed border-border/70 bg-muted/35 px-4 py-3">
             <p className="text-sm font-medium text-foreground">
               Nenhuma sugestao rapida pronta agora

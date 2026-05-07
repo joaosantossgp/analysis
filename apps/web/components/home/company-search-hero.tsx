@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { ArrowRightIcon, SearchIcon, XIcon } from "lucide-react";
-import { useDeferredValue, useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import { buttonVariants } from "@/components/ui/button";
@@ -32,10 +32,10 @@ export function CompanySearchHero() {
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [suggestionError, setSuggestionError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-  const deferredQuery = useDeferredValue(query);
+  const suggestionsCacheRef = useRef(new Map<string, CompanySuggestionItem[]>());
 
   useEffect(() => {
-    const normalized = deferredQuery.trim();
+    const normalized = query.trim();
     if (normalized.length < 2) {
       setSuggestions([]);
       setLoadingSuggestions(false);
@@ -44,14 +44,24 @@ export function CompanySearchHero() {
     }
 
     let active = true;
-    const timer = window.setTimeout(async () => {
-      setLoadingSuggestions(true);
-      setSuggestionError(null);
+    setLoadingSuggestions(true);
+    setSuggestionError(null);
 
+    const timer = window.setTimeout(async () => {
       try {
+        const cached = suggestionsCacheRef.current.get(normalized);
+        if (cached) {
+          if (active) {
+            setSuggestions(cached);
+          }
+          return;
+        }
+
         const payload = await fetchCompanySuggestionsRoute(normalized, 6);
         if (active) {
-          setSuggestions(payload.items ?? []);
+          const items = payload.items ?? [];
+          suggestionsCacheRef.current.set(normalized, items);
+          setSuggestions(items);
         }
       } catch (error) {
         if (active) {
@@ -65,13 +75,13 @@ export function CompanySearchHero() {
           setLoadingSuggestions(false);
         }
       }
-    }, 180);
+    }, 250);
 
     return () => {
       active = false;
       window.clearTimeout(timer);
     };
-  }, [deferredQuery]);
+  }, [query]);
 
   const showDropdown =
     focused && (loadingSuggestions || suggestions.length > 0 || suggestionError !== null);
