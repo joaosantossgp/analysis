@@ -4,6 +4,7 @@ import Link from "next/link";
 import { PlusIcon, SearchIcon, XIcon } from "lucide-react";
 import {
   startTransition,
+  type KeyboardEvent,
   useEffect,
   useMemo,
   useRef,
@@ -69,6 +70,7 @@ export function CompareSelector({
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [suggestionError, setSuggestionError] = useState<string | null>(null);
   const suggestionsCacheRef = useRef(new Map<string, CompareCompanyOption[]>());
+  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
 
   const selectedIds = useMemo(
     () => selectedCompanies.map((company) => company.cd_cvm),
@@ -83,6 +85,7 @@ export function CompareSelector({
       setSuggestions([]);
       setSuggestionError(null);
       setLoadingSuggestions(false);
+      setActiveSuggestionIndex(-1);
       return;
     }
 
@@ -99,6 +102,7 @@ export function CompareSelector({
             setSuggestions(
               cached.filter((item) => !selectedIdSet.has(item.cd_cvm)),
             );
+            setActiveSuggestionIndex(cached.length > 0 ? 0 : -1);
           }
           return;
         }
@@ -119,12 +123,14 @@ export function CompareSelector({
 
         suggestionsCacheRef.current.set(cacheKey, payload.items?.map(toCompareOption) ?? []);
         setSuggestions(nextSuggestions);
+        setActiveSuggestionIndex(nextSuggestions.length > 0 ? 0 : -1);
       } catch (error) {
         if (!active) {
           return;
         }
         setSuggestions([]);
         setSuggestionError(getUserFacingErrorMessage(error));
+        setActiveSuggestionIndex(-1);
       } finally {
         if (active) {
           setLoadingSuggestions(false);
@@ -222,6 +228,45 @@ export function CompareSelector({
     pushSelection(selectedIds, selectedYears);
   }
 
+  function handleSearchKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "ArrowDown") {
+      if (suggestions.length === 0) {
+        return;
+      }
+      event.preventDefault();
+      setActiveSuggestionIndex((current) =>
+        current < suggestions.length - 1 ? current + 1 : 0,
+      );
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      if (suggestions.length === 0) {
+        return;
+      }
+      event.preventDefault();
+      setActiveSuggestionIndex((current) =>
+        current > 0 ? current - 1 : suggestions.length - 1,
+      );
+      return;
+    }
+
+    if (event.key === "Escape") {
+      setSuggestions([]);
+      setActiveSuggestionIndex(-1);
+      return;
+    }
+
+    if (event.key === "Enter" && activeSuggestionIndex >= 0) {
+      const activeSuggestion = suggestions[activeSuggestionIndex];
+      if (!activeSuggestion) {
+        return;
+      }
+      event.preventDefault();
+      addCompany(activeSuggestion);
+    }
+  }
+
   const quickOptions = quickCompanies.filter(
     (company) => !selectedIdSet.has(company.cd_cvm),
   );
@@ -253,6 +298,15 @@ export function CompareSelector({
               placeholder="Buscar empresa para adicionar"
               className="h-auto border-0 bg-transparent p-0 shadow-none focus-visible:ring-0"
               aria-label="Buscar empresa para comparar"
+              role="combobox"
+              aria-expanded={suggestions.length > 0}
+              aria-controls="compare-selector-suggestions"
+              aria-activedescendant={
+                activeSuggestionIndex >= 0
+                  ? `compare-selector-suggestion-${suggestions[activeSuggestionIndex]?.cd_cvm ?? "none"}`
+                  : undefined
+              }
+              onKeyDown={handleSearchKeyDown}
             />
           </div>
           <p className="text-xs text-muted-foreground">
@@ -277,14 +331,21 @@ export function CompareSelector({
         ) : null}
 
         {suggestions.length > 0 ? (
-          <div className="grid gap-2 sm:grid-cols-2">
-            {suggestions.map((item) => (
+          <div id="compare-selector-suggestions" role="listbox" className="grid gap-2 sm:grid-cols-2">
+            {suggestions.map((item, index) => (
               <button
                 key={item.cd_cvm}
+                id={`compare-selector-suggestion-${item.cd_cvm}`}
+                role="option"
+                aria-selected={activeSuggestionIndex === index}
                 type="button"
                 data-testid="compare-suggestion-add"
-                className="flex items-center justify-between rounded-[1rem] border border-border/65 bg-background/90 px-4 py-3 text-left transition-colors hover:bg-muted/45"
+                className={cn(
+                  "flex items-center justify-between rounded-[1rem] border border-border/65 bg-background/90 px-4 py-3 text-left transition-colors hover:bg-muted/45",
+                  activeSuggestionIndex === index && "bg-muted/45",
+                )}
                 onClick={() => addCompany(item)}
+                onMouseEnter={() => setActiveSuggestionIndex(index)}
               >
                 <span className="space-y-1">
                   <span className="block text-sm font-medium text-foreground">{item.company_name}</span>

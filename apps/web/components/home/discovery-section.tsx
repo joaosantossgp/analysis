@@ -1,8 +1,9 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowRightIcon, TrendingUpIcon } from "lucide-react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { ApiUnavailableState } from "@/components/ui/api-unavailable-state";
 import type { CompanyDirectoryItem } from "@/lib/api";
@@ -23,6 +24,7 @@ type DiscoverySectionProps = {
   popularesCompanies: CompanyDirectoryItem[];
   popularesState: PopularesState;
   destaqueCompanies: CompanyDirectoryItem[];
+  initialTab?: Tab;
 };
 
 function getAvailabilityBadgeClassName(
@@ -200,8 +202,23 @@ export function DiscoverySection({
   popularesCompanies,
   popularesState,
   destaqueCompanies,
+  initialTab = "populares",
 }: DiscoverySectionProps) {
-  const [activeTab, setActiveTab] = useState<Tab>("populares");
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [activeTab, setActiveTab] = useState<Tab>(initialTab);
+
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab]);
+
+  function selectTab(tab: Tab) {
+    setActiveTab(tab);
+    const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.set("tab", tab);
+    router.replace(`${pathname}?${nextParams.toString()}`, { scroll: false });
+  }
 
   return (
     <section className="w-full max-w-5xl mx-auto space-y-6 text-left">
@@ -223,7 +240,7 @@ export function DiscoverySection({
             <button
               key={tab.id}
               type="button"
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => selectTab(tab.id)}
               className={cn(
                 "rounded-full px-3.5 py-1.5 text-sm font-medium transition-all duration-150",
                 activeTab === tab.id
