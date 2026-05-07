@@ -4,6 +4,8 @@ import dynamic from "next/dynamic";
 
 import type { CompanyDirectoryItem } from "@/lib/api";
 
+type PopularesState = "loading" | "empty" | "error" | "ready";
+
 const DiscoverySection = dynamic(
   () =>
     import("@/components/home/discovery-section").then(
@@ -28,16 +30,19 @@ const DiscoverySection = dynamic(
 
 type DiscoverySectionLazyProps = {
   popularesCompanies: CompanyDirectoryItem[];
+  popularesState: PopularesState;
   destaqueCompanies: CompanyDirectoryItem[];
 };
 
 export function DiscoverySectionLazy({
   popularesCompanies,
+  popularesState,
   destaqueCompanies,
 }: DiscoverySectionLazyProps) {
   return (
     <DiscoverySection
       popularesCompanies={popularesCompanies}
+      popularesState={popularesState}
       destaqueCompanies={destaqueCompanies}
     />
   );

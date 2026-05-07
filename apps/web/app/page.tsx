@@ -12,6 +12,8 @@ import { isDesktopServerMode } from "@/lib/desktop-mode";
 // Keep at 300 to match the perf baseline.
 export const revalidate = 300;
 
+type PopularesState = "loading" | "empty" | "error" | "ready";
+
 export default async function HomePage() {
   if (isDesktopServerMode()) {
     return <HomeDesktopLoader />;
@@ -26,6 +28,12 @@ export default async function HomePage() {
 
   const popularesCompanies =
     popularesResult.status === "fulfilled" ? popularesResult.value.items : [];
+  const popularesState: PopularesState =
+    popularesResult.status === "rejected"
+      ? "error"
+      : popularesCompanies.length === 0
+        ? "empty"
+        : "ready";
 
   const destaqueCompanies =
     destaqueResult.status === "fulfilled" ? destaqueResult.value.items : [];
@@ -52,6 +60,7 @@ export default async function HomePage() {
       {/* Discovery Section */}
       <DiscoverySectionLazy
         popularesCompanies={popularesCompanies}
+        popularesState={popularesState}
         destaqueCompanies={destaqueCompanies}
       />
 
