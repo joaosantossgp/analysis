@@ -10,6 +10,7 @@ import { SECTOR_COLOR, getSectorColor } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
 type Tab = "populares" | "destaque" | "setores";
+type PopularesState = "loading" | "empty" | "error" | "ready";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "populares", label: "Populares agora" },
@@ -19,6 +20,7 @@ const TABS: { id: Tab; label: string }[] = [
 
 type DiscoverySectionProps = {
   popularesCompanies: CompanyDirectoryItem[];
+  popularesState: PopularesState;
   destaqueCompanies: CompanyDirectoryItem[];
 };
 
@@ -195,6 +197,7 @@ function DestaquCard({ co, rank }: { co: CompanyDirectoryItem; rank: number }) {
 
 export function DiscoverySection({
   popularesCompanies,
+  popularesState,
   destaqueCompanies,
 }: DiscoverySectionProps) {
   const [activeTab, setActiveTab] = useState<Tab>("populares");
@@ -235,8 +238,25 @@ export function DiscoverySection({
 
       {activeTab === "populares" ? (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {popularesCompanies.length > 0 ? (
+          {popularesState === "ready" ? (
             popularesCompanies.map((co) => <CompanyCard key={co.cd_cvm} co={co} />)
+          ) : popularesState === "error" ? (
+            <div className="col-span-full rounded-[1rem] border border-destructive/30 bg-destructive/5 px-4 py-5">
+              <p className="text-sm font-medium text-destructive">
+                A lista de empresas populares esta indisponivel no momento.
+              </p>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="mt-3 inline-flex items-center rounded-md border border-border bg-card px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-accent"
+              >
+                Tentar novamente
+              </button>
+            </div>
+          ) : popularesState === "empty" ? (
+            <p className="col-span-full px-2 py-4 text-sm text-muted-foreground">
+              Nenhuma empresa disponivel no momento.
+            </p>
           ) : (
             <p className="col-span-full px-2 py-4 text-sm text-muted-foreground">
               Carregando empresas populares...

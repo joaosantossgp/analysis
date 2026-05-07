@@ -19,11 +19,13 @@ import {
 
 const BRIDGE_READY_MAX_ATTEMPTS = 60;
 const BRIDGE_READY_RETRY_MS = 100;
+type PopularesState = "loading" | "empty" | "error" | "ready";
 
 export function HomeDesktopLoader() {
   const [popularesCompanies, setPopularesCompanies] = useState<
     CompanyDirectoryItem[]
   >([]);
+  const [popularesState, setPopularesState] = useState<PopularesState>("loading");
   const [destaqueCompanies, setDestaqueCompanies] = useState<
     CompanyDirectoryItem[]
   >([]);
@@ -40,6 +42,7 @@ export function HomeDesktopLoader() {
       if (!isDesktopMode()) {
         attempts += 1;
         if (attempts <= BRIDGE_READY_MAX_ATTEMPTS) {
+          setPopularesState("loading");
           timeoutId = setTimeout(load, BRIDGE_READY_RETRY_MS);
           return;
         }
@@ -58,6 +61,13 @@ export function HomeDesktopLoader() {
       setPopularesCompanies(
         popularesResult.status === "fulfilled" ? popularesResult.value.items : [],
       );
+      if (popularesResult.status === "rejected") {
+        setPopularesState("error");
+      } else if (popularesResult.value.items.length === 0) {
+        setPopularesState("empty");
+      } else {
+        setPopularesState("ready");
+      }
       setDestaqueCompanies(
         destaqueResult.status === "fulfilled" ? destaqueResult.value.items : [],
       );
@@ -84,6 +94,7 @@ export function HomeDesktopLoader() {
       <BentoFeatures />
       <DiscoverySectionLazy
         popularesCompanies={popularesCompanies}
+        popularesState={popularesState}
         destaqueCompanies={destaqueCompanies}
       />
       <CtaSection />
