@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Iterable
 
 from fastapi import HTTPException, Query, Request, status
+from fastapi.responses import Response
 
 from src.company_catalog import CompanyCatalogUnavailableError
 from src.read_service import CVMReadService
@@ -194,6 +195,18 @@ def limit_dependency(
     ),
 ) -> int:
     return int(limit)
+
+
+def apply_cache_headers(response: Response, cache_control: str) -> None:
+    response.headers["Cache-Control"] = cache_control
+    vary_values = [
+        value.strip()
+        for value in response.headers.get("Vary", "").split(",")
+        if value.strip()
+    ]
+    if not any(value.lower() == "origin" for value in vary_values):
+        vary_values.append("Origin")
+    response.headers["Vary"] = ", ".join(vary_values)
 
 
 def coerce_company(cd_cvm: int, service: CVMReadService):

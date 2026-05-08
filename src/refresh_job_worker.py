@@ -9,7 +9,11 @@ from dataclasses import dataclass, field
 
 from sqlalchemy import text
 
-from src.contracts import RefreshProgressUpdate, RefreshPolicy, RefreshRequest
+from src.contracts import (
+    RefreshProgressUpdate,
+    RefreshRequest,
+    default_incremental_refresh_policy,
+)
 from src.db import build_engine
 from src.observability import log_event
 from src.refresh_jobs import (
@@ -252,11 +256,7 @@ class RefreshJobWorker:
             companies=(str(job.cd_cvm),),
             start_year=int(job.start_year),
             end_year=int(job.end_year),
-            policy=RefreshPolicy(
-                skip_complete_company_years=True,
-                enable_fast_lane=False,
-                force_refresh=False,
-            ),
+            policy=default_incremental_refresh_policy(),
         )
 
     def _resolve_public_success_state(

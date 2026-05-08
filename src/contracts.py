@@ -46,6 +46,14 @@ class RefreshPolicy:
         return asdict(self)
 
 
+def default_incremental_refresh_policy() -> RefreshPolicy:
+    return RefreshPolicy(
+        skip_complete_company_years=True,
+        enable_fast_lane=False,
+        force_refresh=False,
+    )
+
+
 @dataclass(frozen=True)
 class RefreshRequest:
     companies: tuple[str, ...]

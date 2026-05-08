@@ -32,7 +32,6 @@ from src.contracts import (
     RankedRefreshQueueResult,
     RefreshBatchSelection,
     RefreshDispatchDTO,
-    RefreshPolicy,
     RefreshRequest,
     RefreshStatusDTO,
     SectorCompanyMetricDTO,
@@ -45,6 +44,7 @@ from src.contracts import (
     StatementSummaryDTO,
     SummaryBlockDTO,
     TabularData,
+    default_incremental_refresh_policy,
 )
 from src.refresh_jobs import (
     REFRESH_STAGE_ORDER,
@@ -1502,11 +1502,7 @@ class CVMReadService:
             companies=(str(cd_cvm),),
             start_year=start_year,
             end_year=end_year,
-            policy=RefreshPolicy(
-                skip_complete_company_years=True,
-                enable_fast_lane=False,
-                force_refresh=False,
-            ),
+            policy=default_incremental_refresh_policy(),
         )
         planned_companies, _, _ = self.refresh_service.build_company_year_plan(request)
 

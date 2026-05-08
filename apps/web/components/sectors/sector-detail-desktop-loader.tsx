@@ -15,10 +15,11 @@ import {
   SectionHeading,
   SurfaceCard,
 } from "@/components/shared/design-system-recipes";
+import { useDesktopBridgeReady } from "@/components/shared/use-desktop-bridge-ready";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
 import type { SectorDetail } from "@/lib/api";
-import { bridgeFetchSectorDetail, isDesktopMode } from "@/lib/desktop-bridge";
+import { bridgeFetchSectorDetail } from "@/lib/desktop-bridge";
 import { formatCompactInteger } from "@/lib/formatters";
 import {
   coerceSectorTab,
@@ -31,9 +32,6 @@ const SECTOR_TABS = [
   { value: "visao-geral", label: "Visao Geral" },
   { value: "empresas", label: "Empresas" },
 ] as const;
-
-const BRIDGE_READY_MAX_ATTEMPTS = 60;
-const BRIDGE_READY_RETRY_MS = 100;
 
 type SectorDetailDesktopLoaderProps = {
   slug: string;
@@ -55,6 +53,7 @@ export function SectorDetailDesktopLoader({
   const loadKey = `${slug}|${rawYear ?? ""}|${rawTab ?? ""}`;
   const currentTab = coerceSectorTab(rawTab);
   const pathname = `/setores/${slug}`;
+  const bridgeReady = useDesktopBridgeReady(loadKey);
 
   const [state, setState] = useState<{
     key: string;
@@ -70,28 +69,12 @@ export function SectorDetailDesktopLoader({
   } | null>(null);
 
   useEffect(() => {
+    if (bridgeReady !== "ready") return;
+
     let cancelled = false;
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    let attempts = 0;
 
     async function load() {
       if (cancelled) return;
-
-      if (!isDesktopMode()) {
-        attempts += 1;
-        if (attempts <= BRIDGE_READY_MAX_ATTEMPTS) {
-          timeoutId = setTimeout(load, BRIDGE_READY_RETRY_MS);
-          return;
-        }
-        setState({
-          key: loadKey,
-          phase: "bridge_timeout",
-          errorMessageText:
-            "Bridge local do desktop indisponivel. Reabra o aplicativo para carregar os dados locais.",
-          resolvedTab: currentTab,
-        });
-        return;
-      }
 
       setState({ key: loadKey, phase: "loading", resolvedTab: currentTab });
 
@@ -149,9 +132,46 @@ export function SectorDetailDesktopLoader({
 
     return () => {
       cancelled = true;
-      if (timeoutId !== undefined) clearTimeout(timeoutId);
     };
-  }, [loadKey, slug, rawYear, rawTab, currentTab]);
+  }, [bridgeReady, loadKey, slug, rawYear, rawTab, currentTab]);
+
+  if (bridgeReady === "timeout" && (!state || state.key !== loadKey)) {
+    return (
+      <PageShell density="relaxed" className="max-w-4xl">
+        <SurfaceCard tone="hero" padding="hero" className="space-y-6">
+          <SectionHeading
+            eyebrow="PG-06 - Detalhe do setor"
+            title="Leitura setorial indisponivel"
+            titleAs="h1"
+            description="O detalhe do setor nao conseguiu concluir a leitura agora."
+          />
+          <Alert variant="destructive-soft">
+            <AlertTitle>Falha controlada do detalhe setorial</AlertTitle>
+            <AlertDescription>
+              Bridge local do desktop indisponivel. Reabra o aplicativo para carregar os dados locais.
+            </AlertDescription>
+          </Alert>
+          <div className="flex flex-wrap gap-3">
+            <Link
+              href="/setores"
+              className={cn(buttonVariants({ size: "lg" }), "rounded-full px-5")}
+            >
+              Voltar para setores
+            </Link>
+            <Link
+              href="/empresas"
+              className={cn(
+                buttonVariants({ variant: "outline", size: "lg" }),
+                "rounded-full px-5",
+              )}
+            >
+              Abrir empresas
+            </Link>
+          </div>
+        </SurfaceCard>
+      </PageShell>
+    );
+  }
 
   if (!state || state.key !== loadKey) {
     return (

@@ -9,19 +9,18 @@ import { DiscoverySectionLazy } from "@/components/home/discovery-section-lazy";
 import { HomeTrustStrip } from "@/components/home/home-trust-strip";
 import { StatsStrip } from "@/components/home/stats-strip";
 import { PageShell } from "@/components/shared/design-system-recipes";
+import { useDesktopBridgeReady } from "@/components/shared/use-desktop-bridge-ready";
 import type { CompanyDirectoryItem } from "@/lib/api";
 import {
   bridgeFetchCompanies,
   bridgeFetchEmDestaque,
   bridgeFetchPopulares,
-  isDesktopMode,
 } from "@/lib/desktop-bridge";
 
-const BRIDGE_READY_MAX_ATTEMPTS = 60;
-const BRIDGE_READY_RETRY_MS = 100;
 type PopularesState = "loading" | "empty" | "error" | "ready";
 
 export function HomeDesktopLoader() {
+  const bridgeReady = useDesktopBridgeReady("home");
   const [popularesCompanies, setPopularesCompanies] = useState<
     CompanyDirectoryItem[]
   >([]);
@@ -32,22 +31,12 @@ export function HomeDesktopLoader() {
   const [totalCompanies, setTotalCompanies] = useState<number | null>(null);
 
   useEffect(() => {
+    if (bridgeReady !== "ready") return;
+
     let cancelled = false;
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    let attempts = 0;
 
     async function load() {
       if (cancelled) return;
-
-      if (!isDesktopMode()) {
-        attempts += 1;
-        if (attempts <= BRIDGE_READY_MAX_ATTEMPTS) {
-          setPopularesState("loading");
-          timeoutId = setTimeout(load, BRIDGE_READY_RETRY_MS);
-          return;
-        }
-        return;
-      }
 
       const [popularesResult, destaqueResult, statsResult] =
         await Promise.allSettled([
@@ -82,9 +71,8 @@ export function HomeDesktopLoader() {
 
     return () => {
       cancelled = true;
-      if (timeoutId !== undefined) clearTimeout(timeoutId);
     };
-  }, []);
+  }, [bridgeReady]);
 
   return (
     <PageShell density="relaxed" className="flex flex-col items-center gap-20 pb-24">

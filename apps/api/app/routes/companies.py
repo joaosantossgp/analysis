@@ -6,6 +6,7 @@ from fastapi.responses import Response
 from apps.api.app.dependencies import (
     InvalidRequestError,
     ServiceUnavailableError,
+    apply_cache_headers,
     company_ids_dependency,
     coerce_company,
     ensure_api_ready,
@@ -47,14 +48,6 @@ COMPANY_YEARS_CACHE_CONTROL = "public, max-age=86400, stale-while-revalidate=604
 COMPANY_DATA_CACHE_CONTROL = "public, max-age=600"
 
 
-def _apply_cache_headers(response: Response, cache_control: str) -> None:
-    response.headers["Cache-Control"] = cache_control
-    vary_values = [value.strip() for value in response.headers.get("Vary", "").split(",") if value.strip()]
-    if not any(value.lower() == "origin" for value in vary_values):
-        vary_values.append("Origin")
-    response.headers["Vary"] = ", ".join(vary_values)
-
-
 @router.get(
     "/companies",
     response_model=CompanyDirectoryPagePayload,
@@ -70,7 +63,7 @@ def list_companies(
     service: CVMReadService = Depends(get_read_service),
 ) -> CompanyDirectoryPagePayload:
     ensure_api_ready(get_settings(request))
-    _apply_cache_headers(response, COMPANY_DIRECTORY_CACHE_CONTROL)
+    apply_cache_headers(response, COMPANY_DIRECTORY_CACHE_CONTROL)
     page_dto = service.list_companies(
         search=search,
         sector_slug=sector,
@@ -91,7 +84,7 @@ def get_company_filters(
     service: CVMReadService = Depends(get_read_service),
 ) -> CompanyFiltersPayload:
     ensure_api_ready(get_settings(request))
-    _apply_cache_headers(response, COMPANY_FILTERS_CACHE_CONTROL)
+    apply_cache_headers(response, COMPANY_FILTERS_CACHE_CONTROL)
     return present_company_filters(service.get_company_filters())
 
 
@@ -112,7 +105,7 @@ def get_company_suggestions(
     service: CVMReadService = Depends(get_read_service),
 ) -> CompanySuggestionsPayload:
     ensure_api_ready(get_settings(request))
-    _apply_cache_headers(response, COMPANY_SUGGESTIONS_CACHE_CONTROL)
+    apply_cache_headers(response, COMPANY_SUGGESTIONS_CACHE_CONTROL)
     items = service.suggest_companies(q=q, limit=limit, ready_only=ready_only)
     return present_company_suggestions(items)
 
@@ -132,7 +125,7 @@ def list_populares_companies(
     service: CVMReadService = Depends(get_read_service),
 ) -> CompanyDirectoryPagePayload:
     ensure_api_ready(get_settings(request))
-    _apply_cache_headers(response, COMPANY_POPULARES_CACHE_CONTROL)
+    apply_cache_headers(response, COMPANY_POPULARES_CACHE_CONTROL)
     page_dto = service.get_populares_companies()
     return present_company_directory_page(page_dto)
 
@@ -149,7 +142,7 @@ def list_em_destaque_companies(
     service: CVMReadService = Depends(get_read_service),
 ) -> CompanyDirectoryPagePayload:
     ensure_api_ready(get_settings(request))
-    _apply_cache_headers(response, COMPANY_DESTAQUE_CACHE_CONTROL)
+    apply_cache_headers(response, COMPANY_DESTAQUE_CACHE_CONTROL)
     page_dto = service.get_em_destaque_companies(limit=limit)
     return present_company_directory_page(page_dto)
 
@@ -245,7 +238,7 @@ def get_company(
 ) -> CompanyInfoPayload:
     ensure_api_ready(get_settings(request))
     info = coerce_company(cd_cvm, service)
-    _apply_cache_headers(response, COMPANY_INFO_CACHE_CONTROL)
+    apply_cache_headers(response, COMPANY_INFO_CACHE_CONTROL)
     return present_company_info(info)
 
 
@@ -287,7 +280,7 @@ def get_company_years(
 ) -> list[int]:
     ensure_api_ready(get_settings(request))
     coerce_company(cd_cvm, service)
-    _apply_cache_headers(response, COMPANY_YEARS_CACHE_CONTROL)
+    apply_cache_headers(response, COMPANY_YEARS_CACHE_CONTROL)
     return service.get_available_years(cd_cvm)
 
 
@@ -306,7 +299,7 @@ def get_company_statement(
 ) -> StatementMatrixPayload:
     ensure_api_ready(get_settings(request))
     coerce_company(cd_cvm, service)
-    _apply_cache_headers(response, COMPANY_DATA_CACHE_CONTROL)
+    apply_cache_headers(response, COMPANY_DATA_CACHE_CONTROL)
     matrix = service.get_statement_matrix(cd_cvm=cd_cvm, years=years, stmt_type=stmt)
     return present_statement(matrix)
 
@@ -325,7 +318,7 @@ def get_company_kpis(
 ) -> KPIBundlePayload:
     ensure_api_ready(get_settings(request))
     coerce_company(cd_cvm, service)
-    _apply_cache_headers(response, COMPANY_DATA_CACHE_CONTROL)
+    apply_cache_headers(response, COMPANY_DATA_CACHE_CONTROL)
     bundle = service.get_kpi_bundle(cd_cvm=cd_cvm, years=years)
     return present_kpis(bundle)
 
