@@ -4,7 +4,7 @@ import { DownloadIcon } from "lucide-react";
 import type { ComponentProps } from "react";
 import { useState } from "react";
 
-import { getUserFacingErrorMessage } from "@/lib/api";
+import { getUserFacingErrorMessage, isDesktopMode } from "@/lib/api";
 import { downloadFile } from "@/lib/download-file";
 import { track, type TrackEventName } from "@/lib/track";
 import { Button } from "@/components/ui/button";
@@ -38,6 +38,7 @@ export function ExcelDownloadButton({
 }: ExcelDownloadButtonProps) {
   const [pending, setPending] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   async function handleDownload() {
     if (disabled || pending) {
@@ -46,9 +47,13 @@ export function ExcelDownloadButton({
 
     setPending(true);
     setErrorMessage(null);
+    setSuccessMessage(null);
 
     try {
       const filename = await downloadFile(endpoint, fallbackFilename);
+      if (isDesktopMode()) {
+        setSuccessMessage(`Arquivo salvo em Downloads: ${filename}`);
+      }
       track(trackingEvent, {
         ...(trackingPayload ?? {}),
         file_name: filename,
@@ -56,6 +61,7 @@ export function ExcelDownloadButton({
     } catch (error) {
       const message = getUserFacingErrorMessage(error);
       setErrorMessage(message);
+      setSuccessMessage(null);
       track(failureTrackingEvent, {
         ...(trackingPayload ?? {}),
         error_message: message,
@@ -81,6 +87,11 @@ export function ExcelDownloadButton({
       {errorMessage ? (
         <p className="max-w-64 text-xs leading-5 text-destructive">
           {errorMessage}
+        </p>
+      ) : null}
+      {successMessage ? (
+        <p className="max-w-72 text-xs leading-5 text-emerald-700 dark:text-emerald-300">
+          {successMessage}
         </p>
       ) : null}
     </div>

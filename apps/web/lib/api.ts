@@ -447,6 +447,7 @@ type ApiReadRequestInit = {
 export { isDesktopMode } from "./desktop-bridge.ts";
 import {
   isDesktopMode,
+  bridgeFetchCompanyFreshness,
   bridgeFetchCompanies,
   bridgeFetchPopulares,
   bridgeFetchEmDestaque,
@@ -468,6 +469,7 @@ import {
   bridgeFetchBaseHealth,
   bridgeCancelRefresh,
 } from "./desktop-bridge.ts";
+import { isDesktopServerMode } from "./desktop-mode.ts";
 
 export type ApiErrorCode =
   | "network_error"
@@ -1444,6 +1446,13 @@ export async function fetchRefreshStatus(
 export async function fetchCompanyFreshness(
   cdCvm: number,
 ): Promise<RefreshStatusItem | null> {
+  if (isDesktopMode()) {
+    return bridgeFetchCompanyFreshness(cdCvm);
+  }
+  if (isDesktopServerMode()) {
+    // Desktop runtime should avoid HTTP API dependencies.
+    return null;
+  }
   const items = (await apiFetch<RawRefreshStatusItem[]>(
     `/refresh-status${buildQuery({ cd_cvm: cdCvm })}`,
     {

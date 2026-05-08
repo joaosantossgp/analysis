@@ -3,34 +3,38 @@
 import { useEffect, useState } from "react";
 
 import { TrustStrip } from "@/components/home/trust-strip";
-import type { HealthResponse } from "@/lib/api";
+import { fetchHealth, type HealthResponse } from "@/lib/api";
+import { isDesktopMode } from "@/lib/desktop-bridge";
 
 type HomeTrustStripProps = {
   totalCompanies: number | null;
+  disableHealthCheck?: boolean;
 };
 
-export function HomeTrustStrip({ totalCompanies }: HomeTrustStripProps) {
+export function HomeTrustStrip({
+  totalCompanies,
+  disableHealthCheck = false,
+}: HomeTrustStripProps) {
   const [health, setHealth] = useState<HealthResponse | null>(null);
-  const [healthLoading, setHealthLoading] = useState(true);
+  const [healthLoading, setHealthLoading] = useState(!disableHealthCheck);
 
   useEffect(() => {
+    if (disableHealthCheck) {
+      setHealth(null);
+      setHealthLoading(false);
+      return;
+    }
+
     const controller = new AbortController();
 
     const loadHealth = async () => {
+      if (isDesktopMode()) {
+        setHealthLoading(false);
+        return;
+      }
+
       try {
-        const response = await fetch("/api/health", {
-          cache: "no-store",
-          signal: controller.signal,
-        });
-
-        if (!response.ok) {
-          if (!controller.signal.aborted) {
-            setHealth(null);
-          }
-          return;
-        }
-
-        const payload = (await response.json()) as HealthResponse;
+        const payload = await fetchHealth();
         if (!controller.signal.aborted) {
           setHealth(payload);
         }
@@ -50,7 +54,7 @@ export function HomeTrustStrip({ totalCompanies }: HomeTrustStripProps) {
     return () => {
       controller.abort();
     };
-  }, []);
+  }, [disableHealthCheck]);
 
   return (
     <TrustStrip

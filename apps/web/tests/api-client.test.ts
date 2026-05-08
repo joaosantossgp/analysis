@@ -805,6 +805,26 @@ test("fetchCompanyFreshness normalizes missing estimate fields from legacy API p
   }
 });
 
+test("fetchCompanyFreshness skips HTTP in desktop server mode", async () => {
+  const previousDesktopMode = process.env.ANALISYS_DESKTOP_MODE;
+  process.env.ANALISYS_DESKTOP_MODE = "1";
+  const restore = withFetchMock((async () => {
+    throw new Error("HTTP should not be called in desktop server mode");
+  }) as FetchMock);
+
+  try {
+    const payload = await fetchCompanyFreshness(4170);
+    assert.equal(payload, null);
+  } finally {
+    restore();
+    if (previousDesktopMode === undefined) {
+      delete process.env.ANALISYS_DESKTOP_MODE;
+    } else {
+      process.env.ANALISYS_DESKTOP_MODE = previousDesktopMode;
+    }
+  }
+});
+
 test("getFilenameFromDisposition keeps quoted filenames when present", () => {
   const filename = getFilenameFromDisposition(
     'attachment; filename="PETR4_20260409.xlsx"',

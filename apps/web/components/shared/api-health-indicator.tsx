@@ -7,8 +7,30 @@ import { isDesktopMode } from "@/lib/api";
 const HEALTH_RETRY_MS = 30_000;
 
 export function ApiHealthIndicator() {
-  const [desktopMode] = useState(() => isDesktopMode());
+  const [desktopMode, setDesktopMode] = useState(() => isDesktopMode());
   const [apiUnavailable, setApiUnavailable] = useState(false);
+
+  useEffect(() => {
+    if (desktopMode) {
+      return;
+    }
+
+    const onDesktopReady = () => {
+      if (isDesktopMode()) {
+        setDesktopMode(true);
+        setApiUnavailable(false);
+      }
+    };
+
+    // pywebview dispatches this when the bridge becomes available.
+    window.addEventListener("pywebviewready", onDesktopReady as EventListener);
+    const timeoutId = window.setTimeout(onDesktopReady, 300);
+
+    return () => {
+      window.removeEventListener("pywebviewready", onDesktopReady as EventListener);
+      window.clearTimeout(timeoutId);
+    };
+  }, [desktopMode]);
 
   useEffect(() => {
     if (desktopMode) {

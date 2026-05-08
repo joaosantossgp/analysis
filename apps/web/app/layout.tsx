@@ -42,6 +42,8 @@ type RootLayoutProps = {
 };
 
 export default function RootLayout({ children }: RootLayoutProps) {
+  const showApiHealthIndicator = process.env.ANALISYS_DESKTOP_MODE !== "1";
+
   return (
     <html
       lang="pt-BR"
@@ -57,7 +59,7 @@ export default function RootLayout({ children }: RootLayoutProps) {
             <div className="pointer-events-none absolute inset-x-0 top-0 -z-20 h-[30rem] bg-[radial-gradient(circle_at_top_left,_rgba(183,110,44,0.12),_transparent_28%),radial-gradient(circle_at_top_right,_rgba(19,71,52,0.12),_transparent_26%),linear-gradient(180deg,_rgba(14,16,15,0.18)_0%,_rgba(14,16,15,0.08)_46%,_rgba(14,16,15,0)_100%)] sm:h-[36rem] lg:h-[41rem]" />
             <div className="pointer-events-none absolute inset-0 -z-10 bg-[linear-gradient(rgba(33,39,33,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(33,39,33,0.03)_1px,transparent_1px)] bg-[size:52px_52px] [mask-image:linear-gradient(to_bottom,white_20%,transparent_95%)]" />
             <SiteHeader />
-            <ApiHealthIndicator />
+            {showApiHealthIndicator ? <ApiHealthIndicator /> : null}
             <main className="flex-1">{children}</main>
             <SiteFooter />
           </div>

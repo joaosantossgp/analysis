@@ -34,7 +34,8 @@ const SECTOR_TABS = [
   { value: "empresas", label: "Empresas" },
 ] as const;
 
-export const revalidate = 3600;
+// Keep runtime desktop detection active in packaged app.
+export const dynamic = "force-dynamic";
 
 function SectorDetailError({
   message,
