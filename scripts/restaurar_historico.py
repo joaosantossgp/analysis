@@ -26,7 +26,7 @@ sys.path.insert(0, str(ROOT))
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-from src.contracts import RefreshRequest, default_incremental_refresh_policy
+from src.contracts import RefreshPolicy, RefreshRequest
 from src.db import build_engine
 from src.refresh_service import HeadlessRefreshService
 from src.settings import build_settings
@@ -78,7 +78,11 @@ def build_restore_items(service: HeadlessRefreshService, settings, anos: list[in
         max_workers=2,
         data_dir=str(settings.paths.input_dir),
         output_dir=str(settings.paths.reports_dir),
-        policy=default_incremental_refresh_policy(),
+        policy=RefreshPolicy(
+            skip_complete_company_years=True,
+            enable_fast_lane=False,
+            force_refresh=False,
+        ),
     )
     planned_companies, year_overrides, stats = service.build_company_year_plan(request)
     name_by_code = {cd_cvm: company_name for cd_cvm, company_name in company_catalog}
@@ -121,7 +125,11 @@ def run_restore(service: HeadlessRefreshService, settings, items: list[dict], an
             max_workers=2,
             data_dir=str(settings.paths.input_dir),
             output_dir=str(settings.paths.reports_dir),
-            policy=default_incremental_refresh_policy(),
+            policy=RefreshPolicy(
+                skip_complete_company_years=True,
+                enable_fast_lane=False,
+                force_refresh=False,
+            ),
         )
         started_at = time.time()
         result = service.execute(request)
