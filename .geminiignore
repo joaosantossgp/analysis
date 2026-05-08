@@ -1,0 +1,11 @@
+# Ignore large folders to prevent AI indexer crashes
+node_modules/
+apps/web/node_modules/
+apps/web/.next/
+data/
+_backup.claude/
+__pycache__/
+.pytest_cache/
+.venv/
+venv/
+.claude/
