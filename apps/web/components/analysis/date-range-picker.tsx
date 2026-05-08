@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { format, subMonths, subYears, startOfYear, endOfYear } from "date-fns"
+import { format, subMonths, subYears } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import { CalendarIcon } from "lucide-react"
 import type { DateRange } from "react-day-picker"

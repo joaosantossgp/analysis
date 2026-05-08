@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { ptBR } from "date-fns/locale"
 import type { DateRange } from "react-day-picker"
 import {
   ArrowUpRight,
@@ -43,7 +42,7 @@ import {
   SurfaceCard,
   InfoChip,
 } from "@/components/shared/design-system-recipes"
-import { IndicatorSelector, type SelectedIndicator, type ChartType } from "@/components/analysis/indicator-selector"
+import { IndicatorSelector, type SelectedIndicator } from "@/components/analysis/indicator-selector"
 import { DateRangePicker } from "@/components/analysis/date-range-picker"
 
 // Mock data
