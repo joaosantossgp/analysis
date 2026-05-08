@@ -787,7 +787,7 @@ class CVMReadService:
                 page=page,
                 page_size=page_size,
             )
-            if catalog_page is not None:
+            if catalog_page is not None and catalog_page.pagination.total_items > 0:
                 return catalog_page
         years_map = self.query_layer.get_company_years_map(rows_df["cd_cvm"].tolist()) if not rows_df.empty else {}
         if not rows_df.empty:
@@ -875,8 +875,8 @@ class CVMReadService:
                     ticker_b3=entry.ticker_b3,
                     setor_analitico=None,
                     setor_cvm=entry.setor_cvm,
-                    sector_name=gics.gics_sector if gics else legacy_sector,
-                    sector_slug=gics.gics_sector_slug if gics else sector_slugify(legacy_sector),
+                    sector_name=legacy_sector,
+                    sector_slug=sector_slugify(legacy_sector),
                     anos_disponiveis=(),
                     total_rows=0,
                     has_financial_data=False,
@@ -987,40 +987,36 @@ class CVMReadService:
             try:
                 for entry in self.company_catalog.list_entries():
                     sector_name = canonical_sector_name(None, entry.setor_cvm)
-                    gics = build_gics_classification(
-                        sector_name=sector_name,
-                        setor_analitico=None,
-                        setor_cvm=entry.setor_cvm,
-                    )
-                    display_sector = gics.gics_sector if gics else sector_name
-                    sector_counts[display_sector] = sector_counts.get(display_sector, 0) + 1
+                    sector_counts[sector_name] = sector_counts.get(sector_name, 0) + 1
             except CompanyCatalogUnavailableError:
                 use_catalog_fallback = False
+
+        # Catalog fallback can legitimately yield zero sectors (tests stub an empty catalog).
+        # In that case fall back to local DB sector histogram.
+        if use_catalog_fallback and not sector_counts:
+            use_catalog_fallback = False
 
         if not use_catalog_fallback:
             for _, row in df.iterrows():
                 sector_name = str(row["sector_name"])
-                gics = build_gics_classification(
-                    sector_name=sector_name,
-                    setor_analitico=sector_name,
-                    setor_cvm=sector_name,
-                )
-                display_sector = gics.gics_sector if gics else sector_name
-                sector_counts[display_sector] = sector_counts.get(display_sector, 0) + int(row["company_count"] or 0)
+                sector_counts[sector_name] = sector_counts.get(sector_name, 0) + int(row["company_count"] or 0)
 
-        # Keep the canonical GICS taxonomy visible even when local data is sparse.
-        for gics_sector in GICS_11_SECTORS:
-            sector_counts.setdefault(gics_sector, 0)
-
-        sectors = tuple(
-            CompanySectorFilterOption(
+        sectors_list: list[CompanySectorFilterOption] = []
+        for sector_name, company_count in sorted(sector_counts.items(), key=lambda item: item[0]):
+            gics_meta = build_gics_classification(
                 sector_name=sector_name,
-                sector_slug=sector_slugify(sector_name),
-                company_count=int(company_count),
-                gics_sector=sector_name if sector_name in GICS_11_SECTORS else None,
+                setor_analitico=sector_name,
+                setor_cvm=sector_name,
             )
-            for sector_name, company_count in sorted(sector_counts.items(), key=lambda item: item[0])
-        )
+            sectors_list.append(
+                CompanySectorFilterOption(
+                    sector_name=sector_name,
+                    sector_slug=sector_slugify(sector_name),
+                    company_count=int(company_count),
+                    gics_sector=gics_meta.gics_sector if gics_meta else None,
+                )
+            )
+        sectors = tuple(sectors_list)
         return CompanyFiltersDTO(sectors=sectors)
 
     @functools.lru_cache(maxsize=128)
@@ -1076,18 +1072,6 @@ class CVMReadService:
 
     def list_sectors(self) -> SectorDirectoryDTO:
         metric_rows = self.query_layer.get_sector_metric_rows()
-        if metric_rows is not None and not metric_rows.empty:
-            metric_rows = metric_rows.copy()
-            def _to_gics_sector_name(value: Any) -> str:
-                sector_name = str(value or "").strip()
-                gics = build_gics_classification(
-                    sector_name=sector_name,
-                    setor_analitico=sector_name,
-                    setor_cvm=sector_name,
-                )
-                return gics.gics_sector if gics else sector_name
-
-            metric_rows["sector_name"] = metric_rows["sector_name"].map(_to_gics_sector_name)
         yearly = self._aggregate_sector_yearly_metrics(metric_rows)
         filters = self.get_company_filters()
 
@@ -1103,19 +1087,30 @@ class CVMReadService:
                     latest_row,
                 )
 
+        # Snapshot sectors come from financial_reports KPI pivots (canonical Portuguese labels).
+        # Company-filter options may additionally include remote-catalog sectors whose spelling
+        # does not match these keys — iterating snapshots first keeps the hub aligned with metrics.
+        filters_by_name = {str(opt.sector_name): opt for opt in filters.sectors}
+        raw_sector_counts: dict[str, int] = {}
+        sectors_hist = self.query_layer.get_available_company_sectors()
+        for _, row in sectors_hist.iterrows():
+            key = str(row.get("sector_name") or "").strip()
+            if key:
+                raw_sector_counts[key] = int(row.get("company_count") or 0)
+
         items: list[SectorDirectoryItemDTO] = []
-        for option in filters.sectors:
-            sector_name = str(option.sector_name)
-            latest_year = None
-            snapshot_row: pd.Series | None = None
-            latest_snapshot = latest_snapshot_by_sector.get(sector_name)
-            if latest_snapshot is not None:
-                latest_year, snapshot_row = latest_snapshot
+        for sector_name, (latest_year, snapshot_row) in latest_snapshot_by_sector.items():
+            option = filters_by_name.get(sector_name)
+            company_count = (
+                int(option.company_count)
+                if option is not None
+                else raw_sector_counts.get(sector_name, 0)
+            )
             items.append(
                 SectorDirectoryItemDTO(
                     sector_name=sector_name,
                     sector_slug=sector_slugify(sector_name),
-                    company_count=int(option.company_count or 0),
+                    company_count=company_count,
                     latest_year=latest_year,
                     snapshot=SectorSnapshotDTO(
                         roe=self._coerce_optional_float(snapshot_row["roe"]) if snapshot_row is not None else None,
@@ -3338,7 +3333,6 @@ class CVMReadService:
                 setor_analitico=setor_analitico,
                 setor_cvm=setor_cvm,
             )
-            display_sector_name = gics.gics_sector if gics else sector_name
             raw_coverage_rank = row.get("coverage_rank")
             results.append(
                 CompanySearchResult(
@@ -3347,8 +3341,8 @@ class CVMReadService:
                     ticker_b3=self._clean_optional_text(row.get("ticker_b3")),
                     setor_analitico=setor_analitico,
                     setor_cvm=setor_cvm,
-                    sector_name=display_sector_name,
-                    sector_slug=gics.gics_sector_slug if gics else sector_slugify(sector_name),
+                    sector_name=sector_name,
+                    sector_slug=sector_slugify(sector_name),
                     anos_disponiveis=_parse_years(row.get("anos_disponiveis")),
                     total_rows=int(row.get("total_rows") or 0),
                     has_financial_data=bool(int(row.get("has_financial_data") or 0)),
