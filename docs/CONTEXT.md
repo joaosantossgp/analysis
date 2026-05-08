@@ -115,7 +115,6 @@ cvm_repots_capture/
 |   |-- database.py             # CVMDatabase
 |   |-- db.py                   # get_engine() SQLite/PostgreSQL
 |   |-- standardizer.py         # AccountStandardizer
-|   |-- dictionary.py           # Dicionario de contas
 |   |-- query_layer.py          # Camada de leitura para dashboard/exportacao
 |   |-- kpi_engine.py           # KPIs financeiros
 |   |-- excel_exporter.py       # Exportacao Excel
@@ -130,7 +129,7 @@ cvm_repots_capture/
 |       |-- visao_geral.py      # KPIs e visoes resumidas
 |       |-- demonstracoes.py    # Tabelas das demonstracoes
 |       `-- download.py         # Exportacao/download
-|-- scripts/                    # Setup, batches e validacoes
+|-- scripts/                    # Setup, batches, dicionario canonico e validacoes
 |-- archive/                    # Scripts antigos/arquivados
 |-- tests/                      # Suite pytest focada em scraper, PyQt, DB e exportacao
 |-- data/
