@@ -79,6 +79,8 @@
       "vercel.json",
       "fix_jules_pr_gov.py",
       ".gitignore",
+      ".gdriveignore",
+      ".geminiignore",
       "data/test_samples/**"
     ]
   },
