@@ -207,6 +207,11 @@ class CompanySearchResult:
     total_rows: int
     has_financial_data: bool
     coverage_rank: int | None
+    gics_sector: str | None = None
+    gics_sector_slug: str | None = None
+    gics_industry_group: str | None = None
+    gics_industry: str | None = None
+    gics_sub_industry: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -232,6 +237,11 @@ class CompanyInfoDTO:
     latest_readable_year: int | None = None
     read_availability_code: str | None = None
     read_availability_message: str | None = None
+    gics_sector: str | None = None
+    gics_sector_slug: str | None = None
+    gics_industry_group: str | None = None
+    gics_industry: str | None = None
+    gics_sub_industry: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -278,6 +288,7 @@ class CompanySectorFilterOption:
     sector_name: str
     sector_slug: str
     company_count: int
+    gics_sector: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

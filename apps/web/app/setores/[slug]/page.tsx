@@ -34,7 +34,8 @@ const SECTOR_TABS = [
   { value: "empresas", label: "Empresas" },
 ] as const;
 
-export const revalidate = 3600;
+// Keep runtime desktop detection active in packaged app.
+export const dynamic = "force-dynamic";
 
 function SectorDetailError({
   message,
@@ -138,6 +139,7 @@ export default async function SectorDetailPage({
 
     return <SectorDetailError message={detailError} />;
   }
+  const companiesBySectorHref = `/empresas?setor=${encodeURIComponent(detail.sector_slug)}&anos=${detail.selected_year}`;
 
   return (
     <PageShell density="default">
@@ -191,7 +193,7 @@ export default async function SectorDetailPage({
 
             <div className="flex flex-wrap gap-3">
               <Link
-                href={`/empresas?setor=${detail.sector_slug}`}
+                href={companiesBySectorHref}
                 className={cn(
                   buttonVariants({ variant: "outline", size: "lg" }),
                   "rounded-full px-5",

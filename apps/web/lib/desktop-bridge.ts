@@ -55,6 +55,10 @@ interface PywebviewApi {
   get_company_years(params: Record<string, unknown>): Promise<unknown>;
   get_company_kpis(params: Record<string, unknown>): Promise<unknown>;
   get_company_statement(params: Record<string, unknown>): Promise<unknown>;
+  download_company_excel(params: Record<string, unknown>): Promise<unknown>;
+  download_companies_excel_batch(params: Record<string, unknown>): Promise<unknown>;
+  save_company_excel(params: Record<string, unknown>): Promise<unknown>;
+  save_companies_excel_batch(params: Record<string, unknown>): Promise<unknown>;
   get_sectors(params?: Record<string, unknown>): Promise<unknown>;
   get_sector_detail(params: Record<string, unknown>): Promise<unknown>;
   get_health(params?: Record<string, unknown>): Promise<unknown>;
@@ -241,6 +245,13 @@ export async function bridgeFetchRefreshStatus(
   return result.items ?? [];
 }
 
+export async function bridgeFetchCompanyFreshness(
+  cdCvm: number,
+): Promise<RefreshStatusItem | null> {
+  const items = await bridgeFetchRefreshStatus(cdCvm);
+  return items[0] ?? null;
+}
+
 export async function bridgeRequestRefresh(
   cdCvm: number,
 ): Promise<RefreshDispatchResponse> {
@@ -289,10 +300,58 @@ export type CheckUpdateResponse = {
   url: string;
 };
 
+export type BridgeBinaryDownload = {
+  filename: string;
+  mime_type: string;
+  content_base64: string;
+};
+
+export type BridgeSavedFile = {
+  filename: string;
+  saved_path: string;
+  revealed?: boolean;
+};
+
 export async function bridgeCheckUpdate(): Promise<CheckUpdateResponse> {
   return callBridge<CheckUpdateResponse>("check_update", {});
 }
 
 export async function bridgeApplyUpdate(): Promise<void> {
   await callBridge<unknown>("apply_update", {});
+}
+
+export async function bridgeDownloadCompanyExcel(
+  cdCvm: number,
+): Promise<BridgeBinaryDownload> {
+  return callBridge<BridgeBinaryDownload>("download_company_excel", {
+    cd_cvm: cdCvm,
+  });
+}
+
+export async function bridgeSaveCompanyExcel(
+  cdCvm: number,
+  options?: { reveal?: boolean },
+): Promise<BridgeSavedFile> {
+  return callBridge<BridgeSavedFile>("save_company_excel", {
+    cd_cvm: cdCvm,
+    reveal: options?.reveal ?? true,
+  });
+}
+
+export async function bridgeDownloadCompaniesExcelBatch(
+  ids: number[],
+): Promise<BridgeBinaryDownload> {
+  return callBridge<BridgeBinaryDownload>("download_companies_excel_batch", {
+    ids,
+  });
+}
+
+export async function bridgeSaveCompaniesExcelBatch(
+  ids: number[],
+  options?: { reveal?: boolean },
+): Promise<BridgeSavedFile> {
+  return callBridge<BridgeSavedFile>("save_companies_excel_batch", {
+    ids,
+    reveal: options?.reveal ?? true,
+  });
 }

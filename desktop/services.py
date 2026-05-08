@@ -1440,7 +1440,18 @@ class DesktopRefreshJobManager:
     def get_refresh_status(self, params: dict[str, Any] | None = None) -> dict[str, Any]:
         p = dict(params or {})
         job_id = p.get("job_id")
+        cd_cvm = p.get("cd_cvm")
         with self._lock:
+            if cd_cvm not in (None, "") and not job_id:
+                try:
+                    scoped_cd = int(cd_cvm)
+                    scoped_items = [
+                        item.to_dict()
+                        for item in self._read_service().list_refresh_status(scoped_cd)
+                    ]
+                    return {"items": scoped_items}
+                except Exception:
+                    return {"items": []}
             if job_id:
                 job = self._jobs.get(str(job_id))
                 if job is None:
@@ -1732,6 +1743,7 @@ class DesktopRefreshJobManager:
             "job_id": job.get("job_id"),
             "state": job.get("state"),
             "status": job.get("state"),
+            "mode": job.get("mode"),
             "stage": job.get("stage"),
             "queued": int(job.get("queued") or 0),
             "processed": int(job.get("processed") or 0),

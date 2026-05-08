@@ -6,34 +6,23 @@ import { HomeDesktopLoader } from "@/components/home/home-desktop-loader";
 import { HomeTrustStrip } from "@/components/home/home-trust-strip";
 import { StatsStrip } from "@/components/home/stats-strip";
 import { PageShell } from "@/components/shared/design-system-recipes";
-import { fetchCompanies, fetchEmDestaqueCompanies, fetchPopularesCompanies } from "@/lib/api";
+import { fetchCompanies, fetchEmDestaqueCompanies } from "@/lib/api";
 import { isDesktopServerMode } from "@/lib/desktop-mode";
 
 // Keep at 300 to match the perf baseline.
 export const revalidate = 300;
 
-type PopularesState = "loading" | "empty" | "error" | "ready";
 export default async function HomePage() {
 
   if (isDesktopServerMode()) {
     return <HomeDesktopLoader />;
   }
 
-  const [popularesResult, destaqueResult, statsResult] = await Promise.allSettled([
-    fetchPopularesCompanies(),
+  const [destaqueResult, statsResult] = await Promise.allSettled([
     fetchEmDestaqueCompanies(),
     // Minimal fetch only for the total company count used by StatsStrip / HomeTrustStrip
     fetchCompanies({ page: 1, pageSize: 1 }),
   ]);
-
-  const popularesCompanies =
-    popularesResult.status === "fulfilled" ? popularesResult.value.items : [];
-  const popularesState: PopularesState =
-    popularesResult.status === "rejected"
-      ? "error"
-      : popularesCompanies.length === 0
-        ? "empty"
-        : "ready";
 
   const destaqueCompanies =
     destaqueResult.status === "fulfilled" ? destaqueResult.value.items : [];
@@ -59,8 +48,6 @@ export default async function HomePage() {
 
       {/* Discovery Section */}
       <DiscoverySectionLazy
-        popularesCompanies={popularesCompanies}
-        popularesState={popularesState}
         destaqueCompanies={destaqueCompanies}
       />
 

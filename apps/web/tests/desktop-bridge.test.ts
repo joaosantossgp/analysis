@@ -12,6 +12,7 @@ import {
   bridgeFetchBaseHealth,
   bridgeTrackCompanyView,
   bridgeFetchRefreshStatus,
+  bridgeFetchCompanyFreshness,
   bridgeFetchBatchJobs,
   bridgeRequestRefresh,
 } from "../lib/desktop-bridge.ts";
@@ -260,6 +261,24 @@ test("bridgeFetchRefreshStatus returns empty array in desktop mode", async () =>
   try {
     const items = await bridgeFetchRefreshStatus(9512);
     assert.deepEqual(items, []);
+  } finally {
+    restore();
+  }
+});
+
+test("bridgeFetchCompanyFreshness returns first refresh item", async () => {
+  const restore = withPywebview({
+    get_refresh_status: async () => ({
+      items: [
+        { cd_cvm: 9512, company_name: "VALE", source_scope: "on_demand" },
+        { cd_cvm: 9512, company_name: "VALE", source_scope: "cached" },
+      ],
+    }),
+  } as unknown as PyApi);
+
+  try {
+    const item = await bridgeFetchCompanyFreshness(9512);
+    assert.equal(item?.source_scope, "on_demand");
   } finally {
     restore();
   }

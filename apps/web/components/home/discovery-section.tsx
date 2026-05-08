@@ -1,27 +1,22 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { ArrowRightIcon, TrendingUpIcon } from "lucide-react";
+import { TrendingUpIcon } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
-import { ApiUnavailableState } from "@/components/ui/api-unavailable-state";
 import type { CompanyDirectoryItem } from "@/lib/api";
 import { getCompanyAvailability } from "@/lib/company-discovery";
-import { SECTOR_COLOR, getSectorColor } from "@/lib/constants";
+import { SECTOR_COLOR, getSectorColor, getSectorSlugFromName } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
-type Tab = "populares" | "destaque" | "setores";
-type PopularesState = "loading" | "empty" | "error" | "ready";
+type Tab = "destaque" | "setores";
 
 const TABS: { id: Tab; label: string }[] = [
-  { id: "populares", label: "Populares agora" },
   { id: "destaque", label: "Em destaque" },
   { id: "setores", label: "Setores" },
 ];
 
 type DiscoverySectionProps = {
-  popularesCompanies: CompanyDirectoryItem[];
-  popularesState: PopularesState;
   destaqueCompanies: CompanyDirectoryItem[];
   initialTab?: Tab;
 };
@@ -54,94 +49,6 @@ function buildSparkPoints(anos: number[], W = 70, H = 32): string {
       return `${x.toFixed(1)},${y.toFixed(1)}`;
     })
     .join(" ");
-}
-
-function CompanyCard({ co }: { co: CompanyDirectoryItem }) {
-  const color = getSectorColor(co.sector_name);
-  const anos = co.anos_disponiveis ?? [];
-  const sparkPts = buildSparkPoints(anos);
-  const availability = getCompanyAvailability(co);
-  const historyLabel =
-    anos.length > 0 ? `${Math.min(...anos)}-${Math.max(...anos)}` : availability.yearsLabel;
-
-  return (
-    <Link
-      href={`/empresas/${co.cd_cvm}`}
-      className="group flex flex-col gap-3 rounded-[1.25rem] border border-border/60 bg-card p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-[0_22px_40px_-28px_rgba(16,30,24,0.22)]"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="mb-2 flex flex-wrap items-center gap-2">
-            <div
-              className="inline-block rounded-[0.35rem] px-1.5 py-0.5 font-mono text-xs font-medium"
-              style={{
-                background: `color-mix(in oklch, ${color} 12%, transparent)`,
-                border: `1px solid color-mix(in oklch, ${color} 25%, transparent)`,
-                color,
-              }}
-            >
-              {co.ticker_b3 ?? `CVM ${co.cd_cvm}`}
-            </div>
-            <span
-              className={cn(
-                "rounded-full border px-2 py-0.5 text-xs font-medium uppercase tracking-[0.14em]",
-                getAvailabilityBadgeClassName(availability.kind),
-              )}
-            >
-              {availability.badge}
-            </span>
-          </div>
-          <p className="line-clamp-1 text-base font-semibold text-foreground">
-            {co.company_name}
-          </p>
-          {co.sector_name ? (
-            <p className="mt-0.5 text-xs text-muted-foreground">{co.sector_name}</p>
-          ) : null}
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            {availability.detail}
-          </p>
-        </div>
-        {sparkPts ? (
-          <svg
-            width={70}
-            height={32}
-            viewBox={`0 0 70 32`}
-            className="shrink-0"
-            aria-hidden
-          >
-            <defs>
-              <linearGradient id={`spark-grad-${co.cd_cvm}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={color} stopOpacity="0.25" />
-                <stop offset="100%" stopColor={color} stopOpacity="0.02" />
-              </linearGradient>
-            </defs>
-            <polyline
-              points={sparkPts}
-              fill="none"
-              stroke={color}
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        ) : null}
-      </div>
-      <div className="flex items-end justify-between border-t border-dashed border-border/60 pt-3">
-        <div>
-          <p className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
-            Historico local
-          </p>
-          <p className="mt-0.5 font-mono text-sm font-medium text-foreground tabular-nums">
-            {historyLabel}
-          </p>
-        </div>
-        <div className="flex items-center gap-1 text-sm font-medium text-muted-foreground transition-colors group-hover:text-primary">
-          <span>{availability.actionLabel}</span>
-          <ArrowRightIcon className="size-3.5" />
-        </div>
-      </div>
-    </Link>
-  );
 }
 
 function DestaquCard({ co, rank }: { co: CompanyDirectoryItem; rank: number }) {
@@ -198,8 +105,6 @@ function DestaquCard({ co, rank }: { co: CompanyDirectoryItem; rank: number }) {
 }
 
 export function DiscoverySection({
-  popularesCompanies,
-  popularesState,
   destaqueCompanies,
   initialTab,
 }: DiscoverySectionProps) {
@@ -209,9 +114,7 @@ export function DiscoverySection({
   const tabParam = searchParams.get("tab");
   const activeTab: Tab =
     initialTab ??
-    (tabParam === "destaque" || tabParam === "setores"
-      ? tabParam
-      : "populares");
+    (tabParam === "setores" ? "setores" : "destaque");
 
   function selectTab(tab: Tab) {
     const nextParams = new URLSearchParams(searchParams.toString());
@@ -253,30 +156,6 @@ export function DiscoverySection({
         </div>
       </div>
 
-      {activeTab === "populares" ? (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {popularesState === "ready" ? (
-            popularesCompanies.map((co) => <CompanyCard key={co.cd_cvm} co={co} />)
-          ) : popularesState === "error" ? (
-            <div className="col-span-full">
-              <ApiUnavailableState
-                title="Populares indisponivel"
-                description="A lista de empresas populares esta indisponivel no momento."
-                onRetry={() => window.location.reload()}
-              />
-            </div>
-          ) : popularesState === "empty" ? (
-            <p className="col-span-full px-2 py-4 text-sm text-muted-foreground">
-              Nenhuma empresa disponivel no momento.
-            </p>
-          ) : (
-            <p className="col-span-full px-2 py-4 text-sm text-muted-foreground">
-              Carregando empresas populares...
-            </p>
-          )}
-        </div>
-      ) : null}
-
       {activeTab === "destaque" ? (
         <div className="rounded-[1.25rem] border border-border/60 bg-card p-5">
           <div className="mb-3 flex items-center gap-2">
@@ -299,10 +178,12 @@ export function DiscoverySection({
 
       {activeTab === "setores" ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-          {Object.entries(SECTOR_COLOR).map(([sector, color]) => (
+          {Object.entries(SECTOR_COLOR).map(([sector, color]) => {
+            const sectorSlug = getSectorSlugFromName(sector);
+            return (
             <Link
               key={sector}
-              href={`/empresas?setor=${encodeURIComponent(sector)}`}
+              href={`/empresas?setor=${encodeURIComponent(sectorSlug ?? sector)}`}
               className="group flex items-center gap-3 rounded-[1rem] border border-border/60 bg-card px-4 py-3.5 transition-all duration-150 hover:-translate-y-0.5 hover:border-primary/20 hover:shadow-sm"
             >
               <div
@@ -320,7 +201,8 @@ export function DiscoverySection({
                 <p className="mt-0.5 text-xs text-muted-foreground">Ver empresas</p>
               </div>
             </Link>
-          ))}
+            );
+          })}
         </div>
       ) : null}
     </section>

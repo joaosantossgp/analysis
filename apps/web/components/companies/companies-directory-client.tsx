@@ -14,6 +14,7 @@ import {
   type CompaniesDirectoryQueryState,
 } from "@/lib/companies-directory-query";
 import { formatCompactInteger } from "@/lib/formatters";
+import { getSectorNameFromSlug } from "@/lib/constants";
 import type { CompaniesPageData } from "@/lib/companies-page-data";
 import { mergeSearchParams } from "@/lib/search-params";
 import { cn } from "@/lib/utils";
@@ -112,6 +113,7 @@ export function CompaniesDirectoryPageContent({
   }
 
   const { directory, directoryError, filters, filtersError } = data;
+  const currentSectorLabel = getSectorNameFromSlug(currentSector);
   const currentParamsStr = mergeSearchParams("", {
     busca: currentSearch || null,
     setor: currentSector,
@@ -138,7 +140,7 @@ export function CompaniesDirectoryPageContent({
           <p className="mt-1.5 text-sm text-muted-foreground">
             {formatCompactInteger(directory.pagination.total_items)} empresas
             {currentSearch ? ` / "${currentSearch}"` : ""}
-            {currentSector ? ` / ${currentSector}` : ""}
+            {currentSectorLabel ? ` / ${currentSectorLabel}` : ""}
           </p>
         </div>
 

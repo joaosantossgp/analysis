@@ -20,6 +20,9 @@ class _EmptyCompanyCatalog:
     def lookup_company(self, cd_cvm: int):
         return None
 
+    def list_entries(self):
+        return ()
+
     def search_companies(self, *, q: str, limit: int, exclude_codes=None):
         return ()
 

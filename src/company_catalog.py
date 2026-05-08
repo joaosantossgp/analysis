@@ -62,6 +62,10 @@ class CompanyCatalogService:
         snapshot = self._load_snapshot()
         return snapshot.by_cd_cvm.get(int(cd_cvm))
 
+    def list_entries(self) -> tuple[CompanyCatalogEntry, ...]:
+        snapshot = self._load_snapshot()
+        return snapshot.entries
+
     def search_companies(
         self,
         *,

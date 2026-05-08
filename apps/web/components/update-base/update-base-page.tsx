@@ -23,6 +23,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,15 +33,20 @@ import {
   fetchBaseHealth,
   fetchBatchJobs,
   type CompanySectorFilter,
+  type CompanySuggestionItem,
   fetchBatchJobStatus,
   fetchBatchRefresh,
   fetchCompanyFilters,
+  fetchCompanySuggestions,
+  fetchRequestRefresh,
   resolveBatchRefreshCvmRange,
 } from "@/lib/api";
 import {
   buildBaseHealthSummary,
   buildHistoryRows,
   buildUpdateModeEstimates,
+  computeRefreshProgress,
+  getStageProgressFloor,
   getDefaultBaseHealthWindow,
   getHistoryState,
   isActiveBatchJob,
@@ -60,6 +66,8 @@ type AppState =
   | "already_running";
 
 type UpdateType = "full" | "missing" | "outdated" | "failed";
+type UpdateScope = "single_company" | "sector" | "all";
+type SingleCompanyMode = "on_demand" | "batch_single";
 type LogType = "info" | "success" | "warning" | "error" | "dim";
 
 type LogLine = {
@@ -83,6 +91,8 @@ type NavItem = {
   label: string;
   icon: LucideIcon;
 };
+
+type OperationalBannerTone = "error" | "warning" | "info";
 
 const REFRESH_STAGES = [
   "planning",
@@ -191,6 +201,53 @@ function SectionTitle({ icon: Icon, title }: { icon: LucideIcon; title: string }
       <Icon className="size-4.5 text-primary" strokeWidth={1.8} />
       <h2 className="font-heading text-lg font-semibold tracking-[-0.01em]">{title}</h2>
     </div>
+  );
+}
+
+function OperationalBanner({
+  tone,
+  icon: Icon,
+  title,
+  description,
+  action,
+}: {
+  tone: OperationalBannerTone;
+  icon: LucideIcon;
+  title: string;
+  description: string;
+  action?: React.ReactNode;
+}) {
+  const toneClasses = {
+    error: "border-destructive/20 bg-destructive/5",
+    warning: "border-amber-400/20 bg-amber-400/5",
+    info: "border-primary/25 bg-primary/5",
+  } as const;
+  const iconClasses = {
+    error:
+      "border-destructive/25 bg-destructive/10 text-destructive",
+    warning:
+      "border-amber-400/25 bg-amber-400/10 text-amber-300",
+    info: "border-primary/25 bg-primary/10 text-primary",
+  } as const;
+
+  return (
+    <Card className={cn("animate-in rounded-[1.15rem]", toneClasses[tone])}>
+      <CardContent className="flex flex-col gap-4 px-5 sm:flex-row sm:items-center">
+        <div
+          className={cn(
+            "flex size-11 shrink-0 items-center justify-center rounded-[0.9rem] border",
+            iconClasses[tone],
+          )}
+        >
+          <Icon className="size-5" />
+        </div>
+        <div className="flex-1">
+          <h3 className="font-heading font-semibold">{title}</h3>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">{description}</p>
+        </div>
+        {action}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -452,13 +509,83 @@ type UpdateBasePageProps = {
   initialSectors?: CompanySectorFilter[];
 };
 
+function parseUpdateBaseSearchParams(sp: URLSearchParams): {
+  updateScope: UpdateScope;
+  singleCompanyMode: SingleCompanyMode;
+  updateType: UpdateType;
+  singleCvm: string;
+  filterSector: string;
+  filterStatus: string;
+  filterCvmFrom: string;
+  filterCvmTo: string;
+  activeSection: string;
+  jobId: string | null;
+} {
+  const scope = sp.get("scope");
+  const updateScope: UpdateScope =
+    scope === "single_company" || scope === "sector" || scope === "all" ? scope : "all";
+
+  const mode = sp.get("mode");
+  const updateType: UpdateType =
+    mode === "full" || mode === "missing" || mode === "outdated" || mode === "failed" ? mode : "full";
+
+  const sectorParam = sp.get("sector");
+  const filterSector = sectorParam && sectorParam.length > 0 ? sectorParam : "all";
+
+  const statusParam = sp.get("status");
+  const filterStatus = statusParam && statusParam.length > 0 ? statusParam : "all";
+
+  const cvmFrom = sp.get("cvm_from") ?? "";
+  const cvmTo = sp.get("cvm_to") ?? "";
+
+  const singleCvmParam = sp.get("single_cvm") ?? "";
+
+  const singleMode = sp.get("single_mode");
+  const singleCompanyMode: SingleCompanyMode =
+    singleMode === "on_demand" || singleMode === "batch_single" ? singleMode : "on_demand";
+
+  const sectionParam = sp.get("section");
+  const activeSection = sectionParam && sectionParam.length > 0 ? sectionParam : "status";
+
+  const jobParam = sp.get("job_id");
+  const jobId = jobParam && jobParam.length > 0 ? jobParam : null;
+
+  return {
+    updateScope,
+    singleCompanyMode,
+    updateType,
+    singleCvm: singleCvmParam,
+    filterSector,
+    filterStatus,
+    filterCvmFrom: cvmFrom,
+    filterCvmTo: cvmTo,
+    activeSection,
+    jobId,
+  };
+}
+
 export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const urlBoot = useMemo(() => {
+    return parseUpdateBaseSearchParams(new URLSearchParams(searchParams.toString()));
+    // One-shot bootstrap from the initial URL (matches legacy hydration effect).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [appState, setAppState] = useState<AppState>("idle");
-  const [updateType, setUpdateType] = useState<UpdateType>("full");
-  const [filterSector, setFilterSector] = useState("all");
-  const [filterStatus, setFilterStatus] = useState("all");
-  const [filterCvmFrom, setFilterCvmFrom] = useState("");
-  const [filterCvmTo, setFilterCvmTo] = useState("");
+  const [updateScope, setUpdateScope] = useState<UpdateScope>(urlBoot.updateScope);
+  const [singleCompanyMode, setSingleCompanyMode] = useState<SingleCompanyMode>(urlBoot.singleCompanyMode);
+  const [updateType, setUpdateType] = useState<UpdateType>(urlBoot.updateType);
+  const [singleCvm, setSingleCvm] = useState(urlBoot.singleCvm);
+  const [singleCompanyQuery, setSingleCompanyQuery] = useState("");
+  const [singleCompanySuggestions, setSingleCompanySuggestions] = useState<CompanySuggestionItem[]>([]);
+  const [singleCompanySuggestionState, setSingleCompanySuggestionState] = useState<DataLoadState>("available");
+  const [selectedSingleCompany, setSelectedSingleCompany] = useState<CompanySuggestionItem | null>(null);
+  const [filterSector, setFilterSector] = useState(urlBoot.filterSector);
+  const [filterStatus, setFilterStatus] = useState(urlBoot.filterStatus);
+  const [filterCvmFrom, setFilterCvmFrom] = useState(urlBoot.filterCvmFrom);
+  const [filterCvmTo, setFilterCvmTo] = useState(urlBoot.filterCvmTo);
   const [dispatchError, setDispatchError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [processed, setProcessed] = useState(0);
@@ -468,8 +595,8 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
   const [currentStep, setCurrentStep] = useState("");
   const [elapsed, setElapsed] = useState(0);
   const [logs, setLogs] = useState<LogLine[]>([]);
-  const [activeSection, setActiveSection] = useState("status");
-  const [jobId, setJobId] = useState<string | null>(null);
+  const [activeSection, setActiveSection] = useState(urlBoot.activeSection);
+  const [jobId, setJobId] = useState<string | null>(urlBoot.jobId);
   const [totalFromJob, setTotalFromJob] = useState(0);
   const [baseHealth, setBaseHealth] = useState<Awaited<ReturnType<typeof fetchBaseHealth>> | null>(null);
   const [baseHealthState, setBaseHealthState] = useState<DataLoadState>("loading");
@@ -479,9 +606,21 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
   );
   const [batchJobs, setBatchJobs] = useState<Awaited<ReturnType<typeof fetchBatchJobs>>["items"]>([]);
   const [jobsState, setJobsState] = useState<DataLoadState>("loading");
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [showSourceTechnicalDetails, setShowSourceTechnicalDetails] = useState(false);
+  const [showExecutionTechnicalDetails, setShowExecutionTechnicalDetails] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const logRef = useRef<HTMLDivElement | null>(null);
   const lastLogCountRef = useRef(0);
+  const lastProgressRef = useRef(0);
+  const stalledPollCountRef = useRef(0);
+  const urlHydratedRef = useRef(true);
+  const urlSyncRef = useRef(false);
+
+  const trimmedSingleQuery = singleCompanyQuery.trim();
+  const shouldFetchSuggestions = updateScope === "single_company" && trimmedSingleQuery.length >= 2;
+  const visibleSuggestions = shouldFetchSuggestions ? singleCompanySuggestions : [];
+  const visibleSuggestionState = shouldFetchSuggestions ? singleCompanySuggestionState : "available";
 
   const isCancelling = appState === "cancelling";
   const isCancelled = appState === "cancelled";
@@ -534,9 +673,11 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
   const selectedModeEstimate = updateModeEstimates[updateType];
   const total = totalFromJob || selectedModeEstimate.affected || 0;
   const selectedImpactLabel =
-    selectedModeEstimate.affected != null
-      ? `${formatNumber(selectedModeEstimate.affected)} ${selectedModeEstimate.unitLabel}`
-      : "Resolvido ao iniciar";
+    updateScope === "single_company"
+      ? "1 empresa"
+      : selectedModeEstimate.affected != null
+        ? `${formatNumber(selectedModeEstimate.affected)} ${selectedModeEstimate.unitLabel}`
+        : "Resolvido ao iniciar";
   const activeBatchJobCount = batchJobs.filter(isActiveBatchJob).length;
   const historyItems: HistoryItem[] = buildHistoryRows(batchJobs);
   const historyState = getHistoryState({
@@ -556,17 +697,42 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
   );
   const cvmRangeError = resolvedCvmRange.error;
   const hasInvalidCvmRange = cvmRangeError !== null;
+  const parsedSingleCvm = Number(singleCvm.trim());
+  const hasSingleCvmInput = singleCvm.trim().length > 0;
+  const selectedSingleCompanyCode = selectedSingleCompany?.cd_cvm ?? null;
+  const effectiveSingleCompanyCvm = selectedSingleCompanyCode ?? (hasSingleCvmInput ? parsedSingleCvm : null);
+  const hasInvalidSingleCvm =
+    updateScope === "single_company" &&
+    (effectiveSingleCompanyCvm == null ||
+      !Number.isFinite(effectiveSingleCompanyCvm) ||
+      effectiveSingleCompanyCvm <= 0);
+  const isSingleBatchMode = updateScope === "single_company" && singleCompanyMode === "batch_single";
 
   const activeFilters = useMemo(() => {
     const filters: string[] = [];
-    if (selectedSector) filters.push(`Setor: ${selectedSector.sector_name}`);
+    if (updateScope === "single_company" && hasSingleCvmInput) {
+      if (selectedSingleCompany) {
+        filters.push(
+          `Empresa: ${selectedSingleCompany.company_name}${selectedSingleCompany.ticker_b3 ? ` (${selectedSingleCompany.ticker_b3})` : ""}`,
+        );
+      } else {
+        filters.push(`Empresa CVM: ${singleCvm.trim()}`);
+      }
+      filters.push(
+        singleCompanyMode === "on_demand" ? "Modo: Rapido (on-demand)" : "Modo: Lote compativel",
+      );
+      return filters;
+    }
+    if (updateScope === "sector" && selectedSector) {
+      filters.push(`Setor: ${selectedSector.sector_name}`);
+    }
     if (filterStatus !== "all") {
       filters.push(`Status: ${STATUS_OPTIONS.find((item) => item.value === filterStatus)?.label ?? filterStatus}`);
     }
     if (filterCvmFrom) filters.push(`CVM >= ${filterCvmFrom}`);
     if (filterCvmTo) filters.push(`CVM <= ${filterCvmTo}`);
     return filters;
-  }, [filterCvmFrom, filterCvmTo, filterStatus, selectedSector]);
+  }, [filterCvmFrom, filterCvmTo, filterStatus, hasSingleCvmInput, selectedSector, selectedSingleCompany, singleCompanyMode, singleCvm, updateScope]);
 
   const navItems: NavItem[] = useMemo(
     () => [
@@ -600,8 +766,9 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
 
   async function handleConfirm() {
     const currentRange = resolveBatchRefreshCvmRange(filterCvmFrom, filterCvmTo);
+    const shouldValidateBatchRange = updateScope !== "single_company";
 
-    if (currentRange.error) {
+    if (shouldValidateBatchRange && currentRange.error) {
       setAppState("idle");
       setDispatchError(currentRange.error);
       return;
@@ -621,6 +788,48 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
     setLogs([]);
     setJobId(null);
     setTotalFromJob(0);
+    lastProgressRef.current = 0;
+    stalledPollCountRef.current = 0;
+
+    if (updateScope === "single_company" && singleCompanyMode === "on_demand") {
+      if (hasInvalidSingleCvm) {
+        setAppState("idle");
+        setDispatchError("Informe um codigo CVM valido para atualizar uma empresa especifica.");
+        return;
+      }
+      const cdCvm = Math.trunc(effectiveSingleCompanyCvm ?? 0);
+      addLog(`Iniciando atualizacao rapida da empresa ${cdCvm}...`, "info");
+      try {
+        const dispatch = await fetchRequestRefresh(cdCvm);
+        addLog(dispatch.message, dispatch.status === "already_current" ? "success" : "info");
+        if (dispatch.job_id) {
+          setJobId(dispatch.job_id);
+          setTotalFromJob(1);
+          upsertBatchJob({
+            job_id: dispatch.job_id,
+            state: "queued",
+            mode: "missing",
+            queued: 1,
+            processed: 0,
+            failures: 0,
+            accepted_at: dispatch.accepted_at,
+            log_lines: [],
+          });
+          startPolling(dispatch.job_id);
+          return;
+        }
+        setProgress(100);
+        setProcessed(1);
+        setSuccessCount(1);
+        setElapsed(0);
+        setAppState("completed");
+      } catch (error) {
+        setAppState("source_unavailable");
+        setDispatchError(error instanceof Error ? error.message : "Falha ao iniciar atualizacao on-demand.");
+        addLog(error instanceof Error ? error.message : "Falha ao iniciar atualizacao on-demand.", "error");
+      }
+      return;
+    }
 
     addLog("Iniciando atualizacao em lote...", "info");
     addLog(`Tipo: ${UPDATE_TYPE_META[updateType].shortLabel}`, "dim");
@@ -629,9 +838,12 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
     try {
       dispatch = await fetchBatchRefresh({
         mode: updateType,
-        sectorSlug: selectedSector?.sector_slug ?? null,
+        sectorSlug: updateScope === "sector" ? selectedSector?.sector_slug ?? null : null,
         statusFilter: filterStatus !== "all" ? filterStatus : null,
-        cvmRange: currentRange.cvmRange,
+        cvmRange:
+          isSingleBatchMode
+            ? { start: Math.trunc(effectiveSingleCompanyCvm ?? 0), end: Math.trunc(effectiveSingleCompanyCvm ?? 0) }
+            : currentRange.cvmRange,
       });
     } catch (error) {
       setAppState("source_unavailable");
@@ -682,7 +894,11 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
     }
 
     const jid = dispatch.job_id ?? "";
-    const queuedCount = dispatch.queued ?? selectedModeEstimate.affected ?? 0;
+    const queuedCount =
+      dispatch.queued ??
+      (isSingleBatchMode
+        ? 1
+        : selectedModeEstimate.affected ?? 0);
     setJobId(jid);
     setTotalFromJob(queuedCount);
     if (jid) {
@@ -713,11 +929,10 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
         }
 
         const queued = status.queued || 1;
-        const pct = Math.min(Math.round((status.processed / queued) * 100), 99);
+        const numericPct = Math.min(Math.round((status.processed / queued) * 100), 99);
         upsertBatchJob({ ...status, mode: status.mode ?? updateType });
 
         setProcessed(status.processed);
-        setProgress(pct);
         setFailCount(status.failures);
         setSuccessCount(Math.max(0, status.processed - status.failures));
         setElapsed(Math.floor((Date.now() - startedAt) / 1000));
@@ -728,11 +943,26 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
         const newLines = logLines.slice(lastLogCountRef.current);
         lastLogCountRef.current = logLines.length;
         newLines.forEach((line) => addLog(line, "info"));
+        const stageFloor = getStageProgressFloor(status.stage ?? null);
+        const hasActivity = newLines.length > 0 || status.processed !== lastProgressRef.current;
+        if (hasActivity) {
+          stalledPollCountRef.current = 0;
+        } else {
+          stalledPollCountRef.current += 1;
+        }
+        lastProgressRef.current = status.processed;
+        const isStalled = stalledPollCountRef.current >= 3;
+        const displayPct = computeRefreshProgress({
+          numericPct,
+          stageFloor,
+          isStalled,
+        });
+        setProgress(displayPct);
 
         const TERMINAL = new Set(["success", "error", "cancelled", "interrupted"]);
         if (TERMINAL.has(status.state)) {
           clearTimer();
-          setProgress(status.state === "success" ? 100 : pct);
+          setProgress(status.state === "success" ? 100 : displayPct);
           setAppState(status.state === "cancelled" ? "cancelled" : "completed");
           addLog(
             status.state === "success"
@@ -793,9 +1023,15 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
     setLogs([]);
     setJobId(null);
     setTotalFromJob(0);
+    lastProgressRef.current = 0;
+    stalledPollCountRef.current = 0;
   }
 
   function handleStartRequest() {
+    if (updateScope === "single_company" && hasInvalidSingleCvm) {
+      setDispatchError("Informe um codigo CVM valido para atualizar uma empresa especifica.");
+      return;
+    }
     if (cvmRangeError) {
       setDispatchError(cvmRangeError);
       return;
@@ -857,6 +1093,34 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
   }, [initialSectors]);
 
   useEffect(() => {
+    if (!shouldFetchSuggestions) {
+      return;
+    }
+
+    let alive = true;
+
+    void (async () => {
+      await Promise.resolve();
+      if (!alive) return;
+      setSingleCompanySuggestionState("loading");
+      try {
+        const payload = await fetchCompanySuggestions(trimmedSingleQuery, 8);
+        if (!alive) return;
+        setSingleCompanySuggestions(payload.items);
+        setSingleCompanySuggestionState("available");
+      } catch {
+        if (!alive) return;
+        setSingleCompanySuggestions([]);
+        setSingleCompanySuggestionState("unavailable");
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [shouldFetchSuggestions, trimmedSingleQuery]);
+
+  useEffect(() => {
     let alive = true;
     void fetchBatchJobs()
       .then((payload) => {
@@ -878,76 +1142,104 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
   useEffect(() => () => clearTimer(), []);
 
   useEffect(() => {
+    if (!urlHydratedRef.current || urlSyncRef.current) return;
+    const params = new URLSearchParams(searchParams.toString());
+    const setOrDelete = (key: string, value: string | null) => {
+      if (value === null || value === "") params.delete(key);
+      else params.set(key, value);
+    };
+    setOrDelete("scope", updateScope);
+    setOrDelete("mode", updateType);
+    setOrDelete("sector", updateScope === "sector" ? filterSector : null);
+    setOrDelete("status", filterStatus !== "all" ? filterStatus : null);
+    setOrDelete("cvm_from", filterCvmFrom || null);
+    setOrDelete("cvm_to", filterCvmTo || null);
+    setOrDelete("single_cvm", updateScope === "single_company" ? singleCvm : null);
+    setOrDelete("single_mode", updateScope === "single_company" ? singleCompanyMode : null);
+    setOrDelete("section", activeSection || null);
+    setOrDelete("job_id", jobId || null);
+    const next = params.toString();
+    const current = searchParams.toString();
+    if (next === current) return;
+    urlSyncRef.current = true;
+    router.replace(next ? `${pathname}?${next}` : pathname, { scroll: false });
+    queueMicrotask(() => {
+      urlSyncRef.current = false;
+    });
+  }, [
+    activeSection,
+    filterCvmFrom,
+    filterCvmTo,
+    filterSector,
+    filterStatus,
+    jobId,
+    pathname,
+    router,
+    searchParams,
+    singleCompanyMode,
+    singleCvm,
+    updateScope,
+    updateType,
+  ]);
+
+  useEffect(() => {
     if (logRef.current) {
       logRef.current.scrollTop = logRef.current.scrollHeight;
     }
   }, [logs]);
 
-  const sourcePanel =
-    baseHealthState === "unavailable" ? (
-      <Card className="animate-in rounded-[1.15rem] border-destructive/20 bg-destructive/5">
-        <CardContent className="flex flex-col gap-4 px-5 sm:flex-row sm:items-center">
-          <div className="flex size-11 shrink-0 items-center justify-center rounded-[0.9rem] border border-destructive/25 bg-destructive/10 text-destructive">
-            <CloudOffIcon className="size-5" />
-          </div>
-          <div>
-            <h3 className="font-heading font-semibold">Fonte indisponivel</h3>
-            <p className="mt-1 text-sm leading-6 text-muted-foreground">
-              Nao foi possivel carregar `/base-health`. Os controles continuam
-              visiveis, mas os totais da base ficam indisponiveis ate a fonte responder.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-    ) : null;
-
-  const specialPanel =
-    appState === "source_unavailable" ? (
-      <Card className="animate-in rounded-[1.15rem] border-destructive/20 bg-destructive/5">
-        <CardContent className="flex flex-col gap-4 px-5 sm:flex-row sm:items-center">
-          <div className="flex size-11 shrink-0 items-center justify-center rounded-[0.9rem] border border-destructive/25 bg-destructive/10 text-destructive">
-            <CloudOffIcon className="size-5" />
-          </div>
-          <div className="flex-1">
-            <h3 className="font-heading font-semibold">Erro operacional</h3>
-            <p className="mt-1 text-sm leading-6 text-muted-foreground">
-              {dispatchError ??
-                "O servico de atualizacao nao conseguiu iniciar a operacao. Verifique a API e tente novamente."}
-            </p>
-          </div>
-          <Button variant="outline" onClick={() => setAppState("idle")}>
-            <RefreshCwIcon className="size-4" />
-            Tentar novamente
-          </Button>
-        </CardContent>
-      </Card>
-    ) : appState === "no_permission" ? (
-      <Card className="animate-in rounded-[1.15rem] border-amber-400/20 bg-amber-400/5">
-        <CardContent className="flex flex-col gap-4 px-5 sm:flex-row sm:items-center">
-          <div className="flex size-11 shrink-0 items-center justify-center rounded-[0.9rem] border border-amber-400/25 bg-amber-400/10 text-amber-300">
-            <LockIcon className="size-5" />
-          </div>
-          <div>
-            <h3 className="font-heading font-semibold">Permissao insuficiente</h3>
-            <p className="mt-1 text-sm leading-6 text-muted-foreground">
-              Atualizacoes em lote exigem permissao de administrador. Voce ainda pode visualizar o estado da base e o historico.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-    ) : appState === "already_running" ? (
-      <Card className="animate-in rounded-[1.15rem] border-primary/25 bg-primary/5">
-        <CardContent className="flex items-center gap-4 px-5">
-          <RefreshCwIcon className="size-5 animate-spin text-primary" />
-          <div>
-            <h3 className="font-heading font-semibold">Atualizacao ja em execucao</h3>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Iniciada as 13:45 por sistema. Nao e possivel iniciar uma nova operacao.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-    ) : null;
+  const operationalBanner = (() => {
+    if (appState === "source_unavailable") {
+      return (
+        <OperationalBanner
+          tone="error"
+          icon={CloudOffIcon}
+          title="Erro operacional"
+          description={
+            dispatchError ??
+            "O servico de atualizacao nao conseguiu iniciar a operacao. Verifique a API e tente novamente."
+          }
+          action={(
+            <Button variant="outline" onClick={() => setAppState("idle")}>
+              <RefreshCwIcon className="size-4" />
+              Tentar novamente
+            </Button>
+          )}
+        />
+      );
+    }
+    if (appState === "no_permission") {
+      return (
+        <OperationalBanner
+          tone="warning"
+          icon={LockIcon}
+          title="Permissao insuficiente"
+          description="Atualizacoes em lote exigem permissao de administrador. Voce ainda pode visualizar o estado da base e o historico."
+        />
+      );
+    }
+    if (appState === "already_running") {
+      return (
+        <OperationalBanner
+          tone="info"
+          icon={RefreshCwIcon}
+          title="Atualizacao ja em execucao"
+          description="Ja existe um job em andamento. Nao e possivel iniciar uma nova operacao ate ele finalizar."
+        />
+      );
+    }
+    if (baseHealthState === "unavailable") {
+      return (
+        <OperationalBanner
+          tone="warning"
+          icon={CloudOffIcon}
+          title="Fonte parcialmente indisponivel"
+          description="Nao foi possivel carregar /base-health. Os controles continuam disponiveis, mas os totais da base podem ficar incompletos."
+        />
+      );
+    }
+    return null;
+  })();
 
   const historyEmptyCopy = {
     loading: {
@@ -1041,8 +1333,7 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
             </div>
           </header>
 
-          {sourcePanel}
-          {specialPanel}
+          {operationalBanner}
 
           <section id="section-status" className="scroll-mt-24">
             <SectionTitle icon={BarChart3Icon} title="Estado da base" />
@@ -1080,28 +1371,45 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
             </div>
 
             <Card className="mt-3 rounded-[1.15rem] bg-card/92">
-              <CardContent className="flex flex-col gap-5 px-5 lg:flex-row lg:items-center">
-                <div className="flex-1">
-                  <Eyebrow className="mb-3">Saude da fonte</Eyebrow>
-                  <div className="flex flex-wrap gap-6">
-                    <div>
-                      <p className="mb-1 text-xs text-muted-foreground">CVM DFP/ITR</p>
-                      <SourceHealth status={sourceHealthStatus} />
+              <CardContent className="px-5">
+                <button
+                  type="button"
+                  onClick={() => setShowSourceTechnicalDetails((value) => !value)}
+                  className="flex w-full items-center justify-between py-1 text-left"
+                >
+                  <Eyebrow>Detalhes tecnicos da fonte</Eyebrow>
+                  <ChevronRightIcon
+                    className={cn("size-4 text-muted-foreground transition", showSourceTechnicalDetails && "rotate-90")}
+                  />
+                </button>
+                {showSourceTechnicalDetails ? (
+                  <div className="mt-3 flex flex-col gap-5 border-t border-border/55 pt-4 lg:flex-row lg:items-center">
+                    <div className="flex-1">
+                      <div className="flex flex-wrap gap-6">
+                        <div>
+                          <p className="mb-1 text-xs text-muted-foreground">CVM DFP/ITR</p>
+                          <SourceHealth status={sourceHealthStatus} />
+                        </div>
+                        <div>
+                          <p className="mb-1 text-xs text-muted-foreground">Dados cadastrais</p>
+                          <SourceHealth status={sectorState === "unavailable" ? "offline" : sectorState === "loading" ? "partial" : "available"} />
+                        </div>
+                        <div>
+                          <p className="mb-1 text-xs text-muted-foreground">API auxiliar</p>
+                          <SourceHealth status={jobsState === "unavailable" ? "offline" : jobsState === "loading" ? "partial" : "available"} />
+                        </div>
+                      </div>
                     </div>
                     <div>
-                      <p className="mb-1 text-xs text-muted-foreground">Dados cadastrais</p>
-                      <SourceHealth status={sectorState === "unavailable" ? "offline" : sectorState === "loading" ? "partial" : "available"} />
-                    </div>
-                    <div>
-                      <p className="mb-1 text-xs text-muted-foreground">API auxiliar</p>
-                      <SourceHealth status={jobsState === "unavailable" ? "offline" : jobsState === "loading" ? "partial" : "available"} />
+                      <Eyebrow className="mb-1">Ultima verificacao</Eyebrow>
+                      <p className="font-mono text-sm tabular-nums">{formatDateTimeLabel(baseSummary.generatedAt)}</p>
                     </div>
                   </div>
-                </div>
-                <div>
-                  <Eyebrow className="mb-1">Ultima verificacao</Eyebrow>
-                  <p className="font-mono text-sm tabular-nums">{formatDateTimeLabel(baseSummary.generatedAt)}</p>
-                </div>
+                ) : (
+                  <p className="pb-1 text-sm text-muted-foreground">
+                    Exibe saude das fontes, API auxiliar e timestamp da ultima verificacao.
+                  </p>
+                )}
               </CardContent>
             </Card>
           </section>
@@ -1109,6 +1417,129 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
           <section id="section-controls" className="scroll-mt-24">
             <SectionTitle icon={SlidersHorizontalIcon} title="Controles de atualizacao" />
             <Card className="rounded-[1.15rem] bg-card/92">
+              <CardHeader>
+                <Eyebrow>O que voce quer atualizar?</Eyebrow>
+              </CardHeader>
+              <CardContent className="grid gap-3 px-5 sm:grid-cols-3">
+                {[
+                  { value: "single_company", label: "Empresa especifica", desc: "Atualiza 1 companhia por codigo CVM" },
+                  { value: "sector", label: "Setor especifico", desc: "Atualiza empresas de um setor" },
+                  { value: "all", label: "Todas as empresas", desc: "Atualiza toda a base sem recorte" },
+                ].map((scope) => (
+                  <button
+                    key={scope.value}
+                    type="button"
+                    disabled={!canRun}
+                    onClick={() => {
+                      setUpdateScope(scope.value as UpdateScope);
+                      setDispatchError(null);
+                    }}
+                    className={cn(
+                      "flex min-h-24 flex-col items-start gap-2 rounded-[1rem] border p-4 text-left transition",
+                      updateScope === scope.value
+                        ? "border-primary/45 bg-primary/8"
+                        : "border-border/60 bg-background/70 hover:border-primary/25 hover:bg-muted/25",
+                      !canRun && "cursor-not-allowed opacity-60",
+                    )}
+                  >
+                    <p className="font-medium text-foreground">{scope.label}</p>
+                    <p className="text-xs leading-5 text-muted-foreground">{scope.desc}</p>
+                  </button>
+                ))}
+              </CardContent>
+            </Card>
+
+            {updateScope === "single_company" ? (
+              <Card className="mt-3 rounded-[1.15rem] bg-card/92">
+                <CardHeader>
+                  <Eyebrow>Empresa especifica</Eyebrow>
+                </CardHeader>
+                <CardContent className="grid gap-3 px-5 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <AdminInput
+                      label="Buscar empresa (nome ou ticker)"
+                      placeholder="Ex: Petrobras ou PETR4"
+                      value={singleCompanyQuery}
+                      onChange={(value) => {
+                        setSingleCompanyQuery(value);
+                        setSelectedSingleCompany(null);
+                        setDispatchError(null);
+                      }}
+                      disabled={!canRun}
+                    />
+                    {visibleSuggestionState === "loading" ? (
+                      <p className="text-xs text-muted-foreground">Buscando sugestoes...</p>
+                    ) : null}
+                    {visibleSuggestions.length > 0 ? (
+                      <div className="max-h-40 space-y-1 overflow-y-auto rounded-[0.75rem] border border-border/65 bg-background/60 p-2">
+                        {visibleSuggestions.map((item) => (
+                          <button
+                            key={item.cd_cvm}
+                            type="button"
+                            className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted/40"
+                            onClick={() => {
+                              setSelectedSingleCompany(item);
+                              setSingleCvm(String(item.cd_cvm));
+                              setSingleCompanyQuery(
+                                `${item.company_name}${item.ticker_b3 ? ` (${item.ticker_b3})` : ""}`,
+                              );
+                            }}
+                          >
+                            <span className="truncate">{item.company_name}</span>
+                            <span className="ml-2 shrink-0 text-muted-foreground">
+                              {item.ticker_b3 ?? `CVM ${item.cd_cvm}`}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="space-y-2">
+                    <AdminInput
+                      label="Codigo CVM (opcional, avancado)"
+                      placeholder="Ex: 9512"
+                      value={singleCvm}
+                      onChange={(value) => {
+                        setSingleCvm(value);
+                        setSelectedSingleCompany(null);
+                        setDispatchError(null);
+                      }}
+                      disabled={!canRun}
+                    />
+                    {selectedSingleCompany ? (
+                      <div className="rounded-[0.75rem] border border-border/65 bg-muted/25 px-3 py-2 text-xs">
+                        <p className="font-medium text-foreground">
+                          {selectedSingleCompany.company_name}
+                        </p>
+                        <p className="text-muted-foreground">
+                          {selectedSingleCompany.ticker_b3 ?? "Sem ticker"} - CVM {selectedSingleCompany.cd_cvm}
+                        </p>
+                      </div>
+                    ) : null}
+                  </div>
+                  <AdminSelect
+                    label="Estrategia"
+                    value={singleCompanyMode}
+                    onChange={(value) => {
+                      setSingleCompanyMode(value as SingleCompanyMode);
+                      setDispatchError(null);
+                    }}
+                    options={[
+                      { value: "on_demand", label: "Rapido (on-demand)" },
+                      { value: "batch_single", label: "Lote compativel (CVM unico)" },
+                    ]}
+                    disabled={!canRun}
+                  />
+                </CardContent>
+                <div className="px-5 pb-4 text-xs text-muted-foreground">
+                  {singleCompanyMode === "on_demand"
+                    ? "On-demand e mais rapido para 1 empresa e usa o endpoint dedicado."
+                    : "Lote compativel usa o mesmo pipeline de batch com faixa CVM unica."}
+                </div>
+              </Card>
+            ) : null}
+
+            <Card className="mt-3 rounded-[1.15rem] bg-card/92">
               <CardHeader>
                 <Eyebrow>Tipo de atualizacao</Eyebrow>
               </CardHeader>
@@ -1122,14 +1553,15 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
                     <button
                       key={type}
                       type="button"
-                      disabled={!canRun}
+                      disabled={!canRun || (updateScope === "single_company" && singleCompanyMode === "on_demand")}
                       onClick={() => setUpdateType(type)}
                       className={cn(
                         "flex min-h-32 flex-col items-start gap-3 rounded-[1rem] border p-4 text-left transition",
                         active
                           ? "border-primary/45 bg-primary/8 shadow-[0_18px_44px_-34px_rgba(45,212,191,0.45)]"
                           : "border-border/60 bg-background/70 hover:border-primary/25 hover:bg-muted/25",
-                        !canRun && "cursor-not-allowed opacity-60",
+                        (!canRun || (updateScope === "single_company" && singleCompanyMode === "on_demand")) &&
+                          "cursor-not-allowed opacity-60",
                       )}
                     >
                       <Icon className={cn("size-5", active ? "text-primary" : "text-muted-foreground")} strokeWidth={1.8} />
@@ -1145,30 +1577,54 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
 
             <Card className="mt-3 rounded-[1.15rem] bg-card/92">
               <CardHeader className="flex-row items-center justify-between">
-                <Eyebrow>Filtros opcionais</Eyebrow>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setFilterSector("all");
-                    setFilterStatus("all");
-                    setFilterCvmFrom("");
-                    setFilterCvmTo("");
-                    setDispatchError(null);
-                  }}
+                <button
+                  type="button"
+                  onClick={() => setShowAdvancedFilters((value) => !value)}
+                  className="flex items-center gap-2 text-left"
                 >
-                  Limpar
-                </Button>
+                  <Eyebrow>Filtros opcionais</Eyebrow>
+                  <ChevronRightIcon
+                    className={cn("size-4 text-muted-foreground transition", showAdvancedFilters && "rotate-90")}
+                  />
+                </button>
+                {showAdvancedFilters ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setFilterSector("all");
+                      setFilterStatus("all");
+                      setFilterCvmFrom("");
+                      setFilterCvmTo("");
+                      setDispatchError(null);
+                    }}
+                  >
+                    Limpar
+                  </Button>
+                ) : null}
               </CardHeader>
-              <CardContent className="grid gap-3 px-5 sm:grid-cols-2 xl:grid-cols-4">
-                <AdminSelect label="Setor" value={filterSector} onChange={setFilterSector} options={sectorOptions} disabled={!canRun || sectorOptions.length === 1} />
-                <AdminSelect label="Status" value={filterStatus} onChange={setFilterStatus} options={STATUS_OPTIONS} disabled={!canRun} />
-                <AdminInput label="Cod. CVM - de" placeholder="Ex: 1000" value={filterCvmFrom} onChange={(value) => { setFilterCvmFrom(value); setDispatchError(null); }} disabled={!canRun} />
-                <AdminInput label="Cod. CVM - ate" placeholder="Ex: 9999" value={filterCvmTo} onChange={(value) => { setFilterCvmTo(value); setDispatchError(null); }} disabled={!canRun} />
-              </CardContent>
-              {dispatchError || hasInvalidCvmRange ? (
+              {showAdvancedFilters && updateScope !== "single_company" ? (
+                <CardContent className="grid gap-3 px-5 sm:grid-cols-2 xl:grid-cols-4">
+                  <AdminSelect label="Setor" value={filterSector} onChange={setFilterSector} options={sectorOptions} disabled={!canRun || sectorOptions.length === 1 || updateScope !== "sector"} />
+                  <AdminSelect label="Status" value={filterStatus} onChange={setFilterStatus} options={STATUS_OPTIONS} disabled={!canRun} />
+                  <AdminInput label="Cod. CVM - de" placeholder="Ex: 1000" value={filterCvmFrom} onChange={(value) => { setFilterCvmFrom(value); setDispatchError(null); }} disabled={!canRun} />
+                  <AdminInput label="Cod. CVM - ate" placeholder="Ex: 9999" value={filterCvmTo} onChange={(value) => { setFilterCvmTo(value); setDispatchError(null); }} disabled={!canRun} />
+                </CardContent>
+              ) : (
+                <CardContent className="px-5">
+                  <p className="text-sm text-muted-foreground">
+                    {updateScope === "single_company"
+                      ? "No modo de empresa especifica, use o codigo CVM acima."
+                      : "Use filtros apenas quando precisar limitar setor, status ou faixa de CVM."}
+                  </p>
+                </CardContent>
+              )}
+              {dispatchError || (updateScope !== "single_company" && hasInvalidCvmRange) || hasInvalidSingleCvm ? (
                 <div className="mx-5 mb-4 rounded-[0.95rem] border border-destructive/20 bg-destructive/8 px-4 py-3 text-sm text-destructive">
-                  {dispatchError ?? cvmRangeError}
+                  {dispatchError ??
+                    (hasInvalidSingleCvm
+                      ? "Informe um codigo CVM valido para atualizar uma empresa especifica."
+                      : cvmRangeError)}
                 </div>
               ) : null}
               {activeFilters.length ? (
@@ -1181,9 +1637,13 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
 
             {canRun ? (
               <div className="mt-4 flex flex-wrap items-center gap-3">
-                <Button size="lg" onClick={handleStartRequest} disabled={hasInvalidCvmRange}>
+                <Button
+                  size="lg"
+                  onClick={handleStartRequest}
+                  disabled={(updateScope !== "single_company" && hasInvalidCvmRange) || hasInvalidSingleCvm}
+                >
                   <PlayIcon className="size-4" />
-                  Iniciar atualizacao
+                  {updateScope === "single_company" ? "Iniciar atualizacao da empresa" : "Iniciar atualizacao"}
                 </Button>
                 <p className="text-xs text-muted-foreground">
                   {selectedImpactLabel} - {selectedModeEstimate.duration}
@@ -1227,6 +1687,11 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
                   </div>
 
                   <Progress value={progress} indicatorClassName={cn(isActiveJob && "animate-pulse")} />
+                  {isActiveJob && progress < 100 && total <= 5 ? (
+                    <p className="text-xs text-muted-foreground">
+                      Lote curto: pode concluir antes de variacoes visiveis na barra.
+                    </p>
+                  ) : null}
 
                   <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                     {[
@@ -1242,53 +1707,75 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
                     ))}
                   </div>
 
-                  {isActiveJob ? (
-                    <div className="grid gap-4 border-t border-border/60 pt-5 lg:grid-cols-[1fr_1.3fr_auto] lg:items-center">
-                      <div>
-                        <Eyebrow className="mb-1">Empresa atual</Eyebrow>
-                        <p className="font-mono text-sm font-medium">{currentCompany || "Preparando fila"}</p>
-                      </div>
-                      <div>
-                        <Eyebrow className="mb-2">Etapa</Eyebrow>
-                        <div className="flex flex-wrap gap-1.5">
-                          {REFRESH_STAGES.map((step) => (
-                            <span
-                              key={step}
-                              className={cn(
-                                "rounded-full border px-2.5 py-1 font-mono text-xs",
-                                currentStep === step
-                                  ? "border-primary/35 bg-primary/12 text-primary"
-                                  : "border-border/55 text-muted-foreground",
-                              )}
-                            >
-                              {step}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                      <div>
-                        <Eyebrow className="mb-1">Tempo decorrido</Eyebrow>
-                        <p className="font-mono text-sm tabular-nums">
-                          {String(Math.floor(elapsed / 60)).padStart(2, "0")}:{String(elapsed % 60).padStart(2, "0")}
-                        </p>
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {logs.length ? (
+                  {isActiveJob || logs.length ? (
                     <div className="border-t border-border/60 pt-5">
-                      <div className="mb-3 flex items-center justify-between">
-                        <Eyebrow>Log em tempo real</Eyebrow>
-                        <Button variant="ghost" size="sm">
-                          <DownloadIcon className="size-4" />
-                          Exportar log
-                        </Button>
-                      </div>
-                      <div ref={logRef} className="h-48 overflow-y-auto rounded-[0.95rem] border border-border/55 bg-muted/25 p-3">
-                        {logs.map((line, index) => (
-                          <LogEntry key={`${line.time}-${index}`} line={line} />
-                        ))}
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowExecutionTechnicalDetails((value) => !value)}
+                        className="mb-3 flex w-full items-center justify-between text-left"
+                      >
+                        <Eyebrow>Detalhes tecnicos da execucao</Eyebrow>
+                        <ChevronRightIcon
+                          className={cn("size-4 text-muted-foreground transition", showExecutionTechnicalDetails && "rotate-90")}
+                        />
+                      </button>
+                      {showExecutionTechnicalDetails ? (
+                        <>
+                          {isActiveJob ? (
+                            <div className="grid gap-4 lg:grid-cols-[1fr_1.3fr_auto] lg:items-center">
+                              <div>
+                                <Eyebrow className="mb-1">Empresa atual</Eyebrow>
+                                <p className="font-mono text-sm font-medium">{currentCompany || "Preparando fila"}</p>
+                              </div>
+                              <div>
+                                <Eyebrow className="mb-2">Etapa</Eyebrow>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {REFRESH_STAGES.map((step) => (
+                                    <span
+                                      key={step}
+                                      className={cn(
+                                        "rounded-full border px-2.5 py-1 font-mono text-xs",
+                                        currentStep === step
+                                          ? "border-primary/35 bg-primary/12 text-primary"
+                                          : "border-border/55 text-muted-foreground",
+                                      )}
+                                    >
+                                      {step}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                              <div>
+                                <Eyebrow className="mb-1">Tempo decorrido</Eyebrow>
+                                <p className="font-mono text-sm tabular-nums">
+                                  {String(Math.floor(elapsed / 60)).padStart(2, "0")}:{String(elapsed % 60).padStart(2, "0")}
+                                </p>
+                              </div>
+                            </div>
+                          ) : null}
+
+                          {logs.length ? (
+                            <div className={cn(isActiveJob && "mt-4")}>
+                              <div className="mb-3 flex items-center justify-between">
+                                <Eyebrow>Log em tempo real</Eyebrow>
+                                <Button variant="ghost" size="sm" disabled>
+                                  <DownloadIcon className="size-4" />
+                                  Exportar log (em breve)
+                                </Button>
+                              </div>
+                              <div ref={logRef} className="h-48 overflow-y-auto rounded-[0.95rem] border border-border/55 bg-muted/25 p-3">
+                                {logs.map((line, index) => (
+                                  <LogEntry key={`${line.time}-${index}`} line={line} />
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
+                        </>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">
+                          Exibe empresa atual, etapa interna e log detalhado da execucao.
+                        </p>
+                      )}
                     </div>
                   ) : null}
                 </CardContent>

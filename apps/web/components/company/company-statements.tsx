@@ -167,7 +167,10 @@ export function CompanyStatements({ matrix }: CompanyStatementsProps) {
     : rows;
 
   function navigateTo(stmt: string) {
-    const query = mergeSearchParams(searchParams.toString(), { stmt });
+    const query = mergeSearchParams(searchParams.toString(), {
+      stmt,
+      aba: "demonstracoes",
+    });
     startTransition(() => {
       router.push(query ? `${pathname}?${query}` : pathname);
     });

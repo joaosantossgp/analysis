@@ -76,6 +76,8 @@ export function CompareSelector({
     () => selectedCompanies.map((company) => company.cd_cvm),
     [selectedCompanies],
   );
+  const selectedYearsParam =
+    selectedYears.length > 0 ? serializeYears(selectedYears) : null;
   const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
   useEffect(() => {
@@ -426,7 +428,11 @@ export function CompareSelector({
                 className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/88 px-3 py-1.5 text-sm"
               >
                 <Link
-                  href={`/empresas/${company.cd_cvm}`}
+                  href={
+                    selectedYearsParam
+                      ? `/empresas/${company.cd_cvm}?anos=${encodeURIComponent(selectedYearsParam)}`
+                      : `/empresas/${company.cd_cvm}`
+                  }
                   className="font-medium text-foreground hover:underline"
                 >
                   {company.company_name}

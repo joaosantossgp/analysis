@@ -21,6 +21,11 @@ export type CompanyDirectoryItem = {
   coverage_rank: number | null;
   anos_disponiveis: number[];
   total_rows: number;
+  gics_sector?: string | null;
+  gics_sector_slug?: string | null;
+  gics_industry_group?: string | null;
+  gics_industry?: string | null;
+  gics_sub_industry?: string | null;
 };
 
 export type CompanyDirectoryPage = {
@@ -54,6 +59,7 @@ export type CompanySectorFilter = {
   sector_name: string;
   sector_slug: string;
   company_count: number;
+  gics_sector?: string | null;
 };
 
 export type CompanyFiltersResponse = {
@@ -77,6 +83,11 @@ export type CompanyInfo = {
   latest_readable_year: number | null;
   read_availability_code: string | null;
   read_availability_message: string | null;
+  gics_sector?: string | null;
+  gics_sector_slug?: string | null;
+  gics_industry_group?: string | null;
+  gics_industry?: string | null;
+  gics_sub_industry?: string | null;
 };
 
 export type RefreshDispatchResponse = {
@@ -447,6 +458,7 @@ type ApiReadRequestInit = {
 export { isDesktopMode } from "./desktop-bridge.ts";
 import {
   isDesktopMode,
+  bridgeFetchCompanyFreshness,
   bridgeFetchCompanies,
   bridgeFetchPopulares,
   bridgeFetchEmDestaque,
@@ -468,6 +480,7 @@ import {
   bridgeFetchBaseHealth,
   bridgeCancelRefresh,
 } from "./desktop-bridge.ts";
+import { isDesktopServerMode } from "./desktop-mode.ts";
 
 export type ApiErrorCode =
   | "network_error"
@@ -1444,6 +1457,13 @@ export async function fetchRefreshStatus(
 export async function fetchCompanyFreshness(
   cdCvm: number,
 ): Promise<RefreshStatusItem | null> {
+  if (isDesktopMode()) {
+    return bridgeFetchCompanyFreshness(cdCvm);
+  }
+  if (isDesktopServerMode()) {
+    // Desktop runtime should avoid HTTP API dependencies.
+    return null;
+  }
   const items = (await apiFetch<RawRefreshStatusItem[]>(
     `/refresh-status${buildQuery({ cd_cvm: cdCvm })}`,
     {

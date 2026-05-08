@@ -8,8 +8,13 @@ não como kwargs. Use sempre `def method(self, params=None)` + `params.get(...)`
 from __future__ import annotations
 
 import dataclasses
+import base64
+import math
+import os
+import subprocess
 import threading
 import time
+from pathlib import Path
 from typing import Any
 
 
@@ -56,8 +61,21 @@ class CVMBridge:
             parsed = int(default)
         return max(int(minimum), min(int(maximum), parsed))
 
+    @staticmethod
+    def _sanitize_for_json(value: Any) -> Any:
+        """Recursively replace non-finite floats with None for strict JSON."""
+        if isinstance(value, float):
+            return value if math.isfinite(value) else None
+        if isinstance(value, dict):
+            return {key: CVMBridge._sanitize_for_json(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [CVMBridge._sanitize_for_json(item) for item in value]
+        if isinstance(value, tuple):
+            return [CVMBridge._sanitize_for_json(item) for item in value]
+        return value
+
     def ping(self, params=None) -> dict:
-        return {"pong": True, "ts": time.time()}
+        return self._sanitize_for_json({"pong": True, "ts": time.time()})
 
     # ------------------------------------------------------------------
     # Diretório de empresas
@@ -79,14 +97,14 @@ class CVMBridge:
             )
             payload = dataclasses.asdict(result)
             payload["_bridge_ms"] = round((time.perf_counter() - t0) * 1000, 3)
-            return payload
+            return self._sanitize_for_json(payload)
         except Exception as exc:
             return {"error": str(exc), "items": [], "pagination": {}}
 
     def get_company_filters(self, params=None) -> dict:
         try:
             result = self._svc().get_company_filters()
-            return dataclasses.asdict(result)
+            return self._sanitize_for_json(dataclasses.asdict(result))
         except Exception as exc:
             return {"error": str(exc), "sectors": []}
 
@@ -98,14 +116,14 @@ class CVMBridge:
                 limit=self._bounded_int(p.get("limit", 6), default=6, maximum=100),
                 ready_only=bool(p.get("ready_only", False)),
             )
-            return {"items": [dataclasses.asdict(i) for i in items]}
+            return self._sanitize_for_json({"items": [dataclasses.asdict(i) for i in items]})
         except Exception as exc:
             return {"error": str(exc), "items": []}
 
     def get_populares(self, params=None) -> dict:
         try:
             result = self._svc().get_populares_companies()
-            return dataclasses.asdict(result)
+            return self._sanitize_for_json(dataclasses.asdict(result))
         except Exception as exc:
             return {"error": str(exc), "items": [], "pagination": {}}
 
@@ -115,7 +133,7 @@ class CVMBridge:
             result = self._svc().get_em_destaque_companies(
                 limit=int(p.get("limit", 10))
             )
-            return dataclasses.asdict(result)
+            return self._sanitize_for_json(dataclasses.asdict(result))
         except Exception as exc:
             return {"error": str(exc), "items": [], "pagination": {}}
 
@@ -139,15 +157,15 @@ class CVMBridge:
             cd_cvm = int(p.get("cd_cvm", 0))
             result = self._svc().get_company_info(
                 cd_cvm,
-                allow_catalog_lookup=False,
+                allow_catalog_lookup=True,
             )
             if result is None:
                 cached = self._get_cached_company_info(cd_cvm)
                 if cached is not None:
-                    return cached
+                    return self._sanitize_for_json(cached)
                 self._queue_company_info_lookup(cd_cvm)
                 return {"not_found": True, "catalog_lookup_pending": True}
-            return dataclasses.asdict(result)
+            return self._sanitize_for_json(dataclasses.asdict(result))
         except Exception as exc:
             return {"error": str(exc)}
 
@@ -185,7 +203,7 @@ class CVMBridge:
         try:
             cd_cvm = int(p.get("cd_cvm", 0))
             years = self._svc().get_available_years(cd_cvm)
-            return {"years": years}
+            return self._sanitize_for_json({"years": years})
         except Exception as exc:
             return {"error": str(exc), "years": []}
 
@@ -199,7 +217,7 @@ class CVMBridge:
             else:
                 years = [int(y) for y in years_raw]
             result = self._svc().get_kpi_bundle(cd_cvm, years)
-            return dataclasses.asdict(result)
+            return self._sanitize_for_json(dataclasses.asdict(result))
         except Exception as exc:
             return {"error": str(exc)}
 
@@ -214,9 +232,106 @@ class CVMBridge:
                 years = [int(y) for y in years_raw]
             stmt = str(p.get("stmt", "bpa"))
             result = self._svc().get_statement_matrix(cd_cvm, years, stmt)
-            return dataclasses.asdict(result)
+            return self._sanitize_for_json(dataclasses.asdict(result))
         except Exception as exc:
             return {"error": str(exc)}
+
+    def download_company_excel(self, params=None) -> dict:
+        p = params or {}
+        try:
+            cd_cvm = int(p.get("cd_cvm", 0))
+            filename, payload = self._svc().build_company_excel_export(cd_cvm)
+            return self._sanitize_for_json({
+                "filename": filename,
+                "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "content_base64": base64.b64encode(payload).decode("ascii"),
+            })
+        except Exception as exc:
+            return {"error": str(exc)}
+
+    def save_company_excel(self, params=None) -> dict:
+        p = params or {}
+        try:
+            cd_cvm = int(p.get("cd_cvm", 0))
+            filename, payload = self._svc().build_company_excel_export(cd_cvm)
+            saved_path = self._save_bytes_to_downloads(filename, payload)
+            reveal = bool(p.get("reveal", True))
+            revealed = self._reveal_in_file_explorer(saved_path) if reveal else False
+            return self._sanitize_for_json({
+                "filename": filename,
+                "saved_path": saved_path,
+                "revealed": revealed,
+            })
+        except Exception as exc:
+            return {"error": str(exc)}
+
+    def download_companies_excel_batch(self, params=None) -> dict:
+        p = params or {}
+        try:
+            ids_raw = p.get("ids", [])
+            if isinstance(ids_raw, str):
+                ids = [int(part.strip()) for part in ids_raw.split(",") if part.strip()]
+            else:
+                ids = [int(item) for item in ids_raw]
+            if not ids:
+                return {"error": "Nenhuma empresa valida foi informada para o lote Excel."}
+            filename, payload = self._svc().build_companies_excel_batch_export(ids)
+            return self._sanitize_for_json({
+                "filename": filename,
+                "mime_type": "application/zip",
+                "content_base64": base64.b64encode(payload).decode("ascii"),
+            })
+        except Exception as exc:
+            return {"error": str(exc)}
+
+    def save_companies_excel_batch(self, params=None) -> dict:
+        p = params or {}
+        try:
+            ids_raw = p.get("ids", [])
+            if isinstance(ids_raw, str):
+                ids = [int(part.strip()) for part in ids_raw.split(",") if part.strip()]
+            else:
+                ids = [int(item) for item in ids_raw]
+            if not ids:
+                return {"error": "Nenhuma empresa valida foi informada para o lote Excel."}
+            filename, payload = self._svc().build_companies_excel_batch_export(ids)
+            saved_path = self._save_bytes_to_downloads(filename, payload)
+            reveal = bool(p.get("reveal", True))
+            revealed = self._reveal_in_file_explorer(saved_path) if reveal else False
+            return self._sanitize_for_json({
+                "filename": filename,
+                "saved_path": saved_path,
+                "revealed": revealed,
+            })
+        except Exception as exc:
+            return {"error": str(exc)}
+
+    @staticmethod
+    def _save_bytes_to_downloads(filename: str, payload: bytes) -> str:
+        downloads_dir = Path.home() / "Downloads"
+        downloads_dir.mkdir(parents=True, exist_ok=True)
+        safe_name = Path(str(filename or "download.bin")).name
+        stem = Path(safe_name).stem or "download"
+        suffix = Path(safe_name).suffix
+        target = downloads_dir / safe_name
+        counter = 1
+        while target.exists():
+            target = downloads_dir / f"{stem} ({counter}){suffix}"
+            counter += 1
+        target.write_bytes(payload)
+        return str(target)
+
+    @staticmethod
+    def _reveal_in_file_explorer(saved_path: str) -> bool:
+        path = Path(saved_path)
+        try:
+            if os.name == "nt":
+                os.startfile(str(path.parent))  # type: ignore[attr-defined]
+                return True
+            subprocess.Popen(["xdg-open", str(path.parent)])
+            return True
+        except Exception:
+            return False
 
     # ------------------------------------------------------------------
     # Setores
@@ -225,7 +340,7 @@ class CVMBridge:
     def get_sectors(self, params=None) -> dict:
         try:
             result = self._svc().list_sectors()
-            return dataclasses.asdict(result)
+            return self._sanitize_for_json(dataclasses.asdict(result))
         except Exception as exc:
             return {"error": str(exc), "items": []}
 
@@ -238,7 +353,7 @@ class CVMBridge:
             result = self._svc().get_sector_detail(slug, year_int)
             if result is None:
                 return {"not_found": True}
-            return dataclasses.asdict(result)
+            return self._sanitize_for_json(dataclasses.asdict(result))
         except Exception as exc:
             return {"error": str(exc)}
 
@@ -248,35 +363,35 @@ class CVMBridge:
 
     def get_refresh_status(self, params=None) -> dict:
         try:
-            return self._refresh().get_refresh_status(params or {})
+            return self._sanitize_for_json(self._refresh().get_refresh_status(params or {}))
         except Exception as exc:
-            return {
+            return self._sanitize_for_json({
                 "state": "error",
                 "processed": 0,
                 "failures": 1,
                 "current_cvm": None,
                 "log_lines": [str(exc)],
                 "error": str(exc),
-            }
+            })
 
     def request_refresh(self, params=None) -> dict:
         try:
-            return self._refresh().request_refresh(params or {})
+            return self._sanitize_for_json(self._refresh().request_refresh(params or {}))
         except Exception as exc:
-            return {
+            return self._sanitize_for_json({
                 "status": "error",
                 "job_id": None,
                 "message": str(exc),
                 "status_reason_code": "desktop_refresh_error",
                 "status_reason_message": str(exc),
                 "is_retry_allowed": True,
-            }
+            })
 
     def cancel_refresh(self, params=None) -> dict:
         try:
-            return self._refresh().cancel_job(params or {})
+            return self._sanitize_for_json(self._refresh().cancel_job(params or {}))
         except Exception as exc:
-            return {"ok": False, "message": str(exc)}
+            return self._sanitize_for_json({"ok": False, "message": str(exc)})
 
     # ------------------------------------------------------------------
     # Auto-updater
@@ -298,20 +413,20 @@ class CVMBridge:
         with self._update_lock:
             info = self._update_info
         if not info:
-            return {"available": False}
-        return {
+            return self._sanitize_for_json({"available": False})
+        return self._sanitize_for_json({
             "available": True,
             "version": info["version"],
             "zip_url": info["zip_url"],
-        }
+        })
 
     def apply_update(self, params=None) -> dict:
         with self._update_lock:
             info = self._update_info
             if not info:
-                return {"error": "no_update_available"}
+                return self._sanitize_for_json({"error": "no_update_available"})
             if self._update_progress.get("status") == "downloading":
-                return {"error": "already_in_progress"}
+                return self._sanitize_for_json({"error": "already_in_progress"})
             self._update_progress = {"status": "downloading", "percent": 0, "error": None}
 
         def _run() -> None:
@@ -339,23 +454,23 @@ class CVMBridge:
                     self._update_progress = {"status": "error", "percent": 0, "error": str(exc)}
 
         threading.Thread(target=_run, name="desktop-apply-update", daemon=True).start()
-        return {"started": True}
+        return self._sanitize_for_json({"started": True})
 
     def get_update_progress(self, params=None) -> dict:
         with self._update_lock:
-            return dict(self._update_progress)
+            return self._sanitize_for_json(dict(self._update_progress))
 
     def snooze_update(self, params=None) -> dict:
         with self._update_lock:
             info = self._update_info
         if not info:
-            return {"ok": False, "error": "no_update_info"}
+            return self._sanitize_for_json({"ok": False, "error": "no_update_info"})
         try:
             from desktop.updater import UpdateChecker  # noqa: PLC0415
             UpdateChecker().snooze(info["tag"])
-            return {"ok": True}
+            return self._sanitize_for_json({"ok": True})
         except Exception as exc:
-            return {"ok": False, "error": str(exc)}
+            return self._sanitize_for_json({"ok": False, "error": str(exc)})
 
     # ------------------------------------------------------------------
     # Health / diagnostico
@@ -377,7 +492,7 @@ class CVMBridge:
                 end_year=end_year,
                 force_refresh=force_refresh,
             )
-            return dataclasses.asdict(result)
+            return self._sanitize_for_json(dataclasses.asdict(result))
         except Exception as exc:
             return {"error": str(exc)}
 
@@ -387,16 +502,16 @@ class CVMBridge:
             svc = CVMReadService()
             # Faz uma consulta leve para checar DB
             svc.list_companies(page=1, page_size=1)
-            return {
+            return self._sanitize_for_json({
                 "status": "ok",
                 "version": "desktop",
                 "database_dialect": "sqlite",
                 "required_tables": [],
                 "warnings": [],
                 "errors": [],
-            }
+            })
         except Exception as exc:
-            return {
+            return self._sanitize_for_json({
                 "status": "degraded",
                 "version": "desktop",
                 "database_dialect": "sqlite",
@@ -404,7 +519,7 @@ class CVMBridge:
                 "warnings": [],
                 "errors": [{"severity": "error", "code": "db_error",
                             "message": str(exc), "path": None}],
-            }
+            })
 
 
 def _serialize(obj: Any) -> Any:

@@ -23,7 +23,10 @@ export const metadata: Metadata = {
     "Hub setorial da V2 web com leitura agregada por setor, contagem de empresas e snapshots anuais.",
 };
 
-export const revalidate = 3600;
+// Desktop mode is decided at runtime via ANALISYS_DESKTOP_MODE.
+// Force dynamic rendering so this route does not get pre-rendered
+// with the web/API branch during build.
+export const dynamic = "force-dynamic";
 
 export default async function SetoresPage() {
   if (isDesktopServerMode()) {

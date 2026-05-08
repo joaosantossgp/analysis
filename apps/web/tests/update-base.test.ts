@@ -13,6 +13,8 @@ import {
   buildBaseHealthSummary,
   buildHistoryRows,
   buildUpdateModeEstimates,
+  computeRefreshProgress,
+  getStageProgressFloor,
   getHistoryState,
 } from "../lib/update-base-admin.ts";
 import {
@@ -165,6 +167,21 @@ test("update-base history exposes explicit empty and terminal states", () => {
   assert.equal(
     getHistoryState({ jobsState: "available", activeJobCount: 1, historyCount: 0 }),
     "active_jobs_no_history",
+  );
+});
+
+test("progress fallback uses stage floor when numeric progress stalls", () => {
+  assert.equal(getStageProgressFloor("planning"), 8);
+  assert.equal(getStageProgressFloor("persist_reports"), 82);
+  assert.equal(getStageProgressFloor("unknown"), 0);
+
+  assert.equal(
+    computeRefreshProgress({ numericPct: 0, stageFloor: 35, isStalled: true }),
+    35,
+  );
+  assert.equal(
+    computeRefreshProgress({ numericPct: 42, stageFloor: 35, isStalled: false }),
+    42,
   );
 });
 

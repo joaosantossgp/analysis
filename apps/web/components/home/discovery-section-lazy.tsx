@@ -4,8 +4,7 @@ import dynamic from "next/dynamic";
 
 import type { CompanyDirectoryItem } from "@/lib/api";
 
-type PopularesState = "loading" | "empty" | "error" | "ready";
-type Tab = "populares" | "destaque" | "setores";
+type Tab = "destaque" | "setores";
 
 const DiscoverySection = dynamic(
   () =>
@@ -30,22 +29,16 @@ const DiscoverySection = dynamic(
 );
 
 type DiscoverySectionLazyProps = {
-  popularesCompanies: CompanyDirectoryItem[];
-  popularesState: PopularesState;
   destaqueCompanies: CompanyDirectoryItem[];
   initialTab?: Tab;
 };
 
 export function DiscoverySectionLazy({
-  popularesCompanies,
-  popularesState,
   destaqueCompanies,
   initialTab,
 }: DiscoverySectionLazyProps) {
   return (
     <DiscoverySection
-      popularesCompanies={popularesCompanies}
-      popularesState={popularesState}
       destaqueCompanies={destaqueCompanies}
       initialTab={initialTab}
     />

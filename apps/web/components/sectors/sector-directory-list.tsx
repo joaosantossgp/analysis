@@ -90,17 +90,23 @@ export function SectorDirectoryList({ items }: SectorDirectoryListProps) {
             <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">
               Base {item.latest_year ?? "-"}
             </p>
-            <Link
-              href={`/setores/${item.sector_slug}`}
-              data-testid="sector-card-link"
-              className={cn(
-                buttonVariants({ variant: "outline", size: "lg" }),
-                "rounded-full px-5",
-              )}
-            >
-              Abrir setor
-              <ArrowUpRightIcon className="size-4" />
-            </Link>
+            {item.latest_year != null ? (
+              <Link
+                href={`/setores/${item.sector_slug}`}
+                data-testid="sector-card-link"
+                className={cn(
+                  buttonVariants({ variant: "outline", size: "lg" }),
+                  "rounded-full px-5",
+                )}
+              >
+                Abrir setor
+                <ArrowUpRightIcon className="size-4" />
+              </Link>
+            ) : (
+              <span className="rounded-full border border-border/65 px-4 py-2 text-xs text-muted-foreground">
+                Sem historico ainda
+              </span>
+            )}
           </div>
         </SurfaceCard>
       ))}
