@@ -63,13 +63,14 @@ CVM website → `src/scraper.py` (CVMScraper) → `src/standardizer.py` (Account
 
 **`src/` module roles:**
 - `src/utils.py` — `normalize_account_name()` + `generate_line_id_base()` (used throughout)
-- `src/dictionary.py` — builds canonical account dictionary from CVM raw data
 - `src/db.py` — Streamlit-free `get_engine()` factory (2-tier: `DATABASE_URL` env → SQLite); safe to import from CLI scripts and PyQt6
 - `src/query_layer.py` — `CVMQueryLayer` class: all SQL queries for fetching statements (DRE, BPA, BPP, DFC, DVA, DMPL) by company/year/period. **Important**: `get_statement()` applies `fillna("")` on `STANDARD_NAME` before `pivot_table` — pandas silently drops NaN index rows.
 - `src/kpi_engine.py` — `compute_all_kpis()`, `compute_quarterly_kpis()`: 60+ financial indicators (ROE, ROA, margins, solvency, etc.). Outputs include `UNIDADE` column (`"%"` or `"x"`). Quarterly mode trims leading periods where LTM flow KPIs are not computable.
 - `src/ticker_map.py` — B3 ticker ↔ CVM code mapping utilities
 - `src/excel_exporter.py` — Excel report generation with QA logs and validations. KPI sheet has columns: INDICADOR, FÓRMULA, UNIDADE, [periods], Δ YoY, Tendência. Category headers use individual cell writes (no merge_range).
 - `src/statement_summary.py` — condensed multi-block statement builder (DRE, BPA, BPP, DFC). Filters to subtotal/summary `CD_CONTA` codes and optionally expands direct children. Used for high-level views without loading full pivot tables.
+
+Canonical account dictionary generation lives in `scripts/build_canonical_dict.py`.
 
 ### Database
 
