@@ -3,6 +3,7 @@ import Link from "next/link";
 import { CompanyContextCard } from "@/components/company/company-context-card";
 import { CompanyFreshnessCard } from "@/components/company/company-freshness-card";
 import { CompanyHeader } from "@/components/company/company-header";
+import { CompanyRequestRefresh } from "@/components/company/company-request-refresh";
 import {
   PageShell,
   SectionHeading,
@@ -58,15 +59,15 @@ export async function CompanyNoDataPage({ company }: CompanyNoDataPageProps) {
         <div className="flex flex-col gap-6 lg:col-span-8">
           <SurfaceCard tone="default" padding="lg" className="space-y-6">
             <SectionHeading
-              eyebrow="Historico anual ainda nao liberado"
-              title="Esta empresa ainda depende da primeira materializacao"
+              eyebrow="Empresa cadastrada, historico pendente"
+              title="No historical data available yet"
               titleAs="h2"
-              description="O cadastro da companhia ja esta disponivel, mas esta pagina ainda nao encontrou uma serie anual local utilizavel. Quando a leitura on-demand conseguir materializar o historico, este mesmo shell libera os KPIs, o grafico, a tabela anual e as demonstracoes."
+              description="This company exists in the database but has no downloaded history. You can request the full historical update now; the page remains available while financial data is still missing."
               descriptionClassName="max-w-3xl text-sm leading-7"
             />
 
             <Alert className="rounded-[1.5rem] border border-border/70 bg-muted/24 px-5 py-5">
-              <AlertTitle>O que destrava esta pagina</AlertTitle>
+              <AlertTitle>No financial data available yet</AlertTitle>
               <AlertDescription>
                 A solicitacao on-demand busca uma serie anual processavel na CVM e
                 atualiza o painel lateral com o status real da tentativa. Quando o
@@ -75,6 +76,11 @@ export async function CompanyNoDataPage({ company }: CompanyNoDataPageProps) {
                 {freshnessCopy?.retryHint ? ` ${freshnessCopy.retryHint}` : ""}
               </AlertDescription>
             </Alert>
+
+            <CompanyRequestRefresh
+              cdCvm={company.cd_cvm}
+              initialStatus={initialFreshness}
+            />
 
             {lastOutcomeMessage ? (
               <Alert className="rounded-[1.5rem] border border-border/70 bg-background/82 px-5 py-5">

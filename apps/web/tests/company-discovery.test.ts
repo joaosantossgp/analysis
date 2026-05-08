@@ -5,7 +5,6 @@ import type { CompanyDirectoryItem } from "../lib/api.ts";
 import {
   getCompanyAvailability,
   prioritizeDiscoveryCompanies,
-  selectReadyCompareCompanies,
 } from "../lib/company-discovery.ts";
 
 function buildCompany(
@@ -34,9 +33,7 @@ test("getCompanyAvailability marks strong local history as ready", () => {
   assert.equal(state.kind, "ready");
   assert.equal(state.badge, "Pronta agora");
   assert.equal(state.yearsLabel, "2023-2024");
-  assert.equal(state.compareEligible, true);
 });
-
 test("getCompanyAvailability marks empty local history as requestable", () => {
   const state = getCompanyAvailability(
     buildCompany(2, {
@@ -50,7 +47,6 @@ test("getCompanyAvailability marks empty local history as requestable", () => {
 
   assert.equal(state.kind, "requestable");
   assert.equal(state.summary, "Carga on-demand");
-  assert.equal(state.compareEligible, false);
 });
 
 test("getCompanyAvailability distinguishes low signal local coverage", () => {
@@ -95,19 +91,4 @@ test("prioritizeDiscoveryCompanies keeps strong entries ahead of weak suggestion
   const orderedIds = prioritizeDiscoveryCompanies(items).map((item) => item.cd_cvm);
 
   assert.deepEqual(orderedIds, [1, 2, 3, 4]);
-});
-
-test("selectReadyCompareCompanies only returns companies eligible for compare", () => {
-  const result = selectReadyCompareCompanies([
-    buildCompany(1),
-    buildCompany(2, { anos_disponiveis: [2024], total_rows: 120 }),
-    buildCompany(3, {
-      has_financial_data: false,
-      anos_disponiveis: [],
-      total_rows: 0,
-      coverage_rank: null,
-    }),
-  ]);
-
-  assert.deepEqual(result.map((item) => item.cd_cvm), [1]);
 });

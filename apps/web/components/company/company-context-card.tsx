@@ -29,7 +29,7 @@ export function CompanyContextCard({
             Contexto
           </p>
           <CompanyHelpTip>
-            Use o mesmo recorte anual para comparar esta empresa com o setor ou outras companhias.
+            Use o mesmo recorte anual para continuar a leitura pelo setor GICS.
           </CompanyHelpTip>
         </div>
         <h3 className="font-heading text-xl tracking-[-0.02em] text-foreground">
@@ -59,12 +59,6 @@ export function CompanyContextCard({
       </dl>
 
       <div className="flex flex-wrap gap-2">
-        <Link
-          href={hero.compareHref}
-          className={cn(buttonVariants({ variant: "outline", size: "sm" }), "rounded-full px-4")}
-        >
-          Comparar
-        </Link>
         {hero.sectorHref ? (
           <Link
             href={hero.sectorHref}

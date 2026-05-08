@@ -24,7 +24,7 @@ export function BentoFeatures() {
           Tudo que voce precisa para analisar
         </h2>
         <p className="mx-auto mt-3 max-w-xl text-base leading-relaxed text-muted-foreground">
-          Uma leitura unica para descobrir, comparar e aprofundar companhias abertas brasileiras.
+          Uma leitura unica para descobrir, filtrar e aprofundar companhias abertas brasileiras.
         </p>
       </div>
 

@@ -58,6 +58,7 @@ export function SectorCompanyTable({
               <TableHead className="px-5">Rank</TableHead>
               <TableHead>Empresa</TableHead>
               <TableHead>Ticker</TableHead>
+              <TableHead>Sub-setor GICS</TableHead>
               <TableHead>ROE</TableHead>
               <TableHead>Margem EBIT</TableHead>
               <TableHead>Margem Liquida</TableHead>
@@ -85,6 +86,9 @@ export function SectorCompanyTable({
                 </TableCell>
                 <TableCell className="text-muted-foreground">
                   {company.ticker_b3 ?? "-"}
+                </TableCell>
+                <TableCell className="max-w-[14rem] text-muted-foreground">
+                  {company.gics_sub_industry ?? "-"}
                 </TableCell>
                 <TableCell>{formatKpiValue(company.roe, "pct")}</TableCell>
                 <TableCell>{formatKpiValue(company.mg_ebit, "pct")}</TableCell>

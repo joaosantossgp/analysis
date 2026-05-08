@@ -6,7 +6,7 @@ import { HomeDesktopLoader } from "@/components/home/home-desktop-loader";
 import { HomeTrustStrip } from "@/components/home/home-trust-strip";
 import { StatsStrip } from "@/components/home/stats-strip";
 import { PageShell } from "@/components/shared/design-system-recipes";
-import { fetchCompanies, fetchEmDestaqueCompanies } from "@/lib/api";
+import { fetchCompanies, fetchCompanyFilters, fetchEmDestaqueCompanies } from "@/lib/api";
 import { isDesktopServerMode } from "@/lib/desktop-mode";
 
 // Keep at 300 to match the perf baseline.
@@ -18,10 +18,11 @@ export default async function HomePage() {
     return <HomeDesktopLoader />;
   }
 
-  const [destaqueResult, statsResult] = await Promise.allSettled([
+  const [destaqueResult, statsResult, filtersResult] = await Promise.allSettled([
     fetchEmDestaqueCompanies(),
     // Minimal fetch only for the total company count used by StatsStrip / HomeTrustStrip
     fetchCompanies({ page: 1, pageSize: 1 }),
+    fetchCompanyFilters(),
   ]);
 
   const destaqueCompanies =
@@ -31,6 +32,8 @@ export default async function HomePage() {
     statsResult.status === "fulfilled"
       ? (statsResult.value?.pagination.total_items ?? null)
       : null;
+  const gicsSectors =
+    filtersResult.status === "fulfilled" ? filtersResult.value.sectors : [];
 
   return (
     <PageShell density="relaxed" className="flex flex-col items-center gap-20 pb-24">
@@ -49,9 +52,9 @@ export default async function HomePage() {
       {/* Discovery Section */}
       <DiscoverySectionLazy
         destaqueCompanies={destaqueCompanies}
+        gicsSectors={gicsSectors}
       />
 
-      {/* Compare CTA */}
       <CtaSection />
     </PageShell>
   );

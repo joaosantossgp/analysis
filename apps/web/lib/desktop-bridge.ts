@@ -42,7 +42,6 @@ declare global {
     };
   }
 }
-
 interface PywebviewApi {
   ping(params?: Record<string, unknown>): Promise<{ pong: boolean; ts: number }>;
   get_companies(params: Record<string, unknown>): Promise<unknown>;
@@ -56,9 +55,7 @@ interface PywebviewApi {
   get_company_kpis(params: Record<string, unknown>): Promise<unknown>;
   get_company_statement(params: Record<string, unknown>): Promise<unknown>;
   download_company_excel(params: Record<string, unknown>): Promise<unknown>;
-  download_companies_excel_batch(params: Record<string, unknown>): Promise<unknown>;
   save_company_excel(params: Record<string, unknown>): Promise<unknown>;
-  save_companies_excel_batch(params: Record<string, unknown>): Promise<unknown>;
   get_sectors(params?: Record<string, unknown>): Promise<unknown>;
   get_sector_detail(params: Record<string, unknown>): Promise<unknown>;
   get_health(params?: Record<string, unknown>): Promise<unknown>;
@@ -334,24 +331,6 @@ export async function bridgeSaveCompanyExcel(
 ): Promise<BridgeSavedFile> {
   return callBridge<BridgeSavedFile>("save_company_excel", {
     cd_cvm: cdCvm,
-    reveal: options?.reveal ?? true,
-  });
-}
-
-export async function bridgeDownloadCompaniesExcelBatch(
-  ids: number[],
-): Promise<BridgeBinaryDownload> {
-  return callBridge<BridgeBinaryDownload>("download_companies_excel_batch", {
-    ids,
-  });
-}
-
-export async function bridgeSaveCompaniesExcelBatch(
-  ids: number[],
-  options?: { reveal?: boolean },
-): Promise<BridgeSavedFile> {
-  return callBridge<BridgeSavedFile>("save_companies_excel_batch", {
-    ids,
     reveal: options?.reveal ?? true,
   });
 }

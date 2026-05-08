@@ -67,19 +67,19 @@ test("detalhe sem historico vira experiencia guiada de pre-refresh", async ({ pa
   });
 
   await expect(
-    page.getByText(/esta empresa ainda depende da primeira materializacao/i),
+    page.getByText(/No historical data available yet/i),
   ).toBeVisible();
   await expect(
-    page.getByText(/o que destrava esta pagina/i),
+    page.getByText(/No financial data available yet/i),
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: /atualizar leitura da cvm/i }),
   ).toBeVisible();
 });
 
-test("header mobile preserva navegacao no compare", async ({ page }) => {
+test("header mobile preserva navegacao principal", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/comparar");
+  await page.goto("/setores");
 
   const menuButton = page.getByRole("button", { name: /abrir menu/i });
   await expect(menuButton).toBeVisible();
@@ -87,5 +87,6 @@ test("header mobile preserva navegacao no compare", async ({ page }) => {
 
   const mobileNav = page.locator("#mobile-site-nav");
   await expect(mobileNav.getByRole("link", { name: /^empresas$/i })).toBeVisible();
-  await expect(mobileNav.getByRole("link", { name: /^comparar$/i })).toBeVisible();
+  await expect(mobileNav.getByRole("link", { name: /^setores$/i })).toBeVisible();
+  await expect(mobileNav.getByRole("link", { name: /^comparar$/i })).toHaveCount(0);
 });

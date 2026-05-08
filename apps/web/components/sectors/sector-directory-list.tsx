@@ -60,8 +60,25 @@ export function SectorDirectoryList({ items }: SectorDirectoryListProps) {
                   </InfoChip>
                 </div>
                 <p className="text-sm leading-7 text-muted-foreground">
-                  Snapshot agregado do ano mais recente disponivel para o setor.
+                  Snapshot GICS do ano mais recente disponivel.
                 </p>
+                {item.sub_industries.length ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {item.sub_industries.slice(0, 3).map((subIndustry) => (
+                      <span
+                        key={subIndustry}
+                        className="rounded-full border border-border/55 bg-muted/35 px-2.5 py-1 text-xs text-muted-foreground"
+                      >
+                        {subIndustry}
+                      </span>
+                    ))}
+                    {item.sub_industries.length > 3 ? (
+                      <span className="rounded-full border border-border/55 bg-muted/35 px-2.5 py-1 text-xs text-muted-foreground">
+                        +{item.sub_industries.length - 3}
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
 
               <div className="flex size-11 shrink-0 items-center justify-center rounded-full border border-border/70 bg-muted/45 text-muted-foreground">

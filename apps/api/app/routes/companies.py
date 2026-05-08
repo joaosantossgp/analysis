@@ -7,7 +7,6 @@ from apps.api.app.dependencies import (
     InvalidRequestError,
     ServiceUnavailableError,
     apply_cache_headers,
-    company_ids_dependency,
     coerce_company,
     ensure_api_ready,
     get_read_service,
@@ -145,32 +144,6 @@ def list_em_destaque_companies(
     apply_cache_headers(response, COMPANY_DESTAQUE_CACHE_CONTROL)
     page_dto = service.get_em_destaque_companies(limit=limit)
     return present_company_directory_page(page_dto)
-
-
-@router.get(
-    "/companies/export/excel-batch",
-    summary="Retorna um arquivo ZIP com um workbook Excel por empresa selecionada.",
-)
-def export_companies_excel_batch(
-    request: Request,
-    ids: list[int] = Depends(company_ids_dependency),
-    service: CVMReadService = Depends(get_read_service),
-) -> Response:
-    ensure_api_ready(get_settings(request))
-    for cd_cvm in ids:
-        coerce_company(cd_cvm, service)
-    try:
-        filename, payload = service.build_companies_excel_batch_export(ids)
-    except ValueError as exc:
-        raise InvalidRequestError(str(exc)) from exc
-
-    return Response(
-        content=payload,
-        media_type="application/zip",
-        headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
-        },
-    )
 
 
 @router.post(

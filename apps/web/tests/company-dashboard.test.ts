@@ -150,10 +150,9 @@ test("buildCompanyDashboardModel returns chart, cards and table models from annu
   );
 });
 
-test("buildCompanyHeroModel keeps compare and sector links aligned with selected years", () => {
+test("buildCompanyHeroModel keeps sector link aligned with selected years", () => {
   const hero = buildCompanyHeroModel(buildCompanyInfo(), [2023, 2024]);
 
   assert.equal(hero.initials, "PB");
-  assert.match(hero.compareHref, /\/comparar\?ids=9512&anos=2023%2C2024/);
   assert.equal(hero.sectorHref, "/setores/energia?ano=2024");
 });

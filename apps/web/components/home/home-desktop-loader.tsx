@@ -12,6 +12,7 @@ import { PageShell } from "@/components/shared/design-system-recipes";
 import { useDesktopBridgeReady } from "@/components/shared/use-desktop-bridge-ready";
 import {
   bridgeFetchCompanies,
+  bridgeFetchCompanyFilters,
   bridgeFetchEmDestaque,
 } from "@/lib/desktop-bridge";
 
@@ -21,6 +22,9 @@ export function HomeDesktopLoader() {
     Awaited<ReturnType<typeof bridgeFetchEmDestaque>>["items"]
   >([]);
   const [totalCompanies, setTotalCompanies] = useState<number | null>(null);
+  const [gicsSectors, setGicsSectors] = useState<
+    Awaited<ReturnType<typeof bridgeFetchCompanyFilters>>["sectors"]
+  >([]);
 
   useEffect(() => {
     if (bridgeReady !== "ready") return;
@@ -30,9 +34,10 @@ export function HomeDesktopLoader() {
     async function load() {
       if (cancelled) return;
 
-      const [destaqueResult, statsResult] = await Promise.allSettled([
+      const [destaqueResult, statsResult, filtersResult] = await Promise.allSettled([
         bridgeFetchEmDestaque(),
         bridgeFetchCompanies({ page: 1, pageSize: 1 }),
+        bridgeFetchCompanyFilters(),
       ]);
 
       if (cancelled) return;
@@ -44,6 +49,9 @@ export function HomeDesktopLoader() {
         statsResult.status === "fulfilled"
           ? (statsResult.value.pagination.total_items ?? null)
           : null,
+      );
+      setGicsSectors(
+        filtersResult.status === "fulfilled" ? filtersResult.value.sectors : [],
       );
     }
 
@@ -62,6 +70,7 @@ export function HomeDesktopLoader() {
       <BentoFeatures />
       <DiscoverySectionLazy
         destaqueCompanies={destaqueCompanies}
+        gicsSectors={gicsSectors}
       />
       <CtaSection />
     </PageShell>

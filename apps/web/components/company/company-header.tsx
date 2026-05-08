@@ -98,15 +98,6 @@ export function CompanyHeader({ company, selectedYears }: CompanyHeaderProps) {
                 Setor indisponível
               </Button>
             )}
-            <Link
-              href={hero.compareHref}
-              className={cn(
-                buttonVariants({ variant: "outline", size: "sm" }),
-                "rounded-full px-4",
-              )}
-            >
-              Comparar
-            </Link>
           </div>
         </div>
       </div>

@@ -6,7 +6,6 @@ const SITEMAP = [
     links: [
       { label: "Home", href: "/" },
       { label: "Empresas", href: "/empresas" },
-      { label: "Comparar", href: "/comparar" },
       { label: "Setores", href: "/setores" },
     ],
   },
@@ -48,7 +47,7 @@ export function SiteFooter() {
             </p>
             <p className="mt-2 text-sm leading-7 text-muted-foreground">
               V2 web como camada read-only sobre a API estabilizada. Fluxos de
-              comparacao e leitura setorial ja estao ativos, com KPIs e macro
+              empresas e leitura setorial GICS ja estao ativos, com KPIs e macro
               entrando nas proximas fases.
             </p>
           </div>

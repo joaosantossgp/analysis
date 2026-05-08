@@ -94,37 +94,10 @@ Notas de contrato:
 
 ---
 
-### PG-04 - `/comparar` (Compare) `live`
+### PG-04 - `/comparar` (removida)
 
-**Objetivo**: comparacao lado a lado entre ao menos 2 empresas com base em KPIs.
-
-**Status**: rota entregue e integrada na navegacao principal. O fluxo cobre
-estado inicial, deep-link por `ids`/`anos`, periodo em comum, fallback para
-ausencia de interseccao anual e erro parcial sem derrubar a tela.
-
-**Nao requer novos endpoints** - agrega chamadas existentes em paralelo.
-
-**Endpoints consumidos**:
-
-| Endpoint | Params | Para que serve |
-|---|---|---|
-| `GET /companies` | `page=1&page_size=8` | Sugestoes rapidas de empresas no seletor |
-| `GET /companies/{cd_cvm}` | - | Metadados de cada empresa selecionada (paralelo) |
-| `GET /companies/{cd_cvm}/years` | - | Anos anuais disponiveis por empresa (paralelo) |
-| `GET /companies/{cd_cvm}/kpis` | `years=<interseccao>` | KPI bundles por empresa (paralelo) |
-| `GET /companies/export/excel-batch` | `ids=cd_cvm1,cd_cvm2,...` | Download do lote `.zip` com um workbook `.xlsx` por empresa selecionada |
-
-**Query params publicos da rota**: `?ids=cd_cvm1,cd_cvm2,...&anos=2022,2023`
-
-Notas de contrato:
-- a interseccao de anos do comparar usa apenas anos anuais exportaveis
-- trimestre isolado mais recente nao desloca `referenceYear`
-
-**Arquivos relevantes**:
-- `apps/web/app/comparar/page.tsx` - page component
-- `apps/web/lib/compare-page-data.ts` - orquestracao das chamadas paralelas
-- `apps/web/lib/compare-utils.ts` - helpers de interseccao de anos e montagem de linhas
-- `apps/web/components/compare/` - CompareSelector, CompareKpiTable, CompareTracker
+**Status**: removida da navegacao e do app page em favor dos fluxos de empresas
+e setores GICS.
 
 ---
 
@@ -262,16 +235,15 @@ de produto. Nao consome endpoints de API.
 | Endpoint | Rotas que consomem |
 |---|---|
 | `GET /health` | `/` |
-| `GET /companies` | `/`, `/empresas`, `/comparar` |
+| `GET /companies` | `/`, `/empresas` |
 | `GET /companies/suggestions` | `/` |
 | `GET /companies/filters` | `/empresas` |
-| `GET /companies/{cd_cvm}` | `/empresas/[cd_cvm]`, `/comparar` |
-| `GET /companies/{cd_cvm}/years` | `/empresas/[cd_cvm]`, `/comparar` |
+| `GET /companies/{cd_cvm}` | `/empresas/[cd_cvm]` |
+| `GET /companies/{cd_cvm}/years` | `/empresas/[cd_cvm]` |
 | `GET /companies/{cd_cvm}/statements` | `/empresas/[cd_cvm]` |
-| `GET /companies/{cd_cvm}/kpis` | `/empresas/[cd_cvm]`, `/comparar` |
+| `GET /companies/{cd_cvm}/kpis` | `/empresas/[cd_cvm]` |
 | `GET /companies/{cd_cvm}/export/excel` | `/empresas/[cd_cvm]` |
 | `POST /companies/{cd_cvm}/request-refresh` | `/empresas/[cd_cvm]` |
-| `GET /companies/export/excel-batch` | `/comparar` |
 | `GET /sectors` | `/setores` |
 | `GET /sectors/{slug}` | `/setores/[slug]` |
 | `GET /refresh-status` | `/empresas/[cd_cvm]` |

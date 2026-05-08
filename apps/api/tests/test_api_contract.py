@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import io
 import logging
-import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -246,10 +245,38 @@ def test_companies_filters_returns_canonical_sector_options(client: TestClient):
     assert response.status_code == 200
     payload = response.json()
     assert payload["sectors"] == [
-        {"sector_name": "Energia", "sector_slug": "energia", "company_count": 1},
-        {"sector_name": "Financeiro", "sector_slug": "financeiro", "company_count": 1},
-        {"sector_name": "Materiais Basicos", "sector_slug": "materiais-basicos", "company_count": 1},
-        {"sector_name": "Saneamento", "sector_slug": "saneamento", "company_count": 1},
+        {
+            "sector_name": "Energy",
+            "sector_slug": "energy",
+            "company_count": 1,
+            "gics_sector": "Energy",
+            "gics_sector_slug": "energy",
+            "gics_sub_industry": None,
+        },
+        {
+            "sector_name": "Financials",
+            "sector_slug": "financials",
+            "company_count": 1,
+            "gics_sector": "Financials",
+            "gics_sector_slug": "financials",
+            "gics_sub_industry": None,
+        },
+        {
+            "sector_name": "Materials",
+            "sector_slug": "materials",
+            "company_count": 1,
+            "gics_sector": "Materials",
+            "gics_sector_slug": "materials",
+            "gics_sub_industry": None,
+        },
+        {
+            "sector_name": "Utilities",
+            "sector_slug": "utilities",
+            "company_count": 1,
+            "gics_sector": "Utilities",
+            "gics_sector_slug": "utilities",
+            "gics_sub_industry": None,
+        },
     ]
 
 
@@ -382,14 +409,16 @@ def test_sectors_returns_directory_with_latest_year_and_snapshot(client: TestCli
     assert response.status_code == 200
     payload = response.json()
     assert [item["sector_name"] for item in payload["items"]] == [
-        "Energia",
-        "Materiais Basicos",
-        "Saneamento",
+        "Energy",
+        "Materials",
+        "Financials",
+        "Utilities",
     ]
     energia = payload["items"][0]
-    assert energia["sector_slug"] == "energia"
+    assert energia["sector_slug"] == "energy"
     assert energia["company_count"] == 1
     assert energia["latest_year"] == 2024
+    assert energia["sub_industries"] == ["Integrated Oil & Gas"]
     assert energia["snapshot"]["roe"] == pytest.approx(180.0 / 380.0)
     assert energia["snapshot"]["mg_ebit"] == pytest.approx(240.0 / 1100.0)
     assert energia["snapshot"]["mg_liq"] == pytest.approx(180.0 / 1100.0)
@@ -400,7 +429,7 @@ def test_sectors_directory_keeps_null_snapshot_metrics_when_accounts_are_partial
 
     assert response.status_code == 200
     payload = response.json()
-    materiais = next(item for item in payload["items"] if item["sector_slug"] == "materiais-basicos")
+    materiais = next(item for item in payload["items"] if item["sector_slug"] == "materials")
     assert materiais["latest_year"] == 2024
     assert materiais["snapshot"] == {"roe": None, "mg_ebit": None, "mg_liq": None}
 
@@ -434,6 +463,7 @@ def test_sector_detail_returns_default_latest_year_and_yearly_overview(client: T
             "cd_cvm": 9512,
             "company_name": "PETROBRAS",
             "ticker_b3": "PETR4",
+            "gics_sub_industry": "Integrated Oil & Gas",
             "roe": pytest.approx(180.0 / 380.0),
             "mg_ebit": pytest.approx(240.0 / 1100.0),
             "mg_liq": pytest.approx(180.0 / 1100.0),
@@ -461,6 +491,7 @@ def test_sector_detail_keeps_company_row_with_null_metrics_when_accounts_are_par
             "cd_cvm": 11223,
             "company_name": "SABESP",
             "ticker_b3": "SBSP3",
+            "gics_sub_industry": "Electric Utilities",
             "roe": None,
             "mg_ebit": None,
             "mg_liq": None,
@@ -918,46 +949,6 @@ def test_company_excel_export_returns_422_when_company_has_no_exportable_years(c
 
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "invalid_request"
-
-
-def test_company_excel_batch_export_returns_zip_with_one_workbook_per_company(client: TestClient):
-    response = client.get("/companies/export/excel-batch", params={"ids": "9512,4170"})
-
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("application/zip")
-    assert 'filename="comparar_excel_lote.zip"' in response.headers["content-disposition"]
-
-    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
-        names = sorted(archive.namelist())
-        assert len(names) == 2
-        assert names[0].startswith("PETR4_")
-        assert names[1].startswith("VALE3_")
-        assert names[0].endswith(".xlsx")
-        assert names[1].endswith(".xlsx")
-
-        workbook = openpyxl.load_workbook(io.BytesIO(archive.read(names[0])))
-        assert "CAPA" in workbook.sheetnames
-
-
-def test_company_excel_batch_export_rejects_duplicate_ids(client: TestClient):
-    response = client.get("/companies/export/excel-batch", params={"ids": "9512,9512"})
-
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "invalid_request"
-
-
-def test_company_excel_batch_export_rejects_single_company(client: TestClient):
-    response = client.get("/companies/export/excel-batch", params={"ids": "9512"})
-
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "invalid_request"
-
-
-def test_company_excel_batch_export_returns_404_for_unknown_company(client: TestClient):
-    response = client.get("/companies/export/excel-batch", params={"ids": "9512,999999"})
-
-    assert response.status_code == 404
-    assert response.json()["error"]["code"] == "not_found"
 
 
 def test_company_statement_returns_matrix(client: TestClient):

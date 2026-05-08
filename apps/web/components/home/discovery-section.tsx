@@ -4,9 +4,9 @@ import Link from "next/link";
 import { TrendingUpIcon } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
-import type { CompanyDirectoryItem } from "@/lib/api";
+import type { CompanyDirectoryItem, CompanySectorFilter } from "@/lib/api";
 import { getCompanyAvailability } from "@/lib/company-discovery";
-import { SECTOR_COLOR, getSectorColor, getSectorSlugFromName } from "@/lib/constants";
+import { getSectorColor } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
 type Tab = "destaque" | "setores";
@@ -18,6 +18,7 @@ const TABS: { id: Tab; label: string }[] = [
 
 type DiscoverySectionProps = {
   destaqueCompanies: CompanyDirectoryItem[];
+  gicsSectors: CompanySectorFilter[];
   initialTab?: Tab;
 };
 
@@ -106,6 +107,7 @@ function DestaquCard({ co, rank }: { co: CompanyDirectoryItem; rank: number }) {
 
 export function DiscoverySection({
   destaqueCompanies,
+  gicsSectors,
   initialTab,
 }: DiscoverySectionProps) {
   const router = useRouter();
@@ -133,8 +135,8 @@ export function DiscoverySection({
             Por onde comecar
           </h2>
           <p className="mt-2 max-w-2xl text-sm leading-7 text-muted-foreground">
-            As maiores da B3 em market cap para comecar rapido, ou as mais
-            visitadas pela comunidade para seguir o que esta em foco.
+            Comece pelas empresas em foco ou navegue pelos setores GICS
+            disponiveis no cadastro da aplicacao.
           </p>
         </div>
         <div className="inline-flex items-center gap-0.5 rounded-full border border-border bg-muted p-1">
@@ -178,12 +180,12 @@ export function DiscoverySection({
 
       {activeTab === "setores" ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-          {Object.entries(SECTOR_COLOR).map(([sector, color]) => {
-            const sectorSlug = getSectorSlugFromName(sector);
+          {gicsSectors.map((sector) => {
+            const color = getSectorColor(sector.gics_sector ?? sector.sector_name);
             return (
             <Link
-              key={sector}
-              href={`/empresas?setor=${encodeURIComponent(sectorSlug ?? sector)}`}
+              key={sector.sector_slug}
+              href={`/empresas?setor=${encodeURIComponent(sector.sector_slug)}`}
               className="group flex items-center gap-3 rounded-[1rem] border border-border/60 bg-card px-4 py-3.5 transition-all duration-150 hover:-translate-y-0.5 hover:border-primary/20 hover:shadow-sm"
             >
               <div
@@ -196,13 +198,21 @@ export function DiscoverySection({
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-foreground leading-tight">
-                  {sector}
+                  {sector.sector_name}
                 </p>
-                <p className="mt-0.5 text-xs text-muted-foreground">Ver empresas</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {sector.company_count} empresas
+                  {sector.gics_sub_industry ? ` - ${sector.gics_sub_industry}` : ""}
+                </p>
               </div>
             </Link>
             );
           })}
+          {gicsSectors.length === 0 ? (
+            <p className="col-span-full rounded-[1rem] border border-border/60 bg-card px-4 py-3 text-sm text-muted-foreground">
+              Nenhum setor GICS disponivel no momento.
+            </p>
+          ) : null}
         </div>
       ) : null}
     </section>

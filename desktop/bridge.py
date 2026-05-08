@@ -265,47 +265,6 @@ class CVMBridge:
         except Exception as exc:
             return {"error": str(exc)}
 
-    def download_companies_excel_batch(self, params=None) -> dict:
-        p = params or {}
-        try:
-            ids_raw = p.get("ids", [])
-            if isinstance(ids_raw, str):
-                ids = [int(part.strip()) for part in ids_raw.split(",") if part.strip()]
-            else:
-                ids = [int(item) for item in ids_raw]
-            if not ids:
-                return {"error": "Nenhuma empresa valida foi informada para o lote Excel."}
-            filename, payload = self._svc().build_companies_excel_batch_export(ids)
-            return self._sanitize_for_json({
-                "filename": filename,
-                "mime_type": "application/zip",
-                "content_base64": base64.b64encode(payload).decode("ascii"),
-            })
-        except Exception as exc:
-            return {"error": str(exc)}
-
-    def save_companies_excel_batch(self, params=None) -> dict:
-        p = params or {}
-        try:
-            ids_raw = p.get("ids", [])
-            if isinstance(ids_raw, str):
-                ids = [int(part.strip()) for part in ids_raw.split(",") if part.strip()]
-            else:
-                ids = [int(item) for item in ids_raw]
-            if not ids:
-                return {"error": "Nenhuma empresa valida foi informada para o lote Excel."}
-            filename, payload = self._svc().build_companies_excel_batch_export(ids)
-            saved_path = self._save_bytes_to_downloads(filename, payload)
-            reveal = bool(p.get("reveal", True))
-            revealed = self._reveal_in_file_explorer(saved_path) if reveal else False
-            return self._sanitize_for_json({
-                "filename": filename,
-                "saved_path": saved_path,
-                "revealed": revealed,
-            })
-        except Exception as exc:
-            return {"error": str(exc)}
-
     @staticmethod
     def _save_bytes_to_downloads(filename: str, payload: bytes) -> str:
         downloads_dir = Path.home() / "Downloads"
