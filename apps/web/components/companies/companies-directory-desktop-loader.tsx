@@ -6,10 +6,10 @@ import {
   CompaniesDirectoryLoadingState,
   CompaniesDirectoryPageContent,
 } from "@/components/companies/companies-directory-client";
+import { useDesktopBridgeReady } from "@/components/shared/use-desktop-bridge-ready";
 import type { CompaniesDirectoryQueryState } from "@/lib/companies-directory-query";
 import type { CompaniesPageData } from "@/lib/companies-page-data";
 import {
-  isDesktopMode,
   bridgeFetchCompanies,
   bridgeFetchCompanyFilters,
   bridgeFetchCompanySuggestions,
@@ -19,9 +19,6 @@ type CompaniesDirectoryDesktopLoaderProps = Pick<
   CompaniesDirectoryQueryState,
   "page" | "pageSize" | "search" | "sector" | "viewMode"
 >;
-
-const BRIDGE_READY_MAX_ATTEMPTS = 60;
-const BRIDGE_READY_RETRY_MS = 100;
 
 function emptyDesktopData(error: string): CompaniesPageData {
   return {
@@ -48,34 +45,19 @@ export function CompaniesDirectoryDesktopLoader({
   viewMode,
 }: CompaniesDirectoryDesktopLoaderProps) {
   const loadKey = `${search}|${sector ?? ""}|${page}|${pageSize}`;
+  const bridgeReady = useDesktopBridgeReady(loadKey);
   const [loadState, setLoadState] = useState<{
     key: string;
     data: CompaniesPageData;
   } | null>(null);
 
   useEffect(() => {
+    if (bridgeReady !== "ready") return;
+
     let cancelled = false;
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    let attempts = 0;
 
     async function loadFromBridge() {
       if (cancelled) return;
-
-      if (!isDesktopMode()) {
-        attempts += 1;
-        if (attempts <= BRIDGE_READY_MAX_ATTEMPTS) {
-          timeoutId = setTimeout(loadFromBridge, BRIDGE_READY_RETRY_MS);
-          return;
-        }
-
-        setLoadState({
-          key: loadKey,
-          data: emptyDesktopData(
-            "Bridge local do desktop indisponivel. Reabra o aplicativo para carregar os dados locais.",
-          ),
-        });
-        return;
-      }
 
       const shouldFetchFallbackSuggestions =
         search.trim().length >= 2 && !sector;
@@ -121,19 +103,28 @@ export function CompaniesDirectoryDesktopLoader({
 
     return () => {
       cancelled = true;
-      if (timeoutId !== undefined) {
-        clearTimeout(timeoutId);
-      }
     };
-  }, [loadKey, page, pageSize, search, sector]);
+  }, [bridgeReady, loadKey, page, pageSize, search, sector]);
 
-  if (!loadState || loadState.key !== loadKey) {
+  const timeoutState =
+    bridgeReady === "timeout"
+      ? {
+          key: loadKey,
+          data: emptyDesktopData(
+            "Bridge local do desktop indisponivel. Reabra o aplicativo para carregar os dados locais.",
+          ),
+        }
+      : null;
+  const resolvedState =
+    loadState?.key === loadKey ? loadState : timeoutState;
+
+  if (!resolvedState) {
     return <CompaniesDirectoryLoadingState />;
   }
 
   return (
     <CompaniesDirectoryPageContent
-      data={loadState.data}
+      data={resolvedState.data}
       page={page}
       pageSize={pageSize}
       search={search}

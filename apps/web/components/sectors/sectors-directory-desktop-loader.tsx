@@ -11,15 +11,13 @@ import {
   SectionHeading,
   SurfaceCard,
 } from "@/components/shared/design-system-recipes";
+import { useDesktopBridgeReady } from "@/components/shared/use-desktop-bridge-ready";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
 import type { SectorDirectory } from "@/lib/api";
-import { bridgeFetchSectors, isDesktopMode } from "@/lib/desktop-bridge";
+import { bridgeFetchSectors } from "@/lib/desktop-bridge";
 import { formatCompactInteger } from "@/lib/formatters";
 import { cn } from "@/lib/utils";
-
-const BRIDGE_READY_MAX_ATTEMPTS = 60;
-const BRIDGE_READY_RETRY_MS = 100;
 
 function errorMessage(error: unknown): string {
   return error instanceof Error
@@ -30,26 +28,15 @@ function errorMessage(error: unknown): string {
 export function SectorsDirectoryDesktopLoader() {
   const [directory, setDirectory] = useState<SectorDirectory | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const bridgeReady = useDesktopBridgeReady("sectors-directory");
 
   useEffect(() => {
+    if (bridgeReady !== "ready") return;
+
     let cancelled = false;
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    let attempts = 0;
 
     async function load() {
       if (cancelled) return;
-
-      if (!isDesktopMode()) {
-        attempts += 1;
-        if (attempts <= BRIDGE_READY_MAX_ATTEMPTS) {
-          timeoutId = setTimeout(load, BRIDGE_READY_RETRY_MS);
-          return;
-        }
-        setError(
-          "Bridge local do desktop indisponivel. Reabra o aplicativo para carregar os dados locais.",
-        );
-        return;
-      }
 
       try {
         const data = await bridgeFetchSectors();
@@ -69,11 +56,15 @@ export function SectorsDirectoryDesktopLoader() {
 
     return () => {
       cancelled = true;
-      if (timeoutId !== undefined) clearTimeout(timeoutId);
     };
-  }, []);
+  }, [bridgeReady]);
 
-  if (error && !directory) {
+  const bridgeError =
+    bridgeReady === "timeout"
+      ? "Bridge local do desktop indisponivel. Reabra o aplicativo para carregar os dados locais."
+      : error;
+
+  if (bridgeError && !directory) {
     return (
       <PageShell density="relaxed">
         <SurfaceCard tone="hero" padding="hero" className="space-y-6">
@@ -85,7 +76,7 @@ export function SectorsDirectoryDesktopLoader() {
           />
           <Alert variant="destructive-soft">
             <AlertTitle>Falha controlada do hub setorial</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
+            <AlertDescription>{bridgeError}</AlertDescription>
           </Alert>
           <div className="flex flex-wrap gap-3">
             <Link

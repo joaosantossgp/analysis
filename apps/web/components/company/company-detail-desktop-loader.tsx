@@ -15,6 +15,7 @@ import {
   SectionHeading,
   SurfaceCard,
 } from "@/components/shared/design-system-recipes";
+import { useDesktopBridgeReady } from "@/components/shared/use-desktop-bridge-ready";
 import { buttonVariants } from "@/components/ui/button";
 import { getReadableCompanyYears } from "@/lib/company-detail-handoff";
 import type { CompanyInfo, KPIBundle, StatementMatrix } from "@/lib/api";
@@ -23,7 +24,6 @@ import {
   bridgeFetchCompanyKpis,
   bridgeFetchCompanyStatement,
   bridgeFetchCompanyYears,
-  isDesktopMode,
 } from "@/lib/desktop-bridge";
 import {
   coerceDetailTab,
@@ -37,9 +37,6 @@ type CompanyDetailDesktopLoaderProps = {
   cdCvm: number;
   searchParams: Record<string, string | string[] | undefined>;
 };
-
-const BRIDGE_READY_MAX_ATTEMPTS = 60;
-const BRIDGE_READY_RETRY_MS = 100;
 
 function errorMessage(error: unknown): string {
   return error instanceof Error
@@ -102,6 +99,7 @@ export function CompanyDetailDesktopLoader({
   const stmt = getFirstParam(searchParams.stmt);
   const anos = getFirstParam(searchParams.anos);
   const loadKey = `${cdCvm}|${aba ?? ""}|${stmt ?? ""}|${anos ?? ""}`;
+  const bridgeReady = useDesktopBridgeReady(loadKey);
 
   const [state, setState] = useState<{
     key: string;
@@ -124,27 +122,12 @@ export function CompanyDetailDesktopLoader({
   } | null>(null);
 
   useEffect(() => {
+    if (bridgeReady !== "ready") return;
+
     let cancelled = false;
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    let attempts = 0;
 
     async function run() {
       if (cancelled) return;
-
-      if (!isDesktopMode()) {
-        attempts += 1;
-        if (attempts <= BRIDGE_READY_MAX_ATTEMPTS) {
-          timeoutId = setTimeout(run, BRIDGE_READY_RETRY_MS);
-          return;
-        }
-        setState({
-          key: loadKey,
-          phase: "bridge_timeout",
-          errorMessage:
-            "Bridge local do desktop indisponivel. Reabra o aplicativo para carregar os dados locais.",
-        });
-        return;
-      }
 
       setState({ key: loadKey, phase: "loading" });
 
@@ -231,9 +214,14 @@ export function CompanyDetailDesktopLoader({
 
     return () => {
       cancelled = true;
-      if (timeoutId !== undefined) clearTimeout(timeoutId);
     };
-  }, [loadKey, cdCvm, aba, stmt, anos]);
+  }, [bridgeReady, loadKey, cdCvm, aba, stmt, anos]);
+
+  if (bridgeReady === "timeout" && (!state || state.key !== loadKey)) {
+    return (
+      <CompanyDetailErrorPage message="Bridge local do desktop indisponivel. Reabra o aplicativo para carregar os dados locais." />
+    );
+  }
 
   if (!state || state.key !== loadKey) {
     return <CompanyDetailLoadingState />;

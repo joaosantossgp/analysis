@@ -8,6 +8,7 @@ import {
   SectionHeading,
   SurfaceCard,
 } from "@/components/shared/design-system-recipes";
+import { useDesktopBridgeReady } from "@/components/shared/use-desktop-bridge-ready";
 import type { CompanySuggestionItem } from "@/lib/api";
 import {
   EMPTY_COMPARE_PAGE_DATA,
@@ -19,7 +20,6 @@ import {
   bridgeFetchCompanyKpis,
   bridgeFetchCompanySuggestions,
   bridgeFetchCompanyYears,
-  isDesktopMode,
 } from "@/lib/desktop-bridge";
 import { getSectorNameFromSlug } from "@/lib/constants";
 
@@ -27,9 +27,6 @@ type CompareDesktopLoaderProps = {
   ids: string | undefined;
   years: string | undefined;
 };
-
-const BRIDGE_READY_MAX_ATTEMPTS = 60;
-const BRIDGE_READY_RETRY_MS = 100;
 
 function toQuickOption(item: CompanySuggestionItem): CompareCompanyOption {
   return {
@@ -44,6 +41,7 @@ const EMPTY_QUICK: CompareCompanyOption[] = [];
 
 export function CompareDesktopLoader({ ids, years }: CompareDesktopLoaderProps) {
   const loadKey = `${ids ?? ""}|${years ?? ""}`;
+  const bridgeReady = useDesktopBridgeReady(loadKey);
   const [state, setState] = useState<{
     key: string;
     ready: boolean;
@@ -53,28 +51,12 @@ export function CompareDesktopLoader({ ids, years }: CompareDesktopLoaderProps) 
   } | null>(null);
 
   useEffect(() => {
+    if (bridgeReady !== "ready") return;
+
     let cancelled = false;
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    let attempts = 0;
 
     async function run() {
       if (cancelled) return;
-
-      if (!isDesktopMode()) {
-        attempts += 1;
-        if (attempts <= BRIDGE_READY_MAX_ATTEMPTS) {
-          timeoutId = setTimeout(run, BRIDGE_READY_RETRY_MS);
-          return;
-        }
-        setState({
-          key: loadKey,
-          ready: true,
-          compareData: null,
-          quickCompanies: EMPTY_QUICK,
-          bridgeTimeout: true,
-        });
-        return;
-      }
 
       try {
         const [compareData, quickPayload] = await Promise.all([
@@ -126,11 +108,23 @@ export function CompareDesktopLoader({ ids, years }: CompareDesktopLoaderProps) 
 
     return () => {
       cancelled = true;
-      if (timeoutId !== undefined) clearTimeout(timeoutId);
     };
-  }, [loadKey, ids, years]);
+  }, [bridgeReady, loadKey, ids, years]);
 
-  if (!state || state.key !== loadKey || !state.ready) {
+  const resolvedState =
+    state?.key === loadKey
+      ? state
+      : bridgeReady === "timeout"
+        ? {
+            key: loadKey,
+            ready: true,
+            compareData: null,
+            quickCompanies: EMPTY_QUICK,
+            bridgeTimeout: true,
+          }
+        : null;
+
+  if (!resolvedState || !resolvedState.ready) {
     return (
       <PageShell density="default">
         <SurfaceCard tone="muted" padding="hero" className="animate-pulse space-y-4">
@@ -141,7 +135,7 @@ export function CompareDesktopLoader({ ids, years }: CompareDesktopLoaderProps) 
     );
   }
 
-  if (state.bridgeTimeout) {
+  if (resolvedState.bridgeTimeout) {
     return (
       <PageShell density="default">
         <SectionHeading
@@ -154,7 +148,7 @@ export function CompareDesktopLoader({ ids, years }: CompareDesktopLoaderProps) 
     );
   }
 
-  if (!state.compareData) {
+  if (!resolvedState.compareData) {
     return (
       <PageShell density="default">
         <SurfaceCard tone="muted" padding="hero" className="animate-pulse space-y-4">
@@ -167,8 +161,8 @@ export function CompareDesktopLoader({ ids, years }: CompareDesktopLoaderProps) 
 
   return (
     <ComparePageView
-      compareData={state.compareData}
-      quickCompanies={state.quickCompanies}
+      compareData={resolvedState.compareData}
+      quickCompanies={resolvedState.quickCompanies}
     />
   );
 }

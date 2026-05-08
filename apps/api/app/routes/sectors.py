@@ -6,6 +6,7 @@ from fastapi.responses import Response
 from apps.api.app.dependencies import (
     InvalidRequestError,
     NotFoundError,
+    apply_cache_headers,
     ensure_api_ready,
     get_read_service,
     get_settings,
@@ -25,14 +26,6 @@ SECTOR_DIRECTORY_CACHE_CONTROL = "public, max-age=3600, stale-while-revalidate=8
 SECTOR_DETAIL_CACHE_CONTROL = "public, max-age=3600, stale-while-revalidate=86400"
 
 
-def _apply_cache_headers(response: Response, cache_control: str) -> None:
-    response.headers["Cache-Control"] = cache_control
-    vary_values = [value.strip() for value in response.headers.get("Vary", "").split(",") if value.strip()]
-    if not any(value.lower() == "origin" for value in vary_values):
-        vary_values.append("Origin")
-    response.headers["Vary"] = ", ".join(vary_values)
-
-
 @router.get(
     "/sectors",
     response_model=SectorDirectoryPayload,
@@ -44,7 +37,7 @@ def list_sectors(
     service: CVMReadService = Depends(get_read_service),
 ) -> SectorDirectoryPayload:
     ensure_api_ready(get_settings(request))
-    _apply_cache_headers(response, SECTOR_DIRECTORY_CACHE_CONTROL)
+    apply_cache_headers(response, SECTOR_DIRECTORY_CACHE_CONTROL)
     return present_sector_directory(service.list_sectors())
 
 
@@ -69,5 +62,5 @@ def get_sector_detail(
     if detail is None:
         raise NotFoundError(f"Setor '{sector_slug}' nao encontrado.")
 
-    _apply_cache_headers(response, SECTOR_DETAIL_CACHE_CONTROL)
+    apply_cache_headers(response, SECTOR_DETAIL_CACHE_CONTROL)
     return present_sector_detail(detail)
