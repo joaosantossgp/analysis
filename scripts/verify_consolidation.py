@@ -3,43 +3,15 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
-from typing import Optional
 
 import pandas as pd
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SCRIPT_DIR.parent
-DEFAULT_XLS_FILE = REPO_ROOT / "output" / "reports" / "PETROBRAS_financials.xlsx"
-LEGACY_XLS_FILE = REPO_ROOT / "output" / "PETROBRAS_financials.xlsx"
-
-
-def resolve_xlsx_path(xlsx_arg: Optional[str]) -> Path:
-    if xlsx_arg:
-        candidate = Path(xlsx_arg)
-        if not candidate.is_absolute():
-            candidate = (Path.cwd() / candidate).resolve()
-        if candidate.exists():
-            return candidate
-        raise FileNotFoundError(f"Arquivo informado em --xlsx nao encontrado: {candidate}")
-
-    if DEFAULT_XLS_FILE.exists():
-        return DEFAULT_XLS_FILE
-    if LEGACY_XLS_FILE.exists():
-        return LEGACY_XLS_FILE
-
-    raise FileNotFoundError(
-        "Nao foi encontrado arquivo padrao. Esperado em "
-        f"{DEFAULT_XLS_FILE} (ou legado {LEGACY_XLS_FILE})."
-    )
+from workbook_paths import add_xlsx_argument, resolve_xlsx_path
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Verify consolidation and disambiguation results")
-    parser.add_argument(
-        "--xlsx",
-        help="Caminho do arquivo XLSX de saida (padrao: output/reports/PETROBRAS_financials.xlsx)",
-    )
+    add_xlsx_argument(parser)
     args = parser.parse_args()
     xls_file = resolve_xlsx_path(args.xlsx)
 
