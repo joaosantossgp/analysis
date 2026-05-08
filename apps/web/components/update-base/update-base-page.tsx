@@ -509,23 +509,83 @@ type UpdateBasePageProps = {
   initialSectors?: CompanySectorFilter[];
 };
 
+function parseUpdateBaseSearchParams(sp: URLSearchParams): {
+  updateScope: UpdateScope;
+  singleCompanyMode: SingleCompanyMode;
+  updateType: UpdateType;
+  singleCvm: string;
+  filterSector: string;
+  filterStatus: string;
+  filterCvmFrom: string;
+  filterCvmTo: string;
+  activeSection: string;
+  jobId: string | null;
+} {
+  const scope = sp.get("scope");
+  const updateScope: UpdateScope =
+    scope === "single_company" || scope === "sector" || scope === "all" ? scope : "all";
+
+  const mode = sp.get("mode");
+  const updateType: UpdateType =
+    mode === "full" || mode === "missing" || mode === "outdated" || mode === "failed" ? mode : "full";
+
+  const sectorParam = sp.get("sector");
+  const filterSector = sectorParam && sectorParam.length > 0 ? sectorParam : "all";
+
+  const statusParam = sp.get("status");
+  const filterStatus = statusParam && statusParam.length > 0 ? statusParam : "all";
+
+  const cvmFrom = sp.get("cvm_from") ?? "";
+  const cvmTo = sp.get("cvm_to") ?? "";
+
+  const singleCvmParam = sp.get("single_cvm") ?? "";
+
+  const singleMode = sp.get("single_mode");
+  const singleCompanyMode: SingleCompanyMode =
+    singleMode === "on_demand" || singleMode === "batch_single" ? singleMode : "on_demand";
+
+  const sectionParam = sp.get("section");
+  const activeSection = sectionParam && sectionParam.length > 0 ? sectionParam : "status";
+
+  const jobParam = sp.get("job_id");
+  const jobId = jobParam && jobParam.length > 0 ? jobParam : null;
+
+  return {
+    updateScope,
+    singleCompanyMode,
+    updateType,
+    singleCvm: singleCvmParam,
+    filterSector,
+    filterStatus,
+    filterCvmFrom: cvmFrom,
+    filterCvmTo: cvmTo,
+    activeSection,
+    jobId,
+  };
+}
+
 export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const urlBoot = useMemo(() => {
+    return parseUpdateBaseSearchParams(new URLSearchParams(searchParams.toString()));
+    // One-shot bootstrap from the initial URL (matches legacy hydration effect).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [appState, setAppState] = useState<AppState>("idle");
-  const [updateScope, setUpdateScope] = useState<UpdateScope>("all");
-  const [singleCompanyMode, setSingleCompanyMode] = useState<SingleCompanyMode>("on_demand");
-  const [updateType, setUpdateType] = useState<UpdateType>("full");
-  const [singleCvm, setSingleCvm] = useState("");
+  const [updateScope, setUpdateScope] = useState<UpdateScope>(urlBoot.updateScope);
+  const [singleCompanyMode, setSingleCompanyMode] = useState<SingleCompanyMode>(urlBoot.singleCompanyMode);
+  const [updateType, setUpdateType] = useState<UpdateType>(urlBoot.updateType);
+  const [singleCvm, setSingleCvm] = useState(urlBoot.singleCvm);
   const [singleCompanyQuery, setSingleCompanyQuery] = useState("");
   const [singleCompanySuggestions, setSingleCompanySuggestions] = useState<CompanySuggestionItem[]>([]);
   const [singleCompanySuggestionState, setSingleCompanySuggestionState] = useState<DataLoadState>("available");
   const [selectedSingleCompany, setSelectedSingleCompany] = useState<CompanySuggestionItem | null>(null);
-  const [filterSector, setFilterSector] = useState("all");
-  const [filterStatus, setFilterStatus] = useState("all");
-  const [filterCvmFrom, setFilterCvmFrom] = useState("");
-  const [filterCvmTo, setFilterCvmTo] = useState("");
+  const [filterSector, setFilterSector] = useState(urlBoot.filterSector);
+  const [filterStatus, setFilterStatus] = useState(urlBoot.filterStatus);
+  const [filterCvmFrom, setFilterCvmFrom] = useState(urlBoot.filterCvmFrom);
+  const [filterCvmTo, setFilterCvmTo] = useState(urlBoot.filterCvmTo);
   const [dispatchError, setDispatchError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [processed, setProcessed] = useState(0);
@@ -535,8 +595,8 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
   const [currentStep, setCurrentStep] = useState("");
   const [elapsed, setElapsed] = useState(0);
   const [logs, setLogs] = useState<LogLine[]>([]);
-  const [activeSection, setActiveSection] = useState("status");
-  const [jobId, setJobId] = useState<string | null>(null);
+  const [activeSection, setActiveSection] = useState(urlBoot.activeSection);
+  const [jobId, setJobId] = useState<string | null>(urlBoot.jobId);
   const [totalFromJob, setTotalFromJob] = useState(0);
   const [baseHealth, setBaseHealth] = useState<Awaited<ReturnType<typeof fetchBaseHealth>> | null>(null);
   const [baseHealthState, setBaseHealthState] = useState<DataLoadState>("loading");
@@ -554,8 +614,13 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
   const lastLogCountRef = useRef(0);
   const lastProgressRef = useRef(0);
   const stalledPollCountRef = useRef(0);
-  const urlHydratedRef = useRef(false);
+  const urlHydratedRef = useRef(true);
   const urlSyncRef = useRef(false);
+
+  const trimmedSingleQuery = singleCompanyQuery.trim();
+  const shouldFetchSuggestions = updateScope === "single_company" && trimmedSingleQuery.length >= 2;
+  const visibleSuggestions = shouldFetchSuggestions ? singleCompanySuggestions : [];
+  const visibleSuggestionState = shouldFetchSuggestions ? singleCompanySuggestionState : "available";
 
   const isCancelling = appState === "cancelling";
   const isCancelled = appState === "cancelled";
@@ -1028,34 +1093,32 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
   }, [initialSectors]);
 
   useEffect(() => {
-    if (updateScope !== "single_company") {
-      setSingleCompanySuggestions([]);
-      setSingleCompanySuggestionState("available");
+    if (!shouldFetchSuggestions) {
       return;
     }
-    const query = singleCompanyQuery.trim();
-    if (query.length < 2) {
-      setSingleCompanySuggestions([]);
-      setSingleCompanySuggestionState("available");
-      return;
-    }
+
     let alive = true;
-    setSingleCompanySuggestionState("loading");
-    void fetchCompanySuggestions(query, 8)
-      .then((payload) => {
+
+    void (async () => {
+      await Promise.resolve();
+      if (!alive) return;
+      setSingleCompanySuggestionState("loading");
+      try {
+        const payload = await fetchCompanySuggestions(trimmedSingleQuery, 8);
         if (!alive) return;
         setSingleCompanySuggestions(payload.items);
         setSingleCompanySuggestionState("available");
-      })
-      .catch(() => {
+      } catch {
         if (!alive) return;
         setSingleCompanySuggestions([]);
         setSingleCompanySuggestionState("unavailable");
-      });
+      }
+    })();
+
     return () => {
       alive = false;
     };
-  }, [singleCompanyQuery, updateScope]);
+  }, [shouldFetchSuggestions, trimmedSingleQuery]);
 
   useEffect(() => {
     let alive = true;
@@ -1077,37 +1140,6 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
   }, []);
 
   useEffect(() => () => clearTimer(), []);
-
-  useEffect(() => {
-    if (urlHydratedRef.current) return;
-    const scope = searchParams.get("scope");
-    const mode = searchParams.get("mode");
-    const sector = searchParams.get("sector");
-    const status = searchParams.get("status");
-    const cvmFrom = searchParams.get("cvm_from");
-    const cvmTo = searchParams.get("cvm_to");
-    const singleCvmParam = searchParams.get("single_cvm");
-    const singleMode = searchParams.get("single_mode");
-    const section = searchParams.get("section");
-    const job = searchParams.get("job_id");
-    if (scope === "single_company" || scope === "sector" || scope === "all") {
-      setUpdateScope(scope);
-    }
-    if (mode === "full" || mode === "missing" || mode === "outdated" || mode === "failed") {
-      setUpdateType(mode);
-    }
-    if (sector) setFilterSector(sector);
-    if (status) setFilterStatus(status);
-    if (cvmFrom) setFilterCvmFrom(cvmFrom);
-    if (cvmTo) setFilterCvmTo(cvmTo);
-    if (singleCvmParam) setSingleCvm(singleCvmParam);
-    if (singleMode === "on_demand" || singleMode === "batch_single") {
-      setSingleCompanyMode(singleMode);
-    }
-    if (section) setActiveSection(section);
-    if (job) setJobId(job);
-    urlHydratedRef.current = true;
-  }, [searchParams]);
 
   useEffect(() => {
     if (!urlHydratedRef.current || urlSyncRef.current) return;
@@ -1435,12 +1467,12 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
                       }}
                       disabled={!canRun}
                     />
-                    {singleCompanySuggestionState === "loading" ? (
+                    {visibleSuggestionState === "loading" ? (
                       <p className="text-xs text-muted-foreground">Buscando sugestoes...</p>
                     ) : null}
-                    {singleCompanySuggestions.length > 0 ? (
+                    {visibleSuggestions.length > 0 ? (
                       <div className="max-h-40 space-y-1 overflow-y-auto rounded-[0.75rem] border border-border/65 bg-background/60 p-2">
-                        {singleCompanySuggestions.map((item) => (
+                        {visibleSuggestions.map((item) => (
                           <button
                             key={item.cd_cvm}
                             type="button"
