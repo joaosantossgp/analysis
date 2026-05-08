@@ -300,7 +300,7 @@ export function CompanyAnalysisChart({
             </g>
           ))}
 
-          {activeSeries.map((series, seriesIndex) => {
+          {activeSeries.map((series) => {
             if (series.chartType === "bar") {
               const barIndex = activeSeries
                 .filter((item) => item.chartType === "bar")
