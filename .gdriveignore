@@ -1,0 +1,24 @@
+# Git worktrees — large, ephemeral, should never sync
+.claude/worktrees/
+.git/worktrees
+
+
+
+# Python / Node artifacts
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+node_modules/
+.next/
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+
+# Local data
+data/
+archive/
+output/
