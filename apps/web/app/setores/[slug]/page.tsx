@@ -139,6 +139,7 @@ export default async function SectorDetailPage({
 
     return <SectorDetailError message={detailError} />;
   }
+  const companiesBySectorHref = `/empresas?setor=${encodeURIComponent(detail.sector_slug)}&anos=${detail.selected_year}`;
 
   return (
     <PageShell density="default">
@@ -192,7 +193,7 @@ export default async function SectorDetailPage({
 
             <div className="flex flex-wrap gap-3">
               <Link
-                href={`/empresas?setor=${detail.sector_slug}`}
+                href={companiesBySectorHref}
                 className={cn(
                   buttonVariants({ variant: "outline", size: "lg" }),
                   "rounded-full px-5",

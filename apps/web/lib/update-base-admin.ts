@@ -51,6 +51,13 @@ const MODE_LABELS: Record<BatchRefreshMode, string> = {
   outdated: "Desatualizadas",
   failed: "Com falha",
 };
+const STAGE_PROGRESS_FLOOR: Record<string, number> = {
+  planning: 8,
+  download_extract: 35,
+  process_data: 58,
+  persist_reports: 82,
+  finalizing: 95,
+};
 
 const numberFormatter = new Intl.NumberFormat("pt-BR");
 
@@ -233,4 +240,29 @@ export function getHistoryState({
   if (historyCount > 0) return "has_history";
   if (activeJobCount > 0) return "active_jobs_no_history";
   return "no_history_no_active_job";
+}
+
+export function getStageProgressFloor(stage: string | null | undefined): number {
+  if (!stage) return 0;
+  return STAGE_PROGRESS_FLOOR[stage] ?? 0;
+}
+
+export function computeRefreshProgress({
+  numericPct,
+  stageFloor,
+  isStalled,
+}: {
+  numericPct: number;
+  stageFloor: number;
+  isStalled: boolean;
+}): number {
+  const boundedNumeric = Number.isFinite(numericPct)
+    ? Math.max(0, Math.min(99, Math.round(numericPct)))
+    : 0;
+  const boundedStage = Math.max(0, Math.min(99, Math.round(stageFloor)));
+  if (!isStalled) {
+    return Math.max(boundedNumeric, boundedStage);
+  }
+  // When backend progress is temporarily static, keep a conservative visual floor by stage.
+  return Math.max(boundedNumeric, boundedStage, 5);
 }

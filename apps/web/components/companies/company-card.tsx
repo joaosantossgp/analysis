@@ -47,6 +47,9 @@ export function CompanyCard({ item }: CompanyCardProps) {
   const availability = getCompanyAvailability(item);
   const yearsRange =
     anos.length > 0 ? `${Math.min(...anos)}-${Math.max(...anos)}` : availability.yearsLabel;
+  const gicsLabel = item.gics_sector
+    ? `${item.gics_sector} / ${item.gics_industry_group ?? "-"} / ${item.gics_industry ?? "-"} / ${item.gics_sub_industry ?? "-"}`
+    : null;
 
   return (
     <Link
@@ -116,6 +119,7 @@ export function CompanyCard({ item }: CompanyCardProps) {
         {item.sector_name ? (
           <p className="mt-0.5 text-xs text-muted-foreground">{item.sector_name}</p>
         ) : null}
+        {gicsLabel ? <p className="mt-0.5 text-[11px] text-muted-foreground">{gicsLabel}</p> : null}
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
           {availability.detail}
         </p>

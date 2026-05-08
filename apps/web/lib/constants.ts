@@ -47,6 +47,21 @@ export function getSectorNameFromSlug(
   return SECTOR_NAME_BY_SLUG[sectorSlug] ?? formatSectorSlug(sectorSlug);
 }
 
+export function getSectorSlugFromName(
+  sectorName: string | null | undefined,
+): string | null {
+  if (!sectorName) {
+    return null;
+  }
+  const normalized = sectorName
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+  return normalized || null;
+}
+
 export const FEATURED_KPIS = [
   { id: "MG_BRUTA", label: "Margem Bruta", formatType: "pct" },
   { id: "MG_EBITDA", label: "Margem EBITDA", formatType: "pct" },

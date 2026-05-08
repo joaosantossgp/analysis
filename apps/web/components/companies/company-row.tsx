@@ -50,6 +50,9 @@ export function CompanyRow({ item }: CompanyRowProps) {
     anos.length > 0
       ? `${Math.min(...anos)}-${Math.max(...anos)}`
       : availability.yearsLabel;
+  const gicsLabel = item.gics_sector
+    ? `${item.gics_sector} / ${item.gics_industry_group ?? "-"} / ${item.gics_industry ?? "-"} / ${item.gics_sub_industry ?? "-"}`
+    : null;
 
   return (
     <Link
@@ -108,7 +111,7 @@ export function CompanyRow({ item }: CompanyRowProps) {
       </div>
 
       <p className="hidden truncate text-sm text-muted-foreground sm:block">
-        {item.sector_name ?? "--"}
+        {gicsLabel ?? item.sector_name ?? "--"}
       </p>
 
       <div className="hidden items-center gap-2 lg:flex">

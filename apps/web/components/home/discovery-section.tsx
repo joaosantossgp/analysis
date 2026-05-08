@@ -6,7 +6,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import type { CompanyDirectoryItem } from "@/lib/api";
 import { getCompanyAvailability } from "@/lib/company-discovery";
-import { SECTOR_COLOR, getSectorColor } from "@/lib/constants";
+import { SECTOR_COLOR, getSectorColor, getSectorSlugFromName } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
 type Tab = "destaque" | "setores";
@@ -178,10 +178,12 @@ export function DiscoverySection({
 
       {activeTab === "setores" ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-          {Object.entries(SECTOR_COLOR).map(([sector, color]) => (
+          {Object.entries(SECTOR_COLOR).map(([sector, color]) => {
+            const sectorSlug = getSectorSlugFromName(sector);
+            return (
             <Link
               key={sector}
-              href={`/empresas?setor=${encodeURIComponent(sector)}`}
+              href={`/empresas?setor=${encodeURIComponent(sectorSlug ?? sector)}`}
               className="group flex items-center gap-3 rounded-[1rem] border border-border/60 bg-card px-4 py-3.5 transition-all duration-150 hover:-translate-y-0.5 hover:border-primary/20 hover:shadow-sm"
             >
               <div
@@ -199,7 +201,8 @@ export function DiscoverySection({
                 <p className="mt-0.5 text-xs text-muted-foreground">Ver empresas</p>
               </div>
             </Link>
-          ))}
+            );
+          })}
         </div>
       ) : null}
     </section>

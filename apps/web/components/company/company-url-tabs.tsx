@@ -29,9 +29,18 @@ export function CompanyUrlTabs({
     <Tabs
       value={currentValue}
       onValueChange={(value) => {
-        const query = mergeSearchParams(searchParams.toString(), {
+        const updates: Record<string, string | null> = {
           [paramName]: value,
-        });
+        };
+        if (paramName === "aba") {
+          if (value !== "demonstracoes") {
+            updates.stmt = null;
+          }
+        }
+        if (paramName === "stmt") {
+          updates.aba = "demonstracoes";
+        }
+        const query = mergeSearchParams(searchParams.toString(), updates);
 
         if (eventName) {
           track(eventName, {

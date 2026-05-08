@@ -60,6 +60,13 @@ export function CompanyDetailBody({
         options={Array.from(DETAIL_TABS)}
       />
 
+      <CompanyPeriodPreset
+        pathname={pathname}
+        availableYears={readableYears}
+        selectedYears={selectedYears}
+        variant="custom-only"
+      />
+
       {currentTab === "visao-geral" ? (
         bundle ? (
           <CompanyOverview
@@ -97,12 +104,6 @@ export function CompanyDetailBody({
               eventName="company_statement_changed"
             />
           </div>
-          <CompanyPeriodPreset
-            pathname={pathname}
-            availableYears={readableYears}
-            selectedYears={selectedYears}
-            variant="custom-only"
-          />
           {statement ? (
             <CompanyStatementsLazy matrix={statement} />
           ) : (

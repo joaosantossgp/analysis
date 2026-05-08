@@ -157,7 +157,7 @@ class CVMBridge:
             cd_cvm = int(p.get("cd_cvm", 0))
             result = self._svc().get_company_info(
                 cd_cvm,
-                allow_catalog_lookup=False,
+                allow_catalog_lookup=True,
             )
             if result is None:
                 cached = self._get_cached_company_info(cd_cvm)

@@ -21,6 +21,11 @@ export type CompanyDirectoryItem = {
   coverage_rank: number | null;
   anos_disponiveis: number[];
   total_rows: number;
+  gics_sector?: string | null;
+  gics_sector_slug?: string | null;
+  gics_industry_group?: string | null;
+  gics_industry?: string | null;
+  gics_sub_industry?: string | null;
 };
 
 export type CompanyDirectoryPage = {
@@ -54,6 +59,7 @@ export type CompanySectorFilter = {
   sector_name: string;
   sector_slug: string;
   company_count: number;
+  gics_sector?: string | null;
 };
 
 export type CompanyFiltersResponse = {
@@ -77,6 +83,11 @@ export type CompanyInfo = {
   latest_readable_year: number | null;
   read_availability_code: string | null;
   read_availability_message: string | null;
+  gics_sector?: string | null;
+  gics_sector_slug?: string | null;
+  gics_industry_group?: string | null;
+  gics_industry?: string | null;
+  gics_sub_industry?: string | null;
 };
 
 export type RefreshDispatchResponse = {

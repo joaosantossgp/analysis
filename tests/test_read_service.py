@@ -137,10 +137,16 @@ def test_list_sectors_returns_stable_snapshot_contract(tmp_path):
 
     dto = service.list_sectors()
 
-    assert [row.sector_name for row in dto.items] == ["Energia", "Saneamento"]
-    assert dto.items[0].latest_year == 2024
-    assert round(dto.items[0].snapshot.roe or 0.0, 6) == round(180.0 / 380.0, 6)
-    assert dto.items[1].snapshot.roe is None
+    names = [row.sector_name for row in dto.items]
+    assert "Energy" in names
+    assert "Utilities" in names
+
+    energy = next(row for row in dto.items if row.sector_name == "Energy")
+    utilities = next(row for row in dto.items if row.sector_name == "Utilities")
+    assert energy.latest_year == 2024
+    assert round(energy.snapshot.roe or 0.0, 6) == round(180.0 / 380.0, 6)
+    assert utilities.latest_year == 2024
+    assert utilities.snapshot.roe is None
 
 
 def test_get_sector_detail_defaults_to_latest_year_and_keeps_null_metrics(tmp_path):
@@ -153,3 +159,4 @@ def test_get_sector_detail_defaults_to_latest_year_and_keeps_null_metrics(tmp_pa
     assert detail.available_years == (2024,)
     assert detail.companies[0].company_name == "SABESP"
     assert detail.companies[0].roe is None
+
