@@ -46,6 +46,7 @@ def test_desktop_bridge_caps_company_pagination_and_suggestion_limit() -> None:
     assert service.company_calls[0]["page_size"] == 100
     assert service.company_calls[0]["page"] == 2
     assert suggestions_payload == {"items": []}
+    assert service.suggestion_calls[0]["q"] == ""
     assert service.suggestion_calls[0]["limit"] == 100
 
 

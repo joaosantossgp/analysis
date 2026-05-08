@@ -94,7 +94,7 @@ class CVMBridge:
         p = params or {}
         try:
             items = self._svc().suggest_companies(
-                query=str(p.get("q", "")),
+                q=str(p.get("q", "")),
                 limit=self._bounded_int(p.get("limit", 6), default=6, maximum=100),
                 ready_only=bool(p.get("ready_only", False)),
             )
