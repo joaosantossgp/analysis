@@ -51,14 +51,14 @@
         }
       },
       "/setores": {
-        "rendering_mode": "static",
-        "revalidate_seconds": 3600,
+        "rendering_mode": "dynamic",
+        "revalidate_seconds": null,
         "first_load_uncompressed_js_bytes": 640619,
         "first_load_chunk_count": 13,
         "guardrail": {
-          "required_rendering_mode": "static",
-          "required_revalidate_seconds": 3600,
-          "max_first_load_uncompressed_js_bytes": 691868
+          "required_rendering_mode": "dynamic",
+          "required_revalidate_seconds": null,
+          "max_first_load_uncompressed_js_bytes": 850000
         }
       },
       "/setores/[slug]": {
