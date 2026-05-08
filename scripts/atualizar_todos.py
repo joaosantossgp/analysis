@@ -23,7 +23,7 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from src.contracts import RefreshPolicy, RefreshRequest
+from src.contracts import RefreshRequest, default_incremental_refresh_policy
 from src.db import build_engine
 from src.refresh_service import HeadlessRefreshService
 from src.settings import build_settings
@@ -94,11 +94,7 @@ def run_update(anos: list[int], dry_run: bool = False) -> None:
                 max_workers=2,
                 data_dir=str(settings.paths.input_dir),
                 output_dir=str(settings.paths.reports_dir),
-                policy=RefreshPolicy(
-                    skip_complete_company_years=True,
-                    enable_fast_lane=False,
-                    force_refresh=False,
-                ),
+                policy=default_incremental_refresh_policy(),
             )
             result = service.execute(request)
             log.info(
