@@ -1111,6 +1111,71 @@ class CVMReadService:
                 counts[key] += int(opt.company_count)
         return dict(counts)
 
+    @staticmethod
+    def _histogram_bucket_from_directory_row(row: pd.Series) -> str:
+        """Align with query_layer._sector_bucket_expression_sql (persisted GICS over canonical setor)."""
+        persisted = CVMReadService._clean_optional_text(row.get("persisted_gics_sector"))
+        canonical = CVMReadService._clean_optional_text(row.get("sector_name"))
+        if persisted:
+            return persisted
+        return canonical or "Nao classificado"
+
+    @staticmethod
+    def _hub_gics_key_for_histogram_bucket(bucket_label: str) -> str | None:
+        """Histogram bucket label -> GICS 11 hub key (get_company_filters + _gics_sector_hub_counts)."""
+        meta_a = build_gics_classification(
+            sector_name=bucket_label,
+            setor_analitico=bucket_label,
+            setor_cvm=bucket_label,
+        )
+        display_key = meta_a.gics_sector if meta_a else bucket_label
+
+        meta_b = build_gics_classification(
+            sector_name=display_key,
+            setor_analitico=display_key,
+            setor_cvm=display_key,
+        )
+        gics_sector = meta_b.gics_sector if meta_b else None
+        if display_key in GICS_11_SECTORS:
+            gics_sector = display_key
+
+        opt = CompanySectorFilterOption(
+            sector_name=display_key,
+            sector_slug=sector_slugify(display_key),
+            company_count=1,
+            gics_sector=gics_sector,
+            gics_sector_slug=sector_slugify(gics_sector) if gics_sector else None,
+        )
+
+        if opt.sector_name in GICS_11_SECTORS:
+            return opt.sector_name
+        if opt.gics_sector and opt.gics_sector in GICS_11_SECTORS:
+            return opt.gics_sector
+        meta_c = build_gics_classification(
+            sector_name=opt.sector_name,
+            setor_analitico=opt.sector_name,
+            setor_cvm=opt.sector_name,
+        )
+        if meta_c and meta_c.gics_sector in GICS_11_SECTORS:
+            return meta_c.gics_sector
+        return None
+
+    def _filter_directory_rows_by_hub_gics(
+        self,
+        rows_df: pd.DataFrame,
+        hub_gics_sector: str,
+    ) -> pd.DataFrame:
+        if rows_df.empty:
+            return rows_df
+
+        def _row_matches(row: pd.Series) -> bool:
+            bucket = self._histogram_bucket_from_directory_row(row)
+            hub_key = self._hub_gics_key_for_histogram_bucket(bucket)
+            return hub_key == hub_gics_sector
+
+        mask = rows_df.apply(_row_matches, axis=1)
+        return rows_df.loc[mask].reset_index(drop=True)
+
     @functools.lru_cache(maxsize=128)
     def suggest_companies(
         self,
@@ -1289,11 +1354,8 @@ class CVMReadService:
             rows_df["anos_disponiveis"] = rows_df["cd_cvm"].map(
                 lambda cd_cvm: years_map.get(int(cd_cvm), ())
             )
-        filtered = [
-            item
-            for item in self._build_company_results(rows_df)
-            if item.gics_sector == gics_sector
-        ]
+        filtered_df = self._filter_directory_rows_by_hub_gics(rows_df, gics_sector)
+        filtered = self._build_company_results(filtered_df)
         total_items = len(filtered)
         start = max(0, (int(page) - 1) * int(page_size))
         end = start + int(page_size)
@@ -1326,24 +1388,17 @@ class CVMReadService:
                 page=1,
                 page_size=BATCH_REFRESH_MAX_PAGE_SIZE,
             )
-            local_candidates = [
-                item
-                for item in self._build_company_results(local_rows)
-                if item.gics_sector == resolved_sector_name
-            ]
-            if local_candidates:
-                company_items = local_candidates
-            else:
-                company_page = self.list_companies(
-                    search="",
-                    sector_slug=sector_slug,
-                    page=1,
-                    page_size=BATCH_REFRESH_MAX_PAGE_SIZE,
+            if not local_rows.empty:
+                years_map = self.query_layer.get_company_years_map(local_rows["cd_cvm"].tolist())
+                local_rows = local_rows.copy()
+                local_rows["anos_disponiveis"] = local_rows["cd_cvm"].map(
+                    lambda cd_cvm: years_map.get(int(cd_cvm), ())
                 )
-                company_items = list(company_page.items)
-            if not company_items:
+            filtered_df = self._filter_directory_rows_by_hub_gics(local_rows, resolved_sector_name)
+            if filtered_df.empty:
                 return None
-            total_items = len(company_items)
+            total_items = len(filtered_df)
+            company_items = self._build_company_results(filtered_df)
             company_rows = pd.DataFrame(
                 [
                     {
