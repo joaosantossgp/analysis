@@ -1089,6 +1089,28 @@ class CVMReadService:
         sectors = tuple(sectors_list)
         return CompanyFiltersDTO(sectors=sectors)
 
+    @staticmethod
+    def _gics_sector_hub_counts(filters: CompanyFiltersDTO) -> dict[str, int]:
+        """Sum company counts into GICS 11 buckets using the same labels as get_company_filters."""
+        counts: dict[str, int] = defaultdict(int)
+        for opt in filters.sectors:
+            key: str | None = None
+            if opt.sector_name in GICS_11_SECTORS:
+                key = opt.sector_name
+            elif opt.gics_sector and opt.gics_sector in GICS_11_SECTORS:
+                key = opt.gics_sector
+            else:
+                meta = build_gics_classification(
+                    sector_name=opt.sector_name,
+                    setor_analitico=opt.sector_name,
+                    setor_cvm=opt.sector_name,
+                )
+                if meta and meta.gics_sector in GICS_11_SECTORS:
+                    key = meta.gics_sector
+            if key:
+                counts[key] += int(opt.company_count)
+        return dict(counts)
+
     @functools.lru_cache(maxsize=128)
     def suggest_companies(
         self,
@@ -1186,21 +1208,28 @@ class CVMReadService:
                     latest_row,
                 )
 
-        # Snapshot sectors come from financial_reports KPI pivots (canonical Portuguese labels).
-        # Company-filter options may additionally include remote-catalog sectors whose spelling
-        # does not match these keys — iterating snapshots first keeps the hub aligned with metrics.
+        # Hub sectors must match aggregate counts from get_company_filters — not only rows where
+        # per-company _build_company_results resolved gics_sector (many rows stay None otherwise).
+        hub_counts = self._gics_sector_hub_counts(filters)
         filters_by_name = {str(opt.sector_name): opt for opt in filters.sectors}
         items: list[SectorDirectoryItemDTO] = []
-        candidate_sector_names = [
-            sector for sector in GICS_11_SECTORS if companies_by_gics.get(sector)
-        ]
+        candidate_keys = {
+            name for name, count in hub_counts.items() if count > 0 and name in GICS_11_SECTORS
+        }
+        candidate_keys.update(
+            name for name in companies_by_gics if name in GICS_11_SECTORS
+        )
+        candidate_sector_names = sorted(
+            candidate_keys,
+            key=lambda name: GICS_11_SECTORS.index(name),
+        )
         for sector_name in candidate_sector_names:
             latest_year, snapshot_row = latest_snapshot_by_sector.get(
                 sector_name,
                 (None, None),
             )
             option = filters_by_name.get(sector_name)
-            company_count = (
+            company_count = hub_counts.get(sector_name, 0) or (
                 int(option.company_count)
                 if option is not None
                 else len(companies_by_gics.get(sector_name, ()))
