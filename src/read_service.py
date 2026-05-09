@@ -1307,22 +1307,14 @@ class CVMReadService:
                 lambda cd_cvm: years_map.get(int(cd_cvm), ())
             )
         if "gics_sub_industry" not in company_rows.columns:
-            gics_by_cd_cvm = {
-                int(item.cd_cvm): item.gics_sub_industry
-                for item in self._build_company_results(
-                    self.query_layer.get_companies_directory_page(
-                        search="",
-                        sector_name=None,
-                        page=1,
-                        page_size=BATCH_REFRESH_MAX_PAGE_SIZE,
-                    )[0]
-                )
-                if item.gics_sub_industry
-            }
-            company_rows = company_rows.copy()
-            company_rows["gics_sub_industry"] = company_rows["cd_cvm"].map(
-                lambda cd_cvm: gics_by_cd_cvm.get(int(cd_cvm))
+            gics_meta = build_gics_classification(
+                sector_name=resolved_sector_name,
+                setor_analitico=resolved_sector_name,
+                setor_cvm=resolved_sector_name,
             )
+            gics_sub_industry = gics_meta.gics_sub_industry if gics_meta else None
+            company_rows = company_rows.copy()
+            company_rows["gics_sub_industry"] = gics_sub_industry
         available_years = self._extract_years_from_company_rows(company_rows)
         if not available_years:
             return None
