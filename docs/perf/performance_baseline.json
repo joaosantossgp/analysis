@@ -39,17 +39,6 @@
           "max_first_load_uncompressed_js_bytes": 806500
         }
       },
-      "/comparar": {
-        "rendering_mode": "dynamic",
-        "revalidate_seconds": null,
-        "first_load_uncompressed_js_bytes": 689735,
-        "first_load_chunk_count": 14,
-        "guardrail": {
-          "required_rendering_mode": "dynamic",
-          "required_revalidate_seconds": null,
-          "max_first_load_uncompressed_js_bytes": 744913
-        }
-      },
       "/setores": {
         "rendering_mode": "dynamic",
         "revalidate_seconds": null,
