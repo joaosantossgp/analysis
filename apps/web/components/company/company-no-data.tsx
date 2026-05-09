@@ -116,7 +116,7 @@ export async function CompanyNoDataPage({ company }: CompanyNoDataPageProps) {
         </div>
 
         <div className="flex flex-col gap-4 lg:col-span-4">
-          <CompanyFreshnessCard cdCvm={company.cd_cvm} />
+          <CompanyFreshnessCard cdCvm={company.cd_cvm} showRequestAction={false} />
           <CompanyContextCard company={company} selectedYears={[]} availableYears={[]} />
         </div>
       </div>

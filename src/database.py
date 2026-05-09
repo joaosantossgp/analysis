@@ -126,9 +126,12 @@ def init_db_tables(engine: Engine) -> None:
 
 
 def _ensure_company_gics_columns(conn) -> None:
+    inspector = inspect(conn, raiseerr=False)
+    if inspector is None:
+        return
     existing = {
         str(column.get("name") or "").lower()
-        for column in inspect(conn).get_columns("companies")
+        for column in inspector.get_columns("companies")
     }
     for column_name in (
         "gics_sector",

@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 
 type CompanyFreshnessCardProps = {
   cdCvm: number;
+  showRequestAction?: boolean;
 };
 
 const RELATIVE_TIME_FORMATTER = new Intl.RelativeTimeFormat("pt-BR", {
@@ -91,6 +92,7 @@ function getStatusBadgeClassName(tone: FreshnessBadgeTone): string {
 
 export async function CompanyFreshnessCard({
   cdCvm,
+  showRequestAction = true,
 }: CompanyFreshnessCardProps) {
   let freshness: RefreshStatusItem | null = null;
   let fetchError: string | null = null;
@@ -189,7 +191,9 @@ export async function CompanyFreshnessCard({
         </p>
       ) : null}
 
-      <CompanyRequestRefreshLazy cdCvm={cdCvm} initialStatus={freshness} />
+      {showRequestAction ? (
+        <CompanyRequestRefreshLazy cdCvm={cdCvm} initialStatus={freshness} />
+      ) : null}
     </SurfaceCard>
   );
 }
