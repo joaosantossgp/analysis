@@ -44,7 +44,7 @@ export default async function HomePage() {
   const directoryItems =
     sectorsResult.status === "fulfilled" ? sectorsResult.value.items : [];
 
-  let gicsSectors =
+  const gicsSectors =
     directoryItems.length > 0
       ? directoryItems.map((item) => ({
           sector_name: item.sector_name,

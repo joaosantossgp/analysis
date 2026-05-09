@@ -96,7 +96,7 @@ Meta de aprendizado:
 Saida esperada:
 - uma navegacao web minima funcional;
 - paridade inicial de busca + detalhe rico de empresa;
-- base pronta para `PG-04 /comparar` sem reabrir foundation.
+- base pronta para proximos fluxos de produto sem reabrir foundation.
 
 ### Fase 3 - Primeiro deploy gerenciado
 

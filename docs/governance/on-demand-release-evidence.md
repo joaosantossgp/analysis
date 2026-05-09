@@ -74,7 +74,7 @@ python -m pytest scripts/test_update_base_smoke.py -q
 
 ## Checklist de aceitacao
 
-- Search/entry: busca da home ou do compare chega ao destino certo sem CORS ou
+- Search/entry: busca da home chega ao destino certo sem CORS ou
   chamada direta para host externo.
 - Wait/polling: estados `queued`, `running`, reconnecting e delayed mantem
   feedback nao destrutivo e caminho de recuperacao.

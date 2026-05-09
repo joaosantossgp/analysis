@@ -21,8 +21,6 @@ Escopo: migracao desktop-only no runtime local (`.exe`) sem dependencia de API r
   Hub setorial local carregado por bridge.
 - `apps/web/components/sectors/sector-detail-desktop-loader.tsx`  
   Detalhe setorial local carregado por bridge.
-- `apps/web/components/compare/compare-desktop-loader.tsx`  
-  Comparar local carregado por bridge.
 
 ### `desktop-partial` (dual path desktop + web, sem bloqueio critico)
 
@@ -30,7 +28,7 @@ Escopo: migracao desktop-only no runtime local (`.exe`) sem dependencia de API r
   Camada unificada com fallback HTTP para web e bridge para desktop em quase todos os fluxos.
 - `apps/web/lib/download-file.ts`  
   Download desktop via bridge para empresa/lote; fallback web por endpoint.
-- `apps/web/app/page.tsx`, `apps/web/app/empresas/page.tsx`, `apps/web/app/empresas/[cd_cvm]/page.tsx`, `apps/web/app/setores/page.tsx`, `apps/web/app/setores/[slug]/page.tsx`, `apps/web/app/comparar/page.tsx`, `apps/web/app/atualizar-base/page.tsx`  
+- `apps/web/app/page.tsx`, `apps/web/app/empresas/page.tsx`, `apps/web/app/empresas/[cd_cvm]/page.tsx`, `apps/web/app/setores/page.tsx`, `apps/web/app/setores/[slug]/page.tsx`, `apps/web/app/atualizar-base/page.tsx`
   Rotas usam `isDesktopServerMode()` para desviar para loaders locais.
 - `apps/web/next.config.ts`  
   Runtime local ainda baseado em `output: "standalone"` (Node embutido).
@@ -62,7 +60,7 @@ Escopo: migracao desktop-only no runtime local (`.exe`) sem dependencia de API r
 ## 3) Sequencia de fechamento (bridge-first)
 
 1. Fechar helpers de dominio ainda HTTP-only no desktop (`freshness` concluido).  
-2. Validar todos os fluxos criticos desktop: home, empresas, detalhe, setores, comparar, atualizar-base.  
+2. Validar todos os fluxos criticos desktop: home, empresas, detalhe, setores, atualizar-base.
 3. Congelar contrato bridge como fonte local de verdade para o runtime desktop.  
 4. Manter `app/api/**` apenas como camada web enquanto existir dual-target.
 
@@ -89,7 +87,7 @@ Checklist minimo por release desktop:
    - confirmar geracao de `dist/CVMAnalytics/CVMAnalytics.exe`
 2. Runtime smoke (maquina limpa ou equivalente):
    - abrir app
-   - navegar: `/`, `/empresas`, `/empresas/[cd_cvm]`, `/setores`, `/setores/[slug]`, `/comparar`, `/atualizar-base`
+   - navegar: `/`, `/empresas`, `/empresas/[cd_cvm]`, `/setores`, `/setores/[slug]`, `/atualizar-base`
    - testar refresh on-demand/batch
    - testar download excel (empresa e lote)
 3. Release CI:

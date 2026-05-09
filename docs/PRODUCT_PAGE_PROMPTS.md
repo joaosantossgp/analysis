@@ -45,7 +45,7 @@ recent activity, and platform status.
 - Recent companies
 - Saved analyses
 - Latest filings
-- Shortcut actions for compare, sectors, and update base
+- Shortcut actions for sectors and update base
 - Alert summary
 - Data freshness or system status summary
 
@@ -71,9 +71,9 @@ Create a dashboard page for a premium financial analytics platform.
 The page should include:
 - Search by company name, ticker, or CVM code
 - Recent companies
-- Saved analyses and comparisons
+- Saved analyses
 - Latest imported filings
-- Shortcuts to company search, compare, sectors, and update base
+- Shortcuts to company search, sectors, and update base
 - Alert summary for filings, KPI thresholds, and update jobs
 - Data freshness or platform status summary
 
@@ -82,7 +82,7 @@ Main user actions:
 - Resume a saved analysis
 - Open a recent company
 - Review recent filings
-- Jump into compare, sectors, or update base workflows
+- Jump into sectors or update base workflows
 
 States to include:
 - Loading dashboard data
@@ -94,7 +94,7 @@ States to include:
 - Partial data unavailable without blocking the whole page
 
 Context:
-This screen is used by professionals analyzing companies, CVM filings, financial indicators, sectors, and comparisons. Keep the experience focused, trustworthy, efficient, and suitable for a serious financial product.
+This screen is used by professionals analyzing companies, CVM filings, financial indicators, and sectors. Keep the experience focused, trustworthy, efficient, and suitable for a serious financial product.
 ```
 
 ## Company Search
@@ -153,7 +153,7 @@ States to include:
 - Filters applied
 
 Context:
-This screen is used by professionals analyzing companies, CVM filings, financial indicators, sectors, and comparisons. Keep the experience focused, trustworthy, efficient, and suitable for a serious financial product.
+This screen is used by professionals analyzing companies, CVM filings, financial indicators, and sectors. Keep the experience focused, trustworthy, efficient, and suitable for a serious financial product.
 ```
 
 ## Company Profile
@@ -167,14 +167,13 @@ for one company.
 - Registration or listing details
 - Available years and filings
 - Data freshness status
-- Links to analysis, statements, compare, and export
+- Links to analysis, statements, and export
 - Refresh/request update action
 
 **Important user actions:**
 - Review company identity and data availability
 - Open the analysis view
 - Open statements
-- Add company to comparison
 - Request data refresh
 - Export available company data
 
@@ -196,14 +195,13 @@ The page should include:
 - Registration or listing details
 - Available years and filings
 - Data freshness status
-- Entry points to analysis, statements, compare, and export
+- Entry points to analysis, statements, and export
 - Refresh or request update action
 
 Main user actions:
 - Review company identity and available data
 - Open the analysis screen
 - Open financial statements
-- Add the company to a comparison
 - Request a data refresh
 - Export company data
 
@@ -217,7 +215,7 @@ States to include:
 - Refresh failed
 
 Context:
-This screen is used by professionals analyzing companies, CVM filings, financial indicators, sectors, and comparisons. Keep the experience focused, trustworthy, efficient, and suitable for a serious financial product.
+This screen is used by professionals analyzing companies, CVM filings, financial indicators, and sectors. Keep the experience focused, trustworthy, efficient, and suitable for a serious financial product.
 ```
 
 ## Company Analysis
@@ -233,7 +231,7 @@ statements across selected periods.
 - Annual or quarterly view
 - Financial statement table access
 - Contextual help for indicators and periods
-- Export and compare actions
+- Export actions
 
 **Important user actions:**
 - Select periods
@@ -241,7 +239,6 @@ statements across selected periods.
 - Switch between overview and statements
 - Read charts and tables
 - Export data
-- Add company to comparison
 
 **States to include:**
 - Loading indicators
@@ -262,7 +259,7 @@ The page should include:
 - Annual and quarterly analysis options
 - Financial statement table access
 - Contextual help for indicators, periods, and calculations
-- Export and compare actions
+- Export actions
 
 Main user actions:
 - Select periods
@@ -270,7 +267,6 @@ Main user actions:
 - Switch between overview and financial statements
 - Read KPIs, charts, and tables
 - Export data
-- Add the company to a comparison
 
 States to include:
 - Loading indicators
@@ -281,70 +277,7 @@ States to include:
 - Refresh needed or refresh in progress
 
 Context:
-This screen is used by professionals analyzing companies, CVM filings, financial indicators, sectors, and comparisons. Keep the experience focused, trustworthy, efficient, and suitable for a serious financial product.
-```
-
-## Compare Companies
-
-**Page purpose:** Let users compare financial indicators and statements across
-multiple companies using aligned periods.
-
-**Required content/components:**
-- Company selector
-- Selected company list
-- Common period selector
-- KPI comparison table
-- Side-by-side chart area
-- Missing data indicators
-- Export/share actions
-
-**Important user actions:**
-- Select two or more companies
-- Remove or replace companies
-- Align periods
-- Compare KPIs and statements
-- Export comparison
-- Share or save comparison
-
-**States to include:**
-- Empty comparison
-- One company selected
-- Minimum company requirement
-- Loading comparison
-- Missing common periods
-- Partial data missing
-- Export loading
-
-```text
-Create a compare companies page for a premium financial analytics platform.
-
-The page should include:
-- Company selector
-- Selected company list
-- Common period selector
-- KPI comparison table
-- Side-by-side chart area
-- Missing data indicators
-- Export, share, and save actions
-
-Main user actions:
-- Select two or more companies
-- Remove or replace companies
-- Align comparison periods
-- Compare KPIs and financial statements
-- Export the comparison
-- Save or share the comparison
-
-States to include:
-- Empty comparison
-- Only one company selected
-- Loading comparison data
-- No common periods available
-- Partial data missing for one company
-- Export loading
-
-Context:
-This screen is used by professionals analyzing companies, CVM filings, financial indicators, sectors, and comparisons. Keep the experience focused, trustworthy, efficient, and suitable for a serious financial product.
+This screen is used by professionals analyzing companies, CVM filings, financial indicators, and sectors. Keep the experience focused, trustworthy, efficient, and suitable for a serious financial product.
 ```
 
 ## Sectors
@@ -359,7 +292,6 @@ sector-level patterns.
 - Sector benchmark indicators
 - Ranking tables
 - Link to sector detail
-- Link to compare companies inside a sector
 
 **Important user actions:**
 - Browse sectors
@@ -367,7 +299,6 @@ sector-level patterns.
 - Open sector detail
 - Review benchmark indicators
 - Open a ranked company
-- Compare companies from the same sector
 
 **States to include:**
 - Loading sectors
@@ -386,7 +317,6 @@ The page should include:
 - Sector benchmark indicators
 - Ranking tables
 - Link to sector detail
-- Action to compare companies within a sector
 
 Main user actions:
 - Browse sectors
@@ -394,7 +324,6 @@ Main user actions:
 - Open sector detail
 - Review benchmark indicators
 - Open a ranked company
-- Start a comparison from selected sector companies
 
 States to include:
 - Loading sectors
@@ -404,7 +333,7 @@ States to include:
 - Partial benchmark data missing
 
 Context:
-This screen is used by professionals analyzing companies, CVM filings, financial indicators, sectors, and comparisons. Keep the experience focused, trustworthy, efficient, and suitable for a serious financial product.
+This screen is used by professionals analyzing companies, CVM filings, financial indicators, and sectors. Keep the experience focused, trustworthy, efficient, and suitable for a serious financial product.
 ```
 
 ## Reports / Filings
@@ -468,7 +397,7 @@ States to include:
 - Refresh requested
 
 Context:
-This screen is used by professionals analyzing companies, CVM filings, financial indicators, sectors, and comparisons. Keep the experience focused, trustworthy, efficient, and suitable for a serious financial product.
+This screen is used by professionals analyzing companies, CVM filings, financial indicators, and sectors. Keep the experience focused, trustworthy, efficient, and suitable for a serious financial product.
 ```
 
 ## Update Base
@@ -546,7 +475,7 @@ States to include:
 - Permission denied
 
 Context:
-This screen is used by administrators maintaining the company data base used for CVM filings, financial indicators, sectors, and comparisons. Keep the experience focused, trustworthy, efficient, and suitable for a serious financial product.
+This screen is used by administrators maintaining the company data base used for CVM filings, financial indicators, and sectors. Keep the experience focused, trustworthy, efficient, and suitable for a serious financial product.
 ```
 
 ## Saved Views
@@ -556,7 +485,6 @@ This screen is used by administrators maintaining the company data base used for
 **Required content/components:**
 - Saved dashboards
 - Saved company analyses
-- Saved comparisons
 - Saved indicator sets
 - Search/filter for saved items
 - Rename, delete, duplicate, share actions
@@ -585,7 +513,6 @@ Create a saved views page for a premium financial analytics platform.
 The page should include:
 - Saved dashboards
 - Saved company analyses
-- Saved comparisons
 - Saved indicator sets
 - Search and filters for saved items
 - Rename, delete, duplicate, and share actions
@@ -609,7 +536,7 @@ States to include:
 - Share error
 
 Context:
-This screen is used by professionals analyzing companies, CVM filings, financial indicators, sectors, and comparisons. Keep the experience focused, trustworthy, efficient, and suitable for a serious financial product.
+This screen is used by professionals analyzing companies, CVM filings, financial indicators, and sectors. Keep the experience focused, trustworthy, efficient, and suitable for a serious financial product.
 ```
 
 ## Alerts
@@ -671,7 +598,7 @@ States to include:
 - Alert action failed
 
 Context:
-This screen is used by professionals analyzing companies, CVM filings, financial indicators, sectors, and comparisons. Keep the experience focused, trustworthy, efficient, and suitable for a serious financial product.
+This screen is used by professionals analyzing companies, CVM filings, financial indicators, and sectors. Keep the experience focused, trustworthy, efficient, and suitable for a serious financial product.
 ```
 
 ## Settings
@@ -737,7 +664,7 @@ States to include:
 - Invalid input
 
 Context:
-This screen is used by professionals analyzing companies, CVM filings, financial indicators, sectors, and comparisons. Keep the experience focused, trustworthy, efficient, and suitable for a serious financial product.
+This screen is used by professionals analyzing companies, CVM filings, financial indicators, and sectors. Keep the experience focused, trustworthy, efficient, and suitable for a serious financial product.
 ```
 
 ## Admin

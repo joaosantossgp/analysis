@@ -79,6 +79,7 @@ export type CompanyInfo = {
   sector_slug: string;
   company_type: string | null;
   ticker_b3: string | null;
+  has_local_financial_reports: boolean;
   read_model_updated_at: string | null;
   has_readable_current_data: boolean;
   readable_years_count: number;
@@ -153,6 +154,7 @@ export type RefreshStatusItem = {
 
 type RawCompanyInfo = Omit<
   CompanyInfo,
+  | "has_local_financial_reports"
   | "read_model_updated_at"
   | "has_readable_current_data"
   | "readable_years_count"
@@ -160,6 +162,7 @@ type RawCompanyInfo = Omit<
   | "read_availability_code"
   | "read_availability_message"
 > & {
+  has_local_financial_reports?: boolean;
   read_model_updated_at?: string | null;
   has_readable_current_data?: boolean;
   readable_years_count?: number;
@@ -305,6 +308,10 @@ export type BaseHealthSnapshot = {
   total_companies: number;
   companies_with_historical_data: number;
   companies_without_historical_data: number;
+  companies_with_any_local_financial_report: number;
+  companies_partial_local: number;
+  companies_with_refresh_status_recorded: number;
+  companies_with_last_refresh_error: number;
 };
 
 export type BaseHealthRequest = {
@@ -673,7 +680,8 @@ function isCompanyFiltersResponse(value: unknown): value is CompanyFiltersRespon
   );
 }
 
-function isBaseHealthSnapshot(value: unknown): value is BaseHealthSnapshot {
+/** Validates `/base-health` core shape; extended inventory counters may be absent (filled by {@link normalizeBaseHealthSnapshot}). */
+function isBaseHealthSnapshotCore(value: unknown): value is Record<string, unknown> {
   return (
     isRecord(value) &&
     isNullableString(value.generated_at) &&
@@ -695,6 +703,46 @@ function isBaseHealthSnapshot(value: unknown): value is BaseHealthSnapshot {
     typeof value.companies_with_historical_data === "number" &&
     typeof value.companies_without_historical_data === "number"
   );
+}
+
+function coerceNonNegativeSnapshotInt(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return 0;
+  return Math.max(0, Math.trunc(value));
+}
+
+export function normalizeBaseHealthSnapshot(raw: Record<string, unknown>): BaseHealthSnapshot {
+  return {
+    generated_at: isNullableString(raw.generated_at) ? raw.generated_at : null,
+    start_year: raw.start_year as number,
+    end_year: raw.end_year as number,
+    total_cells: raw.total_cells as number,
+    completed_cells: raw.completed_cells as number,
+    missing_cells: raw.missing_cells as number,
+    pct: raw.pct as number,
+    health_score: raw.health_score as number,
+    health_status: raw.health_status as string,
+    eta_hours: isNullableNumber(raw.eta_hours) ? raw.eta_hours : null,
+    throughput_per_hour: isNullableNumber(raw.throughput_per_hour)
+      ? raw.throughput_per_hour
+      : null,
+    throughput_confidence: raw.throughput_confidence as string,
+    per_year: raw.per_year as BaseHealthSnapshot["per_year"],
+    prioritized_companies: raw.prioritized_companies as BaseHealthSnapshot["prioritized_companies"],
+    raw: raw.raw as Record<string, unknown>,
+    total_companies: raw.total_companies as number,
+    companies_with_historical_data: raw.companies_with_historical_data as number,
+    companies_without_historical_data: raw.companies_without_historical_data as number,
+    companies_with_any_local_financial_report: coerceNonNegativeSnapshotInt(
+      raw.companies_with_any_local_financial_report,
+    ),
+    companies_partial_local: coerceNonNegativeSnapshotInt(raw.companies_partial_local),
+    companies_with_refresh_status_recorded: coerceNonNegativeSnapshotInt(
+      raw.companies_with_refresh_status_recorded,
+    ),
+    companies_with_last_refresh_error: coerceNonNegativeSnapshotInt(
+      raw.companies_with_last_refresh_error,
+    ),
+  };
 }
 
 function isBatchJobListResponse(value: unknown): value is BatchJobListResponse {
@@ -726,6 +774,7 @@ function isCompanyInfo(value: unknown): value is RawCompanyInfo {
     typeof value.company_name === "string" &&
     typeof value.sector_name === "string" &&
     typeof value.sector_slug === "string" &&
+    isOptionalBoolean(value.has_local_financial_reports) &&
     isOptionalNullableString(value.read_model_updated_at) &&
     isOptionalBoolean(value.has_readable_current_data) &&
     (value.readable_years_count === undefined ||
@@ -886,6 +935,7 @@ function normalizeRefreshStatusItem(
 function normalizeCompanyInfo(company: RawCompanyInfo): CompanyInfo {
   return {
     ...company,
+    has_local_financial_reports: company.has_local_financial_reports ?? false,
     read_model_updated_at: company.read_model_updated_at ?? null,
     has_readable_current_data: company.has_readable_current_data ?? false,
     readable_years_count: company.readable_years_count ?? 0,
@@ -1516,20 +1566,31 @@ export async function fetchCompanyFreshness(
 export async function fetchBaseHealth(
   params: BaseHealthRequest,
 ): Promise<BaseHealthSnapshot> {
-  if (isDesktopMode()) return bridgeFetchBaseHealth(params);
-  return (await routeFetch<BaseHealthSnapshot>(
-    `/api/base-health${buildQuery({
-      start_year: params.startYear,
-      end_year: params.endYear,
-      force_refresh: params.forceRefresh ? "1" : null,
-    })}`,
-    undefined,
-    {
-      validate: isBaseHealthSnapshot,
-      invalidResponseMessage:
-        "A rota interna retornou um snapshot de saude invalido.",
-    },
-  )) as BaseHealthSnapshot;
+  const rawUnknown: unknown = isDesktopMode()
+    ? await bridgeFetchBaseHealth(params)
+    : await routeFetch<Record<string, unknown>>(
+        `/api/base-health${buildQuery({
+          start_year: params.startYear,
+          end_year: params.endYear,
+          force_refresh: params.forceRefresh ? "1" : null,
+        })}`,
+        undefined,
+        {
+          validate: isBaseHealthSnapshotCore,
+          invalidResponseMessage:
+            "A rota interna retornou um snapshot de saude invalido.",
+        },
+      );
+
+  if (!isRecord(rawUnknown)) {
+    throw new ApiClientError(
+      "Resposta de saude da base em formato inesperado.",
+      502,
+      "invalid_response",
+    );
+  }
+
+  return normalizeBaseHealthSnapshot(rawUnknown);
 }
 
 function buildBatchRefreshBody(params: BatchRefreshRequest): Record<string, unknown> {

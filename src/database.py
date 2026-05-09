@@ -7,7 +7,7 @@ import pandas as pd
 from sqlalchemy import create_engine, inspect, text, Engine
 from sqlalchemy.exc import OperationalError
 
-from src.gics_manual_mapping import build_gics_classification
+from src.gics_manual_mapping import resolve_gics_classification
 from src.refresh_jobs import ensure_refresh_runtime_tables_for_connection
 
 logger = logging.getLogger(__name__)
@@ -187,7 +187,7 @@ class CVMDatabase:
                                  ticker_b3: str | None = None) -> None:
         """Persiste metadados na tabela companies (se existir). Idempotente."""
         updated_at = datetime.utcnow().replace(microsecond=0).isoformat()
-        gics = build_gics_classification(
+        gics = resolve_gics_classification(
             sector_name=setor_cvm,
             setor_analitico=None,
             setor_cvm=setor_cvm,

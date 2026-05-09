@@ -11,6 +11,10 @@ export type BaseHealthSummary = {
   totalCompanies: number | null;
   companiesWithHistoricalData: number | null;
   companiesWithoutHistoricalData: number | null;
+  companiesWithAnyLocalFinancialReport: number | null;
+  companiesPartialLocal: number | null;
+  companiesWithRefreshStatusRecorded: number | null;
+  companiesWithLastRefreshError: number | null;
   completedCells: number | null;
   missingCells: number | null;
   coveragePct: number | null;
@@ -75,37 +79,22 @@ function formatNumber(value: number): string {
   return numberFormatter.format(value);
 }
 
-function sumSectorCompanies(sectors: CompanySectorFilter[]): number | null {
-  if (!sectors.length) return null;
-  return sectors.reduce((total, sector) => total + sector.company_count, 0);
-}
-
-function latestCoverageRow(health: BaseHealthSnapshot | null) {
-  if (!health?.per_year.length) return null;
-  return [...health.per_year].sort((a, b) => b.year - a.year)[0] ?? null;
-}
-
-export function buildBaseHealthSummary(
-  health: BaseHealthSnapshot | null,
-  sectors: CompanySectorFilter[],
-): BaseHealthSummary {
-  const totalCompanies =
-    health?.total_companies ??
-    sumSectorCompanies(sectors) ??
-    latestCoverageRow(health)?.total_companies ??
-    null;
-  const companiesWithHistoricalData =
-    health?.companies_with_historical_data ?? null;
+export function buildBaseHealthSummary(health: BaseHealthSnapshot | null): BaseHealthSummary {
+  const totalCompanies = health?.total_companies ?? null;
+  const companiesWithHistoricalData = health?.companies_with_historical_data ?? null;
   const companiesWithoutHistoricalData =
-    health?.companies_without_historical_data ??
-    (totalCompanies != null && companiesWithHistoricalData != null
-      ? Math.max(0, totalCompanies - companiesWithHistoricalData)
-      : null);
+    health?.companies_without_historical_data ?? null;
 
   return {
     totalCompanies,
     companiesWithHistoricalData,
     companiesWithoutHistoricalData,
+    companiesWithAnyLocalFinancialReport:
+      health?.companies_with_any_local_financial_report ?? null,
+    companiesPartialLocal: health?.companies_partial_local ?? null,
+    companiesWithRefreshStatusRecorded:
+      health?.companies_with_refresh_status_recorded ?? null,
+    companiesWithLastRefreshError: health?.companies_with_last_refresh_error ?? null,
     completedCells: health?.completed_cells ?? null,
     missingCells: health?.missing_cells ?? null,
     coveragePct: health?.pct ?? null,
@@ -134,7 +123,7 @@ export function buildUpdateModeEstimates({
   sectors: CompanySectorFilter[];
   selectedSectorSlug: string | null;
 }): Record<BatchRefreshMode, UpdateModeEstimate> {
-  const summary = buildBaseHealthSummary(health, sectors);
+  const summary = buildBaseHealthSummary(health);
   const selectedSector = sectors.find((sector) => sector.sector_slug === selectedSectorSlug);
   const fullCount = selectedSector?.company_count ?? summary.totalCompanies;
   const windowLabel =

@@ -14,7 +14,6 @@ O objetivo nao e cobrir o sitemap inteiro. O objetivo e fechar o primeiro fluxo 
 `Home -> Empresas -> Empresa`
 
 Pacote aditivo entregue depois do slice inicial:
-- `/comparar`
 - `/setores`
 - `/setores/[slug]`
 
@@ -60,15 +59,6 @@ Pacote aditivo entregue depois do slice inicial:
 - aba `demonstracoes`
 - `stmt` em URL com `DRE`, `BPA`, `BPP`, `DFC`
 
-### `/comparar`
-
-- selecao de empresas por busca e sugestoes rapidas
-- download em lote `.zip` com um `.xlsx` por empresa selecionada
-- deep-link publico por `ids` e `anos`
-- periodo anual resolvido por interseccao entre empresas
-- tabela comparativa de KPIs com base de referencia na primeira empresa
-- fallback explicito para ausencia de anos em comum, erro parcial e IDs invalidos
-
 ### `/setores`
 
 - hub setorial com cards de descoberta
@@ -103,14 +93,6 @@ Defaults:
 - `aba=visao-geral`
 - `stmt=DRE`
 - `anos`: 3 anos mais recentes, ou menos se a empresa tiver menos historico
-
-### Compare
-
-- `/comparar?ids=9512,1179&anos=2023,2024`
-
-Defaults:
-- `ids`: vazio ate o usuario montar a selecao inicial
-- `anos`: interseccao mais recente resolvida pelo frontend quando a URL nao informar um periodo valido
 
 ### Setores
 

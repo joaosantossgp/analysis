@@ -6,8 +6,8 @@ Last update: 2026-04-09
 
 ## 1) Product Context
 - Product: financial analysis platform with CVM data for Brazilian companies.
-- Main users: investors and analysts who need fast discovery and comparison.
-- Architecture goals: discoverability, efficient comparison, and lead base growth.
+- Main users: investors and analysts who need fast discovery and analysis.
+- Architecture goals: discoverability, efficient analysis, and lead base growth.
 - Growth constraint: keep MVP public now, preserve path for future logged area.
 
 ## 2) User Preferences
@@ -15,7 +15,7 @@ Last update: 2026-04-09
 - Navigation depth: shallow.
 - Navigation style: product-led.
 - Discovery model: hub-first, then detail pages.
-- Priority order: analysis, comparison, discoverability, lead generation.
+- Priority order: analysis, discoverability, lead generation.
 - Access model: public for now.
 - Naming preference: short product labels.
 
@@ -31,14 +31,12 @@ Last update: 2026-04-09
 - Sectors
 - KPIs
 - Macro
-- Compare
 - Trust and Conversion (Methodology, Sources, Glossary, Contact, Newsletter)
 
 ### 4.2 Content relationships
 - Company belongs to a sector.
 - Company and sector are interpreted through KPI views.
 - Macro indicators provide context for KPI and sector behavior.
-- Compare crosses Company x Company and Company x Sector.
 
 ### 4.3 Grouping and hierarchy logic
 - Level 1: hub pages for discovery.
@@ -55,7 +53,6 @@ Last update: 2026-04-09
 - /
 - /empresas
 - /empresas/[cd_cvm]
-- /comparar
 - /setores
 - /setores/[slug]
 - /kpis
@@ -84,7 +81,6 @@ Last update: 2026-04-09
 - Setores
 - KPIs
 - Macro
-- Comparar
 
 ### 6.2 Secondary navigation (detail pages)
 - Visao Geral
@@ -95,7 +91,6 @@ Last update: 2026-04-09
 ### 6.3 Contextual navigation
 - Breadcrumbs on all detail pages.
 - Related links between company, sector, KPI, and macro pages.
-- Fast action link to Compare from hubs and detail pages.
 
 ### 6.4 Footer navigation
 - Sobre
@@ -138,7 +133,6 @@ Last update: 2026-04-09
 ### 10.1 MVP
 - Public read-only navigation.
 - Hubs and details for Companies, Sectors, KPIs, Macro.
-- Compare route live.
 - Trust, utility, and legal essentials.
 
 ### 10.2 Expanded
@@ -149,7 +143,7 @@ Last update: 2026-04-09
 ## 11) Next Recommendations
 1. Validate the tree with 5 to 8 core user tasks.
 2. Define content ownership per domain.
-3. Add event tracking by intent: discover, analyze, compare, convert.
+3. Add event tracking by intent: discover, analyze, convert.
 4. Lock slug strategy before broad page generation.
 
 ## 12) Documentation and Handoff Notes
@@ -158,7 +152,7 @@ Do not implement all pages at once.
 Implement page by page following priority and acceptance criteria.
 
 ## 12.1 Current delivery checkpoint
-- Live hoje: PG-01, PG-02, PG-03, PG-04, PG-05 e PG-06.
+- Live hoje: PG-01, PG-02, PG-03, PG-05 e PG-06. PG-04 `/comparar` foi removida do produto.
 - Proximo bloco de produto: PG-07 e PG-08 (`/kpis` e `/kpis/[kpi_id]`).
 - Macro (`PG-09` e `PG-10`) continua travado em discovery de fonte e contrato.
 
@@ -178,7 +172,6 @@ Goal: find each page spec in less than 60 seconds.
 | 1 | PG-01 | P0 | / | Home | entry and routing to analysis | no |
 | 2 | PG-02 | P0 | /empresas | Companies hub | discover and choose company | no |
 | 3 | PG-03 | P0 | /empresas/[cd_cvm] | Company detail | analyze one company deeply | YES: app becomes functional here |
-| 4 | PG-04 | P0 | /comparar | Compare | compare entities directly | YES: full core proposition |
 | 5 | PG-05 | P0 | /setores | Sectors hub | sector discovery | yes |
 | 6 | PG-06 | P0 | /setores/[slug] | Sector detail | sector analysis | yes |
 | 7 | PG-07 | P0 | /kpis | KPI hub | discover KPI catalog | yes |
@@ -200,7 +193,6 @@ Goal: find each page spec in less than 60 seconds.
 ### 13.3 Functional threshold
 - Minimum functional app starts at PG-03.
 - Reason: user can discover a company and complete a full company analysis flow.
-- Full core proposition starts at PG-04 when direct comparison is available.
 
 ---
 
@@ -230,7 +222,7 @@ Use this exact card per page:
 - Acceptance criteria:
 - Analytics events:
 
-### 14.2 Ready-to-build cards for first four pages
+### 14.2 Ready-to-build cards for current core pages
 #### PG-01 - Home
 - Route: /
 - Priority: P0
@@ -239,8 +231,8 @@ Use this exact card per page:
 - Required data contracts: health and basic company search availability.
 - Mandatory content blocks: hero search, quick entry links, trust strip.
 - Primary CTA: Buscar empresa.
-- Secondary CTA: Ir para comparar.
-- Internal links out: /empresas, /comparar, /setores, /kpis, /macro.
+- Secondary CTA: Abrir setores.
+- Internal links out: /empresas, /setores, /kpis, /macro.
 - Acceptance criteria: user can move to hub/detail in one click from home.
 
 #### PG-02 - Companies Hub
@@ -251,8 +243,8 @@ Use this exact card per page:
 - Required data contracts: companies search endpoint.
 - Mandatory content blocks: searchable list, filters, key metadata.
 - Primary CTA: Ver empresa.
-- Secondary CTA: Comparar.
-- Internal links out: /empresas/[cd_cvm], /comparar.
+- Secondary CTA: Ver setores.
+- Internal links out: /empresas/[cd_cvm], /setores.
 - Acceptance criteria: user can find and open target company in under 2 interactions.
 
 #### PG-03 - Company Detail
@@ -262,24 +254,10 @@ Use this exact card per page:
 - User job-to-be-done: understand company performance over years.
 - Required data contracts: company info, years, statements, kpis.
 - Mandatory content blocks: summary, KPI highlights, statements, contextual links.
-- Primary CTA: Comparar empresa.
+- Primary CTA: Analisar demonstracoes.
 - Secondary CTA: Ver setor.
-- Internal links out: /comparar, /setores/[slug], /kpis/[kpi_id].
+- Internal links out: /setores/[slug], /kpis/[kpi_id].
 - Acceptance criteria: one-company analysis flow is complete and reliable.
-
-#### PG-04 - Compare
-- Route: /comparar
-- Priority: P0
-- Goal: enable direct comparison flow for decision support.
-- User job-to-be-done: compare at least two entities side by side.
-- Required data contracts: companies search, company detail, KPI bundles.
-- Mandatory content blocks: selectors, comparable KPI table, difference highlights.
-- Primary CTA: Ajustar comparacao.
-- Secondary CTA: Abrir detalhe da empresa.
-- Internal links out: /empresas/[cd_cvm], /setores/[slug], /kpis/[kpi_id].
-- Acceptance criteria: user can complete one comparison task without dead ends.
-
----
 
 ## 15) Traceability to Existing Project Docs
 - API contracts and payloads: docs/V2_API_CONTRACT.md

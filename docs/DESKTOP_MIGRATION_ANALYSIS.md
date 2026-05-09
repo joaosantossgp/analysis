@@ -91,7 +91,7 @@ Transformar o dashboard web em um app desktop local que:
   (a) Next.js dev server vs build de produção,
   (b) hop FastAPI extra desnecessário em local,
   (c) hidratação React + Motion/Remotion pesados,
-  (d) N+1 em rotas de comparação/setor.
+  (d) N+1 em rotas de setor.
 - **Single-file `.exe` literal é um mito útil.** Todos os caminhos sérios
   produzem um *bundle* comprimido em executável (PyInstaller `--onefile`)
   ou um `.msi/.exe` instalador (Inno Setup, NSIS, Tauri bundler). Pra

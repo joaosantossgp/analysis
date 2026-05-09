@@ -10,6 +10,7 @@ import { CompanyOverview } from "@/components/company/company-overview";
 import { CompanyPeriodPreset } from "@/components/company/company-period-preset";
 import { CompanyStatementsLazy } from "@/components/company/company-statements-lazy";
 import { CompanyUrlTabs } from "@/components/company/company-url-tabs";
+import { CompanyYearsListWarning } from "@/components/company/company-years-list-warning";
 import {
   PageShell,
   SectionHeading,
@@ -28,6 +29,7 @@ type CompanyDetailBodyProps = {
   bundle: KPIBundle | null;
   statement: StatementMatrix | null;
   contentError: string | null;
+  yearsListUnreachable?: boolean;
 };
 
 export function CompanyDetailBody({
@@ -40,6 +42,7 @@ export function CompanyDetailBody({
   bundle,
   statement,
   contentError,
+  yearsListUnreachable = false,
 }: CompanyDetailBodyProps) {
   return (
     <PageShell density="default">
@@ -66,6 +69,10 @@ export function CompanyDetailBody({
         selectedYears={selectedYears}
         variant="custom-only"
       />
+
+      {yearsListUnreachable ? (
+        <CompanyYearsListWarning context="detail_fallback" />
+      ) : null}
 
       {currentTab === "visao-geral" ? (
         bundle ? (

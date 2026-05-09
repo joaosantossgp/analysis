@@ -649,6 +649,12 @@ Parametros:
 
 DTO de saida:
 - `src.contracts.HealthSnapshot`
+- campos agregados extras na raiz do JSON (painel **Atualizar base**), sempre derivados do SQLite/Postgres:
+  - `companies_with_any_local_financial_report`: empresas com pelo menos uma linha em `financial_reports`
+  - `companies_partial_local`: ha dados locais, mas nenhum ano fecha como DFP anual computavel (mesmo filtro de `get_company_years_map`)
+  - `companies_with_refresh_status_recorded`: empresas ativas que possuem linha em `company_refresh_status` (para contextualizar cobertura do historico de refresh)
+  - `companies_with_last_refresh_error`: empresas com `company_refresh_status.last_status` em estado terminal de falha operacional (`error`, `failed`, `dispatch_failed`, mesmo conjunto usado em refresh em lote)
+  - clientes web podem tratar os quatro contadores acima como opcionais (omitidos => zero) ao parsear snapshots antigos
 
 Resposta exemplo:
 

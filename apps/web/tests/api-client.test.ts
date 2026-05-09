@@ -252,6 +252,7 @@ test("fetchCompanyInfo accepts readable handoff fields from company detail", asy
         sector_slug: "energia",
         company_type: "comercial",
         ticker_b3: "PETR4",
+        has_local_financial_reports: true,
         read_model_updated_at: "2026-04-21T12:05:00+00:00",
         has_readable_current_data: true,
         readable_years_count: 2,
@@ -274,6 +275,7 @@ test("fetchCompanyInfo accepts readable handoff fields from company detail", asy
     });
 
     assert.equal(capturedInit?.cache, "no-store");
+    assert.equal(payload?.has_local_financial_reports, true);
     assert.equal(payload?.has_readable_current_data, true);
     assert.equal(payload?.readable_years_count, 2);
     assert.equal(payload?.latest_readable_year, 2024);
@@ -311,6 +313,7 @@ test("fetchCompanyInfo normalizes missing readable handoff fields", async () => 
   try {
     const payload = await fetchCompanyInfo(19348);
 
+    assert.equal(payload?.has_local_financial_reports, false);
     assert.equal(payload?.has_readable_current_data, false);
     assert.equal(payload?.readable_years_count, 0);
     assert.equal(payload?.latest_readable_year, null);

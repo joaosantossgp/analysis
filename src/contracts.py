@@ -231,6 +231,7 @@ class CompanyInfoDTO:
     sector_slug: str
     company_type: str | None
     ticker_b3: str | None
+    has_local_financial_reports: bool = False
     read_model_updated_at: str | None = None
     has_readable_current_data: bool = False
     readable_years_count: int = 0
@@ -646,6 +647,10 @@ class HealthSnapshot:
     total_companies: int = 0
     companies_with_historical_data: int = 0
     companies_without_historical_data: int = 0
+    companies_with_any_local_financial_report: int = 0
+    companies_partial_local: int = 0
+    companies_with_refresh_status_recorded: int = 0
+    companies_with_last_refresh_error: int = 0
 
     @classmethod
     def from_payload(cls, payload: dict[str, Any]) -> "HealthSnapshot":
@@ -681,6 +686,16 @@ class HealthSnapshot:
             or global_stats.get("companies_with_historical_data")
             or 0
         )
+        companies_with_any_local_financial_report = int(
+            company_inventory.get("companies_with_any_local_financial_report") or 0
+        )
+        companies_partial_local = int(company_inventory.get("companies_partial_local") or 0)
+        companies_with_refresh_status_recorded = int(
+            company_inventory.get("companies_with_refresh_status_recorded") or 0
+        )
+        companies_with_last_refresh_error = int(
+            company_inventory.get("companies_with_last_refresh_error") or 0
+        )
         return cls(
             generated_at=payload.get("generated_at"),
             start_year=int(payload.get("start_year") or 0),
@@ -711,6 +726,10 @@ class HealthSnapshot:
                 0,
                 total_companies - companies_with_historical_data,
             ),
+            companies_with_any_local_financial_report=companies_with_any_local_financial_report,
+            companies_partial_local=companies_partial_local,
+            companies_with_refresh_status_recorded=companies_with_refresh_status_recorded,
+            companies_with_last_refresh_error=companies_with_last_refresh_error,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -733,4 +752,8 @@ class HealthSnapshot:
             "total_companies": self.total_companies,
             "companies_with_historical_data": self.companies_with_historical_data,
             "companies_without_historical_data": self.companies_without_historical_data,
+            "companies_with_any_local_financial_report": self.companies_with_any_local_financial_report,
+            "companies_partial_local": self.companies_partial_local,
+            "companies_with_refresh_status_recorded": self.companies_with_refresh_status_recorded,
+            "companies_with_last_refresh_error": self.companies_with_last_refresh_error,
         }

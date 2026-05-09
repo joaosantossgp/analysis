@@ -12,12 +12,15 @@ type CompanyContextCardProps = {
   company: CompanyInfo;
   selectedYears: number[];
   availableYears: number[];
+  /** When set (e.g. partial quarterly-only rows), replaces the empty-years fallback label. */
+  historicoNaPaginaHint?: string | null;
 };
 
 export function CompanyContextCard({
   company,
   selectedYears,
   availableYears,
+  historicoNaPaginaHint,
 }: CompanyContextCardProps) {
   const hero = buildCompanyHeroModel(company, selectedYears);
 
@@ -47,7 +50,9 @@ export function CompanyContextCard({
         <div className="flex items-baseline justify-between gap-3">
           <dt className="text-muted-foreground">Historico na pagina</dt>
           <dd className="text-right text-foreground">
-            {availableYears.length > 0 ? formatYearsLabel(availableYears) : "Sem anos locais"}
+            {availableYears.length > 0
+              ? formatYearsLabel(availableYears)
+              : historicoNaPaginaHint ?? "Sem anos locais"}
           </dd>
         </div>
         <div className="flex items-baseline justify-between gap-3">

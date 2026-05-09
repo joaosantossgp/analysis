@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import sqlite3
 
+from src.gics_manual_mapping import GICS_11_SECTORS
 from src.read_service import CVMReadService
 from src.settings import build_settings
 
@@ -135,6 +136,24 @@ def _seed_sector_read_service(tmp_path):
         conn.commit()
 
     return CVMReadService(settings=settings)
+
+
+def test_list_sectors_hub_counts_sum_matches_full_universe(tmp_path):
+    """Sector hub totals must equal companies that resolve to a GICS hub (unpaged directory)."""
+    service = _seed_sector_read_service(tmp_path)
+    all_rows, _ = service.query_layer.get_companies_directory_page(
+        search="",
+        sector_name=None,
+        page=1,
+        page_size=None,
+    )
+    items = service._build_company_results(all_rows)
+    classified = sum(
+        1 for item in items if item.gics_sector and item.gics_sector in GICS_11_SECTORS
+    )
+    dto = service.list_sectors()
+    hub_sum = sum(row.company_count for row in dto.items)
+    assert hub_sum == classified
 
 
 def test_list_sectors_returns_stable_snapshot_contract(tmp_path):

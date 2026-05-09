@@ -19,6 +19,7 @@ function buildCompanyInfo(overrides: Partial<CompanyInfo> = {}): CompanyInfo {
     sector_slug: "energia",
     company_type: "comercial",
     ticker_b3: "PETR4",
+    has_local_financial_reports: true,
     read_model_updated_at: null,
     has_readable_current_data: true,
     readable_years_count: 3,

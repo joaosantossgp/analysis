@@ -19,6 +19,7 @@ import {
   RotateCcwIcon,
   SlidersHorizontalIcon,
   TerminalSquareIcon,
+  XCircleIcon,
   XIcon,
   type LucideIcon,
 } from "lucide-react";
@@ -291,12 +292,13 @@ function StatTile({
   value: string;
   subvalue?: string;
   icon: LucideIcon;
-  tone?: "default" | "success" | "warning";
+  tone?: "default" | "success" | "warning" | "error";
 }) {
   const toneClass = {
     default: "text-foreground",
     success: "text-emerald-300",
     warning: "text-amber-300",
+    error: "text-destructive",
   };
 
   return (
@@ -644,10 +646,7 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
       : isCompleted
         ? "Concluido"
         : "Executando";
-  const baseSummary = useMemo(
-    () => buildBaseHealthSummary(baseHealth, sectors),
-    [baseHealth, sectors],
-  );
+  const baseSummary = useMemo(() => buildBaseHealthSummary(baseHealth), [baseHealth]);
   const sectorOptions = useMemo(
     () => [
       { value: "all", label: "Todos os setores" },
@@ -1337,46 +1336,94 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
 
           <section id="section-status" className="scroll-mt-24">
             <SectionTitle icon={BarChart3Icon} title="Estado da base" />
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <Eyebrow className="mb-3 text-[0.65rem]">Cadastro local (mesmo universo do diretorio)</Eyebrow>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               <StatTile
-                label="Total de empresas"
+                label="Empresas no cadastro"
                 value={baseSummary.totalCompanies != null ? formatNumber(baseSummary.totalCompanies) : "n/d"}
-                subvalue={baseHealthState === "loading" ? "Carregando /base-health" : "Cadastro ativo"}
+                subvalue={
+                  baseHealthState === "loading"
+                    ? "Carregando GET /base-health"
+                    : baseHealthState === "unavailable"
+                      ? "API indisponivel — nao use somatoria de setores como substituto"
+                      : "Linhas ativas em companies (filtro is_active)"
+                }
                 icon={Building2Icon}
               />
               <StatTile
-                label="Com historico"
-                value={baseSummary.companiesWithHistoricalData != null ? formatNumber(baseSummary.companiesWithHistoricalData) : "n/d"}
-                subvalue="Ao menos um ano anual disponivel"
+                label="Com DFP anual completo"
+                value={
+                  baseSummary.companiesWithHistoricalData != null
+                    ? formatNumber(baseSummary.companiesWithHistoricalData)
+                    : "n/d"
+                }
+                subvalue="Pelo menos um ano com periodo anual (PERIOD_LABEL alinhado ao ano), como no diretorio"
                 icon={CheckCircle2Icon}
                 tone="success"
               />
               <StatTile
-                label="Sem historico"
-                value={baseSummary.companiesWithoutHistoricalData != null ? formatNumber(baseSummary.companiesWithoutHistoricalData) : "n/d"}
-                subvalue="Cadastradas, ainda sem leitura local"
+                label="Sem ano DFP computavel"
+                value={
+                  baseSummary.companiesWithoutHistoricalData != null
+                    ? formatNumber(baseSummary.companiesWithoutHistoricalData)
+                    : "n/d"
+                }
+                subvalue="Cadastradas sem ano anual legivel para KPIs (podem ter só ITR ou arquivo incompleto)"
                 icon={FileClockIcon}
                 tone="warning"
               />
+              <StatTile
+                label="Arquivo local parcial"
+                value={
+                  baseSummary.companiesPartialLocal != null
+                    ? formatNumber(baseSummary.companiesPartialLocal)
+                    : "n/d"
+                }
+                subvalue="Ha linhas em demonstrativos, mas nenhum ano fecha como DFP anual para leitura da pagina"
+                icon={AlertTriangleIcon}
+                tone="warning"
+              />
+              <StatTile
+                label="Falhas no ultimo refresh"
+                value={
+                  baseSummary.companiesWithLastRefreshError != null
+                    ? formatNumber(baseSummary.companiesWithLastRefreshError)
+                    : "n/d"
+                }
+                subvalue={
+                  baseSummary.companiesWithRefreshStatusRecorded != null &&
+                  baseSummary.totalCompanies != null
+                    ? `Status terminal error, failed ou dispatch_failed em company_refresh_status. Com registro de atualizacao: ${formatNumber(baseSummary.companiesWithRefreshStatusRecorded)} de ${formatNumber(baseSummary.totalCompanies)} empresas no cadastro.`
+                    : "Status terminal error, failed ou dispatch_failed quando ha linha em company_refresh_status."
+                }
+                icon={XCircleIcon}
+                tone="error"
+              />
+            </div>
+
+            <Eyebrow className="mb-3 mt-8 text-[0.65rem]">
+              Cobertura na janela de anos (pacote de demonstrativos)
+            </Eyebrow>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <StatTile
                 label="Ultima verificacao"
                 value={formatDateTimeLabel(baseSummary.generatedAt)}
                 subvalue={
                   baseSummary.startYear != null && baseSummary.endYear != null
                     ? `Janela ${baseSummary.startYear}-${baseSummary.endYear}`
-                    : "Aguardando /base-health"
+                    : "Aguardando GET /base-health"
                 }
                 icon={Clock3Icon}
               />
               <StatTile
                 label="Celulas completas"
                 value={baseSummary.completedCells != null ? formatNumber(baseSummary.completedCells) : "n/d"}
-                subvalue={`${formatPercent(baseSummary.coveragePct)} da janela`}
+                subvalue={`${formatPercent(baseSummary.coveragePct)} da grade empresa × ano`}
                 icon={CheckCircle2Icon}
                 tone="success"
               />
               <StatTile
-                label="Lacunas pendentes"
+                label="Lacunas na janela"
                 value={baseSummary.missingCells != null ? formatNumber(baseSummary.missingCells) : "n/d"}
                 subvalue={baseSummary.healthStatus ?? "Fonte indisponivel"}
                 icon={AlertTriangleIcon}
@@ -1386,23 +1433,48 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
 
             <Card className="mt-4 rounded-[1.15rem] border border-border/55 bg-muted/25">
               <CardContent className="space-y-2 py-4 text-sm leading-6 text-muted-foreground">
-                <p className="font-medium text-foreground">Como ler estes numeros</p>
+                <p className="font-medium text-foreground">Fonte e definicoes</p>
                 <ul className="list-disc space-y-1.5 pl-5">
                   <li>
-                    <span className="text-foreground">Total de empresas</span> — companhias ativas no cadastro
-                    local que entram no escopo da API (nao e um numero fixo da aplicacao).
+                    <span className="text-foreground">Origem</span> — calculo no servidor via{" "}
+                    <span className="font-mono text-xs">GET /base-health</span> sobre o mesmo SQLite (ou Postgres)
+                    da aplicacao; estes totais nao vêm de estimativas fixas nem da soma dos filtros de setor na barra
+                    lateral.
                   </li>
                   <li>
-                    <span className="text-foreground">Com / Sem historico</span> — empresas com pelo menos um ano
-                    anual (DFP) legivel no SQLite versus cadastradas ainda sem serie anual util ao cockpit.
+                    <span className="text-foreground">Empresas no cadastro</span> — contagens alinhadas ao universo ativo
+                    usado pelo diretorio (<span className="font-mono text-xs">companies</span> com{" "}
+                    <span className="font-mono text-xs">is_active</span>).
                   </li>
                   <li>
-                    <span className="text-foreground">Celulas completas / Lacunas</span> — grade{" "}
+                    <span className="text-foreground">DFP anual computavel</span> — mesmo critério de anos do motor de KPIs
+                    (periodo anual, nao só trimestral).
+                  </li>
+                  <li>
+                    <span className="text-foreground">Arquivo local parcial</span> — existe pelo menos uma linha em{" "}
+                    <span className="font-mono text-xs">financial_reports</span>, mas nenhum ano satisfaz o filtro de DFP
+                    anual acima.
+                  </li>
+                  <li>
+                    <span className="text-foreground">Falhas no refresh</span> — empresas do cadastro com{" "}
+                    <span className="font-mono text-xs">last_status</span> normalizado para{" "}
+                    <span className="font-mono text-xs">error</span>, <span className="font-mono text-xs">failed</span> ou{" "}
+                    <span className="font-mono text-xs">dispatch_failed</span>. O denominador &quot;com registro&quot;
+                    conta quantas empresas ativas possuem linha em{" "}
+                    <span className="font-mono text-xs">company_refresh_status</span>; sem linha, nao entram nem como
+                    falha nem como sucesso.
+                  </li>
+                  <li>
+                    <span className="text-foreground">Compatibilidade da API</span> — clientes web tratam contadores
+                    estendidos como opcionais (ausentes viram zero) para nao quebrar snapshots antigos do mesmo endpoint.
+                  </li>
+                  <li>
+                    <span className="text-foreground">Celulas / Lacunas</span> — grade{" "}
                     <span className="tabular-nums">
                       empresas × anos ({baseSummary.startYear ?? "?"}-{baseSummary.endYear ?? "?"})
                     </span>{" "}
-                    para o pacote de demonstrativos esperado; uma lacuna e uma combinacao ano-empresa ausente, nao
-                    uma &quot;empresa inteira&quot;.
+                    onde cada celula exige o pacote completo de demonstrativos na janela; uma lacuna e um par empresa-ano
+                    ausente, nao necessariamente a empresa inteira.
                   </li>
                 </ul>
               </CardContent>

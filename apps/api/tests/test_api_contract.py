@@ -23,6 +23,9 @@ class StaticCompanyCatalog:
     def lookup_company(self, cd_cvm: int) -> CompanyCatalogEntry | None:
         return self.by_cd_cvm.get(int(cd_cvm))
 
+    def list_entries(self) -> tuple[CompanyCatalogEntry, ...]:
+        return self.entries
+
     def search_companies(
         self,
         *,
@@ -143,8 +146,34 @@ def test_companies_empty_search_returns_paginated_directory(client: TestClient):
     returned_names = [item["company_name"] for item in payload["items"]]
     assert "SEM DADOS" in returned_names
     sem_dados = next(i for i in payload["items"] if i["company_name"] == "SEM DADOS")
-    assert sem_dados["has_financial_data"] is False
+    assert sem_dados["has_financial_data"] is True
     assert sem_dados["anos_disponiveis"] == []
+
+
+def test_companies_catalog_fallback_preserves_local_data_status_for_same_cvm(
+    client: TestClient,
+):
+    client.app.state.read_service._company_catalog = StaticCompanyCatalog(
+        CompanyCatalogEntry(
+            cd_cvm=9512,
+            company_name="PETROLEO BRASILEIRO S.A. - PETROBRAS",
+            nome_comercial="Petrobras",
+            cnpj="33.000.167/0001-01",
+            setor_cvm="Petróleo e Gás",
+            ticker_b3="PETR4",
+            is_active=True,
+        )
+    )
+
+    response = client.get("/companies", params={"search": "petrobras", "page_size": 5})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["items"][0]["cd_cvm"] == 9512
+    assert payload["items"][0]["company_name"] == "PETROBRAS"
+    assert payload["items"][0]["has_financial_data"] is True
+    assert payload["items"][0]["total_rows"] > 0
+    assert payload["items"][0]["anos_disponiveis"] == [2023, 2024]
 
 
 @pytest.mark.parametrize(
@@ -819,6 +848,7 @@ def test_company_detail_returns_metadata(client: TestClient):
     assert payload["sector_name"] == "Energia"
     assert payload["sector_slug"] == "energia"
     assert payload["has_readable_current_data"] is True
+    assert payload["has_local_financial_reports"] is True
     assert payload["readable_years_count"] == 2
     assert payload["latest_readable_year"] == 2024
     assert payload["read_model_updated_at"] == "2026-04-08T08:55:00"
@@ -851,6 +881,7 @@ def test_company_detail_uses_catalog_fallback_for_unknown_local_company(
     assert payload["sector_slug"] == "financeiro"
     assert payload["ticker_b3"] == "ITUB4"
     assert payload["has_readable_current_data"] is False
+    assert payload["has_local_financial_reports"] is False
     assert payload["readable_years_count"] == 0
     assert payload["latest_readable_year"] is None
     assert payload["read_model_updated_at"] is None
@@ -869,6 +900,21 @@ def test_company_detail_uses_sector_fallback_when_analytical_sector_is_missing(c
     assert payload["company_name"] == "SABESP"
     assert payload["sector_name"] == "Saneamento"
     assert payload["sector_slug"] == "saneamento"
+
+
+def test_company_detail_flags_partial_local_financial_rows_without_annual_history(
+    client: TestClient,
+):
+    response = client.get("/companies/77889")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["company_name"] == "SEM DADOS"
+    assert payload["has_local_financial_reports"] is True
+    assert payload["has_readable_current_data"] is False
+    assert payload["readable_years_count"] == 0
+    assert payload["latest_readable_year"] is None
+    assert payload["read_availability_code"] == "no_readable_annual_history"
 
 
 def test_company_detail_returns_404_for_unknown_company(client: TestClient):
@@ -1522,6 +1568,13 @@ def test_base_health_returns_snapshot(client: TestClient):
     assert payload["raw"]["ranked_backlog"]["total_ranked"] == 3
     assert payload["raw"]["ranked_backlog"]["fully_covered_companies"] == 1
     assert payload["raw"]["ranked_backlog"]["queue_eligible_companies"] == 2
+    assert payload["total_companies"] == 4
+    assert payload["companies_with_historical_data"] == 3
+    assert payload["companies_without_historical_data"] == 1
+    assert payload["companies_with_any_local_financial_report"] == 4
+    assert payload["companies_partial_local"] == 1
+    assert payload["companies_with_refresh_status_recorded"] == 1
+    assert payload["companies_with_last_refresh_error"] == 0
 
 
 def test_base_health_rejects_invalid_year_window(client: TestClient):
@@ -1684,9 +1737,9 @@ def test_non_targeted_endpoints_do_not_expose_api_cache_headers(client: TestClie
 # ── Regressao: /years exclui anos com apenas dados trimestrais ITR ─────────────
 # A seed do banco inclui linhas ITR para PETROBRAS (REPORT_YEAR=2025,
 # PERIOD_LABEL="1Q25"). Sem o filtro PERIOD_LABEL = CAST(REPORT_YEAR AS TEXT)
-# o endpoint retornaria [2023, 2024, 2025] e o Comparar usaria referenceYear=2025,
+# o endpoint retornaria [2023, 2024, 2025] e a UI poderia usar referenceYear=2025,
 # cujas colunas nao existem no KPI bundle (KPI engine so usa dados anuais).
-# Isso causaria todos os valores "-" na tabela de comparacao.
+# Isso causaria todos os valores "-" em exibicoes dependentes de KPIs anuais.
 
 def test_company_years_excludes_itr_only_years(client: TestClient):
     """Garante que /years retorna apenas anos com DFP (PERIOD_LABEL == ano)."""

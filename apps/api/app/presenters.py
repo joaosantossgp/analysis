@@ -79,6 +79,7 @@ class CompanyInfoPayload(BaseModel):
     sector_slug: str
     company_type: str | None = None
     ticker_b3: str | None = None
+    has_local_financial_reports: bool = False
     read_model_updated_at: str | None = None
     has_readable_current_data: bool = False
     readable_years_count: int = 0
@@ -346,6 +347,10 @@ class HealthSnapshotPayload(BaseModel):
     total_companies: int = 0
     companies_with_historical_data: int = 0
     companies_without_historical_data: int = 0
+    companies_with_any_local_financial_report: int = 0
+    companies_partial_local: int = 0
+    companies_with_refresh_status_recorded: int = 0
+    companies_with_last_refresh_error: int = 0
 
 
 def _normalize_value(value: Any) -> Any:

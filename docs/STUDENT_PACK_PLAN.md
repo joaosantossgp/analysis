@@ -31,7 +31,7 @@ Atualizacao em 2026-04-09:
   [0004 - Primeiro runtime remoto: Railway + Vercel](./decisions/0004-first-remote-runtime-railway-vercel.md);
 - o deploy inicial continua limitado ao slice `/`, `/empresas` e
   `/empresas/[cd_cvm]`;
-- `/comparar` continua fora do gate remoto desta wave.
+- A feature `/comparar` foi removida do escopo de recuperacao atual.
 
 ## 1.1 Aprendizado por construcao
 
