@@ -43,7 +43,6 @@ TARGET_WEB_ROUTES = (
     "/",
     "/empresas",
     "/empresas/[cd_cvm]",
-    "/comparar",
     "/setores",
     "/setores/[slug]",
 )
