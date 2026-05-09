@@ -326,6 +326,15 @@ class SectorSnapshotDTO:
 
 
 @dataclass(frozen=True)
+class SubIndustryCountDTO:
+    name: str
+    count: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"name": self.name, "count": self.count}
+
+
+@dataclass(frozen=True)
 class SectorDirectoryItemDTO:
     sector_name: str
     sector_slug: str
@@ -333,10 +342,12 @@ class SectorDirectoryItemDTO:
     latest_year: int | None
     snapshot: SectorSnapshotDTO
     sub_industries: tuple[str, ...] = ()
+    sub_industry_breakdown: tuple[SubIndustryCountDTO, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
         payload["snapshot"] = self.snapshot.to_dict()
+        payload["sub_industry_breakdown"] = [row.to_dict() for row in self.sub_industry_breakdown]
         return payload
 
 

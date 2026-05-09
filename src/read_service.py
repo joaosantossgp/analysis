@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import functools
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from statistics import median
@@ -38,6 +38,7 @@ from src.contracts import (
     SectorDirectoryDTO,
     SectorDirectoryItemDTO,
     SectorSnapshotDTO,
+    SubIndustryCountDTO,
     SectorYearOverviewDTO,
     StatementMatrix,
     StatementSummaryDTO,
@@ -636,6 +637,26 @@ class CVMReadService:
         )
         company_name = str(payload.get("company_name") or "").strip() or f"CVM_{default_cd_cvm}"
         company_type = str(payload.get("company_type") or "comercial").strip() or "comercial"
+        pg = CVMReadService._clean_optional_text(payload.get("gics_sector"))
+        if pg:
+            slug = CVMReadService._clean_optional_text(payload.get("gics_sector_slug")) or sector_slugify(pg)
+            return CompanyInfoDTO(
+                cd_cvm=int(payload.get("cd_cvm") or default_cd_cvm),
+                company_name=company_name,
+                nome_comercial=payload.get("nome_comercial"),
+                cnpj=payload.get("cnpj"),
+                setor_cvm=payload.get("setor_cvm"),
+                setor_analitico=payload.get("setor_analitico"),
+                sector_name=sector_name,
+                sector_slug=sector_slugify(sector_name),
+                company_type=company_type,
+                ticker_b3=payload.get("ticker_b3"),
+                gics_sector=pg,
+                gics_sector_slug=slug,
+                gics_industry_group=CVMReadService._clean_optional_text(payload.get("gics_industry_group")),
+                gics_industry=CVMReadService._clean_optional_text(payload.get("gics_industry")),
+                gics_sub_industry=CVMReadService._clean_optional_text(payload.get("gics_sub_industry")),
+            )
         gics = build_gics_classification(
             sector_name=sector_name,
             setor_analitico=payload.get("setor_analitico"),
@@ -1130,12 +1151,14 @@ class CVMReadService:
         company_items = self._build_company_results(all_rows)
         companies_by_gics: dict[str, list[CompanySearchResult]] = defaultdict(list)
         sub_industries_by_gics: dict[str, set[str]] = defaultdict(set)
+        sub_industry_counts_by_gics: dict[str, Counter] = defaultdict(Counter)
         for item in company_items:
             if not item.gics_sector:
                 continue
             companies_by_gics[item.gics_sector].append(item)
             if item.gics_sub_industry:
                 sub_industries_by_gics[item.gics_sector].add(item.gics_sub_industry)
+                sub_industry_counts_by_gics[item.gics_sector][item.gics_sub_industry] += 1
 
         metric_rows = self.query_layer.get_sector_metric_rows()
         if metric_rows is not None and not metric_rows.empty and company_items:
@@ -1182,6 +1205,14 @@ class CVMReadService:
                 if option is not None
                 else len(companies_by_gics.get(sector_name, ()))
             )
+            breakdown_counter = sub_industry_counts_by_gics.get(sector_name, Counter())
+            breakdown = tuple(
+                SubIndustryCountDTO(name=name, count=int(count))
+                for name, count in sorted(
+                    breakdown_counter.items(),
+                    key=lambda item: (-int(item[1]), str(item[0])),
+                )
+            )
             items.append(
                 SectorDirectoryItemDTO(
                     sector_name=sector_name,
@@ -1194,6 +1225,7 @@ class CVMReadService:
                         mg_liq=self._coerce_optional_float(snapshot_row["mg_liq"]) if snapshot_row is not None else None,
                     ),
                     sub_industries=tuple(sorted(sub_industries_by_gics.get(sector_name, ()))),
+                    sub_industry_breakdown=breakdown,
                 )
             )
 
@@ -3453,11 +3485,24 @@ class CVMReadService:
             setor_cvm = self._clean_optional_text(row.get("setor_cvm"))
             raw_sector_name = self._clean_optional_text(row.get("sector_name"))
             sector_name = raw_sector_name or canonical_sector_name(setor_analitico, setor_cvm)
-            gics = build_gics_classification(
-                sector_name=sector_name,
-                setor_analitico=setor_analitico,
-                setor_cvm=setor_cvm,
-            )
+            pg_sec = self._clean_optional_text(row.get("persisted_gics_sector"))
+            if pg_sec:
+                g_sec = pg_sec
+                g_slug = self._clean_optional_text(row.get("persisted_gics_sector_slug")) or sector_slugify(pg_sec)
+                g_grp = self._clean_optional_text(row.get("persisted_gics_industry_group"))
+                g_ind = self._clean_optional_text(row.get("persisted_gics_industry"))
+                g_sub = self._clean_optional_text(row.get("persisted_gics_sub_industry"))
+            else:
+                gics = build_gics_classification(
+                    sector_name=sector_name,
+                    setor_analitico=setor_analitico,
+                    setor_cvm=setor_cvm,
+                )
+                g_sec = gics.gics_sector if gics else None
+                g_slug = gics.gics_sector_slug if gics else None
+                g_grp = gics.gics_industry_group if gics else None
+                g_ind = gics.gics_industry if gics else None
+                g_sub = gics.gics_sub_industry if gics else None
             raw_coverage_rank = row.get("coverage_rank")
             results.append(
                 CompanySearchResult(
@@ -3472,11 +3517,11 @@ class CVMReadService:
                     total_rows=int(row.get("total_rows") or 0),
                     has_financial_data=bool(int(row.get("has_financial_data") or 0)),
                     coverage_rank=int(raw_coverage_rank) if raw_coverage_rank is not None and str(raw_coverage_rank) != "nan" else None,
-                    gics_sector=gics.gics_sector if gics else None,
-                    gics_sector_slug=gics.gics_sector_slug if gics else None,
-                    gics_industry_group=gics.gics_industry_group if gics else None,
-                    gics_industry=gics.gics_industry if gics else None,
-                    gics_sub_industry=gics.gics_sub_industry if gics else None,
+                    gics_sector=g_sec,
+                    gics_sector_slug=g_slug,
+                    gics_industry_group=g_grp,
+                    gics_industry=g_ind,
+                    gics_sub_industry=g_sub,
                 )
             )
         return results

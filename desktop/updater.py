@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -31,8 +32,11 @@ _SNOOZE_DAYS = 7
 
 
 def _parse_version(tag: str) -> tuple[int, ...]:
-    """Convert 'v1.2.3' or '1.2.3' to (1, 2, 3) for comparison."""
+    """Compare semver core X.Y.Z; ignore git-describe suffix (e.g. 1.2.3-4-gabc)."""
     cleaned = tag.lstrip("v").strip()
+    m = re.match(r"^(\d+)\.(\d+)\.(\d+)", cleaned)
+    if m:
+        return tuple(int(x) for x in m.groups())
     try:
         return tuple(int(x) for x in cleaned.split("."))
     except ValueError:

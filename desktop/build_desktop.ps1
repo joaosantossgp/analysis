@@ -4,7 +4,7 @@
 # Uso:
 #   .\desktop\build_desktop.ps1
 #   .\desktop\build_desktop.ps1 -SkipNextBuild   # pula o next build (UI nao mudou)
-#   .\desktop\build_desktop.ps1 -Version 0.2.0   # versao explícita (default: git tag)
+#   .\desktop\build_desktop.ps1 -Version 0.2.0   # versao explícita (default: git describe --tags --always)
 #   .\desktop\build_desktop.ps1 -Verbose
 #
 # Saída:
@@ -54,10 +54,12 @@ if (-not $SkipNextBuild) {
 Write-Host "[2/5] Injetando versao em desktop/__version__.py..." -ForegroundColor Yellow
 
 if (-not $Version) {
+    # Full describe: exact tag (v0.2.0) or commits after tag (v0.2.0-5-gabcdef).
+    # --abbrev=0 was tag-only and hid post-tag commits from the bundled semver string.
     $gitTag = ""
     $gitDescribeExitCode = 1
     try {
-        $gitTag = (git -C $Root describe --tags --abbrev=0 2>$null)
+        $gitTag = (git -C $Root describe --tags --always 2>$null)
         $gitDescribeExitCode = $LASTEXITCODE
     } catch {
         $gitTag = ""

@@ -6,7 +6,12 @@ import { HomeDesktopLoader } from "@/components/home/home-desktop-loader";
 import { HomeTrustStrip } from "@/components/home/home-trust-strip";
 import { StatsStrip } from "@/components/home/stats-strip";
 import { PageShell } from "@/components/shared/design-system-recipes";
-import { fetchCompanies, fetchCompanyFilters, fetchEmDestaqueCompanies } from "@/lib/api";
+import {
+  fetchCompanies,
+  fetchCompanyFilters,
+  fetchEmDestaqueCompanies,
+  fetchSectorDirectory,
+} from "@/lib/api";
 import { isDesktopServerMode } from "@/lib/desktop-mode";
 
 // Keep at 300 to match the perf baseline.
@@ -32,8 +37,23 @@ export default async function HomePage() {
     statsResult.status === "fulfilled"
       ? (statsResult.value?.pagination.total_items ?? null)
       : null;
-  const gicsSectors =
+  let gicsSectors =
     filtersResult.status === "fulfilled" ? filtersResult.value.sectors : [];
+
+  if (gicsSectors.length === 0) {
+    try {
+      const directory = await fetchSectorDirectory();
+      gicsSectors = directory.items.map((item) => ({
+        sector_name: item.sector_name,
+        sector_slug: item.sector_slug,
+        company_count: item.company_count,
+        gics_sector: item.sector_name,
+        gics_sector_slug: item.sector_slug,
+      }));
+    } catch {
+      /* discovery falls back to empty state below */
+    }
+  }
 
   return (
     <PageShell density="relaxed" className="flex flex-col items-center gap-20 pb-24">

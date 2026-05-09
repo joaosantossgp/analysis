@@ -131,6 +131,44 @@ class CVMQueryLayer:
 
     def __init__(self, engine: Optional[Engine] = None):
         self.engine = engine or get_engine()
+        self._company_columns: frozenset[str] | None = None
+
+    def _company_column_names(self) -> frozenset[str]:
+        if self._company_columns is None:
+            try:
+                insp = inspect(self.engine)
+                self._company_columns = frozenset(
+                    str(c.get("name") or "").lower()
+                    for c in insp.get_columns("companies")
+                )
+            except Exception:
+                self._company_columns = frozenset()
+        return self._company_columns
+
+    def _persisted_gics_max_sql(self) -> str:
+        cols = self._company_column_names()
+        parts: list[str] = []
+        mapping = (
+            ("gics_sector", "persisted_gics_sector"),
+            ("gics_sector_slug", "persisted_gics_sector_slug"),
+            ("gics_industry_group", "persisted_gics_industry_group"),
+            ("gics_industry", "persisted_gics_industry"),
+            ("gics_sub_industry", "persisted_gics_sub_industry"),
+        )
+        for col, alias in mapping:
+            if col in cols:
+                parts.append(f"MAX(c.{col}) AS {alias}")
+        if not parts:
+            return ""
+        return ",\n                " + ",\n                ".join(parts)
+
+    def _sector_bucket_expression_sql(self) -> str:
+        """Prefer persisted GICS sector label when present for histograms/filters."""
+        cols = self._company_column_names()
+        base = _CANONICAL_SECTOR_SQL
+        if "gics_sector" in cols:
+            return f"COALESCE(NULLIF(TRIM(c.gics_sector), ''), {base})"
+        return base
 
     def get_companies(self, search: str = "") -> _pd().DataFrame:
         rows_df, _ = self.get_companies_directory_page(
@@ -182,6 +220,7 @@ class CVMQueryLayer:
             paged_params["limit"] = int(page_size)
             paged_params["offset"] = max(0, (int(page) - 1) * int(page_size))
 
+        gics_sql = self._persisted_gics_max_sql()
         rows_sql = text(
             f"""
             SELECT
@@ -193,7 +232,7 @@ class CVMQueryLayer:
                 {_CANONICAL_SECTOR_SQL} AS sector_name,
                 COALESCE(COUNT(fr."CD_CVM"), 0) AS total_rows,
                 CASE WHEN COUNT(fr."CD_CVM") > 0 THEN 1 ELSE 0 END AS has_financial_data,
-                c.coverage_rank
+                c.coverage_rank{gics_sql}
             FROM companies c
             LEFT JOIN financial_reports fr ON fr."CD_CVM" = c.cd_cvm
             WHERE {where_sql}
@@ -211,14 +250,15 @@ class CVMQueryLayer:
         return rows_df.reset_index(drop=True), total_items
 
     def get_available_company_sectors(self) -> _pd().DataFrame:
+        bucket = self._sector_bucket_expression_sql()
         sql = text(
             f"""
             SELECT
-                {_CANONICAL_SECTOR_SQL} AS sector_name,
+                {bucket} AS sector_name,
                 COUNT(DISTINCT c.cd_cvm) AS company_count
             FROM companies c
             LEFT JOIN financial_reports fr ON fr."CD_CVM" = c.cd_cvm
-            GROUP BY {_CANONICAL_SECTOR_SQL}
+            GROUP BY {bucket}
             ORDER BY sector_name ASC
             """
         )
@@ -647,6 +687,19 @@ class CVMQueryLayer:
                 f"CASE WHEN {latest_readable_year} IS NOT NULL THEN c.updated_at ELSE NULL END)"
             )
 
+        cols = self._company_column_names()
+        gics_parts: list[str] = []
+        for col in (
+            "gics_sector",
+            "gics_sector_slug",
+            "gics_industry_group",
+            "gics_industry",
+            "gics_sub_industry",
+        ):
+            if col in cols:
+                gics_parts.append(f"c.{col}")
+        gics_cols_sql = (",\n                " + ",\n                ".join(gics_parts)) if gics_parts else ""
+
         sql = text(
             f"""
             SELECT
@@ -666,7 +719,7 @@ class CVMQueryLayer:
                 CASE WHEN {latest_readable_year} IS NOT NULL THEN 1 ELSE 0 END AS has_readable_current_data,
                 {readable_years_count} AS readable_years_count,
                 {latest_readable_year} AS latest_readable_year,
-                {read_model_updated_at} AS read_model_updated_at
+                {read_model_updated_at} AS read_model_updated_at{gics_cols_sql}
             FROM companies c
             {annual_join}
             {status_join}

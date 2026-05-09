@@ -72,9 +72,23 @@ export function getCompanyAvailability(
   const anos = getSortedYears(item);
   const yearsLabel = getYearsLabel(anos);
   const latestYear = anos[anos.length - 1] ?? null;
-  const hasReadableHistory = item.has_financial_data !== false && anos.length > 0;
+  const hasAnnualYears = anos.length > 0;
+  const hasRawRows =
+    item.has_financial_data === true || (item.total_rows ?? 0) > 0;
 
-  if (!hasReadableHistory) {
+  if (!hasAnnualYears && hasRawRows) {
+    return {
+      kind: "low_signal",
+      badge: "Dados parciais",
+      summary: "Historico anual incompleto",
+      detail:
+        "Existem linhas locais, mas a serie anual legivel (DFP) ainda nao esta completa para KPIs.",
+      yearsLabel,
+      actionLabel: "Completar carga",
+    };
+  }
+
+  if (!hasAnnualYears && !hasRawRows) {
     return {
       kind: "requestable",
       badge: "Solicitar dados",

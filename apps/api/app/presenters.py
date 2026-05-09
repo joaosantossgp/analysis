@@ -142,6 +142,11 @@ class SectorSnapshotPayload(BaseModel):
     mg_liq: float | None = None
 
 
+class SubIndustryCountPayload(BaseModel):
+    name: str
+    count: int
+
+
 class SectorDirectoryItemPayload(BaseModel):
     sector_name: str
     sector_slug: str
@@ -149,6 +154,7 @@ class SectorDirectoryItemPayload(BaseModel):
     latest_year: int | None = None
     snapshot: SectorSnapshotPayload
     sub_industries: list[str] = Field(default_factory=list)
+    sub_industry_breakdown: list[SubIndustryCountPayload] = Field(default_factory=list)
 
 
 class SectorDirectoryPayload(BaseModel):

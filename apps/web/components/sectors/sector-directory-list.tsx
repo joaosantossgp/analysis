@@ -62,7 +62,26 @@ export function SectorDirectoryList({ items }: SectorDirectoryListProps) {
                 <p className="text-sm leading-7 text-muted-foreground">
                   Snapshot GICS do ano mais recente disponivel.
                 </p>
-                {item.sub_industries.length ? (
+                {item.sub_industry_breakdown && item.sub_industry_breakdown.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {item.sub_industry_breakdown.slice(0, 8).map((row) => (
+                      <span
+                        key={row.name}
+                        className="rounded-full border border-border/55 bg-muted/35 px-2.5 py-1 text-xs text-muted-foreground"
+                      >
+                        {row.name}{" "}
+                        <span className="tabular-nums text-foreground/90">
+                          ({formatCompactInteger(row.count)})
+                        </span>
+                      </span>
+                    ))}
+                    {item.sub_industry_breakdown.length > 8 ? (
+                      <span className="rounded-full border border-border/55 bg-muted/35 px-2.5 py-1 text-xs text-muted-foreground">
+                        +{item.sub_industry_breakdown.length - 8} sub-setores
+                      </span>
+                    ) : null}
+                  </div>
+                ) : item.sub_industries.length ? (
                   <div className="flex flex-wrap gap-1.5">
                     {item.sub_industries.slice(0, 3).map((subIndustry) => (
                       <span

@@ -1384,6 +1384,30 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
               />
             </div>
 
+            <Card className="mt-4 rounded-[1.15rem] border border-border/55 bg-muted/25">
+              <CardContent className="space-y-2 py-4 text-sm leading-6 text-muted-foreground">
+                <p className="font-medium text-foreground">Como ler estes numeros</p>
+                <ul className="list-disc space-y-1.5 pl-5">
+                  <li>
+                    <span className="text-foreground">Total de empresas</span> — companhias ativas no cadastro
+                    local que entram no escopo da API (nao e um numero fixo da aplicacao).
+                  </li>
+                  <li>
+                    <span className="text-foreground">Com / Sem historico</span> — empresas com pelo menos um ano
+                    anual (DFP) legivel no SQLite versus cadastradas ainda sem serie anual util ao cockpit.
+                  </li>
+                  <li>
+                    <span className="text-foreground">Celulas completas / Lacunas</span> — grade{" "}
+                    <span className="tabular-nums">
+                      empresas × anos ({baseSummary.startYear ?? "?"}-{baseSummary.endYear ?? "?"})
+                    </span>{" "}
+                    para o pacote de demonstrativos esperado; uma lacuna e uma combinacao ano-empresa ausente, nao
+                    uma &quot;empresa inteira&quot;.
+                  </li>
+                </ul>
+              </CardContent>
+            </Card>
+
             <Card className="mt-3 rounded-[1.15rem] bg-card/92">
               <CardContent className="px-5">
                 <button

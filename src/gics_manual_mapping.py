@@ -34,6 +34,14 @@ def build_gics_classification(
     setor_analitico: str | None,
     setor_cvm: str | None,
 ) -> GicsClassification | None:
+    # Persisted English GICS labels (and API-normalized names) must resolve directly.
+    for raw in (sector_name, setor_analitico, setor_cvm):
+        if raw is None:
+            continue
+        label = str(raw).strip()
+        if label in GICS_11_SECTORS:
+            return _mk(label, label, label, label)
+
     haystack = " ".join(
         str(part or "").strip().lower()
         for part in (sector_name, setor_analitico, setor_cvm)

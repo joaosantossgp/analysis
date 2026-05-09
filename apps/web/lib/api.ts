@@ -393,6 +393,11 @@ export type SectorSnapshot = {
   mg_liq: number | null;
 };
 
+export type SubIndustryCount = {
+  name: string;
+  count: number;
+};
+
 export type SectorDirectoryItem = {
   sector_name: string;
   sector_slug: string;
@@ -400,6 +405,7 @@ export type SectorDirectoryItem = {
   latest_year: number | null;
   snapshot: SectorSnapshot;
   sub_industries: string[];
+  sub_industry_breakdown?: SubIndustryCount[];
 };
 
 export type SectorDirectory = {
@@ -904,7 +910,15 @@ function isSectorDirectory(value: unknown): value is SectorDirectory {
         typeof item.company_count === "number" &&
         isNullableNumber(item.latest_year) &&
         isSectorSnapshot(item.snapshot) &&
-        (item.sub_industries === undefined || isStringArray(item.sub_industries)),
+        (item.sub_industries === undefined || isStringArray(item.sub_industries)) &&
+        (item.sub_industry_breakdown === undefined ||
+          (Array.isArray(item.sub_industry_breakdown) &&
+            item.sub_industry_breakdown.every(
+              (row) =>
+                isRecord(row) &&
+                typeof row.name === "string" &&
+                typeof row.count === "number",
+            ))),
     )
   );
 }
