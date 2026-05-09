@@ -11,6 +11,7 @@ import {
   fetchCompanyFilters,
   fetchEmDestaqueCompanies,
   fetchSectorDirectory,
+  SECTOR_DIRECTORY_NO_STORE_READ,
 } from "@/lib/api";
 import { isDesktopServerMode } from "@/lib/desktop-mode";
 
@@ -23,11 +24,13 @@ export default async function HomePage() {
     return <HomeDesktopLoader />;
   }
 
-  const [destaqueResult, statsResult, filtersResult] = await Promise.allSettled([
+  const [destaqueResult, statsResult, filtersResult, sectorsResult] = await Promise.allSettled([
     fetchEmDestaqueCompanies(),
     // Minimal fetch only for the total company count used by StatsStrip / HomeTrustStrip
     fetchCompanies({ page: 1, pageSize: 1 }),
     fetchCompanyFilters(),
+    // Same source as /setores — fresh fetch avoids stale ISR hiding deploy/backfill
+    fetchSectorDirectory({ request: SECTOR_DIRECTORY_NO_STORE_READ }),
   ]);
 
   const destaqueCompanies =
@@ -37,23 +40,22 @@ export default async function HomePage() {
     statsResult.status === "fulfilled"
       ? (statsResult.value?.pagination.total_items ?? null)
       : null;
-  let gicsSectors =
-    filtersResult.status === "fulfilled" ? filtersResult.value.sectors : [];
 
-  if (gicsSectors.length === 0) {
-    try {
-      const directory = await fetchSectorDirectory();
-      gicsSectors = directory.items.map((item) => ({
-        sector_name: item.sector_name,
-        sector_slug: item.sector_slug,
-        company_count: item.company_count,
-        gics_sector: item.sector_name,
-        gics_sector_slug: item.sector_slug,
-      }));
-    } catch {
-      /* discovery falls back to empty state below */
-    }
-  }
+  const directoryItems =
+    sectorsResult.status === "fulfilled" ? sectorsResult.value.items : [];
+
+  let gicsSectors =
+    directoryItems.length > 0
+      ? directoryItems.map((item) => ({
+          sector_name: item.sector_name,
+          sector_slug: item.sector_slug,
+          company_count: item.company_count,
+          gics_sector: item.sector_name,
+          gics_sector_slug: item.sector_slug,
+        }))
+      : filtersResult.status === "fulfilled"
+        ? filtersResult.value.sectors
+        : [];
 
   return (
     <PageShell density="relaxed" className="flex flex-col items-center gap-20 pb-24">

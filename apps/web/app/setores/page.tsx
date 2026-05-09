@@ -14,6 +14,7 @@ import { ApiUnavailableState } from "@/components/ui/api-unavailable-state";
 import { buttonVariants } from "@/components/ui/button";
 import { formatCompactInteger } from "@/lib/formatters";
 import { isDesktopServerMode } from "@/lib/desktop-mode";
+import { fetchSectorDirectory, SECTOR_DIRECTORY_NO_STORE_READ } from "@/lib/api";
 import { loadSectorsPageData } from "@/lib/sectors-page-data";
 import { cn } from "@/lib/utils";
 
@@ -33,7 +34,10 @@ export default async function SetoresPage() {
     return <SectorsDirectoryDesktopLoader />;
   }
 
-  const { directory, directoryError } = await loadSectorsPageData();
+  const { directory, directoryError } = await loadSectorsPageData({
+    fetchDirectory: () =>
+      fetchSectorDirectory({ request: SECTOR_DIRECTORY_NO_STORE_READ }),
+  });
 
   if (!directory) {
     return (

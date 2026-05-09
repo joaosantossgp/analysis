@@ -564,7 +564,13 @@ const COMPANY_DATA_API_READ: ApiReadRequestInit = {
   timeoutMs: PAGE_LEVEL_FETCH_TIMEOUT_MS,
 };
 const SECTOR_DIRECTORY_API_READ: ApiReadRequestInit = {
-  next: { revalidate: 3600 },
+  next: { revalidate: 300 },
+  timeoutMs: PAGE_LEVEL_FETCH_TIMEOUT_MS,
+};
+
+/** Bypass Next fetch cache — use after deploy / backfill so hubs match live API immediately. */
+export const SECTOR_DIRECTORY_NO_STORE_READ: ApiReadRequestInit = {
+  cache: "no-store",
   timeoutMs: PAGE_LEVEL_FETCH_TIMEOUT_MS,
 };
 const SECTOR_DETAIL_API_READ: ApiReadRequestInit = {
@@ -1358,10 +1364,12 @@ export async function fetchCompanySuggestionsRoute(
   )) as CompanySuggestionsResponse;
 }
 
-export async function fetchSectorDirectory(): Promise<SectorDirectory> {
+export async function fetchSectorDirectory(
+  options?: { request?: ApiReadRequestInit },
+): Promise<SectorDirectory> {
   if (isDesktopMode()) return bridgeFetchSectors();
   return (await apiFetch<SectorDirectory>("/sectors", {
-    request: SECTOR_DIRECTORY_API_READ,
+    request: options?.request ?? SECTOR_DIRECTORY_API_READ,
     validate: isSectorDirectory,
     invalidResponseMessage: "A API retornou um diretorio de setores invalido.",
   })) as SectorDirectory;
