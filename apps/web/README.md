@@ -76,14 +76,13 @@ npm run test:unit
 npm run test:e2e
 ```
 
-## Deploy remoto
+## Produto empacotado (prioridade)
 
-- **Web (Vercel):** https://analisys-nine.vercel.app
-- **API (Railway):** https://analisys-production.up.railway.app
+A UI deste app e compilada no **desktop Windows**: `desktop/build_desktop.ps1` → **`dist/CVMAnalytics/`**. Em runtime empacotado, `ANALISYS_DESKTOP_MODE=1` e os dados vêm da **bridge Python** + SQLite local — **nao** dependa de Vercel/Railway para reproduzir o uso principal.
 
-`API_BASE_URL` e definido como variavel de ambiente no projeto Vercel. O deploy
-automatico e acionado via `VERCEL_DEPLOY_HOOK` no CI (`.github/workflows/ci.yml`
-job `deploy-web`) a cada push no `main`.
+## Deploy hospedado (historico / opcional)
+
+Deploy remoto (Vercel, Railway, etc.) **nao** e o fluxo oficial para quem usa apenas o `.exe`. Artefatos ou URLs antigas podem existir no CI ou em ADRs; nao tratar como fonte de verdade salvo pedido explicito do mantenedor.
 
 ## Observacoes
 

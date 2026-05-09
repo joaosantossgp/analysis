@@ -4,7 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Hybrid Python project: a CLI scraper that extracts DFP/ITR financial reports from Brazil's CVM regulator and persists them to SQLite/PostgreSQL, plus a Streamlit analytics dashboard and a PyQt6 desktop app for 449+ public companies.
+Hybrid Python project: a CLI scraper that extracts DFP/ITR financial reports from Brazil's CVM regulator and persists them to SQLite/PostgreSQL, plus a Streamlit analytics dashboard and desktop apps for 449+ public companies.
+
+### Canonical product (default assumption)
+
+- **Shipped runtime:** Windows **`CVMAnalytics.exe`** under **`dist/CVMAnalytics/`**, built with **`desktop/build_desktop.ps1`** (`python -m desktop.app` in dev). UI is **pywebview** loading the **bundled Next.js standalone**; data is **local SQLite** next to the exe (see `desktop/app.py`).
+- **Do not assume Vercel, Railway, or any hosted public API/web** as the maintainer’s environment unless the user explicitly says they use cloud hosting. Troubleshooting and UX fixes **must** be validated against **desktop mode** (`ANALISYS_DESKTOP_MODE`) and/or **local API + DB**, not remote URLs.
+- **`apps/web`** remains the UI source compiled into the desktop bundle; **`apps/api`** is optional for local/dev HTTP — not the primary deployment target for this workflow.
 
 > For commands, architecture, and conventions: `docs/CLAUDE_REFERENCE.md` (read on demand).
 > For business rules and pipeline details: `docs/CONTEXT.md` (read before touching `src/`).

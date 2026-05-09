@@ -11,19 +11,17 @@
 ## Estado Atual (2026-04-23)
 
 ### Dashboard
-- **3 abas renderizadas** em `dashboard/app.py`: `Visao Geral`, `Demonstracoes`, `Download`
-- `dashboard/app.py` atua como orquestrador read-only
-- Atualizacao de dados nao acontece no Streamlit; pertence ao app PyQt6 e aos scripts
+- Streamlit `dashboard/app.py`: 3 abas read-only (`Visao Geral`, `Demonstracoes`, `Download`); ingestao via scripts/desktop.
 
 ### Banco de Dados
 - **449 empresas**, 1,735,340 registros, 2022-2025 (last confirmed)
 - SQLite local: `data/db/cvm_financials.db` (WAL mode)
 - Tabelas: `financial_reports` (UPPER_CASE), `companies`, `account_names` (snake_case)
 
-### App Desktop
-- `cvm_pyqt_app.py` e a interface operacional principal
-- Ranking inteligente: 40% market cap + 60% liquidez, combinado com desatualizacao
-- Paralelismo configuravel 2-8 workers
+### App Desktop (runtime oficial)
+- **`desktop/app.py`** (pywebview + Next standalone): app local **principal**; release = **`dist/CVMAnalytics/CVMAnalytics.exe`** (`desktop/build_desktop.ps1`). `ANALISYS_DESKTOP_MODE` na UI empacotada.
+- **`desktop/cvm_pyqt_app.py`**: legado / fallback; nao tratar como produto padrao.
+- PyQt6: ranking 40% market cap + 60% liquidez; paralelismo 2-8 workers onde aplicavel ao legado.
 
 ### V2 Backend
 - `apps/api`: API `FastAPI` read-only sobre `src/read_service.py`
@@ -44,14 +42,12 @@
 - `apps/web`: `npm run lint`, `npm run typecheck`, `npm run build`, `npm run test:unit`, `npm run test:e2e`
 - CI `test-web` tambem gateia `tests/smoke.spec.ts` com seed SQLite isolado para on-demand
 
-### URLs Publicas
-- **API (Railway):** `https://analisys-production.up.railway.app`
-- **Web (Vercel):** `https://analisys-nine.vercel.app`
+### Deploy hospedado (nao assumir)
+- **Vercel/Railway** sao historicos / opcionais para outros fluxos; **nao** sao o runtime padrao do mantenedor que usa só o `.exe`.
+- Validacao de bugs de produto: **desktop + SQLite local** (ou build em `dist/`), nao URLs remotas.
 
 ### Pendencias Tecnicas
-- Validacao contra PostgreSQL real pendente (`DATABASE_URL` necessario)
-- Streamlit Cloud pendente
-- P10 (bancos financeiros: Itau, Bradesco) nao iniciado
+- PostgreSQL opcional (`DATABASE_URL`); Streamlit Cloud; P10 bancos (Itau, Bradesco).
 
 ---
 

@@ -2,6 +2,10 @@
 
 Projeto para captura, tratamento e consulta de demonstracoes financeiras da CVM, com persistencia em SQLite/PostgreSQL, app desktop local em pywebview + UI Next.js, dashboard analitico em Streamlit, API read-only da V2 em FastAPI e app web em Next.js. O app PyQt6 continua no repositorio como legado.
 
+## Produto principal (uso real)
+
+O canal **oficial de uso** deste repositorio é o **app desktop Windows** gerado em **`dist/CVMAnalytics/CVMAnalytics.exe`** (script **`desktop/build_desktop.ps1`**). A UI Next.js roda **embutida** no pacote; a base é **SQLite local** distribuída com o app. **Deploy em Vercel/Railway não faz parte desse fluxo** para quem trabalha só com o `.exe` — não oriente manutenção assumindo esses ambientes salvo pedido explicito.
+
 Canal publico recomendado:
 
 - Landing estatica de download: `landing/`

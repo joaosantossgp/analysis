@@ -5,6 +5,7 @@ repositorio.
 
 ## Fonte de verdade
 
+- **Produto principal entregue ao usuario:** app desktop **`dist/CVMAnalytics/CVMAnalytics.exe`** (build `desktop/build_desktop.ps1`). Para UX/dados, assumir **SQLite local + modo desktop**; **nao** assumir Vercel/Railway salvo o usuario pedir.
 - O backlog oficial vive em `GitHub Issues`.
 - `docs/AGENTS.md` registra estado atual e historico de sessoes. Nao use esse
   arquivo como lista viva de tarefas.
