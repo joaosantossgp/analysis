@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from src.contracts import (
     CompanyDirectoryPage,
@@ -61,6 +61,11 @@ class CompanySearchResultPayload(BaseModel):
     total_rows: int
     has_financial_data: bool
     coverage_rank: int | None = None
+    gics_sector: str | None = None
+    gics_sector_slug: str | None = None
+    gics_industry_group: str | None = None
+    gics_industry: str | None = None
+    gics_sub_industry: str | None = None
 
 
 class CompanyInfoPayload(BaseModel):
@@ -80,6 +85,11 @@ class CompanyInfoPayload(BaseModel):
     latest_readable_year: int | None = None
     read_availability_code: str | None = None
     read_availability_message: str | None = None
+    gics_sector: str | None = None
+    gics_sector_slug: str | None = None
+    gics_industry_group: str | None = None
+    gics_industry: str | None = None
+    gics_sub_industry: str | None = None
 
 
 class CompanyDirectoryPaginationPayload(BaseModel):
@@ -117,6 +127,9 @@ class CompanySectorFilterPayload(BaseModel):
     sector_name: str
     sector_slug: str
     company_count: int
+    gics_sector: str | None = None
+    gics_sector_slug: str | None = None
+    gics_sub_industry: str | None = None
 
 
 class CompanyFiltersPayload(BaseModel):
@@ -135,6 +148,7 @@ class SectorDirectoryItemPayload(BaseModel):
     company_count: int
     latest_year: int | None = None
     snapshot: SectorSnapshotPayload
+    sub_industries: list[str] = Field(default_factory=list)
 
 
 class SectorDirectoryPayload(BaseModel):
@@ -152,6 +166,7 @@ class SectorCompanyMetricPayload(BaseModel):
     cd_cvm: int
     company_name: str
     ticker_b3: str | None = None
+    gics_sub_industry: str | None = None
     roe: float | None = None
     mg_ebit: float | None = None
     mg_liq: float | None = None
@@ -322,6 +337,9 @@ class HealthSnapshotPayload(BaseModel):
     per_year: list[HealthYearCoveragePayload]
     prioritized_companies: list[HealthPriorityPayload]
     raw: dict[str, Any]
+    total_companies: int = 0
+    companies_with_historical_data: int = 0
+    companies_without_historical_data: int = 0
 
 
 def _normalize_value(value: Any) -> Any:

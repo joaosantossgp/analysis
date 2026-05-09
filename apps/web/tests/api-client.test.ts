@@ -205,7 +205,7 @@ test("fetchCompanySuggestionsRoute uses the internal same-origin proxy with no-s
   }
 });
 
-test("fetchCompanySuggestionsRoute forwards ready-only compare lookups", async () => {
+test("fetchCompanySuggestionsRoute forwards ready-only lookup requests", async () => {
   let capturedInput: RequestInfo | URL | undefined;
   const restore = withFetchMock((async (input) => {
     capturedInput = input;

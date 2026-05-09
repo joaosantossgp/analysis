@@ -60,6 +60,8 @@ export type CompanySectorFilter = {
   sector_slug: string;
   company_count: number;
   gics_sector?: string | null;
+  gics_sector_slug?: string | null;
+  gics_sub_industry?: string | null;
 };
 
 export type CompanyFiltersResponse = {
@@ -300,6 +302,9 @@ export type BaseHealthSnapshot = {
   per_year: BaseHealthYearCoverage[];
   prioritized_companies: BaseHealthPriority[];
   raw: Record<string, unknown>;
+  total_companies: number;
+  companies_with_historical_data: number;
+  companies_without_historical_data: number;
 };
 
 export type BaseHealthRequest = {
@@ -394,6 +399,7 @@ export type SectorDirectoryItem = {
   company_count: number;
   latest_year: number | null;
   snapshot: SectorSnapshot;
+  sub_industries: string[];
 };
 
 export type SectorDirectory = {
@@ -411,6 +417,7 @@ export type SectorCompanyMetric = {
   cd_cvm: number;
   company_name: string;
   ticker_b3: string | null;
+  gics_sub_industry: string | null;
   roe: number | null;
   mg_ebit: number | null;
   mg_liq: number | null;
@@ -671,7 +678,10 @@ function isBaseHealthSnapshot(value: unknown): value is BaseHealthSnapshot {
     typeof value.throughput_confidence === "string" &&
     Array.isArray(value.per_year) &&
     Array.isArray(value.prioritized_companies) &&
-    isRecord(value.raw)
+    isRecord(value.raw) &&
+    typeof value.total_companies === "number" &&
+    typeof value.companies_with_historical_data === "number" &&
+    typeof value.companies_without_historical_data === "number"
   );
 }
 
@@ -893,7 +903,8 @@ function isSectorDirectory(value: unknown): value is SectorDirectory {
         typeof item.sector_slug === "string" &&
         typeof item.company_count === "number" &&
         isNullableNumber(item.latest_year) &&
-        isSectorSnapshot(item.snapshot),
+        isSectorSnapshot(item.snapshot) &&
+        (item.sub_industries === undefined || isStringArray(item.sub_industries)),
     )
   );
 }
@@ -922,6 +933,9 @@ function isSectorDetail(value: unknown): value is SectorDetail {
         typeof company.cd_cvm === "number" &&
         typeof company.company_name === "string" &&
         (company.ticker_b3 === null || typeof company.ticker_b3 === "string") &&
+        (company.gics_sub_industry === null ||
+          typeof company.gics_sub_industry === "string" ||
+          company.gics_sub_industry === undefined) &&
         isNullableNumber(company.roe) &&
         isNullableNumber(company.mg_ebit) &&
         isNullableNumber(company.mg_liq),

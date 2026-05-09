@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import functools
-import io
-import zipfile
 from collections import defaultdict
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
@@ -703,6 +701,11 @@ class CVMReadService:
             return False
 
         now_iso = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+        gics = build_gics_classification(
+            sector_name=canonical_sector_name(None, catalog_entry.setor_cvm),
+            setor_analitico=None,
+            setor_cvm=catalog_entry.setor_cvm,
+        )
         with self.engine.begin() as conn:
             conn.execute(
                 text(
@@ -713,6 +716,11 @@ class CVMReadService:
                         nome_comercial,
                         cnpj,
                         setor_cvm,
+                        gics_sector,
+                        gics_sector_slug,
+                        gics_industry_group,
+                        gics_industry,
+                        gics_sub_industry,
                         company_type,
                         ticker_b3,
                         is_active,
@@ -723,6 +731,11 @@ class CVMReadService:
                         :nome_comercial,
                         :cnpj,
                         :setor_cvm,
+                        :gics_sector,
+                        :gics_sector_slug,
+                        :gics_industry_group,
+                        :gics_industry,
+                        :gics_sub_industry,
                         :company_type,
                         :ticker_b3,
                         :is_active,
@@ -733,6 +746,11 @@ class CVMReadService:
                         nome_comercial = COALESCE(excluded.nome_comercial, companies.nome_comercial),
                         cnpj = COALESCE(excluded.cnpj, companies.cnpj),
                         setor_cvm = COALESCE(excluded.setor_cvm, companies.setor_cvm),
+                        gics_sector = COALESCE(excluded.gics_sector, companies.gics_sector),
+                        gics_sector_slug = COALESCE(excluded.gics_sector_slug, companies.gics_sector_slug),
+                        gics_industry_group = COALESCE(excluded.gics_industry_group, companies.gics_industry_group),
+                        gics_industry = COALESCE(excluded.gics_industry, companies.gics_industry),
+                        gics_sub_industry = COALESCE(excluded.gics_sub_industry, companies.gics_sub_industry),
                         company_type = COALESCE(excluded.company_type, companies.company_type),
                         ticker_b3 = COALESCE(excluded.ticker_b3, companies.ticker_b3),
                         is_active = excluded.is_active,
@@ -745,6 +763,11 @@ class CVMReadService:
                     "nome_comercial": catalog_entry.nome_comercial,
                     "cnpj": catalog_entry.cnpj,
                     "setor_cvm": catalog_entry.setor_cvm,
+                    "gics_sector": gics.gics_sector if gics else None,
+                    "gics_sector_slug": gics.gics_sector_slug if gics else None,
+                    "gics_industry_group": gics.gics_industry_group if gics else None,
+                    "gics_industry": gics.gics_industry if gics else None,
+                    "gics_sub_industry": gics.gics_sub_industry if gics else None,
                     "company_type": "comercial",
                     "ticker_b3": catalog_entry.ticker_b3,
                     "is_active": 1 if catalog_entry.is_active else 0,
@@ -767,6 +790,14 @@ class CVMReadService:
             return self._empty_company_page(
                 search=search,
                 sector_slug=sector_slug,
+                page=page,
+                page_size=page_size,
+            )
+        if resolved_sector_name in GICS_11_SECTORS:
+            return self._list_companies_by_gics_sector(
+                search=search,
+                sector_slug=sector_slug,
+                gics_sector=resolved_sector_name,
                 page=page,
                 page_size=page_size,
             )
@@ -1001,19 +1032,37 @@ class CVMReadService:
                 sector_name = str(row["sector_name"])
                 sector_counts[sector_name] = sector_counts.get(sector_name, 0) + int(row["company_count"] or 0)
 
-        sectors_list: list[CompanySectorFilterOption] = []
+        gics_sector_counts: dict[str, int] = {}
         for sector_name, company_count in sorted(sector_counts.items(), key=lambda item: item[0]):
             gics_meta = build_gics_classification(
                 sector_name=sector_name,
                 setor_analitico=sector_name,
                 setor_cvm=sector_name,
             )
+            display_sector_name = gics_meta.gics_sector if gics_meta else sector_name
+            gics_sector_counts[display_sector_name] = (
+                gics_sector_counts.get(display_sector_name, 0) + int(company_count)
+            )
+
+        sectors_list: list[CompanySectorFilterOption] = []
+        for sector_name, company_count in sorted(gics_sector_counts.items(), key=lambda item: item[0]):
+            gics_meta = build_gics_classification(
+                sector_name=sector_name,
+                setor_analitico=sector_name,
+                setor_cvm=sector_name,
+            )
+            gics_sector = gics_meta.gics_sector if gics_meta else None
+            gics_sector_slug = gics_meta.gics_sector_slug if gics_meta else None
+            if sector_name in GICS_11_SECTORS:
+                gics_sector = sector_name
+                gics_sector_slug = sector_slugify(sector_name)
             sectors_list.append(
                 CompanySectorFilterOption(
                     sector_name=sector_name,
                     sector_slug=sector_slugify(sector_name),
                     company_count=int(company_count),
-                    gics_sector=gics_meta.gics_sector if gics_meta else None,
+                    gics_sector=gics_sector,
+                    gics_sector_slug=gics_sector_slug,
                 )
             )
         sectors = tuple(sectors_list)
@@ -1071,9 +1120,36 @@ class CVMReadService:
         return self._resolve_sector_slug(sector_slug)
 
     def list_sectors(self) -> SectorDirectoryDTO:
-        metric_rows = self.query_layer.get_sector_metric_rows()
-        yearly = self._aggregate_sector_yearly_metrics(metric_rows)
         filters = self.get_company_filters()
+        all_rows, _ = self.query_layer.get_companies_directory_page(
+            search="",
+            sector_name=None,
+            page=1,
+            page_size=BATCH_REFRESH_MAX_PAGE_SIZE,
+        )
+        company_items = self._build_company_results(all_rows)
+        companies_by_gics: dict[str, list[CompanySearchResult]] = defaultdict(list)
+        sub_industries_by_gics: dict[str, set[str]] = defaultdict(set)
+        for item in company_items:
+            if not item.gics_sector:
+                continue
+            companies_by_gics[item.gics_sector].append(item)
+            if item.gics_sub_industry:
+                sub_industries_by_gics[item.gics_sector].add(item.gics_sub_industry)
+
+        metric_rows = self.query_layer.get_sector_metric_rows()
+        if metric_rows is not None and not metric_rows.empty and company_items:
+            gics_by_cd_cvm = {
+                int(item.cd_cvm): item.gics_sector
+                for item in company_items
+                if item.gics_sector
+            }
+            metric_rows = metric_rows.copy()
+            metric_rows["sector_name"] = metric_rows["cd_cvm"].map(
+                lambda code: gics_by_cd_cvm.get(int(code))
+            )
+            metric_rows = metric_rows.dropna(subset=["sector_name"])
+        yearly = self._aggregate_sector_yearly_metrics(metric_rows)
 
         latest_snapshot_by_sector: dict[str, tuple[int, pd.Series]] = {}
         if not yearly.empty:
@@ -1091,20 +1167,20 @@ class CVMReadService:
         # Company-filter options may additionally include remote-catalog sectors whose spelling
         # does not match these keys — iterating snapshots first keeps the hub aligned with metrics.
         filters_by_name = {str(opt.sector_name): opt for opt in filters.sectors}
-        raw_sector_counts: dict[str, int] = {}
-        sectors_hist = self.query_layer.get_available_company_sectors()
-        for _, row in sectors_hist.iterrows():
-            key = str(row.get("sector_name") or "").strip()
-            if key:
-                raw_sector_counts[key] = int(row.get("company_count") or 0)
-
         items: list[SectorDirectoryItemDTO] = []
-        for sector_name, (latest_year, snapshot_row) in latest_snapshot_by_sector.items():
+        candidate_sector_names = [
+            sector for sector in GICS_11_SECTORS if companies_by_gics.get(sector)
+        ]
+        for sector_name in candidate_sector_names:
+            latest_year, snapshot_row = latest_snapshot_by_sector.get(
+                sector_name,
+                (None, None),
+            )
             option = filters_by_name.get(sector_name)
             company_count = (
                 int(option.company_count)
                 if option is not None
-                else raw_sector_counts.get(sector_name, 0)
+                else len(companies_by_gics.get(sector_name, ()))
             )
             items.append(
                 SectorDirectoryItemDTO(
@@ -1117,6 +1193,7 @@ class CVMReadService:
                         mg_ebit=self._coerce_optional_float(snapshot_row["mg_ebit"]) if snapshot_row is not None else None,
                         mg_liq=self._coerce_optional_float(snapshot_row["mg_liq"]) if snapshot_row is not None else None,
                     ),
+                    sub_industries=tuple(sorted(sub_industries_by_gics.get(sector_name, ()))),
                 )
             )
 
@@ -1129,6 +1206,52 @@ class CVMReadService:
             )
         )
         return SectorDirectoryDTO(items=tuple(items))
+
+    def _list_companies_by_gics_sector(
+        self,
+        *,
+        search: str,
+        sector_slug: str | None,
+        gics_sector: str,
+        page: int,
+        page_size: int,
+    ) -> CompanyDirectoryPage:
+        rows_df, _ = self.query_layer.get_companies_directory_page(
+            search=search,
+            sector_name=None,
+            page=1,
+            page_size=BATCH_REFRESH_MAX_PAGE_SIZE,
+        )
+        if not rows_df.empty:
+            years_map = self.query_layer.get_company_years_map(rows_df["cd_cvm"].tolist())
+            rows_df = rows_df.copy()
+            rows_df["anos_disponiveis"] = rows_df["cd_cvm"].map(
+                lambda cd_cvm: years_map.get(int(cd_cvm), ())
+            )
+        filtered = [
+            item
+            for item in self._build_company_results(rows_df)
+            if item.gics_sector == gics_sector
+        ]
+        total_items = len(filtered)
+        start = max(0, (int(page) - 1) * int(page_size))
+        end = start + int(page_size)
+        total_pages = max(1, ((total_items - 1) // int(page_size)) + 1) if total_items else 1
+        return CompanyDirectoryPage(
+            items=tuple(filtered[start:end]),
+            pagination=CompanyDirectoryPagination(
+                page=int(page),
+                page_size=int(page_size),
+                total_items=int(total_items),
+                total_pages=int(total_pages),
+                has_next=int(page) < int(total_pages),
+                has_previous=int(page) > 1,
+            ),
+            applied_filters=CompanyDirectoryAppliedFilters(
+                search=str(search or ""),
+                sector=sector_slug,
+            ),
+        )
 
     def get_sector_detail(self, sector_slug: str, year: int | None = None) -> SectorDetailDTO | None:
         resolved_sector_name = self._resolve_sector_slug(sector_slug)
@@ -1167,6 +1290,7 @@ class CVMReadService:
                         "company_name": str(item.company_name),
                         "ticker_b3": item.ticker_b3,
                         "anos_disponiveis": tuple(item.anos_disponiveis),
+                        "gics_sub_industry": item.gics_sub_industry,
                     }
                     for item in company_items
                 ]
@@ -1182,6 +1306,15 @@ class CVMReadService:
             company_rows["anos_disponiveis"] = company_rows["cd_cvm"].map(
                 lambda cd_cvm: years_map.get(int(cd_cvm), ())
             )
+        if "gics_sub_industry" not in company_rows.columns:
+            gics_meta = build_gics_classification(
+                sector_name=resolved_sector_name,
+                setor_analitico=resolved_sector_name,
+                setor_cvm=resolved_sector_name,
+            )
+            gics_sub_industry = gics_meta.gics_sub_industry if gics_meta else None
+            company_rows = company_rows.copy()
+            company_rows["gics_sub_industry"] = gics_sub_industry
         available_years = self._extract_years_from_company_rows(company_rows)
         if not available_years:
             return None
@@ -1223,7 +1356,7 @@ class CVMReadService:
         company_metrics = metric_rows[metric_rows["report_year"] == selected_year].copy()
         selected_companies = company_rows[
             company_rows["anos_disponiveis"].map(lambda years: selected_year in years)
-        ][["cd_cvm", "company_name", "ticker_b3"]].drop_duplicates()
+        ][["cd_cvm", "company_name", "ticker_b3", "gics_sub_industry"]].drop_duplicates()
         selected_companies = selected_companies.merge(
             company_metrics[
                 ["cd_cvm", "roe", "mg_ebit", "mg_liq"]
@@ -1244,6 +1377,7 @@ class CVMReadService:
                 cd_cvm=int(row["cd_cvm"]),
                 company_name=str(row["company_name"]),
                 ticker_b3=self._clean_optional_text(row.get("ticker_b3")),
+                gics_sub_industry=self._clean_optional_text(row.get("gics_sub_industry")),
                 roe=self._coerce_optional_float(row.get("roe")),
                 mg_ebit=self._coerce_optional_float(row.get("mg_ebit")),
                 mg_liq=self._coerce_optional_float(row.get("mg_liq")),
@@ -1372,28 +1506,6 @@ class CVMReadService:
             extra_sheets=extra_sheets,
         )
         return build_excel_filename(company_info), exporter.export()
-
-    def build_companies_excel_batch_export(self, cd_cvms: list[int]) -> tuple[str, bytes]:
-        if len(cd_cvms) < 2:
-            raise ValueError("O lote de exportacao exige ao menos 2 empresas.")
-
-        seen: set[int] = set()
-        unique_ids: list[int] = []
-        for cd_cvm in cd_cvms:
-            normalized = int(cd_cvm)
-            if normalized in seen:
-                raise ValueError("O lote de exportacao nao aceita empresas duplicadas.")
-            seen.add(normalized)
-            unique_ids.append(normalized)
-
-        buffer = io.BytesIO()
-        with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
-            for cd_cvm in unique_ids:
-                filename, payload = self.build_company_excel_export(cd_cvm)
-                archive.writestr(filename, payload)
-
-        buffer.seek(0)
-        return "comparar_excel_lote.zip", buffer.read()
 
     def get_health_snapshot(
         self,
@@ -1888,6 +2000,10 @@ class CVMReadService:
             start_year=start_year,
             end_year=end_year,
         )
+        all_years_map = self.query_layer.get_company_years_map(company_codes)
+        companies_with_historical_data = sum(
+            1 for cd_cvm in company_codes if all_years_map.get(int(cd_cvm))
+        )
         status_map = self._load_refresh_status_map(company_codes)
 
         per_year_buckets = {
@@ -2034,12 +2150,21 @@ class CVMReadService:
             "required_package": list(self.REQUIRED_PACKAGE_STATEMENTS),
             "ranked_backlog": dict(ranked_backlog["summary"]),
             "active_companies": int(len(active_rows)),
+            "company_inventory": {
+                "total_companies": int(len(active_rows)),
+                "companies_with_historical_data": int(companies_with_historical_data),
+                "companies_without_historical_data": max(
+                    0,
+                    int(len(active_rows)) - int(companies_with_historical_data),
+                ),
+            },
             "global": {
                 "total_cells": int(total_cells),
                 "completed_cells": int(completed_cells),
                 "missing_cells": int(missing_cells),
                 "pct": float(pct),
                 "active_universe": int(len(active_rows)),
+                "companies_with_historical_data": int(companies_with_historical_data),
                 "remaining_companies": int(remaining_companies),
                 "eta_hours": eta_hours,
             },

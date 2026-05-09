@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 
-import type { CompanyDirectoryItem } from "@/lib/api";
+import type { CompanyDirectoryItem, CompanySectorFilter } from "@/lib/api";
 
 type Tab = "destaque" | "setores";
 
@@ -30,16 +30,19 @@ const DiscoverySection = dynamic(
 
 type DiscoverySectionLazyProps = {
   destaqueCompanies: CompanyDirectoryItem[];
+  gicsSectors: CompanySectorFilter[];
   initialTab?: Tab;
 };
 
 export function DiscoverySectionLazy({
   destaqueCompanies,
+  gicsSectors,
   initialTab,
 }: DiscoverySectionLazyProps) {
   return (
     <DiscoverySection
       destaqueCompanies={destaqueCompanies}
+      gicsSectors={gicsSectors}
       initialTab={initialTab}
     />
   );

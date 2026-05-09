@@ -4,9 +4,10 @@ import time
 import logging
 from datetime import datetime
 import pandas as pd
-from sqlalchemy import create_engine, text, Engine
+from sqlalchemy import create_engine, inspect, text, Engine
 from sqlalchemy.exc import OperationalError
 
+from src.gics_manual_mapping import build_gics_classification
 from src.refresh_jobs import ensure_refresh_runtime_tables_for_connection
 
 logger = logging.getLogger(__name__)
@@ -73,6 +74,11 @@ def init_db_tables(engine: Engine) -> None:
                 cnpj            TEXT,
                 setor_cvm       TEXT,
                 setor_analitico TEXT,
+                gics_sector     TEXT,
+                gics_sector_slug TEXT,
+                gics_industry_group TEXT,
+                gics_industry   TEXT,
+                gics_sub_industry TEXT,
                 company_type    TEXT NOT NULL DEFAULT 'comercial',
                 ticker_b3       TEXT,
                 coverage_rank   INTEGER,
@@ -88,6 +94,7 @@ def init_db_tables(engine: Engine) -> None:
             )
         """))
         ensure_refresh_runtime_tables_for_connection(conn)
+        _ensure_company_gics_columns(conn)
 
     _index_ddl = [
         'CREATE INDEX {c}IF NOT EXISTS idx_company_views_count ON company_views(view_count DESC)',
@@ -116,6 +123,25 @@ def init_db_tables(engine: Engine) -> None:
                 idx_conn.execute(text(ddl.format(c="")))
 
     logger.info("init_db_tables completed dialect=%s", dialect)
+
+
+def _ensure_company_gics_columns(conn) -> None:
+    inspector = inspect(conn, raiseerr=False)
+    if inspector is None:
+        return
+    existing = {
+        str(column.get("name") or "").lower()
+        for column in inspector.get_columns("companies")
+    }
+    for column_name in (
+        "gics_sector",
+        "gics_sector_slug",
+        "gics_industry_group",
+        "gics_industry",
+        "gics_sub_industry",
+    ):
+        if column_name not in existing:
+            conn.execute(text(f"ALTER TABLE companies ADD COLUMN {column_name} TEXT"))
 SQLITE_WRITE_BACKOFF_SECONDS = 0.6
 DEFAULT_TO_SQL_CHUNKSIZE = 2000
 SQLITE_SAFE_MAX_VARIABLES = 900
@@ -161,6 +187,11 @@ class CVMDatabase:
                                  ticker_b3: str | None = None) -> None:
         """Persiste metadados na tabela companies (se existir). Idempotente."""
         updated_at = datetime.utcnow().replace(microsecond=0).isoformat()
+        gics = build_gics_classification(
+            sector_name=setor_cvm,
+            setor_analitico=None,
+            setor_cvm=setor_cvm,
+        )
         params = {
             "cd": int(cvm_code),
             "name": company_name,
@@ -168,13 +199,24 @@ class CVMDatabase:
             "setor": setor_cvm,
             "ticker": ticker_b3,
             "updated_at": updated_at,
+            "gics_sector": gics.gics_sector if gics else None,
+            "gics_sector_slug": gics.gics_sector_slug if gics else None,
+            "gics_industry_group": gics.gics_industry_group if gics else None,
+            "gics_industry": gics.gics_industry if gics else None,
+            "gics_sub_industry": gics.gics_sub_industry if gics else None,
         }
 
         conn.execute(text("""
             INSERT INTO companies
-                (cd_cvm, company_name, company_type, setor_cvm, ticker_b3, updated_at)
+                (
+                    cd_cvm, company_name, company_type, setor_cvm, ticker_b3,
+                    gics_sector, gics_sector_slug, gics_industry_group,
+                    gics_industry, gics_sub_industry, updated_at
+                )
             SELECT
-                :cd, :name, :ctype, :setor, :ticker, :updated_at
+                :cd, :name, :ctype, :setor, :ticker,
+                :gics_sector, :gics_sector_slug, :gics_industry_group,
+                :gics_industry, :gics_sub_industry, :updated_at
             WHERE NOT EXISTS (
                 SELECT 1 FROM companies WHERE cd_cvm = :cd
             )
@@ -185,6 +227,11 @@ class CVMDatabase:
                 company_type = :ctype,
                 setor_cvm    = COALESCE(:setor, setor_cvm),
                 ticker_b3    = COALESCE(:ticker, ticker_b3),
+                gics_sector  = COALESCE(:gics_sector, gics_sector),
+                gics_sector_slug = COALESCE(:gics_sector_slug, gics_sector_slug),
+                gics_industry_group = COALESCE(:gics_industry_group, gics_industry_group),
+                gics_industry = COALESCE(:gics_industry, gics_industry),
+                gics_sub_industry = COALESCE(:gics_sub_industry, gics_sub_industry),
                 updated_at   = :updated_at
             WHERE cd_cvm = :cd
         """), params)

@@ -427,27 +427,6 @@ Regras do endpoint:
 - o workbook e gerado no dominio Python (`src/read_service.py` +
   `src/excel_exporter.py`), nao na camada HTTP
 
-### `GET /companies/export/excel-batch?ids=`
-
-Parametros:
-- `ids`: obrigatorio; CSV de inteiros sem duplicatas, com ao menos 2 empresas,
-  ex. `9512,4170`
-
-Uso:
-- retorna um `.zip` com um workbook `.xlsx` por empresa selecionada
-- existe para o fluxo `/comparar`, sem inventar um workbook combinado novo
-
-Headers principais:
-- `Content-Type: application/zip`
-- `Content-Disposition: attachment; filename="comparar_excel_lote.zip"`
-
-Regras do endpoint:
-- `404` se alguma empresa informada nao existir
-- `422` para `ids` invalido, duplicado ou com menos de 2 empresas
-- cada arquivo interno reutiliza o mesmo contrato do endpoint individual por
-  empresa
-- a ordem dos arquivos no lote segue a ordem dos `ids` recebidos
-
 ### `GET /companies/{cd_cvm}/years`
 
 Resposta:

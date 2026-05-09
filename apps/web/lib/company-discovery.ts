@@ -13,7 +13,6 @@ export type CompanyAvailability = {
   detail: string;
   yearsLabel: string;
   actionLabel: string;
-  compareEligible: boolean;
 };
 
 type CompanyAvailabilityOptions = {
@@ -34,7 +33,6 @@ const DISCOVERY_ORDER: Record<CompanyDiscoveryStateKind, number> = {
 function getReferenceYear(options?: CompanyAvailabilityOptions): number {
   return options?.referenceYear ?? new Date().getFullYear();
 }
-
 function getSortedYears(item: CompanyDirectoryItem): number[] {
   return [...(item.anos_disponiveis ?? [])].sort((left, right) => left - right);
 }
@@ -85,7 +83,6 @@ export function getCompanyAvailability(
         "Ainda sem historico local. Abra a pagina para solicitar a primeira carga.",
       yearsLabel,
       actionLabel: "Abrir e solicitar",
-      compareEligible: false,
     };
   }
 
@@ -104,7 +101,6 @@ export function getCompanyAvailability(
         "Existe leitura local, mas o ano mais recente parece defasado para analise atual.",
       yearsLabel,
       actionLabel: "Revisar historico",
-      compareEligible: false,
     };
   }
 
@@ -117,7 +113,6 @@ export function getCompanyAvailability(
         "Ha dados locais, mas a cobertura ainda e curta para comparacoes fortes.",
       yearsLabel,
       actionLabel: "Conferir dados",
-      compareEligible: false,
     };
   }
 
@@ -128,7 +123,6 @@ export function getCompanyAvailability(
     detail: "KPIs, demonstracoes e Excel disponiveis agora.",
     yearsLabel,
     actionLabel: "Analisar agora",
-    compareEligible: true,
   };
 }
 
@@ -165,14 +159,5 @@ export function prioritizeDiscoveryCompanies(
 
       return left.company_name.localeCompare(right.company_name, "pt-BR");
     })
-    .slice(0, limit);
-}
-
-export function selectReadyCompareCompanies(
-  items: CompanyDirectoryItem[],
-  limit = 6,
-): CompanyDirectoryItem[] {
-  return prioritizeDiscoveryCompanies(items, items.length)
-    .filter((item) => getCompanyAvailability(item).compareEligible)
     .slice(0, limit);
 }

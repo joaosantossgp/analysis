@@ -71,6 +71,11 @@ def _seed_sector_read_service(tmp_path):
                 cnpj TEXT,
                 setor_cvm TEXT,
                 setor_analitico TEXT,
+                gics_sector TEXT,
+                gics_sector_slug TEXT,
+                gics_industry_group TEXT,
+                gics_industry TEXT,
+                gics_sub_industry TEXT,
                 company_type TEXT,
                 ticker_b3 TEXT,
                 coverage_rank INTEGER,
@@ -138,12 +143,13 @@ def test_list_sectors_returns_stable_snapshot_contract(tmp_path):
     dto = service.list_sectors()
 
     names = [row.sector_name for row in dto.items]
-    assert "Energia" in names
-    assert "Saneamento" in names
+    assert "Energy" in names
+    assert "Utilities" in names
 
-    energia = next(row for row in dto.items if row.sector_name == "Energia")
-    saneamento = next(row for row in dto.items if row.sector_name == "Saneamento")
+    energia = next(row for row in dto.items if row.sector_name == "Energy")
+    saneamento = next(row for row in dto.items if row.sector_name == "Utilities")
     assert energia.latest_year == 2024
+    assert energia.sub_industries == ("Integrated Oil & Gas",)
     assert round(energia.snapshot.roe or 0.0, 6) == round(180.0 / 380.0, 6)
     assert saneamento.latest_year == 2024
     assert saneamento.snapshot.roe is None

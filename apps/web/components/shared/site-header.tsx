@@ -6,7 +6,6 @@ import {
   Building2Icon,
   ChevronDownIcon,
   DatabaseZapIcon,
-  GitCompareArrowsIcon,
   LayersIcon,
   LineChartIcon,
   MenuIcon,
@@ -24,7 +23,6 @@ import { cn } from "@/lib/utils";
 const PRIMARY_NAV = [
   { label: "Home", href: "/" },
   { label: "Empresas", href: "/empresas" },
-  { label: "Comparar", href: "/comparar" },
   { label: "Setores", href: "/setores" },
 ] as const;
 
@@ -68,7 +66,7 @@ const DROPDOWN_ITEMS = {
       soon: true,
     },
     {
-      icon: GitCompareArrowsIcon,
+      icon: LayersIcon,
       label: "Design System",
       description: "Componentes e padroes",
       href: "/design-system",

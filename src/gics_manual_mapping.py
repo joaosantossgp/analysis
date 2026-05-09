@@ -42,9 +42,11 @@ def build_gics_classification(
         return None
 
     # Priority rules tuned for Brazilian issuer labels.
+    if _has_any(haystack, ("utilit", "saneamento", "energia eletrica", "eletric", "water", "gas distribu")):
+        return _mk("Utilities", "Utilities", "Electric Utilities", "Electric Utilities")
     if _has_any(haystack, ("energia", "petro", "oil", "gas", "combust")):
         return _mk("Energy", "Energy", "Oil, Gas & Consumable Fuels", "Integrated Oil & Gas")
-    if _has_any(haystack, ("material", "miner", "sider", "aco", "quimic", "papel", "celulose")):
+    if _has_any(haystack, ("material", "materiais", "basicos", "miner", "sider", "aco", "quimic", "papel", "celulose")):
         return _mk("Materials", "Materials", "Metals & Mining", "Diversified Metals & Mining")
     if _has_any(haystack, ("industrial", "logist", "transp", "infra", "aero", "rodov", "maquina")):
         return _mk("Industrials", "Industrials", "Industrial Conglomerates", "Industrial Conglomerates")
@@ -60,9 +62,6 @@ def build_gics_classification(
         return _mk("Information Technology", "Information Technology", "Software & Services", "Application Software")
     if _has_any(haystack, ("comunic", "media", "telecom", "internet", "conteudo")):
         return _mk("Communication Services", "Communication Services", "Telecommunication Services", "Integrated Telecommunication Services")
-    if _has_any(haystack, ("utilit", "saneamento", "eletric", "energia eletrica", "water", "gas distribu")):
-        # Requested pattern example.
-        return _mk("Utilities", "Utilities", "Electric Utilities", "Electric Utilities")
     if _has_any(haystack, ("imobili", "real estate", "propriedade", "laje corporativa")):
         return _mk("Real Estate", "Real Estate", "Real Estate Management & Development", "Real Estate Development")
     return None

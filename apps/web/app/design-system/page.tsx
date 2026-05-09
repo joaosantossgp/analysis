@@ -584,7 +584,7 @@ export default function DesignSystemPage() {
                 <AnimatedDropdown
                   text="Acoes"
                   items={[
-                    { name: "Comparar", link: "#" },
+                    { name: "Abrir setor", link: "#" },
                     { name: "Compartilhar", link: "#" },
                     { name: "Configuracoes", link: "#" },
                   ]}

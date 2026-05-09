@@ -289,6 +289,8 @@ class CompanySectorFilterOption:
     sector_slug: str
     company_count: int
     gics_sector: str | None = None
+    gics_sector_slug: str | None = None
+    gics_sub_industry: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -330,6 +332,7 @@ class SectorDirectoryItemDTO:
     company_count: int
     latest_year: int | None
     snapshot: SectorSnapshotDTO
+    sub_industries: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -361,6 +364,7 @@ class SectorCompanyMetricDTO:
     cd_cvm: int
     company_name: str
     ticker_b3: str | None
+    gics_sub_industry: str | None
     roe: float | None
     mg_ebit: float | None
     mg_liq: float | None
@@ -628,6 +632,9 @@ class HealthSnapshot:
     per_year: tuple[HealthYearCoverage, ...]
     prioritized_companies: tuple[HealthPriority, ...]
     raw: dict[str, Any]
+    total_companies: int = 0
+    companies_with_historical_data: int = 0
+    companies_without_historical_data: int = 0
 
     @classmethod
     def from_payload(cls, payload: dict[str, Any]) -> "HealthSnapshot":
@@ -651,6 +658,17 @@ class HealthSnapshot:
         priorities = tuple(
             HealthPriority.from_payload(row)
             for row in payload.get("prioritized_companies", [])
+        )
+        company_inventory = payload.get("company_inventory", {})
+        total_companies = int(
+            company_inventory.get("total_companies")
+            or global_stats.get("active_universe")
+            or 0
+        )
+        companies_with_historical_data = int(
+            company_inventory.get("companies_with_historical_data")
+            or global_stats.get("companies_with_historical_data")
+            or 0
         )
         return cls(
             generated_at=payload.get("generated_at"),
@@ -676,6 +694,12 @@ class HealthSnapshot:
             per_year=per_year_rows,
             prioritized_companies=priorities,
             raw=dict(payload),
+            total_companies=total_companies,
+            companies_with_historical_data=companies_with_historical_data,
+            companies_without_historical_data=max(
+                0,
+                total_companies - companies_with_historical_data,
+            ),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -695,4 +719,7 @@ class HealthSnapshot:
             "per_year": [row.to_dict() for row in self.per_year],
             "prioritized_companies": [row.to_dict() for row in self.prioritized_companies],
             "raw": dict(self.raw),
+            "total_companies": self.total_companies,
+            "companies_with_historical_data": self.companies_with_historical_data,
+            "companies_without_historical_data": self.companies_without_historical_data,
         }

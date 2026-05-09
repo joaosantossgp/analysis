@@ -57,7 +57,6 @@ export type CompanyDashboardModel = {
 
 export type CompanyHeroModel = {
   initials: string;
-  compareHref: string;
   sectorHref: string | null;
 };
 
@@ -388,11 +387,6 @@ export function buildCompanyHeroModel(
   company: CompanyInfo,
   selectedYears: number[],
 ): CompanyHeroModel {
-  const compareParams = new URLSearchParams({ ids: String(company.cd_cvm) });
-  if (selectedYears.length > 0) {
-    compareParams.set("anos", selectedYears.join(","));
-  }
-
   const latestSelectedYear = selectedYears[selectedYears.length - 1] ?? null;
   const sectorHref =
     company.sector_slug && latestSelectedYear
@@ -403,7 +397,6 @@ export function buildCompanyHeroModel(
 
   return {
     initials: getInitials(company.company_name),
-    compareHref: `/comparar?${compareParams.toString()}`,
     sectorHref,
   };
 }

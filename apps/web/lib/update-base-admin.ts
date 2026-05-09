@@ -9,6 +9,8 @@ export type DataLoadState = "loading" | "available" | "unavailable";
 
 export type BaseHealthSummary = {
   totalCompanies: number | null;
+  companiesWithHistoricalData: number | null;
+  companiesWithoutHistoricalData: number | null;
   completedCells: number | null;
   missingCells: number | null;
   coveragePct: number | null;
@@ -87,11 +89,23 @@ export function buildBaseHealthSummary(
   health: BaseHealthSnapshot | null,
   sectors: CompanySectorFilter[],
 ): BaseHealthSummary {
-  const latest = latestCoverageRow(health);
-  const totalCompanies = latest?.total_companies ?? sumSectorCompanies(sectors);
+  const totalCompanies =
+    health?.total_companies ??
+    sumSectorCompanies(sectors) ??
+    latestCoverageRow(health)?.total_companies ??
+    null;
+  const companiesWithHistoricalData =
+    health?.companies_with_historical_data ?? null;
+  const companiesWithoutHistoricalData =
+    health?.companies_without_historical_data ??
+    (totalCompanies != null && companiesWithHistoricalData != null
+      ? Math.max(0, totalCompanies - companiesWithHistoricalData)
+      : null);
 
   return {
     totalCompanies,
+    companiesWithHistoricalData,
+    companiesWithoutHistoricalData,
     completedCells: health?.completed_cells ?? null,
     missingCells: health?.missing_cells ?? null,
     coveragePct: health?.pct ?? null,

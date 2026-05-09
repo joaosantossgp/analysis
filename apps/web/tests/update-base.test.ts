@@ -73,6 +73,9 @@ const baseHealthPayload = {
   ],
   prioritized_companies: [],
   raw: {},
+  total_companies: 6,
+  companies_with_historical_data: 4,
+  companies_without_historical_data: 2,
 };
 
 test("fetchBaseHealth (web) loads the same-origin base-health route with the real window", async () => {
@@ -130,6 +133,8 @@ test("update-base summaries derive cards and mode estimates from health and filt
   });
 
   assert.equal(summary.totalCompanies, 6);
+  assert.equal(summary.companiesWithHistoricalData, 4);
+  assert.equal(summary.companiesWithoutHistoricalData, 2);
   assert.equal(summary.completedCells, 7);
   assert.equal(summary.missingCells, 3);
   assert.equal(estimates.full.affected, 2);

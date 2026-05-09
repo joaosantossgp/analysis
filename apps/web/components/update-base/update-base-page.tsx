@@ -1341,8 +1341,22 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
               <StatTile
                 label="Total de empresas"
                 value={baseSummary.totalCompanies != null ? formatNumber(baseSummary.totalCompanies) : "n/d"}
-                subvalue={sectorState === "loading" ? "Carregando filtros" : "Cadastro atual"}
+                subvalue={baseHealthState === "loading" ? "Carregando /base-health" : "Cadastro ativo"}
                 icon={Building2Icon}
+              />
+              <StatTile
+                label="Com historico"
+                value={baseSummary.companiesWithHistoricalData != null ? formatNumber(baseSummary.companiesWithHistoricalData) : "n/d"}
+                subvalue="Ao menos um ano anual disponivel"
+                icon={CheckCircle2Icon}
+                tone="success"
+              />
+              <StatTile
+                label="Sem historico"
+                value={baseSummary.companiesWithoutHistoricalData != null ? formatNumber(baseSummary.companiesWithoutHistoricalData) : "n/d"}
+                subvalue="Cadastradas, ainda sem leitura local"
+                icon={FileClockIcon}
+                tone="warning"
               />
               <StatTile
                 label="Ultima verificacao"
