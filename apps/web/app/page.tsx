@@ -11,7 +11,6 @@ import {
   fetchCompanyFilters,
   fetchEmDestaqueCompanies,
   fetchSectorDirectory,
-  SECTOR_DIRECTORY_NO_STORE_READ,
 } from "@/lib/api";
 import { isDesktopServerMode } from "@/lib/desktop-mode";
 
@@ -29,8 +28,7 @@ export default async function HomePage() {
     // Minimal fetch only for the total company count used by StatsStrip / HomeTrustStrip
     fetchCompanies({ page: 1, pageSize: 1 }),
     fetchCompanyFilters(),
-    // Same source as /setores — fresh fetch avoids stale ISR hiding deploy/backfill
-    fetchSectorDirectory({ request: SECTOR_DIRECTORY_NO_STORE_READ }),
+    fetchSectorDirectory(),
   ]);
 
   const destaqueCompanies =
