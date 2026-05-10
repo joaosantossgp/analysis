@@ -13,6 +13,7 @@ export type BaseHealthSummary = {
   companiesWithoutHistoricalData: number | null;
   companiesWithAnyLocalFinancialReport: number | null;
   companiesPartialLocal: number | null;
+  companiesFullyUpdated: number | null;
   companiesWithRefreshStatusRecorded: number | null;
   companiesWithLastRefreshError: number | null;
   completedCells: number | null;
@@ -92,6 +93,7 @@ export function buildBaseHealthSummary(health: BaseHealthSnapshot | null): BaseH
     companiesWithAnyLocalFinancialReport:
       health?.companies_with_any_local_financial_report ?? null,
     companiesPartialLocal: health?.companies_partial_local ?? null,
+    companiesFullyUpdated: health?.companies_fully_updated ?? null,
     companiesWithRefreshStatusRecorded:
       health?.companies_with_refresh_status_recorded ?? null,
     companiesWithLastRefreshError: health?.companies_with_last_refresh_error ?? null,

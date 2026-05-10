@@ -12,8 +12,8 @@ import { PageShell } from "@/components/shared/design-system-recipes";
 import { useDesktopBridgeReady } from "@/components/shared/use-desktop-bridge-ready";
 import {
   bridgeFetchCompanies,
-  bridgeFetchCompanyFilters,
   bridgeFetchEmDestaque,
+  bridgeFetchSectors,
 } from "@/lib/desktop-bridge";
 
 export function HomeDesktopLoader() {
@@ -23,7 +23,13 @@ export function HomeDesktopLoader() {
   >([]);
   const [totalCompanies, setTotalCompanies] = useState<number | null>(null);
   const [gicsSectors, setGicsSectors] = useState<
-    Awaited<ReturnType<typeof bridgeFetchCompanyFilters>>["sectors"]
+    Array<{
+      sector_name: string;
+      sector_slug: string;
+      company_count: number;
+      gics_sector: string;
+      gics_sector_slug: string;
+    }>
   >([]);
 
   useEffect(() => {
@@ -34,10 +40,10 @@ export function HomeDesktopLoader() {
     async function load() {
       if (cancelled) return;
 
-      const [destaqueResult, statsResult, filtersResult] = await Promise.allSettled([
+      const [destaqueResult, statsResult, sectorsResult] = await Promise.allSettled([
         bridgeFetchEmDestaque(),
         bridgeFetchCompanies({ page: 1, pageSize: 1 }),
-        bridgeFetchCompanyFilters(),
+        bridgeFetchSectors("sector"),
       ]);
 
       if (cancelled) return;
@@ -51,7 +57,17 @@ export function HomeDesktopLoader() {
           : null,
       );
       setGicsSectors(
-        filtersResult.status === "fulfilled" ? filtersResult.value.sectors : [],
+        sectorsResult.status === "fulfilled"
+          ? sectorsResult.value.items
+              .filter((item) => (item.group_type ?? "sector") === "sector")
+              .map((item) => ({
+                sector_name: item.sector_name,
+                sector_slug: item.sector_slug,
+                company_count: item.company_count,
+                gics_sector: item.sector_name,
+                gics_sector_slug: item.sector_slug,
+              }))
+          : [],
       );
     }
 

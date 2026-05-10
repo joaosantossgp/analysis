@@ -9,6 +9,7 @@ import {
   CircleStopIcon,
   Clock3Icon,
   CloudOffIcon,
+  DatabaseIcon,
   DownloadIcon,
   FileClockIcon,
   FilterIcon,
@@ -39,6 +40,7 @@ import {
   fetchBatchRefresh,
   fetchCompanyFilters,
   fetchCompanySuggestions,
+  fetchSectorDirectory,
   fetchRequestRefresh,
   resolveBatchRefreshCvmRange,
 } from "@/lib/api";
@@ -67,7 +69,7 @@ type AppState =
   | "already_running";
 
 type UpdateType = "full" | "missing" | "outdated" | "failed";
-type UpdateScope = "single_company" | "sector" | "all";
+type UpdateScope = "single_company" | "sector" | "sub_sector" | "batch" | "all";
 type SingleCompanyMode = "on_demand" | "batch_single";
 type LogType = "info" | "success" | "warning" | "error" | "dim";
 
@@ -517,6 +519,7 @@ function parseUpdateBaseSearchParams(sp: URLSearchParams): {
   updateType: UpdateType;
   singleCvm: string;
   filterSector: string;
+  filterSubSector: string;
   filterStatus: string;
   filterCvmFrom: string;
   filterCvmTo: string;
@@ -525,7 +528,13 @@ function parseUpdateBaseSearchParams(sp: URLSearchParams): {
 } {
   const scope = sp.get("scope");
   const updateScope: UpdateScope =
-    scope === "single_company" || scope === "sector" || scope === "all" ? scope : "all";
+    scope === "single_company" ||
+    scope === "sector" ||
+    scope === "sub_sector" ||
+    scope === "batch" ||
+    scope === "all"
+      ? scope
+      : "all";
 
   const mode = sp.get("mode");
   const updateType: UpdateType =
@@ -533,6 +542,8 @@ function parseUpdateBaseSearchParams(sp: URLSearchParams): {
 
   const sectorParam = sp.get("sector");
   const filterSector = sectorParam && sectorParam.length > 0 ? sectorParam : "all";
+  const subSectorParam = sp.get("sub_sector");
+  const filterSubSector = subSectorParam && subSectorParam.length > 0 ? subSectorParam : "all";
 
   const statusParam = sp.get("status");
   const filterStatus = statusParam && statusParam.length > 0 ? statusParam : "all";
@@ -558,6 +569,7 @@ function parseUpdateBaseSearchParams(sp: URLSearchParams): {
     updateType,
     singleCvm: singleCvmParam,
     filterSector,
+    filterSubSector,
     filterStatus,
     filterCvmFrom: cvmFrom,
     filterCvmTo: cvmTo,
@@ -584,7 +596,11 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
   const [singleCompanySuggestions, setSingleCompanySuggestions] = useState<CompanySuggestionItem[]>([]);
   const [singleCompanySuggestionState, setSingleCompanySuggestionState] = useState<DataLoadState>("available");
   const [selectedSingleCompany, setSelectedSingleCompany] = useState<CompanySuggestionItem | null>(null);
+  const [batchCompanyQuery, setBatchCompanyQuery] = useState("");
+  const [batchCompanySuggestions, setBatchCompanySuggestions] = useState<CompanySuggestionItem[]>([]);
+  const [selectedBatchCompanies, setSelectedBatchCompanies] = useState<CompanySuggestionItem[]>([]);
   const [filterSector, setFilterSector] = useState(urlBoot.filterSector);
+  const [filterSubSector, setFilterSubSector] = useState(urlBoot.filterSubSector);
   const [filterStatus, setFilterStatus] = useState(urlBoot.filterStatus);
   const [filterCvmFrom, setFilterCvmFrom] = useState(urlBoot.filterCvmFrom);
   const [filterCvmTo, setFilterCvmTo] = useState(urlBoot.filterCvmTo);
@@ -603,6 +619,7 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
   const [baseHealth, setBaseHealth] = useState<Awaited<ReturnType<typeof fetchBaseHealth>> | null>(null);
   const [baseHealthState, setBaseHealthState] = useState<DataLoadState>("loading");
   const [sectors, setSectors] = useState<CompanySectorFilter[]>(initialSectors);
+  const [subSectors, setSubSectors] = useState<Array<{ name: string; count: number }>>([]);
   const [sectorState, setSectorState] = useState<DataLoadState>(
     initialSectors.length ? "available" : "loading",
   );
@@ -620,7 +637,9 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
   const urlSyncRef = useRef(false);
 
   const trimmedSingleQuery = singleCompanyQuery.trim();
+  const trimmedBatchQuery = batchCompanyQuery.trim();
   const shouldFetchSuggestions = updateScope === "single_company" && trimmedSingleQuery.length >= 2;
+  const shouldFetchBatchSuggestions = updateScope === "batch" && trimmedBatchQuery.length >= 2;
   const visibleSuggestions = shouldFetchSuggestions ? singleCompanySuggestions : [];
   const visibleSuggestionState = shouldFetchSuggestions ? singleCompanySuggestionState : "available";
 
@@ -660,6 +679,17 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
   const selectedSector = sectors.find(
     (sector) => sector.sector_slug === filterSector,
   );
+  const subSectorOptions = useMemo(
+    () => [
+      { value: "all", label: "Todos os sub-setores" },
+      ...subSectors.map((subSector) => ({
+        value: subSector.name,
+        label: `${subSector.name} (${formatNumber(subSector.count)})`,
+      })),
+    ],
+    [subSectors],
+  );
+  const selectedSubSector = subSectors.find((subSector) => subSector.name === filterSubSector);
   const updateModeEstimates = useMemo(
     () =>
       buildUpdateModeEstimates({
@@ -674,6 +704,10 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
   const selectedImpactLabel =
     updateScope === "single_company"
       ? "1 empresa"
+      : updateScope === "batch"
+        ? `${formatNumber(selectedBatchCompanies.length)} empresa${selectedBatchCompanies.length !== 1 ? "s" : ""}`
+      : updateScope === "sub_sector" && selectedSubSector
+        ? `${formatNumber(selectedSubSector.count)} empresas`
       : selectedModeEstimate.affected != null
         ? `${formatNumber(selectedModeEstimate.affected)} ${selectedModeEstimate.unitLabel}`
         : "Resolvido ao iniciar";
@@ -705,6 +739,9 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
     (effectiveSingleCompanyCvm == null ||
       !Number.isFinite(effectiveSingleCompanyCvm) ||
       effectiveSingleCompanyCvm <= 0);
+  const hasInvalidSector = updateScope === "sector" && !selectedSector;
+  const hasInvalidSubSector = updateScope === "sub_sector" && !selectedSubSector;
+  const hasInvalidBatch = updateScope === "batch" && selectedBatchCompanies.length === 0;
   const isSingleBatchMode = updateScope === "single_company" && singleCompanyMode === "batch_single";
 
   const activeFilters = useMemo(() => {
@@ -725,13 +762,19 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
     if (updateScope === "sector" && selectedSector) {
       filters.push(`Setor: ${selectedSector.sector_name}`);
     }
+    if (updateScope === "sub_sector" && selectedSubSector) {
+      filters.push(`Sub-setor: ${selectedSubSector.name}`);
+    }
+    if (updateScope === "batch" && selectedBatchCompanies.length > 0) {
+      filters.push(`${selectedBatchCompanies.length} empresas selecionadas`);
+    }
     if (filterStatus !== "all") {
       filters.push(`Status: ${STATUS_OPTIONS.find((item) => item.value === filterStatus)?.label ?? filterStatus}`);
     }
     if (filterCvmFrom) filters.push(`CVM >= ${filterCvmFrom}`);
     if (filterCvmTo) filters.push(`CVM <= ${filterCvmTo}`);
     return filters;
-  }, [filterCvmFrom, filterCvmTo, filterStatus, hasSingleCvmInput, selectedSector, selectedSingleCompany, singleCompanyMode, singleCvm, updateScope]);
+  }, [filterCvmFrom, filterCvmTo, filterStatus, hasSingleCvmInput, selectedBatchCompanies.length, selectedSector, selectedSingleCompany, selectedSubSector, singleCompanyMode, singleCvm, updateScope]);
 
   const navItems: NavItem[] = useMemo(
     () => [
@@ -838,6 +881,11 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
       dispatch = await fetchBatchRefresh({
         mode: updateType,
         sectorSlug: updateScope === "sector" ? selectedSector?.sector_slug ?? null : null,
+        subSector: updateScope === "sub_sector" ? selectedSubSector?.name ?? null : null,
+        companyIds:
+          updateScope === "batch"
+            ? selectedBatchCompanies.map((company) => company.cd_cvm)
+            : null,
         statusFilter: filterStatus !== "all" ? filterStatus : null,
         cvmRange:
           isSingleBatchMode
@@ -1031,6 +1079,18 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
       setDispatchError("Informe um codigo CVM valido para atualizar uma empresa especifica.");
       return;
     }
+    if (hasInvalidSector) {
+      setDispatchError("Selecione um setor GICS para atualizar.");
+      return;
+    }
+    if (hasInvalidSubSector) {
+      setDispatchError("Selecione um sub-setor GICS para atualizar.");
+      return;
+    }
+    if (hasInvalidBatch) {
+      setDispatchError("Selecione pelo menos uma empresa para atualizar em lote.");
+      return;
+    }
     if (cvmRangeError) {
       setDispatchError(cvmRangeError);
       return;
@@ -1070,11 +1130,14 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
 
   useEffect(() => {
     if (initialSectors.length) {
-      return;
+      setSectorState("available");
     }
 
     let alive = true;
-    void fetchCompanyFilters()
+    const sectorsPromise = initialSectors.length
+      ? Promise.resolve({ sectors: initialSectors })
+      : fetchCompanyFilters();
+    void sectorsPromise
       .then((filters) => {
         if (!alive) return;
         setSectors(filters.sectors);
@@ -1090,6 +1153,27 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
       alive = false;
     };
   }, [initialSectors]);
+
+  useEffect(() => {
+    let alive = true;
+    void fetchSectorDirectory({ groupBy: "sub_sector" })
+      .then((directory) => {
+        if (!alive) return;
+        setSubSectors(
+          directory.items
+            .filter((item) => item.group_type === "sub_sector")
+            .map((item) => ({ name: item.sector_name, count: item.company_count })),
+        );
+      })
+      .catch(() => {
+        if (!alive) return;
+        setSubSectors([]);
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!shouldFetchSuggestions) {
@@ -1118,6 +1202,34 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
       alive = false;
     };
   }, [shouldFetchSuggestions, trimmedSingleQuery]);
+
+  useEffect(() => {
+    if (!shouldFetchBatchSuggestions) {
+      return;
+    }
+
+    let alive = true;
+
+    void (async () => {
+      await Promise.resolve();
+      if (!alive) return;
+      try {
+        const payload = await fetchCompanySuggestions(trimmedBatchQuery, 8);
+        if (!alive) return;
+        const selectedCodes = new Set(selectedBatchCompanies.map((item) => item.cd_cvm));
+        setBatchCompanySuggestions(
+          payload.items.filter((item) => !selectedCodes.has(item.cd_cvm)),
+        );
+      } catch {
+        if (!alive) return;
+        setBatchCompanySuggestions([]);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [selectedBatchCompanies, shouldFetchBatchSuggestions, trimmedBatchQuery]);
 
   useEffect(() => {
     let alive = true;
@@ -1150,6 +1262,7 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
     setOrDelete("scope", updateScope);
     setOrDelete("mode", updateType);
     setOrDelete("sector", updateScope === "sector" ? filterSector : null);
+    setOrDelete("sub_sector", updateScope === "sub_sector" ? filterSubSector : null);
     setOrDelete("status", filterStatus !== "all" ? filterStatus : null);
     setOrDelete("cvm_from", filterCvmFrom || null);
     setOrDelete("cvm_to", filterCvmTo || null);
@@ -1170,6 +1283,7 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
     filterCvmFrom,
     filterCvmTo,
     filterSector,
+    filterSubSector,
     filterStatus,
     jobId,
     pathname,
@@ -1351,13 +1465,41 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
                 icon={Building2Icon}
               />
               <StatTile
-                label="Com DFP anual completo"
+                label="Com dados locais"
+                value={
+                  baseSummary.companiesWithAnyLocalFinancialReport != null
+                    ? formatNumber(baseSummary.companiesWithAnyLocalFinancialReport)
+                    : "n/d"
+                }
+                subvalue="Empresas com qualquer linha financeira local ligada ao codigo CVM"
+                icon={DatabaseIcon}
+                tone="success"
+              />
+              <StatTile
+                label="Sem dados locais"
+                value={
+                  baseSummary.totalCompanies != null &&
+                  baseSummary.companiesWithAnyLocalFinancialReport != null
+                    ? formatNumber(
+                        Math.max(
+                          0,
+                          baseSummary.totalCompanies - baseSummary.companiesWithAnyLocalFinancialReport,
+                        ),
+                      )
+                    : "n/d"
+                }
+                subvalue="Empresas do universo sem demonstrativos locais vinculados ao codigo CVM"
+                icon={FileClockIcon}
+                tone="warning"
+              />
+              <StatTile
+                label="Com ano anual legivel"
                 value={
                   baseSummary.companiesWithHistoricalData != null
                     ? formatNumber(baseSummary.companiesWithHistoricalData)
                     : "n/d"
                 }
-                subvalue="Pelo menos um ano com periodo anual (PERIOD_LABEL alinhado ao ano), como no diretorio"
+                subvalue="Pelo menos um ano anual legivel para KPIs; nao significa janela inteira atualizada"
                 icon={CheckCircle2Icon}
                 tone="success"
               />
@@ -1399,6 +1541,17 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
                 icon={XCircleIcon}
                 tone="error"
               />
+              <StatTile
+                label="Atualizacao completa na janela"
+                value={
+                  baseSummary.companiesFullyUpdated != null
+                    ? formatNumber(baseSummary.companiesFullyUpdated)
+                    : "n/d"
+                }
+                subvalue="Empresa com todos os anos da janela contendo DRE, BPA, BPP e DFC em periodo anual"
+                icon={CheckCircle2Icon}
+                tone="success"
+              />
             </div>
 
             <Eyebrow className="mb-3 mt-8 text-[0.65rem]">
@@ -1416,7 +1569,7 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
                 icon={Clock3Icon}
               />
               <StatTile
-                label="Celulas completas"
+                label="Empresa-ano completas"
                 value={baseSummary.completedCells != null ? formatNumber(baseSummary.completedCells) : "n/d"}
                 subvalue={`${formatPercent(baseSummary.coveragePct)} da grade empresa × ano`}
                 icon={CheckCircle2Icon}
@@ -1528,13 +1681,15 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
             <SectionTitle icon={SlidersHorizontalIcon} title="Controles de atualizacao" />
             <Card className="rounded-[1.15rem] bg-card/92">
               <CardHeader>
-                <Eyebrow>O que voce quer atualizar?</Eyebrow>
+                <Eyebrow>Escopo da atualizacao</Eyebrow>
               </CardHeader>
-              <CardContent className="grid gap-3 px-5 sm:grid-cols-3">
+              <CardContent className="grid gap-3 px-5 sm:grid-cols-2 xl:grid-cols-5">
                 {[
-                  { value: "single_company", label: "Empresa especifica", desc: "Atualiza 1 companhia por codigo CVM" },
-                  { value: "sector", label: "Setor especifico", desc: "Atualiza empresas de um setor" },
-                  { value: "all", label: "Todas as empresas", desc: "Atualiza toda a base sem recorte" },
+                  { value: "all", label: "Toda a base", desc: "Todas as empresas do universo" },
+                  { value: "sector", label: "Por setor GICS", desc: "Empresas de um setor GICS" },
+                  { value: "sub_sector", label: "Por sub-setor GICS", desc: "Empresas de um sub-setor GICS" },
+                  { value: "batch", label: "Lote de empresas", desc: "Lista escolhida por busca" },
+                  { value: "single_company", label: "Empresa especifica", desc: "Uma companhia por codigo CVM" },
                 ].map((scope) => (
                   <button
                     key={scope.value}
@@ -1558,6 +1713,91 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
                 ))}
               </CardContent>
             </Card>
+
+            {updateScope === "sector" ? (
+              <Card className="mt-3 rounded-[1.15rem] bg-card/92">
+                <CardHeader>
+                  <Eyebrow>Setor GICS</Eyebrow>
+                </CardHeader>
+                <CardContent className="px-5">
+                  <AdminSelect label="Setor GICS" value={filterSector} onChange={setFilterSector} options={sectorOptions} disabled={!canRun || sectorOptions.length === 1} />
+                </CardContent>
+              </Card>
+            ) : null}
+
+            {updateScope === "sub_sector" ? (
+              <Card className="mt-3 rounded-[1.15rem] bg-card/92">
+                <CardHeader>
+                  <Eyebrow>Sub-setor GICS</Eyebrow>
+                </CardHeader>
+                <CardContent className="px-5">
+                  <AdminSelect label="Sub-setor GICS" value={filterSubSector} onChange={setFilterSubSector} options={subSectorOptions} disabled={!canRun || subSectorOptions.length === 1} />
+                </CardContent>
+              </Card>
+            ) : null}
+
+            {updateScope === "batch" ? (
+              <Card className="mt-3 rounded-[1.15rem] bg-card/92">
+                <CardHeader>
+                  <Eyebrow>Lote de empresas</Eyebrow>
+                </CardHeader>
+                <CardContent className="space-y-3 px-5">
+                  <AdminInput
+                    label="Buscar empresas para adicionar"
+                    placeholder="Ex: Petrobras, Vale ou PETR4"
+                    value={batchCompanyQuery}
+                    onChange={setBatchCompanyQuery}
+                    disabled={!canRun}
+                  />
+                  {batchCompanySuggestions.length > 0 ? (
+                    <div className="max-h-44 space-y-1 overflow-y-auto rounded-[0.75rem] border border-border/65 bg-background/60 p-2">
+                      {batchCompanySuggestions.map((item) => (
+                        <button
+                          key={item.cd_cvm}
+                          type="button"
+                          className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted/40"
+                          onClick={() => {
+                            setSelectedBatchCompanies((current) =>
+                              current.some((company) => company.cd_cvm === item.cd_cvm)
+                                ? current
+                                : [...current, item],
+                            );
+                            setBatchCompanyQuery("");
+                            setBatchCompanySuggestions([]);
+                          }}
+                        >
+                          <span className="truncate">{item.company_name}</span>
+                          <span className="ml-2 shrink-0 text-muted-foreground">
+                            {item.ticker_b3 ?? `CVM ${item.cd_cvm}`}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                  {selectedBatchCompanies.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {selectedBatchCompanies.map((company) => (
+                        <button
+                          key={company.cd_cvm}
+                          type="button"
+                          onClick={() =>
+                            setSelectedBatchCompanies((current) =>
+                              current.filter((item) => item.cd_cvm !== company.cd_cvm),
+                            )
+                          }
+                          className="inline-flex items-center gap-2 rounded-full border border-border/65 px-3 py-1 text-xs"
+                        >
+                          {company.ticker_b3 ?? company.company_name}
+                          <XIcon className="size-3" />
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Adicione pelo menos uma empresa ao lote.</p>
+                  )}
+                </CardContent>
+              </Card>
+            ) : null}
 
             {updateScope === "single_company" ? (
               <Card className="mt-3 rounded-[1.15rem] bg-card/92">
@@ -1650,9 +1890,19 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
             ) : null}
 
             <Card className="mt-3 rounded-[1.15rem] bg-card/92">
-              <CardHeader>
-                <Eyebrow>Tipo de atualizacao</Eyebrow>
+              <CardHeader className="flex-row items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => setShowAdvancedFilters((value) => !value)}
+                  className="flex items-center gap-2 text-left"
+                >
+                  <Eyebrow>Opcoes avancadas de execucao</Eyebrow>
+                  <ChevronRightIcon
+                    className={cn("size-4 text-muted-foreground transition", showAdvancedFilters && "rotate-90")}
+                  />
+                </button>
               </CardHeader>
+              {showAdvancedFilters ? (
               <CardContent className="grid gap-3 px-5 sm:grid-cols-2 xl:grid-cols-4">
                 {(Object.keys(UPDATE_TYPE_META) as UpdateType[]).map((type) => {
                   const item = UPDATE_TYPE_META[type];
@@ -1683,6 +1933,13 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
                   );
                 })}
               </CardContent>
+              ) : (
+                <CardContent className="px-5">
+                  <p className="text-sm text-muted-foreground">
+                    Padrao: atualizacao completa. Abra para escolher faltantes, desatualizadas ou falhas.
+                  </p>
+                </CardContent>
+              )}
             </Card>
 
             <Card className="mt-3 rounded-[1.15rem] bg-card/92">
@@ -1715,7 +1972,6 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
               </CardHeader>
               {showAdvancedFilters && updateScope !== "single_company" ? (
                 <CardContent className="grid gap-3 px-5 sm:grid-cols-2 xl:grid-cols-4">
-                  <AdminSelect label="Setor" value={filterSector} onChange={setFilterSector} options={sectorOptions} disabled={!canRun || sectorOptions.length === 1 || updateScope !== "sector"} />
                   <AdminSelect label="Status" value={filterStatus} onChange={setFilterStatus} options={STATUS_OPTIONS} disabled={!canRun} />
                   <AdminInput label="Cod. CVM - de" placeholder="Ex: 1000" value={filterCvmFrom} onChange={(value) => { setFilterCvmFrom(value); setDispatchError(null); }} disabled={!canRun} />
                   <AdminInput label="Cod. CVM - ate" placeholder="Ex: 9999" value={filterCvmTo} onChange={(value) => { setFilterCvmTo(value); setDispatchError(null); }} disabled={!canRun} />
@@ -1729,11 +1985,22 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
                   </p>
                 </CardContent>
               )}
-              {dispatchError || (updateScope !== "single_company" && hasInvalidCvmRange) || hasInvalidSingleCvm ? (
+              {dispatchError ||
+              (updateScope !== "single_company" && hasInvalidCvmRange) ||
+              hasInvalidSingleCvm ||
+              hasInvalidSector ||
+              hasInvalidSubSector ||
+              hasInvalidBatch ? (
                 <div className="mx-5 mb-4 rounded-[0.95rem] border border-destructive/20 bg-destructive/8 px-4 py-3 text-sm text-destructive">
                   {dispatchError ??
                     (hasInvalidSingleCvm
                       ? "Informe um codigo CVM valido para atualizar uma empresa especifica."
+                      : hasInvalidSector
+                        ? "Selecione um setor GICS para atualizar."
+                      : hasInvalidSubSector
+                        ? "Selecione um sub-setor GICS para atualizar."
+                        : hasInvalidBatch
+                          ? "Selecione pelo menos uma empresa para atualizar em lote."
                       : cvmRangeError)}
                 </div>
               ) : null}
@@ -1750,7 +2017,13 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
                 <Button
                   size="lg"
                   onClick={handleStartRequest}
-                  disabled={(updateScope !== "single_company" && hasInvalidCvmRange) || hasInvalidSingleCvm}
+                  disabled={
+                    (updateScope !== "single_company" && hasInvalidCvmRange) ||
+                    hasInvalidSingleCvm ||
+                    hasInvalidSector ||
+                    hasInvalidSubSector ||
+                    hasInvalidBatch
+                  }
                 >
                   <PlayIcon className="size-4" />
                   {updateScope === "single_company" ? "Iniciar atualizacao da empresa" : "Iniciar atualizacao"}

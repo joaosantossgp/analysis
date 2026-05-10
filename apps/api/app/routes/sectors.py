@@ -34,11 +34,12 @@ SECTOR_DETAIL_CACHE_CONTROL = "public, max-age=3600, stale-while-revalidate=8640
 def list_sectors(
     response: Response,
     request: Request,
+    group_by: str = "sector",
     service: CVMReadService = Depends(get_read_service),
 ) -> SectorDirectoryPayload:
     ensure_api_ready(get_settings(request))
     apply_cache_headers(response, SECTOR_DIRECTORY_CACHE_CONTROL)
-    return present_sector_directory(service.list_sectors())
+    return present_sector_directory(service.list_sectors(group_by=group_by))
 
 
 @router.get(

@@ -42,7 +42,9 @@ export default async function HomePage() {
       : null;
 
   const directoryItems =
-    sectorsResult.status === "fulfilled" ? sectorsResult.value.items : [];
+    sectorsResult.status === "fulfilled"
+      ? sectorsResult.value.items.filter((item) => (item.group_type ?? "sector") === "sector")
+      : [];
 
   const gicsSectors =
     directoryItems.length > 0

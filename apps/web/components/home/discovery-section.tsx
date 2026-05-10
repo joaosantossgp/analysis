@@ -210,7 +210,7 @@ export function DiscoverySection({
           })}
           {gicsSectors.length === 0 ? (
             <p className="col-span-full rounded-[1rem] border border-border/60 bg-card px-4 py-3 text-sm text-muted-foreground">
-              Nenhum setor GICS disponivel no momento.
+              Sem classificacao GICS disponivel no universo atual. Empresas sem GICS nao sao misturadas aos setores GICS.
             </p>
           ) : null}
         </div>

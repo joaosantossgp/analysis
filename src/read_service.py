@@ -224,6 +224,7 @@ def _load_batch_candidate_companies(
     *,
     page_size: int,
 ) -> list[str]:
+    company_ids = _resolve_batch_company_ids(params.get("company_ids"))
     sector_slug = params.get("sector_slug") or params.get("sector")
     page = read_service.list_companies(
         search=str(params.get("search") or ""),
@@ -231,7 +232,48 @@ def _load_batch_candidate_companies(
         page=1,
         page_size=int(page_size),
     )
-    return _unique_company_codes(getattr(page, "items", ()))
+    items = list(getattr(page, "items", ()))
+
+    sub_sector = str(params.get("gics_sub_industry") or params.get("sub_sector") or "").strip()
+    if sub_sector:
+        items = [
+            item
+            for item in items
+            if str(_get_batch_attr(item, "gics_sub_industry") or "").strip() == sub_sector
+        ]
+
+    if company_ids:
+        wanted = {int(value) for value in company_ids}
+        items = [
+            item
+            for item in items
+            if int(_get_batch_attr(item, "cd_cvm") or 0) in wanted
+        ]
+
+    return _unique_company_codes(items)
+
+
+def _resolve_batch_company_ids(raw_ids: Any) -> list[int]:
+    if raw_ids in (None, ""):
+        return []
+    values = raw_ids
+    if isinstance(raw_ids, str):
+        values = [part.strip() for part in raw_ids.split(",") if part.strip()]
+    if not isinstance(values, (list, tuple, set)):
+        raise ValueError("company_ids deve ser uma lista de codigos CVM.")
+    parsed: list[int] = []
+    seen: set[int] = set()
+    for value in values:
+        try:
+            code = int(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("company_ids aceita apenas codigos CVM inteiros.") from exc
+        if code <= 0:
+            raise ValueError("company_ids aceita apenas codigos CVM positivos.")
+        if code not in seen:
+            seen.add(code)
+            parsed.append(code)
+    return parsed
 
 
 def _unique_company_codes(items: Any) -> list[str]:
@@ -818,24 +860,21 @@ class CVMReadService:
                 page_size=page_size,
             )
 
+        catalog_page = self._list_companies_from_catalog(
+            search=search,
+            sector_slug=sector_slug,
+            page=page,
+            page_size=page_size,
+        )
+        if catalog_page is not None:
+            return catalog_page
+
         rows_df, total_items = self.query_layer.get_companies_directory_page(
             search=search,
             sector_name=resolved_sector_name,
             page=page,
             page_size=page_size,
         )
-        if (
-            int(total_items) < self.CATALOG_FALLBACK_MIN_LOCAL_COMPANIES
-            and rows_df is not None
-        ):
-            catalog_page = self._list_companies_from_catalog(
-                search=search,
-                sector_slug=sector_slug,
-                page=page,
-                page_size=page_size,
-            )
-            if catalog_page is not None and catalog_page.pagination.total_items > 0:
-                return catalog_page
         years_map = self.query_layer.get_company_years_map(rows_df["cd_cvm"].tolist()) if not rows_df.empty else {}
         if not rows_df.empty:
             rows_df = rows_df.copy()
@@ -867,33 +906,30 @@ class CVMReadService:
         page: int,
         page_size: int,
     ) -> CompanyDirectoryPage | None:
-        try:
-            catalog_entries = self.company_catalog.list_entries()
-        except CompanyCatalogUnavailableError:
+        universe_items = self._list_company_universe_results()
+        if not universe_items:
             return None
 
         normalized_search = str(search or "").strip().lower()
         normalized_sector_slug = str(sector_slug or "").strip().lower() or None
 
-        filtered: list[CompanyCatalogEntry] = []
-        for entry in catalog_entries:
-            sector_name = canonical_sector_name(None, entry.setor_cvm)
-            current_sector_slug = sector_slugify(sector_name)
+        filtered: list[CompanySearchResult] = []
+        for item in universe_items:
+            current_sector_slug = item.sector_slug
             if normalized_sector_slug and current_sector_slug != normalized_sector_slug:
                 continue
 
             if normalized_search:
                 tokens = [
-                    entry.company_name.lower(),
-                    (entry.nome_comercial or "").lower(),
-                    (entry.ticker_b3 or "").lower(),
-                    str(entry.cd_cvm),
+                    item.company_name.lower(),
+                    (item.ticker_b3 or "").lower(),
+                    str(item.cd_cvm),
                 ]
                 if not any(normalized_search in token for token in tokens if token):
                     continue
-            filtered.append(entry)
+            filtered.append(item)
 
-        filtered.sort(key=lambda item: (0 if item.is_active else 1, item.company_name.lower()))
+        filtered.sort(key=lambda item: (0 if item.has_financial_data else 1, item.company_name.lower()))
         total_items = len(filtered)
         if total_items == 0:
             return self._empty_company_page(
@@ -905,58 +941,7 @@ class CVMReadService:
 
         start = max(0, (int(page) - 1) * int(page_size))
         end = start + int(page_size)
-        page_entries = filtered[start:end]
-        page_codes = [int(entry.cd_cvm) for entry in page_entries]
-        local_results_by_code: dict[int, CompanySearchResult] = {}
-        if page_codes:
-            local_rows = self.query_layer.get_companies_by_cvm_ids(page_codes)
-            if not local_rows.empty:
-                local_rows = local_rows.copy()
-                years_map = self.query_layer.get_company_years_map(
-                    local_rows["cd_cvm"].tolist()
-                )
-                local_rows["anos_disponiveis"] = local_rows["cd_cvm"].map(
-                    lambda cd_cvm: years_map.get(int(cd_cvm), ())
-                )
-                local_results_by_code = {
-                    int(item.cd_cvm): item
-                    for item in self._build_company_results(local_rows)
-                }
-
-        page_items = []
-        for entry in page_entries:
-            local_result = local_results_by_code.get(int(entry.cd_cvm))
-            if local_result is not None:
-                page_items.append(local_result)
-                continue
-
-            legacy_sector = canonical_sector_name(None, entry.setor_cvm)
-            gics = resolve_gics_classification(
-                sector_name=legacy_sector,
-                setor_analitico=None,
-                setor_cvm=entry.setor_cvm,
-            )
-            page_items.append(
-                CompanySearchResult(
-                    cd_cvm=int(entry.cd_cvm),
-                    company_name=entry.company_name,
-                    ticker_b3=entry.ticker_b3,
-                    setor_analitico=None,
-                    setor_cvm=entry.setor_cvm,
-                    sector_name=legacy_sector,
-                    sector_slug=sector_slugify(legacy_sector),
-                    anos_disponiveis=(),
-                    total_rows=0,
-                    has_financial_data=False,
-                    coverage_rank=None,
-                    gics_sector=gics.gics_sector if gics else None,
-                    gics_sector_slug=gics.gics_sector_slug if gics else None,
-                    gics_industry_group=gics.gics_industry_group if gics else None,
-                    gics_industry=gics.gics_industry if gics else None,
-                    gics_sub_industry=gics.gics_sub_industry if gics else None,
-                )
-            )
-        page_items = tuple(page_items)
+        page_items = tuple(filtered[start:end])
         total_pages = max(1, ((int(total_items) - 1) // int(page_size)) + 1)
         return CompanyDirectoryPage(
             items=page_items,
@@ -1048,58 +1033,20 @@ class CVMReadService:
             )
 
     def get_company_filters(self) -> CompanyFiltersDTO:
-        df = self.query_layer.get_available_company_sectors()
-        use_catalog_fallback = int(df["company_count"].sum()) < self.CATALOG_FALLBACK_MIN_LOCAL_COMPANIES
-        sector_counts: dict[str, int] = {}
-        if use_catalog_fallback:
-            try:
-                for entry in self.company_catalog.list_entries():
-                    sector_name = canonical_sector_name(None, entry.setor_cvm)
-                    sector_counts[sector_name] = sector_counts.get(sector_name, 0) + 1
-            except CompanyCatalogUnavailableError:
-                use_catalog_fallback = False
-
-        # Catalog fallback can legitimately yield zero sectors (tests stub an empty catalog).
-        # In that case fall back to local DB sector histogram.
-        if use_catalog_fallback and not sector_counts:
-            use_catalog_fallback = False
-
-        if not use_catalog_fallback:
-            for _, row in df.iterrows():
-                sector_name = str(row["sector_name"])
-                sector_counts[sector_name] = sector_counts.get(sector_name, 0) + int(row["company_count"] or 0)
-
-        gics_sector_counts: dict[str, int] = {}
-        for sector_name, company_count in sorted(sector_counts.items(), key=lambda item: item[0]):
-            gics_meta = resolve_gics_classification(
-                sector_name=sector_name,
-                setor_analitico=sector_name,
-                setor_cvm=sector_name,
-            )
-            display_sector_name = gics_meta.gics_sector if gics_meta else sector_name
-            gics_sector_counts[display_sector_name] = (
-                gics_sector_counts.get(display_sector_name, 0) + int(company_count)
-            )
+        sector_counts: dict[str, int] = defaultdict(int)
+        for item in self._list_company_universe_results():
+            if item.gics_sector and item.gics_sector in GICS_11_SECTORS:
+                sector_counts[item.gics_sector] += 1
 
         sectors_list: list[CompanySectorFilterOption] = []
-        for sector_name, company_count in sorted(gics_sector_counts.items(), key=lambda item: item[0]):
-            gics_meta = resolve_gics_classification(
-                sector_name=sector_name,
-                setor_analitico=sector_name,
-                setor_cvm=sector_name,
-            )
-            gics_sector = gics_meta.gics_sector if gics_meta else None
-            gics_sector_slug = gics_meta.gics_sector_slug if gics_meta else None
-            if sector_name in GICS_11_SECTORS:
-                gics_sector = sector_name
-                gics_sector_slug = sector_slugify(sector_name)
+        for sector_name, company_count in sorted(sector_counts.items(), key=lambda item: gics_sector_sort_key(item[0])):
             sectors_list.append(
                 CompanySectorFilterOption(
                     sector_name=sector_name,
                     sector_slug=sector_slugify(sector_name),
                     company_count=int(company_count),
-                    gics_sector=gics_sector,
-                    gics_sector_slug=gics_sector_slug,
+                    gics_sector=sector_name,
+                    gics_sector_slug=sector_slugify(sector_name),
                 )
             )
         sectors = tuple(sectors_list)
@@ -1190,29 +1137,33 @@ class CVMReadService:
     def resolve_sector_slug(self, sector_slug: str | None) -> str | None:
         return self._resolve_sector_slug(sector_slug)
 
-    def list_sectors(self) -> SectorDirectoryDTO:
+    def list_sectors(self, group_by: str = "sector") -> SectorDirectoryDTO:
+        normalized_group_by = str(group_by or "sector").strip().lower()
+        if normalized_group_by in {"subsector", "sub-sector", "sub_setor", "sub-setor"}:
+            normalized_group_by = "sub_sector"
+        if normalized_group_by not in {"sector", "sub_sector"}:
+            normalized_group_by = "sector"
+
         # Full unpaged directory so hub counts match the entire `companies` universe (not capped at
         # BATCH_REFRESH_MAX_PAGE_SIZE used for refresh batching).
-        all_rows, _ = self.query_layer.get_companies_directory_page(
-            search="",
-            sector_name=None,
-            page=1,
-            page_size=None,
-        )
-        company_items = self._build_company_results(all_rows)
+        company_items = self._list_company_universe_results()
         companies_by_gics: dict[str, list[CompanySearchResult]] = defaultdict(list)
+        companies_by_sub_sector: dict[str, list[CompanySearchResult]] = defaultdict(list)
         hub_counts: dict[str, int] = defaultdict(int)
         sub_industries_by_gics: dict[str, set[str]] = defaultdict(set)
         sub_industry_counts_by_gics: dict[str, Counter] = defaultdict(Counter)
+        unclassified_items: list[CompanySearchResult] = []
         for item in company_items:
             sector_hub = item.gics_sector
             if not sector_hub or sector_hub not in GICS_11_SECTORS:
+                unclassified_items.append(item)
                 continue
             hub_counts[sector_hub] += 1
             companies_by_gics[sector_hub].append(item)
             if item.gics_sub_industry:
                 sub_industries_by_gics[sector_hub].add(item.gics_sub_industry)
                 sub_industry_counts_by_gics[sector_hub][item.gics_sub_industry] += 1
+                companies_by_sub_sector[item.gics_sub_industry].append(item)
 
         metric_rows = self.query_layer.get_sector_metric_rows()
         if metric_rows is not None and not metric_rows.empty and company_items:
@@ -1240,45 +1191,80 @@ class CVMReadService:
                     latest_row,
                 )
 
-        # Hub counts and grouping use the same per-company GICS resolution as the directory
-        # (`_build_company_results`), so /setores reflects the full company universe loaded here,
-        # not a secondary histogram path that can drop unclassified persisted labels.
-        hub_counts_dict = dict(hub_counts)
         items: list[SectorDirectoryItemDTO] = []
-        candidate_keys = {
-            name for name, count in hub_counts_dict.items() if count > 0 and name in GICS_11_SECTORS
-        }
-        candidate_sector_names = sorted(
-            candidate_keys,
-            key=gics_sector_sort_key,
-        )
-        for sector_name in candidate_sector_names:
-            latest_year, snapshot_row = latest_snapshot_by_sector.get(
-                sector_name,
-                (None, None),
-            )
-            company_count = int(hub_counts_dict.get(sector_name, 0))
-            breakdown_counter = sub_industry_counts_by_gics.get(sector_name, Counter())
-            breakdown = tuple(
-                SubIndustryCountDTO(name=name, count=int(count))
-                for name, count in sorted(
-                    breakdown_counter.items(),
-                    key=lambda item: (-int(item[1]), str(item[0])),
+
+        if normalized_group_by == "sub_sector":
+            for sub_sector_name, sub_items in sorted(companies_by_sub_sector.items(), key=lambda item: item[0]):
+                parent_counts = Counter(item.gics_sector for item in sub_items if item.gics_sector)
+                parent_sector_name = str(parent_counts.most_common(1)[0][0]) if parent_counts else None
+                latest_year, snapshot_row = latest_snapshot_by_sector.get(
+                    parent_sector_name or "",
+                    (None, None),
                 )
+                items.append(
+                    SectorDirectoryItemDTO(
+                        sector_name=sub_sector_name,
+                        sector_slug=sector_slugify(sub_sector_name),
+                        company_count=len(sub_items),
+                        latest_year=latest_year,
+                        snapshot=SectorSnapshotDTO(
+                            roe=self._coerce_optional_float(snapshot_row["roe"]) if snapshot_row is not None else None,
+                            mg_ebit=self._coerce_optional_float(snapshot_row["mg_ebit"]) if snapshot_row is not None else None,
+                            mg_liq=self._coerce_optional_float(snapshot_row["mg_liq"]) if snapshot_row is not None else None,
+                        ),
+                        group_type="sub_sector",
+                        parent_sector_name=parent_sector_name,
+                        parent_sector_slug=sector_slugify(parent_sector_name) if parent_sector_name else None,
+                        companies=self._sector_company_preview(sub_items),
+                    )
+                )
+        else:
+            candidate_sector_names = sorted(
+                {name for name, count in hub_counts.items() if count > 0 and name in GICS_11_SECTORS},
+                key=gics_sector_sort_key,
             )
+            for sector_name in candidate_sector_names:
+                latest_year, snapshot_row = latest_snapshot_by_sector.get(
+                    sector_name,
+                    (None, None),
+                )
+                company_count = int(hub_counts.get(sector_name, 0))
+                breakdown_counter = sub_industry_counts_by_gics.get(sector_name, Counter())
+                breakdown = tuple(
+                    SubIndustryCountDTO(name=name, count=int(count))
+                    for name, count in sorted(
+                        breakdown_counter.items(),
+                        key=lambda item: (-int(item[1]), str(item[0])),
+                    )
+                )
+                items.append(
+                    SectorDirectoryItemDTO(
+                        sector_name=sector_name,
+                        sector_slug=sector_slugify(sector_name),
+                        company_count=company_count,
+                        latest_year=latest_year,
+                        snapshot=SectorSnapshotDTO(
+                            roe=self._coerce_optional_float(snapshot_row["roe"]) if snapshot_row is not None else None,
+                            mg_ebit=self._coerce_optional_float(snapshot_row["mg_ebit"]) if snapshot_row is not None else None,
+                            mg_liq=self._coerce_optional_float(snapshot_row["mg_liq"]) if snapshot_row is not None else None,
+                        ),
+                        sub_industries=tuple(sorted(sub_industries_by_gics.get(sector_name, ()))),
+                        sub_industry_breakdown=breakdown,
+                        group_type="sector",
+                        companies=self._sector_company_preview(companies_by_gics.get(sector_name, [])),
+                    )
+                )
+
+        if unclassified_items:
             items.append(
                 SectorDirectoryItemDTO(
-                    sector_name=sector_name,
-                    sector_slug=sector_slugify(sector_name),
-                    company_count=company_count,
-                    latest_year=latest_year,
-                    snapshot=SectorSnapshotDTO(
-                        roe=self._coerce_optional_float(snapshot_row["roe"]) if snapshot_row is not None else None,
-                        mg_ebit=self._coerce_optional_float(snapshot_row["mg_ebit"]) if snapshot_row is not None else None,
-                        mg_liq=self._coerce_optional_float(snapshot_row["mg_liq"]) if snapshot_row is not None else None,
-                    ),
-                    sub_industries=tuple(sorted(sub_industries_by_gics.get(sector_name, ()))),
-                    sub_industry_breakdown=breakdown,
+                    sector_name="Sem classificacao GICS",
+                    sector_slug="sem-classificacao-gics",
+                    company_count=len(unclassified_items),
+                    latest_year=None,
+                    snapshot=SectorSnapshotDTO(roe=None, mg_ebit=None, mg_liq=None),
+                    group_type="unclassified",
+                    companies=self._sector_company_preview(unclassified_items),
                 )
             )
 
@@ -1364,9 +1350,7 @@ class CVMReadService:
                 ]
             )
         else:
-            company_rows, total_items = self.query_layer.get_sector_companies(resolved_sector_name)
-            if company_rows.empty:
-                return None
+            return None
 
         if "anos_disponiveis" not in company_rows.columns:
             years_map = self.query_layer.get_company_years_map(company_rows["cd_cvm"].tolist())
@@ -1375,17 +1359,31 @@ class CVMReadService:
                 lambda cd_cvm: years_map.get(int(cd_cvm), ())
             )
         if "gics_sub_industry" not in company_rows.columns:
-            gics_meta = resolve_gics_classification(
-                sector_name=resolved_sector_name,
-                setor_analitico=resolved_sector_name,
-                setor_cvm=resolved_sector_name,
-            )
-            gics_sub_industry = gics_meta.gics_sub_industry if gics_meta else None
             company_rows = company_rows.copy()
-            company_rows["gics_sub_industry"] = gics_sub_industry
+            company_rows["gics_sub_industry"] = None
         available_years = self._extract_years_from_company_rows(company_rows)
         if not available_years:
-            return None
+            selected_year = int(year or datetime.now(timezone.utc).year - 1)
+            return SectorDetailDTO(
+                sector_name=resolved_sector_name,
+                sector_slug=sector_slugify(resolved_sector_name),
+                company_count=int(total_items),
+                available_years=(),
+                selected_year=selected_year,
+                yearly_overview=(),
+                companies=tuple(
+                    SectorCompanyMetricDTO(
+                        cd_cvm=int(row["cd_cvm"]),
+                        company_name=str(row["company_name"]),
+                        ticker_b3=self._clean_optional_text(row.get("ticker_b3")),
+                        gics_sub_industry=self._clean_optional_text(row.get("gics_sub_industry")),
+                        roe=None,
+                        mg_ebit=None,
+                        mg_liq=None,
+                    )
+                    for _, row in company_rows.sort_values("company_name").iterrows()
+                ),
+            )
 
         if year is None:
             selected_year = max(available_years)
@@ -2104,12 +2102,15 @@ class CVMReadService:
         }
         company_rows: list[dict[str, Any]] = []
         leader_completed = 0
+        companies_fully_updated = 0
 
         for row in active_rows:
             cd_cvm = int(row["cd_cvm"])
             completed_years = set(complete_years_map.get(cd_cvm, ()))
             years_completed = [year for year in years_scope if year in completed_years]
             years_missing = [year for year in years_scope if year not in completed_years]
+            if not years_missing:
+                companies_fully_updated += 1
             leader_completed = max(leader_completed, len(years_completed))
             for year in years_completed:
                 per_year_buckets[int(year)]["completed"] += 1
@@ -2249,6 +2250,7 @@ class CVMReadService:
                     companies_with_any_local_financial_report
                 ),
                 "companies_partial_local": int(companies_partial_local),
+                "companies_fully_updated": int(companies_fully_updated),
                 "companies_with_refresh_status_recorded": int(
                     companies_with_refresh_status_recorded
                 ),
@@ -2514,6 +2516,35 @@ class CVMReadService:
         return resolved_start_year, resolved_end_year
 
     def _load_active_company_rows(self) -> list[dict[str, Any]]:
+        local_rows = self._load_local_active_company_rows()
+        local_by_code = {int(row["cd_cvm"]): row for row in local_rows}
+        try:
+            entries = [entry for entry in self.company_catalog.list_entries() if entry.is_active]
+        except CompanyCatalogUnavailableError:
+            return local_rows
+        if not entries:
+            return local_rows
+
+        rows: list[dict[str, Any]] = []
+        for entry in entries:
+            local = local_by_code.get(int(entry.cd_cvm), {})
+            rows.append(
+                {
+                    "cd_cvm": int(entry.cd_cvm),
+                    "company_name": str(local.get("company_name") or entry.company_name),
+                    "coverage_rank": local.get("coverage_rank"),
+                }
+            )
+        rows.sort(
+            key=lambda row: (
+                1 if row.get("coverage_rank") is None else 0,
+                int(row.get("coverage_rank") or 999999),
+                str(row.get("company_name") or "").upper(),
+            )
+        )
+        return rows
+
+    def _load_local_active_company_rows(self) -> list[dict[str, Any]]:
         query = text(
             """
             SELECT cd_cvm, company_name, coverage_rank
@@ -3600,6 +3631,107 @@ class CVMReadService:
             )
         return results
 
+    def _list_company_universe_results(self) -> list[CompanySearchResult]:
+        try:
+            catalog_entries = [entry for entry in self.company_catalog.list_entries() if entry.is_active]
+        except CompanyCatalogUnavailableError:
+            rows_df, _ = self.query_layer.get_companies_directory_page(
+                search="",
+                sector_name=None,
+                page=1,
+                page_size=None,
+            )
+            if not rows_df.empty:
+                years_map = self.query_layer.get_company_years_map(rows_df["cd_cvm"].tolist())
+                rows_df = rows_df.copy()
+                rows_df["anos_disponiveis"] = rows_df["cd_cvm"].map(
+                    lambda cd_cvm: years_map.get(int(cd_cvm), ())
+                )
+            return self._build_company_results(rows_df)
+        if not catalog_entries:
+            rows_df, _ = self.query_layer.get_companies_directory_page(
+                search="",
+                sector_name=None,
+                page=1,
+                page_size=None,
+            )
+            if not rows_df.empty:
+                years_map = self.query_layer.get_company_years_map(rows_df["cd_cvm"].tolist())
+                rows_df = rows_df.copy()
+                rows_df["anos_disponiveis"] = rows_df["cd_cvm"].map(
+                    lambda cd_cvm: years_map.get(int(cd_cvm), ())
+                )
+            return self._build_company_results(rows_df)
+
+        page_codes = [int(entry.cd_cvm) for entry in catalog_entries]
+        local_results_by_code: dict[int, CompanySearchResult] = {}
+        if page_codes:
+            local_rows = self.query_layer.get_companies_by_cvm_ids(page_codes)
+            if not local_rows.empty:
+                local_rows = local_rows.copy()
+                years_map = self.query_layer.get_company_years_map(local_rows["cd_cvm"].tolist())
+                local_rows["anos_disponiveis"] = local_rows["cd_cvm"].map(
+                    lambda cd_cvm: years_map.get(int(cd_cvm), ())
+                )
+                local_results_by_code = {
+                    int(item.cd_cvm): item for item in self._build_company_results(local_rows)
+                }
+
+        items: list[CompanySearchResult] = []
+        for entry in catalog_entries:
+            local_result = local_results_by_code.get(int(entry.cd_cvm))
+            if local_result is not None:
+                items.append(local_result)
+                continue
+
+            legacy_sector = canonical_sector_name(None, entry.setor_cvm)
+            items.append(
+                CompanySearchResult(
+                    cd_cvm=int(entry.cd_cvm),
+                    company_name=entry.company_name,
+                    ticker_b3=entry.ticker_b3,
+                    setor_analitico=None,
+                    setor_cvm=entry.setor_cvm,
+                    sector_name=legacy_sector,
+                    sector_slug=sector_slugify(legacy_sector),
+                    anos_disponiveis=(),
+                    total_rows=0,
+                    has_financial_data=False,
+                    coverage_rank=None,
+                    gics_sector=None,
+                    gics_sector_slug=None,
+                    gics_industry_group=None,
+                    gics_industry=None,
+                    gics_sub_industry=None,
+                )
+            )
+        return items
+
+    def _sector_company_preview(
+        self,
+        items: list[CompanySearchResult],
+        limit: int = 12,
+    ) -> tuple[SectorCompanyMetricDTO, ...]:
+        ordered = sorted(
+            items,
+            key=lambda item: (
+                0 if item.has_financial_data else 1,
+                item.company_name.upper(),
+            ),
+        )
+        return tuple(
+            SectorCompanyMetricDTO(
+                cd_cvm=int(item.cd_cvm),
+                company_name=str(item.company_name),
+                ticker_b3=item.ticker_b3,
+                gics_sub_industry=item.gics_sub_industry,
+                roe=None,
+                mg_ebit=None,
+                mg_liq=None,
+            )
+            for item in ordered[: int(limit)]
+        )
+
     @staticmethod
     def _clean_optional_text(value: Any) -> str | None:
         if value is None:
@@ -3618,12 +3750,6 @@ class CVMReadService:
         for option in self.get_company_filters().sectors:
             if option.sector_slug == normalized_slug:
                 return option.sector_name
-        # Keep legacy sector routes working even when company filters are GICS-first.
-        raw_sectors = self.query_layer.get_available_company_sectors()
-        for _, row in raw_sectors.iterrows():
-            sector_name = str(row.get("sector_name") or "").strip()
-            if sector_name and sector_slugify(sector_name) == normalized_slug:
-                return sector_name
         return None
 
     @staticmethod

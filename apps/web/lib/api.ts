@@ -310,6 +310,7 @@ export type BaseHealthSnapshot = {
   companies_without_historical_data: number;
   companies_with_any_local_financial_report: number;
   companies_partial_local: number;
+  companies_fully_updated: number;
   companies_with_refresh_status_recorded: number;
   companies_with_last_refresh_error: number;
 };
@@ -328,6 +329,8 @@ export type BatchRefreshCvmRange = {
 export type BatchRefreshRequest = {
   mode: BatchRefreshMode;
   sectorSlug?: string | null;
+  subSector?: string | null;
+  companyIds?: number[] | null;
   cvmRange?: BatchRefreshCvmRange | null;
   statusFilter?: string | null;
 };
@@ -413,10 +416,15 @@ export type SectorDirectoryItem = {
   snapshot: SectorSnapshot;
   sub_industries: string[];
   sub_industry_breakdown?: SubIndustryCount[];
+  group_type?: "sector" | "sub_sector" | "unclassified";
+  parent_sector_name?: string | null;
+  parent_sector_slug?: string | null;
+  companies?: SectorCompanyMetric[];
 };
 
 export type SectorDirectory = {
   items: SectorDirectoryItem[];
+  unclassified_count?: number;
 };
 
 export type SectorYearOverview = {
@@ -736,6 +744,7 @@ export function normalizeBaseHealthSnapshot(raw: Record<string, unknown>): BaseH
       raw.companies_with_any_local_financial_report,
     ),
     companies_partial_local: coerceNonNegativeSnapshotInt(raw.companies_partial_local),
+    companies_fully_updated: coerceNonNegativeSnapshotInt(raw.companies_fully_updated),
     companies_with_refresh_status_recorded: coerceNonNegativeSnapshotInt(
       raw.companies_with_refresh_status_recorded,
     ),
@@ -955,9 +964,24 @@ function isSectorSnapshot(value: unknown): value is SectorSnapshot {
 }
 
 function isSectorDirectory(value: unknown): value is SectorDirectory {
+  const isSectorCompany = (company: unknown): company is SectorCompanyMetric =>
+    isRecord(company) &&
+    typeof company.cd_cvm === "number" &&
+    typeof company.company_name === "string" &&
+    (company.ticker_b3 === null ||
+      typeof company.ticker_b3 === "string" ||
+      company.ticker_b3 === undefined) &&
+    (company.gics_sub_industry === null ||
+      typeof company.gics_sub_industry === "string" ||
+      company.gics_sub_industry === undefined) &&
+    isNullableNumber(company.roe) &&
+    isNullableNumber(company.mg_ebit) &&
+    isNullableNumber(company.mg_liq);
+
   return (
     isRecord(value) &&
     Array.isArray(value.items) &&
+    (value.unclassified_count === undefined || typeof value.unclassified_count === "number") &&
     value.items.every(
       (item) =>
         isRecord(item) &&
@@ -974,7 +998,19 @@ function isSectorDirectory(value: unknown): value is SectorDirectory {
                 isRecord(row) &&
                 typeof row.name === "string" &&
                 typeof row.count === "number",
-            ))),
+            ))) &&
+        (item.group_type === undefined ||
+          item.group_type === "sector" ||
+          item.group_type === "sub_sector" ||
+          item.group_type === "unclassified") &&
+        (item.parent_sector_name === undefined ||
+          item.parent_sector_name === null ||
+          typeof item.parent_sector_name === "string") &&
+        (item.parent_sector_slug === undefined ||
+          item.parent_sector_slug === null ||
+          typeof item.parent_sector_slug === "string") &&
+        (item.companies === undefined ||
+          (Array.isArray(item.companies) && item.companies.every(isSectorCompany))),
     )
   );
 }
@@ -1415,10 +1451,10 @@ export async function fetchCompanySuggestionsRoute(
 }
 
 export async function fetchSectorDirectory(
-  options?: { request?: ApiReadRequestInit },
+  options?: { request?: ApiReadRequestInit; groupBy?: "sector" | "sub_sector" },
 ): Promise<SectorDirectory> {
-  if (isDesktopMode()) return bridgeFetchSectors();
-  return (await apiFetch<SectorDirectory>("/sectors", {
+  if (isDesktopMode()) return bridgeFetchSectors(options?.groupBy);
+  return (await apiFetch<SectorDirectory>(`/sectors${buildQuery({ group_by: options?.groupBy })}`, {
     request: options?.request ?? SECTOR_DIRECTORY_API_READ,
     validate: isSectorDirectory,
     invalidResponseMessage: "A API retornou um diretorio de setores invalido.",
@@ -1606,6 +1642,8 @@ function buildBatchRefreshBody(params: BatchRefreshRequest): Record<string, unkn
   return {
     mode: params.mode,
     ...(params.sectorSlug ? { sector_slug: params.sectorSlug } : {}),
+    ...(params.subSector ? { gics_sub_industry: params.subSector } : {}),
+    ...(params.companyIds && params.companyIds.length ? { company_ids: params.companyIds } : {}),
     ...(cvmRange ? { cvm_range: cvmRange } : {}),
     ...(params.statusFilter ? { status_filter: params.statusFilter } : {}),
   };

@@ -22,27 +22,19 @@ def test_resolve_gics_prefers_persisted_fields_and_keeps_sub_industry_separate()
     assert gics.gics_sub_industry == "Integrated Oil & Gas"
 
 
-def test_resolve_gics_derives_from_legacy_sector_when_no_persisted_gics():
+def test_resolve_gics_does_not_derive_from_legacy_sector_when_no_persisted_gics():
     gics = resolve_gics_classification(
         sector_name="Saneamento",
         setor_analitico=None,
         setor_cvm="Saneamento",
     )
 
-    assert gics is not None
-    assert gics.gics_sector == "Utilities"
-    assert gics.gics_sub_industry == "Electric Utilities"
+    assert gics is None
 
 
 def test_resolve_gics_sector_name_returns_only_known_gics_sector():
-    assert (
-        resolve_gics_sector_name(
-            sector_name="Energia",
-            setor_analitico="Energia",
-            setor_cvm="Energia",
-        )
-        == "Energy"
-    )
+    assert resolve_gics_sector_name(sector_name="Energia", setor_analitico="Energia", setor_cvm="Energia") is None
+    assert resolve_gics_sector_name(gics_sector="Energy") == "Energy"
     assert resolve_gics_sector_name(sector_name="Nao classificado") is None
 
 
@@ -52,8 +44,8 @@ def test_resolve_gics_canonicalizes_persisted_sector_case():
     assert gics.gics_sector == "Energy"
 
 
-def test_resolve_gics_maps_non_hub_persisted_sector_via_manual_rules():
-    """Persisted Portuguese labels must still roll up to a GICS 11 hub."""
+def test_resolve_gics_rejects_non_hub_persisted_sector():
+    """Portuguese/native labels are not GICS and must not roll up implicitly."""
     gics = resolve_gics_classification(
         sector_name=None,
         setor_analitico=None,
@@ -61,6 +53,4 @@ def test_resolve_gics_maps_non_hub_persisted_sector_via_manual_rules():
         gics_sector="Materiais",
         gics_sub_industry="Steel",
     )
-    assert gics is not None
-    assert gics.gics_sector == "Materials"
-    assert gics.gics_sub_industry == "Steel"
+    assert gics is None

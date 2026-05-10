@@ -156,6 +156,10 @@ class SectorDirectoryItemPayload(BaseModel):
     snapshot: SectorSnapshotPayload
     sub_industries: list[str] = Field(default_factory=list)
     sub_industry_breakdown: list[SubIndustryCountPayload] = Field(default_factory=list)
+    group_type: str = "sector"
+    parent_sector_name: str | None = None
+    parent_sector_slug: str | None = None
+    companies: list[SectorCompanyMetricPayload] = Field(default_factory=list)
 
 
 class SectorDirectoryPayload(BaseModel):
@@ -349,6 +353,7 @@ class HealthSnapshotPayload(BaseModel):
     companies_without_historical_data: int = 0
     companies_with_any_local_financial_report: int = 0
     companies_partial_local: int = 0
+    companies_fully_updated: int = 0
     companies_with_refresh_status_recorded: int = 0
     companies_with_last_refresh_error: int = 0
 

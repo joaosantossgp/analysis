@@ -344,11 +344,16 @@ class SectorDirectoryItemDTO:
     snapshot: SectorSnapshotDTO
     sub_industries: tuple[str, ...] = ()
     sub_industry_breakdown: tuple[SubIndustryCountDTO, ...] = ()
+    group_type: str = "sector"
+    parent_sector_name: str | None = None
+    parent_sector_slug: str | None = None
+    companies: tuple[SectorCompanyMetricDTO, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
         payload["snapshot"] = self.snapshot.to_dict()
         payload["sub_industry_breakdown"] = [row.to_dict() for row in self.sub_industry_breakdown]
+        payload["companies"] = [row.to_dict() for row in self.companies]
         return payload
 
 
@@ -649,6 +654,7 @@ class HealthSnapshot:
     companies_without_historical_data: int = 0
     companies_with_any_local_financial_report: int = 0
     companies_partial_local: int = 0
+    companies_fully_updated: int = 0
     companies_with_refresh_status_recorded: int = 0
     companies_with_last_refresh_error: int = 0
 
@@ -690,6 +696,7 @@ class HealthSnapshot:
             company_inventory.get("companies_with_any_local_financial_report") or 0
         )
         companies_partial_local = int(company_inventory.get("companies_partial_local") or 0)
+        companies_fully_updated = int(company_inventory.get("companies_fully_updated") or 0)
         companies_with_refresh_status_recorded = int(
             company_inventory.get("companies_with_refresh_status_recorded") or 0
         )
@@ -728,6 +735,7 @@ class HealthSnapshot:
             ),
             companies_with_any_local_financial_report=companies_with_any_local_financial_report,
             companies_partial_local=companies_partial_local,
+            companies_fully_updated=companies_fully_updated,
             companies_with_refresh_status_recorded=companies_with_refresh_status_recorded,
             companies_with_last_refresh_error=companies_with_last_refresh_error,
         )
@@ -754,6 +762,7 @@ class HealthSnapshot:
             "companies_without_historical_data": self.companies_without_historical_data,
             "companies_with_any_local_financial_report": self.companies_with_any_local_financial_report,
             "companies_partial_local": self.companies_partial_local,
+            "companies_fully_updated": self.companies_fully_updated,
             "companies_with_refresh_status_recorded": self.companies_with_refresh_status_recorded,
             "companies_with_last_refresh_error": self.companies_with_last_refresh_error,
         }

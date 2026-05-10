@@ -35,11 +35,10 @@ def gics_sector_bucket_sql(
     *,
     table_alias: str | None = "c",
 ) -> str:
-    base = canonical_sector_sql(table_alias)
     prefix = f"{table_alias}." if table_alias else ""
     if "gics_sector" in company_columns:
-        return f"COALESCE(NULLIF(TRIM({prefix}gics_sector), ''), {base})"
-    return base
+        return f"COALESCE(NULLIF(TRIM({prefix}gics_sector), ''), 'Sem classificacao GICS')"
+    return "'Sem classificacao GICS'"
 
 
 def _normalize_label(raw_value: str | None) -> str | None:

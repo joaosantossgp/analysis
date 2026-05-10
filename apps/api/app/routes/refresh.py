@@ -20,6 +20,9 @@ class RefreshBatchRequestPayload(BaseModel):
     mode: str = Field(default="missing", description="full, missing, outdated ou failed.")
     sector_slug: str | None = None
     sector: str | None = None
+    gics_sub_industry: str | None = None
+    sub_sector: str | None = None
+    company_ids: list[int] | str | None = None
     cvm_range: dict[str, Any] | list[Any] | str | None = None
     cvm_from: int | None = None
     cvm_to: int | None = None

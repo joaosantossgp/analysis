@@ -6,11 +6,11 @@ Pipeline:
 
 1. Persisted ``companies.gics_sector`` when it equals one of the 11 English hub labels
    (matched case-insensitively).
-2. Otherwise :func:`build_gics_classification` maps Portuguese/CVM-style strings via keyword rules.
+2. Missing or non-GICS labels return ``None``. CVM/B3/native labels are not treated as GICS.
 
-**Coverage:** strings that match no rule produce no hub; those issuers are excluded from sector hub
-cards (expected empty hub only when zero companies resolve to a GICS hub). Extend coverage by adding
-rules to :func:`build_gics_classification` or by filling canonical GICS columns in ``companies``.
+**Coverage:** issuers without persisted GICS fields are excluded from real GICS hub cards and counted
+as unclassified where the caller exposes that state. Extend coverage by filling canonical GICS columns
+in ``companies``; do not infer GICS from CVM/B3/native labels.
 
 **Scope:** :func:`resolve_gics_classification` is shared across the read layer; behavior changes here
 propagate to listings, filters, and sector routing—keep rules additive and conservative.
@@ -39,9 +39,9 @@ GICS_11_SECTORS: tuple[str, ...] = (
 class GicsClassification:
     gics_sector: str
     gics_sector_slug: str
-    gics_industry_group: str
-    gics_industry: str
-    gics_sub_industry: str
+    gics_industry_group: str | None = None
+    gics_industry: str | None = None
+    gics_sub_industry: str | None = None
 
 
 @dataclass(frozen=True)
@@ -73,15 +73,10 @@ def resolve_gics_classification(
     gics_industry: str | None = None,
     gics_sub_industry: str | None = None,
 ) -> ResolvedGicsClassification | None:
-    """Resolve GICS access fields from persisted metadata or legacy sector labels.
+    """Resolve GICS access fields from persisted metadata only.
 
-    Persisted GICS fields win when they identify one of the 11 hub sectors (canonical
-    English labels, matched case-insensitively). Legacy Portuguese or partial persisted
-    labels fall through to manual mapping together with CVM/analytic sectors so the hub
-    and directory stay aligned with the company universe.
-
-    Missing hierarchy fields stay null instead of being invented when mapping cannot
-    derive them; manual mapping fills known defaults where applicable.
+    Persisted GICS fields win when they identify one of the 11 hub sectors. Legacy
+    Portuguese/CVM/B3/custom labels intentionally do not fall through to GICS.
     """
     persisted_sector = _clean_label(gics_sector)
     if persisted_sector:
@@ -95,20 +90,19 @@ def resolve_gics_classification(
                 gics_sub_industry=_clean_label(gics_sub_industry),
             )
 
-    mapped = build_gics_classification(
-        sector_name=sector_name or persisted_sector,
-        setor_analitico=setor_analitico or persisted_sector,
-        setor_cvm=setor_cvm or persisted_sector,
-    )
-    if mapped is None:
-        return None
-    return ResolvedGicsClassification(
-        gics_sector=mapped.gics_sector,
-        gics_sector_slug=mapped.gics_sector_slug,
-        gics_industry_group=_clean_label(gics_industry_group) or mapped.gics_industry_group,
-        gics_industry=_clean_label(gics_industry) or mapped.gics_industry,
-        gics_sub_industry=_clean_label(gics_sub_industry) or mapped.gics_sub_industry,
-    )
+    direct_sector = _clean_label(sector_name)
+    if direct_sector:
+        canon = _canonical_gics_sector_label(direct_sector)
+        if canon is not None:
+            return ResolvedGicsClassification(
+                gics_sector=canon,
+                gics_sector_slug=sector_slugify(canon),
+                gics_industry_group=_clean_label(gics_industry_group),
+                gics_industry=_clean_label(gics_industry),
+                gics_sub_industry=_clean_label(gics_sub_industry),
+            )
+
+    return None
 
 
 def resolve_gics_sector_name(
@@ -141,49 +135,17 @@ def build_gics_classification(
     setor_analitico: str | None,
     setor_cvm: str | None,
 ) -> GicsClassification | None:
-    # Persisted English GICS labels (and API-normalized names) must resolve directly.
+    """Legacy compatibility helper: resolve only explicit GICS 11 labels.
+
+    It intentionally does not map Portuguese/CVM/B3 labels to GICS.
+    """
     for raw in (sector_name, setor_analitico, setor_cvm):
         if raw is None:
             continue
-        label = str(raw).strip()
-        if label in GICS_11_SECTORS:
-            return _mk(label, label, label, label)
-
-    haystack = " ".join(
-        str(part or "").strip().lower()
-        for part in (sector_name, setor_analitico, setor_cvm)
-    ).strip()
-    if not haystack:
-        return None
-
-    # Priority rules tuned for Brazilian issuer labels.
-    if _has_any(haystack, ("utilit", "saneamento", "energia eletrica", "eletric", "water", "gas distribu")):
-        return _mk("Utilities", "Utilities", "Electric Utilities", "Electric Utilities")
-    if _has_any(haystack, ("energia", "petro", "oil", "gas", "combust")):
-        return _mk("Energy", "Energy", "Oil, Gas & Consumable Fuels", "Integrated Oil & Gas")
-    if _has_any(haystack, ("material", "materiais", "basicos", "miner", "sider", "aco", "quimic", "papel", "celulose")):
-        return _mk("Materials", "Materials", "Metals & Mining", "Diversified Metals & Mining")
-    if _has_any(haystack, ("industrial", "logist", "transp", "infra", "aero", "rodov", "maquina")):
-        return _mk("Industrials", "Industrials", "Industrial Conglomerates", "Industrial Conglomerates")
-    if _has_any(haystack, ("varejo", "retail", "consumo discricionario", "ecommerce", "autos", "shopping")):
-        return _mk("Consumer Discretionary", "Consumer Discretionary", "Broadline Retail", "Broadline Retail")
-    if _has_any(haystack, ("alimento", "bebida", "food", "staples", "farmacia varejo")):
-        return _mk("Consumer Staples", "Consumer Staples", "Consumer Staples Distribution & Retail", "Consumer Staples Merchandise Retail")
-    if _has_any(haystack, ("saude", "health", "hospital", "farma", "medic")):
-        return _mk("Health Care", "Health Care", "Health Care Providers & Services", "Health Care Services")
-    if _has_any(haystack, ("banco", "finance", "segur", "credito", "holding financeira")):
-        return _mk("Financials", "Financials", "Banks", "Diversified Banks")
-    if _has_any(haystack, ("tecnologia", "software", "tech", "dados", "telecom equip")):
-        return _mk("Information Technology", "Information Technology", "Software & Services", "Application Software")
-    if _has_any(haystack, ("comunic", "media", "telecom", "internet", "conteudo")):
-        return _mk("Communication Services", "Communication Services", "Telecommunication Services", "Integrated Telecommunication Services")
-    if _has_any(haystack, ("imobili", "real estate", "propriedade", "laje corporativa")):
-        return _mk("Real Estate", "Real Estate", "Real Estate Management & Development", "Real Estate Development")
+        canon = _canonical_gics_sector_label(str(raw).strip())
+        if canon is not None:
+            return _mk(canon, canon, None, None)
     return None
-
-
-def _has_any(haystack: str, needles: tuple[str, ...]) -> bool:
-    return any(needle in haystack for needle in needles)
 
 
 def _clean_label(value: str | None) -> str | None:
@@ -198,7 +160,12 @@ def _clean_label(value: str | None) -> str | None:
     return text or None
 
 
-def _mk(sector: str, group: str, industry: str, sub_industry: str) -> GicsClassification:
+def _mk(
+    sector: str,
+    group: str | None,
+    industry: str | None,
+    sub_industry: str | None,
+) -> GicsClassification:
     return GicsClassification(
         gics_sector=sector,
         gics_sector_slug=sector_slugify(sector),
