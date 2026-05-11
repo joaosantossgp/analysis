@@ -19,6 +19,28 @@ def sector_slugify(sector_name: str | None) -> str:
     return slug or "nao-classificado"
 
 
+def canonical_sector_sql(table_alias: str | None = "c") -> str:
+    prefix = f"{table_alias}." if table_alias else ""
+    return f"""
+COALESCE(
+    NULLIF(TRIM({prefix}setor_analitico), ''),
+    NULLIF(TRIM({prefix}setor_cvm), ''),
+    'Nao classificado'
+)
+"""
+
+
+def gics_sector_bucket_sql(
+    company_columns: frozenset[str],
+    *,
+    table_alias: str | None = "c",
+) -> str:
+    prefix = f"{table_alias}." if table_alias else ""
+    if "gics_sector" in company_columns:
+        return f"COALESCE(NULLIF(TRIM({prefix}gics_sector), ''), 'Sem classificacao GICS')"
+    return "'Sem classificacao GICS'"
+
+
 def _normalize_label(raw_value: str | None) -> str | None:
     if raw_value is None:
         return None

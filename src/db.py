@@ -4,8 +4,8 @@ src/db.py — Factory de conexão ao banco com 3-tier fallback:
   1. os.getenv("DATABASE_URL")  → Supabase / PostgreSQL remoto
   2. SQLite local               → desenvolvimento sem configuração extra
 
-Extraído de dashboard/db.py. Dependência de streamlit removida —
-scripts CLI e o app PyQt6 podem importar sem instalar o Streamlit.
+Sem dependencias de framework UI — pode ser importado por CLI,
+desktop bridge e API.
 """
 from __future__ import annotations
 

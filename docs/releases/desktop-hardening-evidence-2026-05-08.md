@@ -10,7 +10,6 @@
   - `/empresas/[cd_cvm]`
   - `/setores`
   - `/setores/[slug]`
-  - `/comparar`
   - `/atualizar-base`
 
 ## Evidencia automatizada
@@ -61,8 +60,6 @@ Status esperado: marcar cada item com `ok` ou `falha` apos validacao manual no a
   - Validar listagem e entrada em detalhe setorial.
 - [ ] **Setor detalhe (`/setores/[slug]`)**
   - Validar seletor de ano e alternancia de abas.
-- [ ] **Comparar (`/comparar`)**
-  - Selecionar empresas, validar KPIs e fallback quando nao houver interseccao.
 - [ ] **Atualizar base (`/atualizar-base`)**
   - Abrir tela, iniciar fluxo controlado (escopo minimo), acompanhar status.
 - [ ] **Downloads**

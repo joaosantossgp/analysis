@@ -14,7 +14,7 @@ archive/
 .workflow/.scratchpad/
 
 # Reference documents — binary, for human reading only
-docs/references/
+docs/vendor/
 
 # Python environment
 .venv/

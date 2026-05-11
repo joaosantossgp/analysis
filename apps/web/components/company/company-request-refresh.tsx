@@ -1,39 +1,13 @@
-﻿"use client";
+"use client";
 
 import { LoaderCircleIcon, RotateCcwIcon } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
 
+import { useCompanyRefreshMachine } from "@/components/company/use-company-refresh-machine";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import {
-  type RefreshStatusItem,
-  fetchRefreshStatus,
-  fetchRequestRefresh,
-  getUserFacingErrorMessage,
-  isApiClientError,
-} from "@/lib/api";
-import { getReadableRefreshSuccessKey } from "@/lib/company-detail-handoff";
-import {
-  applyManualStatusFailure,
-  applyRefreshPollFailure,
-  applyRefreshStatusResult,
-  createAlreadyCurrentRefreshState,
-  createDelayedRefreshState,
-  createDispatchFailureState,
-  createDispatchedRefreshState,
-  createIdleRefreshState,
-  createSubmittingRefreshState,
-  getNextPollingDelayMs,
-  getRefreshViewModel,
-  hasRefreshTimedOut,
-  hydrateRefreshState,
-  isAutoPollingPhase,
-  RELOAD_DELAY_MS,
-  type RefreshMachineState,
-} from "@/lib/company-refresh-state";
+import { type RefreshStatusItem } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 type CompanyRequestRefreshProps = {
@@ -45,172 +19,14 @@ export function CompanyRequestRefresh({
   cdCvm,
   initialStatus = null,
 }: CompanyRequestRefreshProps) {
-  const router = useRouter();
-  const [state, setState] = useState<RefreshMachineState>(() =>
-    createIdleRefreshState(),
-  );
-  const [isManualStatusRefreshing, setIsManualStatusRefreshing] =
-    useState(false);
-  const hydratedInitialStatusRef = useRef(false);
-  const isMountedRef = useRef(true);
-  const reloadTimerRef = useRef<number | null>(null);
-  const view = getRefreshViewModel(state);
-  const successHandoffKey =
-    state.phase === "success"
-      ? state.currentItem
-        ? getReadableRefreshSuccessKey(state.currentItem)
-        : "already-current"
-      : null;
-
-  const pollRefreshStatus = useCallback(
-    async (source: "auto" | "manual") => {
-      try {
-        const items = await fetchRefreshStatus(cdCvm);
-
-        if (!isMountedRef.current) {
-          return;
-        }
-
-        setState((currentState) =>
-          applyRefreshStatusResult(
-            currentState,
-            items[0] ?? null,
-            Date.now(),
-            { source },
-          ),
-        );
-      } catch {
-        if (!isMountedRef.current) {
-          return;
-        }
-
-        setState((currentState) =>
-          source === "manual"
-            ? applyManualStatusFailure(currentState)
-            : applyRefreshPollFailure(currentState),
-        );
-      } finally {
-        if (isMountedRef.current && source === "manual") {
-          setIsManualStatusRefreshing(false);
-        }
-      }
-    },
-    [cdCvm],
-  );
-
-  useEffect(() => {
-    return () => {
-      isMountedRef.current = false;
-
-      if (reloadTimerRef.current !== null) {
-        window.clearTimeout(reloadTimerRef.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    if (hydratedInitialStatusRef.current || !initialStatus) {
-      return;
-    }
-
-    hydratedInitialStatusRef.current = true;
-    setState(hydrateRefreshState(initialStatus));
-  }, [initialStatus]);
-
-  useEffect(() => {
-    if (!successHandoffKey) {
-      return;
-    }
-
-    router.refresh();
-
-    reloadTimerRef.current = window.setTimeout(() => {
-      router.refresh();
-    }, RELOAD_DELAY_MS);
-
-    return () => {
-      if (reloadTimerRef.current !== null) {
-        window.clearTimeout(reloadTimerRef.current);
-        reloadTimerRef.current = null;
-      }
-    };
-  }, [router, successHandoffKey]);
-
-  useEffect(() => {
-    if (!isAutoPollingPhase(state.phase)) {
-      return;
-    }
-
-    if (hasRefreshTimedOut(state, Date.now())) {
-      setState((currentState) =>
-        hasRefreshTimedOut(currentState, Date.now())
-          ? createDelayedRefreshState(currentState)
-          : currentState,
-      );
-      return;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      void pollRefreshStatus("auto");
-    }, getNextPollingDelayMs(state));
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [pollRefreshStatus, state]);
-
-  async function handleRequestRefresh() {
-    if (view.requestButtonDisabled) {
-      return;
-    }
-
-    setState(createSubmittingRefreshState());
-
-    try {
-      const payload = await fetchRequestRefresh(cdCvm);
-
-      if (!isMountedRef.current) {
-        return;
-      }
-
-      if (payload.status === "already_current") {
-        setState(createAlreadyCurrentRefreshState(payload.message));
-        return;
-      }
-
-      setState(createDispatchedRefreshState(Date.now()));
-    } catch (error) {
-      if (!isMountedRef.current) {
-        return;
-      }
-
-      if (isApiClientError(error) && error.status === 429) {
-        setState(createDispatchedRefreshState(Date.now()));
-        return;
-      }
-
-      setState(createDispatchFailureState(getUserFacingErrorMessage(error)));
-    }
-  }
-
-  function handleManualStatusRefresh() {
-    if (state.phase !== "delayed" || isManualStatusRefreshing) {
-      return;
-    }
-
-    setIsManualStatusRefreshing(true);
-    void pollRefreshStatus("manual");
-  }
-
-  const showButtonSpinner =
-    state.phase === "submitting" ||
-    state.phase === "queued" ||
-    state.phase === "running" ||
-    state.phase === "reconnecting" ||
-    state.phase === "success";
-  const progressLabel = view.estimate
-    ? `${Math.round(view.estimate.progress)}%`
-    : null;
+  const {
+    view,
+    showButtonSpinner,
+    progressLabel,
+    isManualStatusRefreshing,
+    handleRequestRefresh,
+    handleManualStatusRefresh,
+  } = useCompanyRefreshMachine({ cdCvm, initialStatus });
 
   return (
     <div className="flex min-w-[18rem] flex-col gap-3 sm:max-w-xl">

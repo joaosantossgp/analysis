@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 
 import { CompanyDetailDesktopLoader } from "@/components/company/company-detail-desktop-loader";
+import { CompanyYearsListWarning } from "@/components/company/company-years-list-warning";
 import { CompanyDetailErrorPage } from "@/components/company/company-detail-error";
 import { CompanyNoDataPage } from "@/components/company/company-no-data";
 import { CompanyDetailTracker } from "@/components/company/company-detail-tracker";
@@ -51,6 +52,8 @@ const DETAIL_PAGE_MUTABLE_API_READ = {
 type CompanyDetailScaffold = {
   company: CompanyInfo;
   readableYears: number[];
+  /** `/years` failed unexpectedly (network/upstream); metadata fallback may be incomplete */
+  yearsListUnreachable: boolean;
 };
 
 type CompanyDetailScaffoldResult =
@@ -89,21 +92,11 @@ async function loadCompanyDetailScaffold(
   cdCvm: number,
 ) : Promise<CompanyDetailScaffoldResult> {
   let company: CompanyInfo | null = null;
-  let availableYears: number[] = [];
 
   try {
-    [company, availableYears] = await Promise.all([
-      fetchCompanyInfo(cdCvm, { request: DETAIL_PAGE_MUTABLE_API_READ }),
-      fetchCompanyYears(cdCvm, { request: DETAIL_PAGE_MUTABLE_API_READ }).catch(
-        (error) => {
-          if (isApiClientError(error) && error.code === "not_found") {
-            return [];
-          }
-
-          throw error;
-        },
-      ),
-    ]);
+    company = await fetchCompanyInfo(cdCvm, {
+      request: DETAIL_PAGE_MUTABLE_API_READ,
+    });
   } catch (error) {
     if (isApiClientError(error) && error.code === "not_found") {
       return { kind: "not-found" };
@@ -115,11 +108,25 @@ async function loadCompanyDetailScaffold(
     return { kind: "not-found" };
   }
 
+  let availableYears: number[] = [];
+  let yearsListUnreachable = false;
+  try {
+    availableYears = await fetchCompanyYears(cdCvm, {
+      request: DETAIL_PAGE_MUTABLE_API_READ,
+    });
+  } catch (error) {
+    availableYears = [];
+    if (!isApiClientError(error) || error.code !== "not_found") {
+      yearsListUnreachable = true;
+    }
+  }
+
   return {
     kind: "ok",
     value: {
       company,
       readableYears: getReadableCompanyYears(company, availableYears),
+      yearsListUnreachable,
     },
   };
 }
@@ -144,15 +151,23 @@ async function CompanyHeaderYearsSection({
   if (scaffold.kind === "error") {
     return <CompanyDetailErrorPage message={scaffold.message} />;
   }
-  const { company, readableYears } = scaffold.value;
+  const { company, readableYears, yearsListUnreachable } = scaffold.value;
   const selectedYears = normalizeSelectedYears(readableYears, requestedYearsParam);
 
   if (readableYears.length === 0) {
-    return <CompanyNoDataPage company={company} />;
+    return (
+      <CompanyNoDataPage
+        company={company}
+        yearsListUnreachable={yearsListUnreachable}
+      />
+    );
   }
 
   return (
     <>
+      {yearsListUnreachable ? (
+        <CompanyYearsListWarning context="detail_fallback" />
+      ) : null}
       <CompanyDetailTracker
         cdCvm={company.cd_cvm}
         companyName={company.company_name}

@@ -196,8 +196,10 @@ export async function bridgeFetchCompanyStatement(
   });
 }
 
-export async function bridgeFetchSectors(): Promise<SectorDirectory> {
-  return callBridge<SectorDirectory>("get_sectors", {});
+export async function bridgeFetchSectors(
+  groupBy: "sector" | "sub_sector" = "sector",
+): Promise<SectorDirectory> {
+  return callBridge<SectorDirectory>("get_sectors", { group_by: groupBy });
 }
 
 export async function bridgeFetchSectorDetail(
@@ -272,6 +274,8 @@ export async function bridgeRequestBatchRefresh(
   return callBridge<BatchDispatchResponse>("request_refresh", {
     mode: params.mode,
     ...(params.sectorSlug ? { sector_slug: params.sectorSlug } : {}),
+    ...(params.subSector ? { gics_sub_industry: params.subSector } : {}),
+    ...(params.companyIds && params.companyIds.length ? { company_ids: params.companyIds } : {}),
     ...(cvmRange ? { cvm_range: cvmRange } : {}),
     ...(params.statusFilter ? { status_filter: params.statusFilter } : {}),
   });

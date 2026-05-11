@@ -5,8 +5,8 @@ import type { ReactNode } from "react";
 import { Home, Search, BarChart2, Bookmark, User } from "lucide-react";
 
 import { Calendar } from "@/components/calendar";
-import { Accordion, AccordionItem, AccordionPanel, AccordionTrigger } from "@/components/coss-accordion";
-import ContentTooltipDemo from "@/components/contemt-tooltip";
+import { Accordion, AccordionItem, AccordionPanel, AccordionTrigger } from "@/components/accordion";
+import ContentTooltipDemo from "@/components/content-tooltip";
 import { NativeDelete } from "@/components/delete-button";
 import { InteractiveMenu } from "@/components/modern-mobile-menu";
 import {

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 import { SectorDirectoryList } from "@/components/sectors/sector-directory-list";
 import { SectorHubTracker } from "@/components/sectors/sector-hub-tracker";
@@ -25,7 +26,19 @@ function errorMessage(error: unknown): string {
     : "Nao foi possivel carregar os dados locais agora.";
 }
 
-export function SectorsDirectoryDesktopLoader() {
+type SectorsDirectoryDesktopLoaderProps = {
+  initialGroupBy?: "sector" | "sub_sector";
+};
+
+function coerceGroupBy(value: string | null, fallback: "sector" | "sub_sector"): "sector" | "sub_sector" {
+  return value === "sub_sector" || value === "sub-setor" ? "sub_sector" : fallback;
+}
+
+export function SectorsDirectoryDesktopLoader({
+  initialGroupBy = "sector",
+}: SectorsDirectoryDesktopLoaderProps) {
+  const searchParams = useSearchParams();
+  const groupBy = coerceGroupBy(searchParams.get("visao"), initialGroupBy);
   const [directory, setDirectory] = useState<SectorDirectory | null>(null);
   const [error, setError] = useState<string | null>(null);
   const bridgeReady = useDesktopBridgeReady("sectors-directory");
@@ -39,7 +52,7 @@ export function SectorsDirectoryDesktopLoader() {
       if (cancelled) return;
 
       try {
-        const data = await bridgeFetchSectors();
+        const data = await bridgeFetchSectors(groupBy);
         if (!cancelled) {
           setDirectory(data);
           setError(null);
@@ -57,7 +70,7 @@ export function SectorsDirectoryDesktopLoader() {
     return () => {
       cancelled = true;
     };
-  }, [bridgeReady]);
+  }, [bridgeReady, groupBy]);
 
   const bridgeError =
     bridgeReady === "timeout"
@@ -122,13 +135,13 @@ export function SectorsDirectoryDesktopLoader() {
 
       <SectionHeading
         eyebrow="PG-05 - Hub de setores"
-        title="Leitura por setores"
+        title={groupBy === "sub_sector" ? "Leitura por sub-setores GICS" : "Leitura por setores GICS"}
         titleAs="h1"
-        description="Entre por cadeias produtivas e clusters analiticos para sair da navegacao empresa a empresa quando o problema e tematico."
+        description="A visao usa somente campos GICS persistidos. Empresas sem GICS aparecem separadas como sem classificacao."
         meta={
           <div className="flex flex-wrap items-center gap-2">
             <InfoChip tone="muted">
-              {formatCompactInteger(directory.items.length)} setores
+              {formatCompactInteger(directory.items.length)} grupos
             </InfoChip>
             <InfoChip tone="muted">
               {formatCompactInteger(totalCompanies)} empresas somadas
@@ -138,14 +151,33 @@ export function SectorsDirectoryDesktopLoader() {
       />
 
       <SurfaceCard tone="subtle" padding="lg" className="space-y-4">
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href="/setores?visao=sector"
+            className={cn(
+              buttonVariants({ variant: groupBy === "sector" ? "default" : "outline", size: "sm" }),
+              "rounded-full px-4",
+            )}
+          >
+            Setores GICS
+          </Link>
+          <Link
+            href="/setores?visao=sub_sector"
+            className={cn(
+              buttonVariants({ variant: groupBy === "sub_sector" ? "default" : "outline", size: "sm" }),
+              "rounded-full px-4",
+            )}
+          >
+            Sub-setores GICS
+          </Link>
+        </div>
         <p className="text-sm leading-7 text-muted-foreground">
-          Cada card entrega um snapshot do ano mais recente disponivel no setor,
-          mantendo metricas ausentes como lacunas explicitas em vez de
-          preenchimento artificial.
+          Cada card mostra contagem e empresas do grupo. Metricas financeiras
+          aparecem apenas quando ha dados anuais locais.
         </p>
       </SurfaceCard>
 
-      <SectorDirectoryList items={directory.items} />
+      <SectorDirectoryList items={directory.items} groupBy={groupBy} />
     </PageShell>
   );
 }

@@ -39,7 +39,7 @@ const DISCOVERY_LEGEND = [
   },
   {
     label: "Baixo sinal",
-    description: "Tem dados locais, mas cobertura curta para comparacao forte.",
+    description: "Tem dados locais, mas cobertura curta para analise forte.",
     className: "border-amber-500/24 bg-amber-500/10 text-amber-700 dark:text-amber-300",
   },
   {

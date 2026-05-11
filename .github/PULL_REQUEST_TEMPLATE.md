@@ -1,51 +1,33 @@
-## Issue
+## Summary
 
-Closes #
+<!-- 1–3 bullets describing the scope and intent of this PR. -->
 
-> Excecao controlada: se a PR tiver sido publicada pelo Jules, o `Closes #`
-> pode ser adicionado depois que a automacao criar ou reconciliar a task
-> retroativa. Use `Workspace da task = jules://github/pr/<numero-da-pr>`,
-> registre `Source PR` na issue e mantenha o label `source:jules`.
+## Test plan
 
-## Resumo
+<!-- Checklist of validations run. Include relevant commands. -->
 
-- descreva o escopo principal desta PR
+- [ ] `npx tsc --noEmit` (when web edits)
+- [ ] `pytest tests/` (when src/ edits)
+- [ ] `pytest apps/api/tests/` (when API edits)
+- [ ] Manual verification in desktop mode (when UI/runtime edits)
 
-## Paralelismo
+## Notes
 
-- lane da task: `lane:frontend | lane:backend | lane:ops-quality`
-- worktree usada: `.claude/worktrees/<lane>/<issue-number>-<slug>/ | jules://github/pr/<numero-da-pr>`
-- esta e a unica PR oficial da task: `sim | nao`
-- risco da task: `risk:safe | risk:shared | risk:contract-sensitive`
-- task mae: `#<numero> | n/a`
-- lane solicitante: `lane:frontend | lane:backend | lane:ops-quality | n/a`
-- consumo registrado na task mae: `sim | nao | n/a`
-- write-set principal:
-- coordenacao com outras tasks/PRs:
+<!-- Optional: assumptions, risks, follow-ups. -->
 
-## Compatibilidade
+---
 
-- politica aplicada: `additive-only | breaking-approved | n/a`
-- impacto em API, schema ou docs publicos:
+<details>
+<summary>Autonomous-mode PRs only</summary>
 
-## Validacao
+If this PR is part of an autonomous-agent workflow, also include:
 
-- [ ] validacoes executadas e registradas abaixo
+- `Closes #<issue-number>`
+- Lane: `lane:frontend | lane:backend | lane:ops-quality | lane:master`
+- Risk: `risk:safe | risk:shared | risk:contract-sensitive`
+- Worktree: `.claude/worktrees/<lane>/<issue-number>-<slug>/`
+- Write-set:
 
-```text
-# comandos executados
-```
+See `docs/governance/autonomous-mode.md` for the full contract.
 
-## Checklist
-
-- [ ] a branch segue `task/<issue-number>-<slug>` ou a PR foi publicada pelo Jules e a automacao ja vinculou a task retroativa
-- [ ] a issue vinculada esta atualizada com checklist/status/evidencias
-- [ ] a issue vinculada registra owner atual, lane oficial, workspace da task, write-set esperado e `risk:*`
-- [ ] docs relevantes foram atualizados quando necessario
-- [ ] lane da task e worktree oficial foram registradas nesta PR
-- [ ] se a task for `risk:shared` ou `risk:contract-sensitive`, a PR abriu em draft
-- [ ] se a task for `risk:contract-sensitive`, a compatibilidade foi revisada e documentada
-- [ ] PR em draft apenas enquanto o trabalho ou as validacoes ainda estiverem incompletos
-- [ ] checks obrigatorios verdes ou helper de conclusao acionado para aguardar
-- [ ] pronto para `squash merge` em `master` quando os checks estiverem verdes
-- [ ] nao considerar a task concluida ate confirmar merge, issue fechada e branch remota removida quando aplicavel
+</details>

@@ -27,7 +27,7 @@ O escopo remoto inicial continua limitado a:
 - `/empresas`
 - `/empresas/[cd_cvm]`
 
-O pacote `/comparar` fica fora do gate desta wave.
+O pacote `/comparar` foi removido do escopo de produto atual.
 
 ## Racional
 

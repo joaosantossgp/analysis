@@ -18,6 +18,18 @@ import { fetchSectorDirectory, SECTOR_DIRECTORY_NO_STORE_READ } from "@/lib/api"
 import { loadSectorsPageData } from "@/lib/sectors-page-data";
 import { cn } from "@/lib/utils";
 
+type SetoresPageProps = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
+
+function getFirstParam(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function coerceGroupBy(value: string | undefined): "sector" | "sub_sector" {
+  return value === "sub_sector" || value === "sub-setor" ? "sub_sector" : "sector";
+}
+
 export const metadata: Metadata = {
   title: "Setores",
   description:
@@ -29,14 +41,17 @@ export const metadata: Metadata = {
 // with the web/API branch during build.
 export const dynamic = "force-dynamic";
 
-export default async function SetoresPage() {
+export default async function SetoresPage({ searchParams }: SetoresPageProps) {
+  const resolvedSearchParams = await searchParams;
+  const groupBy = coerceGroupBy(getFirstParam(resolvedSearchParams.visao));
+
   if (isDesktopServerMode()) {
-    return <SectorsDirectoryDesktopLoader />;
+    return <SectorsDirectoryDesktopLoader initialGroupBy={groupBy} />;
   }
 
   const { directory, directoryError } = await loadSectorsPageData({
     fetchDirectory: () =>
-      fetchSectorDirectory({ request: SECTOR_DIRECTORY_NO_STORE_READ }),
+      fetchSectorDirectory({ request: SECTOR_DIRECTORY_NO_STORE_READ, groupBy }),
   });
 
   if (!directory) {
@@ -85,13 +100,13 @@ export default async function SetoresPage() {
 
       <SectionHeading
         eyebrow="PG-05 - Hub de setores"
-        title="Leitura por setores"
+        title={groupBy === "sub_sector" ? "Leitura por sub-setores GICS" : "Leitura por setores GICS"}
         titleAs="h1"
-        description="Entre por cadeias produtivas e clusters analiticos para sair da navegacao empresa a empresa quando o problema e tematico."
+        description="A visao usa somente campos GICS persistidos. Empresas sem GICS aparecem separadas como sem classificacao, sem virar setor falso."
         meta={
           <div className="flex flex-wrap items-center gap-2">
             <InfoChip tone="muted">
-              {formatCompactInteger(directory.items.length)} setores
+              {formatCompactInteger(directory.items.length)} grupos
             </InfoChip>
             <InfoChip tone="muted">
               {formatCompactInteger(totalCompanies)} empresas somadas
@@ -101,14 +116,34 @@ export default async function SetoresPage() {
       />
 
       <SurfaceCard tone="subtle" padding="lg" className="space-y-4">
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href="/setores?visao=sector"
+            className={cn(
+              buttonVariants({ variant: groupBy === "sector" ? "default" : "outline", size: "sm" }),
+              "rounded-full px-4",
+            )}
+          >
+            Setores GICS
+          </Link>
+          <Link
+            href="/setores?visao=sub_sector"
+            className={cn(
+              buttonVariants({ variant: groupBy === "sub_sector" ? "default" : "outline", size: "sm" }),
+              "rounded-full px-4",
+            )}
+          >
+            Sub-setores GICS
+          </Link>
+        </div>
         <p className="text-sm leading-7 text-muted-foreground">
-          Cada card entrega um snapshot do ano mais recente disponivel no setor,
-          mantendo metricas ausentes como lacunas explicitas em vez de
-          preenchimento artificial.
+          Cada card mostra contagem e empresas do grupo. Metricas financeiras
+          aparecem apenas quando ha dados anuais locais; ausencia de GICS fica
+          isolada em estado proprio.
         </p>
       </SurfaceCard>
 
-      <SectorDirectoryList items={directory.items} />
+      <SectorDirectoryList items={directory.items} groupBy={groupBy} />
     </PageShell>
   );
 }

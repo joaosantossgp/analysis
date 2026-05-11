@@ -298,7 +298,8 @@ class CVMBridge:
 
     def get_sectors(self, params=None) -> dict:
         try:
-            result = self._svc().list_sectors()
+            p = params or {}
+            result = self._svc().list_sectors(group_by=str(p.get("group_by") or "sector"))
             return self._sanitize_for_json(dataclasses.asdict(result))
         except Exception as exc:
             return {"error": str(exc), "items": []}

@@ -6,7 +6,7 @@ Owner lane: `ops-quality`
 This repository now keeps a lightweight, repeatable baseline for:
 
 - main product web routes:
-  `/`, `/empresas`, `/empresas/[cd_cvm]`, `/comparar`, `/setores`, `/setores/[slug]`
+  `/`, `/empresas`, `/empresas/[cd_cvm]`, `/setores`, `/setores/[slug]`
 - hot API endpoints behind those routes:
   `/companies`, `/companies/filters`, `/companies/suggestions`, `/companies/{cd_cvm}`,
   `/companies/{cd_cvm}/years`, `/companies/{cd_cvm}/statements`,

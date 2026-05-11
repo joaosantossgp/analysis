@@ -14,6 +14,7 @@ import {
   SECTOR_DIRECTORY_NO_STORE_READ,
 } from "@/lib/api";
 import { isDesktopServerMode } from "@/lib/desktop-mode";
+import { settledOr } from "@/lib/promise-helpers";
 
 // Keep at 300 to match the perf baseline.
 export const revalidate = 300;
@@ -33,18 +34,17 @@ export default async function HomePage() {
     fetchSectorDirectory({ request: SECTOR_DIRECTORY_NO_STORE_READ }),
   ]);
 
-  const destaqueCompanies =
-    destaqueResult.status === "fulfilled" ? destaqueResult.value.items : [];
+  const destaqueCompanies = settledOr(destaqueResult, null)?.items ?? [];
 
   const totalCompanies =
-    statsResult.status === "fulfilled"
-      ? (statsResult.value?.pagination.total_items ?? null)
-      : null;
+    settledOr(statsResult, null)?.pagination.total_items ?? null;
 
   const directoryItems =
-    sectorsResult.status === "fulfilled" ? sectorsResult.value.items : [];
+    settledOr(sectorsResult, null)?.items.filter(
+      (item) => (item.group_type ?? "sector") === "sector",
+    ) ?? [];
 
-  let gicsSectors =
+  const gicsSectors =
     directoryItems.length > 0
       ? directoryItems.map((item) => ({
           sector_name: item.sector_name,
@@ -53,9 +53,7 @@ export default async function HomePage() {
           gics_sector: item.sector_name,
           gics_sector_slug: item.sector_slug,
         }))
-      : filtersResult.status === "fulfilled"
-        ? filtersResult.value.sectors
-        : [];
+      : (settledOr(filtersResult, null)?.sectors ?? []);
 
   return (
     <PageShell density="relaxed" className="flex flex-col items-center gap-20 pb-24">

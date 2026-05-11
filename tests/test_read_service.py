@@ -3,8 +3,20 @@ from __future__ import annotations
 
 import sqlite3
 
+from src.gics_manual_mapping import GICS_11_SECTORS
 from src.read_service import CVMReadService
 from src.settings import build_settings
+
+
+class _EmptyCompanyCatalog:
+    def lookup_company(self, cd_cvm: int):
+        return None
+
+    def list_entries(self):
+        return ()
+
+    def search_companies(self, *, q: str, limit: int, exclude_codes=None):
+        return ()
 
 
 def test_list_refresh_status_returns_stable_dto_contract(tmp_path):
@@ -105,12 +117,48 @@ def _seed_sector_read_service(tmp_path):
             """
             INSERT INTO companies (
                 cd_cvm, company_name, nome_comercial, cnpj,
-                setor_cvm, setor_analitico, company_type, ticker_b3, coverage_rank, is_active, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                setor_cvm, setor_analitico, gics_sector, gics_sector_slug,
+                gics_industry_group, gics_industry, gics_sub_industry,
+                company_type, ticker_b3, coverage_rank, is_active, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
-                (9512, "PETROBRAS", "Petrobras", "33", "Energia", "Energia", "comercial", "PETR4", 1, 1, "2026"),
-                (11223, "SABESP", "Sabesp", "43", "Saneamento", None, "comercial", "SBSP3", 3, 1, "2026"),
+                (
+                    9512,
+                    "PETROBRAS",
+                    "Petrobras",
+                    "33",
+                    "Energia",
+                    "Energia",
+                    "Energy",
+                    "energy",
+                    "Energy",
+                    "Oil, Gas & Consumable Fuels",
+                    "Integrated Oil & Gas",
+                    "comercial",
+                    "PETR4",
+                    1,
+                    1,
+                    "2026",
+                ),
+                (
+                    11223,
+                    "SABESP",
+                    "Sabesp",
+                    "43",
+                    "Saneamento",
+                    None,
+                    "Utilities",
+                    "utilities",
+                    "Utilities",
+                    "Water Utilities",
+                    "Water Utilities",
+                    "comercial",
+                    "SBSP3",
+                    3,
+                    1,
+                    "2026",
+                ),
             ],
         )
         conn.executemany(
@@ -134,7 +182,27 @@ def _seed_sector_read_service(tmp_path):
         )
         conn.commit()
 
-    return CVMReadService(settings=settings)
+    service = CVMReadService(settings=settings)
+    service._company_catalog = _EmptyCompanyCatalog()
+    return service
+
+
+def test_list_sectors_hub_counts_sum_matches_full_universe(tmp_path):
+    """Sector hub totals must equal companies that resolve to a GICS hub (unpaged directory)."""
+    service = _seed_sector_read_service(tmp_path)
+    all_rows, _ = service.query_layer.get_companies_directory_page(
+        search="",
+        sector_name=None,
+        page=1,
+        page_size=None,
+    )
+    items = service._build_company_results(all_rows)
+    classified = sum(
+        1 for item in items if item.gics_sector and item.gics_sector in GICS_11_SECTORS
+    )
+    dto = service.list_sectors()
+    hub_sum = sum(row.company_count for row in dto.items if row.group_type == "sector")
+    assert hub_sum == classified
 
 
 def test_list_sectors_returns_stable_snapshot_contract(tmp_path):
@@ -158,7 +226,7 @@ def test_list_sectors_returns_stable_snapshot_contract(tmp_path):
 def test_get_sector_detail_defaults_to_latest_year_and_keeps_null_metrics(tmp_path):
     service = _seed_sector_read_service(tmp_path)
 
-    detail = service.get_sector_detail("saneamento")
+    detail = service.get_sector_detail("utilities")
 
     assert detail is not None
     assert detail.selected_year == 2024

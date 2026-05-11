@@ -237,7 +237,7 @@ function AnalysisRemotionVideo() {
               One calm flow from source data to decision.
             </h4>
             <p className="mt-4 max-w-[28rem] text-base leading-6 text-white/58">
-              Busca, demonstracoes, KPIs, comparacao e setores aparecem como uma
+              Busca, demonstracoes, KPIs e setores aparecem como uma
               unica trilha de trabalho, sem blocos competindo pela atencao.
             </p>
           </div>

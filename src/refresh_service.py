@@ -18,6 +18,7 @@ from src.observability import append_jsonl, log_event
 from src.refresh_jobs import ensure_refresh_runtime_tables_for_connection
 from src.scraper import CVMScraper
 from src.settings import AppSettings, get_settings
+from src.utils import now_iso_seconds
 
 
 class HeadlessRefreshService:
@@ -290,7 +291,7 @@ class HeadlessRefreshService:
 
         engine = self._engine_for(db_path_override)
         companies_table_exists = self._table_exists(engine, "companies")
-        now_iso = datetime.now().replace(microsecond=0).isoformat()
+        now_iso = now_iso_seconds()
         updated = 0
 
         with engine.begin() as conn:

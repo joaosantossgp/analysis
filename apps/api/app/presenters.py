@@ -79,6 +79,7 @@ class CompanyInfoPayload(BaseModel):
     sector_slug: str
     company_type: str | None = None
     ticker_b3: str | None = None
+    has_local_financial_reports: bool = False
     read_model_updated_at: str | None = None
     has_readable_current_data: bool = False
     readable_years_count: int = 0
@@ -155,6 +156,10 @@ class SectorDirectoryItemPayload(BaseModel):
     snapshot: SectorSnapshotPayload
     sub_industries: list[str] = Field(default_factory=list)
     sub_industry_breakdown: list[SubIndustryCountPayload] = Field(default_factory=list)
+    group_type: str = "sector"
+    parent_sector_name: str | None = None
+    parent_sector_slug: str | None = None
+    companies: list[SectorCompanyMetricPayload] = Field(default_factory=list)
 
 
 class SectorDirectoryPayload(BaseModel):
@@ -346,6 +351,11 @@ class HealthSnapshotPayload(BaseModel):
     total_companies: int = 0
     companies_with_historical_data: int = 0
     companies_without_historical_data: int = 0
+    companies_with_any_local_financial_report: int = 0
+    companies_partial_local: int = 0
+    companies_fully_updated: int = 0
+    companies_with_refresh_status_recorded: int = 0
+    companies_with_last_refresh_error: int = 0
 
 
 def _normalize_value(value: Any) -> Any:
@@ -373,13 +383,13 @@ def present_issue(issue: StartupIssue) -> StartupIssuePayload:
     )
 
 
-def present_company_search(rows: list[CompanySearchResult]) -> list[CompanySearchResultPayload]:
+def _present_company_search(rows: list[CompanySearchResult]) -> list[CompanySearchResultPayload]:
     return [CompanySearchResultPayload(**row.to_dict()) for row in rows]
 
 
 def present_company_directory_page(dto: CompanyDirectoryPage) -> CompanyDirectoryPagePayload:
     payload = dto.to_dict()
-    payload["items"] = [item.model_dump() for item in present_company_search(list(dto.items))]
+    payload["items"] = [item.model_dump() for item in _present_company_search(list(dto.items))]
     return CompanyDirectoryPagePayload(**payload)
 
 

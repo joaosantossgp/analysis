@@ -76,7 +76,41 @@ const baseHealthPayload = {
   total_companies: 6,
   companies_with_historical_data: 4,
   companies_without_historical_data: 2,
+  companies_with_any_local_financial_report: 5,
+  companies_partial_local: 1,
+  companies_fully_updated: 2,
+  companies_with_refresh_status_recorded: 5,
+  companies_with_last_refresh_error: 0,
 };
+
+test("fetchBaseHealth tolerates legacy payloads without extended inventory counters", async () => {
+  const legacy = { ...baseHealthPayload } as Record<string, unknown>;
+  delete legacy.companies_with_any_local_financial_report;
+  delete legacy.companies_partial_local;
+  delete legacy.companies_fully_updated;
+  delete legacy.companies_with_refresh_status_recorded;
+  delete legacy.companies_with_last_refresh_error;
+
+  const restore = withFetchMock((async (request: RequestInfo | URL): Promise<Response> => {
+    void request;
+    return new Response(JSON.stringify(legacy), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }) as FetchMock);
+
+  try {
+    const result = await fetchBaseHealth({ startYear: 2024, endYear: 2025 });
+    assert.equal(result.companies_with_any_local_financial_report, 0);
+    assert.equal(result.companies_partial_local, 0);
+    assert.equal(result.companies_fully_updated, 0);
+    assert.equal(result.companies_with_refresh_status_recorded, 0);
+    assert.equal(result.companies_with_last_refresh_error, 0);
+    assert.equal(result.total_companies, 6);
+  } finally {
+    restore();
+  }
+});
 
 test("fetchBaseHealth (web) loads the same-origin base-health route with the real window", async () => {
   let capturedUrl = "";
@@ -125,7 +159,7 @@ test("update-base summaries derive cards and mode estimates from health and filt
     { sector_name: "Financeiro", sector_slug: "financeiro", company_count: 4 },
   ];
 
-  const summary = buildBaseHealthSummary(baseHealthPayload, sectors);
+  const summary = buildBaseHealthSummary(baseHealthPayload);
   const estimates = buildUpdateModeEstimates({
     health: baseHealthPayload,
     sectors,
@@ -135,6 +169,8 @@ test("update-base summaries derive cards and mode estimates from health and filt
   assert.equal(summary.totalCompanies, 6);
   assert.equal(summary.companiesWithHistoricalData, 4);
   assert.equal(summary.companiesWithoutHistoricalData, 2);
+  assert.equal(summary.companiesWithAnyLocalFinancialReport, 5);
+  assert.equal(summary.companiesFullyUpdated, 2);
   assert.equal(summary.completedCells, 7);
   assert.equal(summary.missingCells, 3);
   assert.equal(estimates.full.affected, 2);

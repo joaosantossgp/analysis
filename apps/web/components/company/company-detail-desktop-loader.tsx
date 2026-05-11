@@ -44,15 +44,6 @@ function errorMessage(error: unknown): string {
     : "Nao foi possivel carregar os dados locais agora.";
 }
 
-function isYearsNotFoundError(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error as { code?: string }).code === "not_found"
-  );
-}
-
 function CompanyDetailLoadingState() {
   return (
     <PageShell density="relaxed" className="max-w-4xl">
@@ -119,6 +110,7 @@ export function CompanyDetailDesktopLoader({
     bundle?: KPIBundle | null;
     statement?: StatementMatrix | null;
     contentError?: string | null;
+    yearsListUnreachable?: boolean;
   } | null>(null);
 
   useEffect(() => {
@@ -141,14 +133,12 @@ export function CompanyDetailDesktopLoader({
         }
 
         let availableYears: number[] = [];
+        let yearsListUnreachable = false;
         try {
           availableYears = await bridgeFetchCompanyYears(cdCvm);
-        } catch (error) {
-          if (isYearsNotFoundError(error)) {
-            availableYears = [];
-          } else {
-            throw error;
-          }
+        } catch {
+          availableYears = [];
+          yearsListUnreachable = true;
         }
 
         if (cancelled) return;
@@ -156,7 +146,12 @@ export function CompanyDetailDesktopLoader({
         const readableYears = getReadableCompanyYears(company, availableYears);
 
         if (readableYears.length === 0) {
-          setState({ key: loadKey, phase: "no_data", company });
+          setState({
+            key: loadKey,
+            phase: "no_data",
+            company,
+            yearsListUnreachable,
+          });
           return;
         }
 
@@ -199,6 +194,7 @@ export function CompanyDetailDesktopLoader({
           bundle,
           statement,
           contentError,
+          yearsListUnreachable,
         });
       } catch (error) {
         if (cancelled) return;
@@ -242,7 +238,12 @@ export function CompanyDetailDesktopLoader({
   }
 
   if (state.phase === "no_data" && state.company) {
-    return <CompanyNoDataPage company={state.company} />;
+    return (
+      <CompanyNoDataPage
+        company={state.company}
+        yearsListUnreachable={state.yearsListUnreachable ?? false}
+      />
+    );
   }
 
   if (
@@ -265,6 +266,7 @@ export function CompanyDetailDesktopLoader({
         bundle={state.bundle ?? null}
         statement={state.statement ?? null}
         contentError={state.contentError ?? null}
+        yearsListUnreachable={state.yearsListUnreachable ?? false}
       />
     );
   }

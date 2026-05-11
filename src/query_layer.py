@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING, Optional
 from sqlalchemy import Engine, inspect, text
 
 from src.db import get_engine
+from src.sector_taxonomy import canonical_sector_sql, gics_sector_bucket_sql
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -99,13 +100,7 @@ _KPI_ACCOUNTS = {
     "FCF": "6.03",
 }
 
-_CANONICAL_SECTOR_SQL = """
-COALESCE(
-    NULLIF(TRIM(c.setor_analitico), ''),
-    NULLIF(TRIM(c.setor_cvm), ''),
-    'Nao classificado'
-)
-"""
+_CANONICAL_SECTOR_SQL = canonical_sector_sql("c")
 
 _HAS_ANNUAL_HISTORY_SQL = """
 EXISTS (
@@ -164,11 +159,7 @@ class CVMQueryLayer:
 
     def _sector_bucket_expression_sql(self) -> str:
         """Prefer persisted GICS sector label when present for histograms/filters."""
-        cols = self._company_column_names()
-        base = _CANONICAL_SECTOR_SQL
-        if "gics_sector" in cols:
-            return f"COALESCE(NULLIF(TRIM(c.gics_sector), ''), {base})"
-        return base
+        return gics_sector_bucket_sql(self._company_column_names(), table_alias="c")
 
     def get_companies(self, search: str = "") -> _pd().DataFrame:
         rows_df, _ = self.get_companies_directory_page(
@@ -618,7 +609,7 @@ class CVMQueryLayer:
 
     def get_company_info(self, cd_cvm: int) -> dict:
         sql = text(
-            """
+            f"""
             SELECT
                 cd_cvm,
                 company_name,
@@ -626,11 +617,7 @@ class CVMQueryLayer:
                 cnpj,
                 setor_cvm,
                 setor_analitico,
-                COALESCE(
-                    NULLIF(TRIM(setor_analitico), ''),
-                    NULLIF(TRIM(setor_cvm), ''),
-                    'Nao classificado'
-                ) AS sector_name,
+                {canonical_sector_sql(None)} AS sector_name,
                 company_type,
                 ticker_b3
             FROM companies
@@ -658,7 +645,11 @@ class CVMQueryLayer:
         annual_join = ""
         readable_years_count = "0"
         latest_readable_year = "NULL"
+        has_local_financial_reports_sql = "0"
         if has_financial_reports:
+            has_local_financial_reports_sql = """CASE WHEN EXISTS (
+                    SELECT 1 FROM financial_reports fr WHERE fr."CD_CVM" = c.cd_cvm LIMIT 1
+                ) THEN 1 ELSE 0 END"""
             annual_join = """
             LEFT JOIN (
                 SELECT
@@ -709,13 +700,10 @@ class CVMQueryLayer:
                 c.cnpj,
                 c.setor_cvm,
                 c.setor_analitico,
-                COALESCE(
-                    NULLIF(TRIM(c.setor_analitico), ''),
-                    NULLIF(TRIM(c.setor_cvm), ''),
-                    'Nao classificado'
-                ) AS sector_name,
+                {_CANONICAL_SECTOR_SQL} AS sector_name,
                 c.company_type,
                 c.ticker_b3,
+                {has_local_financial_reports_sql} AS has_local_financial_reports,
                 CASE WHEN {latest_readable_year} IS NOT NULL THEN 1 ELSE 0 END AS has_readable_current_data,
                 {readable_years_count} AS readable_years_count,
                 {latest_readable_year} AS latest_readable_year,

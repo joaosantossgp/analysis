@@ -7,6 +7,7 @@ import {
   type CompanyFiltersResponse,
   type CompanySuggestionsResponse,
 } from "./api.ts";
+import { settledOr, settledReason } from "./promise-helpers.ts";
 
 type CompaniesPageLoaders = {
   fetchDirectory?: () => Promise<CompanyDirectoryPage>;
@@ -57,24 +58,14 @@ export async function loadCompaniesPageData(
   ]);
 
   return {
-    directory:
-      directoryResult.status === "fulfilled" ? directoryResult.value : null,
-    filters: filtersResult.status === "fulfilled" ? filtersResult.value : null,
-    fallbackSuggestions:
-      fallbackSuggestionsResult.status === "fulfilled"
-        ? fallbackSuggestionsResult.value
-        : null,
-    directoryError:
-      directoryResult.status === "rejected"
-        ? getUserFacingErrorMessage(directoryResult.reason)
-        : null,
-    filtersError:
-      filtersResult.status === "rejected"
-        ? getUserFacingErrorMessage(filtersResult.reason)
-        : null,
-    fallbackSuggestionsError:
-      fallbackSuggestionsResult.status === "rejected"
-        ? getUserFacingErrorMessage(fallbackSuggestionsResult.reason)
-        : null,
+    directory: settledOr(directoryResult, null),
+    filters: settledOr(filtersResult, null),
+    fallbackSuggestions: settledOr(fallbackSuggestionsResult, null),
+    directoryError: settledReason(directoryResult, getUserFacingErrorMessage),
+    filtersError: settledReason(filtersResult, getUserFacingErrorMessage),
+    fallbackSuggestionsError: settledReason(
+      fallbackSuggestionsResult,
+      getUserFacingErrorMessage,
+    ),
   };
 }

@@ -14,6 +14,7 @@ import {
   bridgeFetchCompanyFilters,
   bridgeFetchCompanySuggestions,
 } from "@/lib/desktop-bridge";
+import { settledOr, settledReason } from "@/lib/promise-helpers";
 
 type CompaniesDirectoryDesktopLoaderProps = Pick<
   CompaniesDirectoryQueryState,
@@ -75,26 +76,15 @@ export function CompaniesDirectoryDesktopLoader({
       setLoadState({
         key: loadKey,
         data: {
-          directory:
-            directoryResult.status === "fulfilled" ? directoryResult.value : null,
-          filters:
-            filtersResult.status === "fulfilled" ? filtersResult.value : null,
-          fallbackSuggestions:
-            fallbackSuggestionsResult.status === "fulfilled"
-              ? fallbackSuggestionsResult.value
-              : null,
-          directoryError:
-            directoryResult.status === "rejected"
-              ? errorMessage(directoryResult.reason)
-              : null,
-          filtersError:
-            filtersResult.status === "rejected"
-              ? errorMessage(filtersResult.reason)
-              : null,
-          fallbackSuggestionsError:
-            fallbackSuggestionsResult.status === "rejected"
-              ? errorMessage(fallbackSuggestionsResult.reason)
-              : null,
+          directory: settledOr(directoryResult, null),
+          filters: settledOr(filtersResult, null),
+          fallbackSuggestions: settledOr(fallbackSuggestionsResult, null),
+          directoryError: settledReason(directoryResult, errorMessage),
+          filtersError: settledReason(filtersResult, errorMessage),
+          fallbackSuggestionsError: settledReason(
+            fallbackSuggestionsResult,
+            errorMessage,
+          ),
         },
       });
     }

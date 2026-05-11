@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import type { CompanyInfo, RefreshStatusItem } from "../lib/api.ts";
 import {
+  companyHasNonAnnualLocalOnly,
   getReadableCompanyYears,
   getReadableRefreshSuccessKey,
   isReadableRefreshSuccess,
@@ -20,6 +21,7 @@ function buildCompanyInfo(overrides: Partial<CompanyInfo> = {}): CompanyInfo {
     sector_slug: "energia",
     company_type: "comercial",
     ticker_b3: "PETR4",
+    has_local_financial_reports: false,
     read_model_updated_at: null,
     has_readable_current_data: false,
     readable_years_count: 0,
@@ -107,6 +109,52 @@ test("getReadableCompanyYears falls back to company detail readable metadata", (
   );
 
   assert.deepEqual(years, [2024]);
+});
+
+test("getReadableCompanyYears falls back using readable_years_count when flag is false", () => {
+  const years = getReadableCompanyYears(
+    buildCompanyInfo({
+      has_readable_current_data: false,
+      readable_years_count: 2,
+      latest_readable_year: 2024,
+    }),
+    [],
+  );
+
+  assert.deepEqual(years, [2024]);
+});
+
+test("getReadableCompanyYears coerces near-integer year values from upstream", () => {
+  const years = getReadableCompanyYears(buildCompanyInfo(), [2023.0000001, 2024]);
+
+  assert.deepEqual(years, [2023, 2024]);
+});
+
+test("getReadableCompanyYears drops bogus fractional fiscal years", () => {
+  const years = getReadableCompanyYears(buildCompanyInfo(), [2023.6, 2024]);
+
+  assert.deepEqual(years, [2024]);
+});
+
+test("companyHasNonAnnualLocalOnly matches partial local signal", () => {
+  assert.equal(
+    companyHasNonAnnualLocalOnly(
+      buildCompanyInfo({
+        has_local_financial_reports: true,
+        read_availability_code: "no_readable_annual_history",
+      }),
+    ),
+    true,
+  );
+  assert.equal(
+    companyHasNonAnnualLocalOnly(
+      buildCompanyInfo({
+        has_local_financial_reports: false,
+        read_availability_code: "no_readable_annual_history",
+      }),
+    ),
+    false,
+  );
 });
 
 test("getReadableCompanyYears stays empty without a readable completion signal", () => {

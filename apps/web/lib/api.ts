@@ -79,6 +79,7 @@ export type CompanyInfo = {
   sector_slug: string;
   company_type: string | null;
   ticker_b3: string | null;
+  has_local_financial_reports: boolean;
   read_model_updated_at: string | null;
   has_readable_current_data: boolean;
   readable_years_count: number;
@@ -153,6 +154,7 @@ export type RefreshStatusItem = {
 
 type RawCompanyInfo = Omit<
   CompanyInfo,
+  | "has_local_financial_reports"
   | "read_model_updated_at"
   | "has_readable_current_data"
   | "readable_years_count"
@@ -160,6 +162,7 @@ type RawCompanyInfo = Omit<
   | "read_availability_code"
   | "read_availability_message"
 > & {
+  has_local_financial_reports?: boolean;
   read_model_updated_at?: string | null;
   has_readable_current_data?: boolean;
   readable_years_count?: number;
@@ -305,6 +308,11 @@ export type BaseHealthSnapshot = {
   total_companies: number;
   companies_with_historical_data: number;
   companies_without_historical_data: number;
+  companies_with_any_local_financial_report: number;
+  companies_partial_local: number;
+  companies_fully_updated: number;
+  companies_with_refresh_status_recorded: number;
+  companies_with_last_refresh_error: number;
 };
 
 export type BaseHealthRequest = {
@@ -321,6 +329,8 @@ export type BatchRefreshCvmRange = {
 export type BatchRefreshRequest = {
   mode: BatchRefreshMode;
   sectorSlug?: string | null;
+  subSector?: string | null;
+  companyIds?: number[] | null;
   cvmRange?: BatchRefreshCvmRange | null;
   statusFilter?: string | null;
 };
@@ -406,10 +416,15 @@ export type SectorDirectoryItem = {
   snapshot: SectorSnapshot;
   sub_industries: string[];
   sub_industry_breakdown?: SubIndustryCount[];
+  group_type?: "sector" | "sub_sector" | "unclassified";
+  parent_sector_name?: string | null;
+  parent_sector_slug?: string | null;
+  companies?: SectorCompanyMetric[];
 };
 
 export type SectorDirectory = {
   items: SectorDirectoryItem[];
+  unclassified_count?: number;
 };
 
 export type SectorYearOverview = {
@@ -673,7 +688,8 @@ function isCompanyFiltersResponse(value: unknown): value is CompanyFiltersRespon
   );
 }
 
-function isBaseHealthSnapshot(value: unknown): value is BaseHealthSnapshot {
+/** Validates `/base-health` core shape; extended inventory counters may be absent (filled by {@link normalizeBaseHealthSnapshot}). */
+function isBaseHealthSnapshotCore(value: unknown): value is Record<string, unknown> {
   return (
     isRecord(value) &&
     isNullableString(value.generated_at) &&
@@ -695,6 +711,47 @@ function isBaseHealthSnapshot(value: unknown): value is BaseHealthSnapshot {
     typeof value.companies_with_historical_data === "number" &&
     typeof value.companies_without_historical_data === "number"
   );
+}
+
+function coerceNonNegativeSnapshotInt(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return 0;
+  return Math.max(0, Math.trunc(value));
+}
+
+export function normalizeBaseHealthSnapshot(raw: Record<string, unknown>): BaseHealthSnapshot {
+  return {
+    generated_at: isNullableString(raw.generated_at) ? raw.generated_at : null,
+    start_year: raw.start_year as number,
+    end_year: raw.end_year as number,
+    total_cells: raw.total_cells as number,
+    completed_cells: raw.completed_cells as number,
+    missing_cells: raw.missing_cells as number,
+    pct: raw.pct as number,
+    health_score: raw.health_score as number,
+    health_status: raw.health_status as string,
+    eta_hours: isNullableNumber(raw.eta_hours) ? raw.eta_hours : null,
+    throughput_per_hour: isNullableNumber(raw.throughput_per_hour)
+      ? raw.throughput_per_hour
+      : null,
+    throughput_confidence: raw.throughput_confidence as string,
+    per_year: raw.per_year as BaseHealthSnapshot["per_year"],
+    prioritized_companies: raw.prioritized_companies as BaseHealthSnapshot["prioritized_companies"],
+    raw: raw.raw as Record<string, unknown>,
+    total_companies: raw.total_companies as number,
+    companies_with_historical_data: raw.companies_with_historical_data as number,
+    companies_without_historical_data: raw.companies_without_historical_data as number,
+    companies_with_any_local_financial_report: coerceNonNegativeSnapshotInt(
+      raw.companies_with_any_local_financial_report,
+    ),
+    companies_partial_local: coerceNonNegativeSnapshotInt(raw.companies_partial_local),
+    companies_fully_updated: coerceNonNegativeSnapshotInt(raw.companies_fully_updated),
+    companies_with_refresh_status_recorded: coerceNonNegativeSnapshotInt(
+      raw.companies_with_refresh_status_recorded,
+    ),
+    companies_with_last_refresh_error: coerceNonNegativeSnapshotInt(
+      raw.companies_with_last_refresh_error,
+    ),
+  };
 }
 
 function isBatchJobListResponse(value: unknown): value is BatchJobListResponse {
@@ -726,6 +783,7 @@ function isCompanyInfo(value: unknown): value is RawCompanyInfo {
     typeof value.company_name === "string" &&
     typeof value.sector_name === "string" &&
     typeof value.sector_slug === "string" &&
+    isOptionalBoolean(value.has_local_financial_reports) &&
     isOptionalNullableString(value.read_model_updated_at) &&
     isOptionalBoolean(value.has_readable_current_data) &&
     (value.readable_years_count === undefined ||
@@ -886,6 +944,7 @@ function normalizeRefreshStatusItem(
 function normalizeCompanyInfo(company: RawCompanyInfo): CompanyInfo {
   return {
     ...company,
+    has_local_financial_reports: company.has_local_financial_reports ?? false,
     read_model_updated_at: company.read_model_updated_at ?? null,
     has_readable_current_data: company.has_readable_current_data ?? false,
     readable_years_count: company.readable_years_count ?? 0,
@@ -905,9 +964,24 @@ function isSectorSnapshot(value: unknown): value is SectorSnapshot {
 }
 
 function isSectorDirectory(value: unknown): value is SectorDirectory {
+  const isSectorCompany = (company: unknown): company is SectorCompanyMetric =>
+    isRecord(company) &&
+    typeof company.cd_cvm === "number" &&
+    typeof company.company_name === "string" &&
+    (company.ticker_b3 === null ||
+      typeof company.ticker_b3 === "string" ||
+      company.ticker_b3 === undefined) &&
+    (company.gics_sub_industry === null ||
+      typeof company.gics_sub_industry === "string" ||
+      company.gics_sub_industry === undefined) &&
+    isNullableNumber(company.roe) &&
+    isNullableNumber(company.mg_ebit) &&
+    isNullableNumber(company.mg_liq);
+
   return (
     isRecord(value) &&
     Array.isArray(value.items) &&
+    (value.unclassified_count === undefined || typeof value.unclassified_count === "number") &&
     value.items.every(
       (item) =>
         isRecord(item) &&
@@ -924,7 +998,19 @@ function isSectorDirectory(value: unknown): value is SectorDirectory {
                 isRecord(row) &&
                 typeof row.name === "string" &&
                 typeof row.count === "number",
-            ))),
+            ))) &&
+        (item.group_type === undefined ||
+          item.group_type === "sector" ||
+          item.group_type === "sub_sector" ||
+          item.group_type === "unclassified") &&
+        (item.parent_sector_name === undefined ||
+          item.parent_sector_name === null ||
+          typeof item.parent_sector_name === "string") &&
+        (item.parent_sector_slug === undefined ||
+          item.parent_sector_slug === null ||
+          typeof item.parent_sector_slug === "string") &&
+        (item.companies === undefined ||
+          (Array.isArray(item.companies) && item.companies.every(isSectorCompany))),
     )
   );
 }
@@ -1365,10 +1451,10 @@ export async function fetchCompanySuggestionsRoute(
 }
 
 export async function fetchSectorDirectory(
-  options?: { request?: ApiReadRequestInit },
+  options?: { request?: ApiReadRequestInit; groupBy?: "sector" | "sub_sector" },
 ): Promise<SectorDirectory> {
-  if (isDesktopMode()) return bridgeFetchSectors();
-  return (await apiFetch<SectorDirectory>("/sectors", {
+  if (isDesktopMode()) return bridgeFetchSectors(options?.groupBy);
+  return (await apiFetch<SectorDirectory>(`/sectors${buildQuery({ group_by: options?.groupBy })}`, {
     request: options?.request ?? SECTOR_DIRECTORY_API_READ,
     validate: isSectorDirectory,
     invalidResponseMessage: "A API retornou um diretorio de setores invalido.",
@@ -1516,20 +1602,31 @@ export async function fetchCompanyFreshness(
 export async function fetchBaseHealth(
   params: BaseHealthRequest,
 ): Promise<BaseHealthSnapshot> {
-  if (isDesktopMode()) return bridgeFetchBaseHealth(params);
-  return (await routeFetch<BaseHealthSnapshot>(
-    `/api/base-health${buildQuery({
-      start_year: params.startYear,
-      end_year: params.endYear,
-      force_refresh: params.forceRefresh ? "1" : null,
-    })}`,
-    undefined,
-    {
-      validate: isBaseHealthSnapshot,
-      invalidResponseMessage:
-        "A rota interna retornou um snapshot de saude invalido.",
-    },
-  )) as BaseHealthSnapshot;
+  const rawUnknown: unknown = isDesktopMode()
+    ? await bridgeFetchBaseHealth(params)
+    : await routeFetch<Record<string, unknown>>(
+        `/api/base-health${buildQuery({
+          start_year: params.startYear,
+          end_year: params.endYear,
+          force_refresh: params.forceRefresh ? "1" : null,
+        })}`,
+        undefined,
+        {
+          validate: isBaseHealthSnapshotCore,
+          invalidResponseMessage:
+            "A rota interna retornou um snapshot de saude invalido.",
+        },
+      );
+
+  if (!isRecord(rawUnknown)) {
+    throw new ApiClientError(
+      "Resposta de saude da base em formato inesperado.",
+      502,
+      "invalid_response",
+    );
+  }
+
+  return normalizeBaseHealthSnapshot(rawUnknown);
 }
 
 function buildBatchRefreshBody(params: BatchRefreshRequest): Record<string, unknown> {
@@ -1545,6 +1642,8 @@ function buildBatchRefreshBody(params: BatchRefreshRequest): Record<string, unkn
   return {
     mode: params.mode,
     ...(params.sectorSlug ? { sector_slug: params.sectorSlug } : {}),
+    ...(params.subSector ? { gics_sub_industry: params.subSector } : {}),
+    ...(params.companyIds && params.companyIds.length ? { company_ids: params.companyIds } : {}),
     ...(cvmRange ? { cvm_range: cvmRange } : {}),
     ...(params.statusFilter ? { status_filter: params.statusFilter } : {}),
   };

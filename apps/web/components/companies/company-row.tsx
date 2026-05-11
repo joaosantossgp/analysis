@@ -2,43 +2,15 @@
 import { ChevronRightIcon } from "lucide-react";
 
 import type { CompanyDirectoryItem } from "@/lib/api";
+import { getAvailabilityBadgeClassName } from "@/lib/badge-classes";
 import { getCompanyAvailability } from "@/lib/company-discovery";
 import { getSectorColor } from "@/lib/constants";
+import { buildSparklinePoints } from "@/lib/sparkline";
 import { cn } from "@/lib/utils";
-
-function buildSparklinePoints(anos: number[], W = 54, H = 20): string {
-  if (anos.length < 2) return "";
-  const sorted = [...anos].sort((a, b) => a - b);
-  const min = sorted[0]!;
-  const max = sorted[sorted.length - 1]!;
-  const rangeYears = max - min || 1;
-  return sorted
-    .map((year, i) => {
-      const x = ((year - min) / rangeYears) * W;
-      const y = H - (i / Math.max(sorted.length - 1, 1)) * (H * 0.75) - 2;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(" ");
-}
 
 type CompanyRowProps = {
   item: CompanyDirectoryItem;
 };
-
-function getAvailabilityBadgeClassName(
-  kind: ReturnType<typeof getCompanyAvailability>["kind"],
-): string {
-  switch (kind) {
-    case "ready":
-      return "border-emerald-500/20 bg-emerald-500/8 text-emerald-700 dark:text-emerald-300";
-    case "requestable":
-      return "border-primary/20 bg-primary/8 text-primary/80";
-    case "low_signal":
-      return "border-amber-500/24 bg-amber-500/10 text-amber-700 dark:text-amber-300";
-    case "stalled":
-      return "border-destructive/25 bg-destructive/8 text-destructive";
-  }
-}
 
 export function CompanyRow({ item }: CompanyRowProps) {
   const color = getSectorColor(item.sector_name);

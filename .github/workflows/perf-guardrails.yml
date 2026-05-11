@@ -5,7 +5,23 @@ on:
     branches:
       - main
       - "task/**"
+    paths:
+      - "apps/web/**"
+      - "apps/api/**"
+      - "src/**"
+      - "desktop/**"
+      - "scripts/perf_guardrail.py"
+      - "docs/perf/**"
+      - ".github/workflows/perf-guardrails.yml"
   pull_request:
+    paths:
+      - "apps/web/**"
+      - "apps/api/**"
+      - "src/**"
+      - "desktop/**"
+      - "scripts/perf_guardrail.py"
+      - "docs/perf/**"
+      - ".github/workflows/perf-guardrails.yml"
   merge_group:
   workflow_dispatch:
 
