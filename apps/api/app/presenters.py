@@ -383,13 +383,13 @@ def present_issue(issue: StartupIssue) -> StartupIssuePayload:
     )
 
 
-def present_company_search(rows: list[CompanySearchResult]) -> list[CompanySearchResultPayload]:
+def _present_company_search(rows: list[CompanySearchResult]) -> list[CompanySearchResultPayload]:
     return [CompanySearchResultPayload(**row.to_dict()) for row in rows]
 
 
 def present_company_directory_page(dto: CompanyDirectoryPage) -> CompanyDirectoryPagePayload:
     payload = dto.to_dict()
-    payload["items"] = [item.model_dump() for item in present_company_search(list(dto.items))]
+    payload["items"] = [item.model_dump() for item in _present_company_search(list(dto.items))]
     return CompanyDirectoryPagePayload(**payload)
 
 

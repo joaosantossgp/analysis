@@ -9,7 +9,13 @@ import pandas as pd
 import unicodedata
 import re
 import hashlib
+from datetime import datetime, timezone
 from typing import Union
+
+
+def now_iso_seconds() -> str:
+    """UTC ISO-8601 timestamp truncated to seconds. Canonical 'now' for DB writes."""
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
 def normalize_account_name(text: Union[str, float, None]) -> str:

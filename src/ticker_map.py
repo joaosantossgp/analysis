@@ -1,7 +1,6 @@
-"""Mapa canônico cd_cvm → ticker B3 (Yahoo Finance).
+"""Mapa canonico cd_cvm -> ticker B3 (Yahoo Finance).
 
-Extraído de dashboard/constants.py para que scripts e o app PyQt6
-possam importar sem depender do módulo dashboard.
+Sem dependencias de framework UI.
 """
 from __future__ import annotations
 

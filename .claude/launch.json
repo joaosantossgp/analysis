@@ -8,16 +8,15 @@
       "port": 3000
     },
     {
-      "name": "Next.js Web (79-foundation-tokens)",
-      "runtimeExecutable": "cmd",
-      "runtimeArgs": ["/c", ".claude\\worktrees\\frontend\\79-foundation-tokens\\apps\\web\\start-web-wt.cmd"],
-      "port": 3001
+      "name": "Desktop App (pywebview)",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "desktop.app", "--dev"]
     },
     {
-      "name": "Dashboard Streamlit",
-      "runtimeExecutable": ".venv\\Scripts\\streamlit.exe",
-      "runtimeArgs": ["run", "dashboard/app.py", "--server.headless", "true"],
-      "port": 8501
+      "name": "FastAPI (dev)",
+      "runtimeExecutable": "uvicorn",
+      "runtimeArgs": ["apps.api.app.main:app", "--reload"],
+      "port": 8000
     }
   ]
 }

@@ -65,6 +65,7 @@ from src.kpi_engine import compute_all_kpis, compute_quarterly_kpis
 from src.query_layer import CVMQueryLayer
 from src.sector_taxonomy import canonical_sector_name, sector_slugify
 from src.settings import AppSettings, get_settings
+from src.utils import now_iso_seconds
 
 EXPORT_STATEMENT_TYPES = ("DRE", "BPA", "BPP", "DFC", "DVA", "DMPL")
 
@@ -758,7 +759,7 @@ class CVMReadService:
         if catalog_entry is None:
             return False
 
-        now_iso = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+        now_iso = now_iso_seconds()
         gics = resolve_gics_classification(
             sector_name=canonical_sector_name(None, catalog_entry.setor_cvm),
             setor_analitico=None,
@@ -1012,7 +1013,7 @@ class CVMReadService:
         writes. Silently ignores unknown cd_cvm values (FK constraint skips
         the insert rather than raising).
         """
-        now_iso = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+        now_iso = now_iso_seconds()
         try:
             with self.engine.begin() as conn:
                 conn.execute(
@@ -2232,7 +2233,7 @@ class CVMReadService:
         )
 
         return {
-            "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+            "generated_at": now_iso_seconds(),
             "start_year": int(start_year),
             "end_year": int(end_year),
             "scope": "database_backed",

@@ -1,240 +1,114 @@
 # AGENTS.md
 
-Contrato operacional para qualquer agente ou pessoa que trabalhe neste
-repositorio.
+Canonical operating rules for AI agents in this project. English-only. ~120 lines.
 
-## Fonte de verdade
+## 1. How to read this file
 
-- **Produto principal entregue ao usuario:** app desktop **`dist/CVMAnalytics/CVMAnalytics.exe`** (build `desktop/build_desktop.ps1`). Para UX/dados, assumir **SQLite local + modo desktop**; **nao** assumir Vercel/Railway salvo o usuario pedir.
-- O backlog oficial vive em `GitHub Issues`.
-- `docs/AGENTS.md` registra estado atual e historico de sessoes. Nao use esse
-  arquivo como lista viva de tarefas.
-- `docs/STUDENT_PACK_PLAN.md` resume o roadmap e aponta para issues/milestones.
-  Nao replique nele o backlog operacional dia a dia.
+- This is the **default** contract. Read once per session.
+- For long-running autonomous PRs, also read `docs/governance/autonomous-mode.md`.
+- Before touching `src/` or `apps/api/`, also read `docs/CONTEXT.md`.
+- Before touching `apps/web/`, the per-directory `apps/web/AGENTS.md` is auto-loaded.
+- Active reference docs live in `docs/reference/`. ADRs live in `docs/decisions/`.
+- Anything in `docs/archive/` is historical — do not treat as current contract. (Note: there is no `docs/archive/` directory; stale planning docs were deleted. History lives in git log.)
 
-## Check inicial por chat
+## 2. Principles
 
-- No inicio de qualquer chat executavel, a IA deve verificar:
-  - tasks abertas da propria `lane:*`
-  - child tasks recebidas de outras lanes na propria lane
-  - child tasks que sua lane abriu para outras lanes
-  - PRs abertas ligadas a essas issues para saber se algo ja foi entregue e
-    aguarda consumo
-- Se existir entrega pendente de consumo para a lane atual, a IA deve tratar
-  isso antes de expandir escopo com novas delegacoes.
+1. **Inspect before editing.** Read the file you're changing and at least one of its callers. Never fabricate project state.
+2. **Prefer small, reviewable changes.** One concern per edit. If a task spans multiple concerns, finish one cleanly, then start the next.
+3. **Preserve architecture unless asked to change it.** If you must change it, say so explicitly and propose the alternative before doing it.
+4. **Ask only questions that change scope, correctness, or quality.** Don't ask permission on reversible decisions inside a granted scope.
+5. **Validate what you can validate.** Run typecheck/lint/tests when the change is testable. Run the dev server when the change is observable. If you cannot validate, say so plainly — don't claim success.
+6. **Surface assumptions and risks at the end of the work.** In 1–3 lines: what could go wrong, what wasn't verified, what to watch for.
+7. **Don't speculate-engineer.** No memoization without a measured win, no abstraction for hypothetical second callers, no comments that re-narrate the code.
+8. **Match the language of the surrounding code.** Some files are Portuguese, some English. Use whichever the file you're editing already uses.
+9. **Be honest about audit/finding quality.** If you delegate analysis to a subagent and the findings don't hold up on inspection, say so. Don't relay confidence you don't have.
+10. **Data/financial/modeling work:** prioritize auditability and correctness over speed. Preserve column conventions; honor `docs/CONTEXT.md`.
+11. **UI/design work:** keep output professional and consistent with the existing design system. Preserve creative latitude — propose visual options when not constrained.
+12. **Autonomous (long-running) work:** route through `docs/governance/autonomous-mode.md`. Interactive sessions use this file only.
 
-## Fluxo obrigatorio
+## 3. Plan-mode rule (risk-based, not ceremony-based)
 
-1. Localize uma `task issue` aberta antes de alterar qualquer arquivo versionado.
-2. Se a task ainda nao existir, crie uma issue a partir do template correto.
-3. Garanta que a issue tenha, no minimo:
-   - `kind:task`
-   - um label `status:*`
-   - um label `priority:*`
-   - um label `area:*`
-   - um label `risk:*`
-   - um label `lane:*`
-4. Garanta que o corpo da issue declare:
-   - `Owner atual`
-   - `Lane oficial`
-   - `Workspace da task`
-   - `Write-set esperado`
-   - `Classificacao de risco`
-5. Trabalhe sempre em uma worktree dedicada:
-   - repo raiz permanece em `main`
-   - a task usa branch `task/<issue-number>-<slug>`
-   - a worktree vive em `.claude/worktrees/<lane>/<issue-number>-<slug>/`
-6. Abra PR com `Closes #<issue-number>` no corpo.
-7. Quando a implementacao estiver pronta, conclua a task com
-   `scripts/pr_complete.ps1` ou processo equivalente:
-   - checks obrigatorios verdes;
-   - PR mergeada;
-   - issue fechada;
-   - branch remota removida quando aplicavel.
-8. Antes de encerrar, atualize checklist, evidencias e docs afetados.
-9. A task so conta como concluida depois do merge confirmado da PR. Epics fecham
-   manualmente.
+- **Low risk** (typo, copy fix, isolated function, formatter swap, single-component prop tweak): inspect, act, one-line summary.
+- **Medium risk** (multi-file refactor, new component, non-trivial logic change, new hook): state the plan in 2–4 lines, then act.
+- **High risk** (architecture, data model, DB schema, financial calculations, auth/security, destructive ops, repo-wide changes, dependency changes): plan in full and **wait for approval**.
+- **"Only plan" / "plan only" / "draft"**: plan; do not edit files.
+- **"Do next" / "go" / "proceed"**: proceed with the agreed step without re-asking, unless new risk appears.
 
-## Excecao controlada para Jules
+## 4. Validation expectations
 
-- A excecao existe apenas para PRs publicadas pelo Jules (Google Labs).
-- Nessas PRs, o fluxo pode comecar por PR e a task issue pode ser criada
-  depois, desde que a governanca seja regularizada imediatamente.
-- A identificacao do Jules depende do corpo da PR, com os marcadores
-  `PR created automatically by Jules` ou `jules.google.com/task/`. Nao dependa
-  apenas do autor da PR.
-- O workflow dedicado `Jules PR Governance` e o unico ponto que pode intakear
-  essa excecao. Ele deve:
-  - aplicar o label persistente `source:jules`
-  - criar ou reconciliar a task retroativa
-  - registrar `Workspace da task` como `jules://github/pr/<numero-da-pr>`
-  - preencher `Source PR`
-  - inferir `Lane oficial`, `Write-set esperado` e `Classificacao de risco`
-  - atualizar a PR com `Closes #<issue>` assim que a issue existir
-- A excecao nao libera merge sem task. Enquanto a intake estiver invalida,
-  ambigua ou com domain mix proibido, a PR do Jules deve permanecer em draft e
-  bloqueada por falha explicita do workflow dedicado.
-- Fora desse caso especifico, continua valendo o fluxo normal `issue -> branch -> PR`.
+- TypeScript: `npx tsc --noEmit` in `apps/web/` after any TSX/TS edit.
+- Python: `pytest tests/` for `src/`, `pytest apps/api/tests/` for the API.
+- UI-observable changes: start the dev server and verify when feasible (browser preview, screenshot, snapshot).
+- If validation is skipped, say why explicitly in the wrap-up.
 
-## Regra de commit, push e merge
+## 5. Task modes
 
-- Nao deixe trabalho concluido apenas localmente.
-- Faca `commit` quando houver um checkpoint coerente e verificavel:
-  - uma parte funcional completa;
-  - uma correcao validada;
-  - ou antes de uma mudanca mais arriscada que mereca rollback claro.
-- Faca `push` quando:
-  - existir um commit verificavel que nao deve ficar so local;
-  - a task precisar de backup remoto, handoff ou atualizacao da PR;
-  - o fim da sessao deixar trabalho relevante em andamento.
-- Abra ou atualize a PR assim que a branch estiver revisavel, mesmo em draft.
-- Quando a task estiver completa e as validacoes relevantes tiverem passado:
-  - atualize a issue;
-  - marque a PR como pronta;
-  - use `scripts/pr_complete.ps1 -Pr <numero>` ou fluxo equivalente para esperar
-    os checks e concluir o merge.
-- Preferencia de merge: `squash merge`.
-- Depois do merge:
-  - confirme o fechamento da task;
-  - remova a worktree da task;
-  - confirme que a branch remota foi removida ou remova-a explicitamente.
+Each task type has a minimal extra rule on top of the principles. Match the mode to the work; don't blend them.
 
-## Lanes oficiais
+### Bugfix
 
-- `lane:frontend`
-  - ownership principal: `apps/web/**` e docs internos do web app
-- `lane:backend`
-  - ownership principal: `apps/api/**`, `src/**`, `desktop/**`,
-    `dashboard/**`, `tests/**` e `apps/api/tests/**`
-- `lane:ops-quality`
-  - ownership principal: `.github/**`, `docs/**`, `README.md`,
-    `COMO_RODAR.md`, `AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`,
-    scripts operacionais e smokes
-- `lane:master`
-  - orchestrador transversal com amplo acesso de escrita a paths de aplicacao
-    e backend; veja secao dedicada abaixo
+- Reproduce or read the error trace before proposing a fix.
+- Fix the root cause, not the symptom.
+- Add a regression test only if the bug came from a previously untested path.
 
-Uma task pertence a exatamente uma lane. Se o trabalho realmente precisar tocar
-duas lanes de produto, divida em child tasks separadas.
+### Feature
 
-## Lane master
+- Confirm scope before designing. If the request is ambiguous, ask one targeted question.
+- Prefer additive changes over rewrites.
+- Validate end-to-end before declaring done.
 
-A lane `master` e o orquestrador transversal com acesso de escrita irrestrito
-a todos os paths de aplicacao e backend. Ela existe para:
-- corrigir bugs que cruzam multiplos dominios,
-- desbloquear trabalho que outras lanes hesitam em tocar,
-- executar correcoes de proximo passo em todo o codigo.
+### Refactor
 
-A lane master tem dois modos:
-- **Modo execucao** (`lane:master`): execucao normal com amplo acesso de
-  escrita. Pode tocar `apps/web/**`, `apps/api/**`, `src/**`, `desktop/**`,
-  `dashboard/**`, `tests/**` e todos os outros paths de runtime/UI. A restricao
-  de domain mix (`frontend-with-backend-runtime`) e isenta para essa lane.
-- **Modo planejamento** (`lane:master.plan`): orquestracao somente leitura.
-  Sem edicoes de arquivos, sem escrita de codigo. Apenas pesquisa profunda do
-  projeto e propostas estruturadas de tasks.
+- **No behavior change.** State what's preserved and what's moving.
+- Verify with typecheck + tests; do not add new features in the same pass.
+- If a "refactor" requires a behavior change, stop and re-scope.
 
-**Exclusao de governanca:** a lane master NAO possui e NAO pode escrever em
-paths de governanca criticos (`critical-bootstrap`). Esse dominio permanece
-exclusivamente com `ops-quality`. Isso significa que master nao pode modificar
-`.github/workflows/**`, `.github/guardrails/**`, scripts de bootstrap ou os
-proprios arquivos de governanca.
+### UI / UX / design
 
-## Protocolo de trabalho paralelo
+- Honor the existing design system (Tailwind tokens, `@base-ui/react`, sector colors via `getSectorColor`, OKLCH palette).
+- Verify visually in the dev server when the change is observable.
+- Preserve creative latitude — propose 2–3 visual options when the brief is not constrained.
 
-- O protocolo vale por `task issue`, nao pela identidade da IA ou da pessoa.
-- Regra central: `1 task = 1 owner = 1 branch = 1 worktree = 1 PR`.
-- Se outra IA ou pessoa assumir a task, atualize primeiro o `Owner atual` da
-  issue e so depois continue implementando.
-- Se duas tasks tiverem write-set relevante em comum, uma delas deve:
-  - esperar;
-  - reduzir escopo;
-  - ou ser marcada como dependente.
-- Registre a dependencia ou a disputa de write-set na propria issue antes de
-  continuar.
-- Durante trabalho paralelo, interfaces publicas seguem `additive-only` por
-  default.
-- Mudanca breaking em API/contrato so pode acontecer em task propria,
-  classificada como `risk:contract-sensitive`, com coordenacao explicita e merge
-  serializado.
+### Data / modeling / financial logic
 
-## Child tasks entre lanes
+- Read `docs/CONTEXT.md` first.
+- Prioritize auditability and correctness over speed.
+- Validate against known fixtures, not just type signatures.
+- Never infer GICS classifications from CVM/B3/ticker/name (see `docs/reference/gics-import.md`).
 
-- Se uma lane precisar de mudanca em write-set de outra lane, nao use pedido
-  informal no chat como mecanismo de execucao. Abra uma child task formal na
-  lane dona do write-set.
-- Toda child task precisa registrar no corpo da issue:
-  - `Task mae`
-  - `Lane solicitante`
-  - `Criterio de consumo`
-- Toda task mae precisa registrar `Tasks filhas` no proprio corpo da issue.
-- A child task continua obedecendo `1 task = 1 owner = 1 branch = 1 worktree = 1 PR`
-  e fecha pela sua propria PR.
-- Enquanto a child task estiver aberta ou em revisao, a task mae fica
-  `status:blocked`.
-- Quando a child task ja tiver sido entregue/mergeada mas a lane solicitante
-  ainda nao tiver validado ou consumido a entrega, a task mae vira
-  `status:awaiting-consumption`.
-- So a lane solicitante pode marcar a entrega como consumida e tirar a task mae
-  de `status:blocked` ou `status:awaiting-consumption`.
-- `Lane solicitante` deve coincidir com a `Lane oficial` da task mae.
+### Docs / research
 
-## Critical paths
+- No code edits in this mode.
+- Output is documentation, findings, or recommendations.
+- Cite file paths with line numbers when referencing code.
 
-- A fonte oficial de paths sensiveis vive em
-  `.github/guardrails/path-policy.json`.
-- Classes oficiais:
-  - `shared-governance`
-  - `critical-bootstrap`
-  - `critical-runtime`
-  - `critical-contract`
-- Paths classificados exigem, no minimo, o risco e a lane permitidos pela
-  policy versionada.
-- Se um arquivo nao estiver coberto pela policy nem pela allowlist da lane,
-  classifique o path antes de abrir PR.
-- `shared-governance` pode acompanhar qualquer lane, mas nao autoriza misturar
-  frontend e backend na mesma task.
+### Autonomous (opt-in only)
 
-## Leitura obrigatoria por area
+- Route through `docs/governance/autonomous-mode.md`.
+- Default workflow does NOT use issue-first / worktrees / risk labels / draft PRs.
 
-Antes de tocar qualquer arquivo dentro das areas abaixo, leia o documento
-indicado. Nao assuma contexto de arquitetura sem ter lido.
+## 6. Source-of-truth pointers
 
-| Area | Leitura obrigatoria |
-|---|---|
-| `apps/web` | `docs/INTERFACE_MAP.md` — rotas existentes, status e endpoints consumidos |
-| `apps/api` | `docs/INTERFACE_MAP.md` + `docs/V2_API_CONTRACT.md` — contratos e quem consome cada endpoint |
-| `src/` | `docs/CONTEXT.md` — dominio Python, regras de negocio e convencoes criticas |
-| `docs/SITEMAP.MD` | `docs/INTERFACE_MAP.md` — o sitemap e derivado do mapa de interface |
+- `README.md` — project overview
+- `COMO_RODAR.md` — how to run locally (Portuguese, operational)
+- `docs/CONTEXT.md` — domain rules for `src/` and `apps/api/`
+- `docs/decisions/` — ADRs (durable architectural decisions)
+- `docs/reference/` — active reference docs (sitemap, interface map, API contract, perf baseline, GICS import, product page prompts)
+- `docs/governance/autonomous-mode.md` — opt-in heavy contract for autonomous PRs
 
-## Onde registrar o que
+## 7. What NOT to do
 
-- Estado tecnico atual e sessoes: `docs/AGENTS.md`
-- Decisoes duraveis: `docs/decisions/`
-- Regras de lanes/worktrees/critical paths: `docs/governance/parallel-lanes.md`
-- Roadmap de Student Pack e backlog resumido: `docs/STUDENT_PACK_PLAN.md`
-- Mapa de rotas x endpoints: `docs/INTERFACE_MAP.md`
-- Release notes: `docs/releases/`
+- Don't open PRs in draft because the change touches multiple files. Draft only when the work itself is incomplete.
+- Don't use the GitHub CLI (`gh`) or `scripts/pr_complete.ps1` for routine merges. Standard `git push` + manual or auto-merge is sufficient.
+- Don't insist on issue-first, worktrees, lanes, or risk labels for interactive sessions. These belong to autonomous mode only.
+- Don't load stale planning docs as context — they were deleted. If you find references to `STUDENT_PACK_PLAN`, `WEBAPP_TRANSFORMATION_PLAN`, `V2_PHASE1_BACKEND`, etc., they no longer exist.
+- Don't follow `CLAUDE.md`, `CONTRIBUTING.md`, or `docs/GOVERNANCE_QUICK_REFERENCE.md` — they were folded into this file and deleted.
+- Don't assume Vercel/Railway hosting. The canonical product is the Windows `CVMAnalytics.exe` desktop app (`desktop/build_desktop.ps1`).
 
-## Antes de marcar como concluido
+## 8. Canonical product
 
-- Execute as validacoes relevantes.
-- Atualize a issue com a evidencia principal.
-- Confirme que a PR referencia a mesma issue da branch.
-- Confirme que a worktree da task esta registrada na issue.
-- Nao pare com a PR apenas aberta: confirme checks verdes e merge real.
-- Confirme que a issue fechou e que a branch remota foi removida, quando
-  aplicavel.
-
-### Sessao 43 - 2026-04-13 (governanca kickoff e merge de PRs Jules)
-- Triagem da lane `ops-quality` realizada via skill kickoff.
-- Issue #14 desbloqueada: `fix_jules_pr_gov.py` classificado no `path-policy.json`.
-- PR #2 mergeada (Excel alignment + unblock infra).
-- PR #6 em processo de merge (setup_db optimizations).
-- Conta do GitHub restaurada apos suspensao 403.
-
-### Sessao 44 - 2026-04-14 (Merge de PRs de Otimizacao do Jules)
-- Regularizacao e merge de 3 PRs do Jules (#23, #25, #29) focadas em performance.
-- Resolucoes de conflitos em arquivos de governanca e infraestrutura compartilhada.
-- Issues retroativas (#24, #26, #30) fechadas automaticamente pelo merge.
-- CI restaurado e validado apos os merges.
+- **Shipped runtime:** `dist/CVMAnalytics/CVMAnalytics.exe` (built via `desktop/build_desktop.ps1`).
+- **Architecture:** pywebview wraps the Next.js standalone bundle from `apps/web/`; data is local SQLite at `data/db/cvm_financials.db`.
+- **`apps/web`** is the UI source compiled into the desktop bundle.
+- **`apps/api`** is optional for local/dev HTTP — not the primary deployment target.
+- Validate product bugs against desktop mode (`ANALISYS_DESKTOP_MODE=1`) and/or local API + DB, not remote URLs.

@@ -38,7 +38,7 @@ Thumbs.db
 .agents/
 
 # Reference sites (large HTML snapshots)
-docs/references/sites_ex/
+docs/vendor/sites_ex/
 
 # Logs
 *.log
@@ -51,3 +51,6 @@ logs/
 # Local caches and reports
 data/cache/
 perf-guardrail-report.local.json
+
+# Build-time portable Node binary (copied from system Node by build_desktop.ps1)
+desktop/node_portable/

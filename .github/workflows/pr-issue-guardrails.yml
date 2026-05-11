@@ -8,6 +8,8 @@ on:
       - synchronize
       - reopened
       - ready_for_review
+      - labeled
+      - unlabeled
 
 permissions:
   contents: read
@@ -16,6 +18,10 @@ permissions:
 
 jobs:
   validate-pr-issue-contract:
+    # Only enforce the heavy issue/lane/risk contract on autonomous-mode PRs.
+    # Interactive PRs (the default) skip these checks. To opt in, add the
+    # `flow:autonomous` label to the PR. See docs/governance/autonomous-mode.md.
+    if: contains(github.event.pull_request.labels.*.name, 'flow:autonomous')
     runs-on: ubuntu-latest
     steps:
       - name: Validate branch, issue, lanes, and critical paths

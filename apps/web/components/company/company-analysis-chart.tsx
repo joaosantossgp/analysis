@@ -7,6 +7,7 @@ import type {
   DashboardFormatType,
   DashboardSelectedIndicator,
 } from "@/lib/company-dashboard";
+import { formatCompactCurrency, formatKpiValue } from "@/lib/formatters";
 
 type CompanyAnalysisChartProps = {
   chartSeries: CompanyDashboardModel["chartSeries"];
@@ -25,27 +26,6 @@ type AxisStats = {
   min: number;
   max: number;
 };
-
-function formatCompactCurrency(value: number): string {
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-    notation: "compact",
-    maximumFractionDigits: 1,
-  }).format(value);
-}
-
-function formatMetricValue(value: number, formatType: DashboardFormatType): string {
-  if (formatType === "pct") {
-    return `${(value * 100).toFixed(1)}%`;
-  }
-
-  if (formatType === "ratio") {
-    return `${value.toFixed(2)}x`;
-  }
-
-  return formatCompactCurrency(value);
-}
 
 function formatAxisValue(value: number, formatType: DashboardFormatType | "mixed"): string {
   if (formatType === "pct") {
@@ -126,6 +106,19 @@ export function CompanyAnalysisChart({
       ).sort((left, right) => left - right),
     [activeSeries],
   );
+
+  const yearIndexMap = useMemo(
+    () => new Map(years.map((year, index) => [year, index])),
+    [years],
+  );
+
+  const barSeriesIndexMap = useMemo(() => {
+    const map = new Map<string, number>();
+    activeSeries
+      .filter((series) => series.chartType === "bar")
+      .forEach((series, index) => map.set(series.id, index));
+    return map;
+  }, [activeSeries]);
 
   if (activeSeries.length === 0 || years.length === 0) {
     return (
@@ -302,14 +295,12 @@ export function CompanyAnalysisChart({
 
           {activeSeries.map((series) => {
             if (series.chartType === "bar") {
-              const barIndex = activeSeries
-                .filter((item) => item.chartType === "bar")
-                .findIndex((item) => item.id === series.id);
+              const barIndex = barSeriesIndexMap.get(series.id) ?? 0;
 
               return (
                 <g key={series.id}>
                   {series.points.map((point) => {
-                    const yearIndex = years.indexOf(point.year);
+                    const yearIndex = yearIndexMap.get(point.year) ?? 0;
                     const xCenter = toX(yearIndex);
                     const baseline = getBaseline(series.formatType);
                     const y = toY(point.value, series.formatType);
@@ -357,7 +348,7 @@ export function CompanyAnalysisChart({
                   strokeLinejoin="round"
                 />
                 {series.points.map((point) => {
-                  const yearIndex = years.indexOf(point.year);
+                  const yearIndex = yearIndexMap.get(point.year) ?? 0;
                   return (
                     <circle
                       key={`${series.id}-${point.year}`}
@@ -414,7 +405,7 @@ export function CompanyAnalysisChart({
                     <p className="text-sm font-medium text-foreground">{entry.label}</p>
                   </div>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    {formatMetricValue(entry.value, entry.formatType)}
+                    {formatKpiValue(entry.value, entry.formatType)}
                   </p>
                 </div>
               ))}

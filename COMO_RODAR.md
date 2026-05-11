@@ -133,12 +133,6 @@ Para validar o modo distribuivel:
 .\dist\CVMAnalytics\CVMAnalytics.exe
 ```
 
-Compatibilidade legada:
-
-```powershell
-python -m desktop.cvm_pyqt_app
-```
-
 ### Opcao B - CLI pontual
 
 ```powershell
@@ -165,20 +159,7 @@ Os logs ficam em `output/logs/`.
 
 ---
 
-## 6. Abrir o dashboard Streamlit
-
-```powershell
-streamlit run dashboard/app.py
-```
-
-Uso:
-- buscar empresa por nome, ticker ou codigo CVM
-- selecionar anos
-- consultar `Visao Geral`, `Demonstracoes` e `Download`
-
----
-
-## 7. Subir a API da V2
+## 6. Subir a API da V2
 
 ```powershell
 uvicorn apps.api.app.main:app --reload
@@ -208,7 +189,7 @@ Invoke-RestMethod http://127.0.0.1:8000/companies/filters
 
 ---
 
-## 8. Subir o web app da V2
+## 7. Subir o web app da V2
 
 O web app em `apps/web` e mantido para desenvolvimento local e para o desktop standalone. Ele nao e mais o canal publico em Vercel.
 
@@ -235,7 +216,7 @@ Observacoes:
 
 ---
 
-## 9. Validar tudo
+## 8. Validar tudo
 
 Suite principal:
 
@@ -265,7 +246,7 @@ python scripts/final_verification.py --xlsx output/reports/PETROBRAS_financials.
 
 ---
 
-## 10. Desktop pywebview (Fase 3)
+## 9. Desktop pywebview (Fase 3)
 
 App nativo com janela pywebview + UI Next.js. O bridge Python responde
 diretamente, sem precisar do servidor FastAPI para leitura.
@@ -319,11 +300,10 @@ await window.pywebview.api.get_companies({page: 1, page_size: 5})
 
 | O que aconteceu | O que fazer |
 |---|---|
-| `ModuleNotFoundError` ao abrir o desktop | Prefira `python -m desktop.app --dev`; o PyQt6 (`desktop.cvm_pyqt_app`) e legado. |
+| `ModuleNotFoundError` ao abrir o desktop | Use `python -m desktop.app --dev` para rodar o app. |
 | `python` nao reconhecido | Instale o Python e coloque no `PATH`. |
 | `runtime_doctor.py` falha com `venv-broken` | Recrie a `.venv` com `python -m venv .venv`. |
 | App desktop abre sem empresas | Rode `setup_db.py`, `setup_companies_table.py` e atualize dados. |
-| Dashboard vazio | Verifique se a empresa/anos escolhidos ja foram processados. |
 | API responde `503` | Valide o banco, tabelas obrigatorias e o `runtime_doctor.py`. |
 | Web app sem dados | Verifique `API_BASE_URL` e se `uvicorn apps.api.app.main:app --reload` esta rodando. |
 | Erro de permissao no PowerShell | Rode `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`. |

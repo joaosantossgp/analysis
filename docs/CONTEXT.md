@@ -1,15 +1,15 @@
 # CONTEXT.md - CVM Reports Capture
 
 > Referencia tecnica: regras de negocio, pipeline, arquitetura e troubleshooting.
-> Para comandos e convencoes rapidas, veja `CLAUDE.md`. Para estado atual e historico de sessoes, veja `docs/AGENTS.md`.
+> Para regras operacionais e convencoes de agentes, veja `AGENTS.md` na raiz.
 
 ---
 
 ## 1. O que e o projeto
 
-Extrai demonstracoes financeiras historicas de companhias listadas na CVM, organiza em SQLite/PostgreSQL e expoe os dados via dashboard Streamlit read-only e app PyQt6 para atualizacao operacional. O foco e produzir output confiavel, legivel e verificavel sem misturar periodos, versoes ou linhas conflitantes.
+Extrai demonstracoes financeiras historicas de companhias listadas na CVM, organiza em SQLite local (PostgreSQL opcional) e expoe os dados via app desktop pywebview (Next.js UI + bridge Python) e API FastAPI read-only para dev/local. O foco e produzir output confiavel, legivel e verificavel sem misturar periodos, versoes ou linhas conflitantes.
 
-**Objetivo final:** pipeline unico que recebe empresa + ano inicial/final, persiste demonstracoes e metadados em banco e disponibiliza consulta/exportacao via PyQt6, Streamlit e Excel auditavel.
+**Objetivo final:** pipeline unico que recebe empresa + ano inicial/final, persiste demonstracoes e metadados em banco e disponibiliza consulta/exportacao via app desktop, API HTTP e Excel auditavel.
 
 **Fonte de dados:** CVM publica - `https://dados.cvm.gov.br` (DFP anual + ITR trimestral).
 
@@ -23,7 +23,7 @@ Extrai demonstracoes financeiras historicas de companhias listadas na CVM, organ
 
 **Prioridade 3 (concluida):** padronizacao por dicionario de contas (`STANDARD_NAME`), aba `PADRONIZACAO` no Excel.
 
-**Prioridades 4-8 (concluidas):** expansao em massa (449 empresas), vetorizacao + WAL + paralelismo, dashboard Streamlit read-only, app Desktop PyQt6, testes automatizados.
+**Prioridades 4-8 (concluidas):** expansao em massa (449 empresas), vetorizacao + WAL + paralelismo, V2 web (Next.js) + API (FastAPI), app desktop pywebview com Next.js standalone embutido, testes automatizados.
 
 ---
 
@@ -62,11 +62,12 @@ Abas **QA_LOG** e **QA_Errors** sao obrigatorias para rastreabilidade.
 
 ## 4. Pipeline e data flow
 
-### Ciclo completo (download -> banco -> dashboard)
+### Ciclo completo (download -> banco -> consulta)
 
 **1. Trigger**
 - CLI: `python main.py --companies ... --start_year ... --end_year ...`
-- Desktop: PyQt6 invoca o scraper para empresas/range selecionados
+- Desktop app (`desktop/app.py`): invoca o scraper via bridge para empresas/range selecionados na UI
+- Scripts em lote: `scripts/batch_completo.py`, `scripts/atualizar_todos.py`
 
 **2. Download e extracao**
 - `src/scraper.py` baixa ZIPs da CVM para `data/input/raw`
@@ -80,21 +81,14 @@ Abas **QA_LOG** e **QA_Errors** sao obrigatorias para rastreabilidade.
 **4. Persistencia**
 - `src/database.py` escreve linhas long-form em `financial_reports` e eventos de QA em `qa_logs`
 - metadados de empresa sao atualizados em `companies`
-- exportacao Excel continua disponivel em `output/reports/`
+- status de refresh persistido em `company_refresh_status`
+- exportacao Excel disponivel em `output/reports/`
 
-**5. Dashboard**
-- `dashboard/app.py` orquestra a aplicacao Streamlit atual
-- `src/query_layer.py` consulta `financial_reports` e tabelas relacionadas
-- `src/kpi_engine.py` calcula KPIs para as visoes e exportacoes
-- o app atual possui 3 abas: `Visao Geral`, `Demonstracoes` e `Download`
-- atualizacao de dados nao acontece no Streamlit; ela pertence ao app PyQt6 e aos scripts
-
-### PyQt6 updater
-
-1. Ranking inteligente: relevancia de mercado (40% market cap + 60% liquidez) combinada com desatualizacao
-2. Executa `CVMScraper.run(...)` para as empresas/anos selecionados
-3. Persiste status de refresh em `company_refresh_status`
-4. Exibe progresso, erros, cobertura e pode abrir o dashboard local
+**5. Consulta**
+- `src/read_service.py` e a fonte de verdade da camada de leitura
+- `apps/api` (FastAPI) e o adaptador HTTP fino sobre `read_service`
+- `apps/web` (Next.js) consome `apps/api`
+- App desktop usa o bridge Python direto via `desktop/bridge.py`, evitando o salto HTTP em runtime local
 
 ### Modelo de cobertura
 
@@ -115,34 +109,38 @@ cvm_repots_capture/
 |   |-- database.py             # CVMDatabase
 |   |-- db.py                   # get_engine() SQLite/PostgreSQL
 |   |-- standardizer.py         # AccountStandardizer
-|   |-- query_layer.py          # Camada de leitura para dashboard/exportacao
+|   |-- query_layer.py          # Camada de leitura
+|   |-- read_service.py         # Servico de leitura canonico (consumido pelo apps/api e bridge)
+|   |-- refresh_service.py      # Servico de refresh headless
 |   |-- kpi_engine.py           # KPIs financeiros
 |   |-- excel_exporter.py       # Exportacao Excel
 |   |-- statement_summary.py    # Resumos de demonstracoes
 |   |-- ticker_map.py           # Mapa CVM -> ticker
 |   `-- utils.py                # Helpers compartilhados
-|-- dashboard/                  # Dashboard Streamlit read-only
-|   |-- app.py                  # Orquestrador principal
-|   |-- components/
-|   |   `-- search_bar.py       # Busca de empresa e selecao de anos
-|   `-- tabs/
-|       |-- visao_geral.py      # KPIs e visoes resumidas
-|       |-- demonstracoes.py    # Tabelas das demonstracoes
-|       `-- download.py         # Exportacao/download
+|-- desktop/                    # App desktop oficial (pywebview + Next.js)
+|   |-- app.py                  # Entry point pywebview
+|   |-- bridge.py               # Bridge Python expondo read/refresh para a UI
+|   |-- services.py             # Logica de negocio compartilhada
+|   |-- build_desktop.ps1       # Script de build do .exe via PyInstaller
+|   `-- updater.py              # Auto-updater do desktop
+|-- apps/
+|   |-- api/                    # FastAPI read-only (adaptador HTTP)
+|   `-- web/                    # Next.js (UI embutida no desktop + dev server)
 |-- scripts/                    # Setup, batches, dicionario canonico e validacoes
-|-- archive/                    # Scripts antigos/arquivados
-|-- tests/                      # Suite pytest focada em scraper, PyQt, DB e exportacao
+|-- archive/                    # Scripts e governanca antigos
+|-- tests/                      # Suite pytest
 |-- data/
 |   |-- db/cvm_financials.db    # SQLite local
 |   |-- cache/                  # Caches auxiliares
 |   `-- metadata/               # Metadados de empresas e tickers
 |-- docs/
 |   |-- CONTEXT.md              # Este arquivo
-|   |-- AGENTS.md               # Estado atual + historico de sessoes
-|   `-- AUDIT.md                # Registro de audit/cleanup
-|-- cvm_pyqt_app.py             # Interface oficial para updates
+|   |-- decisions/              # ADRs
+|   |-- governance/             # Autonomous-mode contract
+|   |-- reference/              # Docs de referencia ativos
+|   `-- vendor/                 # Manuais CVM (PDF/XLS) para leitura humana
 |-- main.py                     # Entrypoint CLI
-|-- CLAUDE.md                   # Guia operacional para agentes
+|-- AGENTS.md                   # Regras operacionais para agentes
 |-- README.md                   # Overview do projeto
 `-- COMO_RODAR.md               # Tutorial passo a passo
 ```
@@ -152,7 +150,10 @@ cvm_repots_capture/
 ## 6. Stack e convencoes de codigo
 
 **Stack:**
-- Python 3.11+, pandas, sqlalchemy, requests, PyQt6, yfinance, Streamlit e Plotly
+- Python: 3.11+, pandas, polars, sqlalchemy, requests, yfinance, pywebview, PyInstaller
+- Web: Next.js 16, TypeScript, Tailwind v4, `@base-ui/react`
+- API: FastAPI (read-only)
+- DB: SQLite local + PostgreSQL opcional via `DATABASE_URL`
 
 **Convencoes:**
 - `snake_case` para variaveis e nomes de arquivos
@@ -162,19 +163,18 @@ cvm_repots_capture/
 
 ---
 
-## 7. Estado atual (2026-04-05)
+## 7. Estado atual
 
 - Banco local SQLite com suporte opcional a PostgreSQL via `DATABASE_URL`
-- Dashboard Streamlit com 3 abas: `Visao Geral`, `Demonstracoes`, `Download`
-- App Desktop PyQt6 como interface oficial de atualizacao
-- Automacao e batches via `batch_completo.py` e `atualizar_todos.py`
-- Testes: 114 pytest passing
-- `CLAUDE.md` reflete melhor o estado atual do que referencias antigas em outros docs
+- App desktop oficial: `desktop/app.py` (pywebview + Next.js standalone bundled como `dist/CVMAnalytics/CVMAnalytics.exe`)
+- API FastAPI read-only em `apps/api` para dev/local HTTP
+- Web UI em `apps/web` (Next.js 16, App Router)
+- Automacao e batches via `scripts/batch_completo.py` e `scripts/atualizar_todos.py`
 
 **Proximas prioridades:**
-- deploy cloud (Supabase PostgreSQL + Streamlit Cloud)
 - ampliacao de cobertura/contas para outros setores
-- exportacoes auxiliares e melhoria de documentacao operacional
+- melhorias na auditabilidade dos KPIs financeiros
+- documentacao operacional e exportacoes auxiliares
 
 ---
 
@@ -191,15 +191,14 @@ Fluxo pos-bootstrap recomendado:
 .\.venv\Scripts\Activate.ps1
 python scripts/setup_db.py
 python scripts/setup_companies_table.py
-python cvm_pyqt_app.py
-streamlit run dashboard/app.py
+python -m desktop.app --dev
 ```
 
 Fluxo alternativo via CLI:
 ```powershell
 .\.venv\Scripts\Activate.ps1
 python main.py --companies PETROBRAS --start_year 2021 --end_year 2025 --type consolidated
-streamlit run dashboard/app.py
+uvicorn apps.api.app.main:app --reload
 ```
 
 ---
@@ -208,11 +207,26 @@ streamlit run dashboard/app.py
 
 | Sintoma | Diagnostico |
 |---------|-------------|
-| Sem dados no dashboard | Verificar se `financial_reports` tem linhas e se a empresa/anos selecionados foram processados |
+| Sem dados no app | Verificar se `financial_reports` tem linhas e se a empresa/anos selecionados foram processados |
 | Empresa ausente | Verificar se o `CD_CVM` foi processado com sucesso |
-| SQL error no updater | Inspecionar logs do updater e confirmar que o SQLite nao esta bloqueado |
-| Lista repete as mesmas empresas | Verificar se `last_success_at` esta sendo atualizado corretamente |
+| SQL error no updater | Inspecionar logs em `output/logs/refresh_runs.jsonl` e confirmar que o SQLite nao esta bloqueado |
+| Lista repete as mesmas empresas | Verificar se `last_success_at` esta sendo atualizado em `company_refresh_status` |
 | ETA nao aparece | Comportamento esperado quando ainda ha poucas amostras de throughput |
 | Numeros de cobertura desatualizados | Forcar refresh do ranking e checar o cache local |
 | Widgets de mercado vazios | Verificar disponibilidade do yfinance e mapeamento de ticker |
-| Tabelas do dashboard retornam vazias | Checar consultas em `src/query_layer.py` e cobertura real da empresa/anos selecionados |
+| Cockpit retorna vazio | Checar `apps/api/app/routes/` e a cobertura real da empresa/anos selecionados |
+
+---
+
+## 10. Decisoes Tecnicas Nao-Obvias
+
+Decisões de implementação que não são óbvias da leitura do código e que já causaram bugs no passado:
+
+| Decisao | Razao |
+|---------|-------|
+| `int(year)` antes de param SQLite | numpy int64 falha silenciosamente |
+| yfinance `dividendYield` ja em % | nao multiplicar por 100 |
+| SQLAlchemy IN clause: `bindparam("x", expanding=True)` | listas como params SQL |
+| `_upsert_company_metadata`: INSERT OR IGNORE + UPDATE | preserva CNPJ/ticker preenchidos por `setup_companies_table` |
+| `fillna("")` antes de `pivot_table` | evita perda silenciosa de linhas com `STANDARD_NAME` nulo |
+| `apps/api` consome `src/read_service.py` | evita reimplementar SQL e KPI logic no adaptador HTTP |

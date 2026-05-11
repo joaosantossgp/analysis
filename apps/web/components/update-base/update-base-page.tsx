@@ -32,15 +32,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import {
   cancelBatchJob,
-  fetchBaseHealth,
-  fetchBatchJobs,
   type CompanySectorFilter,
   type CompanySuggestionItem,
   fetchBatchJobStatus,
   fetchBatchRefresh,
-  fetchCompanyFilters,
   fetchCompanySuggestions,
-  fetchSectorDirectory,
   fetchRequestRefresh,
   resolveBatchRefreshCvmRange,
 } from "@/lib/api";
@@ -48,13 +44,15 @@ import {
   buildBaseHealthSummary,
   buildHistoryRows,
   buildUpdateModeEstimates,
-  computeRefreshProgress,
-  getStageProgressFloor,
-  getDefaultBaseHealthWindow,
   getHistoryState,
   isActiveBatchJob,
   type DataLoadState,
 } from "@/lib/update-base-admin";
+import { useBaseHealth } from "@/components/update-base/use-base-health";
+import { useBatchJobProgress, type LogLine, type LogType } from "@/components/update-base/use-batch-job-progress";
+import { useBatchJobs } from "@/components/update-base/use-batch-jobs";
+import { useSectorsCatalog } from "@/components/update-base/use-sectors-catalog";
+import { useSubSectors } from "@/components/update-base/use-sub-sectors";
 import { cn } from "@/lib/utils";
 
 type AppState =
@@ -71,14 +69,6 @@ type AppState =
 type UpdateType = "full" | "missing" | "outdated" | "failed";
 type UpdateScope = "single_company" | "sector" | "sub_sector" | "batch" | "all";
 type SingleCompanyMode = "on_demand" | "batch_single";
-type LogType = "info" | "success" | "warning" | "error" | "dim";
-
-type LogLine = {
-  time: string;
-  message: string;
-  type: LogType;
-};
-
 type HistoryItem = {
   id: string;
   date: string;
@@ -159,13 +149,6 @@ function formatDateTimeLabel(value: string | null) {
     hour: "2-digit",
     minute: "2-digit",
   });
-}
-
-function nowAsLogTime() {
-  const now = new Date();
-  return [now.getHours(), now.getMinutes(), now.getSeconds()]
-    .map((part) => String(part).padStart(2, "0"))
-    .join(":");
 }
 
 function Eyebrow({ children, className }: { children: React.ReactNode; className?: string }) {
@@ -605,34 +588,33 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
   const [filterCvmFrom, setFilterCvmFrom] = useState(urlBoot.filterCvmFrom);
   const [filterCvmTo, setFilterCvmTo] = useState(urlBoot.filterCvmTo);
   const [dispatchError, setDispatchError] = useState<string | null>(null);
-  const [progress, setProgress] = useState(0);
-  const [processed, setProcessed] = useState(0);
-  const [successCount, setSuccessCount] = useState(0);
-  const [failCount, setFailCount] = useState(0);
-  const [currentCompany, setCurrentCompany] = useState("");
-  const [currentStep, setCurrentStep] = useState("");
-  const [elapsed, setElapsed] = useState(0);
-  const [logs, setLogs] = useState<LogLine[]>([]);
+  const {
+    progress,
+    processed,
+    successCount,
+    failCount,
+    currentCompany,
+    currentStep,
+    elapsed,
+    logs,
+    addLog,
+    setProgress,
+    resetProgress,
+    markInstantSuccess,
+    recordPollTick,
+  } = useBatchJobProgress();
   const [activeSection, setActiveSection] = useState(urlBoot.activeSection);
   const [jobId, setJobId] = useState<string | null>(urlBoot.jobId);
   const [totalFromJob, setTotalFromJob] = useState(0);
-  const [baseHealth, setBaseHealth] = useState<Awaited<ReturnType<typeof fetchBaseHealth>> | null>(null);
-  const [baseHealthState, setBaseHealthState] = useState<DataLoadState>("loading");
-  const [sectors, setSectors] = useState<CompanySectorFilter[]>(initialSectors);
-  const [subSectors, setSubSectors] = useState<Array<{ name: string; count: number }>>([]);
-  const [sectorState, setSectorState] = useState<DataLoadState>(
-    initialSectors.length ? "available" : "loading",
-  );
-  const [batchJobs, setBatchJobs] = useState<Awaited<ReturnType<typeof fetchBatchJobs>>["items"]>([]);
-  const [jobsState, setJobsState] = useState<DataLoadState>("loading");
+  const { baseHealth, baseHealthState } = useBaseHealth();
+  const { sectors, sectorState } = useSectorsCatalog(initialSectors);
+  const subSectors = useSubSectors();
+  const { batchJobs, jobsState, upsertJob } = useBatchJobs();
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [showSourceTechnicalDetails, setShowSourceTechnicalDetails] = useState(false);
   const [showExecutionTechnicalDetails, setShowExecutionTechnicalDetails] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const logRef = useRef<HTMLDivElement | null>(null);
-  const lastLogCountRef = useRef(0);
-  const lastProgressRef = useRef(0);
-  const stalledPollCountRef = useRef(0);
   const urlHydratedRef = useRef(true);
   const urlSyncRef = useRef(false);
 
@@ -787,23 +769,11 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
     [isActiveJob, isCancelled, isCompleted],
   );
 
-  function addLog(message: string, type: LogType = "info") {
-    setLogs((current) => [...current, { time: nowAsLogTime(), message, type }].slice(-100));
-  }
-
   function clearTimer() {
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
-  }
-
-  function upsertBatchJob(job: (typeof batchJobs)[number]) {
-    setBatchJobs((current) => {
-      const next = current.filter((item) => item.job_id !== job.job_id);
-      return [job, ...next];
-    });
-    setJobsState("available");
   }
 
   async function handleConfirm() {
@@ -817,21 +787,11 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
     }
 
     clearTimer();
-    lastLogCountRef.current = 0;
     setAppState("running");
     setDispatchError(null);
-    setProgress(0);
-    setProcessed(0);
-    setSuccessCount(0);
-    setFailCount(0);
-    setElapsed(0);
-    setCurrentCompany("");
-    setCurrentStep("");
-    setLogs([]);
+    resetProgress();
     setJobId(null);
     setTotalFromJob(0);
-    lastProgressRef.current = 0;
-    stalledPollCountRef.current = 0;
 
     if (updateScope === "single_company" && singleCompanyMode === "on_demand") {
       if (hasInvalidSingleCvm) {
@@ -847,7 +807,7 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
         if (dispatch.job_id) {
           setJobId(dispatch.job_id);
           setTotalFromJob(1);
-          upsertBatchJob({
+          upsertJob({
             job_id: dispatch.job_id,
             state: "queued",
             mode: "missing",
@@ -860,10 +820,7 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
           startPolling(dispatch.job_id);
           return;
         }
-        setProgress(100);
-        setProcessed(1);
-        setSuccessCount(1);
-        setElapsed(0);
+        markInstantSuccess();
         setAppState("completed");
       } catch (error) {
         setAppState("source_unavailable");
@@ -913,7 +870,7 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
       addLog("Ja existe uma atualizacao em andamento.", "warning");
       if (dispatch.job_id) {
         setJobId(dispatch.job_id);
-        upsertBatchJob({
+        upsertJob({
           job_id: dispatch.job_id,
           state: "running",
           mode: updateType,
@@ -949,7 +906,7 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
     setJobId(jid);
     setTotalFromJob(queuedCount);
     if (jid) {
-      upsertBatchJob({
+      upsertJob({
         job_id: jid,
         state: "queued",
         mode: updateType,
@@ -975,41 +932,15 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
           return;
         }
 
-        const queued = status.queued || 1;
-        const numericPct = Math.min(Math.round((status.processed / queued) * 100), 99);
-        upsertBatchJob({ ...status, mode: status.mode ?? updateType });
-
-        setProcessed(status.processed);
-        setFailCount(status.failures);
-        setSuccessCount(Math.max(0, status.processed - status.failures));
-        setElapsed(Math.floor((Date.now() - startedAt) / 1000));
-        if (status.current_cvm != null) setCurrentCompany(String(status.current_cvm));
-        if (status.stage) setCurrentStep(status.stage);
-
-        const logLines = status.log_lines ?? [];
-        const newLines = logLines.slice(lastLogCountRef.current);
-        lastLogCountRef.current = logLines.length;
-        newLines.forEach((line) => addLog(line, "info"));
-        const stageFloor = getStageProgressFloor(status.stage ?? null);
-        const hasActivity = newLines.length > 0 || status.processed !== lastProgressRef.current;
-        if (hasActivity) {
-          stalledPollCountRef.current = 0;
-        } else {
-          stalledPollCountRef.current += 1;
-        }
-        lastProgressRef.current = status.processed;
-        const isStalled = stalledPollCountRef.current >= 3;
-        const displayPct = computeRefreshProgress({
-          numericPct,
-          stageFloor,
-          isStalled,
-        });
-        setProgress(displayPct);
+        upsertJob({ ...status, mode: status.mode ?? updateType });
+        recordPollTick(status, startedAt);
 
         const TERMINAL = new Set(["success", "error", "cancelled", "interrupted"]);
         if (TERMINAL.has(status.state)) {
           clearTimer();
-          setProgress(status.state === "success" ? 100 : displayPct);
+          if (status.state === "success") {
+            setProgress(100);
+          }
           setAppState(status.state === "cancelled" ? "cancelled" : "completed");
           addLog(
             status.state === "success"
@@ -1060,18 +991,9 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
     clearTimer();
     setAppState("idle");
     setDispatchError(null);
-    setProgress(0);
-    setProcessed(0);
-    setSuccessCount(0);
-    setFailCount(0);
-    setCurrentCompany("");
-    setCurrentStep("");
-    setElapsed(0);
-    setLogs([]);
+    resetProgress();
     setJobId(null);
     setTotalFromJob(0);
-    lastProgressRef.current = 0;
-    stalledPollCountRef.current = 0;
   }
 
   function handleStartRequest() {
@@ -1106,74 +1028,6 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
       block: "start",
     });
   }
-
-  useEffect(() => {
-    let alive = true;
-    const window = getDefaultBaseHealthWindow();
-
-    void fetchBaseHealth(window)
-      .then((health) => {
-        if (!alive) return;
-        setBaseHealth(health);
-        setBaseHealthState("available");
-      })
-      .catch(() => {
-        if (!alive) return;
-        setBaseHealth(null);
-        setBaseHealthState("unavailable");
-      });
-
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (initialSectors.length) {
-      setSectorState("available");
-    }
-
-    let alive = true;
-    const sectorsPromise = initialSectors.length
-      ? Promise.resolve({ sectors: initialSectors })
-      : fetchCompanyFilters();
-    void sectorsPromise
-      .then((filters) => {
-        if (!alive) return;
-        setSectors(filters.sectors);
-        setSectorState("available");
-      })
-      .catch(() => {
-        if (!alive) return;
-        setSectors([]);
-        setSectorState("unavailable");
-      });
-
-    return () => {
-      alive = false;
-    };
-  }, [initialSectors]);
-
-  useEffect(() => {
-    let alive = true;
-    void fetchSectorDirectory({ groupBy: "sub_sector" })
-      .then((directory) => {
-        if (!alive) return;
-        setSubSectors(
-          directory.items
-            .filter((item) => item.group_type === "sub_sector")
-            .map((item) => ({ name: item.sector_name, count: item.company_count })),
-        );
-      })
-      .catch(() => {
-        if (!alive) return;
-        setSubSectors([]);
-      });
-
-    return () => {
-      alive = false;
-    };
-  }, []);
 
   useEffect(() => {
     if (!shouldFetchSuggestions) {
@@ -1230,25 +1084,6 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
       alive = false;
     };
   }, [selectedBatchCompanies, shouldFetchBatchSuggestions, trimmedBatchQuery]);
-
-  useEffect(() => {
-    let alive = true;
-    void fetchBatchJobs()
-      .then((payload) => {
-        if (!alive) return;
-        setBatchJobs(payload.items);
-        setJobsState("available");
-      })
-      .catch(() => {
-        if (!alive) return;
-        setBatchJobs([]);
-        setJobsState("unavailable");
-      });
-
-    return () => {
-      alive = false;
-    };
-  }, []);
 
   useEffect(() => () => clearTimer(), []);
 

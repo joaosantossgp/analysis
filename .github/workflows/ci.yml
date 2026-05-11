@@ -58,7 +58,6 @@ jobs:
           pytest tests apps/api/tests -q
           --cov=src
           --cov=desktop
-          --cov=dashboard
           --cov=apps/api/app
           --cov-branch
           --cov-report=xml:coverage.xml

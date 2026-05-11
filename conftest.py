@@ -1,6 +1,5 @@
 import sys
 from pathlib import Path
 
-# Garante que o diretório raiz do projeto esteja no sys.path,
-# necessário para importar cvm_pyqt_app e outros módulos raiz nos testes.
+# Ensure the project root is on sys.path so root-level modules can be imported in tests.
 sys.path.insert(0, str(Path(__file__).resolve().parent))

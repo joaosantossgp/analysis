@@ -4,7 +4,7 @@ from apps.api.app.presenters import (
     present_company_directory_page,
     present_company_filters,
     present_company_info,
-    present_company_search,
+    _present_company_search,
     present_health_snapshot,
     present_kpis,
     present_refresh_status,
@@ -32,7 +32,7 @@ from src.contracts import (
 
 
 def test_presenters_serialize_dtos_without_raw_pandas_objects():
-    company_search = present_company_search(
+    company_search = _present_company_search(
         [
             CompanySearchResult(
                 cd_cvm=9512,

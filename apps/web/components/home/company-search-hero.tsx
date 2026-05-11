@@ -1,15 +1,13 @@
 ﻿"use client";
 
 import { ArrowRightIcon, SearchIcon, XIcon } from "lucide-react";
-import { useEffect, useRef, useState, useTransition, type KeyboardEvent } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
+import { useCompanySuggestions } from "@/components/shared/use-company-suggestions";
+import { useComboboxNavigation } from "@/components/shared/use-combobox-navigation";
 import { buttonVariants } from "@/components/ui/button";
-import {
-  type CompanySuggestionItem,
-  fetchCompanySuggestionsRoute,
-  getUserFacingErrorMessage,
-} from "@/lib/api";
+import { type CompanySuggestionItem } from "@/lib/api";
 import { getSectorColor, getSectorNameFromSlug } from "@/lib/constants";
 import { track } from "@/lib/track";
 import { cn } from "@/lib/utils";
@@ -28,68 +26,17 @@ export function CompanySearchHero() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [focused, setFocused] = useState(false);
-  const [suggestions, setSuggestions] = useState<CompanySuggestionItem[]>([]);
-  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
-  const [suggestionError, setSuggestionError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-  const suggestionsCacheRef = useRef(new Map<string, CompanySuggestionItem[]>());
-  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
 
-  useEffect(() => {
-    const normalized = query.trim();
-    if (normalized.length < 2) {
-      setSuggestions([]);
-      setLoadingSuggestions(false);
-      setSuggestionError(null);
-      setActiveSuggestionIndex(-1);
-      return;
-    }
+  const {
+    suggestions,
+    loading: loadingSuggestions,
+    error: suggestionFetchError,
+  } = useCompanySuggestions(query);
 
-    let active = true;
-    setLoadingSuggestions(true);
-    setSuggestionError(null);
-
-    const timer = window.setTimeout(async () => {
-      try {
-        const cached = suggestionsCacheRef.current.get(normalized);
-        if (cached) {
-          if (active) {
-            setSuggestions(cached);
-            setActiveSuggestionIndex(cached.length > 0 ? 0 : -1);
-          }
-          return;
-        }
-
-        const payload = await fetchCompanySuggestionsRoute(normalized, 6);
-        if (active) {
-          const items = payload.items ?? [];
-          suggestionsCacheRef.current.set(normalized, items);
-          setSuggestions(items);
-          setActiveSuggestionIndex(items.length > 0 ? 0 : -1);
-        }
-      } catch (error) {
-        if (active) {
-          setSuggestions([]);
-          setSuggestionError(
-            `${getUserFacingErrorMessage(error)} Pressione Enter para abrir o diretorio completo.`,
-          );
-          setActiveSuggestionIndex(-1);
-        }
-      } finally {
-        if (active) {
-          setLoadingSuggestions(false);
-        }
-      }
-    }, 250);
-
-    return () => {
-      active = false;
-      window.clearTimeout(timer);
-    };
-  }, [query]);
-
-  const showDropdown =
-    focused && (loadingSuggestions || suggestions.length > 0 || suggestionError !== null);
+  const suggestionError = suggestionFetchError
+    ? `${suggestionFetchError} Pressione Enter para abrir o diretorio completo.`
+    : null;
 
   function navigateToCompany(item: CompanySuggestionItem) {
     track("home_suggestion_selected", {
@@ -107,44 +54,19 @@ export function CompanySearchHero() {
     );
   }
 
-  function handleInputKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key === "ArrowDown") {
-      if (suggestions.length === 0) {
-        return;
-      }
-      event.preventDefault();
-      setActiveSuggestionIndex((current) =>
-        current < suggestions.length - 1 ? current + 1 : 0,
-      );
-      return;
-    }
+  const {
+    activeIndex: activeSuggestionIndex,
+    setActiveIndex: setActiveSuggestionIndex,
+    handleKeyDown: handleInputKeyDown,
+  } = useComboboxNavigation({
+    items: suggestions,
+    onSelect: navigateToCompany,
+    onSubmit: submit,
+    onEscape: () => setFocused(false),
+  });
 
-    if (event.key === "ArrowUp") {
-      if (suggestions.length === 0) {
-        return;
-      }
-      event.preventDefault();
-      setActiveSuggestionIndex((current) =>
-        current > 0 ? current - 1 : suggestions.length - 1,
-      );
-      return;
-    }
-
-    if (event.key === "Escape") {
-      setFocused(false);
-      setActiveSuggestionIndex(-1);
-      return;
-    }
-
-    if (event.key === "Enter") {
-      if (activeSuggestionIndex >= 0 && suggestions[activeSuggestionIndex]) {
-        event.preventDefault();
-        navigateToCompany(suggestions[activeSuggestionIndex]!);
-        return;
-      }
-      submit();
-    }
-  }
+  const showDropdown =
+    focused && (loadingSuggestions || suggestions.length > 0 || suggestionError !== null);
 
   return (
     <div className="w-full max-w-[680px] mx-auto space-y-6 text-center">
