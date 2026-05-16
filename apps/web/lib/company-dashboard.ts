@@ -69,7 +69,7 @@ type DashboardCatalogEntry = DashboardIndicatorOption & {
 const KPI_CATALOG: DashboardCatalogEntry[] = [
   {
     id: "RECEITA_LIQ",
-    label: "Receita Liquida",
+    label: "Receita Líquida",
     category: "Escala",
     formatType: "brl",
     defaultChartType: "bar",
@@ -87,7 +87,7 @@ const KPI_CATALOG: DashboardCatalogEntry[] = [
   },
   {
     id: "LUCRO_LIQ",
-    label: "Lucro Liquido",
+    label: "Lucro Líquido",
     category: "Escala",
     formatType: "brl",
     defaultChartType: "area",
@@ -120,7 +120,7 @@ const KPI_CATALOG: DashboardCatalogEntry[] = [
   },
   {
     id: "MG_LIQ",
-    label: "Margem Liquida",
+    label: "Margem Líquida",
     category: "Rentabilidade",
     formatType: "pct",
     defaultChartType: "line",
@@ -143,14 +143,14 @@ const KPI_CATALOG: DashboardCatalogEntry[] = [
   },
   {
     id: "DIV_LIQ_EBITDA",
-    label: "Divida Liquida / EBITDA",
+    label: "Dívida Líquida / EBITDA",
     category: "Endividamento",
     formatType: "ratio",
     defaultChartType: "line",
   },
   {
     id: "DIV_LIQ_PL",
-    label: "Divida Liquida / PL",
+    label: "Dívida Líquida / PL",
     category: "Endividamento",
     formatType: "ratio",
     defaultChartType: "line",
@@ -388,11 +388,12 @@ export function buildCompanyHeroModel(
   selectedYears: number[],
 ): CompanyHeroModel {
   const latestSelectedYear = selectedYears[selectedYears.length - 1] ?? null;
+  const gicsSlug = company.gics_sector_slug ?? null;
   const sectorHref =
-    company.sector_slug && latestSelectedYear
-      ? `/setores/${company.sector_slug}?ano=${latestSelectedYear}`
-      : company.sector_slug
-        ? `/setores/${company.sector_slug}`
+    gicsSlug && latestSelectedYear
+      ? `/setores/${gicsSlug}?ano=${latestSelectedYear}`
+      : gicsSlug
+        ? `/setores/${gicsSlug}`
         : null;
 
   return {

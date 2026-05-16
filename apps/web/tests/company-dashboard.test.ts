@@ -13,7 +13,7 @@ function buildCompanyInfo(overrides: Partial<CompanyInfo> = {}): CompanyInfo {
     company_name: "PETROLEO BRASILEIRO S.A. - PETROBRAS",
     nome_comercial: "Petrobras",
     cnpj: "33.000.167/0001-01",
-    setor_cvm: "Energia",
+    setor_cvm: "Petróleo e Gás",
     setor_analitico: "Energia",
     sector_name: "Energia",
     sector_slug: "energia",
@@ -26,6 +26,11 @@ function buildCompanyInfo(overrides: Partial<CompanyInfo> = {}): CompanyInfo {
     latest_readable_year: 2024,
     read_availability_code: "readable_history_available",
     read_availability_message: "Leitura anual disponivel ate 2024.",
+    gics_sector: "Energy",
+    gics_sector_slug: "energy",
+    gics_industry_group: "Energy",
+    gics_industry: "Oil, Gas & Consumable Fuels",
+    gics_sub_industry: "Integrated Oil & Gas",
     ...overrides,
   };
 }
@@ -151,9 +156,18 @@ test("buildCompanyDashboardModel returns chart, cards and table models from annu
   );
 });
 
-test("buildCompanyHeroModel keeps sector link aligned with selected years", () => {
+test("buildCompanyHeroModel routes through GICS sector slug", () => {
   const hero = buildCompanyHeroModel(buildCompanyInfo(), [2023, 2024]);
 
   assert.equal(hero.initials, "PB");
-  assert.equal(hero.sectorHref, "/setores/energia?ano=2024");
+  assert.equal(hero.sectorHref, "/setores/energy?ano=2024");
+});
+
+test("buildCompanyHeroModel returns null sectorHref when GICS slug is missing", () => {
+  const hero = buildCompanyHeroModel(
+    buildCompanyInfo({ gics_sector: null, gics_sector_slug: null }),
+    [2023, 2024],
+  );
+
+  assert.equal(hero.sectorHref, null);
 });
