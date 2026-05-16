@@ -1,40 +1,69 @@
-export const SECTOR_COLOR: Record<string, string> = {
-  Financeiro:   '#1E88E5',
-  Tecnologia:   '#D32F2F',
-  'Saúde':      '#43A047',
-  Industrial:   '#FFB300',
-  Varejo:       '#E91E63',
-  Utilidades:   '#00897B',
-  Energia:      '#FF6F00',
-  'Mineração':  '#8D6E63',
-  'Agronegócio':'#558B2F',
-  'Imobiliário':'#7B1FA2',
+// GICS é a verdade global para classificação setorial.
+// Os 11 setores GICS oficiais (ordem S&P/MSCI) em inglês.
+// Slugs derivados normalizando o nome (lower + hyphen). Bater com
+// `sector_slugify` em src/ — se divergir, o filtro/rotas quebram.
+export const GICS_SECTORS = [
+  "Energy",
+  "Materials",
+  "Industrials",
+  "Consumer Discretionary",
+  "Consumer Staples",
+  "Health Care",
+  "Financials",
+  "Information Technology",
+  "Communication Services",
+  "Utilities",
+  "Real Estate",
+] as const;
+
+export type GicsSector = (typeof GICS_SECTORS)[number];
+
+export const GICS_SECTOR_SLUGS = {
+  Energy: "energy",
+  Materials: "materials",
+  Industrials: "industrials",
+  "Consumer Discretionary": "consumer-discretionary",
+  "Consumer Staples": "consumer-staples",
+  "Health Care": "health-care",
+  Financials: "financials",
+  "Information Technology": "information-technology",
+  "Communication Services": "communication-services",
+  Utilities: "utilities",
+  "Real Estate": "real-estate",
+} as const satisfies Record<GicsSector, string>;
+
+export const GICS_SECTOR_BY_SLUG: Record<string, GicsSector> = Object.fromEntries(
+  (Object.entries(GICS_SECTOR_SLUGS) as Array<[GicsSector, string]>).map(
+    ([name, slug]) => [slug, name],
+  ),
+);
+
+export const GICS_SLUG_SET: ReadonlySet<string> = new Set(
+  Object.values(GICS_SECTOR_SLUGS),
+);
+
+export const SECTOR_COLOR: Record<GicsSector, string> = {
+  Energy: "#FF6F00",
+  Materials: "#8D6E63",
+  Industrials: "#FFB300",
+  "Consumer Discretionary": "#E91E63",
+  "Consumer Staples": "#558B2F",
+  "Health Care": "#43A047",
+  Financials: "#1E88E5",
+  "Information Technology": "#D32F2F",
+  "Communication Services": "#7B1FA2",
+  Utilities: "#00897B",
+  "Real Estate": "#5E35B1",
 };
 
-const SECTOR_NAME_BY_SLUG: Record<string, string> = {
-  agronegocio: "Agronegocio",
-  energia: "Energia",
-  financeiro: "Financeiro",
-  imobiliario: "Imobiliario",
-  industrial: "Industrial",
-  mineracao: "Mineracao",
-  saude: "Saude",
-  tecnologia: "Tecnologia",
-  utilidades: "Utilidades",
-  varejo: "Varejo",
-};
+export const UNCLASSIFIED_SECTOR_LABEL = "Não classificado";
+const UNCLASSIFIED_SECTOR_COLOR = "#64748B";
 
 export function getSectorColor(sector: string | null | undefined): string {
-  if (!sector) return '#64748B';
-  return SECTOR_COLOR[sector] ?? '#64748B';
-}
-
-function formatSectorSlug(slug: string): string {
-  return slug
-    .split("-")
-    .filter(Boolean)
-    .map((segment) => segment[0]!.toUpperCase() + segment.slice(1))
-    .join(" ");
+  if (!sector) return UNCLASSIFIED_SECTOR_COLOR;
+  return (
+    (SECTOR_COLOR as Record<string, string>)[sector] ?? UNCLASSIFIED_SECTOR_COLOR
+  );
 }
 
 export function getSectorNameFromSlug(
@@ -44,7 +73,7 @@ export function getSectorNameFromSlug(
     return null;
   }
 
-  return SECTOR_NAME_BY_SLUG[sectorSlug] ?? formatSectorSlug(sectorSlug);
+  return GICS_SECTOR_BY_SLUG[sectorSlug] ?? null;
 }
 
 export function getSectorSlugFromName(
@@ -53,13 +82,7 @@ export function getSectorSlugFromName(
   if (!sectorName) {
     return null;
   }
-  const normalized = sectorName
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
-  return normalized || null;
+  return (GICS_SECTOR_SLUGS as Record<string, string>)[sectorName] ?? null;
 }
 
 export const FEATURED_KPIS = [
@@ -74,8 +97,8 @@ export const FEATURED_KPIS = [
 ] as const;
 
 export const DETAIL_TABS = [
-  { value: "visao-geral", label: "Visao Geral" },
-  { value: "demonstracoes", label: "Demonstracoes" },
+  { value: "visao-geral", label: "Visão Geral" },
+  { value: "demonstracoes", label: "Demonstrações" },
 ] as const;
 
 export const STATEMENT_OPTIONS = [
@@ -86,9 +109,9 @@ export const STATEMENT_OPTIONS = [
 ] as const;
 
 export const STATEMENT_LABELS: Record<string, string> = {
-  DRE: "Demonstracao de Resultado",
-  BPA: "Balanco Patrimonial Ativo",
-  BPP: "Balanco Patrimonial Passivo",
+  DRE: "Demonstração de Resultado",
+  BPA: "Balanço Patrimonial Ativo",
+  BPP: "Balanço Patrimonial Passivo",
   DFC: "Fluxo de Caixa",
 };
 

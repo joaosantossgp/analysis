@@ -3,7 +3,7 @@
 import type { CompanyDirectoryItem } from "@/lib/api";
 import { getAvailabilityBadgeClassName } from "@/lib/badge-classes";
 import { getCompanyAvailability } from "@/lib/company-discovery";
-import { getSectorColor } from "@/lib/constants";
+import { getSectorColor, UNCLASSIFIED_SECTOR_LABEL } from "@/lib/constants";
 import { buildSparklinePoints } from "@/lib/sparkline";
 import { cn } from "@/lib/utils";
 
@@ -12,22 +12,26 @@ type CompanyCardProps = {
 };
 
 export function CompanyCard({ item }: CompanyCardProps) {
-  const color = getSectorColor(item.sector_name);
+  const color = getSectorColor(item.gics_sector);
   const anos = item.anos_disponiveis ?? [];
   const sparkPts = buildSparklinePoints(anos, 240, 36, 4);
   const initials = (item.ticker_b3 ?? item.company_name).slice(0, 2).toUpperCase();
   const availability = getCompanyAvailability(item);
   const yearsRange =
     anos.length > 0 ? `${Math.min(...anos)}-${Math.max(...anos)}` : availability.yearsLabel;
-  const gicsLabel = item.gics_sector
-    ? `${item.gics_sector} / ${item.gics_industry_group ?? "-"} / ${item.gics_industry ?? "-"} / ${item.gics_sub_industry ?? "-"}`
+  const primarySector = item.gics_sector ?? UNCLASSIFIED_SECTOR_LABEL;
+  const isUnclassified = !item.gics_sector;
+  const gicsDetail = item.gics_sector
+    ? [item.gics_industry_group, item.gics_industry, item.gics_sub_industry]
+        .filter(Boolean)
+        .join(" / ")
     : null;
 
   return (
     <Link
       href={`/empresas/${item.cd_cvm}`}
       className={cn(
-        "group flex flex-col gap-4 overflow-hidden rounded-[1.25rem] border border-border/60 bg-card p-5 transition-all duration-200",
+        "group flex flex-col gap-4 overflow-hidden rounded-[1.25rem] border border-border/60 bg-card p-5 transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
         availability.kind === "ready"
           ? "hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-[0_18px_36px_-24px_rgba(16,30,24,0.2)]"
           : "hover:-translate-y-0.5 hover:border-primary/20 hover:bg-muted/30",
@@ -88,10 +92,15 @@ export function CompanyCard({ item }: CompanyCardProps) {
         <p className="line-clamp-2 font-heading text-base font-medium leading-tight text-foreground">
           {item.company_name}
         </p>
-        {item.sector_name ? (
-          <p className="mt-0.5 text-xs text-muted-foreground">{item.sector_name}</p>
+        <p
+          className="mt-0.5 text-xs text-muted-foreground"
+          title={isUnclassified ? "Sem mapeamento GICS" : undefined}
+        >
+          {primarySector}
+        </p>
+        {gicsDetail ? (
+          <p className="mt-0.5 text-[11px] text-muted-foreground">{gicsDetail}</p>
         ) : null}
-        {gicsLabel ? <p className="mt-0.5 text-[11px] text-muted-foreground">{gicsLabel}</p> : null}
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
           {availability.detail}
         </p>

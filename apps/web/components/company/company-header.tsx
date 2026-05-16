@@ -6,7 +6,7 @@ import { ExcelDownloadButton } from "@/components/shared/excel-download-button";
 import { Button, buttonVariants } from "@/components/ui/button";
 import type { CompanyInfo } from "@/lib/api";
 import { buildCompanyHeroModel } from "@/lib/company-dashboard";
-import { getSectorColor } from "@/lib/constants";
+import { getSectorColor, UNCLASSIFIED_SECTOR_LABEL } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
 type CompanyHeaderProps = {
@@ -15,8 +15,15 @@ type CompanyHeaderProps = {
 };
 
 export function CompanyHeader({ company, selectedYears }: CompanyHeaderProps) {
-  const sectorColor = getSectorColor(company.sector_name);
+  const primarySector = company.gics_sector ?? UNCLASSIFIED_SECTOR_LABEL;
+  const isUnclassified = !company.gics_sector;
+  const sectorColor = getSectorColor(company.gics_sector);
   const hero = buildCompanyHeroModel(company, selectedYears);
+  const gicsDetail = company.gics_sector
+    ? [company.gics_industry_group, company.gics_industry, company.gics_sub_industry]
+        .filter(Boolean)
+        .join(" / ")
+    : null;
 
   return (
     <div className="space-y-4">
@@ -65,7 +72,15 @@ export function CompanyHeader({ company, selectedYears }: CompanyHeaderProps) {
               <h1 className="font-heading text-[clamp(1.8rem,3.5vw,2.5rem)] leading-[1.05] tracking-[-0.04em] text-foreground">
                 {company.company_name}
               </h1>
-              <p className="text-sm text-muted-foreground">{company.sector_name}</p>
+              <p
+                className="text-sm text-muted-foreground"
+                title={isUnclassified ? "Sem mapeamento GICS" : undefined}
+              >
+                {primarySector}
+              </p>
+              {gicsDetail ? (
+                <p className="text-xs text-muted-foreground/70">{gicsDetail}</p>
+              ) : null}
             </div>
           </div>
 
@@ -81,6 +96,8 @@ export function CompanyHeader({ company, selectedYears }: CompanyHeaderProps) {
                 cd_cvm: company.cd_cvm,
                 company_name: company.company_name,
               }}
+              variant="secondary"
+              size="sm"
               className="rounded-full px-4"
             />
             {hero.sectorHref ? (

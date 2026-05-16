@@ -186,7 +186,7 @@ async function CompanyHeaderYearsSection({
         pathname={pathname}
         availableYears={readableYears}
         selectedYears={selectedYears}
-        variant="custom-only"
+        variant="full"
       />
     </>
   );
@@ -247,9 +247,6 @@ async function CompanyContentSection({
       <CompanyOverview
         company={company}
         bundle={bundle}
-        pathname={pathname}
-        availableYears={readableYears}
-        selectedYears={selectedYears}
       />
     );
   }
@@ -310,7 +307,7 @@ export async function generateMetadata({
     return {
       title: `Empresa ${cd_cvm}`,
       description:
-        "Leitura detalhada local via bridge desktop com KPIs anuais e demonstracoes financeiras.",
+        "Leitura detalhada local via bridge desktop com KPIs anuais e demonstrações financeiras.",
     };
   }
 
@@ -332,7 +329,7 @@ export async function generateMetadata({
 
   return {
     title: company.company_name,
-    description: `Leitura detalhada de ${company.company_name} com KPIs anuais, selecao de anos e demonstracoes financeiras da CVM.`,
+    description: `Leitura detalhada de ${company.company_name} com KPIs anuais, seleção de anos e demonstrações financeiras da CVM.`,
   };
 }
 

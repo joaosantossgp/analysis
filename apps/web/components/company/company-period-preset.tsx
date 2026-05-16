@@ -2,10 +2,16 @@
 
 import { startTransition, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { CalendarIcon } from "lucide-react";
 
+import { Calendar } from "@/components/calendar";
 import { CompanyHelpTip } from "@/components/company/company-help-tip";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { resolveCompanyPeriodRange } from "@/lib/company-period-range";
 import { mergeSearchParams, serializeYears } from "@/lib/search-params";
 import { track } from "@/lib/track";
@@ -81,6 +87,26 @@ function resolvePresetYears(
   }
 }
 
+function getPeriodDate(value: string, fallbackYear: number | undefined): Date | undefined {
+  const year = Number(value.trim() || fallbackYear);
+
+  if (!Number.isInteger(year)) {
+    return undefined;
+  }
+
+  return new Date(year, 0, 1);
+}
+
+function getCalendarBoundary(
+  availableYears: number[],
+  fallback: "start" | "end",
+): Date | undefined {
+  const year =
+    fallback === "start" ? availableYears[0] : availableYears.at(-1);
+
+  return year === undefined ? undefined : new Date(year, 0, 1);
+}
+
 type CustomCompanyPeriodRangeProps = {
   pathname: string;
   availableYears: number[];
@@ -140,59 +166,123 @@ function CustomCompanyPeriodRange({
       onSubmit={handleSubmit}
     >
       <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
-        <label className="space-y-2">
+        <div className="flex flex-col gap-2">
           <span className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
             De:
           </span>
-          <Input
+          <PeriodCalendarPicker
+            ariaLabel="Selecionar período inicial"
+            availableYears={availableYears}
             value={fromInput}
-            onChange={(event) => {
-              setFromInput(event.target.value);
+            fallbackYear={selectedYears[0]}
+            invalid={Boolean(errorMessage)}
+            onChange={(year) => {
+              setFromInput(String(year));
               if (errorMessage) {
                 setErrorMessage(null);
               }
             }}
-            placeholder="2021 ou 2021 3T"
-            inputMode="text"
-            aria-invalid={errorMessage ? "true" : undefined}
           />
-        </label>
+        </div>
 
-        <label className="space-y-2">
+        <div className="flex flex-col gap-2">
           <span className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-            AtÃ©:
+            Até:
           </span>
-          <Input
+          <PeriodCalendarPicker
+            ariaLabel="Selecionar período final"
+            availableYears={availableYears}
             value={toInput}
-            onChange={(event) => {
-              setToInput(event.target.value);
+            fallbackYear={selectedYears.at(-1)}
+            invalid={Boolean(errorMessage)}
+            onChange={(year) => {
+              setToInput(String(year));
               if (errorMessage) {
                 setErrorMessage(null);
               }
             }}
-            placeholder="2024 ou 2024T1"
-            inputMode="text"
-            aria-invalid={errorMessage ? "true" : undefined}
           />
-        </label>
+        </div>
 
-        <Button type="submit" size="sm" className="rounded-full px-4">
+        <Button
+          type="submit"
+          size="sm"
+          variant="secondary"
+          className="h-10 rounded-full px-4"
+        >
           Aplicar
         </Button>
       </div>
 
-      <div className="mt-3 flex items-center gap-2 text-xs">
-        <span className="text-muted-foreground">Aceita ano ou trimestre.</span>
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+        <span className="min-w-0 flex-1 leading-5 text-muted-foreground">
+          Selecione uma data; o filtro usa o ano correspondente.
+        </span>
         <CompanyHelpTip>
-          Exemplos: 2022, 2022T3 e 2022 3T. A pagina continua usando os anos cobertos pelo intervalo informado.
+          A página continua usando os anos cobertos pelo intervalo informado.
         </CompanyHelpTip>
         {errorMessage ? (
-          <p className="ml-auto text-destructive" role="alert">
+          <p className="w-full text-destructive md:w-auto md:ml-auto" role="alert">
             {errorMessage}
           </p>
         ) : null}
       </div>
     </form>
+  );
+}
+
+type PeriodCalendarPickerProps = {
+  ariaLabel: string;
+  availableYears: number[];
+  fallbackYear: number | undefined;
+  invalid: boolean;
+  value: string;
+  onChange: (year: number) => void;
+};
+
+function PeriodCalendarPicker({
+  ariaLabel,
+  availableYears,
+  fallbackYear,
+  invalid,
+  value,
+  onChange,
+}: PeriodCalendarPickerProps) {
+  const selectedDate = getPeriodDate(value, fallbackYear);
+  const startMonth = getCalendarBoundary(availableYears, "start");
+  const endMonth = getCalendarBoundary(availableYears, "end");
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          aria-invalid={invalid ? "true" : undefined}
+          aria-label={`${ariaLabel}: ${value || "ano não selecionado"}`}
+          className="h-10 w-full justify-between rounded-full border-border/60 bg-background px-3 font-normal"
+        >
+          <span>{value || "Selecionar ano"}</span>
+          <CalendarIcon data-icon="inline-end" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-auto p-3">
+        <Calendar
+          mode="single"
+          selected={selectedDate}
+          defaultMonth={selectedDate ?? startMonth}
+          startMonth={startMonth}
+          endMonth={endMonth}
+          captionLayout="dropdown"
+          disabled={(date) => !availableYears.includes(date.getFullYear())}
+          onSelect={(date) => {
+            if (date) {
+              onChange(date.getFullYear());
+            }
+          }}
+        />
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -237,26 +327,12 @@ export function CompanyPeriodPreset({
 
   if (variant === "custom-only") {
     return (
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-muted/18 px-3 py-2 text-xs text-muted-foreground">
-            Periodo atual:{" "}
-            <span className="font-medium text-foreground">
-              {selectedYears.join(", ")}
-            </span>
-            <CompanyHelpTip className="size-4 border-border/60">
-              O grafico, tabela e demonstracoes usam este recorte. Periodos com trimestre sao convertidos para os anos cobertos.
-            </CompanyHelpTip>
-          </div>
-        </div>
-
-        <CustomCompanyPeriodRange
-          key={selectedYears.join(",")}
-          pathname={pathname}
-          availableYears={availableYears}
-          selectedYears={selectedYears}
-        />
-      </div>
+      <CustomCompanyPeriodRange
+        key={selectedYears.join(",")}
+        pathname={pathname}
+        availableYears={availableYears}
+        selectedYears={selectedYears}
+      />
     );
   }
 
@@ -264,7 +340,7 @@ export function CompanyPeriodPreset({
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-3 px-1">
         <span className="text-xs uppercase tracking-[0.24em] text-muted-foreground">
-          Periodo
+          Período
         </span>
         <div className="flex flex-wrap gap-2">
           {PRESET_OPTIONS.map((option) => {

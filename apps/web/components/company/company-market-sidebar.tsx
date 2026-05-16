@@ -1,4 +1,7 @@
-﻿import Link from "next/link";
+"use client";
+
+import Link from "next/link";
+import { useMemo, useState } from "react";
 import {
   ArrowUpRightIcon,
   ChevronDownIcon,
@@ -30,6 +33,7 @@ type NewsItem = {
 };
 
 const PERIODS = ["Max", "10A", "5A", "3A", "1A"] as const;
+type QuotePeriod = (typeof PERIODS)[number];
 
 const BRL_FORMATTER = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -47,13 +51,14 @@ function getSeed(company: CompanyInfo): number {
   );
 }
 
-function buildQuoteModel(company: CompanyInfo): QuoteModel {
+function buildQuoteModel(company: CompanyInfo, period: QuotePeriod): QuoteModel {
   const seed = getSeed(company);
+  const periodSeed = PERIODS.indexOf(period) + 1;
   const price = 24 + (seed % 180) + ((seed * 17) % 100) / 100;
-  const changePercent = ((seed % 56) - 18) / 10;
-  const base = 42 + (seed % 12);
+  const changePercent = (((seed + periodSeed * 7) % 56) - 18) / 10;
+  const base = 42 + ((seed + periodSeed * 5) % 12);
   const points = Array.from({ length: 9 }, (_, index) => {
-    const wave = Math.sin((seed + index * 19) / 13) * 12;
+    const wave = Math.sin((seed + periodSeed * 11 + index * 19) / 13) * 12;
     const drift = index * (changePercent >= 0 ? 3.1 : -1.5);
     return Math.max(12, Math.min(94, base + wave + drift));
   });
@@ -73,21 +78,21 @@ function buildNewsItems(company: CompanyInfo): NewsItem[] {
     {
       id: "results",
       title: `${ticker} atualiza leitura de resultados`,
-      timeLabel: "Ha 2 horas",
+      timeLabel: "Há 2 horas",
       source: "Mercado",
       tone: "brand",
     },
     {
       id: "sector",
       title: `Analistas acompanham pares de ${sector}`,
-      timeLabel: "Ha 3 horas",
+      timeLabel: "Há 3 horas",
       source: "Setor",
       tone: "warning",
     },
     {
       id: "filing",
-      title: "Nova demonstracao entra no radar",
-      timeLabel: "Ha 5 horas",
+      title: "Nova demonstração entra no radar",
+      timeLabel: "Há 5 horas",
       source: "CVM",
       tone: "info",
     },
@@ -122,7 +127,7 @@ function QuoteSparkline({ points }: { points: number[] }) {
       viewBox="0 0 224 86"
       className="h-24 w-full overflow-visible text-primary"
       role="img"
-      aria-label="Movimento recente da cotacao"
+      aria-label="Movimento recente da cotação"
     >
       <path
         d={path}
@@ -171,8 +176,13 @@ function NewsIcon({ tone }: { tone: NewsItem["tone"] }) {
 }
 
 function CompanyQuoteCard({ company }: CompanyMarketSidebarProps) {
-  const quote = buildQuoteModel(company);
+  const [selectedPeriod, setSelectedPeriod] = useState<QuotePeriod>("1A");
+  const quote = useMemo(
+    () => buildQuoteModel(company, selectedPeriod),
+    [company, selectedPeriod],
+  );
   const isPositive = quote.changePercent >= 0;
+  const tickerLabel = company.ticker_b3 ?? company.company_name;
 
   return (
     <SurfaceCard
@@ -182,10 +192,15 @@ function CompanyQuoteCard({ company }: CompanyMarketSidebarProps) {
     >
       <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-primary/35 to-transparent" />
       <div className="flex items-start justify-between gap-4">
-        <div className="space-y-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.26em] text-muted-foreground">
-            COTACAO
-          </p>
+        <div className="min-w-0 space-y-3">
+          <div className="space-y-1">
+            <p className="text-xs font-semibold uppercase tracking-[0.26em] text-muted-foreground">
+              COTAÇÃO
+            </p>
+            <p className="truncate text-sm font-medium text-muted-foreground">
+              {tickerLabel}
+            </p>
+          </div>
           <div className="flex flex-wrap items-center gap-2.5">
             <p className="font-heading text-4xl font-semibold tracking-[-0.055em] text-foreground">
               {BRL_FORMATTER.format(quote.price)}
@@ -202,11 +217,14 @@ function CompanyQuoteCard({ company }: CompanyMarketSidebarProps) {
               {quote.changePercent.toFixed(1)}%
             </span>
           </div>
+          <p className="text-xs text-muted-foreground">
+            Variação no intervalo {selectedPeriod}
+          </p>
         </div>
         <Link
           href={`/empresas/${company.cd_cvm}?aba=visao-geral`}
           className="rounded-full p-2 text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          aria-label="Abrir detalhes da cotacao"
+          aria-label="Abrir detalhes da cotação"
         >
           <ArrowUpRightIcon className="h-4 w-4" />
         </Link>
@@ -216,22 +234,28 @@ function CompanyQuoteCard({ company }: CompanyMarketSidebarProps) {
         <QuoteSparkline points={quote.points} />
       </div>
 
-      <div className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+      <div
+        className="mt-2 flex flex-wrap items-center gap-1.5 text-xs font-semibold text-muted-foreground"
+        aria-label="Intervalo da cotação"
+      >
         {PERIODS.map((period) => {
-          const isSelected = period === "1A";
+          const isSelected = period === selectedPeriod;
 
           return (
-            <span
+            <button
               key={period}
+              type="button"
+              aria-pressed={isSelected}
+              onClick={() => setSelectedPeriod(period)}
               className={cn(
-                "rounded-full px-2.5 py-1 transition-colors",
+                "rounded-full px-2.5 py-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 isSelected
                   ? "bg-muted text-foreground"
-                  : "text-muted-foreground/80",
+                  : "text-muted-foreground/80 hover:bg-muted/45 hover:text-foreground",
               )}
             >
               {period}
-            </span>
+            </button>
           );
         })}
       </div>
@@ -248,14 +272,15 @@ function CompanyNewsCard({ company }: CompanyMarketSidebarProps) {
         <div className="flex items-center gap-2">
           <NewspaperIcon className="h-4 w-4 text-primary" />
           <h3 className="font-heading text-lg font-semibold tracking-[-0.025em] text-foreground">
-            Noticias Recentes
+            Notícias Recentes
           </h3>
         </div>
         <button
           type="button"
+          aria-label="Hoje — filtrar notícias recentes por data"
           className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-muted/25 px-3 py-1.5 text-xs font-medium text-foreground/85 transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          today
+          Hoje
           <ChevronDownIcon className="h-3.5 w-3.5 text-muted-foreground" />
         </button>
       </div>
@@ -269,7 +294,7 @@ function CompanyNewsCard({ company }: CompanyMarketSidebarProps) {
                 {item.title}
               </h4>
               <p className="text-xs leading-4 text-muted-foreground">
-                {item.timeLabel} Â· {item.source}
+                {item.timeLabel} · {item.source}
               </p>
             </div>
           </article>

@@ -4,7 +4,7 @@ import { ChevronRightIcon } from "lucide-react";
 import type { CompanyDirectoryItem } from "@/lib/api";
 import { getAvailabilityBadgeClassName } from "@/lib/badge-classes";
 import { getCompanyAvailability } from "@/lib/company-discovery";
-import { getSectorColor } from "@/lib/constants";
+import { getSectorColor, UNCLASSIFIED_SECTOR_LABEL } from "@/lib/constants";
 import { buildSparklinePoints } from "@/lib/sparkline";
 import { cn } from "@/lib/utils";
 
@@ -13,7 +13,7 @@ type CompanyRowProps = {
 };
 
 export function CompanyRow({ item }: CompanyRowProps) {
-  const color = getSectorColor(item.sector_name);
+  const color = getSectorColor(item.gics_sector);
   const anos = item.anos_disponiveis ?? [];
   const sparkPts = buildSparklinePoints(anos);
   const initials = (item.ticker_b3 ?? item.company_name).slice(0, 2).toUpperCase();
@@ -22,15 +22,15 @@ export function CompanyRow({ item }: CompanyRowProps) {
     anos.length > 0
       ? `${Math.min(...anos)}-${Math.max(...anos)}`
       : availability.yearsLabel;
-  const gicsLabel = item.gics_sector
-    ? `${item.gics_sector} / ${item.gics_industry_group ?? "-"} / ${item.gics_industry ?? "-"} / ${item.gics_sub_industry ?? "-"}`
-    : null;
+  const sectorLabel = item.gics_sector ?? UNCLASSIFIED_SECTOR_LABEL;
+  const isUnclassified = !item.gics_sector;
+  const gicsSubLabel = item.gics_sub_industry ?? item.gics_industry ?? null;
 
   return (
     <Link
       href={`/empresas/${item.cd_cvm}`}
       className={cn(
-        "group grid items-center gap-x-4 px-5 py-3 transition-colors",
+        "group grid items-center gap-x-4 px-5 py-3 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
         "[grid-template-columns:42px_minmax(0,1fr)_32px]",
         "sm:[grid-template-columns:42px_minmax(0,2fr)_minmax(0,1fr)_32px]",
         "lg:[grid-template-columns:42px_minmax(0,2.2fr)_minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,0.85fr)_32px]",
@@ -82,9 +82,17 @@ export function CompanyRow({ item }: CompanyRowProps) {
         </p>
       </div>
 
-      <p className="hidden truncate text-sm text-muted-foreground sm:block">
-        {gicsLabel ?? item.sector_name ?? "--"}
-      </p>
+      <div className="hidden min-w-0 sm:block">
+        <p
+          className="truncate text-sm text-muted-foreground"
+          title={isUnclassified ? "Sem mapeamento GICS" : undefined}
+        >
+          {sectorLabel}
+        </p>
+        {gicsSubLabel ? (
+          <p className="truncate text-[11px] text-muted-foreground/70">{gicsSubLabel}</p>
+        ) : null}
+      </div>
 
       <div className="hidden items-center gap-2 lg:flex">
         {sparkPts ? (
