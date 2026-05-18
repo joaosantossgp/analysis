@@ -49,6 +49,8 @@ export type CompanySuggestionItem = {
   company_name: string;
   ticker_b3: string | null;
   sector_slug: string;
+  gics_sector?: string | null;
+  gics_sector_slug?: string | null;
 };
 
 export type CompanySuggestionsResponse = {

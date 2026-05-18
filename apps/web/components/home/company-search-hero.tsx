@@ -8,7 +8,7 @@ import { useCompanySuggestions } from "@/components/shared/use-company-suggestio
 import { useComboboxNavigation } from "@/components/shared/use-combobox-navigation";
 import { buttonVariants } from "@/components/ui/button";
 import { type CompanySuggestionItem } from "@/lib/api";
-import { getSectorColor, getSectorNameFromSlug } from "@/lib/constants";
+import { getSectorColor, UNCLASSIFIED_SECTOR_LABEL } from "@/lib/constants";
 import { track } from "@/lib/track";
 import { cn } from "@/lib/utils";
 
@@ -160,7 +160,7 @@ export function CompanySearchHero() {
             ) : null}
 
             {suggestions.map((item, index) => {
-              const sectorName = getSectorNameFromSlug(item.sector_slug);
+              const sectorName = item.gics_sector ?? null;
               const color = getSectorColor(sectorName);
               const initials = (item.ticker_b3 ?? item.company_name).slice(0, 2).toUpperCase();
               return (
@@ -204,7 +204,7 @@ export function CompanySearchHero() {
                       ) : null}
                     </div>
                     <p className="text-sm text-muted-foreground mt-0.5">
-                      {sectorName ?? "Setor nao informado"}
+                      {sectorName ?? UNCLASSIFIED_SECTOR_LABEL}
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
                       Abra a pagina; se faltar historico local, solicite dados on-demand.

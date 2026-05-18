@@ -1098,12 +1098,20 @@ class CVMReadService:
             limit=limit,
             ready_only=ready_only,
         )
+        def _clean_gics(value: object) -> str | None:
+            if value is None:
+                return None
+            text_value = str(value).strip()
+            return text_value or None
+
         local_items = tuple(
             CompanySuggestionDTO(
                 cd_cvm=int(row["cd_cvm"]),
                 company_name=str(row["company_name"]),
                 ticker_b3=str(row["ticker_b3"]) if row["ticker_b3"] else None,
                 sector_slug=sector_slugify(str(row["sector_name"])),
+                gics_sector=_clean_gics(row.get("gics_sector")),
+                gics_sector_slug=_clean_gics(row.get("gics_sector_slug")),
             )
             for _, row in df.iterrows()
         )

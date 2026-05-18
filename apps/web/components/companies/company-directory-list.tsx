@@ -6,7 +6,7 @@ import { CompanyRow } from "@/components/companies/company-row";
 import { SurfaceCard } from "@/components/shared/design-system-recipes";
 import { buttonVariants } from "@/components/ui/button";
 import type { CompanyDirectoryItem, CompanySuggestionItem } from "@/lib/api";
-import { getSectorNameFromSlug } from "@/lib/constants";
+import { UNCLASSIFIED_SECTOR_LABEL } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
 type CompanyDirectoryListProps = {
@@ -46,13 +46,13 @@ export function CompanyDirectoryList({
         </p>
         <p className="max-w-sm text-sm leading-7 text-muted-foreground">
           {hasCatalogFallback
-            ? "O diretorio local ainda nao tem dados processados para essa busca, mas o catalogo CVM abaixo permite abrir a pagina e solicitar dados on-demand."
-            : "Ajuste o termo de busca ou remova o filtro setorial para ampliar o diretorio disponivel."}
+            ? "O diretório local ainda não tem dados processados para essa busca, mas o catálogo CVM abaixo permite abrir a página e solicitar dados on-demand."
+            : "Ajuste o termo de busca ou remova o filtro setorial para ampliar o diretório disponível."}
         </p>
 
         {fallbackSuggestionsError ? (
           <div className="max-w-lg rounded-[1rem] border border-border/70 bg-background/85 px-4 py-3 text-left text-sm leading-6 text-muted-foreground">
-            O catalogo CVM tambem oscilou agora: {fallbackSuggestionsError}
+            O catálogo CVM também oscilou agora: {fallbackSuggestionsError}
           </div>
         ) : null}
 
@@ -73,10 +73,10 @@ export function CompanyDirectoryList({
                       </span>
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      {getSectorNameFromSlug(item.sector_slug) ?? "Setor nao informado"}
+                      {item.gics_sector ?? UNCLASSIFIED_SECTOR_LABEL}
                     </p>
                     <p className="text-xs leading-5 text-muted-foreground">
-                      Sem historico local neste filtro. A pagina da empresa libera o pedido on-demand.
+                      Sem histórico local neste filtro. A página da empresa libera o pedido on-demand.
                     </p>
                   </div>
                   <div className="text-right">

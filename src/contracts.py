@@ -309,6 +309,10 @@ class CompanySuggestionDTO:
     company_name: str
     ticker_b3: str | None
     sector_slug: str
+    # GICS-first fields. Empty for catalog fallback rows that have not been
+    # imported into the local DB yet — UI must fall back to "Não classificado".
+    gics_sector: str | None = None
+    gics_sector_slug: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

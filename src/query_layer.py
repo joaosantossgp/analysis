@@ -306,7 +306,9 @@ class CVMQueryLayer:
                 f"""
                 SELECT c.cd_cvm, c.company_name,
                        COALESCE(c.ticker_b3, '') AS ticker_b3,
-                       {_CANONICAL_SECTOR_SQL} AS sector_name
+                       {_CANONICAL_SECTOR_SQL} AS sector_name,
+                       c.gics_sector,
+                       c.gics_sector_slug
                 FROM companies c
                 {ready_only_sql}
                 ORDER BY c.company_name ASC
@@ -327,7 +329,9 @@ class CVMQueryLayer:
             f"""
             SELECT c.cd_cvm, c.company_name,
                    COALESCE(c.ticker_b3, '') AS ticker_b3,
-                   {_CANONICAL_SECTOR_SQL} AS sector_name
+                   {_CANONICAL_SECTOR_SQL} AS sector_name,
+                   c.gics_sector,
+                   c.gics_sector_slug
             FROM companies c
             WHERE
                 {search_filters}
@@ -524,6 +528,7 @@ class CVMQueryLayer:
         unique_ids = [int(cd) for cd in cvm_ids]
         placeholders = ", ".join(f":id_{i}" for i in range(len(unique_ids)))
         params: dict[str, object] = {f"id_{i}": cd for i, cd in enumerate(unique_ids)}
+        gics_sql = self._persisted_gics_max_sql()
         sql = text(
             f"""
             SELECT
@@ -535,7 +540,7 @@ class CVMQueryLayer:
                 {_CANONICAL_SECTOR_SQL} AS sector_name,
                 COALESCE(COUNT(fr."CD_CVM"), 0) AS total_rows,
                 CASE WHEN COUNT(fr."CD_CVM") > 0 THEN 1 ELSE 0 END AS has_financial_data,
-                c.coverage_rank
+                c.coverage_rank{gics_sql}
             FROM companies c
             LEFT JOIN financial_reports fr ON fr."CD_CVM" = c.cd_cvm
             WHERE c.cd_cvm IN ({placeholders})
