@@ -1,6 +1,7 @@
 import {
   fetchSectorDetail,
   fetchSectorDirectory,
+  fetchSubSectorDetail,
   getUserFacingErrorMessage,
   type SectorDetail,
   type SectorDirectory,
@@ -55,10 +56,43 @@ export async function loadSectorDetailPageData(
   loaders: SectorLoaders = {},
 ): Promise<SectorDetailPageData> {
   const fetchDetail = loaders.fetchDetail ?? fetchSectorDetail;
+  return loadDetailPageData(
+    (year) => fetchDetail(sectorSlug, year),
+    rawYear,
+    rawTab,
+  );
+}
+
+export async function loadSubSectorDetailPageData(
+  sectorSlug: string,
+  subIndustrySlug: string,
+  rawYear: string | undefined,
+  rawTab: string | undefined,
+  loaders: {
+    fetchDetail?: (
+      sectorSlug: string,
+      subIndustrySlug: string,
+      year?: number,
+    ) => Promise<SectorDetail | null>;
+  } = {},
+): Promise<SectorDetailPageData> {
+  const fetchDetail = loaders.fetchDetail ?? fetchSubSectorDetail;
+  return loadDetailPageData(
+    (year) => fetchDetail(sectorSlug, subIndustrySlug, year),
+    rawYear,
+    rawTab,
+  );
+}
+
+async function loadDetailPageData(
+  fetchDetail: (year?: number) => Promise<SectorDetail | null>,
+  rawYear: string | undefined,
+  rawTab: string | undefined,
+): Promise<SectorDetailPageData> {
   const currentTab = coerceSectorTab(rawTab);
 
   try {
-    const latestDetail = await fetchDetail(sectorSlug);
+    const latestDetail = await fetchDetail();
 
     if (!latestDetail) {
       return {
@@ -85,7 +119,7 @@ export async function loadSectorDetailPageData(
     let yearScopedDetail: SectorDetail | null = null;
 
     try {
-      yearScopedDetail = await fetchDetail(sectorSlug, resolvedYear);
+      yearScopedDetail = await fetchDetail(resolvedYear);
     } catch {
       yearScopedDetail = null;
     }

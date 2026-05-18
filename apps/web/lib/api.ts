@@ -414,7 +414,7 @@ export type SectorDirectoryItem = {
   company_count: number;
   latest_year: number | null;
   snapshot: SectorSnapshot;
-  sub_industries: string[];
+  sub_industries?: string[];
   sub_industry_breakdown?: SubIndustryCount[];
   group_type?: "sector" | "sub_sector" | "unclassified";
   parent_sector_name?: string | null;
@@ -452,6 +452,9 @@ export type SectorDetail = {
   selected_year: number;
   yearly_overview: SectorYearOverview[];
   companies: SectorCompanyMetric[];
+  // Populated when this detail represents a GICS sub-industry; null for top-level GICS sectors.
+  parent_sector_name?: string | null;
+  parent_sector_slug?: string | null;
 };
 
 type ApiErrorShape = {
@@ -497,6 +500,7 @@ import {
   bridgeFetchCompanyKpis,
   bridgeFetchCompanyStatement,
   bridgeFetchSectors,
+  bridgeFetchSubSectorDetail,
   bridgeFetchSectorDetail,
   bridgeFetchHealth,
   bridgeTrackCompanyView,
@@ -1468,6 +1472,24 @@ export async function fetchSectorDetail(
   if (isDesktopMode()) return bridgeFetchSectorDetail(sectorSlug, year);
   return apiFetch<SectorDetail>(
     `/sectors/${sectorSlug}${buildQuery({ year })}`,
+    {
+      allowNotFound: true,
+      request: SECTOR_DETAIL_API_READ,
+      validate: isSectorDetail,
+      invalidResponseMessage: "A API retornou um detalhe setorial invalido.",
+    },
+  );
+}
+
+export async function fetchSubSectorDetail(
+  sectorSlug: string,
+  subIndustrySlug: string,
+  year?: number,
+): Promise<SectorDetail | null> {
+  if (isDesktopMode())
+    return bridgeFetchSubSectorDetail(sectorSlug, subIndustrySlug, year);
+  return apiFetch<SectorDetail>(
+    `/sectors/${sectorSlug}/${subIndustrySlug}${buildQuery({ year })}`,
     {
       allowNotFound: true,
       request: SECTOR_DETAIL_API_READ,

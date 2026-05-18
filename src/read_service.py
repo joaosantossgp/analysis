@@ -1462,6 +1462,163 @@ class CVMReadService:
             companies=companies,
         )
 
+    def get_sub_sector_detail(
+        self,
+        *,
+        sector_slug: str,
+        sub_industry_slug: str,
+        year: int | None = None,
+    ) -> SectorDetailDTO | None:
+        """Detail for a GICS sub-industry inside a parent GICS sector.
+
+        Returns None if the sector slug is not one of the 11 GICS hubs or if
+        no company in that sector has the requested sub-industry slug.
+        """
+        sector_name = self._resolve_sector_slug(sector_slug)
+        if sector_name is None or sector_name not in GICS_11_SECTORS:
+            return None
+
+        normalized_sub_slug = str(sub_industry_slug or "").strip().lower()
+        if not normalized_sub_slug:
+            return None
+
+        universe = self._list_company_universe_results()
+        sub_industry_name: str | None = None
+        matching: list[CompanySearchResult] = []
+        for item in universe:
+            if item.gics_sector != sector_name:
+                continue
+            if not item.gics_sub_industry:
+                continue
+            if sector_slugify(item.gics_sub_industry) != normalized_sub_slug:
+                continue
+            sub_industry_name = item.gics_sub_industry
+            matching.append(item)
+
+        if not matching or sub_industry_name is None:
+            return None
+
+        company_rows = pd.DataFrame(
+            [
+                {
+                    "cd_cvm": int(item.cd_cvm),
+                    "company_name": str(item.company_name),
+                    "ticker_b3": item.ticker_b3,
+                    "anos_disponiveis": tuple(item.anos_disponiveis),
+                    "gics_sub_industry": item.gics_sub_industry,
+                }
+                for item in matching
+            ]
+        )
+        total_items = len(company_rows)
+        available_years = self._extract_years_from_company_rows(company_rows)
+        parent_sector_slug = sector_slugify(sector_name)
+
+        empty_companies = tuple(
+            SectorCompanyMetricDTO(
+                cd_cvm=int(row["cd_cvm"]),
+                company_name=str(row["company_name"]),
+                ticker_b3=self._clean_optional_text(row.get("ticker_b3")),
+                gics_sub_industry=self._clean_optional_text(row.get("gics_sub_industry")),
+                roe=None,
+                mg_ebit=None,
+                mg_liq=None,
+            )
+            for _, row in company_rows.sort_values("company_name").iterrows()
+        )
+
+        if not available_years:
+            selected_year = int(year or datetime.now(timezone.utc).year - 1)
+            return SectorDetailDTO(
+                sector_name=sub_industry_name,
+                sector_slug=normalized_sub_slug,
+                company_count=int(total_items),
+                available_years=(),
+                selected_year=selected_year,
+                yearly_overview=(),
+                companies=empty_companies,
+                parent_sector_name=sector_name,
+                parent_sector_slug=parent_sector_slug,
+            )
+
+        if year is None:
+            selected_year = max(available_years)
+        else:
+            selected_year = int(year)
+            if selected_year not in available_years:
+                raise ValueError(
+                    f"O parametro 'year' precisa ser um dos anos disponiveis do sub-setor: {', '.join(str(value) for value in available_years)}."
+                )
+
+        metric_rows = self.query_layer.get_sector_metric_rows()
+        company_codes = {int(value) for value in company_rows["cd_cvm"].tolist()}
+        if metric_rows is None or metric_rows.empty:
+            metric_rows = pd.DataFrame(
+                columns=["cd_cvm", "report_year", "roe", "mg_ebit", "mg_liq", "sector_name"]
+            )
+        else:
+            metric_rows = metric_rows[
+                metric_rows["cd_cvm"].map(lambda code: int(code) in company_codes)
+            ].copy()
+            metric_rows["sector_name"] = sub_industry_name
+
+        yearly = self._aggregate_sector_yearly_metrics(metric_rows)
+        yearly_overview = tuple(
+            SectorYearOverviewDTO(
+                year=int(row["year"]),
+                roe=self._coerce_optional_float(row["roe"]),
+                mg_ebit=self._coerce_optional_float(row["mg_ebit"]),
+                mg_liq=self._coerce_optional_float(row["mg_liq"]),
+            )
+            for _, row in yearly[yearly["sector_name"] == sub_industry_name]
+            .sort_values("year")
+            .iterrows()
+        )
+
+        company_metrics = metric_rows[metric_rows["report_year"] == selected_year].copy()
+        selected_companies = company_rows[
+            company_rows["anos_disponiveis"].map(lambda years: selected_year in years)
+        ][["cd_cvm", "company_name", "ticker_b3", "gics_sub_industry"]].drop_duplicates()
+        selected_companies = selected_companies.merge(
+            company_metrics[["cd_cvm", "roe", "mg_ebit", "mg_liq"]],
+            on="cd_cvm",
+            how="left",
+        )
+        selected_companies["ticker_b3"] = selected_companies["ticker_b3"].replace("", None)
+        selected_companies["sort_roe"] = pd.to_numeric(
+            selected_companies["roe"], errors="coerce"
+        )
+        selected_companies = selected_companies.sort_values(
+            by=["sort_roe", "company_name"],
+            ascending=[False, True],
+            na_position="last",
+        )
+
+        companies = tuple(
+            SectorCompanyMetricDTO(
+                cd_cvm=int(row["cd_cvm"]),
+                company_name=str(row["company_name"]),
+                ticker_b3=self._clean_optional_text(row.get("ticker_b3")),
+                gics_sub_industry=self._clean_optional_text(row.get("gics_sub_industry")),
+                roe=self._coerce_optional_float(row.get("roe")),
+                mg_ebit=self._coerce_optional_float(row.get("mg_ebit")),
+                mg_liq=self._coerce_optional_float(row.get("mg_liq")),
+            )
+            for _, row in selected_companies.iterrows()
+        )
+
+        return SectorDetailDTO(
+            sector_name=sub_industry_name,
+            sector_slug=normalized_sub_slug,
+            company_count=int(total_items),
+            available_years=tuple(available_years),
+            selected_year=int(selected_year),
+            yearly_overview=yearly_overview,
+            companies=companies,
+            parent_sector_name=sector_name,
+            parent_sector_slug=parent_sector_slug,
+        )
+
     def get_statement_matrix(
         self,
         cd_cvm: int,

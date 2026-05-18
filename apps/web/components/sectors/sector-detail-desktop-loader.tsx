@@ -19,7 +19,10 @@ import { useDesktopBridgeReady } from "@/components/shared/use-desktop-bridge-re
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
 import type { SectorDetail } from "@/lib/api";
-import { bridgeFetchSectorDetail } from "@/lib/desktop-bridge";
+import {
+  bridgeFetchSectorDetail,
+  bridgeFetchSubSectorDetail,
+} from "@/lib/desktop-bridge";
 import { formatCompactInteger } from "@/lib/formatters";
 import {
   coerceSectorTab,
@@ -37,6 +40,9 @@ type SectorDetailDesktopLoaderProps = {
   slug: string;
   rawYear: string | undefined;
   rawTab: string | undefined;
+  // When set, the loader resolves the GICS sub-industry inside `slug` instead
+  // of the top-level sector.
+  subIndustrySlug?: string;
 };
 
 function errorMessage(error: unknown): string {
@@ -49,11 +55,18 @@ export function SectorDetailDesktopLoader({
   slug,
   rawYear,
   rawTab,
+  subIndustrySlug,
 }: SectorDetailDesktopLoaderProps) {
-  const loadKey = `${slug}|${rawYear ?? ""}|${rawTab ?? ""}`;
+  const loadKey = `${slug}|${subIndustrySlug ?? ""}|${rawYear ?? ""}|${rawTab ?? ""}`;
   const currentTab = coerceSectorTab(rawTab);
-  const pathname = `/setores/${slug}`;
+  const pathname = subIndustrySlug
+    ? `/setores/${slug}/${subIndustrySlug}`
+    : `/setores/${slug}`;
   const bridgeReady = useDesktopBridgeReady(loadKey);
+  const fetchDetail = (year?: number) =>
+    subIndustrySlug
+      ? bridgeFetchSubSectorDetail(slug, subIndustrySlug, year)
+      : bridgeFetchSectorDetail(slug, year);
 
   const [state, setState] = useState<{
     key: string;
@@ -79,11 +92,24 @@ export function SectorDetailDesktopLoader({
       setState({ key: loadKey, phase: "loading", resolvedTab: currentTab });
 
       try {
-        const latestDetail = await bridgeFetchSectorDetail(slug);
+        const latestDetail = await fetchDetail();
 
         if (cancelled) return;
 
         if (!latestDetail) {
+          setState({
+            key: loadKey,
+            phase: "not_found",
+            resolvedTab: currentTab,
+          });
+          return;
+        }
+
+        if (
+          subIndustrySlug &&
+          latestDetail.parent_sector_slug &&
+          latestDetail.parent_sector_slug !== slug
+        ) {
           setState({
             key: loadKey,
             phase: "not_found",
@@ -102,7 +128,7 @@ export function SectorDetailDesktopLoader({
 
         if (resolvedYear !== latestDetail.selected_year) {
           try {
-            const scoped = await bridgeFetchSectorDetail(slug, resolvedYear);
+            const scoped = await fetchDetail(resolvedYear);
             detail = scoped ?? latestDetail;
           } catch {
             detail = latestDetail;
@@ -133,7 +159,7 @@ export function SectorDetailDesktopLoader({
     return () => {
       cancelled = true;
     };
-  }, [bridgeReady, loadKey, slug, rawYear, rawTab, currentTab]);
+  }, [bridgeReady, loadKey, slug, subIndustrySlug, rawYear, rawTab, currentTab]);
 
   if (bridgeReady === "timeout" && (!state || state.key !== loadKey)) {
     return (
@@ -256,6 +282,9 @@ export function SectorDetailDesktopLoader({
 
   const detail = state.detail!;
   const tab = state.resolvedTab ?? currentTab;
+  const isSubIndustry = Boolean(subIndustrySlug);
+  const parentSectorName = detail.parent_sector_name ?? slug;
+  const parentSectorSlug = detail.parent_sector_slug ?? slug;
 
   return (
     <PageShell density="default">
@@ -280,6 +309,17 @@ export function SectorDetailDesktopLoader({
                 Setores
               </Link>
             </li>
+            {isSubIndustry ? (
+              <li className="flex items-center gap-2">
+                <ChevronRightIcon className="size-4" />
+                <Link
+                  href={`/setores/${parentSectorSlug}`}
+                  className="hover:text-foreground"
+                >
+                  {parentSectorName}
+                </Link>
+              </li>
+            ) : null}
             <li className="flex items-center gap-2 text-foreground">
               <ChevronRightIcon className="size-4 text-muted-foreground" />
               <span>{detail.sector_name}</span>

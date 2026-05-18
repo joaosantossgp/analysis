@@ -399,6 +399,10 @@ class SectorDetailDTO:
     selected_year: int
     yearly_overview: tuple[SectorYearOverviewDTO, ...]
     companies: tuple[SectorCompanyMetricDTO, ...]
+    # When this DTO represents a GICS sub-industry, parent_* carry the parent
+    # GICS sector for breadcrumb/route rendering. None for top-level sectors.
+    parent_sector_name: str | None = None
+    parent_sector_slug: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -409,6 +413,8 @@ class SectorDetailDTO:
             "selected_year": self.selected_year,
             "yearly_overview": [row.to_dict() for row in self.yearly_overview],
             "companies": [row.to_dict() for row in self.companies],
+            "parent_sector_name": self.parent_sector_name,
+            "parent_sector_slug": self.parent_sector_slug,
         }
 
 

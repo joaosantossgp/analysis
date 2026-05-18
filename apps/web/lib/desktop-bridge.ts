@@ -58,6 +58,7 @@ interface PywebviewApi {
   save_company_excel(params: Record<string, unknown>): Promise<unknown>;
   get_sectors(params?: Record<string, unknown>): Promise<unknown>;
   get_sector_detail(params: Record<string, unknown>): Promise<unknown>;
+  get_sub_sector_detail(params: Record<string, unknown>): Promise<unknown>;
   get_health(params?: Record<string, unknown>): Promise<unknown>;
   get_base_health(params: Record<string, unknown>): Promise<unknown>;
   get_refresh_status(params?: Record<string, unknown>): Promise<unknown>;
@@ -209,6 +210,23 @@ export async function bridgeFetchSectorDetail(
   const result = await callBridge<(SectorDetail & { not_found?: boolean }) | null>(
     "get_sector_detail",
     { sector_slug: sectorSlug, ...(year != null ? { year } : {}) },
+  );
+  if (!result || (result as { not_found?: boolean }).not_found) return null;
+  return result as SectorDetail;
+}
+
+export async function bridgeFetchSubSectorDetail(
+  sectorSlug: string,
+  subIndustrySlug: string,
+  year?: number,
+): Promise<SectorDetail | null> {
+  const result = await callBridge<(SectorDetail & { not_found?: boolean }) | null>(
+    "get_sub_sector_detail",
+    {
+      sector_slug: sectorSlug,
+      sub_industry_slug: subIndustrySlug,
+      ...(year != null ? { year } : {}),
+    },
   );
   if (!result || (result as { not_found?: boolean }).not_found) return null;
   return result as SectorDetail;

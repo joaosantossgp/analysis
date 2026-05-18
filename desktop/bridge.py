@@ -317,6 +317,24 @@ class CVMBridge:
         except Exception as exc:
             return {"error": str(exc)}
 
+    def get_sub_sector_detail(self, params=None) -> dict:
+        p = params or {}
+        try:
+            sector_slug = str(p.get("sector_slug", ""))
+            sub_industry_slug = str(p.get("sub_industry_slug", ""))
+            year = p.get("year")
+            year_int = int(year) if year is not None else None
+            result = self._svc().get_sub_sector_detail(
+                sector_slug=sector_slug,
+                sub_industry_slug=sub_industry_slug,
+                year=year_int,
+            )
+            if result is None:
+                return {"not_found": True}
+            return self._sanitize_for_json(dataclasses.asdict(result))
+        except Exception as exc:
+            return {"error": str(exc)}
+
     # ------------------------------------------------------------------
     # Refresh
     # ------------------------------------------------------------------
@@ -335,8 +353,35 @@ class CVMBridge:
             })
 
     def request_refresh(self, params=None) -> dict:
+        p = params or {}
+        # Single-company refresh (from no-data company page) routes through the
+        # same code path as the HTTP API (`service.request_company_refresh`),
+        # which does a full incremental backfill (2010..current). The batch
+        # manager defaults to mode="missing" with fast_lane=True, which would
+        # only fetch the last 2 years.
+        batch_signals = ("company_ids", "sector_slug", "gics_sub_industry", "cvm_range", "mode")
+        is_single_company = (
+            p.get("cd_cvm") is not None
+            and not any(p.get(key) for key in batch_signals)
+        )
+        if is_single_company:
+            try:
+                import dataclasses  # noqa: PLC0415
+                cd_cvm = int(p.get("cd_cvm"))
+                result = self._svc().request_company_refresh(cd_cvm)
+                return self._sanitize_for_json(dataclasses.asdict(result))
+            except Exception as exc:
+                return self._sanitize_for_json({
+                    "status": "error",
+                    "job_id": None,
+                    "message": str(exc),
+                    "status_reason_code": "desktop_refresh_error",
+                    "status_reason_message": str(exc),
+                    "is_retry_allowed": True,
+                })
+
         try:
-            return self._sanitize_for_json(self._refresh().request_refresh(params or {}))
+            return self._sanitize_for_json(self._refresh().request_refresh(p))
         except Exception as exc:
             return self._sanitize_for_json({
                 "status": "error",

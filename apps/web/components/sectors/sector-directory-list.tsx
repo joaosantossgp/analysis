@@ -86,7 +86,7 @@ export function SectorDirectoryList({ items, groupBy = "sector" }: SectorDirecto
                       </span>
                     ) : null}
                   </div>
-                ) : item.sub_industries.length ? (
+                ) : item.sub_industries && item.sub_industries.length ? (
                   <div className="flex flex-wrap gap-1.5">
                     {item.sub_industries.slice(0, 3).map((subIndustry) => (
                       <span
@@ -158,23 +158,41 @@ export function SectorDirectoryList({ items, groupBy = "sector" }: SectorDirecto
             <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">
               Base {item.latest_year ?? "-"}
             </p>
-            {item.latest_year != null && item.group_type !== "sub_sector" && item.group_type !== "unclassified" ? (
-              <Link
-                href={`/setores/${item.sector_slug}`}
-                data-testid="sector-card-link"
-                className={cn(
-                  buttonVariants({ variant: "outline", size: "lg" }),
-                  "rounded-full px-5",
-                )}
-              >
-                Abrir setor
-                <ArrowUpRightIcon className="size-4" />
-              </Link>
-            ) : (
-              <span className="rounded-full border border-border/65 px-4 py-2 text-xs text-muted-foreground">
-                {item.group_type === "unclassified" ? "Sem GICS" : "Sem historico ainda"}
-              </span>
-            )}
+            {(() => {
+              if (item.group_type === "unclassified") {
+                return (
+                  <span className="rounded-full border border-border/65 px-4 py-2 text-xs text-muted-foreground">
+                    Sem GICS
+                  </span>
+                );
+              }
+              if (item.latest_year == null) {
+                return (
+                  <span className="rounded-full border border-border/65 px-4 py-2 text-xs text-muted-foreground">
+                    Sem historico ainda
+                  </span>
+                );
+              }
+              const href =
+                item.group_type === "sub_sector" && item.parent_sector_slug
+                  ? `/setores/${item.parent_sector_slug}/${item.sector_slug}`
+                  : `/setores/${item.sector_slug}`;
+              const label =
+                item.group_type === "sub_sector" ? "Abrir sub-setor" : "Abrir setor";
+              return (
+                <Link
+                  href={href}
+                  data-testid="sector-card-link"
+                  className={cn(
+                    buttonVariants({ variant: "outline", size: "lg" }),
+                    "rounded-full px-5",
+                  )}
+                >
+                  {label}
+                  <ArrowUpRightIcon className="size-4" />
+                </Link>
+              );
+            })()}
           </div>
         </SurfaceCard>
       ))}
