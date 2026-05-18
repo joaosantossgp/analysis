@@ -15,8 +15,6 @@ function buildCompanyInfo(overrides: Partial<CompanyInfo> = {}): CompanyInfo {
     cnpj: "33.000.167/0001-01",
     setor_cvm: "Petróleo e Gás",
     setor_analitico: "Energia",
-    sector_name: "Energia",
-    sector_slug: "energia",
     company_type: "comercial",
     ticker_b3: "PETR4",
     has_local_financial_reports: true,

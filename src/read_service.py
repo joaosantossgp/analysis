@@ -702,8 +702,6 @@ class CVMReadService:
             cnpj=payload.get("cnpj"),
             setor_cvm=payload.get("setor_cvm"),
             setor_analitico=payload.get("setor_analitico"),
-            sector_name=sector_name,
-            sector_slug=sector_slugify(sector_name),
             company_type=company_type,
             ticker_b3=payload.get("ticker_b3"),
             gics_sector=gics.gics_sector if gics else None,

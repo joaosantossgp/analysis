@@ -72,7 +72,7 @@ function buildQuoteModel(company: CompanyInfo, period: QuotePeriod): QuoteModel 
 
 function buildNewsItems(company: CompanyInfo): NewsItem[] {
   const ticker = company.ticker_b3 ?? "Companhia";
-  const sector = company.sector_name || "setor";
+  const sector = company.gics_sector ?? "setor";
 
   return [
     {

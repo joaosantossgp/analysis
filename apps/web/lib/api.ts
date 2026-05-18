@@ -75,8 +75,6 @@ export type CompanyInfo = {
   cnpj: string | null;
   setor_cvm: string | null;
   setor_analitico: string | null;
-  sector_name: string;
-  sector_slug: string;
   company_type: string | null;
   ticker_b3: string | null;
   has_local_financial_reports: boolean;
@@ -785,8 +783,6 @@ function isCompanyInfo(value: unknown): value is RawCompanyInfo {
     isRecord(value) &&
     typeof value.cd_cvm === "number" &&
     typeof value.company_name === "string" &&
-    typeof value.sector_name === "string" &&
-    typeof value.sector_slug === "string" &&
     isOptionalBoolean(value.has_local_financial_reports) &&
     isOptionalNullableString(value.read_model_updated_at) &&
     isOptionalBoolean(value.has_readable_current_data) &&

@@ -5,6 +5,7 @@ import { SurfaceCard } from "@/components/shared/design-system-recipes";
 import { buttonVariants } from "@/components/ui/button";
 import type { CompanyInfo } from "@/lib/api";
 import { buildCompanyHeroModel } from "@/lib/company-dashboard";
+import { UNCLASSIFIED_SECTOR_LABEL } from "@/lib/constants";
 import { formatYearsLabel } from "@/lib/formatters";
 import { cn } from "@/lib/utils";
 
@@ -58,7 +59,7 @@ export function CompanyContextCard({
         <div className="flex items-baseline justify-between gap-3">
           <dt className="text-muted-foreground">Setor</dt>
           <dd className="text-right text-foreground">
-            {company.sector_name || "Nao informado"}
+            {company.gics_sector ?? UNCLASSIFIED_SECTOR_LABEL}
           </dd>
         </div>
       </dl>
