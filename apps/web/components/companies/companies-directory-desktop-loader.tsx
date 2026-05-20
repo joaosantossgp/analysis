@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import {
   CompaniesDirectoryLoadingState,
   CompaniesDirectoryPageContent,
 } from "@/components/companies/companies-directory-client";
-import { useDesktopBridgeReady } from "@/components/shared/use-desktop-bridge-ready";
+import { useDesktopLoader } from "@/components/shared/use-desktop-loader";
 import type { CompaniesDirectoryQueryState } from "@/lib/companies-directory-query";
 import type { CompaniesPageData } from "@/lib/companies-page-data";
 import {
@@ -46,55 +46,40 @@ export function CompaniesDirectoryDesktopLoader({
   viewMode,
 }: CompaniesDirectoryDesktopLoaderProps) {
   const loadKey = `${search}|${sector ?? ""}|${page}|${pageSize}`;
-  const bridgeReady = useDesktopBridgeReady(loadKey);
   const [loadState, setLoadState] = useState<{
     key: string;
     data: CompaniesPageData;
   } | null>(null);
 
-  useEffect(() => {
-    if (bridgeReady !== "ready") return;
+  const bridgeReady = useDesktopLoader(loadKey, async (isCancelled) => {
+    const shouldFetchFallbackSuggestions =
+      search.trim().length >= 2 && !sector;
+    const [directoryResult, filtersResult, fallbackSuggestionsResult] =
+      await Promise.allSettled([
+        bridgeFetchCompanies({ search, sector, page, pageSize }),
+        bridgeFetchCompanyFilters(),
+        shouldFetchFallbackSuggestions
+          ? bridgeFetchCompanySuggestions(search, 6)
+          : Promise.resolve({ items: [] }),
+      ]);
 
-    let cancelled = false;
+    if (isCancelled()) return;
 
-    async function loadFromBridge() {
-      if (cancelled) return;
-
-      const shouldFetchFallbackSuggestions =
-        search.trim().length >= 2 && !sector;
-      const [directoryResult, filtersResult, fallbackSuggestionsResult] =
-        await Promise.allSettled([
-          bridgeFetchCompanies({ search, sector, page, pageSize }),
-          bridgeFetchCompanyFilters(),
-          shouldFetchFallbackSuggestions
-            ? bridgeFetchCompanySuggestions(search, 6)
-            : Promise.resolve({ items: [] }),
-        ]);
-
-      if (cancelled) return;
-
-      setLoadState({
-        key: loadKey,
-        data: {
-          directory: settledOr(directoryResult, null),
-          filters: settledOr(filtersResult, null),
-          fallbackSuggestions: settledOr(fallbackSuggestionsResult, null),
-          directoryError: settledReason(directoryResult, errorMessage),
-          filtersError: settledReason(filtersResult, errorMessage),
-          fallbackSuggestionsError: settledReason(
-            fallbackSuggestionsResult,
-            errorMessage,
-          ),
-        },
-      });
-    }
-
-    void loadFromBridge();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [bridgeReady, loadKey, page, pageSize, search, sector]);
+    setLoadState({
+      key: loadKey,
+      data: {
+        directory: settledOr(directoryResult, null),
+        filters: settledOr(filtersResult, null),
+        fallbackSuggestions: settledOr(fallbackSuggestionsResult, null),
+        directoryError: settledReason(directoryResult, errorMessage),
+        filtersError: settledReason(filtersResult, errorMessage),
+        fallbackSuggestionsError: settledReason(
+          fallbackSuggestionsResult,
+          errorMessage,
+        ),
+      },
+    });
+  });
 
   const timeoutState =
     bridgeReady === "timeout"

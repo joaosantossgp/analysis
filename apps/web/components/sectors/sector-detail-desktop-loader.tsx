@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { ChevronRightIcon } from "lucide-react";
 
 import { SectorCompanyTable } from "@/components/sectors/sector-company-table";
@@ -16,7 +16,7 @@ import {
   SurfaceCard,
 } from "@/components/shared/design-system-recipes";
 import { ProblemStateCard } from "@/components/shared/problem-state-card";
-import { useDesktopBridgeReady } from "@/components/shared/use-desktop-bridge-ready";
+import { useDesktopLoader } from "@/components/shared/use-desktop-loader";
 import { buttonVariants } from "@/components/ui/button";
 import type { SectorDetail } from "@/lib/api";
 import {
@@ -62,7 +62,6 @@ export function SectorDetailDesktopLoader({
   const pathname = subIndustrySlug
     ? `/setores/${slug}/${subIndustrySlug}`
     : `/setores/${slug}`;
-  const bridgeReady = useDesktopBridgeReady(loadKey);
   const fetchDetail = useCallback(
     (year?: number) =>
       subIndustrySlug
@@ -84,94 +83,61 @@ export function SectorDetailDesktopLoader({
     resolvedTab?: SectorPageTab;
   } | null>(null);
 
-  useEffect(() => {
-    if (bridgeReady !== "ready") return;
+  const bridgeReady = useDesktopLoader(loadKey, async (isCancelled) => {
+    setState({ key: loadKey, phase: "loading", resolvedTab: currentTab });
 
-    let cancelled = false;
+    try {
+      const latestDetail = await fetchDetail();
+      if (isCancelled()) return;
 
-    async function load() {
-      if (cancelled) return;
-
-      setState({ key: loadKey, phase: "loading", resolvedTab: currentTab });
-
-      try {
-        const latestDetail = await fetchDetail();
-
-        if (cancelled) return;
-
-        if (!latestDetail) {
-          setState({
-            key: loadKey,
-            phase: "not_found",
-            resolvedTab: currentTab,
-          });
-          return;
-        }
-
-        if (
-          subIndustrySlug &&
-          latestDetail.parent_sector_slug &&
-          latestDetail.parent_sector_slug !== slug
-        ) {
-          setState({
-            key: loadKey,
-            phase: "not_found",
-            resolvedTab: currentTab,
-          });
-          return;
-        }
-
-        const resolvedYear = resolveSectorYear(
-          latestDetail.available_years,
-          rawYear,
-          latestDetail.selected_year,
-        );
-
-        let detail: SectorDetail | null = latestDetail;
-
-        if (resolvedYear !== latestDetail.selected_year) {
-          try {
-            const scoped = await fetchDetail(resolvedYear);
-            detail = scoped ?? latestDetail;
-          } catch {
-            detail = latestDetail;
-          }
-        }
-
-        if (cancelled) return;
-
-        setState({
-          key: loadKey,
-          phase: "ready",
-          detail: detail ?? latestDetail,
-          resolvedTab: currentTab,
-        });
-      } catch (error) {
-        if (cancelled) return;
-        setState({
-          key: loadKey,
-          phase: "error",
-          errorMessageText: errorMessage(error),
-          resolvedTab: currentTab,
-        });
+      if (!latestDetail) {
+        setState({ key: loadKey, phase: "not_found", resolvedTab: currentTab });
+        return;
       }
+
+      if (
+        subIndustrySlug &&
+        latestDetail.parent_sector_slug &&
+        latestDetail.parent_sector_slug !== slug
+      ) {
+        setState({ key: loadKey, phase: "not_found", resolvedTab: currentTab });
+        return;
+      }
+
+      const resolvedYear = resolveSectorYear(
+        latestDetail.available_years,
+        rawYear,
+        latestDetail.selected_year,
+      );
+
+      let detail: SectorDetail | null = latestDetail;
+      if (resolvedYear !== latestDetail.selected_year) {
+        try {
+          const scoped = await fetchDetail(resolvedYear);
+          detail = scoped ?? latestDetail;
+        } catch {
+          detail = latestDetail;
+        }
+      }
+
+      if (isCancelled()) return;
+
+      setState({
+        key: loadKey,
+        phase: "ready",
+        detail: detail ?? latestDetail,
+        resolvedTab: currentTab,
+      });
+    } catch (error) {
+      if (isCancelled()) return;
+      setState({
+        key: loadKey,
+        phase: "error",
+        errorMessageText: errorMessage(error),
+        resolvedTab: currentTab,
+      });
     }
-
-    void load();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    bridgeReady,
-    loadKey,
-    slug,
-    subIndustrySlug,
-    rawYear,
-    rawTab,
-    currentTab,
-    fetchDetail,
-  ]);
+  });
 
   if (bridgeReady === "timeout" && (!state || state.key !== loadKey)) {
     return (

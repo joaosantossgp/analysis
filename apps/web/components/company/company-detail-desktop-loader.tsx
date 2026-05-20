@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 const CompanyDetailBody = dynamic(() =>
   import("@/components/company/company-detail-body").then((mod) => mod.CompanyDetailBody),
@@ -15,7 +15,7 @@ import {
   SectionHeading,
   SurfaceCard,
 } from "@/components/shared/design-system-recipes";
-import { useDesktopBridgeReady } from "@/components/shared/use-desktop-bridge-ready";
+import { useDesktopLoader } from "@/components/shared/use-desktop-loader";
 import { buttonVariants } from "@/components/ui/button";
 import { getReadableCompanyYears } from "@/lib/company-detail-handoff";
 import type { CompanyInfo, KPIBundle, StatementMatrix } from "@/lib/api";
@@ -92,7 +92,6 @@ export function CompanyDetailDesktopLoader({
   const anos = getFirstParam(searchParams.anos);
   const refreshTick = useDesktopDataRefreshTick({ cdCvm, scope: "company" });
   const loadKey = `${cdCvm}|${aba ?? ""}|${stmt ?? ""}|${anos ?? ""}|${refreshTick}`;
-  const bridgeReady = useDesktopBridgeReady(loadKey);
 
   const [state, setState] = useState<{
     key: string;
@@ -115,105 +114,91 @@ export function CompanyDetailDesktopLoader({
     yearsListUnreachable?: boolean;
   } | null>(null);
 
-  useEffect(() => {
-    if (bridgeReady !== "ready") return;
+  const bridgeReady = useDesktopLoader(loadKey, async (isCancelled) => {
+    setState({ key: loadKey, phase: "loading" });
 
-    let cancelled = false;
+    try {
+      const company = await bridgeFetchCompanyInfo(cdCvm);
+      if (isCancelled()) return;
 
-    async function run() {
-      if (cancelled) return;
+      if (!company) {
+        setState({ key: loadKey, phase: "not_found" });
+        return;
+      }
 
-      setState({ key: loadKey, phase: "loading" });
-
+      let availableYears: number[] = [];
+      let yearsListUnreachable = false;
       try {
-        const company = await bridgeFetchCompanyInfo(cdCvm);
-        if (cancelled) return;
+        availableYears = await bridgeFetchCompanyYears(cdCvm);
+      } catch {
+        availableYears = [];
+        yearsListUnreachable = true;
+      }
 
-        if (!company) {
-          setState({ key: loadKey, phase: "not_found" });
-          return;
-        }
+      if (isCancelled()) return;
 
-        let availableYears: number[] = [];
-        let yearsListUnreachable = false;
-        try {
-          availableYears = await bridgeFetchCompanyYears(cdCvm);
-        } catch {
-          availableYears = [];
-          yearsListUnreachable = true;
-        }
+      const readableYears = getReadableCompanyYears(company, availableYears);
 
-        if (cancelled) return;
-
-        const readableYears = getReadableCompanyYears(company, availableYears);
-
-        if (readableYears.length === 0) {
-          setState({
-            key: loadKey,
-            phase: "no_data",
-            company,
-            yearsListUnreachable,
-          });
-          return;
-        }
-
-        const currentTab = coerceDetailTab(aba);
-        const currentStatement = coerceStatement(stmt);
-        const selectedYears = normalizeSelectedYears(readableYears, anos);
-
-        let bundle: KPIBundle | null = null;
-        let statement: StatementMatrix | null = null;
-        let contentError: string | null = null;
-
-        if (currentTab === "visao-geral") {
-          try {
-            bundle = await bridgeFetchCompanyKpis(cdCvm, selectedYears);
-          } catch (error) {
-            contentError = errorMessage(error);
-          }
-        } else {
-          try {
-            statement = await bridgeFetchCompanyStatement(
-              cdCvm,
-              selectedYears,
-              currentStatement,
-            );
-          } catch (error) {
-            contentError = errorMessage(error);
-          }
-        }
-
-        if (cancelled) return;
-
+      if (readableYears.length === 0) {
         setState({
           key: loadKey,
-          phase: "ready",
+          phase: "no_data",
           company,
-          readableYears,
-          currentTab,
-          currentStatement,
-          selectedYears,
-          bundle,
-          statement,
-          contentError,
           yearsListUnreachable,
         });
-      } catch (error) {
-        if (cancelled) return;
-        setState({
-          key: loadKey,
-          phase: "error",
-          errorMessage: errorMessage(error),
-        });
+        return;
       }
+
+      const currentTab = coerceDetailTab(aba);
+      const currentStatement = coerceStatement(stmt);
+      const selectedYears = normalizeSelectedYears(readableYears, anos);
+
+      let bundle: KPIBundle | null = null;
+      let statement: StatementMatrix | null = null;
+      let contentError: string | null = null;
+
+      if (currentTab === "visao-geral") {
+        try {
+          bundle = await bridgeFetchCompanyKpis(cdCvm, selectedYears);
+        } catch (error) {
+          contentError = errorMessage(error);
+        }
+      } else {
+        try {
+          statement = await bridgeFetchCompanyStatement(
+            cdCvm,
+            selectedYears,
+            currentStatement,
+          );
+        } catch (error) {
+          contentError = errorMessage(error);
+        }
+      }
+
+      if (isCancelled()) return;
+
+      setState({
+        key: loadKey,
+        phase: "ready",
+        company,
+        readableYears,
+        currentTab,
+        currentStatement,
+        selectedYears,
+        bundle,
+        statement,
+        contentError,
+        yearsListUnreachable,
+      });
+    } catch (error) {
+      if (isCancelled()) return;
+      setState({
+        key: loadKey,
+        phase: "error",
+        errorMessage: errorMessage(error),
+      });
     }
-
-    void run();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [bridgeReady, loadKey, cdCvm, aba, stmt, anos, refreshTick]);
+  });
 
   if (bridgeReady === "timeout" && (!state || state.key !== loadKey)) {
     return (

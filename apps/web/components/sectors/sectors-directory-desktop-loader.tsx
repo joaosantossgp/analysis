@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 import { SectorDirectoryList } from "@/components/sectors/sector-directory-list";
@@ -12,7 +12,7 @@ import {
   SectionHeading,
   SurfaceCard,
 } from "@/components/shared/design-system-recipes";
-import { useDesktopBridgeReady } from "@/components/shared/use-desktop-bridge-ready";
+import { useDesktopLoader } from "@/components/shared/use-desktop-loader";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
 import type { SectorDirectory } from "@/lib/api";
@@ -41,36 +41,22 @@ export function SectorsDirectoryDesktopLoader({
   const groupBy = coerceGroupBy(searchParams.get("visao"), initialGroupBy);
   const [directory, setDirectory] = useState<SectorDirectory | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const bridgeReady = useDesktopBridgeReady("sectors-directory");
 
-  useEffect(() => {
-    if (bridgeReady !== "ready") return;
-
-    let cancelled = false;
-
-    async function load() {
-      if (cancelled) return;
-
+  const bridgeReady = useDesktopLoader(
+    `sectors-directory:${groupBy}`,
+    async (isCancelled) => {
       try {
         const data = await bridgeFetchSectors(groupBy);
-        if (!cancelled) {
-          setDirectory(data);
-          setError(null);
-        }
+        if (isCancelled()) return;
+        setDirectory(data);
+        setError(null);
       } catch (err) {
-        if (!cancelled) {
-          setDirectory(null);
-          setError(errorMessage(err));
-        }
+        if (isCancelled()) return;
+        setDirectory(null);
+        setError(errorMessage(err));
       }
-    }
-
-    void load();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [bridgeReady, groupBy]);
+    },
+  );
 
   const bridgeError =
     bridgeReady === "timeout"
