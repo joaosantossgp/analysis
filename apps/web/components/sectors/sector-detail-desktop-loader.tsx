@@ -15,8 +15,8 @@ import {
   SectionHeading,
   SurfaceCard,
 } from "@/components/shared/design-system-recipes";
+import { ProblemStateCard } from "@/components/shared/problem-state-card";
 import { useDesktopBridgeReady } from "@/components/shared/use-desktop-bridge-ready";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
 import type { SectorDetail } from "@/lib/api";
 import {
@@ -175,39 +175,17 @@ export function SectorDetailDesktopLoader({
 
   if (bridgeReady === "timeout" && (!state || state.key !== loadKey)) {
     return (
-      <PageShell density="relaxed" className="max-w-4xl">
-        <SurfaceCard tone="hero" padding="hero" className="space-y-6">
-          <SectionHeading
-            eyebrow="PG-06 - Detalhe do setor"
-            title="Leitura setorial indisponivel"
-            titleAs="h1"
-            description="O detalhe do setor nao conseguiu concluir a leitura agora."
-          />
-          <Alert variant="destructive-soft">
-            <AlertTitle>Falha controlada do detalhe setorial</AlertTitle>
-            <AlertDescription>
-              Bridge local do desktop indisponivel. Reabra o aplicativo para carregar os dados locais.
-            </AlertDescription>
-          </Alert>
-          <div className="flex flex-wrap gap-3">
-            <Link
-              href="/setores"
-              className={cn(buttonVariants({ size: "lg" }), "rounded-full px-5")}
-            >
-              Voltar para setores
-            </Link>
-            <Link
-              href="/empresas"
-              className={cn(
-                buttonVariants({ variant: "outline", size: "lg" }),
-                "rounded-full px-5",
-              )}
-            >
-              Abrir empresas
-            </Link>
-          </div>
-        </SurfaceCard>
-      </PageShell>
+      <ProblemStateCard
+        eyebrow="PG-06 - Detalhe do setor"
+        title="Leitura setorial indisponivel"
+        description="O detalhe do setor nao conseguiu concluir a leitura agora."
+        alertTitle="Falha controlada do detalhe setorial"
+        alertDescription="Bridge local do desktop indisponivel. Reabra o aplicativo para carregar os dados locais."
+        actions={[
+          { href: "/setores", label: "Voltar para setores" },
+          { href: "/empresas", label: "Abrir empresas", variant: "outline" },
+        ]}
+      />
     );
   }
 
@@ -235,60 +213,28 @@ export function SectorDetailDesktopLoader({
 
   if (state.phase === "bridge_timeout" || state.phase === "error") {
     return (
-      <PageShell density="relaxed" className="max-w-4xl">
-        <SurfaceCard tone="hero" padding="hero" className="space-y-6">
-          <SectionHeading
-            eyebrow="PG-06 - Detalhe do setor"
-            title="Leitura setorial indisponivel"
-            titleAs="h1"
-            description="O detalhe do setor nao conseguiu concluir a leitura agora."
-          />
-          <Alert variant="destructive-soft">
-            <AlertTitle>Falha controlada do detalhe setorial</AlertTitle>
-            <AlertDescription>{state.errorMessageText}</AlertDescription>
-          </Alert>
-          <div className="flex flex-wrap gap-3">
-            <Link
-              href="/setores"
-              className={cn(buttonVariants({ size: "lg" }), "rounded-full px-5")}
-            >
-              Voltar para setores
-            </Link>
-            <Link
-              href="/empresas"
-              className={cn(
-                buttonVariants({ variant: "outline", size: "lg" }),
-                "rounded-full px-5",
-              )}
-            >
-              Abrir empresas
-            </Link>
-          </div>
-        </SurfaceCard>
-      </PageShell>
+      <ProblemStateCard
+        eyebrow="PG-06 - Detalhe do setor"
+        title="Leitura setorial indisponivel"
+        description="O detalhe do setor nao conseguiu concluir a leitura agora."
+        alertTitle="Falha controlada do detalhe setorial"
+        alertDescription={state.errorMessageText}
+        actions={[
+          { href: "/setores", label: "Voltar para setores" },
+          { href: "/empresas", label: "Abrir empresas", variant: "outline" },
+        ]}
+      />
     );
   }
 
   if (state.phase === "not_found") {
     return (
-      <PageShell density="relaxed" className="max-w-4xl">
-        <SurfaceCard tone="hero" padding="hero" className="space-y-6">
-          <SectionHeading
-            eyebrow="PG-06 - Detalhe do setor"
-            title="Setor nao encontrado"
-            titleAs="h1"
-            description="Nao ha dados locais para este slug de setor na base empacotada."
-          />
-          <div className="flex flex-wrap gap-3">
-            <Link
-              href="/setores"
-              className={cn(buttonVariants({ size: "lg" }), "rounded-full px-5")}
-            >
-              Voltar para setores
-            </Link>
-          </div>
-        </SurfaceCard>
-      </PageShell>
+      <ProblemStateCard
+        eyebrow="PG-06 - Detalhe do setor"
+        title="Setor nao encontrado"
+        description="Nao ha dados locais para este slug de setor na base empacotada."
+        actions={[{ href: "/setores", label: "Voltar para setores" }]}
+      />
     );
   }
 
