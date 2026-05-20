@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { SearchIcon } from "lucide-react";
 
-import { IndicatorSelector } from "@/components/analysis/indicator-selector";
+import { IndicatorSelector } from "@/components/company/analysis/indicator-selector";
 import { CompanyAnalysisChart } from "@/components/company/company-analysis-chart";
 import { CompanyHelpTip } from "@/components/company/company-help-tip";
 import { SurfaceCard } from "@/components/shared/design-system-recipes";
