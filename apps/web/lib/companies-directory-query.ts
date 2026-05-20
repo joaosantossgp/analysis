@@ -48,24 +48,3 @@ export function readCompaniesDirectoryQueryFromRecord(
   return readCompaniesDirectoryQuery(searchParams, pageSize);
 }
 
-export function buildCompaniesDirectoryApiHref(
-  state: Pick<CompaniesDirectoryQueryState, "search" | "sector" | "page" | "pageSize">,
-): string {
-  const query = new URLSearchParams();
-
-  if (state.search) {
-    query.set("busca", state.search);
-  }
-
-  if (state.sector) {
-    query.set("setor", state.sector);
-  }
-
-  if (state.page > 1) {
-    query.set("pagina", String(state.page));
-  }
-
-  query.set("pageSize", String(state.pageSize));
-
-  return `/api/companies-directory?${query.toString()}`;
-}

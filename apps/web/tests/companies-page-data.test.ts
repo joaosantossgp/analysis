@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 
 import { ApiClientError } from "../lib/api.ts";
 import {
-  buildCompaniesDirectoryApiHref,
   readCompaniesDirectoryQuery,
   readCompaniesDirectoryQueryFromRecord,
 } from "../lib/companies-directory-query.ts";
@@ -149,17 +148,6 @@ test("readCompaniesDirectoryQueryFromRecord keeps the first app-router param val
     pageSize: 20,
     viewMode: "cards",
   });
-});
-
-test("buildCompaniesDirectoryApiHref keeps only the params used by the directory route", () => {
-  const href = buildCompaniesDirectoryApiHref({
-    search: "PETR4",
-    sector: "energia",
-    page: 3,
-    pageSize: 20,
-  });
-
-  assert.equal(href, "/api/companies-directory?busca=PETR4&setor=energia&pagina=3&pageSize=20");
 });
 
 test("isDesktopServerMode is enabled only by the desktop runtime flag", () => {
