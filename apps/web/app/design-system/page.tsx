@@ -36,7 +36,7 @@ const FeatureCarousel = dynamic(() => import("@/components/feature-carousel"), {
 
 const FinancialTable = dynamic(
   () =>
-    import("@/components/financial-markets-table").then((module) => ({
+    import("@/components/design-system/financial-markets-table").then((module) => ({
       default: module.FinancialTable,
     })),
   {
@@ -47,7 +47,7 @@ const FinancialTable = dynamic(
 
 const LeadsTable = dynamic(
   () =>
-    import("@/components/leads-data-table").then((module) => ({
+    import("@/components/design-system/leads-data-table").then((module) => ({
       default: module.LeadsTable,
     })),
   {
@@ -58,7 +58,7 @@ const LeadsTable = dynamic(
 
 const ServerManagementTable = dynamic(
   () =>
-    import("@/components/server-management-table").then((module) => ({
+    import("@/components/design-system/server-management-table").then((module) => ({
       default: module.ServerManagementTable,
     })),
   {
