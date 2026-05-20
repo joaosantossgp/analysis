@@ -1,3 +1,12 @@
+"""HTTP-facing Pydantic payloads for the FastAPI read service.
+
+Each ``*Payload`` mirrors a ``*DTO`` from ``src.contracts`` and adapts it
+for JSON transport (nullable coercion, ``math.isfinite`` guards on
+floats, ISO timestamp formatting, etc.). The naming convention is
+documented at the top of ``src.contracts`` — keep ``*DTO`` for domain
+shapes and ``*Payload`` for the HTTP boundary.
+"""
+
 from __future__ import annotations
 
 import math

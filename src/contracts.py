@@ -1,3 +1,19 @@
+"""Domain data contracts shared by src/ and apps/api/.
+
+Naming convention:
+- ``*DTO`` (CompanyInfoDTO, RefreshStatusDTO, ...) — domain dataclasses
+  produced by the read/refresh services. Frozen, ``asdict``-able, no
+  presentation logic.
+- ``*Payload`` lives in ``apps/api/app/presenters`` and wraps a DTO for
+  HTTP response shaping (Pydantic, JSON-safe coercion, etc.). API routes
+  build Payloads from DTOs at the transport boundary.
+
+If a new contract is only consumed inside ``src/``, use ``*DTO``. If a
+new HTTP-only field is needed, add it to the matching ``*Payload`` in
+the presenters module — don't pollute the domain DTO with presentation
+concerns.
+"""
+
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
