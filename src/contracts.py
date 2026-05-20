@@ -227,6 +227,8 @@ class CompanyInfoDTO:
     cnpj: str | None
     setor_cvm: str | None
     setor_analitico: str | None
+    sector_name: str
+    sector_slug: str
     company_type: str | None
     ticker_b3: str | None
     has_local_financial_reports: bool = False

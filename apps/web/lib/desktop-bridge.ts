@@ -271,7 +271,15 @@ export async function bridgeFetchCompanyFreshness(
 
 export async function bridgeRequestRefresh(
   cdCvm: number,
+  range?: { startYear: number; endYear: number },
 ): Promise<RefreshDispatchResponse> {
+  if (range) {
+    return callBridge<RefreshDispatchResponse>("request_refresh", {
+      cd_cvm: cdCvm,
+      start_year: range.startYear,
+      end_year: range.endYear,
+    });
+  }
   return callBridge<RefreshDispatchResponse>("request_refresh", {
     cd_cvm: cdCvm,
   });

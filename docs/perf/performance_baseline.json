@@ -188,9 +188,9 @@
           "max_p95_ms": 309.64
         }
       },
-      "GET /sectors/energia": {
+      "GET /sectors/energy": {
         "method": "GET",
-        "path": "/sectors/energia",
+        "path": "/sectors/energy",
         "params": {},
         "median_ms": 67.43,
         "p95_ms": 68.78,

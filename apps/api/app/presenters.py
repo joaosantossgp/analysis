@@ -118,8 +118,6 @@ class CompanySuggestionPayload(BaseModel):
     company_name: str
     ticker_b3: str | None = None
     sector_slug: str
-    gics_sector: str | None = None
-    gics_sector_slug: str | None = None
 
 
 class CompanySuggestionsPayload(BaseModel):

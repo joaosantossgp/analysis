@@ -359,7 +359,13 @@ class CVMBridge:
         # which does a full incremental backfill (2010..current). The batch
         # manager defaults to mode="missing" with fast_lane=True, which would
         # only fetch the last 2 years.
-        batch_signals = ("company_ids", "sector_slug", "gics_sub_industry", "cvm_range", "mode")
+        batch_signals = (
+            "company_ids",
+            "sector_slug",
+            "gics_sub_industry",
+            "cvm_range",
+            "mode",
+        )
         is_single_company = (
             p.get("cd_cvm") is not None
             and not any(p.get(key) for key in batch_signals)
@@ -368,7 +374,15 @@ class CVMBridge:
             try:
                 import dataclasses  # noqa: PLC0415
                 cd_cvm = int(p.get("cd_cvm"))
-                result = self._svc().request_company_refresh(cd_cvm)
+                start_year_raw = p.get("start_year")
+                end_year_raw = p.get("end_year")
+                start_year = int(start_year_raw) if start_year_raw is not None else None
+                end_year = int(end_year_raw) if end_year_raw is not None else None
+                result = self._svc().request_company_refresh(
+                    cd_cvm,
+                    start_year=start_year,
+                    end_year=end_year,
+                )
                 return self._sanitize_for_json(dataclasses.asdict(result))
             except Exception as exc:
                 return self._sanitize_for_json({
@@ -397,6 +411,46 @@ class CVMBridge:
             return self._sanitize_for_json(self._refresh().cancel_job(params or {}))
         except Exception as exc:
             return self._sanitize_for_json({"ok": False, "message": str(exc)})
+
+    # ------------------------------------------------------------------
+    # Internal refresh worker (drena jobs enfileirados em refresh_jobs)
+    # ------------------------------------------------------------------
+
+    def _start_refresh_worker(self) -> None:
+        """Called from a daemon thread in app.py after window creation.
+
+        Jobs enfileirados via ``CVMReadService.request_company_refresh``
+        (caminho single-company com período) ficam pendentes na tabela
+        ``refresh_jobs``. Sem este worker, eles nunca rodam no .exe.
+        """
+        try:
+            from src.refresh_job_worker import (  # noqa: PLC0415
+                RefreshJobWorker,
+                RefreshWorkerConfig,
+            )
+            from src.refresh_service import HeadlessRefreshService  # noqa: PLC0415
+
+            svc = self._svc()
+            # Reusa o repository já inicializado pelo CVMReadService
+            # (mesmo engine sqlite local, esquema já garantido).
+            repository = svc.refresh_job_repository
+            try:
+                repository.ensure_schema()
+            except Exception:
+                pass
+
+            refresh_service = HeadlessRefreshService(settings=svc.settings)
+            worker = RefreshJobWorker(
+                settings=svc.settings,
+                repository=repository,
+                refresh_service=refresh_service,
+                config=RefreshWorkerConfig(),
+            )
+            worker.run_forever()
+        except Exception:
+            # Worker é best-effort: se falhar, o usuário ainda vê o status
+            # "queued" no UI mas não trava o app.
+            pass
 
     # ------------------------------------------------------------------
     # Auto-updater

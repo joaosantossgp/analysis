@@ -13,7 +13,7 @@ import { isDesktopServerMode } from "@/lib/desktop-mode";
 export const metadata: Metadata = {
   title: "Empresas",
   description:
-    "Diretorio publico e paginado de empresas com dados financeiros ja processados na base CVM Analytics.",
+    "Diretório público e paginado de empresas com dados financeiros já processados na base CVM Analytics.",
 };
 
 export const revalidate = 300;

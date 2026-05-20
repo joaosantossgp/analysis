@@ -11,6 +11,7 @@ import {
   isApiClientError,
 } from "@/lib/api";
 import { getReadableRefreshSuccessKey } from "@/lib/company-detail-handoff";
+import { dispatchDesktopDataRefreshed } from "@/lib/desktop-data-events";
 import {
   applyManualStatusFailure,
   applyRefreshPollFailure,
@@ -33,6 +34,7 @@ import {
 type UseCompanyRefreshMachineOptions = {
   cdCvm: number;
   initialStatus?: RefreshStatusItem | null;
+  range?: { startYear: number; endYear: number };
 };
 
 type UseCompanyRefreshMachineResult = {
@@ -47,6 +49,7 @@ type UseCompanyRefreshMachineResult = {
 export function useCompanyRefreshMachine({
   cdCvm,
   initialStatus = null,
+  range,
 }: UseCompanyRefreshMachineOptions): UseCompanyRefreshMachineResult {
   const router = useRouter();
   const [state, setState] = useState<RefreshMachineState>(() =>
@@ -126,10 +129,17 @@ export function useCompanyRefreshMachine({
       return;
     }
 
+    // Server path (web preview): invalida cache RSC e reexecuta a página.
     router.refresh();
+
+    // Desktop path (.exe / pywebview): não há servidor, então
+    // notificamos loaders client-side via event bus para refazerem
+    // suas chamadas ao bridge.
+    dispatchDesktopDataRefreshed({ cdCvm, scope: "company" });
 
     reloadTimerRef.current = window.setTimeout(() => {
       router.refresh();
+      dispatchDesktopDataRefreshed({ cdCvm, scope: "company" });
     }, RELOAD_DELAY_MS);
 
     return () => {
@@ -138,7 +148,7 @@ export function useCompanyRefreshMachine({
         reloadTimerRef.current = null;
       }
     };
-  }, [router, successHandoffKey]);
+  }, [cdCvm, router, successHandoffKey]);
 
   useEffect(() => {
     if (!isAutoPollingPhase(state.phase)) {
@@ -171,7 +181,7 @@ export function useCompanyRefreshMachine({
     setState(createSubmittingRefreshState());
 
     try {
-      const payload = await fetchRequestRefresh(cdCvm);
+      const payload = await fetchRequestRefresh(cdCvm, range);
 
       if (!isMountedRef.current) {
         return;

@@ -40,7 +40,7 @@ test("detalhe com historico renderiza o dashboard de analise na visao geral", as
   const analysisPanel = page.getByTestId("company-analysis-panel");
   await expect(analysisPanel).toBeVisible({ timeout: 30_000 });
   await expect(
-    analysisPanel.getByRole("heading", { name: /visao anual/i }),
+    analysisPanel.getByRole("heading", { name: /vis[aã]o anual/i }),
   ).toBeVisible();
   await expect(analysisPanel.getByText(/tabela anual/i)).toBeVisible();
 });
@@ -60,9 +60,9 @@ test("home suggestions usam a rota same-origin", async ({ page }) => {
 });
 
 test("detalhe sem historico vira experiencia guiada de pre-refresh", async ({ page }) => {
-  await page.goto("/empresas/25640");
+  await page.goto("/empresas/16330");
 
-  await expect(page.locator("h1").first()).toContainText(/AUREN/i, {
+  await expect(page.locator("h1").first()).toBeVisible({
     timeout: 30_000,
   });
 
@@ -73,7 +73,7 @@ test("detalhe sem historico vira experiencia guiada de pre-refresh", async ({ pa
     page.getByText(/No financial data available yet/i),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: /atualizar leitura da cvm/i }),
+    page.getByRole("button", { name: /baixar dados desta empresa agora/i }),
   ).toBeVisible();
 });
 

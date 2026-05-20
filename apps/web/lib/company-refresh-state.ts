@@ -1081,7 +1081,7 @@ export function getRefreshViewModel(
         stepClassName: getBadgeClassName("queued"),
         isDestructive: false,
         estimate,
-        requestButtonLabel: "Atualizar leitura da CVM",
+        requestButtonLabel: "Baixar dados desta empresa agora",
         requestButtonDisabled: false,
         showManualStatusButton: false,
         showRequestAgainButton: false,

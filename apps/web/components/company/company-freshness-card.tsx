@@ -1,4 +1,8 @@
-﻿import { CompanyRequestRefreshLazy } from "@/components/company/company-request-refresh-lazy";
+﻿"use client";
+
+import { useEffect, useState } from "react";
+
+import { CompanyRequestRefreshLazy } from "@/components/company/company-request-refresh-lazy";
 import { CompanyHelpTip } from "@/components/company/company-help-tip";
 import { SurfaceCard } from "@/components/shared/design-system-recipes";
 import {
@@ -15,6 +19,13 @@ import { cn } from "@/lib/utils";
 type CompanyFreshnessCardProps = {
   cdCvm: number;
   showRequestAction?: boolean;
+};
+
+type FreshnessState = {
+  cdCvm: number;
+  freshness: RefreshStatusItem | null;
+  fetchError: string | null;
+  status: "loading" | "ready" | "error";
 };
 
 const RELATIVE_TIME_FORMATTER = new Intl.RelativeTimeFormat("pt-BR", {
@@ -90,17 +101,56 @@ function getStatusBadgeClassName(tone: FreshnessBadgeTone): string {
   }
 }
 
-export async function CompanyFreshnessCard({
+export function CompanyFreshnessCard({
   cdCvm,
   showRequestAction = true,
 }: CompanyFreshnessCardProps) {
-  let freshness: RefreshStatusItem | null = null;
-  let fetchError: string | null = null;
+  const [state, setState] = useState<FreshnessState>({
+    cdCvm,
+    freshness: null,
+    fetchError: null,
+    status: "loading",
+  });
 
-  try {
-    freshness = await fetchCompanyFreshness(cdCvm);
-  } catch (error) {
-    fetchError = getUserFacingErrorMessage(error);
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchCompanyFreshness(cdCvm)
+      .then((result) => {
+        if (cancelled) return;
+        setState({
+          cdCvm,
+          freshness: result,
+          fetchError: null,
+          status: "ready",
+        });
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setState({
+          cdCvm,
+          freshness: null,
+          fetchError: getUserFacingErrorMessage(error),
+          status: "error",
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [cdCvm]);
+
+  const isLoading = state.cdCvm !== cdCvm || state.status === "loading";
+  const freshness = state.cdCvm === cdCvm ? state.freshness : null;
+  const fetchError = state.cdCvm === cdCvm ? state.fetchError : null;
+
+  if (isLoading) {
+    return (
+      <SurfaceCard tone="inset" padding="md" className="space-y-4 animate-pulse">
+        <div className="h-6 w-32 rounded-full bg-muted/70" />
+        <div className="h-20 rounded-2xl bg-muted/50" />
+      </SurfaceCard>
+    );
   }
 
   const summary = getCompanyFreshnessCopy(freshness);

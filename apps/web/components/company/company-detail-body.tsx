@@ -5,6 +5,7 @@ import type {
 } from "@/lib/api";
 
 import { CompanyDetailTracker } from "@/components/company/company-detail-tracker";
+import { CompanyDownloadPeriod } from "@/components/company/company-download-period";
 import { CompanyHeader } from "@/components/company/company-header";
 import { CompanyOverview } from "@/components/company/company-overview";
 import { CompanyPeriodPreset } from "@/components/company/company-period-preset";
@@ -70,6 +71,8 @@ export function CompanyDetailBody({
         variant="custom-only"
       />
 
+      <CompanyDownloadPeriod cdCvm={company.cd_cvm} />
+
       {yearsListUnreachable ? (
         <CompanyYearsListWarning context="detail_fallback" />
       ) : null}
@@ -79,9 +82,6 @@ export function CompanyDetailBody({
           <CompanyOverview
             company={company}
             bundle={bundle}
-            pathname={pathname}
-            availableYears={readableYears}
-            selectedYears={selectedYears}
           />
         ) : (
           <ApiUnavailableState

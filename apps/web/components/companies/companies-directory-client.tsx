@@ -1,4 +1,5 @@
 ﻿import Link from "next/link";
+import { LayoutGridIcon, ListIcon } from "lucide-react";
 
 import { CompanyDirectoryFilters } from "@/components/companies/company-directory-filters";
 import { CompanyDirectoryList } from "@/components/companies/company-directory-list";
@@ -29,17 +30,17 @@ type CompaniesDirectoryPageContentProps = Pick<
 const DISCOVERY_LEGEND = [
   {
     label: "Pronta agora",
-    description: "Leitura anual suficiente para KPIs, demonstracoes e Excel.",
+    description: "Leitura anual suficiente para KPIs, demonstrações e Excel.",
     className: "border-emerald-500/20 bg-emerald-500/8 text-emerald-700 dark:text-emerald-300",
   },
   {
     label: "Solicitar dados",
-    description: "Sem historico local; abra a pagina para pedir on-demand.",
+    description: "Sem histórico local; abra a página para pedir on-demand.",
     className: "border-primary/20 bg-primary/8 text-primary/80",
   },
   {
     label: "Baixo sinal",
-    description: "Tem dados locais, mas cobertura curta para analise forte.",
+    description: "Tem dados locais, mas cobertura curta para análise forte.",
     className: "border-amber-500/24 bg-amber-500/10 text-amber-700 dark:text-amber-300",
   },
   {
@@ -79,15 +80,15 @@ export function CompaniesDirectoryPageContent({
         <SurfaceCard tone="hero" padding="hero" className="space-y-6">
           <SectionHeading
             eyebrow="Empresas"
-            title="Diretorio temporariamente indisponivel"
+            title="Diretório temporariamente indisponível"
             titleAs="h1"
-            description="A listagem de empresas nao respondeu agora. O fluxo de busca e navegacao pode ser retomado assim que a API voltar a responder."
+            description="A listagem de empresas não respondeu agora. O fluxo de busca e navegação pode ser retomado assim que a API voltar a responder."
           />
           <Alert variant="destructive-soft">
             <AlertTitle>Falha controlada da listagem</AlertTitle>
             <AlertDescription>
               {data.directoryError ??
-                "Nao foi possivel carregar o diretorio de empresas agora. Tente novamente em instantes."}
+                "Não foi possível carregar o diretório de empresas agora. Tente novamente em instantes."}
             </AlertDescription>
           </Alert>
           <div className="flex flex-wrap gap-3">
@@ -125,14 +126,14 @@ export function CompaniesDirectoryPageContent({
   const viewCardsHref = viewCardsQuery ? `/empresas?${viewCardsQuery}` : "/empresas?view=cards";
   const clearHref = viewMode === "cards" ? "/empresas?view=cards" : "/empresas";
   const toggleBase =
-    "flex size-8 items-center justify-center rounded-lg border transition-colors text-sm";
+    "flex size-8 items-center justify-center rounded-lg border text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 
   return (
     <PageShell density="default" className="space-y-8">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="mb-1 text-xs font-medium uppercase tracking-[0.26em] text-muted-foreground">
-            Diretorio / CVM
+            Diretório / CVM
           </p>
           <h1 className="font-heading text-[clamp(1.75rem,4vw,2.5rem)] font-medium leading-tight tracking-[-0.04em] text-foreground">
             Todas as companhias abertas
@@ -147,7 +148,8 @@ export function CompaniesDirectoryPageContent({
         <div className="flex items-center gap-1.5">
           <Link
             href={viewRowsHref}
-            title="Ver em linhas"
+            aria-label="Ver empresas em linhas"
+            aria-current={viewMode === "rows" ? "true" : undefined}
             className={cn(
               toggleBase,
               viewMode === "rows"
@@ -155,15 +157,12 @@ export function CompaniesDirectoryPageContent({
                 : "border-border/40 text-muted-foreground hover:border-border hover:text-foreground",
             )}
           >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
-              <rect x="1" y="2" width="12" height="2" rx="0.5" fill="currentColor" />
-              <rect x="1" y="6" width="12" height="2" rx="0.5" fill="currentColor" />
-              <rect x="1" y="10" width="12" height="2" rx="0.5" fill="currentColor" />
-            </svg>
+            <ListIcon className="size-4" aria-hidden="true" />
           </Link>
           <Link
             href={viewCardsHref}
-            title="Ver em cards"
+            aria-label="Ver empresas em cards"
+            aria-current={viewMode === "cards" ? "true" : undefined}
             className={cn(
               toggleBase,
               viewMode === "cards"
@@ -171,19 +170,14 @@ export function CompaniesDirectoryPageContent({
                 : "border-border/40 text-muted-foreground hover:border-border hover:text-foreground",
             )}
           >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
-              <rect x="1" y="1" width="5" height="5" rx="1" fill="currentColor" />
-              <rect x="8" y="1" width="5" height="5" rx="1" fill="currentColor" />
-              <rect x="1" y="8" width="5" height="5" rx="1" fill="currentColor" />
-              <rect x="8" y="8" width="5" height="5" rx="1" fill="currentColor" />
-            </svg>
+            <LayoutGridIcon className="size-4" aria-hidden="true" />
           </Link>
         </div>
       </div>
 
       {directoryError ? (
         <Alert className="rounded-3xl border-border/70 bg-background/85 px-5 py-4">
-          <AlertTitle>Atualizacao parcial da listagem</AlertTitle>
+          <AlertTitle>Atualização parcial da listagem</AlertTitle>
           <AlertDescription>{directoryError}</AlertDescription>
         </Alert>
       ) : null}
@@ -192,7 +186,7 @@ export function CompaniesDirectoryPageContent({
         <Alert className="rounded-3xl border-border/70 bg-background/85 px-5 py-4">
           <AlertTitle>Filtro setorial indisponivel</AlertTitle>
           <AlertDescription>
-            {filtersError} A busca livre e a paginacao continuam disponiveis.
+            {filtersError} A busca livre e a paginação continuam disponíveis.
           </AlertDescription>
         </Alert>
       ) : null}

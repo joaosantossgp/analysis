@@ -96,9 +96,9 @@ API_ENDPOINT_SPECS = (
         "params": {},
     },
     {
-        "id": "GET /sectors/energia",
+        "id": "GET /sectors/energy",
         "method": "GET",
-        "path": "/sectors/energia",
+        "path": "/sectors/energy",
         "params": {},
     },
 )

@@ -45,6 +45,78 @@ SECTORS = [
     "Consumo Ciclico", "Consumo nao Ciclico", "Saude", "Tecnologia",
     "Utilidades", "Industria",
 ]
+GICS_BY_SYNTHETIC_SECTOR = {
+    "Energia": {
+        "gics_sector": "Energy",
+        "gics_sector_slug": "energy",
+        "gics_industry_group": "Energy",
+        "gics_industry": "Oil, Gas & Consumable Fuels",
+        "gics_sub_industry": "Integrated Oil & Gas",
+    },
+    "Materiais Basicos": {
+        "gics_sector": "Materials",
+        "gics_sector_slug": "materials",
+        "gics_industry_group": "Materials",
+        "gics_industry": "Metals & Mining",
+        "gics_sub_industry": "Diversified Metals & Mining",
+    },
+    "Financeiro": {
+        "gics_sector": "Financials",
+        "gics_sector_slug": "financials",
+        "gics_industry_group": "Financial Services",
+        "gics_industry": "Banks",
+        "gics_sub_industry": "Diversified Banks",
+    },
+    "Saneamento": {
+        "gics_sector": "Utilities",
+        "gics_sector_slug": "utilities",
+        "gics_industry_group": "Utilities",
+        "gics_industry": "Water Utilities",
+        "gics_sub_industry": "Water Utilities",
+    },
+    "Consumo Ciclico": {
+        "gics_sector": "Consumer Discretionary",
+        "gics_sector_slug": "consumer-discretionary",
+        "gics_industry_group": "Consumer Discretionary Distribution & Retail",
+        "gics_industry": "Specialty Retail",
+        "gics_sub_industry": "Apparel Retail",
+    },
+    "Consumo nao Ciclico": {
+        "gics_sector": "Consumer Staples",
+        "gics_sector_slug": "consumer-staples",
+        "gics_industry_group": "Consumer Staples Distribution & Retail",
+        "gics_industry": "Consumer Staples Distribution & Retail",
+        "gics_sub_industry": "Food Retail",
+    },
+    "Saude": {
+        "gics_sector": "Health Care",
+        "gics_sector_slug": "health-care",
+        "gics_industry_group": "Health Care Equipment & Services",
+        "gics_industry": "Health Care Providers & Services",
+        "gics_sub_industry": "Health Care Services",
+    },
+    "Tecnologia": {
+        "gics_sector": "Information Technology",
+        "gics_sector_slug": "information-technology",
+        "gics_industry_group": "Software & Services",
+        "gics_industry": "Software",
+        "gics_sub_industry": "Application Software",
+    },
+    "Utilidades": {
+        "gics_sector": "Utilities",
+        "gics_sector_slug": "utilities",
+        "gics_industry_group": "Utilities",
+        "gics_industry": "Electric Utilities",
+        "gics_sub_industry": "Electric Utilities",
+    },
+    "Industria": {
+        "gics_sector": "Industrials",
+        "gics_sector_slug": "industrials",
+        "gics_industry_group": "Capital Goods",
+        "gics_industry": "Industrial Conglomerates",
+        "gics_sub_industry": "Industrial Conglomerates",
+    },
+}
 STMT_ACCOUNTS = {
     "DRE": [("3.01", "Receita"), ("3.03", "Res_Bruto"), ("3.05", "EBIT"), ("3.11", "Lucro_Liq")],
     "BPA": [("1", "Ativo Total"), ("1.01", "Ativo Circ"), ("1.01.01", "Caixa")],
@@ -69,6 +141,7 @@ def seed_synthetic_benchmark_data(engine) -> None:
     for i in range(N_COMPANIES):
         cd_cvm = 1000 + i
         sector = SECTORS[i % len(SECTORS)]
+        gics = GICS_BY_SYNTHETIC_SECTOR[sector]
         company_rows.append({
             "cd_cvm": cd_cvm,
             "company_name": f"EMPRESA {i:04d}",
@@ -81,6 +154,7 @@ def seed_synthetic_benchmark_data(engine) -> None:
             "coverage_rank": i + 1 if i < 100 else None,
             "is_active": 1,
             "updated_at": "2026-01-01T00:00:00",
+            **gics,
         })
 
     fr_rows = []

@@ -1564,10 +1564,14 @@ export async function fetchCompanyStatement(
 
 export async function fetchRequestRefresh(
   cdCvm: number,
+  range?: { startYear: number; endYear: number },
 ): Promise<RefreshDispatchResponse> {
-  if (isDesktopMode()) return bridgeRequestRefresh(cdCvm);
+  if (isDesktopMode()) return bridgeRequestRefresh(cdCvm, range);
+  const query = range
+    ? `?start_year=${range.startYear}&end_year=${range.endYear}`
+    : "";
   return (await routeFetch<RefreshDispatchResponse>(
-    `/api/request-refresh/${cdCvm}`,
+    `/api/request-refresh/${cdCvm}${query}`,
     {
       method: "POST",
     },

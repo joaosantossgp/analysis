@@ -73,7 +73,7 @@ export function DirectoryPagination({
 
   const visiblePages = getVisiblePages(currentPage, totalPages);
   const pillBase =
-    "flex h-8 min-w-8 items-center justify-center rounded-full px-2.5 text-sm transition-colors";
+    "flex h-8 min-w-8 items-center justify-center rounded-full px-2.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 
   return (
     <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-between">
@@ -110,6 +110,8 @@ export function DirectoryPagination({
               <button
                 type="button"
                 onClick={() => goTo(page)}
+                aria-label={`Ir para página ${page}`}
+                aria-current={page === currentPage ? "page" : undefined}
                 className={cn(
                   pillBase,
                   "border",

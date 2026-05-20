@@ -122,8 +122,8 @@ export function CompanyAnalysisChart({
 
   if (activeSeries.length === 0 || years.length === 0) {
     return (
-      <div className="flex h-[320px] items-center justify-center rounded-[1.25rem] border border-dashed border-border/70 bg-muted/16 text-sm text-muted-foreground">
-        Selecione indicadores com historico anual para visualizar o grafico.
+      <div className="flex min-h-[280px] items-center justify-center rounded-[1.1rem] border border-dashed border-border/70 bg-muted/12 px-6 text-center text-sm text-muted-foreground">
+        Selecione indicadores com histórico anual para visualizar o gráfico.
       </div>
     );
   }
@@ -142,10 +142,13 @@ export function CompanyAnalysisChart({
         : relativeSeries.every((series) => series.formatType === "ratio")
           ? "ratio"
           : "mixed";
+  const gridFormat: DashboardFormatType =
+    valueSeries.length > 0 ? "brl" : (relativeSeries[0]?.formatType ?? "pct");
+  const gridStats = gridFormat === "brl" ? valueStats : relativeStats;
 
   const W = 760;
-  const H = 320;
-  const PAD = { top: 28, right: 72, bottom: 44, left: 82 };
+  const H = 300;
+  const PAD = { top: 18, right: 64, bottom: 36, left: 74 };
   const innerW = W - PAD.left - PAD.right;
   const innerH = H - PAD.top - PAD.bottom;
   const slot = innerW / Math.max(years.length, 1);
@@ -214,19 +217,31 @@ export function CompanyAnalysisChart({
         });
 
   return (
-    <div className="space-y-4">
-      <div className="overflow-x-auto rounded-[1.35rem] border border-border/60 bg-background/72 px-4 py-5">
-        <svg viewBox={`0 0 ${W} ${H}`} className="min-w-[680px] w-full" style={{ height: H }}>
-          {buildTicks(valueStats).map((tick) => (
+    <div className="space-y-3">
+      <div className="overflow-x-auto rounded-[1.1rem] border border-border/50 bg-background/64 px-3 py-4">
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          className="w-full"
+          style={{ height: H, minWidth: Math.max(360, years.length * 120) }}
+          role="img"
+          aria-label="Gráfico anual dos indicadores selecionados"
+          onMouseLeave={() => setHoveredYear(null)}
+        >
+          <title>Indicadores anuais selecionados</title>
+          <desc>
+            Compara os indicadores financeiros selecionados ao longo dos anos do período atual.
+          </desc>
+          {buildTicks(gridStats).map((tick) => (
             <line
-              key={`value-grid-${tick}`}
+              key={`grid-${tick}`}
               x1={PAD.left}
               x2={W - PAD.right}
-              y1={toY(tick, "brl")}
-              y2={toY(tick, "brl")}
+              y1={toY(tick, gridFormat)}
+              y2={toY(tick, gridFormat)}
               stroke="var(--border)"
-              strokeOpacity="0.45"
+              strokeOpacity="0.32"
               strokeDasharray={Math.abs(tick) < 0.00001 ? "0" : "4 4"}
+              aria-hidden="true"
             />
           ))}
 
@@ -238,7 +253,7 @@ export function CompanyAnalysisChart({
                   y={toY(tick, "brl")}
                   textAnchor="end"
                   dominantBaseline="middle"
-                  fontSize={10}
+                  fontSize={11}
                   fill="var(--muted-foreground)"
                 >
                   {formatAxisValue(tick, "brl")}
@@ -254,7 +269,7 @@ export function CompanyAnalysisChart({
                   y={toY(tick, relativeSeries[0]?.formatType ?? "pct")}
                   textAnchor="start"
                   dominantBaseline="middle"
-                  fontSize={10}
+                  fontSize={11}
                   fill="var(--muted-foreground)"
                 >
                   {formatAxisValue(tick, rightAxisMode)}
@@ -270,7 +285,8 @@ export function CompanyAnalysisChart({
                 y1={PAD.top}
                 y2={H - PAD.bottom}
                 stroke="var(--border)"
-                strokeOpacity={hoveredYear === year ? 0.5 : 0}
+                strokeOpacity={hoveredYear === year ? 0.48 : 0}
+                aria-hidden="true"
               />
               <rect
                 x={toX(index) - slot / 2}
@@ -279,13 +295,12 @@ export function CompanyAnalysisChart({
                 height={innerH}
                 fill="transparent"
                 onMouseEnter={() => setHoveredYear(year)}
-                onMouseLeave={() => setHoveredYear(null)}
               />
               <text
                 x={toX(index)}
                 y={H - 12}
                 textAnchor="middle"
-                fontSize={11}
+                fontSize={12}
                 fill="var(--muted-foreground)"
               >
                 {year}
@@ -367,11 +382,11 @@ export function CompanyAnalysisChart({
         </svg>
       </div>
 
-      <div className="flex flex-wrap items-start gap-3">
+      <div className="flex flex-wrap items-start gap-2.5">
         {activeSeries.map((series) => (
           <div
             key={series.id}
-            className="flex items-center gap-2 rounded-full border border-border/60 bg-muted/18 px-3 py-1.5 text-xs"
+            className="flex items-center gap-2 rounded-full border border-border/55 bg-muted/14 px-3 py-1.5 text-xs"
           >
             <span
               className="size-2.5 rounded-full"

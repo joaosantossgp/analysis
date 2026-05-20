@@ -12,13 +12,8 @@ import {
 } from "@/components/shared/design-system-recipes";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
-import {
-  fetchCompanyFreshness,
-  type CompanyInfo,
-  type RefreshStatusItem,
-} from "@/lib/api";
+import { type CompanyInfo } from "@/lib/api";
 import { companyHasNonAnnualLocalOnly } from "@/lib/company-detail-handoff";
-import { getCompanyFreshnessCopy } from "@/lib/company-refresh-state";
 import { cn } from "@/lib/utils";
 
 type CompanyNoDataPageProps = {
@@ -41,23 +36,10 @@ function ExpectationCard({ title, description }: ExpectationCardProps) {
   );
 }
 
-export async function CompanyNoDataPage({
+export function CompanyNoDataPage({
   company,
   yearsListUnreachable = false,
 }: CompanyNoDataPageProps) {
-  let initialFreshness: RefreshStatusItem | null = null;
-
-  try {
-    initialFreshness = await fetchCompanyFreshness(company.cd_cvm);
-  } catch {
-    initialFreshness = null;
-  }
-
-  const freshnessCopy = initialFreshness
-    ? getCompanyFreshnessCopy(initialFreshness)
-    : null;
-  const lastOutcomeMessage = freshnessCopy?.latestResultDescription ?? null;
-
   const partialAnnualUnavailable = companyHasNonAnnualLocalOnly(company);
 
   return (
@@ -101,21 +83,10 @@ export async function CompanyNoDataPage({
                 {partialAnnualUnavailable
                   ? "A leitura desta rota usa apenas anos com periodo anual (PERIOD_LABEL alinhado ao ano). Com dados so trimestrais ou incompletos, o painel lateral mostra o estado real do refresh e esta pagina continua aberta para nova tentativa."
                   : "A solicitacao on-demand busca uma serie anual processavel na CVM e atualiza o painel lateral com o status real da tentativa. Quando o processamento encontra historico suficiente, esta mesma rota passa a abrir a visao geral completa e as demonstracoes."}
-                {freshnessCopy?.retryHint ? ` ${freshnessCopy.retryHint}` : ""}
               </AlertDescription>
             </Alert>
 
-            <CompanyRequestRefresh
-              cdCvm={company.cd_cvm}
-              initialStatus={initialFreshness}
-            />
-
-            {lastOutcomeMessage ? (
-              <Alert className="rounded-[1.5rem] border border-border/70 bg-background/82 px-5 py-5">
-                <AlertTitle>Ultimo resultado conhecido</AlertTitle>
-                <AlertDescription>{lastOutcomeMessage}</AlertDescription>
-              </Alert>
-            ) : null}
+            <CompanyRequestRefresh cdCvm={company.cd_cvm} />
 
             <div className="grid gap-4 lg:grid-cols-3">
               <ExpectationCard

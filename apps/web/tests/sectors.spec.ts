@@ -1,7 +1,18 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+
+async function gotoSectorsHub(page: Page) {
+  await page.goto("/setores");
+
+  const unavailableHeading = page.getByRole("heading", {
+    name: /temporariamente indisponivel/i,
+  });
+  if (await unavailableHeading.isVisible()) {
+    await page.getByRole("link", { name: /tentar novamente/i }).click();
+  }
+}
 
 test("hub de setores abre e navega para o detalhe", async ({ page }) => {
-  await page.goto("/setores");
+  await gotoSectorsHub(page);
 
   await expect(
     page.getByRole("heading", { name: /leitura por setores/i }),
@@ -21,7 +32,7 @@ test("hub de setores abre e navega para o detalhe", async ({ page }) => {
 });
 
 test("ano invalido cai para o ano mais recente disponivel do setor", async ({ page }) => {
-  await page.goto("/setores");
+  await gotoSectorsHub(page);
 
   const firstBaseLabel = page.locator("text=/Base\\s+\\d{4}/").first();
   const baseText = (await firstBaseLabel.textContent()) ?? "";
@@ -64,7 +75,7 @@ test("slug inexistente cai em not-found", async ({ page }) => {
 
 test("renderiza a visao geral do setor com KPIs agregados", async ({ page }) => {
   // 1. Navega para a listagem para pegar o primeiro setor real
-  await page.goto("/setores");
+  await gotoSectorsHub(page);
   const firstSectorLink = page.getByTestId("sector-card-link").first();
   await expect(firstSectorLink).toBeVisible({ timeout: 30_000 });
   const href = await firstSectorLink.getAttribute("href");
@@ -79,9 +90,9 @@ test("renderiza a visao geral do setor com KPIs agregados", async ({ page }) => 
   ).toBeVisible({ timeout: 30_000 });
 
   // 4. Verifica os cards de metricas
-  await expect(page.getByText("ROE", { exact: true })).toBeVisible();
-  await expect(page.getByText("Margem EBIT", { exact: true })).toBeVisible();
-  await expect(page.getByText("Margem Liquida", { exact: true })).toBeVisible();
+  await expect(page.locator("p").filter({ hasText: /^ROE$/ })).toBeVisible();
+  await expect(page.locator("p").filter({ hasText: /^Margem EBIT$/ })).toBeVisible();
+  await expect(page.locator("p").filter({ hasText: /^Margem Liquida$/ })).toBeVisible();
 
   // 5. Verifica a tabela de serie anual
   await expect(

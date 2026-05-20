@@ -19,10 +19,6 @@ export function useSectorsCatalog(
   );
 
   useEffect(() => {
-    if (initialSectors.length) {
-      setSectorState("available");
-    }
-
     let alive = true;
     const sectorsPromise = initialSectors.length
       ? Promise.resolve({ sectors: initialSectors })

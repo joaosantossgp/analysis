@@ -21,7 +21,7 @@ Baseline captured for task #239 on 2026-05-03 from the backend worktree.
 | `GET /companies/1000/statements?stmt=DRE&years=2023,2024` | 11.46 | 11.73 |
 | `GET /companies/1000/kpis?years=2023,2024` | 25.63 | 27.46 |
 | `GET /sectors` | 93.67 | 141.89 |
-| `GET /sectors/energia` | 71.74 | 72.38 |
+| `GET /sectors/energy` | 71.74 | 72.38 |
 
 ## Desktop Bundle
 

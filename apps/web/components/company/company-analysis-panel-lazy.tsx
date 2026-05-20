@@ -1,7 +1,6 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import type { ReactNode } from "react";
 
 import type { CompanyDashboardModel } from "@/lib/company-dashboard";
 
@@ -27,12 +26,8 @@ const CompanyAnalysisPanel = dynamic(
 
 type CompanyAnalysisPanelLazyProps = {
   model: CompanyDashboardModel;
-  periodControl?: ReactNode;
 };
 
-export function CompanyAnalysisPanelLazy({
-  model,
-  periodControl,
-}: CompanyAnalysisPanelLazyProps) {
-  return <CompanyAnalysisPanel model={model} periodControl={periodControl} />;
+export function CompanyAnalysisPanelLazy({ model }: CompanyAnalysisPanelLazyProps) {
+  return <CompanyAnalysisPanel model={model} />;
 }

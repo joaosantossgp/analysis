@@ -209,6 +209,14 @@ def main() -> None:
         daemon=True,
     ).start()
 
+    # Drena jobs enfileirados em refresh_jobs (criados por
+    # request_company_refresh no caminho single-company com período).
+    threading.Thread(
+        target=bridge._start_refresh_worker,
+        name="desktop-refresh-worker",
+        daemon=True,
+    ).start()
+
     webview.start(debug=debug_mode)
 
     if server_proc is not None:

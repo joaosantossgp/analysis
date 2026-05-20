@@ -31,7 +31,7 @@ O ciclo atual estabiliza a base visual antes de expandir produto:
 - `components/shared/design-system-recipes.tsx` define recipes reutilizaveis
 - Home, diretorio e detalhe compartilham page shell, cards, chips e headings
 - Estados globais de loading, error e not-found seguem o mesmo vocabulio visual
-- `/design-system` continua como ferramenta interna e nao entra na navegacao principal
+- `/design-system` continua como ferramenta interna e permanece visivel na navegacao
 
 Estado atual da adocao:
 

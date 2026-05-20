@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState } from "react";
 import { SearchIcon } from "lucide-react";
 
 import { IndicatorSelector } from "@/components/analysis/indicator-selector";
@@ -24,13 +24,9 @@ import { formatKpiDelta, formatKpiValue } from "@/lib/formatters";
 
 type CompanyAnalysisPanelProps = {
   model: CompanyDashboardModel;
-  periodControl?: ReactNode;
 };
 
-export function CompanyAnalysisPanel({
-  model,
-  periodControl,
-}: CompanyAnalysisPanelProps) {
+export function CompanyAnalysisPanel({ model }: CompanyAnalysisPanelProps) {
   const [selectedIndicators, setSelectedIndicators] = useState<DashboardSelectedIndicator[]>(
     model.defaultSelectedIndicators,
   );
@@ -41,12 +37,8 @@ export function CompanyAnalysisPanel({
       validIds.has(indicator.id),
     );
 
-    if (filteredSelection.length > 0) {
-      return filteredSelection;
-    }
-
-    return model.defaultSelectedIndicators;
-  }, [model.defaultSelectedIndicators, model.indicatorOptions, selectedIndicators]);
+    return filteredSelection;
+  }, [model.indicatorOptions, selectedIndicators]);
 
   const selectedIds = useMemo(
     () => new Set(effectiveSelectedIndicators.map((indicator) => indicator.id)),
@@ -79,20 +71,28 @@ export function CompanyAnalysisPanel({
   }, [model.tableRows, search, selectedIds]);
 
   return (
-    <SurfaceCard tone="default" padding="lg" className="space-y-6" data-testid="company-analysis-panel">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-        <div className="space-y-2">
+    <SurfaceCard tone="default" padding="lg" className="space-y-5" data-testid="company-analysis-panel">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+        <div className="min-w-0 space-y-3">
           <div className="flex items-center gap-2">
-            <p className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">
-              Analise de indicadores
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+              ANÁLISE DE INDICADORES
             </p>
             <CompanyHelpTip>
-              Escolha ate 5 indicadores para o grafico. O recorte anual usado aqui tambem vale para a pagina.
+              Escolha até 5 indicadores para o gráfico. O recorte anual vem do filtro de período da página.
             </CompanyHelpTip>
           </div>
-          <h2 className="font-heading text-[1.5rem] tracking-[-0.03em] text-foreground">
-            Visao anual
-          </h2>
+          <div className="flex flex-wrap items-center gap-3">
+            <h2 className="font-heading text-[1.5rem] font-semibold tracking-[-0.03em] text-foreground">
+              Visão anual
+            </h2>
+            <span className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-muted/18 px-3 py-1.5 text-xs text-muted-foreground">
+              Período atual
+              <span className="font-semibold text-foreground">
+                {model.years.join(", ")}
+              </span>
+            </span>
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 xl:justify-end">
           <IndicatorSelector
@@ -102,7 +102,6 @@ export function CompanyAnalysisPanel({
             maxSelections={5}
             className="min-w-[220px]"
           />
-          {periodControl}
         </div>
       </div>
 
@@ -111,7 +110,7 @@ export function CompanyAnalysisPanel({
         selectedIndicators={effectiveSelectedIndicators}
       />
 
-      <div className="space-y-4 rounded-[1.35rem] border border-border/60 bg-muted/16 p-4">
+      <div className="space-y-4 rounded-[1.1rem] border border-border/50 bg-muted/10 p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-2">
             <p className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">
@@ -128,13 +127,14 @@ export function CompanyAnalysisPanel({
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Filtrar indicador ou categoria..."
+              aria-label="Filtrar indicador ou categoria"
               className="h-10 rounded-full border-border/60 bg-background pl-9"
             />
           </div>
         </div>
 
-        <div className="overflow-x-auto rounded-[1.15rem] border border-border/60 bg-background/82">
-          <Table>
+        <div className="overflow-x-auto rounded-[1.15rem] border border-border/60 bg-background/82 pb-1">
+          <Table className="min-w-[46rem]" aria-label="Tabela anual de indicadores financeiros">
             <TableHeader>
               <TableRow>
                 <TableHead>Indicador</TableHead>

@@ -11,7 +11,6 @@ import {
   SelectGroup,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from "@/components/ui/select";
 import type { CompanySectorFilter } from "@/lib/api";
 import { mergeSearchParams } from "@/lib/search-params";
@@ -38,6 +37,11 @@ export function CompanyDirectoryFilters({
   const hasCurrentSector = sectors.some((s) => s.sector_slug === currentSector);
   const selectValue =
     sectorFilterUnavailable || !hasCurrentSector ? "all" : currentSector ?? "all";
+  const selectedSectorLabel =
+    selectValue === "all"
+      ? "Todos os setores"
+      : sectors.find((sector) => sector.sector_slug === selectValue)?.sector_name ??
+        "Todos os setores";
 
   const hasActiveFilters = Boolean(currentSearch || currentSector);
 
@@ -69,13 +73,14 @@ export function CompanyDirectoryFilters({
     <div className="space-y-3">
       <form onSubmit={handleSubmit}>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex min-w-[200px] flex-1 items-center gap-2 rounded-[1rem] border border-border/65 bg-muted/55 px-3 py-2">
+          <div className="flex min-w-[200px] flex-1 items-center gap-2 rounded-[1rem] border border-border/65 bg-muted/55 px-3 py-2 transition-colors focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/40">
             <SearchIcon className="size-3.5 shrink-0 text-muted-foreground" />
             <Input
               type="search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Nome, ticker ou CVM"
+              aria-label="Buscar empresa por nome, ticker ou CVM"
               className="h-auto border-0 bg-transparent p-0 text-sm shadow-none focus-visible:ring-0"
             />
             {search && (
@@ -85,7 +90,8 @@ export function CompanyDirectoryFilters({
                   setSearch("");
                   pushFilters({ busca: null, pagina: null });
                 }}
-                className="text-muted-foreground hover:text-foreground"
+                className="rounded-full text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label="Limpar busca"
               >
                 <XIcon className="size-3.5" />
               </button>
@@ -103,12 +109,13 @@ export function CompanyDirectoryFilters({
           >
             <SelectTrigger
               className={cn(
-                "h-[2.375rem] w-auto min-w-[160px] rounded-[1rem] border-border/65 bg-muted/55 px-3 text-sm",
+                "h-[2.375rem] w-full min-w-[160px] rounded-[1rem] border-border/65 bg-muted/55 px-3 text-sm sm:w-auto",
               )}
+              aria-label="Filtrar empresas por setor"
             >
-              <SelectValue
-                placeholder={sectorFilterUnavailable ? "IndisponÃ­vel" : "Todos os setores"}
-              />
+              <span className="max-w-[14rem] truncate text-left">
+                {sectorFilterUnavailable ? "Indisponível" : selectedSectorLabel}
+              </span>
             </SelectTrigger>
             <SelectContent>
               <SelectGroup>
@@ -116,7 +123,7 @@ export function CompanyDirectoryFilters({
                 {!sectorFilterUnavailable
                   ? sectors.map((sector) => (
                       <SelectItem key={sector.sector_slug} value={sector.sector_slug}>
-                        {sector.sector_name} Â· {sector.company_count}
+                        {sector.sector_name} · {sector.company_count}
                       </SelectItem>
                     ))
                   : null}
@@ -138,7 +145,8 @@ export function CompanyDirectoryFilters({
               <button
                 type="button"
                 onClick={() => pushFilters({ busca: null, pagina: null })}
-                className="hover:opacity-70"
+                className="rounded-full transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label="Remover filtro de busca"
               >
                 <XIcon className="size-3" />
               </button>
@@ -151,7 +159,8 @@ export function CompanyDirectoryFilters({
               <button
                 type="button"
                 onClick={() => pushFilters({ setor: null, pagina: null })}
-                className="hover:opacity-70"
+                className="rounded-full transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label="Remover filtro de setor"
               >
                 <XIcon className="size-3" />
               </button>
@@ -160,7 +169,7 @@ export function CompanyDirectoryFilters({
           <button
             type="button"
             onClick={handleClear}
-            className="text-xs text-muted-foreground hover:text-foreground"
+            className="rounded-full px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             Limpar tudo
           </button>

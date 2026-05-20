@@ -27,16 +27,16 @@ export interface SelectedIndicator {
 const CHART_TYPES: { value: ChartType; label: string; icon: typeof BarChart3 }[] = [
   { value: "bar", label: "Barras", icon: BarChart3 },
   { value: "line", label: "Linha", icon: LineChart },
-  { value: "area", label: "Area", icon: AreaChart },
+  { value: "area", label: "Área", icon: AreaChart },
 ]
 
 const DEFAULT_INDICATORS: Indicator[] = [
   // Rentabilidade
-  { id: "receita_liquida", label: "Receita Liquida", category: "Rentabilidade" },
+  { id: "receita_liquida", label: "Receita Líquida", category: "Rentabilidade" },
   { id: "ebitda", label: "EBITDA", category: "Rentabilidade" },
   { id: "margem_ebitda", label: "Margem EBITDA", category: "Rentabilidade" },
-  { id: "lucro_liquido", label: "Lucro Liquido", category: "Rentabilidade" },
-  { id: "margem_liquida", label: "Margem Liquida", category: "Rentabilidade" },
+  { id: "lucro_liquido", label: "Lucro Líquido", category: "Rentabilidade" },
+  { id: "margem_liquida", label: "Margem Líquida", category: "Rentabilidade" },
   { id: "roe", label: "ROE", category: "Rentabilidade" },
   { id: "roa", label: "ROA", category: "Rentabilidade" },
   { id: "roic", label: "ROIC", category: "Rentabilidade" },
@@ -46,9 +46,9 @@ const DEFAULT_INDICATORS: Indicator[] = [
   { id: "ev_ebitda", label: "EV/EBITDA", category: "Valuation" },
   { id: "psr", label: "P/Receita", category: "Valuation" },
   // Endividamento
-  { id: "divida_ebitda", label: "Divida/EBITDA", category: "Endividamento" },
-  { id: "divida_liquida_pl", label: "Divida Liquida/PL", category: "Endividamento" },
-  { id: "divida_bruta", label: "Divida Bruta", category: "Endividamento" },
+  { id: "divida_ebitda", label: "Dívida/EBITDA", category: "Endividamento" },
+  { id: "divida_liquida_pl", label: "Dívida Líquida/PL", category: "Endividamento" },
+  { id: "divida_bruta", label: "Dívida Bruta", category: "Endividamento" },
 ]
 
 interface IndicatorSelectorProps {
@@ -125,6 +125,7 @@ export function IndicatorSelector({
           variant="outline"
           role="combobox"
           aria-expanded={open}
+          aria-label="Selecionar indicadores do gráfico"
           className={cn(
             "h-9 min-w-[200px] justify-between gap-2 font-normal",
             className
@@ -151,6 +152,7 @@ export function IndicatorSelector({
               placeholder="Buscar indicador..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              aria-label="Buscar indicador"
               className="h-8 pl-8 text-sm"
             />
           </div>
@@ -181,8 +183,10 @@ export function IndicatorSelector({
                       type="button"
                       onClick={() => toggleIndicator(indicator.id)}
                       disabled={isDisabled}
+                      aria-label={`${isSelected ? "Remover" : "Selecionar"} ${indicator.label}`}
+                      aria-pressed={isSelected}
                       className={cn(
-                        "flex size-4 shrink-0 items-center justify-center rounded-full border transition-colors",
+                        "flex size-4 shrink-0 items-center justify-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                         isSelected
                           ? "border-chart-1 bg-chart-1 text-primary-foreground"
                           : "border-muted-foreground/40"
@@ -217,8 +221,10 @@ export function IndicatorSelector({
                                 changeChartType(indicator.id, ct.value)
                               }}
                               title={ct.label}
+                              aria-label={`${indicator.label}: usar gráfico de ${ct.label.toLowerCase()}`}
+                              aria-pressed={isActive}
                               className={cn(
-                                "flex size-6 items-center justify-center rounded transition-colors",
+                                "flex size-6 items-center justify-center rounded transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
                                 isActive
                                   ? "bg-background text-foreground shadow-sm"
                                   : "text-muted-foreground hover:text-foreground"
@@ -251,7 +257,8 @@ export function IndicatorSelector({
             <button
               type="button"
               onClick={clearSelection}
-              className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+              className="flex items-center gap-1 rounded-sm text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label="Limpar indicadores selecionados"
             >
               <X className="size-3" />
               Limpar

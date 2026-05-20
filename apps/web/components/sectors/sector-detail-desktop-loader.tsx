@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ChevronRightIcon } from "lucide-react";
 
 import { SectorCompanyTable } from "@/components/sectors/sector-company-table";
@@ -63,10 +63,13 @@ export function SectorDetailDesktopLoader({
     ? `/setores/${slug}/${subIndustrySlug}`
     : `/setores/${slug}`;
   const bridgeReady = useDesktopBridgeReady(loadKey);
-  const fetchDetail = (year?: number) =>
-    subIndustrySlug
-      ? bridgeFetchSubSectorDetail(slug, subIndustrySlug, year)
-      : bridgeFetchSectorDetail(slug, year);
+  const fetchDetail = useCallback(
+    (year?: number) =>
+      subIndustrySlug
+        ? bridgeFetchSubSectorDetail(slug, subIndustrySlug, year)
+        : bridgeFetchSectorDetail(slug, year),
+    [slug, subIndustrySlug],
+  );
 
   const [state, setState] = useState<{
     key: string;
@@ -159,7 +162,16 @@ export function SectorDetailDesktopLoader({
     return () => {
       cancelled = true;
     };
-  }, [bridgeReady, loadKey, slug, subIndustrySlug, rawYear, rawTab, currentTab]);
+  }, [
+    bridgeReady,
+    loadKey,
+    slug,
+    subIndustrySlug,
+    rawYear,
+    rawTab,
+    currentTab,
+    fetchDetail,
+  ]);
 
   if (bridgeReady === "timeout" && (!state || state.key !== loadKey)) {
     return (

@@ -25,6 +25,7 @@ import {
   bridgeFetchCompanyStatement,
   bridgeFetchCompanyYears,
 } from "@/lib/desktop-bridge";
+import { useDesktopDataRefreshTick } from "@/lib/desktop-data-events";
 import {
   coerceDetailTab,
   coerceStatement,
@@ -89,7 +90,8 @@ export function CompanyDetailDesktopLoader({
   const aba = getFirstParam(searchParams.aba);
   const stmt = getFirstParam(searchParams.stmt);
   const anos = getFirstParam(searchParams.anos);
-  const loadKey = `${cdCvm}|${aba ?? ""}|${stmt ?? ""}|${anos ?? ""}`;
+  const refreshTick = useDesktopDataRefreshTick({ cdCvm, scope: "company" });
+  const loadKey = `${cdCvm}|${aba ?? ""}|${stmt ?? ""}|${anos ?? ""}|${refreshTick}`;
   const bridgeReady = useDesktopBridgeReady(loadKey);
 
   const [state, setState] = useState<{
@@ -211,7 +213,7 @@ export function CompanyDetailDesktopLoader({
     return () => {
       cancelled = true;
     };
-  }, [bridgeReady, loadKey, cdCvm, aba, stmt, anos]);
+  }, [bridgeReady, loadKey, cdCvm, aba, stmt, anos, refreshTick]);
 
   if (bridgeReady === "timeout" && (!state || state.key !== loadKey)) {
     return (

@@ -702,6 +702,8 @@ class CVMReadService:
             cnpj=payload.get("cnpj"),
             setor_cvm=payload.get("setor_cvm"),
             setor_analitico=payload.get("setor_analitico"),
+            sector_name=sector_name,
+            sector_slug=sector_slugify(sector_name),
             company_type=company_type,
             ticker_b3=payload.get("ticker_b3"),
             gics_sector=gics.gics_sector if gics else None,
@@ -2045,12 +2047,30 @@ class CVMReadService:
             ),
         )
 
-    def request_company_refresh(self, cd_cvm: int) -> RefreshDispatchDTO:
-        """Enqueue internal on-demand ingest for one company."""
+    def request_company_refresh(
+        self,
+        cd_cvm: int,
+        *,
+        start_year: int | None = None,
+        end_year: int | None = None,
+    ) -> RefreshDispatchDTO:
+        """Enqueue internal on-demand ingest for one company.
+
+        When ``start_year``/``end_year`` are omitted, falls back to the
+        historical default window (2010..current). When provided, the
+        caller can narrow the ingest to a specific period — the dispatch
+        still flows through ``refresh_job_repository`` so that
+        ``company_refresh_status`` reflects the running job for polling.
+        """
         from apps.api.app.dependencies import NotFoundError
 
         bootstrapped = self._ensure_company_catalog_metadata(cd_cvm)
-        start_year, end_year = self._resolve_refresh_range(start_year=2010, end_year=None)
+        requested_start = int(start_year) if start_year is not None else 2010
+        requested_end = int(end_year) if end_year is not None else None
+        start_year, end_year = self._resolve_refresh_range(
+            start_year=requested_start,
+            end_year=requested_end,
+        )
         company_info = self.get_company_info(cd_cvm)
         if company_info is None:
             raise NotFoundError(f"Company cd_cvm={cd_cvm} not found")
