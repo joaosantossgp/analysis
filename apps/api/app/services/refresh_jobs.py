@@ -6,6 +6,7 @@ from typing import Any
 from uuid import uuid4
 
 from src.contracts import RefreshPolicy, RefreshProgressUpdate, RefreshRequest
+from src.read_service import resolve_refresh_year_range
 from src.refresh_service import HeadlessRefreshService
 from src.settings import AppSettings
 
@@ -348,11 +349,11 @@ class ApiRefreshJobManager:
 
     @classmethod
     def _resolve_year_range(cls, params: dict[str, Any]) -> tuple[int, int]:
-        end_year = int(params.get("end_year") or datetime.now().year - 1)
-        start_year = int(params.get("start_year") or cls.DEFAULT_START_YEAR)
-        if start_year > end_year:
-            raise RefreshBatchRequestError("start_year nao pode ser maior que end_year.")
-        return start_year, end_year
+        return resolve_refresh_year_range(
+            params,
+            default_start_year=cls.DEFAULT_START_YEAR,
+            error_factory=RefreshBatchRequestError,
+        )
 
     def _find_active_job(self) -> dict[str, Any] | None:
         with self._lock:

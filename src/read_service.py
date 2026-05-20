@@ -5,7 +5,7 @@ from collections import Counter, defaultdict
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from statistics import median
-from typing import Any
+from typing import Any, Callable
 
 import pandas as pd
 from sqlalchemy import bindparam, inspect, text
@@ -191,20 +191,34 @@ def resolve_refresh_batch_selection(
     )
 
 
-def _resolve_batch_year_range(
+def resolve_refresh_year_range(
     params: dict[str, Any],
     *,
     default_start_year: int,
+    error_factory: Callable[[str], Exception] = ValueError,
 ) -> tuple[int, int]:
+    """Resolve (start_year, end_year) for any refresh request.
+
+    Shared by `resolve_refresh_batch_selection` (read service),
+    `ApiRefreshJobManager` (HTTP API), and `DesktopRefreshJobManager`
+    (desktop bridge). Each caller can pass its own ``error_factory`` so
+    the raised exception matches its transport layer (e.g. API converts
+    its custom exception to HTTP 400).
+    """
     end_default = datetime.now(timezone.utc).year - 1
     try:
         start_year = int(params.get("start_year") or default_start_year)
         end_year = int(params.get("end_year") or end_default)
     except (TypeError, ValueError) as exc:
-        raise ValueError("start_year e end_year devem ser inteiros.") from exc
+        raise error_factory("start_year e end_year devem ser inteiros.") from exc
     if start_year > end_year:
-        raise ValueError("start_year nao pode ser maior que end_year.")
+        raise error_factory("start_year nao pode ser maior que end_year.")
     return start_year, end_year
+
+
+# Backwards-compatible alias kept for internal callsites; new code should
+# use ``resolve_refresh_year_range`` directly.
+_resolve_batch_year_range = resolve_refresh_year_range
 
 
 def _resolve_batch_limit(raw_limit: Any) -> int | None:
