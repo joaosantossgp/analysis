@@ -700,3 +700,14 @@ def test_refresh_batch_actual_manager_invalid_range_returns_422(
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "invalid_request"
     assert "cvm_range.start" in response.json()["error"]["message"]
+
+
+def test_refresh_job_manager_now_iso_is_utc_with_offset() -> None:
+    from datetime import datetime
+
+    value = ApiRefreshJobManager._now_iso()
+
+    parsed = datetime.fromisoformat(value)
+    assert parsed.utcoffset() is not None
+    assert parsed.utcoffset().total_seconds() == 0
+    assert parsed.microsecond == 0

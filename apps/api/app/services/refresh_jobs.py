@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import threading
-from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
@@ -9,6 +8,7 @@ from src.contracts import RefreshPolicy, RefreshProgressUpdate, RefreshRequest
 from src.read_service import resolve_refresh_year_range
 from src.refresh_service import HeadlessRefreshService
 from src.settings import AppSettings
+from src.utils import now_iso_seconds
 
 
 class RefreshBatchRequestError(ValueError):
@@ -439,4 +439,4 @@ class ApiRefreshJobManager:
 
     @staticmethod
     def _now_iso() -> str:
-        return datetime.now().replace(microsecond=0).isoformat()
+        return now_iso_seconds()
