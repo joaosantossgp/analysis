@@ -18,6 +18,15 @@ data/*.xlsx
 data/legacy_archives/
 data/metadata/b3_companies_cache.json
 
+# SQLite sidecars anywhere in the tree (WAL/SHM from runtime opens)
+*.db-wal
+*.db-shm
+
+# Local environment
+.env
+.env.local
+.env.*.local
+
 # Output
 output/
 
