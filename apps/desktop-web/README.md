@@ -2,11 +2,13 @@
 
 ## Status
 
-**Phase 3C experimental runtime.** This package exists in parallel to `apps/web/` (Next.js). It does **not** replace the default production UI yet. The default desktop executable still starts the Next.js standalone server through bundled Node; passing `--vite` starts this Vite SPA instead.
+**Phase 3D experimental runtime.** This package exists in parallel to `apps/web/` (Next.js). It does **not** replace the default production UI yet. The default desktop executable still starts the Next.js standalone server through bundled Node; passing `--vite` starts this Vite SPA instead.
 
 Screens with dynamic routing prove the architecture:
 
-- **Companies directory** (`/`) — `CVMBridge.get_companies(...)` with debounced search, pagination, loading/error/empty states. Powered by TanStack Query.
+- **Companies directory** (`/`) — Phase 3D dense table backed by `CVMBridge.get_companies` and `get_company_filters`. URL-driven `?search=&sector=&page=`, debounced search by name/ticker/CVM code, GICS sector dropdown, active-filter chips with per-filter clear, reset action, result count, dense columns (company / ticker / CVM / sector / sub-industry / years / rows / data dot), loading/error/empty/filtered-empty states. Powered by TanStack Query.
+- **Sectors directory** (`/setores`) — Phase 3D. GICS hub view backed by `get_sectors`. Tab switcher between GICS sectors and GICS sub-industries (`?visao=sub_sector`), per-row company count and latest year, link to filtered companies directory and to sector detail. No invented aggregate metrics.
+- **Sector detail** (`/setores/:slug`) — Phase 3D. Backed by `get_sector_detail`. Breadcrumb, company count + base-year header, year selector (`?ano=`), in-sector company filter (`?q=`), company table with links to company detail, link back to the directory filtered by sector.
 - **Company detail** (`/empresas/:cdCvm`) — dynamic route. Fetches `get_company_info`, `get_company_years`, and `get_company_kpis` in parallel. Header card + annual KPI table with format-aware cells (pct/money/ratio).
 - **Indicadores (KPIs)** (`/empresas/:cdCvm/indicadores`) — Phase 3C.1. Year multi-select with "Last 5" / "All" presets, KPI summary cards for the latest selected year, annual + quarterly tables with unit-aware formatting (R$ mn / % / x / bps). Missing values render as em dash.
 - **Financial statements** (`/empresas/:cdCvm/demonstrativos?stmt=DRE`) — DRE/BPA/BPP/DFC matrix via `get_company_statement`, with real data, statement switching, row filtering, loading/error/empty states.
@@ -119,6 +121,6 @@ The current default still launches the Next standalone server via the bundled `n
 
 - Does not become the default desktop runtime.
 - Does not remove Next.js, FastAPI, `web_standalone/`, or bundled `node.exe`.
-- Does not cover every production screen yet: sectors, Excel export, complete KPI/indicator parity, company-detail refresh controls, advanced update-base filters, and updater UI remain on the legacy Next path.
-- Uses TanStack Query for the companies screen (added in Phase 1.5).
+- Does not cover every production screen yet: Excel export, complete KPI/indicator chart parity, company-detail refresh controls, sub-sector detail route (`/setores/[slug]/[sub_slug]`), advanced update-base filters, and updater UI remain on the legacy Next path.
+- Uses TanStack Query for directory, sectors, and detail screens.
 - Does not call FastAPI. Bridge-only.

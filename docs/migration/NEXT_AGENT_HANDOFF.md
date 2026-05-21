@@ -7,9 +7,9 @@ This is the **primary entry point** for any AI agent or human contributor pickin
 ## TL;DR
 
 - **What we are doing:** rebuilding the desktop app's UI runtime from `Next.js standalone + bundled Node + pywebview` to `static Vite SPA + pywebview` while keeping Python authoritative and user data safe.
-- **Where we are:** Phase 3B accepted (v0.6.1 user-validated DB populates). Phase 3C in progress: 3C.0 standardised the persistent user data root at `%USERPROFILE%\Documents\CVMAnalytics` with WAL-safe migration from the legacy `%LOCALAPPDATA%\CVMAnalytics` location; 3C.1 added the Vite Indicadores screen at `/empresas/:cdCvm/indicadores`. Next still default.
-- **What is released:** `v0.7.0` on GitHub is the current target. Persistent Documents data root, KPI/Indicators screen, plus carry-over of all Phase 3B/3A/3 work. Users still hit the Next path by default.
-- **What is next:** keep closing P0 gaps in `PHASE_3_PARITY_MATRIX.md` before any default switch. Legacy deletion remains Phase 3 and is not approved.
+- **Where we are:** Phase 3D shipped as `v0.8.0` (sector browsing + company directory filters). Phase 3C shipped in `v0.7.0` (persistent Documents data root + Vite Indicadores screen). Phase 3B accepted at `v0.6.1` (Update Base parity). Next still default.
+- **What is released:** `v0.8.0` on GitHub is the current target. Vite company directory now has GICS sector filter, URL-driven chips, and CVM-code search; new `/setores` and `/setores/:slug` routes browse sectors and per-sector companies. Default mode is still Next/Node.
+- **What is next:** keep closing P0 gaps in `PHASE_3_PARITY_MATRIX.md` before any default switch. Remaining P0: Excel export, single-company refresh controls, KPI charts, sub-sector detail route, updater UI. Legacy deletion remains Phase 3 and is not approved.
 - **Hard rule:** do not delete `apps/web/`, `apps/api/`, `desktop/node_portable/`, FastAPI deps, or remove Node from `desktop/app.spec` until the user explicitly approves Phase 3.
 
 ---
@@ -27,6 +27,7 @@ This is the **primary entry point** for any AI agent or human contributor pickin
 | **Phase 3B** | Update Base / Refresh Data Vite parity slice | **Accepted (v0.6.1).** Real DB diagnostics, row-count panel, post-job delta warning, app-updater vs data-updater wording. | See `PHASE_3_PARITY_MATRIX.md` |
 | **Phase 3C.0** | Persistent Documents data root + WAL-safe LocalAppData migration | **Released as `v0.7.0`.** Default runtime data root is `%USERPROFILE%\Documents\CVMAnalytics`. Migration sources: LocalAppData first, then install-dir. `CVMANALYTICS_DATA_DIR` env var overrides. Originals never deleted. | See `PHASE_3_PLAN.md` |
 | **Phase 3C.1** | Indicators (KPIs) Vite parity slice | **Released as `v0.7.0`.** New route `/empresas/:cdCvm/indicadores` with year multi-select, KPI summary cards, annual + quarterly tables, unit-aware formatting. | See `PHASE_3_PARITY_MATRIX.md` |
+| **Phase 3D** | Sectors + company directory filters | **Released as `v0.8.0`.** Companies directory gains sector filter, URL-driven search/sector/page persistence, chips with per-filter clear, reset action, dense table columns (CVM / ticker / sub-industry / years / rows / coverage dot). New routes `/setores` (GICS sectors and sub-industries) and `/setores/:slug` (sector detail with year selector and in-sector company filter). | See `PHASE_3_PARITY_MATRIX.md` |
 | **Phase 3** | Delete legacy: Next, Node, FastAPI, apps/web, apps/api | **Not started.** Gated on Vite screen parity. | See `PHASE_3_PLAN.md` |
 | **Phase 4** | Polish, code signing, AV/UPX review | Not started. | — |
 
@@ -112,7 +113,7 @@ Suggested before any default switch:
 
 1. Keep `PHASE_3_PARITY_MATRIX.md` current.
 2. Recommended next narrow slice: Excel save/export on company detail and statements, using existing `save_company_excel` / `download_company_excel`.
-3. Other remaining P0 areas: sectors, complete KPI/indicator parity, company-detail refresh/freshness controls, updater UI, and navigation polish.
+3. Other remaining P0 areas: company-detail refresh/freshness controls, KPI chart parity, sub-sector detail route (`/setores/:slug/:sub_slug`), updater UI, and navigation polish.
 
 Do NOT start Phase 3 deletion until every P0 parity gap is closed, Vite has shipped as the default with a fallback and soaked, and the user explicitly approves deletion.
 

@@ -213,6 +213,81 @@ export type CancelRefreshResponse = {
   error?: string;
 };
 
+export type CompanySectorFilterOption = {
+  sector_name: string;
+  sector_slug: string;
+  company_count: number;
+  gics_sector: string | null;
+  gics_sector_slug: string | null;
+  gics_sub_industry: string | null;
+};
+
+export type CompanyFiltersResponse = {
+  sectors: CompanySectorFilterOption[];
+  error?: string;
+};
+
+export type SectorSnapshot = {
+  roe: number | null;
+  mg_ebit: number | null;
+  mg_liq: number | null;
+};
+
+export type SubIndustryCount = {
+  name: string;
+  count: number;
+};
+
+export type SectorCompanyMetric = {
+  cd_cvm: number;
+  company_name: string;
+  ticker_b3: string | null;
+  gics_sub_industry: string | null;
+  roe: number | null;
+  mg_ebit: number | null;
+  mg_liq: number | null;
+};
+
+export type SectorDirectoryItem = {
+  sector_name: string;
+  sector_slug: string;
+  company_count: number;
+  latest_year: number | null;
+  snapshot: SectorSnapshot;
+  sub_industries: string[];
+  sub_industry_breakdown: SubIndustryCount[];
+  group_type: "sector" | "sub_sector" | string;
+  parent_sector_name: string | null;
+  parent_sector_slug: string | null;
+  companies: SectorCompanyMetric[];
+};
+
+export type SectorDirectoryResponse = {
+  items: SectorDirectoryItem[];
+  error?: string;
+};
+
+export type SectorYearOverview = {
+  year: number;
+  roe: number | null;
+  mg_ebit: number | null;
+  mg_liq: number | null;
+};
+
+export type SectorDetailResponse = {
+  sector_name: string;
+  sector_slug: string;
+  company_count: number;
+  available_years: number[];
+  selected_year: number;
+  yearly_overview: SectorYearOverview[];
+  companies: SectorCompanyMetric[];
+  parent_sector_name: string | null;
+  parent_sector_slug: string | null;
+  not_found?: boolean;
+  error?: string;
+};
+
 export type DatabaseDiagnostics = {
   db_path: string | null;
   data_root: string | null;
@@ -255,6 +330,9 @@ export interface BridgeApi {
   get_refresh_status(params?: Record<string, unknown>): Promise<RefreshJobStatus | RefreshJobListResponse>;
   cancel_refresh(params: Record<string, unknown>): Promise<CancelRefreshResponse>;
   get_database_diagnostics(params?: Record<string, unknown>): Promise<DatabaseDiagnostics>;
+  get_company_filters(params?: Record<string, unknown>): Promise<CompanyFiltersResponse>;
+  get_sectors(params?: Record<string, unknown>): Promise<SectorDirectoryResponse>;
+  get_sector_detail(params: Record<string, unknown>): Promise<SectorDetailResponse>;
 }
 
 declare global {

@@ -37,6 +37,8 @@ To:
 | Phase 2 | Wire Vite SPA into pywebview | Experimental (opt-in `--vite` flag) | Packaged exe ships both Next standalone and Vite static SPA; default = Next, `--vite` = Vite with zero Node processes. GitHub-downloaded release artifact validation is mandatory before calling a release good. No removals yet. |
 | Phase 3A | Functional parity matrix + first missing Vite screen | Released as v0.5.0 | Parity matrix lives in `PHASE_3_PARITY_MATRIX.md`; company financial statements are implemented in `apps/desktop-web`. No deletion, no default switch. |
 | Phase 3B | Update Base / Refresh Data parity slice | Released as v0.6.0 | Vite route `/atualizar-base` uses the existing desktop refresh bridge methods for base health, guarded refresh start, optional CVM-code targeting, polling, logs, cancel, and empty-DB guidance. Default remains Next. |
+| Phase 3C | Persistent Documents data root + Vite Indicadores | Released as v0.7.0 | Default runtime data root is `%USERPROFILE%\Documents\CVMAnalytics` (WAL-safe migration from `%LOCALAPPDATA%`); new `/empresas/:cdCvm/indicadores` route with year multi-select and KPI cards. Default remains Next. |
+| Phase 3D | Sectors + company directory filters | Released as v0.8.0 | Vite directory gains GICS sector filter, URL-driven chips, CVM-code search, dense table; new `/setores` and `/setores/:slug` routes for sector browsing and per-sector company tables. No invented aggregate metrics. Default remains Next. |
 | Phase 3 | Mandatory legacy deletion | Not started | Delete Next/FastAPI legacy only after parity, a default-Vite soak release, and explicit user approval. |
 | Phase 4 | Polish/performance | Not started | Startup, logging, AV/code-signing review |
 

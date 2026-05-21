@@ -17,6 +17,12 @@
       "runtimeExecutable": "uvicorn",
       "runtimeArgs": ["apps.api.app.main:app", "--reload"],
       "port": 8000
+    },
+    {
+      "name": "Vite Desktop SPA",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "apps/desktop-web"],
+      "port": 5173
     }
   ]
 }
