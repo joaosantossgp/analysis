@@ -17,6 +17,7 @@
 
 param(
     [switch]$SkipNextBuild,
+    [switch]$SkipViteBuild,
     [switch]$Verbose,
     [string]$Version = ""
 )
@@ -24,6 +25,7 @@ param(
 $ErrorActionPreference = "Stop"
 $Root    = Split-Path $PSScriptRoot -Parent
 $WebDir  = Join-Path $Root "apps\web"
+$ViteDir = Join-Path $Root "apps\desktop-web"
 $DesktopDir = $PSScriptRoot
 
 Write-Host ""
@@ -46,6 +48,35 @@ if (-not $SkipNextBuild) {
     Write-Host "  OK: .next/standalone/ gerado" -ForegroundColor Green
 } else {
     Write-Host "[1/5] Pulando next build (-SkipNextBuild)" -ForegroundColor Gray
+}
+
+# ---------------------------------------------------------------------------
+# Passo 1.6 - Vite static SPA build (apps/desktop-web)
+# Produces apps/desktop-web/dist/ which app.spec bundles to _internal/desktop-web/.
+# Optional: pass -SkipViteBuild to reuse the prior build (or skip the Vite mode
+# entirely if the dist directory is missing - app.spec just won't include it).
+# ---------------------------------------------------------------------------
+if (-not $SkipViteBuild) {
+    if (Test-Path (Join-Path $ViteDir "package.json")) {
+        Write-Host "[1.5/5] vite build (apps/desktop-web)..." -ForegroundColor Yellow
+        Push-Location $ViteDir
+        try {
+            if (-not (Test-Path "node_modules")) {
+                Write-Host "  installing apps/desktop-web dependencies..." -ForegroundColor Gray
+                & npm install
+                if ($LASTEXITCODE -ne 0) { throw "npm install (desktop-web) falhou (exit $LASTEXITCODE)" }
+            }
+            & npm run build
+            if ($LASTEXITCODE -ne 0) { throw "vite build falhou (exit $LASTEXITCODE)" }
+        } finally {
+            Pop-Location
+        }
+        Write-Host "  OK: apps/desktop-web/dist/ gerado" -ForegroundColor Green
+    } else {
+        Write-Host "[1.5/5] apps/desktop-web ausente - pulando vite build" -ForegroundColor Gray
+    }
+} else {
+    Write-Host "[1.5/5] Pulando vite build (-SkipViteBuild)" -ForegroundColor Gray
 }
 
 # ---------------------------------------------------------------------------

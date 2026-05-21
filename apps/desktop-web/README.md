@@ -80,7 +80,31 @@ cd apps/desktop-web
 npm run build
 ```
 
-Output is a static SPA at `apps/desktop-web/dist/`. Phase 2 will wire this dir into `desktop/app.spec` and `desktop/app.py` so the packaged exe loads it directly (no Node, no Next standalone server).
+Output is a static SPA at `apps/desktop-web/dist/`.
+
+## Phase 2 — opt-in `--vite` launch mode
+
+The packaged desktop executable now ships the Vite SPA alongside the Next standalone server. The default mode is unchanged (Next). Pass `--vite` to load this SPA instead:
+
+```powershell
+# packaged
+.\dist\CVMAnalytics\CVMAnalytics.exe --vite
+
+# dev (against apps/desktop-web/dist/)
+python -m desktop.app --vite
+
+# dev with live reload (Vite dev server + pywebview, interactive)
+python scripts/phase1_pywebview_smoke.py --manual
+```
+
+In `--vite` mode:
+
+- pywebview loads `_internal/desktop-web/index.html` over a local HTTP server bound to a free port (`http.server.ThreadingHTTPServer`). No `file://` origin issues with WebView2.
+- The Python bridge is the same `CVMBridge()` the Next mode uses.
+- `%LOCALAPPDATA%\CVMAnalytics\db\cvm_financials.db` is read/written exactly as in default mode.
+- **No `node.exe` process is launched.** Verified end-to-end against the packaged exe.
+
+The current default still launches the Next standalone server via the bundled `node.exe`. Removing Node and `web_standalone/` is deferred to Phase 3 (only after parity).
 
 ## What this does NOT do yet
 

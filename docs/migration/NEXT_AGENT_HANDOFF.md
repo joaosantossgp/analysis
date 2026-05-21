@@ -2,9 +2,11 @@
 
 ## Current state
 
-Phase 0 has been implemented.
+Phase 0 stable as of `v0.3.4`.
+Phase 1 (Vite SPA shell), Phase 1.5 (companies directory), and Phase 1.6 (dynamic routing + company detail) all done and approved.
+Phase 2 (opt-in `--vite` launch mode wired into packaged exe) implemented but not released. Default runtime still uses Next + bundled Node.
 
-Do not start Phase 1 until Phase 0 packaged smoke tests are run.
+Do not start Phase 3 until the user explicitly approves it. Phase 3 = legacy deletion (`apps/web/`, `apps/api/`, `desktop/node_portable/`, Node from `app.spec`, FastAPI dependencies). Only after Vite parity is proven on real user machines.
 
 ## What was changed
 

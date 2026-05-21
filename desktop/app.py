@@ -656,6 +656,55 @@ def _wait_for_port(port: int, timeout: float = _STARTUP_TIMEOUT) -> bool:
     return False
 
 
+def _vite_dist_path() -> Path:
+    """Locate the Vite static build.
+
+    Bundled (`_bundled() == True`)  -> `<_MEIPASS>/desktop-web/`
+    Dev mode                         -> `<repo>/apps/desktop-web/dist/`
+    """
+    if _bundled():
+        return _bundle_dir() / "desktop-web"
+    return _repo_root() / "apps" / "desktop-web" / "dist"
+
+
+def _start_vite_static_server(dist: Path) -> tuple[object, int]:
+    """Serve `dist/` over a loopback HTTP server.
+
+    Returns the server instance plus the bound port. The caller is
+    responsible for shutting the server down before the process exits.
+
+    Rationale for HTTP over `file://`: WebView2 blocks several Web Platform
+    features (fetch, importmaps, cross-origin isolation) when content is
+    loaded from `file://`. A local HTTP server avoids that class of
+    problems and gives the SPA the same origin-style guarantees Next has
+    today. The server binds to a random free loopback port so multiple
+    instances do not collide.
+    """
+    from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer  # noqa: PLC0415
+
+    dist_str = str(dist)
+
+    class _QuietHandler(SimpleHTTPRequestHandler):
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            # Pin the served directory at construction time — the partial-
+            # based pattern from the docs does not survive subclassing.
+            super().__init__(*args, directory=dist_str, **kwargs)  # type: ignore[arg-type]
+
+        def log_message(self, *_args: object) -> None:
+            # Silence per-request log lines on stderr. PyInstaller windowed
+            # builds have no console; this is just noise in dev too.
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _QuietHandler)
+    port = server.server_address[1]
+    threading.Thread(
+        target=server.serve_forever,
+        name="desktop-vite-static",
+        daemon=True,
+    ).start()
+    return server, port
+
+
 def _start_dev_server() -> tuple[subprocess.Popen[bytes], int]:
     web_dir = _web_dir()
     if not (web_dir / "package.json").exists():
@@ -705,6 +754,10 @@ def main() -> None:
         return  # _run_diagnostic_mode calls sys.exit; defensive
     dev_mode = "--dev" in args
     debug_mode = "--debug" in args
+    # Phase 2 experimental mode: serve the static Vite SPA over a local
+    # HTTP server. Does not launch Node, does not start the Next standalone.
+    # Default mode is unchanged.
+    vite_mode = "--vite" in args
 
     _configure_bundled_data_paths()
     # Strip Mark-of-the-Web from bundle DLLs BEFORE any .NET load attempt.
@@ -716,8 +769,24 @@ def main() -> None:
     _preflight_pywebview_backend()
     bridge = CVMBridge()
     server_proc: subprocess.Popen[bytes] | None = None
+    static_server: object | None = None
 
-    if dev_mode:
+    if vite_mode:
+        dist = _vite_dist_path()
+        index_html = dist / "index.html"
+        if not index_html.exists():
+            sys.exit(
+                f"[desktop] Vite build nao encontrado em {dist}.\n"
+                "Para gerar localmente:\n"
+                "  npm --prefix apps/desktop-web run build\n"
+                "Para empacotar:\n"
+                "  .\\desktop\\build_desktop.ps1\n"
+                "(verifique se o passo do Vite ficou habilitado)."
+            )
+        static_server, port = _start_vite_static_server(dist)
+        url = f"http://127.0.0.1:{port}/"
+        print(f"[desktop] vite mode: serving {dist} on {url}")
+    elif dev_mode:
         if _port_open(_DEV_PORT):
             url = _DEV_URL
         else:
@@ -748,7 +817,7 @@ def main() -> None:
         url = f"http://127.0.0.1:{port}"
 
     webview.create_window(
-        "CVM Analytics",
+        "CVM Analytics" + (" (Vite)" if vite_mode else ""),
         url=url,
         js_api=bridge,
         width=_WIDTH,
@@ -771,10 +840,16 @@ def main() -> None:
         daemon=True,
     ).start()
 
-    webview.start(debug=debug_mode)
-
-    if server_proc is not None:
-        server_proc.terminate()
+    try:
+        webview.start(debug=debug_mode)
+    finally:
+        if server_proc is not None:
+            server_proc.terminate()
+        if static_server is not None:
+            try:
+                static_server.shutdown()  # type: ignore[attr-defined]
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":

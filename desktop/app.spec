@@ -14,6 +14,7 @@ from pathlib import Path
 
 ROOT = Path(SPECPATH).parent  # repo root (spec está em desktop/, ROOT é um nível acima)
 STANDALONE_DIR = ROOT / "apps" / "web" / ".next" / "standalone"
+VITE_DIST_DIR = ROOT / "apps" / "desktop-web" / "dist"
 NODE_EXE = ROOT / "desktop" / "node_portable" / "node.exe"
 UPDATE_HELPER = ROOT / "desktop" / "update_helper.ps1"
 
@@ -21,6 +22,13 @@ datas = []
 
 if STANDALONE_DIR.exists():
     datas.append((str(STANDALONE_DIR), "web_standalone"))
+
+# Phase 2: ship the Vite static SPA alongside the Next standalone. The
+# runtime decides which one to load via the `--vite` flag in desktop/app.py.
+# Bundling both keeps the default Next path intact while enabling the
+# experimental Vite mode on the same executable.
+if VITE_DIST_DIR.exists():
+    datas.append((str(VITE_DIST_DIR), "desktop-web"))
 
 if NODE_EXE.exists():
     datas.append((str(NODE_EXE), "."))
