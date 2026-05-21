@@ -1,5 +1,6 @@
 import { HashRouter, NavLink, Route, Routes } from "react-router-dom";
 
+import { BridgeStatus } from "./components/BridgeStatus";
 import { CompaniesPage } from "./routes/CompaniesPage";
 import { CompanyDetailPage } from "./routes/CompanyDetailPage";
 import { HealthPage } from "./routes/HealthPage";
@@ -39,8 +40,9 @@ export function App() {
           </Routes>
         </main>
 
-        <footer className="mt-auto pt-6 text-xs text-zinc-600">
-          apps/desktop-web · proof-of-concept · not packaged yet
+        <footer className="mt-auto space-y-2 pt-6 text-xs text-zinc-600">
+          <BridgeStatus />
+          <p>apps/desktop-web · proof-of-concept · not packaged yet</p>
         </footer>
       </div>
     </HashRouter>
