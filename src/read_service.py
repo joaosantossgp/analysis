@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import functools
+import time
 from collections import Counter, defaultdict
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
@@ -582,6 +583,7 @@ class CVMReadService:
     REFRESH_RUNNING_STALL_SECONDS = 3 * 60
     REFRESH_QUEUE_STALL_SECONDS = 12 * 60
     CATALOG_FALLBACK_MIN_LOCAL_COMPANIES = 100
+    READ_CACHE_VERSION_CHECK_SECONDS = 30.0
 
     def __init__(self, settings: AppSettings | None = None):
         self.settings = settings or get_settings()
@@ -591,6 +593,55 @@ class CVMReadService:
         self._company_catalog = None
         self._operational_service = None
         self._refresh_service = None
+        self._read_cache_data_version: int | None = None
+        self._read_cache_checked_at = 0.0
+        self._company_universe_cache: tuple[CompanySearchResult, ...] | None = None
+        self._company_page_cache: dict[tuple[str, str | None, int, int], CompanyDirectoryPage] = {}
+        self._local_company_catalog_is_sufficient_cache: bool | None = None
+        self._company_filters_cache: CompanyFiltersDTO | None = None
+        self._sector_directory_cache: dict[str, SectorDirectoryDTO] = {}
+        self._health_snapshot_cache: dict[tuple[int, int], HealthSnapshot] = {}
+
+    def invalidate_read_caches(self) -> None:
+        self._company_universe_cache = None
+        self._company_page_cache.clear()
+        self._local_company_catalog_is_sufficient_cache = None
+        self._company_filters_cache = None
+        self._sector_directory_cache.clear()
+        self._health_snapshot_cache.clear()
+        self._read_cache_data_version = None
+        self._read_cache_checked_at = 0.0
+        self.get_available_years.cache_clear()
+        self.suggest_companies.cache_clear()
+        self.query_layer.get_sector_years_map.cache_clear()
+
+    def _current_read_cache_data_version(self) -> int:
+        if self.engine.dialect.name != "sqlite":
+            return -1
+        try:
+            with self.engine.connect() as conn:
+                value = conn.exec_driver_sql("PRAGMA data_version").scalar()
+        except Exception:
+            return -1
+        return int(value or 0)
+
+    def _ensure_read_cache_fresh(self) -> None:
+        now = time.monotonic()
+        if (
+            self._read_cache_data_version is not None
+            and now - self._read_cache_checked_at < self.READ_CACHE_VERSION_CHECK_SECONDS
+        ):
+            return
+
+        data_version = self._current_read_cache_data_version()
+        self._read_cache_checked_at = now
+        if self._read_cache_data_version is None:
+            self._read_cache_data_version = data_version
+            return
+        if data_version == self._read_cache_data_version:
+            return
+        self.invalidate_read_caches()
+        self._read_cache_data_version = data_version
 
     @property
     def operational_service(self):
@@ -849,7 +900,6 @@ class CVMReadService:
             )
         return True
 
-    @functools.lru_cache(maxsize=10)
     def list_companies(
         self,
         *,
@@ -858,6 +908,7 @@ class CVMReadService:
         page: int = 1,
         page_size: int = 20,
     ) -> CompanyDirectoryPage:
+        self._ensure_read_cache_fresh()
         resolved_sector_name = self._resolve_sector_slug(sector_slug)
         if sector_slug and resolved_sector_name is None:
             return self._empty_company_page(
@@ -921,12 +972,20 @@ class CVMReadService:
         page: int,
         page_size: int,
     ) -> CompanyDirectoryPage | None:
+        normalized_search = str(search or "").strip().lower()
+        normalized_sector_slug = str(sector_slug or "").strip().lower() or None
+        if normalized_sector_slug is None and self._has_sufficient_local_company_catalog():
+            local_page = self._list_local_company_page(
+                search=search,
+                sector_slug=sector_slug,
+                page=page,
+                page_size=page_size,
+            )
+            return local_page
+
         universe_items = self._list_company_universe_results()
         if not universe_items:
             return None
-
-        normalized_search = str(search or "").strip().lower()
-        normalized_sector_slug = str(sector_slug or "").strip().lower() or None
 
         filtered: list[CompanySearchResult] = []
         for item in universe_items:
@@ -973,6 +1032,63 @@ class CVMReadService:
                 sector=sector_slug,
             ),
         )
+
+    def _list_local_company_page(
+        self,
+        *,
+        search: str,
+        sector_slug: str | None,
+        page: int,
+        page_size: int,
+    ) -> CompanyDirectoryPage:
+        cache_key = (
+            str(search or "").strip().lower(),
+            str(sector_slug).strip().lower() if sector_slug else None,
+            int(page),
+            int(page_size),
+        )
+        cached = self._company_page_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        rows_df, total_items = self.query_layer.get_companies_directory_page(
+            search=search,
+            sector_name=None,
+            page=page,
+            page_size=page_size,
+        )
+        if not rows_df.empty:
+            rows_df = rows_df.copy()
+            years_map = self.query_layer.get_company_years_map(rows_df["cd_cvm"].tolist())
+            rows_df["anos_disponiveis"] = rows_df["cd_cvm"].map(
+                lambda cd_cvm: years_map.get(int(cd_cvm), ())
+            )
+        total_pages = max(1, ((int(total_items) - 1) // int(page_size)) + 1) if total_items else 1
+        result = CompanyDirectoryPage(
+            items=tuple(self._build_company_results(rows_df)),
+            pagination=CompanyDirectoryPagination(
+                page=int(page),
+                page_size=int(page_size),
+                total_items=int(total_items),
+                total_pages=int(total_pages),
+                has_next=int(page) < int(total_pages),
+                has_previous=int(page) > 1,
+            ),
+            applied_filters=CompanyDirectoryAppliedFilters(
+                search=str(search or ""),
+                sector=sector_slug,
+            ),
+        )
+        self._company_page_cache[cache_key] = result
+        return result
+
+    def _has_sufficient_local_company_catalog(self) -> bool:
+        if self._local_company_catalog_is_sufficient_cache is None:
+            self._local_company_catalog_is_sufficient_cache = (
+                len(self._load_local_active_company_rows())
+                >= self.CATALOG_FALLBACK_MIN_LOCAL_COMPANIES
+            )
+        return self._local_company_catalog_is_sufficient_cache
 
     def get_populares_companies(self) -> CompanyDirectoryPage:
         """Returns top-10 B3 companies by market cap in static rank order.
@@ -1048,6 +1164,10 @@ class CVMReadService:
             )
 
     def get_company_filters(self) -> CompanyFiltersDTO:
+        self._ensure_read_cache_fresh()
+        if self._company_filters_cache is not None:
+            return self._company_filters_cache
+
         sector_counts: dict[str, int] = defaultdict(int)
         for item in self._list_company_universe_results():
             if item.gics_sector and item.gics_sector in GICS_11_SECTORS:
@@ -1065,7 +1185,8 @@ class CVMReadService:
                 )
             )
         sectors = tuple(sectors_list)
-        return CompanyFiltersDTO(sectors=sectors)
+        self._company_filters_cache = CompanyFiltersDTO(sectors=sectors)
+        return self._company_filters_cache
 
     @staticmethod
     def _histogram_bucket_from_directory_row(row: pd.Series) -> str:
@@ -1161,11 +1282,15 @@ class CVMReadService:
         return self._resolve_sector_slug(sector_slug)
 
     def list_sectors(self, group_by: str = "sector") -> SectorDirectoryDTO:
+        self._ensure_read_cache_fresh()
         normalized_group_by = str(group_by or "sector").strip().lower()
         if normalized_group_by in {"subsector", "sub-sector", "sub_setor", "sub-setor"}:
             normalized_group_by = "sub_sector"
         if normalized_group_by not in {"sector", "sub_sector"}:
             normalized_group_by = "sector"
+        cached = self._sector_directory_cache.get(normalized_group_by)
+        if cached is not None:
+            return cached
 
         # Full unpaged directory so hub counts match the entire `companies` universe (not capped at
         # BATCH_REFRESH_MAX_PAGE_SIZE used for refresh batching).
@@ -1292,7 +1417,9 @@ class CVMReadService:
             )
 
         items.sort(key=lambda item: gics_sector_sort_key(item.sector_name))
-        return SectorDirectoryDTO(items=tuple(items))
+        result = SectorDirectoryDTO(items=tuple(items))
+        self._sector_directory_cache[normalized_group_by] = result
+        return result
 
     def _list_companies_by_gics_sector(
         self,
@@ -1303,20 +1430,18 @@ class CVMReadService:
         page: int,
         page_size: int,
     ) -> CompanyDirectoryPage:
-        rows_df, _ = self.query_layer.get_companies_directory_page(
-            search=search,
-            sector_name=None,
-            page=1,
-            page_size=None,
-        )
-        if not rows_df.empty:
-            years_map = self.query_layer.get_company_years_map(rows_df["cd_cvm"].tolist())
-            rows_df = rows_df.copy()
-            rows_df["anos_disponiveis"] = rows_df["cd_cvm"].map(
-                lambda cd_cvm: years_map.get(int(cd_cvm), ())
+        normalized_search = str(search or "").strip().lower()
+        filtered = [
+            item
+            for item in self._list_company_universe_results()
+            if item.gics_sector == gics_sector
+            and (
+                not normalized_search
+                or normalized_search in item.company_name.lower()
+                or normalized_search in (item.ticker_b3 or "").lower()
+                or normalized_search in str(item.cd_cvm)
             )
-        filtered_df = self._filter_directory_rows_by_hub_gics(rows_df, gics_sector)
-        filtered = self._build_company_results(filtered_df)
+        ]
         total_items = len(filtered)
         start = max(0, (int(page) - 1) * int(page_size))
         end = start + int(page_size)
@@ -1343,23 +1468,14 @@ class CVMReadService:
             return None
 
         if resolved_sector_name in GICS_11_SECTORS:
-            local_rows, _ = self.query_layer.get_companies_directory_page(
-                search="",
-                sector_name=None,
-                page=1,
-                page_size=None,
-            )
-            if not local_rows.empty:
-                years_map = self.query_layer.get_company_years_map(local_rows["cd_cvm"].tolist())
-                local_rows = local_rows.copy()
-                local_rows["anos_disponiveis"] = local_rows["cd_cvm"].map(
-                    lambda cd_cvm: years_map.get(int(cd_cvm), ())
-                )
-            filtered_df = self._filter_directory_rows_by_hub_gics(local_rows, resolved_sector_name)
-            if filtered_df.empty:
+            company_items = [
+                item
+                for item in self._list_company_universe_results()
+                if item.gics_sector == resolved_sector_name
+            ]
+            if not company_items:
                 return None
-            total_items = len(filtered_df)
-            company_items = self._build_company_results(filtered_df)
+            total_items = len(company_items)
             company_rows = pd.DataFrame(
                 [
                     {
@@ -1760,16 +1876,25 @@ class CVMReadService:
         *,
         force_refresh: bool = False,
     ) -> HealthSnapshot:
-        del force_refresh
         resolved_start_year, resolved_end_year = self._resolve_refresh_range(
             start_year=start_year,
             end_year=end_year,
         )
+        if force_refresh:
+            self.invalidate_read_caches()
+        else:
+            self._ensure_read_cache_fresh()
+            cached = self._health_snapshot_cache.get((resolved_start_year, resolved_end_year))
+            if cached is not None:
+                return cached
+
         payload = self._build_db_health_snapshot(
             start_year=resolved_start_year,
             end_year=resolved_end_year,
         )
-        return HealthSnapshot.from_payload(payload)
+        snapshot = HealthSnapshot.from_payload(payload)
+        self._health_snapshot_cache[(resolved_start_year, resolved_end_year)] = snapshot
+        return snapshot
 
     def list_refresh_status(self, cd_cvm: int | None = None) -> list[RefreshStatusDTO]:
         self.refresh_job_repository.ensure_schema()
@@ -2715,6 +2840,9 @@ class CVMReadService:
 
     def _load_active_company_rows(self) -> list[dict[str, Any]]:
         local_rows = self._load_local_active_company_rows()
+        if len(local_rows) >= self.CATALOG_FALLBACK_MIN_LOCAL_COMPANIES:
+            return local_rows
+
         local_by_code = {int(row["cd_cvm"]): row for row in local_rows}
         try:
             entries = [entry for entry in self.company_catalog.list_entries() if entry.is_active]
@@ -2741,6 +2869,21 @@ class CVMReadService:
             )
         )
         return rows
+
+    def _load_local_company_universe_results(self) -> list[CompanySearchResult]:
+        rows_df, _ = self.query_layer.get_companies_directory_page(
+            search="",
+            sector_name=None,
+            page=1,
+            page_size=None,
+        )
+        if not rows_df.empty:
+            years_map = self.query_layer.get_company_years_map(rows_df["cd_cvm"].tolist())
+            rows_df = rows_df.copy()
+            rows_df["anos_disponiveis"] = rows_df["cd_cvm"].map(
+                lambda cd_cvm: years_map.get(int(cd_cvm), ())
+            )
+        return self._build_company_results(rows_df)
 
     def _load_local_active_company_rows(self) -> list[dict[str, Any]]:
         query = text(
@@ -3830,36 +3973,24 @@ class CVMReadService:
         return results
 
     def _list_company_universe_results(self) -> list[CompanySearchResult]:
+        self._ensure_read_cache_fresh()
+        if self._company_universe_cache is not None:
+            return list(self._company_universe_cache)
+
+        def _cache_and_return(items: list[CompanySearchResult]) -> list[CompanySearchResult]:
+            self._company_universe_cache = tuple(items)
+            return list(self._company_universe_cache)
+
+        local_items = self._load_local_company_universe_results()
+        if len(local_items) >= self.CATALOG_FALLBACK_MIN_LOCAL_COMPANIES:
+            return _cache_and_return(local_items)
+
         try:
             catalog_entries = [entry for entry in self.company_catalog.list_entries() if entry.is_active]
         except CompanyCatalogUnavailableError:
-            rows_df, _ = self.query_layer.get_companies_directory_page(
-                search="",
-                sector_name=None,
-                page=1,
-                page_size=None,
-            )
-            if not rows_df.empty:
-                years_map = self.query_layer.get_company_years_map(rows_df["cd_cvm"].tolist())
-                rows_df = rows_df.copy()
-                rows_df["anos_disponiveis"] = rows_df["cd_cvm"].map(
-                    lambda cd_cvm: years_map.get(int(cd_cvm), ())
-                )
-            return self._build_company_results(rows_df)
+            return _cache_and_return(local_items)
         if not catalog_entries:
-            rows_df, _ = self.query_layer.get_companies_directory_page(
-                search="",
-                sector_name=None,
-                page=1,
-                page_size=None,
-            )
-            if not rows_df.empty:
-                years_map = self.query_layer.get_company_years_map(rows_df["cd_cvm"].tolist())
-                rows_df = rows_df.copy()
-                rows_df["anos_disponiveis"] = rows_df["cd_cvm"].map(
-                    lambda cd_cvm: years_map.get(int(cd_cvm), ())
-                )
-            return self._build_company_results(rows_df)
+            return _cache_and_return(local_items)
 
         page_codes = [int(entry.cd_cvm) for entry in catalog_entries]
         local_results_by_code: dict[int, CompanySearchResult] = {}
@@ -3903,7 +4034,7 @@ class CVMReadService:
                     gics_sub_industry=None,
                 )
             )
-        return items
+        return _cache_and_return(items)
 
     def _sector_company_preview(
         self,

@@ -100,6 +100,7 @@ def init_db_tables(engine: Engine) -> None:
         'CREATE INDEX {c}IF NOT EXISTS idx_company_views_count ON company_views(view_count DESC)',
         'CREATE INDEX {c}IF NOT EXISTS idx_fr_cd_cvm ON financial_reports("CD_CVM")',
         'CREATE INDEX {c}IF NOT EXISTS idx_fr_cd_cvm_stmt_year ON financial_reports("CD_CVM", "STATEMENT_TYPE", "REPORT_YEAR")',
+        'CREATE INDEX {c}IF NOT EXISTS idx_fr_cvm_year ON financial_reports("CD_CVM", "REPORT_YEAR", "PERIOD_LABEL")',
         'CREATE INDEX {c}IF NOT EXISTS idx_fr_cd_conta ON financial_reports("CD_CONTA")',
         "CREATE INDEX {c}IF NOT EXISTS idx_companies_setor ON companies(setor_analitico)",
         "CREATE INDEX {c}IF NOT EXISTS idx_companies_ticker ON companies(ticker_b3)",
@@ -107,6 +108,7 @@ def init_db_tables(engine: Engine) -> None:
         # financial_reports for any query filtered only by PERIOD_LABEL (sector_years_map,
         # available_years, sector_metric_rows). These composites let the planner eliminate
         # annual-vs-quarterly rows and the CD_CONTA IN filter without additional table scans.
+        'CREATE INDEX {c}IF NOT EXISTS idx_fr_year_period ON financial_reports("REPORT_YEAR", "PERIOD_LABEL")',
         'CREATE INDEX {c}IF NOT EXISTS idx_fr_period_label ON financial_reports("PERIOD_LABEL")',
         'CREATE INDEX {c}IF NOT EXISTS idx_fr_cd_cvm_period_label ON financial_reports("CD_CVM", "PERIOD_LABEL")',
         'CREATE INDEX {c}IF NOT EXISTS idx_fr_cd_conta_period_label ON financial_reports("CD_CONTA", "PERIOD_LABEL")',

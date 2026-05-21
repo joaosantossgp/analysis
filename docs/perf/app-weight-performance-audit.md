@@ -224,7 +224,7 @@ Scores are directional and should be recalculated after fixes or deeper profilin
 
 | Dependency | Evidence | Risk |
 |---|---|---|
-| `@remotion/player`, `remotion` | Imported by `apps/web/components/home/analysis-remotion-player.tsx`; home route uses dynamic client loading | Valuable polish, but can add JS/audio/render cost |
+| `@remotion/player`, `remotion` | Removed after the audit; home route now uses a static lightweight feature panel | Re-check bundle stats to confirm the removed chunk stays out of first-load JS |
 | `motion` | Used by interactive/demo components and likely design-system examples | Potentially justified for high-value animation; audit route leakage |
 | `@hugeicons/*` | Used in `apps/web/components/feature-carousel.tsx` | Appears demo/design-system related; classify before changing |
 | `react-countup` | Used in `apps/web/components/area-chart-medium.tsx` | Appears design-system/demo related |

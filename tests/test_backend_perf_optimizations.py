@@ -50,6 +50,17 @@ def test_desktop_bridge_caps_company_pagination_and_suggestion_limit() -> None:
     assert service.suggestion_calls[0]["limit"] == 100
 
 
+def test_desktop_bridge_health_reuses_existing_service() -> None:
+    bridge = CVMBridge()
+    service = _BridgeService()
+    bridge._service = service
+
+    payload = bridge.get_health()
+
+    assert payload["status"] == "ok"
+    assert service.company_calls == [{"page": 1, "page_size": 1}]
+
+
 class _EmptyQueryLayer:
     def get_company_info_with_read_model_state(self, cd_cvm: int) -> dict:
         return {}
@@ -68,8 +79,8 @@ def test_read_service_can_skip_blocking_catalog_lookup() -> None:
     assert service.get_company_info(999999, allow_catalog_lookup=False) is None
 
 
-def test_hot_read_paths_are_lru_cached() -> None:
-    assert hasattr(CVMReadService.list_companies, "cache_info")
+def test_hot_read_paths_have_cache_controls() -> None:
+    assert hasattr(CVMReadService, "invalidate_read_caches")
     assert hasattr(CVMReadService.get_available_years, "cache_info")
     assert hasattr(CVMReadService.suggest_companies, "cache_info")
     assert hasattr(CVMQueryLayer.get_sector_years_map, "cache_info")

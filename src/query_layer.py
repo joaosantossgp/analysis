@@ -24,6 +24,7 @@ import json
 import logging
 import re
 import time
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import Engine, inspect, text
@@ -193,13 +194,8 @@ class CVMQueryLayer:
         count_sql = text(
             f"""
             SELECT COUNT(*) AS total_items
-            FROM (
-                SELECT c.cd_cvm
-                FROM companies c
-                LEFT JOIN financial_reports fr ON fr."CD_CVM" = c.cd_cvm
-                WHERE {where_sql}
-                GROUP BY c.cd_cvm, c.company_name, c.ticker_b3, c.setor_analitico, c.setor_cvm
-            ) company_rows
+            FROM companies c
+            WHERE {where_sql}
             """
         )
         total_items = int(_pd().read_sql(count_sql, self.engine, params=params).iloc[0]["total_items"])
@@ -498,12 +494,17 @@ class CVMQueryLayer:
             return {int(cd_cvm): () for cd_cvm in unique_ids}
 
         placeholders = ", ".join(f":cd{i}" for i in range(len(unique_ids)))
+        current_year = datetime.now(timezone.utc).year
+        annual_labels = tuple(str(year) for year in range(1990, current_year + 1))
+        label_placeholders = ", ".join(f":period{i}" for i in range(len(annual_labels)))
         params = {f"cd{i}": cd_cvm for i, cd_cvm in enumerate(unique_ids)}
+        params.update({f"period{i}": label for i, label in enumerate(annual_labels)})
         sql = text(
             f"""
             SELECT "CD_CVM", "REPORT_YEAR"
             FROM financial_reports
             WHERE "CD_CVM" IN ({placeholders})
+              AND "PERIOD_LABEL" IN ({label_placeholders})
               AND "PERIOD_LABEL" = CAST("REPORT_YEAR" AS TEXT)
             GROUP BY "CD_CVM", "REPORT_YEAR"
             ORDER BY "CD_CVM", "REPORT_YEAR"

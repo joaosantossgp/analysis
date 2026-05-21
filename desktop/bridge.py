@@ -383,6 +383,7 @@ class CVMBridge:
                     start_year=start_year,
                     end_year=end_year,
                 )
+                self._svc().invalidate_read_caches()
                 return self._sanitize_for_json(dataclasses.asdict(result))
             except Exception as exc:
                 return self._sanitize_for_json({
@@ -395,7 +396,9 @@ class CVMBridge:
                 })
 
         try:
-            return self._sanitize_for_json(self._refresh().request_refresh(p))
+            result = self._refresh().request_refresh(p)
+            self._svc().invalidate_read_caches()
+            return self._sanitize_for_json(result)
         except Exception as exc:
             return self._sanitize_for_json({
                 "status": "error",
@@ -557,8 +560,7 @@ class CVMBridge:
 
     def get_health(self, params=None) -> dict:
         try:
-            from src.read_service import CVMReadService  # noqa: PLC0415
-            svc = CVMReadService()
+            svc = self._svc()
             # Faz uma consulta leve para checar DB
             svc.list_companies(page=1, page_size=1)
             return self._sanitize_for_json({

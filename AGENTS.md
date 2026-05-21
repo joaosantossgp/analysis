@@ -26,6 +26,42 @@ Canonical operating rules for AI agents in this project. English-only. ~120 line
 11. **UI/design work:** keep output professional and consistent with the existing design system. Preserve creative latitude — propose visual options when not constrained.
 12. **Autonomous (long-running) work:** route through `docs/governance/autonomous-mode.md`. Interactive sessions use this file only.
 
+## Token and Context Efficiency Protocol
+
+Use context-efficient tools before reading large files.
+
+### Serena MCP
+
+When Serena is available, use it first for code navigation, symbol search, reference lookup, and refactoring analysis.
+
+Prefer Serena for:
+
+- finding symbols, components, functions, classes, and references
+- understanding cross-file dependencies
+- inspecting file outlines before reading full files
+- planning refactors across multiple files
+- checking where a function/component is used before editing it
+
+Avoid reading full files unless:
+
+- the exact implementation is required
+- Serena's symbolic overview is insufficient
+- debugging requires full local context
+
+At the beginning of a new session, activate the current project with Serena and read Serena's initial instructions if they are not already loaded.
+
+### Repomix
+
+Use Repomix outputs only for broad repository understanding, onboarding, architecture review, or high-level planning.
+Do not rely on Repomix compressed output for precise implementation changes. For exact edits, inspect the real source files or use Serena.
+
+### Cost Discipline
+
+Before large changes, inspect the relevant subsystem first.
+Avoid broad grep/read loops across the whole repository.
+When the task changes substantially, start a fresh session or compact/clear the context.
+Prefer targeted plans, small diffs, and focused validation commands.
+
 ## 3. Plan-mode rule (risk-based, not ceremony-based)
 
 - **Low risk** (typo, copy fix, isolated function, formatter swap, single-component prop tweak): inspect, act, one-line summary.
