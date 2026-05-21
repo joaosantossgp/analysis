@@ -33,7 +33,7 @@ To:
 | Phase | Name | Status | Notes |
 |---|---|---|---|
 | Phase 0 | User-data safety net | Released as v0.3.4 (hotfix #4); stable | v0.3.4 fixes CI zip layout to be updater-compatible (flat root). Full contract pass: fresh install + MOTW + updater staging + helper swap + user-data preservation. |
-| Phase 1 | Parallel Vite SPA shell | In progress (Phase 1.5: 2 real screens — health + companies) | apps/desktop-web/ with TanStack Query, debounced search, pagination; Next still untouched |
+| Phase 1 | Parallel Vite SPA shell | In progress (Phase 1.6: dynamic routing + company detail) | apps/desktop-web/ with react-router HashRouter, TanStack Query, 3 screens (companies / company detail / health); Next still untouched |
 | Phase 2 | Wire Vite SPA into pywebview | Not started | Remove production Node only after prototype works |
 | Phase 3 | Mandatory legacy deletion | Not started | Delete Next/FastAPI legacy only after parity |
 | Phase 4 | Polish/performance | Not started | Startup, logging, AV/code-signing review |

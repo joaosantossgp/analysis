@@ -2,12 +2,15 @@
 
 ## Status
 
-**Phase 1.5 proof-of-concept.** This package exists in parallel to `apps/web/` (Next.js). It does **not** replace the production UI. The released desktop executable still ships the Next.js standalone server.
+**Phase 1.6 proof-of-concept.** This package exists in parallel to `apps/web/` (Next.js). It does **not** replace the production UI. The released desktop executable still ships the Next.js standalone server.
 
-Two screens prove the architecture:
+Three screens with dynamic routing prove the architecture:
 
-- **Runtime health** — `CVMBridge.get_health()` rendering status, version, dialect.
-- **Companies directory** — `CVMBridge.get_companies(...)` with debounced search, pagination, loading/error/empty states. Powered by TanStack Query.
+- **Companies directory** (`/`) — `CVMBridge.get_companies(...)` with debounced search, pagination, loading/error/empty states. Powered by TanStack Query.
+- **Company detail** (`/empresas/:cdCvm`) — dynamic route. Fetches `get_company_info`, `get_company_years`, and `get_company_kpis` in parallel. Header card + annual KPI table with format-aware cells (pct/money/ratio).
+- **Runtime health** (`/health`) — `CVMBridge.get_health()` rendering status, version, dialect.
+
+Router: `react-router-dom` v7 with `HashRouter` (portable across `file://`, `http://127.0.0.1:<port>`, and pywebview's `http_server=True`).
 
 ## Goal
 

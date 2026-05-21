@@ -64,6 +64,53 @@ export type CompaniesQuery = {
   page_size?: number;
 };
 
+export type CompanyInfo = {
+  cd_cvm: number;
+  company_name: string;
+  nome_comercial: string | null;
+  cnpj: string | null;
+  ticker_b3: string | null;
+  company_type: string | null;
+  setor_cvm: string | null;
+  setor_analitico: string | null;
+  sector_name?: string | null;
+  sector_slug?: string | null;
+  gics_sector?: string | null;
+  gics_sector_slug?: string | null;
+  gics_industry_group?: string | null;
+  gics_industry?: string | null;
+  gics_sub_industry?: string | null;
+  has_local_financial_reports: boolean;
+  has_readable_current_data: boolean;
+  readable_years_count: number;
+  latest_readable_year: number | null;
+  read_model_updated_at: string | null;
+  read_availability_code: string | null;
+  read_availability_message: string | null;
+  /** Set to true by the bridge when the cd_cvm was not found in the local catalog. */
+  not_found?: boolean;
+  catalog_lookup_pending?: boolean;
+};
+
+export type CompanyYearsResult = {
+  years: number[];
+  error?: string;
+};
+
+export type TabularRow = Record<string, string | number | boolean | null>;
+export type TabularData = {
+  columns: string[];
+  rows: TabularRow[];
+};
+
+export type KPIBundle = {
+  cd_cvm: number;
+  years: number[];
+  annual: TabularData;
+  quarterly: TabularData;
+  error?: string;
+};
+
 export type PingResult = {
   pong: boolean;
   ts: number;
@@ -78,6 +125,9 @@ export interface BridgeApi {
   ping(params?: Record<string, unknown>): Promise<PingResult>;
   get_health(params?: Record<string, unknown>): Promise<HealthPayload>;
   get_companies(params: Record<string, unknown>): Promise<CompanyDirectoryPage>;
+  get_company_info(params: Record<string, unknown>): Promise<CompanyInfo>;
+  get_company_years(params: Record<string, unknown>): Promise<CompanyYearsResult>;
+  get_company_kpis(params: Record<string, unknown>): Promise<KPIBundle>;
 }
 
 declare global {

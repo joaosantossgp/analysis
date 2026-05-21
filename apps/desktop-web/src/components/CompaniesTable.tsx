@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 
 import { fetchCompanies, type CompaniesResult } from "@/lib/api/companies";
@@ -215,10 +216,17 @@ function CompanyRow({
 }) {
   const yearsSummary = useMemo(() => formatYears(company.anos_disponiveis), [company.anos_disponiveis]);
   return (
-    <tr className="hover:bg-zinc-900/50">
+    <tr className="group hover:bg-zinc-900/50">
       <td className="px-3 py-2">
-        <div className="font-medium text-zinc-100">{company.company_name}</div>
-        <div className="font-mono text-xs text-zinc-500">CVM {company.cd_cvm}</div>
+        <Link
+          to={`/empresas/${company.cd_cvm}`}
+          className="block focus:outline-none focus:ring-1 focus:ring-emerald-600"
+        >
+          <div className="font-medium text-zinc-100 group-hover:text-emerald-300">
+            {company.company_name}
+          </div>
+          <div className="font-mono text-xs text-zinc-500">CVM {company.cd_cvm}</div>
+        </Link>
       </td>
       <td className="px-3 py-2 font-mono text-xs text-zinc-300">
         {company.ticker_b3 ?? "—"}

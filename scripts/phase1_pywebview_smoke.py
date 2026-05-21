@@ -103,10 +103,33 @@ def main() -> None:
             page = bridge.get_companies({"page": 1, "page_size": 3})
             items = page.get("items", [])
             total = page.get("pagination", {}).get("total_items")
+            first = items[0] if items else None
             print(
                 f"[smoke] bridge.get_companies: total={total} "
-                f"first={items[0]['company_name'] if items else 'none'}"
+                f"first={first['company_name'] if first else 'none'}"
             )
+            if first:
+                cd_cvm = first["cd_cvm"]
+                info = bridge.get_company_info({"cd_cvm": cd_cvm})
+                print(
+                    f"[smoke] bridge.get_company_info({cd_cvm}): "
+                    f"name={info.get('company_name')} "
+                    f"latest_year={info.get('latest_readable_year')}"
+                )
+                years_resp = bridge.get_company_years({"cd_cvm": cd_cvm})
+                years = years_resp.get("years", [])
+                print(f"[smoke] bridge.get_company_years({cd_cvm}): {years}")
+                if years:
+                    selected = sorted(years)[-3:]
+                    kpis = bridge.get_company_kpis(
+                        {"cd_cvm": cd_cvm, "years": selected}
+                    )
+                    annual = kpis.get("annual", {})
+                    print(
+                        f"[smoke] bridge.get_company_kpis({cd_cvm}, {selected}): "
+                        f"rows={len(annual.get('rows', []))} "
+                        f"columns={len(annual.get('columns', []))}"
+                    )
         except Exception as exc:
             print(f"[smoke] bridge tap error: {exc!r}")
 
