@@ -1,8 +1,8 @@
-# apps/desktop-web — Phase 1 parallel Vite SPA shell
+# apps/desktop-web — Vite SPA desktop runtime prototype
 
 ## Status
 
-**Phase 1.6 proof-of-concept.** This package exists in parallel to `apps/web/` (Next.js). It does **not** replace the production UI. The released desktop executable still ships the Next.js standalone server.
+**Phase 2 experimental runtime.** This package exists in parallel to `apps/web/` (Next.js). It does **not** replace the default production UI yet. The default desktop executable still starts the Next.js standalone server through bundled Node; passing `--vite` starts this Vite SPA instead.
 
 Three screens with dynamic routing prove the architecture:
 
@@ -14,7 +14,7 @@ Router: `react-router-dom` v7 with `HashRouter` (portable across `file://`, `htt
 
 ## Goal
 
-Prove that a static Vite + React + TypeScript build can drive the existing Python bridge (`desktop/bridge.py::CVMBridge`) without an embedded Node runtime. Once the prototype reaches parity it will replace `apps/web/` and remove the bundled `node.exe` (Phase 2 + Phase 3 in `docs/migration/`).
+Prove that a static Vite + React + TypeScript build can drive the existing Python bridge (`desktop/bridge.py::CVMBridge`) without an embedded Node runtime. Once the prototype reaches parity and soaks successfully, Phase 3 may replace `apps/web/` and remove the bundled `node.exe`.
 
 ## What is here
 
@@ -68,10 +68,10 @@ Open `http://127.0.0.1:5173/`. The `HealthCard` will show a yellow "Browser-mode
 
 ```bash
 cd <repo root>
-python -m desktop.app --dev
+python -m desktop.app --vite
 ```
 
-This currently still launches the Next.js dev server. Phase 2 will add a pywebview launch mode that points at the Vite dev server or the built static assets, at which point `HealthCard` will resolve in `desktop` mode and show real Python bridge data.
+This serves the built static assets from `apps/desktop-web/dist/` over a loopback HTTP server and opens them inside pywebview with the real `CVMBridge()` attached. For live Vite dev-server testing, use `python scripts/phase1_pywebview_smoke.py --manual`.
 
 ## Build
 
@@ -108,8 +108,8 @@ The current default still launches the Next standalone server via the bundled `n
 
 ## What this does NOT do yet
 
-- Does not run inside the packaged exe.
-- Does not replace any Next.js route.
-- Does not implement routing — top-tab toggle only. Phase 2 will add a real router.
+- Does not become the default desktop runtime.
+- Does not remove Next.js, FastAPI, `web_standalone/`, or bundled `node.exe`.
+- Does not cover every production screen yet: sectors, update-base, Excel export, and updater UI remain on the legacy Next path.
 - Uses TanStack Query for the companies screen (added in Phase 1.5).
 - Does not call FastAPI. Bridge-only.

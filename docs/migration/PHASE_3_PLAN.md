@@ -1,0 +1,122 @@
+# Phase 3 — Legacy Deletion (PLANNED, NOT STARTED)
+
+Status: **DO NOT EXECUTE WITHOUT EXPLICIT USER APPROVAL.**
+
+Phase 3 deletes the Next.js + FastAPI + bundled Node stack once the Vite SPA reaches parity with the production UI. This is the largest single change in the migration and is irreversible without git revert.
+
+---
+
+## Pre-conditions (all must be true)
+
+1. **Vite SPA parity**: every Next route in production has an equivalent Vite route, exercised in a packaged build smoke. See `ARCHITECTURE.md` bridge surface table — only the rows marked "No (yet)" need porting.
+2. **`v0.3.5+` released** with both UIs bundled, `--vite` exercised by real users for at least one soak window (suggest 1–2 weeks).
+3. **Manual sign-off from the user**: explicit "OK to delete Next / Node / FastAPI".
+4. **No regression** in the Phase 0 contract (LOCALAPPDATA DB, MOTW strip, updater allowlist, recovery scenarios) after switching default to Vite.
+5. **Default switched and soaked**: a release where the default mode is Vite (Next becomes opt-in via `--legacy` or similar) ships and survives a soak window before deletion.
+
+If any pre-condition is not met, **do not start Phase 3**.
+
+---
+
+## Scope of deletion
+
+The following are candidates for removal once Vite reaches parity:
+
+### Bundle deletions
+- `_internal/web_standalone/` (26 MB)
+- `_internal/node.exe` (88 MB)
+
+### Repo deletions
+- `apps/web/` (entire Next.js project)
+- `apps/api/` (entire FastAPI project)
+- `desktop/node_portable/` (build artifact dir)
+
+### Packaging deletions
+- `desktop/app.spec`:
+  - Remove `STANDALONE_DIR` data entry.
+  - Remove `NODE_EXE` data entry.
+  - Optionally rename `desktop-web` → `web` for the resulting `_internal/web/` path.
+- `desktop/build_desktop.ps1`:
+  - Remove `next build` step.
+  - Remove `node.exe` portable copy step.
+  - Remove the static asset copy step (`public/` + `.next/static/` → `standalone/`).
+- `.github/workflows/release-desktop.yml`:
+  - Remove `setup-node` + `npm ci --prefix apps/web` steps.
+  - Verify `desktop/build_desktop.ps1` no longer needs Node.
+
+### Runtime deletions
+- `desktop/app.py`:
+  - Default branch in `main()` flips to Vite (was `--vite`-only).
+  - `--dev` branch removed (or repurposed for Vite dev server).
+  - Remove `_web_dir`, `_standalone_path`, `_node_exe`, `_npm_cmd`, `_start_dev_server`, `_start_standalone_server`.
+  - Remove the `_DEV_PORT`, `_DEV_URL` constants.
+- `requirements.txt` / `apps/api/requirements*.txt`:
+  - Remove FastAPI, Uvicorn, Sentry (if not used elsewhere).
+
+### Docs deletions / updates
+- Update `README.md` to drop references to Next / Node / FastAPI as part of the runtime.
+- Mark `docs/migration/PHASE_*` as historical.
+- Update `apps/desktop-web/README.md` to remove "still parallel to Next" disclaimers.
+
+---
+
+## Suggested execution order
+
+Each step is a separate commit. Easier to revert one step if smoke fails.
+
+1. **Verify parity matrix.** Re-confirm every Next route has a Vite equivalent. List screen-by-screen in a checklist commit.
+2. **Default flip.** Ship `vX.Y.0` where Vite is the default and Next is opt-in (e.g. `--legacy`). Both UIs still bundled.
+3. **Soak window.** 1–2 weeks. Watch issue tracker. If users report Vite-mode bugs, fix and re-soak. **Do not proceed unless the soak is clean.**
+4. **Remove Next runtime path from `desktop/app.py`.** Single commit: deletes `--legacy` branch, `_start_standalone_server`, `_start_dev_server`, etc. `--vite` no longer needed as a flag (it's the only mode).
+5. **Remove Node + web_standalone from `app.spec` + build script.** Single commit. Bundle drops 114 MB.
+6. **Delete `apps/web/`.** Single commit. Big diff. CI workflow update.
+7. **Delete `apps/api/`.** Single commit. Update `requirements.txt` family.
+8. **Delete `desktop/node_portable/`.** Trivial.
+9. **Update docs and release `vX.Y.1`.** Mark phase tracker complete.
+10. **Phase 4 starts.** Code signing, AV/UPX review.
+
+---
+
+## Safety nets that MUST survive Phase 3
+
+Even after deletion, these contracts remain inviolable:
+
+- LOCALAPPDATA user-data layout (`db/`, `output/`, `logs/`, `cache/`).
+- `desktop/app.py::_migrate_legacy_db_once` + `_wal_safe_copy_sqlite` (handles upgraders coming from older releases that may still have install-dir DBs).
+- `desktop/update_helper.ps1` allowlist + rollback snapshot.
+- `desktop/app.py::_strip_motw_from_bundle` (still needed; not Next-specific).
+- `desktop/app.py::_preflight_pywebview_backend` (still needed; checks .NET Framework / WebView2 / pythonnet runtime files).
+- `desktop/app.py::_run_diagnostic_mode` (still needed for user bug reports).
+- `desktop/updater.py` (still needed for auto-updates).
+- Auto-updater asset naming contract (`CVMAnalytics-windows-vX.Y.Z.zip` + `.sha256`).
+- CI flat-zip-root verification (`Compress-Archive -Path dist\CVMAnalytics\*`).
+
+If any of these break during Phase 3, **revert the offending commit** and re-plan.
+
+---
+
+## Risk register
+
+| Risk | Mitigation |
+|---|---|
+| Vite SPA missing a feature only present in Next route | Parity matrix in pre-condition 1; soak window |
+| User on very old release (`v0.2.x`) auto-updates and their bundled Node assumption breaks | Updater allowlist swap is the same; their install becomes the new Vite-only bundle on next launch |
+| User-data migration regression | Phase 0 migrator unchanged; covered by smoke tests |
+| Removing `apps/api/` breaks some CLI / scripted workflow | Audit before delete: grep for `from apps.api`, `uvicorn apps.api`, `apps/api/worker.py`, `railway.toml`, `apps/api/Dockerfile`. Document any non-desktop users. |
+| Removing FastAPI from `requirements.txt` breaks `apps/web/` build (during the transition where Vite is default but apps/web/ still exists) | Sequence carefully: delete `apps/api/` only after step 6 (Next deletion) which removes the consumer. |
+| CI workflow Node step removal breaks something | Verify `desktop/build_desktop.ps1` does not still call `npm ci` against `apps/web/`; remove all `apps/web/` references in same commit. |
+| Bundle size win unexpectedly small | Run `du -sh dist/CVMAnalytics/_internal/*` after deletion; if not ~114 MB lower, investigate. |
+
+---
+
+## Do NOT do during Phase 3
+
+- Rewrite git history.
+- Force-push.
+- Skip the soak window.
+- Combine deletion commits into one mega-commit.
+- Delete a directory without first grepping the repo for cross-references.
+- Touch user-data contracts.
+- Touch the updater allowlist.
+- Remove `_preflight_pywebview_backend` even though Next is gone — pythonnet is still required for pywebview's WinForms backend.
+- Remove `_strip_motw_from_bundle` — still required for `Python.Runtime.dll` to load.
