@@ -46,6 +46,25 @@ Phase 0 is released. **v0.3.0 was superseded by v0.3.1 due to a packaging bug.**
 
 **Pending:** real confirmation from the original reporter's machine. If launch still fails, the `--diagnose-runtime` log will tell us precisely which prerequisite or runtime check is the blocker.
 
+### v0.3.3 hotfix #3 — actual root cause
+
+- Tag: v0.3.3
+- GitHub Release: https://github.com/joaosantossgp/analisys/releases/tag/v0.3.3
+- Artifact: CVMAnalytics-windows-v0.3.3.zip
+- SHA-256: 296d1d82c7a1fab4c62be8fc2d109e779e93b4e5a2c377396740d2b3170e24e1
+
+**The v0.3.2 diagnostic log proved the actual root cause.** Reporter's machine had every prerequisite present (.NET Framework 4.8 Release=533509, WebView2 148.0, all bundle files intact) but `import clr` still failed at `clr_loader/netfx.py:49`. That can only happen if the .NET runtime itself rejected the assembly.
+
+**Cause:** Windows Explorer's "Extract All" (the default on Windows 11) propagates Mark-of-the-Web (Zone.Identifier ADS, ZoneId=3) to every extracted file. .NET Framework's default `loadFromRemoteSources` policy refuses to execute managed assemblies flagged as Internet zone. `Assembly.LoadFile("...\\Python.Runtime.dll")` silently returns null → `clr_loader` raises the generic "Failed to resolve Python.Runtime.Loader.Initialize" error. The v0.3.0 deps.json fix and the v0.3.2 prereq checks were therefore both partial fixes for the wrong layer.
+
+**Why this slipped past our packaged smoke tests:** PowerShell's `Expand-Archive` does NOT preserve MOTW on extracted files. Our test harnesses used `Expand-Archive`, so the bundle came out MOTW-free and `Assembly.LoadFile` worked. The bug only reproduces when the user extracts via Explorer.
+
+**Fix in v0.3.3:** `desktop/app.py::_strip_motw_from_bundle()` walks the PyInstaller `_MEIPASS` at startup and removes the `:Zone.Identifier` alternate data stream from every .dll/.exe/.pyd/.node/.ps1 via Win32 `DeleteFileW`. Idempotent. Silent on failure. Never touches file contents.
+
+**Reproduction:** `scripts/test_motw_explorer.ps1` stamps MOTW on all 115 binaries in the extracted bundle (simulating Explorer Extract All). Without v0.3.3 the launch fails identically to the reporter's crash. With v0.3.3 the launch survives 30s with 20 `msedgewebview2.exe` children.
+
+**Validated on the v0.3.3 build:** the Explorer-MOTW reproduction passes; Phase 0 regressions (legacy WAL migration, LOCALAPPDATA preservation) pass; the diagnostic log section confirms MOTW streams are stripped at startup.
+
 ## What Phase 0 solved
 
 - User runtime DB moved to `%LOCALAPPDATA%\CVMAnalytics\db\cvm_financials.db`

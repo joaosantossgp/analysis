@@ -32,7 +32,7 @@ To:
 
 | Phase | Name | Status | Notes |
 |---|---|---|---|
-| Phase 0 | User-data safety net | Released as v0.3.2 (hotfix #2); awaiting real user-machine confirmation | v0.3.2 adds precise prerequisite checks (.NET Framework 4.8, WebView2) and a `--diagnose-runtime` self-service mode |
+| Phase 0 | User-data safety net | Released as v0.3.3 (hotfix #3); awaiting real user-machine confirmation | v0.3.3 strips Mark-of-the-Web from bundle DLLs at startup — root cause of the v0.3.0/v0.3.1/v0.3.2 startup crashes |
 | Phase 1 | Parallel Vite SPA shell | Not started | Do not delete Next yet |
 | Phase 2 | Wire Vite SPA into pywebview | Not started | Remove production Node only after prototype works |
 | Phase 3 | Mandatory legacy deletion | Not started | Delete Next/FastAPI legacy only after parity |
