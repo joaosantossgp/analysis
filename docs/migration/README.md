@@ -32,11 +32,13 @@ To:
 
 | Phase | Name | Status | Notes |
 |---|---|---|---|
-| Phase 0 | User-data safety net | Complete / pending packaged smoke test | Runtime DB moved to LOCALAPPDATA; update helper hardened |
+| Phase 0 | User-data safety net | Released as v0.3.0; soak pending | Runtime DB moved to LOCALAPPDATA; update helper hardened |
 | Phase 1 | Parallel Vite SPA shell | Not started | Do not delete Next yet |
 | Phase 2 | Wire Vite SPA into pywebview | Not started | Remove production Node only after prototype works |
 | Phase 3 | Mandatory legacy deletion | Not started | Delete Next/FastAPI legacy only after parity |
 | Phase 4 | Polish/performance | Not started | Startup, logging, AV/code-signing review |
+
+See [PHASE_0_RELEASE_CHECKPOINT.md](PHASE_0_RELEASE_CHECKPOINT.md) for the v0.3.0 release record, validation list, and known hygiene issues.
 
 ## Current production status
 
