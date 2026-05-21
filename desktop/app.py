@@ -189,6 +189,62 @@ def _wal_safe_copy_sqlite(source: Path, destination: Path) -> None:
 
 _NET_FRAMEWORK_48_RELEASE_KEY = 528040  # Windows registry release value for 4.8
 
+# File extensions that need Mark-of-the-Web stripped on first launch so .NET
+# Framework's "loadFromRemoteSources" policy does not refuse to execute them.
+_MOTW_STRIP_EXTENSIONS = (".dll", ".exe", ".pyd", ".node", ".ps1")
+
+
+def _strip_motw_from_bundle() -> int:
+    """Remove the Zone.Identifier ADS from every DLL/EXE/PYD in the bundle.
+
+    Why this exists:
+        When a user downloads the release ZIP from GitHub and extracts it
+        with Windows Explorer's "Extract All" (the default on Windows 11),
+        Windows applies Mark-of-the-Web (Zone.Identifier ADS, ZoneId=3) to
+        every extracted file. .NET Framework's default loader policy
+        refuses to execute managed assemblies whose source is the Internet
+        zone, so `Assembly.LoadFile("...\\Python.Runtime.dll")` silently
+        returns null and clr_loader raises:
+
+            RuntimeError: Failed to resolve Python.Runtime.Loader.Initialize
+
+        Note that PowerShell's `Expand-Archive` does NOT preserve MOTW,
+        which is why this bug is invisible on developer machines that
+        extract via the PowerShell helper.
+
+    What it does:
+        Walks the bundle directory and calls Win32 `DeleteFileW` on the
+        `<file>:Zone.Identifier` alternate data stream of every .dll,
+        .exe, .pyd, .node, and .ps1 file. Returns the number of streams
+        successfully removed. Failures are silently tolerated — the
+        worst case is we fall through to the precise MessageBox in
+        `_preflight_pywebview_backend`.
+
+    Idempotent: removing an ADS that does not exist is a no-op.
+    Safe: only touches the Zone.Identifier stream, never the file body.
+    """
+    if not _bundled():
+        return 0
+    try:
+        import ctypes  # noqa: PLC0415
+    except Exception:
+        return 0
+
+    bundle = _bundle_dir()
+    removed = 0
+    delete_file = ctypes.windll.kernel32.DeleteFileW
+    for f in bundle.rglob("*"):
+        if not f.is_file() or f.suffix.lower() not in _MOTW_STRIP_EXTENSIONS:
+            continue
+        ads_path = str(f) + ":Zone.Identifier"
+        try:
+            if delete_file(ads_path):
+                removed += 1
+        except Exception:
+            pass
+    return removed
+
+
 
 def _detect_net_framework_release() -> int | None:
     """Read the NDP\\v4\\Full Release value from the Windows registry.
@@ -342,6 +398,23 @@ def _diagnose_runtime_to_file() -> Path:
     section("Environment overrides")
     for name in ("PYTHONNET_RUNTIME", "PYTHONNET_PYDLL", "DOTNET_ROOT", "PATH"):
         kv(name, os.environ.get(name, "n/a") if name != "PATH" else "(omitted; long)")
+
+    section("Mark-of-the-Web stripping")
+    removed = _strip_motw_from_bundle()
+    kv("zone_identifier streams removed", removed)
+    # After stripping, count any remaining
+    remaining = 0
+    if _bundled():
+        for f in _bundle_dir().rglob("*"):
+            if not f.is_file() or f.suffix.lower() not in _MOTW_STRIP_EXTENSIONS:
+                continue
+            ads = str(f) + ":Zone.Identifier"
+            try:
+                with open(ads, "rb"):
+                    remaining += 1
+            except (OSError, FileNotFoundError):
+                pass
+    kv("zone_identifier streams remaining", remaining)
 
     section("import clr")
     try:
@@ -634,6 +707,10 @@ def main() -> None:
     debug_mode = "--debug" in args
 
     _configure_bundled_data_paths()
+    # Strip Mark-of-the-Web from bundle DLLs BEFORE any .NET load attempt.
+    # Without this, Python.Runtime.dll fails to execute on machines where
+    # Windows Explorer's "Extract All" preserved MOTW on extracted files.
+    _strip_motw_from_bundle()
     _migrate_legacy_db_once()
     _ensure_db_initialized()
     _preflight_pywebview_backend()
