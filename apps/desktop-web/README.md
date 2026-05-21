@@ -2,12 +2,13 @@
 
 ## Status
 
-**Phase 2 experimental runtime.** This package exists in parallel to `apps/web/` (Next.js). It does **not** replace the default production UI yet. The default desktop executable still starts the Next.js standalone server through bundled Node; passing `--vite` starts this Vite SPA instead.
+**Phase 3A experimental runtime.** This package exists in parallel to `apps/web/` (Next.js). It does **not** replace the default production UI yet. The default desktop executable still starts the Next.js standalone server through bundled Node; passing `--vite` starts this Vite SPA instead.
 
-Three screens with dynamic routing prove the architecture:
+Four screens with dynamic routing prove the architecture:
 
 - **Companies directory** (`/`) — `CVMBridge.get_companies(...)` with debounced search, pagination, loading/error/empty states. Powered by TanStack Query.
 - **Company detail** (`/empresas/:cdCvm`) — dynamic route. Fetches `get_company_info`, `get_company_years`, and `get_company_kpis` in parallel. Header card + annual KPI table with format-aware cells (pct/money/ratio).
+- **Financial statements** (`/empresas/:cdCvm/demonstrativos?stmt=DRE`) — DRE/BPA/BPP/DFC matrix via `get_company_statement`, with real data, statement switching, row filtering, loading/error/empty states.
 - **Runtime health** (`/health`) — `CVMBridge.get_health()` rendering status, version, dialect.
 
 Router: `react-router-dom` v7 with `HashRouter` (portable across `file://`, `http://127.0.0.1:<port>`, and pywebview's `http_server=True`).
@@ -36,7 +37,10 @@ apps/desktop-web/
         │   ├── adapter.ts     # single chokepoint for window.pywebview.api
         │   └── types.ts       # typed mirror of Python bridge methods
         └── api/
-            └── health.ts      # facade consumed by components
+            ├── health.ts
+            ├── companyDetail.ts
+            ├── companies.ts
+            └── statements.ts
 ```
 
 ## Bridge pattern
@@ -110,6 +114,6 @@ The current default still launches the Next standalone server via the bundled `n
 
 - Does not become the default desktop runtime.
 - Does not remove Next.js, FastAPI, `web_standalone/`, or bundled `node.exe`.
-- Does not cover every production screen yet: sectors, update-base, Excel export, and updater UI remain on the legacy Next path.
+- Does not cover every production screen yet: sectors, update-base, Excel export, complete KPI/indicator parity, and updater UI remain on the legacy Next path.
 - Uses TanStack Query for the companies screen (added in Phase 1.5).
 - Does not call FastAPI. Bridge-only.

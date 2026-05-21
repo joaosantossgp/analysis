@@ -111,6 +111,15 @@ export type KPIBundle = {
   error?: string;
 };
 
+export type StatementMatrix = {
+  cd_cvm: number;
+  statement_type: string;
+  years: number[];
+  table: TabularData;
+  exclude_conflicts: boolean;
+  error?: string;
+};
+
 export type PingResult = {
   pong: boolean;
   ts: number;
@@ -128,6 +137,7 @@ export interface BridgeApi {
   get_company_info(params: Record<string, unknown>): Promise<CompanyInfo>;
   get_company_years(params: Record<string, unknown>): Promise<CompanyYearsResult>;
   get_company_kpis(params: Record<string, unknown>): Promise<KPIBundle>;
+  get_company_statement(params: Record<string, unknown>): Promise<StatementMatrix>;
 }
 
 declare global {

@@ -222,6 +222,17 @@ function YearsKpiPanel({
           <span className="text-xs text-amber-300">Refreshing…</span>
         ) : null}
       </header>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-zinc-800 bg-zinc-950/60 px-4 py-3">
+        <p className="text-sm text-zinc-400">
+          Need account-level statements for this company?
+        </p>
+        <Link
+          to={`/empresas/${cdCvm}/demonstrativos`}
+          className="rounded-md border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 hover:border-cyan-600 hover:text-cyan-100"
+        >
+          Open financial statements
+        </Link>
+      </div>
       <KpiBody
         yearsQuery={yearsQuery}
         kpiQuery={kpiQuery}

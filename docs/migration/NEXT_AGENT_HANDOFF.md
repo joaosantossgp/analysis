@@ -7,10 +7,9 @@ This is the **primary entry point** for any AI agent or human contributor pickin
 ## TL;DR
 
 - **What we are doing:** rebuilding the desktop app's UI runtime from `Next.js standalone + bundled Node + pywebview` to `static Vite SPA + pywebview` while keeping Python authoritative and user data safe.
-- **Where we are:** Phase 2 done. Both the Next standalone runtime and the new Vite SPA ship in the same packaged exe. The Next path is the default; pass `--vite` to opt into the Vite SPA.
-- **What is released:** `v0.3.4` on GitHub. Pre-Phase-2. Stable. Users hit the Next path.
-- **What is NOT released yet:** Phase 2 (the `--vite` flag) is on `main` but no release tag has been validated from a downloaded GitHub asset yet. The released `v0.3.4` does not have the `--vite` mode.
-- **What is next:** screen-parity in Vite (sectors / update-base / Excel save flow) before Phase 3 (legacy deletion).
+- **Where we are:** Phase 3A is underway. Phase 2 shipped `--vite`; Phase 3A adds the parity matrix and the first missing Vite screen while keeping Next as the default.
+- **What is released:** `v0.4.0` on GitHub. It validates the opt-in Vite runtime from a downloaded release asset. Users still hit the Next path by default.
+- **What is next:** keep closing P0 gaps in `PHASE_3_PARITY_MATRIX.md` before any default switch. Legacy deletion remains Phase 3 and is not approved.
 - **Hard rule:** do not delete `apps/web/`, `apps/api/`, `desktop/node_portable/`, FastAPI deps, or remove Node from `desktop/app.spec` until the user explicitly approves Phase 3.
 
 ---
@@ -23,7 +22,8 @@ This is the **primary entry point** for any AI agent or human contributor pickin
 | **Phase 1** | Parallel Vite + React + TS SPA shell (`apps/desktop-web/`) | Done. Health screen + bridge adapter. Not packaged. | See `PHASE_1_VITE_SHELL.md` |
 | **Phase 1.5** | Companies directory screen + TanStack Query | Done. Real search + pagination. | See `PHASE_1_VITE_SHELL.md` |
 | **Phase 1.6** | Dynamic routing + company detail | Done. HashRouter + 3 routes + KPI table. | See `PHASE_1_VITE_SHELL.md` |
-| **Phase 2** | Opt-in `--vite` runtime in packaged exe | **Done, not yet released.** Both UIs ship; default = Next; `--vite` = Vite with zero Node. | See `PHASE_2_VITE_RUNTIME.md` |
+| **Phase 2** | Opt-in `--vite` runtime in packaged exe | **Released as `v0.4.0`.** Both UIs ship; default = Next; `--vite` = Vite with zero Node. | See `PHASE_2_VITE_RUNTIME.md` |
+| **Phase 3A** | Parity matrix + one missing Vite screen | In progress. Financial statements are the first selected screen. | See `PHASE_3_PARITY_MATRIX.md` |
 | **Phase 3** | Delete legacy: Next, Node, FastAPI, apps/web, apps/api | **Not started.** Gated on Vite screen parity. | See `PHASE_3_PLAN.md` |
 | **Phase 4** | Polish, code signing, AV/UPX review | Not started. | — |
 
@@ -103,20 +103,19 @@ Full architecture map in `ARCHITECTURE.md`.
 
 ---
 
-## Immediate next task (Phase 1.7 / 2.5)
+## Immediate next task (Phase 3A)
 
-Suggested before Phase 3:
+Suggested before any default switch:
 
-1. **Manual click-through of packaged `--vite` mode** on a real user machine. Verify the company directory → search → company detail → back navigation flow works end-to-end in the packaged exe (already verified liveness + WebView2 children, not interactive clicks).
-2. **Port remaining production screens** to `apps/desktop-web/`. The Next app has these the Vite SPA does not:
-   - `/setores` (sectors list) — uses `get_sectors`
-   - `/setores/[slug]` and `/setores/[slug]/[sub_slug]` — uses `get_sector_detail`, `get_sub_sector_detail`
-   - `/atualizar-base` — uses `get_base_health`, `request_refresh`, `cancel_refresh`, `get_refresh_status`, batch refresh APIs
-   - Excel save / download — uses `save_company_excel`, `download_company_excel`
-   - Auto-updater UI prompt (the floating banner) — uses `check_update`, `apply_update`, `snooze_update`, `get_update_progress`
-3. **Tag `v0.4.0` once Phase 2 is stable.** This is a runtime milestone rather than a small patch: the default path remains Next, but the packaged app gains an experimental Vite path with no Node process. The CI workflow will automatically include both UIs in the bundle because both data entries in `desktop/app.spec` are conditional on disk presence. Add a note to the release saying `--vite` is opt-in / experimental.
+1. Keep `PHASE_3_PARITY_MATRIX.md` current.
+2. Validate the newly ported financial statements screen in Vite:
+   - `/empresas/9512/demonstrativos?stmt=DRE`
+   - DRE/BPA/BPP/DFC selector
+   - row filter
+   - company overview back navigation
+3. Recommended next narrow slice after Phase 3A: Excel save/export on company detail and statements, using existing `save_company_excel` / `download_company_excel`.
 
-Do NOT start Phase 3 until at least items 1 and 2 are done.
+Do NOT start Phase 3 deletion until every P0 parity gap is closed, Vite has shipped as the default with a fallback and soaked, and the user explicitly approves deletion.
 
 ---
 

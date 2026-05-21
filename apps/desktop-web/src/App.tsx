@@ -3,6 +3,7 @@ import { HashRouter, NavLink, Route, Routes } from "react-router-dom";
 import { BridgeStatus } from "./components/BridgeStatus";
 import { CompaniesPage } from "./routes/CompaniesPage";
 import { CompanyDetailPage } from "./routes/CompanyDetailPage";
+import { CompanyStatementsPage } from "./routes/CompanyStatementsPage";
 import { HealthPage } from "./routes/HealthPage";
 
 // HashRouter (not BrowserRouter) for portability across pywebview origins:
@@ -15,15 +16,14 @@ export function App() {
       <div className="mx-auto flex min-h-full max-w-5xl flex-col gap-6 px-6 py-8">
         <header className="space-y-2">
           <p className="text-xs uppercase tracking-widest text-zinc-500">
-            Phase 1.6 prototype
+            Experimental Vite runtime
           </p>
           <h1 className="text-3xl font-semibold text-zinc-50">
-            CVM Analytics — desktop SPA shell
+            CVM Analytics
           </h1>
           <p className="max-w-xl text-sm text-zinc-400">
-            Parallel Vite + React build exercising the existing Python bridge.
-            Replaces nothing in production yet; the released exe still ships
-            the Next.js standalone runtime.
+            Local CVM company analysis with directory search, KPIs, and
+            financial statements.
           </p>
         </header>
 
@@ -37,12 +37,16 @@ export function App() {
               path="/empresas/:cdCvm"
               element={<CompanyDetailPage />}
             />
+            <Route
+              path="/empresas/:cdCvm/demonstrativos"
+              element={<CompanyStatementsPage />}
+            />
           </Routes>
         </main>
 
         <footer className="mt-auto space-y-2 pt-6 text-xs text-zinc-600">
           <BridgeStatus />
-          <p>apps/desktop-web · proof-of-concept · not packaged yet</p>
+          <p>apps/desktop-web · opt-in --vite runtime</p>
         </footer>
       </div>
     </HashRouter>

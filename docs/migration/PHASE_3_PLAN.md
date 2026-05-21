@@ -4,12 +4,15 @@ Status: **DO NOT EXECUTE WITHOUT EXPLICIT USER APPROVAL.**
 
 Phase 3 deletes the Next.js + FastAPI + bundled Node stack once the Vite SPA reaches parity with the production UI. This is the largest single change in the migration and is irreversible without git revert.
 
+Phase 3A is not deletion. Phase 3A is the parity-planning and incremental
+screen-port phase. Its active checklist is `PHASE_3_PARITY_MATRIX.md`.
+
 ---
 
 ## Pre-conditions (all must be true)
 
-1. **Vite SPA parity**: every Next route in production has an equivalent Vite route, exercised in a packaged build smoke. See `ARCHITECTURE.md` bridge surface table — only the rows marked "No (yet)" need porting.
-2. **`v0.3.5+` released** with both UIs bundled, `--vite` exercised by real users for at least one soak window (suggest 1–2 weeks).
+1. **Vite SPA parity**: every P0 item in `PHASE_3_PARITY_MATRIX.md` is complete, and every production Next route has an equivalent Vite route exercised in a packaged build smoke.
+2. **`v0.5.0+` released** with both UIs bundled, `--vite` exercised by real users for at least one soak window (suggest 1–2 weeks).
 3. **Manual sign-off from the user**: explicit "OK to delete Next / Node / FastAPI".
 4. **No regression** in the Phase 0 contract (LOCALAPPDATA DB, MOTW strip, updater allowlist, recovery scenarios) after switching default to Vite.
 5. **Default switched and soaked**: a release where the default mode is Vite (Next becomes opt-in via `--legacy` or similar) ships and survives a soak window before deletion.
@@ -64,7 +67,7 @@ The following are candidates for removal once Vite reaches parity:
 
 Each step is a separate commit. Easier to revert one step if smoke fails.
 
-1. **Verify parity matrix.** Re-confirm every Next route has a Vite equivalent. List screen-by-screen in a checklist commit.
+1. **Verify parity matrix.** Re-confirm every Next route has a Vite equivalent. Keep `PHASE_3_PARITY_MATRIX.md` current.
 2. **Default flip.** Ship `vX.Y.0` where Vite is the default and Next is opt-in (e.g. `--legacy`). Both UIs still bundled.
 3. **Soak window.** 1–2 weeks. Watch issue tracker. If users report Vite-mode bugs, fix and re-soak. **Do not proceed unless the soak is clean.**
 4. **Remove Next runtime path from `desktop/app.py`.** Single commit: deletes `--legacy` branch, `_start_standalone_server`, `_start_dev_server`, etc. `--vite` no longer needed as a flag (it's the only mode).
