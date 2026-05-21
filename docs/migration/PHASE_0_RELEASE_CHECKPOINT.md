@@ -65,6 +65,28 @@ Phase 0 is released. **v0.3.0 was superseded by v0.3.1 due to a packaging bug.**
 
 **Validated on the v0.3.3 build:** the Explorer-MOTW reproduction passes; Phase 0 regressions (legacy WAL migration, LOCALAPPDATA preservation) pass; the diagnostic log section confirms MOTW streams are stripped at startup.
 
+### v0.3.4 hotfix #4 — CI zip layout fix
+
+- Tag: v0.3.4
+- GitHub Release: https://github.com/joaosantossgp/analisys/releases/tag/v0.3.4
+- Artifact: CVMAnalytics-windows-v0.3.4.zip (78,409,144 bytes)
+- SHA-256: 496bf3f976bceac2ef02ac4584b5c6fc30017b30e801309c8e7cef6e694bfbd5
+
+**Why v0.3.3 was insufficient:** the v0.3.3 startup fix worked, but the CI workflow's `Compress-Archive -Path dist\CVMAnalytics` wrapped the bundle in a `CVMAnalytics/` directory at the archive root. `desktop/update_helper.ps1` allowlist (`CVMAnalytics.exe`, `_internal`) only matches the flat root. Staging a v0.3.3 update would silently no-op — the helper would skip both entries because the actual files lived one level deeper. Manual fresh-install still worked because the user navigates into the wrapper directory.
+
+**Fix in v0.3.4:** `.github/workflows/release-desktop.yml` now uses `Compress-Archive -Path dist\CVMAnalytics\*` (contents only), plus a post-archive verification step that fails the workflow if `CVMAnalytics.exe` and `_internal` are not both at the archive root.
+
+**Validated on the published v0.3.4 asset (`scripts/test_ci_v034_full.ps1`):**
+
+- Asset layout: roots = `['CVMAnalytics.exe', '_internal']` (flat, updater-compatible).
+- Fresh install with MOTW applied to 155 binaries: process alive 30s, 19 `msedgewebview2.exe` children, LOCALAPPDATA DB created.
+- Updater staging: zip extracted into staging dir produces the flat structure; helper finds both allowlist entries.
+- Helper swap: exit code 0, old `_internal/OLD_MARKER.txt` removed, new content swapped in.
+- User-data preservation: `data/db/cvm_financials.db`, `data/db/cvm_financials.db-wal`, and `output/report.xlsx` all preserved byte-for-byte after swap.
+- Rollback snapshot: `%LOCALAPPDATA%\CVMAnalytics\update_rollback\<utc-ts>\` contains the pre-swap `CVMAnalytics.exe` + `_internal` only — no user data.
+
+**Phase 0 status: stable.** The CI bundle is updater-compatible and the real download/extract/launch path works under MOTW.
+
 ## What Phase 0 solved
 
 - User runtime DB moved to `%LOCALAPPDATA%\CVMAnalytics\db\cvm_financials.db`

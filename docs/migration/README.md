@@ -32,7 +32,7 @@ To:
 
 | Phase | Name | Status | Notes |
 |---|---|---|---|
-| Phase 0 | User-data safety net | Released as v0.3.3 (hotfix #3); awaiting real user-machine confirmation | v0.3.3 strips Mark-of-the-Web from bundle DLLs at startup — root cause of the v0.3.0/v0.3.1/v0.3.2 startup crashes |
+| Phase 0 | User-data safety net | Released as v0.3.4 (hotfix #4); stable | v0.3.4 fixes CI zip layout to be updater-compatible (flat root). Full contract pass: fresh install + MOTW + updater staging + helper swap + user-data preservation. |
 | Phase 1 | Parallel Vite SPA shell | Not started | Do not delete Next yet |
 | Phase 2 | Wire Vite SPA into pywebview | Not started | Remove production Node only after prototype works |
 | Phase 3 | Mandatory legacy deletion | Not started | Delete Next/FastAPI legacy only after parity |
