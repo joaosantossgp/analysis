@@ -24,6 +24,28 @@ Phase 0 is released. **v0.3.0 was superseded by v0.3.1 due to a packaging bug.**
 
 **Validated against the published v0.3.1 asset:** `gh release download` → MOTW (ZoneId=3) → `Expand-Archive` → launch → process alive after 25s with 20 `msedgewebview2.exe` child processes.
 
+### v0.3.2 hotfix #2
+
+- Tag: v0.3.2
+- GitHub Release: https://github.com/joaosantossgp/analisys/releases/tag/v0.3.2
+- Artifact: CVMAnalytics-windows-v0.3.2.zip
+- SHA-256: cc01970b070507459be5f47bd63c0a5e82a6e9ed2ce13e667f993ee02f0432d7
+
+**Why v0.3.1 was insufficient:** the original reporter's machine still failed with the same `Failed to resolve Python.Runtime.Loader.Initialize` error after installing v0.3.1. That error is pythonnet's generic wrapper for any CLR-initialization failure, not specifically a missing `.deps.json`. Without precise prerequisite detection, both v0.3.0 and v0.3.1 produced the same uninformative wrapper for distinct underlying causes.
+
+**Fix in v0.3.2:**
+
+- `_preflight_pywebview_backend()` now runs three precise checks before `import clr`:
+  1. Bundle file presence (`Python.Runtime.dll`, `Python.Runtime.deps.json`).
+  2. .NET Framework 4.8+ via `HKLM\...\NDP\v4\Full\Release >= 528040`.
+  3. WebView2 Runtime via the Evergreen client registry key.
+- Each check shows a precise MessageBox with the specific missing prerequisite and the official Microsoft download URL.
+- New `--diagnose-runtime` flag runs all probes without starting pywebview, writes a full report to `%LOCALAPPDATA%\CVMAnalytics\diagnostics-<utc>.log`, and opens it in Notepad. Designed so the reporter can attach one log to a bug report.
+
+**Validated against the published v0.3.2 asset:** real download via `gh release download v0.3.2`, MOTW applied, extracted, launched. Process alive after 25s with 20 `msedgewebview2.exe` child processes. Unit-tested missing-.NET-Framework branch returns the precise Portuguese MessageBox with the dotnet.microsoft.com URL. Phase 0 regressions (fresh init, WAL-safe legacy migration, LOCALAPPDATA preservation) all pass on the v0.3.2 build.
+
+**Pending:** real confirmation from the original reporter's machine. If launch still fails, the `--diagnose-runtime` log will tell us precisely which prerequisite or runtime check is the blocker.
+
 ## What Phase 0 solved
 
 - User runtime DB moved to `%LOCALAPPDATA%\CVMAnalytics\db\cvm_financials.db`
