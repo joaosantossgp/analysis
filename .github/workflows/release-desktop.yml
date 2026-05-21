@@ -60,7 +60,14 @@ jobs:
           $ver  = "${{ steps.ver.outputs.VERSION }}"
           $zip  = "CVMAnalytics-windows-v$ver.zip"
           $latestZip = "CVMAnalytics-windows.zip"
-          Compress-Archive -Path dist\CVMAnalytics -DestinationPath $zip
+
+          # Compress-Archive with -Path "dir" includes the directory as the
+          # archive root, producing a CVMAnalytics/ wrapper. The auto-updater
+          # contract (desktop/update_helper.ps1 allowlist) requires a FLAT
+          # root with CVMAnalytics.exe + _internal/ at the top of the zip.
+          # Use -Path "dir\*" so contents are written without a wrapper.
+          Compress-Archive -Path dist\CVMAnalytics\* -DestinationPath $zip
+
           Copy-Item $zip $latestZip
           $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
           "$hash  $zip" | Out-File -FilePath "$zip.sha256" -Encoding utf8 -NoNewline
@@ -68,6 +75,19 @@ jobs:
           "$latestHash  $latestZip" | Out-File -FilePath "$latestZip.sha256" -Encoding utf8 -NoNewline
           echo "ZIP=$zip" >> $env:GITHUB_OUTPUT
           echo "LATEST_ZIP=$latestZip" >> $env:GITHUB_OUTPUT
+
+          # Verify the resulting zip has a flat root before publishing.
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive = [System.IO.Compression.ZipFile]::OpenRead($zip)
+          try {
+            $roots = @($archive.Entries | ForEach-Object { ($_.FullName -split '/')[0] } | Sort-Object -Unique)
+            Write-Host "[release] zip roots: $($roots -join ', ')"
+            if (-not ($roots -contains 'CVMAnalytics.exe' -and $roots -contains '_internal')) {
+              throw "Release zip layout invalid. Roots: $($roots -join ', '). Expected to contain CVMAnalytics.exe and _internal at the archive root."
+            }
+          } finally {
+            $archive.Dispose()
+          }
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
