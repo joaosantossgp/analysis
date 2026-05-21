@@ -582,6 +582,119 @@ class CVMBridge:
                             "message": str(exc), "path": None}],
             })
 
+    def get_database_diagnostics(self, params=None) -> dict:
+        """Real local SQLite database diagnostics for the Update Base UI.
+
+        Returns explicit row counts for the tables an operator needs to see
+        when verifying that a refresh actually populated the runtime DB.
+        Distinct from `get_base_health`, which compares against the CVM
+        active universe (not local row counts).
+        """
+        import sqlite3  # noqa: PLC0415
+
+        try:
+            svc = self._svc()
+            db_path = svc.settings.paths.db_path
+            db_path_str = str(db_path)
+            db_exists = db_path.exists()
+            db_size_bytes = int(db_path.stat().st_size) if db_exists else 0
+
+            counts: dict[str, int | None] = {
+                "companies": None,
+                "financial_reports": None,
+                "refresh_jobs": None,
+                "company_refresh_status": None,
+                "qa_logs": None,
+            }
+            latest_success_at: str | None = None
+            latest_attempt_at: str | None = None
+            latest_error: str | None = None
+
+            if db_exists:
+                try:
+                    with sqlite3.connect(db_path_str) as conn:
+                        cur = conn.cursor()
+                        cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                        present = {row[0] for row in cur.fetchall()}
+                        for table in counts.keys():
+                            if table not in present:
+                                counts[table] = 0
+                                continue
+                            try:
+                                cur.execute(f'SELECT COUNT(*) FROM "{table}"')
+                                counts[table] = int(cur.fetchone()[0] or 0)
+                            except Exception:
+                                counts[table] = None
+                        if "company_refresh_status" in present:
+                            try:
+                                cur.execute(
+                                    "SELECT MAX(last_success_at), MAX(last_attempt_at) "
+                                    'FROM "company_refresh_status"'
+                                )
+                                row = cur.fetchone() or (None, None)
+                                latest_success_at = str(row[0]) if row[0] else None
+                                latest_attempt_at = str(row[1]) if row[1] else None
+                            except Exception:
+                                pass
+                            try:
+                                cur.execute(
+                                    "SELECT last_error FROM \"company_refresh_status\" "
+                                    "WHERE last_error IS NOT NULL AND last_error <> '' "
+                                    "ORDER BY last_attempt_at DESC LIMIT 1"
+                                )
+                                row = cur.fetchone()
+                                if row and row[0]:
+                                    latest_error = str(row[0])
+                            except Exception:
+                                pass
+                except Exception as exc:
+                    return self._sanitize_for_json({
+                        "db_path": db_path_str,
+                        "db_exists": db_exists,
+                        "db_size_bytes": db_size_bytes,
+                        "is_empty": True,
+                        "row_counts": counts,
+                        "latest_success_at": None,
+                        "latest_attempt_at": None,
+                        "latest_error": None,
+                        "error": f"sqlite_open_failed: {exc}",
+                    })
+
+            is_empty = (
+                not db_exists
+                or (counts.get("companies") or 0) == 0
+                or (counts.get("financial_reports") or 0) == 0
+            )
+
+            return self._sanitize_for_json({
+                "db_path": db_path_str,
+                "db_exists": db_exists,
+                "db_size_bytes": db_size_bytes,
+                "is_empty": is_empty,
+                "row_counts": counts,
+                "latest_success_at": latest_success_at,
+                "latest_attempt_at": latest_attempt_at,
+                "latest_error": latest_error,
+            })
+        except Exception as exc:
+            return self._sanitize_for_json({
+                "db_path": None,
+                "db_exists": False,
+                "db_size_bytes": 0,
+                "is_empty": True,
+                "row_counts": {
+                    "companies": None,
+                    "financial_reports": None,
+                    "refresh_jobs": None,
+                    "company_refresh_status": None,
+                    "qa_logs": None,
+                },
+                "latest_success_at": None,
+                "latest_attempt_at": None,
+                "latest_error": None,
+                "error": str(exc),
+            })
+
 
 def _serialize(obj: Any) -> Any:
     """Converte dataclasses e tuples para tipos serializáveis por pywebview."""

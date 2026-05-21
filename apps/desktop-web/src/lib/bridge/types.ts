@@ -213,6 +213,24 @@ export type CancelRefreshResponse = {
   error?: string;
 };
 
+export type DatabaseDiagnostics = {
+  db_path: string | null;
+  db_exists: boolean;
+  db_size_bytes: number;
+  is_empty: boolean;
+  row_counts: {
+    companies: number | null;
+    financial_reports: number | null;
+    refresh_jobs: number | null;
+    company_refresh_status: number | null;
+    qa_logs: number | null;
+  };
+  latest_success_at: string | null;
+  latest_attempt_at: string | null;
+  latest_error: string | null;
+  error?: string;
+};
+
 export type PingResult = {
   pong: boolean;
   ts: number;
@@ -235,6 +253,7 @@ export interface BridgeApi {
   request_refresh(params: Record<string, unknown>): Promise<RefreshDispatchResponse>;
   get_refresh_status(params?: Record<string, unknown>): Promise<RefreshJobStatus | RefreshJobListResponse>;
   cancel_refresh(params: Record<string, unknown>): Promise<CancelRefreshResponse>;
+  get_database_diagnostics(params?: Record<string, unknown>): Promise<DatabaseDiagnostics>;
 }
 
 declare global {

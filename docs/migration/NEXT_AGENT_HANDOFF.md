@@ -7,8 +7,8 @@ This is the **primary entry point** for any AI agent or human contributor pickin
 ## TL;DR
 
 - **What we are doing:** rebuilding the desktop app's UI runtime from `Next.js standalone + bundled Node + pywebview` to `static Vite SPA + pywebview` while keeping Python authoritative and user data safe.
-- **Where we are:** Phase 3B is complete. Phase 2 shipped `--vite`; Phase 3A added the parity matrix and financial statements; Phase 3B added Update Base / Refresh Data while keeping Next as the default.
-- **What is released:** `v0.6.0` on GitHub. It validates the opt-in Vite runtime from a downloaded release asset, including a write-path refresh screen. Users still hit the Next path by default.
+- **Where we are:** Phase 3B is **partial**. Phase 2 shipped `--vite`; Phase 3A added the parity matrix and financial statements; Phase 3B added Update Base / Refresh Data screen. v0.6.0 shipped the first cut but lacked real DB diagnostics, so users could not tell whether a refresh actually populated rows. v0.6.1 adds `get_database_diagnostics`, a diagnostics panel with row counts, post-job delta detection, and clearer app-updater vs data-updater wording. Next still default.
+- **What is released:** `v0.6.1` on GitHub is the current target. It validates the opt-in Vite runtime from a downloaded release asset, including a write-path refresh screen with explicit local DB diagnostics. Users still hit the Next path by default.
 - **What is next:** keep closing P0 gaps in `PHASE_3_PARITY_MATRIX.md` before any default switch. Legacy deletion remains Phase 3 and is not approved.
 - **Hard rule:** do not delete `apps/web/`, `apps/api/`, `desktop/node_portable/`, FastAPI deps, or remove Node from `desktop/app.spec` until the user explicitly approves Phase 3.
 
@@ -24,7 +24,7 @@ This is the **primary entry point** for any AI agent or human contributor pickin
 | **Phase 1.6** | Dynamic routing + company detail | Done. HashRouter + 3 routes + KPI table. | See `PHASE_1_VITE_SHELL.md` |
 | **Phase 2** | Opt-in `--vite` runtime in packaged exe | **Released as `v0.4.0`.** Both UIs ship; default = Next; `--vite` = Vite with zero Node. | See `PHASE_2_VITE_RUNTIME.md` |
 | **Phase 3A** | Parity matrix + one missing Vite screen | **Released as `v0.5.0`.** Financial statements are implemented in Vite. | See `PHASE_3_PARITY_MATRIX.md` |
-| **Phase 3B** | Update Base / Refresh Data Vite parity slice | **Released as `v0.6.0`.** Base health, empty-DB guidance, refresh start with optional CVM-code targeting, polling, logs, history, and cancel are implemented in Vite. | See `PHASE_3_PARITY_MATRIX.md` |
+| **Phase 3B** | Update Base / Refresh Data Vite parity slice | **Partial. v0.6.0 shipped UI + bridge plumbing; v0.6.1 added real DB diagnostics (`get_database_diagnostics`), row-count panel, post-job delta warning, and app-updater vs data-updater wording.** User has not yet accepted Phase 3B; row counts must demonstrably increase on an empty DB before parity is marked complete. | See `PHASE_3_PARITY_MATRIX.md` |
 | **Phase 3** | Delete legacy: Next, Node, FastAPI, apps/web, apps/api | **Not started.** Gated on Vite screen parity. | See `PHASE_3_PLAN.md` |
 | **Phase 4** | Polish, code signing, AV/UPX review | Not started. | — |
 

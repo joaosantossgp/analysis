@@ -2,6 +2,7 @@ import { callBridge, getBridgeMode } from "../bridge/adapter";
 import type {
   BaseHealthSnapshot,
   CancelRefreshResponse,
+  DatabaseDiagnostics,
   RefreshDispatchResponse,
   RefreshJobListResponse,
   RefreshJobStatus,
@@ -14,6 +15,10 @@ const BROWSER_REASON =
 export type BaseHealthResult =
   | { mode: "desktop"; snapshot: BaseHealthSnapshot }
   | { mode: "browser"; snapshot: null; reason: string };
+
+export type DatabaseDiagnosticsResult =
+  | { mode: "desktop"; diagnostics: DatabaseDiagnostics }
+  | { mode: "browser"; diagnostics: null; reason: string };
 
 export type RefreshJobsResult =
   | { mode: "desktop"; items: RefreshJobStatus[] }
@@ -178,4 +183,15 @@ export async function cancelRefresh(jobId: string): Promise<CancelRefreshRespons
     throw new Error(response.error);
   }
   return response;
+}
+
+export async function fetchDatabaseDiagnostics(): Promise<DatabaseDiagnosticsResult> {
+  if (getBridgeMode() === "browser") {
+    return { mode: "browser", diagnostics: null, reason: BROWSER_REASON };
+  }
+  const diagnostics = (await callBridge(
+    "get_database_diagnostics",
+    {},
+  )) as DatabaseDiagnostics;
+  return { mode: "desktop", diagnostics };
 }

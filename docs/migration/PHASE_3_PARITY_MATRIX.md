@@ -1,8 +1,14 @@
 # Phase 3 - Functional Parity Matrix
 
 Status: Phase 3A shipped in `v0.5.0` with the first missing Vite screen
-(financial statements). Phase 3B shipped in `v0.6.0` with the Vite Update Base
-/ Refresh Data parity slice. The default runtime is still Next/Node.
+(financial statements). Phase 3B is **partial**: v0.6.0 shipped the Vite
+Update Base screen and bridge plumbing; v0.6.1 added the
+`get_database_diagnostics` bridge method, a real local-DB diagnostics panel
+(actual row counts for `companies`, `financial_reports`, `refresh_jobs`,
+`company_refresh_status`, `qa_logs`), post-job row-count delta detection,
+and app-updater vs data-updater wording. Parity is not declared complete
+until the user confirms that running the flow from a downloaded release
+visibly populates the runtime DB. The default runtime is still Next/Node.
 
 Scope of this document:
 
@@ -23,7 +29,7 @@ Scope of this document:
 | KPIs / indicators | Annual and quarterly KPI bundle available; Next overview uses KPI cards/tables and chart panels. | Partial: annual KPI table only. No quarterly view or chart panel. | Existing `get_company_kpis`. | P0 | Medium | Medium | Add complete annual/quarterly indicator screen after export or sectors. |
 | Sectors directory (`/setores`) | GICS sector/sub-sector directory with counts, snapshots, company previews, empty/error states. | Missing. | Existing `get_sectors`. | P0 | Medium | Medium | Port after company-level essentials. |
 | Sector detail (`/setores/[slug]`, `/setores/[slug]/[sub_slug]`) | Year selector, aggregate KPIs, yearly overview, company table, breadcrumbs. | Missing. | Existing `get_sector_detail`, `get_sub_sector_detail`. | P0 | Medium | Medium | Port with sectors directory as one coherent slice. |
-| Update base / refresh data (`/atualizar-base`) | Administrative refresh dashboard: base health, scopes, filters, job progress, history, cancel flow. | Implemented in Phase 3B as `/atualizar-base`: base-health cards, empty-DB guidance, constrained refresh start with optional CVM-code targeting, 2s polling, logs, history, cancel, and LOCALAPPDATA storage note. It intentionally keeps scope narrower than the full Next admin page. | Existing `get_base_health`, `request_refresh`, `cancel_refresh`, `get_refresh_status`. | P0 | High | High | Done for the base refresh parity slice. Later add company suggestions/sector filters if needed for operator convenience. |
+| Update base / refresh data (`/atualizar-base`) | Administrative refresh dashboard: base health, scopes, filters, job progress, history, cancel flow. | **Partial.** v0.6.0 wired the screen; v0.6.1 added the real local-DB diagnostics panel (db_path, db_size, row counts for `companies`, `financial_reports`, `refresh_jobs`, `company_refresh_status`, `qa_logs`), post-job delta with explicit warning when a job finishes but no rows are inserted, app-updater vs data-updater wording, and a saner default `limit` of 5. User has not yet accepted parity — needs a successful empty-DB → populated-DB run from the downloaded release. | Existing `get_base_health`, `request_refresh`, `cancel_refresh`, `get_refresh_status`; new `get_database_diagnostics`. | P0 | High | High | Validate empty-DB run end-to-end from a downloaded release before marking complete. |
 | Single-company refresh controls | Next company detail can request a period refresh and show progress. | Missing. | Existing `request_refresh`, `get_refresh_status`. | P0 | Medium | High | Port before Vite default; write path but already bridged. |
 | Excel export / save flows | Next has Excel export/download button and desktop bridge save/download path. | Missing. | Existing `save_company_excel`, `download_company_excel`. | P0 | Medium | Medium | Recommended next narrow slice: add export action to company detail/statements. |
 | Auto-updater UI | Next shows floating update prompt through `check_update` / `apply_update`; local snooze only. | Missing. | Existing `check_update`, `apply_update`, `snooze_update`, `get_update_progress`. | P0 | Medium | High | Required before default switch so users keep in-app update prompts. |

@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   cancelRefresh,
   defaultRefreshWindow,
   fetchBaseHealth,
+  fetchDatabaseDiagnostics,
   fetchRefreshJob,
   fetchRefreshJobs,
   isActiveRefreshJob,
@@ -15,18 +16,26 @@ import {
   type StartRefreshParams,
 } from "@/lib/api/updateBase";
 import { whenBridgeReady } from "@/lib/bridge/adapter";
-import type { BaseHealthSnapshot, RefreshJobStatus, RefreshMode } from "@/lib/bridge/types";
+import type {
+  BaseHealthSnapshot,
+  DatabaseDiagnostics,
+  RefreshJobStatus,
+  RefreshMode,
+} from "@/lib/bridge/types";
 
 const ACTIVE_POLL_MS = 2_000;
 const IDLE_POLL_MS = 10_000;
+const DIAG_ACTIVE_POLL_MS = 3_000;
+const DIAG_IDLE_POLL_MS = 30_000;
 const MAX_SAFE_LIMIT = 100;
+const DEFAULT_LIMIT = 5;
 
 export function UpdateBasePage() {
   const queryClient = useQueryClient();
   const defaults = useMemo(() => defaultRefreshWindow(), []);
   const [bridgeReady, setBridgeReady] = useState(false);
   const [mode, setMode] = useState<RefreshMode>("missing");
-  const [limit, setLimit] = useState(1);
+  const [limit, setLimit] = useState(DEFAULT_LIMIT);
   const [startYear, setStartYear] = useState(defaults.startYear);
   const [endYear, setEndYear] = useState(defaults.endYear);
   const [companyCode, setCompanyCode] = useState("");
@@ -77,12 +86,58 @@ export function UpdateBasePage() {
     refetchInterval: isRunning ? 5_000 : false,
   });
 
+  const diagnosticsQuery = useQuery({
+    queryKey: ["db-diagnostics"],
+    queryFn: fetchDatabaseDiagnostics,
+    enabled: bridgeReady,
+    refetchInterval: isRunning ? DIAG_ACTIVE_POLL_MS : DIAG_IDLE_POLL_MS,
+  });
+
+  const diagnostics =
+    diagnosticsQuery.data?.mode === "desktop" ? diagnosticsQuery.data.diagnostics : null;
+
+  // Snapshot row counts at the moment a job starts so we can compute a delta
+  // when it terminates. If the delta is zero, the UI surfaces an explicit
+  // warning instead of pretending the refresh succeeded.
+  const lastStartSnapshotRef = useRef<{
+    jobId: string;
+    companies: number | null;
+    financialReports: number | null;
+  } | null>(null);
+  const [postJobDelta, setPostJobDelta] = useState<{
+    jobId: string;
+    state: string;
+    companies: number;
+    financialReports: number;
+  } | null>(null);
+
   useEffect(() => {
+    if (!trackedJob) return;
+    if (isActiveRefreshJob(trackedJob) && lastStartSnapshotRef.current?.jobId !== trackedJob.job_id) {
+      lastStartSnapshotRef.current = {
+        jobId: trackedJob.job_id,
+        companies: diagnostics?.row_counts.companies ?? null,
+        financialReports: diagnostics?.row_counts.financial_reports ?? null,
+      };
+      setPostJobDelta(null);
+    }
     if (isTerminalRefreshJob(trackedJob)) {
       void queryClient.invalidateQueries({ queryKey: ["base-health"] });
       void queryClient.invalidateQueries({ queryKey: ["companies"] });
+      void queryClient.invalidateQueries({ queryKey: ["db-diagnostics"] });
+      const snap = lastStartSnapshotRef.current;
+      if (snap && snap.jobId === trackedJob.job_id && diagnostics) {
+        const dC = (diagnostics.row_counts.companies ?? 0) - (snap.companies ?? 0);
+        const dF = (diagnostics.row_counts.financial_reports ?? 0) - (snap.financialReports ?? 0);
+        setPostJobDelta({
+          jobId: trackedJob.job_id,
+          state: String(trackedJob.state ?? ""),
+          companies: dC,
+          financialReports: dF,
+        });
+      }
     }
-  }, [queryClient, trackedJob?.job_id, trackedJob?.state]);
+  }, [queryClient, trackedJob, diagnostics]);
 
   const startMutation = useMutation({
     mutationFn: (params: StartRefreshParams) => startBaseRefresh(params),
@@ -111,8 +166,10 @@ export function UpdateBasePage() {
       ? healthQuery.data.reason
       : jobsQuery.data?.mode === "browser"
         ? jobsQuery.data.reason
-        : null;
-  const emptyDatabase = isEmptyDatabase(health);
+        : diagnosticsQuery.data?.mode === "browser"
+          ? diagnosticsQuery.data.reason
+          : null;
+  const emptyDatabase = isEmptyDatabase(diagnostics, health);
   const parsedCompanyCode = parseOptionalCompanyCode(companyCode);
   const companyCodeInvalid = companyCode.trim() !== "" && parsedCompanyCode == null;
   const actionDisabled = !bridgeReady || isRunning || startMutation.isPending || companyCodeInvalid;
@@ -141,7 +198,17 @@ export function UpdateBasePage() {
         jobsLoading={jobsQuery.isLoading}
       />
 
+      <DatabaseDiagnosticsPanel
+        diagnostics={diagnostics}
+        loading={!bridgeReady || diagnosticsQuery.isLoading}
+        error={diagnosticsQuery.error}
+      />
+
+      {postJobDelta ? <PostJobDelta delta={postJobDelta} /> : null}
+
       {emptyDatabase ? <EmptyDatabaseNotice /> : null}
+
+      <UpdateScopeNotice />
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <RefreshControlPanel
@@ -186,12 +253,13 @@ function PageHeader({ bridgeReady }: { bridgeReady: boolean }) {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-2">
           <p className="text-xs uppercase tracking-widest text-zinc-500">
-            Local database maintenance
+            Local data refresh
           </p>
           <h2 className="text-2xl font-semibold text-zinc-50">Atualizar Base</h2>
           <p className="max-w-2xl text-sm leading-6 text-zinc-400">
-            Download and organize CVM filings into the local desktop database. The
-            refresh runs in Python through the pywebview bridge and keeps this UI responsive.
+            Downloads CVM filings and writes them into the local SQLite database under
+            <span className="mx-1 font-mono text-zinc-300">%LOCALAPPDATA%\CVMAnalytics\db</span>.
+            This is the <em>data</em> refresh, not the application updater.
           </p>
         </div>
         <span
@@ -206,6 +274,181 @@ function PageHeader({ bridgeReady }: { bridgeReady: boolean }) {
       </div>
     </header>
   );
+}
+
+function UpdateScopeNotice() {
+  return (
+    <article className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-4 text-xs leading-5 text-zinc-400">
+      <p>
+        <span className="font-semibold text-zinc-200">Atualizar Base</span> populates the
+        local SQLite database with CVM company filings. It does <em>not</em> update the
+        application itself — that is handled separately by the GitHub release updater.
+      </p>
+      <p className="mt-2">
+        First-run tip: a smaller <span className="font-mono text-zinc-300">Company limit</span>
+        (5–20) makes the first job finish quickly and proves the pipeline end-to-end. Increase
+        it once the row counts below confirm data is landing.
+      </p>
+    </article>
+  );
+}
+
+function DatabaseDiagnosticsPanel({
+  diagnostics,
+  loading,
+  error,
+}: {
+  diagnostics: DatabaseDiagnostics | null;
+  loading: boolean;
+  error: unknown;
+}) {
+  if (loading && !diagnostics) {
+    return (
+      <article className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-5 shadow-lg">
+        <p className="text-sm text-zinc-500">Loading database diagnostics…</p>
+      </article>
+    );
+  }
+  if (!diagnostics) {
+    return (
+      <article className="rounded-lg border border-rose-900/60 bg-rose-950/40 p-5 text-sm text-rose-200">
+        Database diagnostics unavailable.
+        {error ? (
+          <p className="mt-1 text-rose-300/80">
+            {error instanceof Error ? error.message : String(error)}
+          </p>
+        ) : null}
+      </article>
+    );
+  }
+  const rc = diagnostics.row_counts;
+  return (
+    <article className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-5 shadow-lg">
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-lg font-semibold text-zinc-100">Local database</h3>
+          <p className="mt-1 font-mono text-xs text-zinc-400">
+            {diagnostics.db_path ?? "path unavailable"}
+          </p>
+          <p className="mt-1 text-xs text-zinc-500">
+            {diagnostics.db_exists
+              ? `${formatBytes(diagnostics.db_size_bytes)} on disk`
+              : "File not present yet"}
+            {" · "}
+            {diagnostics.is_empty ? "Empty (no financial data)" : "Populated"}
+          </p>
+        </div>
+      </header>
+      <dl className="mt-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <CountCard label="Companies" value={rc.companies} highlight={!diagnostics.is_empty} />
+        <CountCard label="Financial reports" value={rc.financial_reports} highlight={!diagnostics.is_empty} />
+        <CountCard label="Refresh jobs" value={rc.refresh_jobs} />
+        <CountCard label="Refresh status" value={rc.company_refresh_status} />
+        <CountCard label="QA log entries" value={rc.qa_logs} />
+      </dl>
+      {(diagnostics.latest_success_at || diagnostics.latest_attempt_at) ? (
+        <p className="mt-4 text-xs text-zinc-500">
+          {diagnostics.latest_success_at
+            ? `Last successful refresh: ${formatDateTime(diagnostics.latest_success_at)}`
+            : "No successful refresh on record"}
+          {" · "}
+          {diagnostics.latest_attempt_at
+            ? `last attempt ${formatDateTime(diagnostics.latest_attempt_at)}`
+            : "no recorded attempt"}
+        </p>
+      ) : null}
+      {diagnostics.latest_error ? (
+        <p className="mt-3 rounded border border-rose-900/60 bg-rose-950/40 p-3 text-xs text-rose-300">
+          Latest recorded refresh error: {diagnostics.latest_error}
+        </p>
+      ) : null}
+      {diagnostics.error ? (
+        <p className="mt-3 rounded border border-rose-900/60 bg-rose-950/40 p-3 text-xs text-rose-300">
+          {diagnostics.error}
+        </p>
+      ) : null}
+    </article>
+  );
+}
+
+function CountCard({
+  label,
+  value,
+  highlight = false,
+}: {
+  label: string;
+  value: number | null;
+  highlight?: boolean;
+}) {
+  const display = value == null ? "—" : new Intl.NumberFormat("pt-BR").format(value);
+  return (
+    <div className="rounded border border-zinc-800 bg-zinc-950/50 p-3">
+      <p className="text-[11px] uppercase tracking-wider text-zinc-500">{label}</p>
+      <p
+        className={`mt-1 font-mono text-base font-semibold ${
+          highlight ? "text-emerald-200" : "text-zinc-100"
+        }`}
+      >
+        {display}
+      </p>
+    </div>
+  );
+}
+
+function PostJobDelta({
+  delta,
+}: {
+  delta: { jobId: string; state: string; companies: number; financialReports: number };
+}) {
+  const stable = delta.companies === 0 && delta.financialReports === 0;
+  const failed = delta.state === "error" || delta.state === "interrupted";
+  if (stable && !failed) {
+    return (
+      <article className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-100">
+        <p className="font-medium">
+          Refresh completed, but the local database still has no new company or financial report data.
+        </p>
+        <p className="mt-1 text-amber-100/80">
+          Check the refresh log below and verify the data source / network connectivity. The job
+          ran but did not insert rows into <span className="font-mono">companies</span> or
+          <span className="ml-1 font-mono">financial_reports</span>.
+        </p>
+      </article>
+    );
+  }
+  if (failed) {
+    return (
+      <article className="rounded-lg border border-rose-900/60 bg-rose-950/40 p-4 text-sm text-rose-200">
+        <p className="font-medium">Refresh did not finish successfully.</p>
+        <p className="mt-1 text-rose-200/80">
+          Job state: <span className="font-mono">{delta.state}</span>. Companies inserted:
+          <span className="ml-1 font-mono">{delta.companies}</span>. Financial reports inserted:
+          <span className="ml-1 font-mono">{delta.financialReports}</span>.
+        </p>
+      </article>
+    );
+  }
+  return (
+    <article className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-100">
+      <p className="font-medium">Refresh wrote new rows to the local database.</p>
+      <p className="mt-1 text-emerald-100/80">
+        +{new Intl.NumberFormat("pt-BR").format(delta.companies)} companies,
+        {" "}+{new Intl.NumberFormat("pt-BR").format(delta.financialReports)} financial reports.
+      </p>
+    </article>
+  );
+}
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 bytes";
+  const units = ["bytes", "KB", "MB", "GB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value.toFixed(value >= 100 || unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
 
 function StatusGrid({
@@ -714,7 +957,13 @@ function BrowserModeBanner({ reason }: { reason: string }) {
   );
 }
 
-function isEmptyDatabase(health: BaseHealthSnapshot | null): boolean {
+function isEmptyDatabase(
+  diagnostics: DatabaseDiagnostics | null,
+  health: BaseHealthSnapshot | null,
+): boolean {
+  if (diagnostics) {
+    return Boolean(diagnostics.is_empty);
+  }
   if (!health) return false;
   return (
     health.total_companies > 0 &&
