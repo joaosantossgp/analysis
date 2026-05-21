@@ -178,7 +178,7 @@ export function CompanyAnalysisChart({
   ): string {
     return points
       .map((point, index) => {
-        const yearIndex = years.indexOf(point.year);
+        const yearIndex = yearIndexMap.get(point.year) ?? 0;
         const x = toX(yearIndex);
         const y = toY(point.value, formatType);
         return `${index === 0 ? "M" : "L"}${x},${y}`;
@@ -191,8 +191,8 @@ export function CompanyAnalysisChart({
     formatType: DashboardFormatType,
   ): string {
     const linePath = buildLinePath(points, formatType);
-    const firstYearIndex = years.indexOf(points[0]!.year);
-    const lastYearIndex = years.indexOf(points.at(-1)!.year);
+    const firstYearIndex = yearIndexMap.get(points[0]!.year) ?? 0;
+    const lastYearIndex = yearIndexMap.get(points.at(-1)!.year) ?? firstYearIndex;
     const baseline = getBaseline(formatType);
     return `${linePath} L${toX(lastYearIndex)},${baseline} L${toX(firstYearIndex)},${baseline} Z`;
   }

@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { startTransition, useState } from "react";
+import { startTransition, useDeferredValue, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { SearchIcon } from "lucide-react";
 
@@ -152,19 +152,29 @@ export function CompanyStatements({ matrix }: CompanyStatementsProps) {
   const [showYoY, setShowYoY] = useState(false);
 
   const currentStmt = matrix.statement_type;
-  const yearColumns = matrix.table.columns.filter((c) => !META_COLS.has(c));
+  const deferredSearch = useDeferredValue(search);
+  const yearColumns = useMemo(
+    () => matrix.table.columns.filter((c) => !META_COLS.has(c)),
+    [matrix.table.columns],
+  );
   const lastYearCol = yearColumns.at(-1);
-  const rows = (matrix.table.rows as TabularDataRow[]).filter(
-    (row) => !Boolean(row.IS_PLACEHOLDER),
+  const rows = useMemo(
+    () =>
+      (matrix.table.rows as TabularDataRow[]).filter(
+        (row) => !Boolean(row.IS_PLACEHOLDER),
+      ),
+    [matrix.table.rows],
   );
 
-  const filteredRows = search.trim()
-    ? rows.filter((row) =>
-        String(row.DS_CONTA ?? "")
-          .toLowerCase()
-          .includes(search.toLowerCase()),
-      )
-    : rows;
+  const filteredRows = useMemo(() => {
+    const query = deferredSearch.trim().toLowerCase();
+    if (!query) return rows;
+    return rows.filter((row) =>
+      String(row.DS_CONTA ?? "")
+        .toLowerCase()
+        .includes(query),
+    );
+  }, [deferredSearch, rows]);
 
   function navigateTo(stmt: string) {
     const query = mergeSearchParams(searchParams.toString(), {

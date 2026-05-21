@@ -693,8 +693,14 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
       : selectedModeEstimate.affected != null
         ? `${formatNumber(selectedModeEstimate.affected)} ${selectedModeEstimate.unitLabel}`
         : "Resolvido ao iniciar";
-  const activeBatchJobCount = batchJobs.filter(isActiveBatchJob).length;
-  const historyItems: HistoryItem[] = buildHistoryRows(batchJobs);
+  const activeBatchJobCount = useMemo(
+    () => batchJobs.filter(isActiveBatchJob).length,
+    [batchJobs],
+  );
+  const historyItems: HistoryItem[] = useMemo(
+    () => buildHistoryRows(batchJobs),
+    [batchJobs],
+  );
   const historyState = getHistoryState({
     jobsState,
     activeJobCount: activeBatchJobCount,
@@ -1036,24 +1042,26 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
 
     let alive = true;
 
-    void (async () => {
-      await Promise.resolve();
+    const timer = window.setTimeout(() => {
       if (!alive) return;
       setSingleCompanySuggestionState("loading");
-      try {
-        const payload = await fetchCompanySuggestions(trimmedSingleQuery, 8);
-        if (!alive) return;
-        setSingleCompanySuggestions(payload.items);
-        setSingleCompanySuggestionState("available");
-      } catch {
-        if (!alive) return;
-        setSingleCompanySuggestions([]);
-        setSingleCompanySuggestionState("unavailable");
-      }
-    })();
+      void (async () => {
+        try {
+          const payload = await fetchCompanySuggestions(trimmedSingleQuery, 8);
+          if (!alive) return;
+          setSingleCompanySuggestions(payload.items);
+          setSingleCompanySuggestionState("available");
+        } catch {
+          if (!alive) return;
+          setSingleCompanySuggestions([]);
+          setSingleCompanySuggestionState("unavailable");
+        }
+      })();
+    }, 250);
 
     return () => {
       alive = false;
+      window.clearTimeout(timer);
     };
   }, [shouldFetchSuggestions, trimmedSingleQuery]);
 
@@ -1064,24 +1072,26 @@ export function UpdateBasePage({ initialSectors = [] }: UpdateBasePageProps) {
 
     let alive = true;
 
-    void (async () => {
-      await Promise.resolve();
+    const timer = window.setTimeout(() => {
       if (!alive) return;
-      try {
-        const payload = await fetchCompanySuggestions(trimmedBatchQuery, 8);
-        if (!alive) return;
-        const selectedCodes = new Set(selectedBatchCompanies.map((item) => item.cd_cvm));
-        setBatchCompanySuggestions(
-          payload.items.filter((item) => !selectedCodes.has(item.cd_cvm)),
-        );
-      } catch {
-        if (!alive) return;
-        setBatchCompanySuggestions([]);
-      }
-    })();
+      void (async () => {
+        try {
+          const payload = await fetchCompanySuggestions(trimmedBatchQuery, 8);
+          if (!alive) return;
+          const selectedCodes = new Set(selectedBatchCompanies.map((item) => item.cd_cvm));
+          setBatchCompanySuggestions(
+            payload.items.filter((item) => !selectedCodes.has(item.cd_cvm)),
+          );
+        } catch {
+          if (!alive) return;
+          setBatchCompanySuggestions([]);
+        }
+      })();
+    }, 250);
 
     return () => {
       alive = false;
+      window.clearTimeout(timer);
     };
   }, [selectedBatchCompanies, shouldFetchBatchSuggestions, trimmedBatchQuery]);
 
