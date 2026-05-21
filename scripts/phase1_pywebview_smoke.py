@@ -10,7 +10,8 @@ uses, so window.pywebview.api is the real production bridge.
 Modes:
   Default (automated)
     Window auto-closes after --timeout seconds (default 12). Bridge tap
-    prints ping / health / companies / detail / statements. CI-friendly.
+    prints ping / health / base health / companies / detail / statements.
+    CI-friendly.
 
   Manual / interactive
     Pass --manual or --no-auto-close. Window stays open until you close it
@@ -102,6 +103,28 @@ def _bridge_tap(bridge: CVMBridge) -> None:
         print(
             f"[smoke] bridge.get_health: status={health.get('status')} "
             f"dialect={health.get('database_dialect')}"
+        )
+        current_year = time.gmtime().tm_year
+        base_health = bridge.get_base_health(
+            {
+                "start_year": current_year - 2,
+                "end_year": current_year - 1,
+                "force_refresh": True,
+            }
+        )
+        if base_health.get("error"):
+            print(f"[smoke] bridge.get_base_health error: {base_health.get('error')}")
+        else:
+            print(
+                "[smoke] bridge.get_base_health: "
+                f"companies={base_health.get('total_companies')} "
+                f"coverage={base_health.get('pct')} "
+                f"missing={base_health.get('missing_cells')}"
+            )
+        jobs = bridge.get_refresh_status({})
+        print(
+            f"[smoke] bridge.get_refresh_status: "
+            f"jobs={len(jobs.get('items', []))}"
         )
         page = bridge.get_companies({"page": 1, "page_size": 3})
         items = page.get("items", [])

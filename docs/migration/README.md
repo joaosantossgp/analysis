@@ -35,7 +35,8 @@ To:
 | Phase 0 | User-data safety net | Released as v0.3.4 (hotfix #4); stable | v0.3.4 fixes CI zip layout to be updater-compatible (flat root). Full contract pass: fresh install + MOTW + updater staging + helper swap + user-data preservation. |
 | Phase 1 | Parallel Vite SPA shell | Done | apps/desktop-web/ with react-router HashRouter, TanStack Query, 3 screens (companies / company detail / health) |
 | Phase 2 | Wire Vite SPA into pywebview | Experimental (opt-in `--vite` flag) | Packaged exe ships both Next standalone and Vite static SPA; default = Next, `--vite` = Vite with zero Node processes. GitHub-downloaded release artifact validation is mandatory before calling a release good. No removals yet. |
-| Phase 3A | Functional parity matrix + first missing Vite screen | In progress | Parity matrix lives in `PHASE_3_PARITY_MATRIX.md`; first missing screen is company financial statements in `apps/desktop-web`. No deletion, no default switch. |
+| Phase 3A | Functional parity matrix + first missing Vite screen | Released as v0.5.0 | Parity matrix lives in `PHASE_3_PARITY_MATRIX.md`; company financial statements are implemented in `apps/desktop-web`. No deletion, no default switch. |
+| Phase 3B | Update Base / Refresh Data parity slice | Released as v0.6.0 | Vite route `/atualizar-base` uses the existing desktop refresh bridge methods for base health, guarded refresh start, optional CVM-code targeting, polling, logs, cancel, and empty-DB guidance. Default remains Next. |
 | Phase 3 | Mandatory legacy deletion | Not started | Delete Next/FastAPI legacy only after parity, a default-Vite soak release, and explicit user approval. |
 | Phase 4 | Polish/performance | Not started | Startup, logging, AV/code-signing review |
 
@@ -60,7 +61,7 @@ Default startup still uses the legacy Next.js standalone server and bundled Node
 - Do not delete legacy runtime before parity.
 - Do not keep obsolete legacy code after parity.
 
-## Phase 3A parity source
+## Phase 3 parity source
 
 Use [PHASE_3_PARITY_MATRIX.md](PHASE_3_PARITY_MATRIX.md) as the active
 screen-by-screen parity source. It records what is already implemented in Vite,

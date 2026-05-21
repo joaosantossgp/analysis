@@ -1,14 +1,14 @@
-# Phase 3A - Functional Parity Matrix
+# Phase 3 - Functional Parity Matrix
 
-Status: Phase 3A started after `v0.4.0` validated the experimental `--vite`
-runtime from a downloaded GitHub Release artifact.
+Status: Phase 3A shipped in `v0.5.0` with the first missing Vite screen
+(financial statements). Phase 3B shipped in `v0.6.0` with the Vite Update Base
+/ Refresh Data parity slice. The default runtime is still Next/Node.
 
 Scope of this document:
 
 - Compare the current Next UI (`apps/web`) with the Vite SPA (`apps/desktop-web`).
 - Identify P0 gaps before Vite can become the default desktop runtime.
-- Record the first missing screen ported in Phase 3A: company financial
-  statements.
+- Record incremental P0 parity slices ported into Vite.
 - Keep legacy deletion out of scope. Phase 3 deletion still requires explicit
   approval after parity, a default-Vite soak release, and updater safety checks.
 
@@ -23,7 +23,7 @@ Scope of this document:
 | KPIs / indicators | Annual and quarterly KPI bundle available; Next overview uses KPI cards/tables and chart panels. | Partial: annual KPI table only. No quarterly view or chart panel. | Existing `get_company_kpis`. | P0 | Medium | Medium | Add complete annual/quarterly indicator screen after export or sectors. |
 | Sectors directory (`/setores`) | GICS sector/sub-sector directory with counts, snapshots, company previews, empty/error states. | Missing. | Existing `get_sectors`. | P0 | Medium | Medium | Port after company-level essentials. |
 | Sector detail (`/setores/[slug]`, `/setores/[slug]/[sub_slug]`) | Year selector, aggregate KPIs, yearly overview, company table, breadcrumbs. | Missing. | Existing `get_sector_detail`, `get_sub_sector_detail`. | P0 | Medium | Medium | Port with sectors directory as one coherent slice. |
-| Update base / refresh data (`/atualizar-base`) | Administrative refresh dashboard: base health, scopes, filters, job progress, history, cancel flow. | Missing. | Existing `get_base_health`, `request_refresh`, `cancel_refresh`, `get_refresh_status`, company suggestions/filter methods. | P0 | High | High | Port after read-only screens; keep write actions narrow and heavily smoke-tested. |
+| Update base / refresh data (`/atualizar-base`) | Administrative refresh dashboard: base health, scopes, filters, job progress, history, cancel flow. | Implemented in Phase 3B as `/atualizar-base`: base-health cards, empty-DB guidance, constrained refresh start with optional CVM-code targeting, 2s polling, logs, history, cancel, and LOCALAPPDATA storage note. It intentionally keeps scope narrower than the full Next admin page. | Existing `get_base_health`, `request_refresh`, `cancel_refresh`, `get_refresh_status`. | P0 | High | High | Done for the base refresh parity slice. Later add company suggestions/sector filters if needed for operator convenience. |
 | Single-company refresh controls | Next company detail can request a period refresh and show progress. | Missing. | Existing `request_refresh`, `get_refresh_status`. | P0 | Medium | High | Port before Vite default; write path but already bridged. |
 | Excel export / save flows | Next has Excel export/download button and desktop bridge save/download path. | Missing. | Existing `save_company_excel`, `download_company_excel`. | P0 | Medium | Medium | Recommended next narrow slice: add export action to company detail/statements. |
 | Auto-updater UI | Next shows floating update prompt through `check_update` / `apply_update`; local snooze only. | Missing. | Existing `check_update`, `apply_update`, `snooze_update`, `get_update_progress`. | P0 | Medium | High | Required before default switch so users keep in-app update prompts. |
@@ -45,6 +45,9 @@ Scope of this document:
 - Company detail route with header and annual KPI table.
 - Phase 3A: company financial statements screen at
   `/empresas/:cdCvm/demonstrativos?stmt=DRE`.
+- Phase 3B: Update Base / Refresh Data screen at `/atualizar-base`, including
+  guarded background refresh jobs, optional CVM-code targeting, and
+  empty-runtime-DB guidance.
 
 ## Remaining P0 Before Vite Can Become Default
 
@@ -52,7 +55,8 @@ Scope of this document:
 - Company detail controls for refresh, freshness, and export.
 - Complete KPI/indicator parity beyond the annual table.
 - Sectors directory and sector detail routes.
-- Update-base refresh dashboard, including guarded write actions.
+- Update-base advanced filters/suggestions beyond the constrained Vite refresh
+  action, if required before the default switch.
 - Auto-updater prompt/progress UI.
 - GitHub-downloaded release validation after each runtime parity slice.
 
@@ -79,6 +83,20 @@ Why this screen:
 - Narrow scope: read-only, no schema changes, no Python pipeline changes.
 - Strong parity proof: exercises large tabular financial data, statement type
   switching, filtering, and value formatting inside Vite.
+
+## Phase 3B Implemented Screen
+
+Selected screen: Update Base / Refresh Data.
+
+Why this screen:
+
+- P0 parity: users with an empty `%LOCALAPPDATA%\CVMAnalytics` runtime DB need a
+  Vite path to populate local data.
+- Existing bridge support: `get_base_health`, `request_refresh`,
+  `get_refresh_status`, and `cancel_refresh` already expose the required job
+  lifecycle.
+- Proves long-running local Python jobs in the Vite runtime without making Vite
+  default or touching updater/user-data migration contracts.
 
 ## Recommended Next Screen
 

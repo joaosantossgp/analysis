@@ -120,6 +120,99 @@ export type StatementMatrix = {
   error?: string;
 };
 
+export type BaseHealthYearCoverage = {
+  year: number;
+  total_companies: number;
+  completed: number;
+  missing: number;
+  pct: number;
+  eta_hours: number | null;
+};
+
+export type BaseHealthPriority = {
+  cd_cvm: number;
+  company_name: string;
+  sector_name: string;
+  sector_slug: string;
+  priority_score: number;
+  missing_years_count: number;
+  gap_to_leader_years: number;
+  years_missing: number[];
+  recommended_action: string;
+  reason: string;
+};
+
+export type BaseHealthSnapshot = {
+  generated_at: string | null;
+  start_year: number;
+  end_year: number;
+  total_cells: number;
+  completed_cells: number;
+  missing_cells: number;
+  pct: number;
+  health_score: number;
+  health_status: string;
+  eta_hours: number | null;
+  throughput_per_hour: number | null;
+  throughput_confidence: string;
+  per_year: BaseHealthYearCoverage[];
+  prioritized_companies: BaseHealthPriority[];
+  raw: Record<string, unknown>;
+  total_companies: number;
+  companies_with_historical_data: number;
+  companies_without_historical_data: number;
+  companies_with_any_local_financial_report: number;
+  companies_partial_local: number;
+  companies_fully_updated: number;
+  companies_with_refresh_status_recorded: number;
+  companies_with_last_refresh_error: number;
+  error?: string;
+};
+
+export type RefreshMode = "missing" | "full" | "outdated" | "failed";
+
+export type RefreshDispatchResponse = {
+  status: string;
+  job_id: string | null;
+  accepted_at?: string | null;
+  queued?: number;
+  message?: string;
+  status_reason_code?: string | null;
+  status_reason_message?: string | null;
+  is_retry_allowed?: boolean;
+  error?: string;
+};
+
+export type RefreshJobStatus = {
+  job_id: string;
+  state: string;
+  status?: string;
+  mode?: RefreshMode | string | null;
+  stage?: string | null;
+  queued: number;
+  processed: number;
+  failures: number;
+  current_cvm?: number | null;
+  log_lines: string[];
+  accepted_at?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  updated_at?: string | null;
+  error?: string | null;
+  result?: Record<string, unknown> | null;
+};
+
+export type RefreshJobListResponse = {
+  items: RefreshJobStatus[];
+  error?: string;
+};
+
+export type CancelRefreshResponse = {
+  ok: boolean;
+  message?: string;
+  error?: string;
+};
+
 export type PingResult = {
   pong: boolean;
   ts: number;
@@ -138,6 +231,10 @@ export interface BridgeApi {
   get_company_years(params: Record<string, unknown>): Promise<CompanyYearsResult>;
   get_company_kpis(params: Record<string, unknown>): Promise<KPIBundle>;
   get_company_statement(params: Record<string, unknown>): Promise<StatementMatrix>;
+  get_base_health(params: Record<string, unknown>): Promise<BaseHealthSnapshot>;
+  request_refresh(params: Record<string, unknown>): Promise<RefreshDispatchResponse>;
+  get_refresh_status(params?: Record<string, unknown>): Promise<RefreshJobStatus | RefreshJobListResponse>;
+  cancel_refresh(params: Record<string, unknown>): Promise<CancelRefreshResponse>;
 }
 
 declare global {

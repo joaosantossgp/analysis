@@ -5,6 +5,7 @@ import { CompaniesPage } from "./routes/CompaniesPage";
 import { CompanyDetailPage } from "./routes/CompanyDetailPage";
 import { CompanyStatementsPage } from "./routes/CompanyStatementsPage";
 import { HealthPage } from "./routes/HealthPage";
+import { UpdateBasePage } from "./routes/UpdateBasePage";
 
 // HashRouter (not BrowserRouter) for portability across pywebview origins:
 // file:// (PyInstaller _MEIPASS), http://127.0.0.1:<port> (Vite dev), and
@@ -33,6 +34,7 @@ export function App() {
           <Routes>
             <Route path="/" element={<CompaniesPage />} />
             <Route path="/health" element={<HealthPage />} />
+            <Route path="/atualizar-base" element={<UpdateBasePage />} />
             <Route
               path="/empresas/:cdCvm"
               element={<CompanyDetailPage />}
@@ -58,6 +60,7 @@ function Nav() {
     <nav className="flex gap-2 border-b border-zinc-800 pb-2">
       <NavTab to="/" label="Companies" end />
       <NavTab to="/health" label="Runtime health" />
+      <NavTab to="/atualizar-base" label="Update base" />
     </nav>
   );
 }

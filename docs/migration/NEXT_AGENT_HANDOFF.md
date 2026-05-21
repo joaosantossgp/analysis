@@ -7,8 +7,8 @@ This is the **primary entry point** for any AI agent or human contributor pickin
 ## TL;DR
 
 - **What we are doing:** rebuilding the desktop app's UI runtime from `Next.js standalone + bundled Node + pywebview` to `static Vite SPA + pywebview` while keeping Python authoritative and user data safe.
-- **Where we are:** Phase 3A is underway. Phase 2 shipped `--vite`; Phase 3A adds the parity matrix and the first missing Vite screen while keeping Next as the default.
-- **What is released:** `v0.4.0` on GitHub. It validates the opt-in Vite runtime from a downloaded release asset. Users still hit the Next path by default.
+- **Where we are:** Phase 3B is complete. Phase 2 shipped `--vite`; Phase 3A added the parity matrix and financial statements; Phase 3B added Update Base / Refresh Data while keeping Next as the default.
+- **What is released:** `v0.6.0` on GitHub. It validates the opt-in Vite runtime from a downloaded release asset, including a write-path refresh screen. Users still hit the Next path by default.
 - **What is next:** keep closing P0 gaps in `PHASE_3_PARITY_MATRIX.md` before any default switch. Legacy deletion remains Phase 3 and is not approved.
 - **Hard rule:** do not delete `apps/web/`, `apps/api/`, `desktop/node_portable/`, FastAPI deps, or remove Node from `desktop/app.spec` until the user explicitly approves Phase 3.
 
@@ -23,7 +23,8 @@ This is the **primary entry point** for any AI agent or human contributor pickin
 | **Phase 1.5** | Companies directory screen + TanStack Query | Done. Real search + pagination. | See `PHASE_1_VITE_SHELL.md` |
 | **Phase 1.6** | Dynamic routing + company detail | Done. HashRouter + 3 routes + KPI table. | See `PHASE_1_VITE_SHELL.md` |
 | **Phase 2** | Opt-in `--vite` runtime in packaged exe | **Released as `v0.4.0`.** Both UIs ship; default = Next; `--vite` = Vite with zero Node. | See `PHASE_2_VITE_RUNTIME.md` |
-| **Phase 3A** | Parity matrix + one missing Vite screen | In progress. Financial statements are the first selected screen. | See `PHASE_3_PARITY_MATRIX.md` |
+| **Phase 3A** | Parity matrix + one missing Vite screen | **Released as `v0.5.0`.** Financial statements are implemented in Vite. | See `PHASE_3_PARITY_MATRIX.md` |
+| **Phase 3B** | Update Base / Refresh Data Vite parity slice | **Released as `v0.6.0`.** Base health, empty-DB guidance, refresh start with optional CVM-code targeting, polling, logs, history, and cancel are implemented in Vite. | See `PHASE_3_PARITY_MATRIX.md` |
 | **Phase 3** | Delete legacy: Next, Node, FastAPI, apps/web, apps/api | **Not started.** Gated on Vite screen parity. | See `PHASE_3_PLAN.md` |
 | **Phase 4** | Polish, code signing, AV/UPX review | Not started. | — |
 
@@ -103,17 +104,13 @@ Full architecture map in `ARCHITECTURE.md`.
 
 ---
 
-## Immediate next task (Phase 3A)
+## Immediate next task
 
 Suggested before any default switch:
 
 1. Keep `PHASE_3_PARITY_MATRIX.md` current.
-2. Validate the newly ported financial statements screen in Vite:
-   - `/empresas/9512/demonstrativos?stmt=DRE`
-   - DRE/BPA/BPP/DFC selector
-   - row filter
-   - company overview back navigation
-3. Recommended next narrow slice after Phase 3A: Excel save/export on company detail and statements, using existing `save_company_excel` / `download_company_excel`.
+2. Recommended next narrow slice: Excel save/export on company detail and statements, using existing `save_company_excel` / `download_company_excel`.
+3. Other remaining P0 areas: sectors, complete KPI/indicator parity, company-detail refresh/freshness controls, updater UI, and navigation polish.
 
 Do NOT start Phase 3 deletion until every P0 parity gap is closed, Vite has shipped as the default with a fallback and soaked, and the user explicitly approves deletion.
 
