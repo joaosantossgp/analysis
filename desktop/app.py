@@ -187,36 +187,302 @@ def _wal_safe_copy_sqlite(source: Path, destination: Path) -> None:
         src.close()
 
 
+_NET_FRAMEWORK_48_RELEASE_KEY = 528040  # Windows registry release value for 4.8
+
+
+def _detect_net_framework_release() -> int | None:
+    """Read the NDP\\v4\\Full Release value from the Windows registry.
+
+    Returns None if the key is missing (no .NET Framework 4.x installed)
+    or if we cannot read it. Otherwise returns the integer Release value,
+    where >= 528040 means .NET Framework 4.8 or later.
+    """
+    try:
+        import winreg  # noqa: PLC0415
+    except ImportError:
+        return None
+    try:
+        key = winreg.OpenKey(
+            winreg.HKEY_LOCAL_MACHINE,
+            r"SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full",
+        )
+    except OSError:
+        return None
+    try:
+        value, _ = winreg.QueryValueEx(key, "Release")
+        return int(value)
+    except OSError:
+        return None
+    finally:
+        winreg.CloseKey(key)
+
+
+def _detect_webview2_runtime() -> str | None:
+    """Return the installed Microsoft Edge WebView2 Runtime version or None.
+
+    Checks the per-machine registry locations used by the Evergreen Runtime
+    installer for both 64-bit and 32-bit hosts.
+    """
+    try:
+        import winreg  # noqa: PLC0415
+    except ImportError:
+        return None
+    candidates = (
+        (
+            winreg.HKEY_LOCAL_MACHINE,
+            r"SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
+        ),
+        (
+            winreg.HKEY_LOCAL_MACHINE,
+            r"SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
+        ),
+        (
+            winreg.HKEY_CURRENT_USER,
+            r"SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
+        ),
+    )
+    for root, sub in candidates:
+        try:
+            key = winreg.OpenKey(root, sub)
+        except OSError:
+            continue
+        try:
+            value, _ = winreg.QueryValueEx(key, "pv")
+            value = str(value)
+            if value and value != "0.0.0.0":
+                return value
+        except OSError:
+            continue
+        finally:
+            winreg.CloseKey(key)
+    return None
+
+
+def _diagnose_runtime_to_file() -> Path:
+    """Collect runtime diagnostics into a file under LOCALAPPDATA.
+
+    Designed to run BEFORE any clr / pywebview import so that a broken
+    .NET environment cannot prevent diagnostic collection. The resulting
+    log path is returned so the caller can open it in Notepad and exit.
+    """
+    import hashlib  # noqa: PLC0415
+    import platform  # noqa: PLC0415
+    import traceback  # noqa: PLC0415
+
+    user_root = _user_data_root()
+    user_root.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    log_path = user_root / f"diagnostics-{stamp}.log"
+
+    lines: list[str] = []
+
+    def section(title: str) -> None:
+        lines.append("")
+        lines.append(f"=== {title} ===")
+
+    def kv(key: str, value: object) -> None:
+        lines.append(f"{key}: {value}")
+
+    try:
+        from desktop.__version__ import __version__ as app_version  # noqa: PLC0415
+    except Exception:
+        app_version = "unknown"
+
+    section("App")
+    kv("version", app_version)
+    kv("frozen", _bundled())
+    kv("executable", sys.executable)
+    kv("python", sys.version.replace("\n", " "))
+    kv("argv", sys.argv)
+
+    section("Platform")
+    kv("system", platform.system())
+    kv("release", platform.release())
+    kv("version", platform.version())
+    kv("machine", platform.machine())
+    kv("processor", platform.processor())
+    kv("architecture", platform.architecture())
+
+    section("Paths")
+    kv("_MEIPASS", getattr(sys, "_MEIPASS", "n/a"))
+    kv("_runtime_dir", _runtime_dir())
+    kv("_user_data_root", user_root)
+    kv("LOCALAPPDATA", os.environ.get("LOCALAPPDATA", "n/a"))
+
+    section("Bundled pythonnet runtime/")
+    if _bundled():
+        runtime_dir = _bundle_dir() / "pythonnet" / "runtime"
+        kv("path", runtime_dir)
+        kv("exists", runtime_dir.is_dir())
+        if runtime_dir.is_dir():
+            for f in sorted(runtime_dir.iterdir()):
+                if f.is_file():
+                    h = hashlib.sha256()
+                    with f.open("rb") as fh:
+                        for chunk in iter(lambda: fh.read(65536), b""):
+                            h.update(chunk)
+                    kv(f"  {f.name}", f"size={f.stat().st_size} sha256={h.hexdigest()[:16]}")
+    else:
+        kv("note", "not a frozen build; skipped")
+
+    section(".NET Framework")
+    release = _detect_net_framework_release()
+    kv("registry Release value", release)
+    if release is None:
+        kv("status", "NOT INSTALLED (no NDP\\v4\\Full\\Release key)")
+    elif release < _NET_FRAMEWORK_48_RELEASE_KEY:
+        kv("status", f"PRE-4.8 (Release {release} < {_NET_FRAMEWORK_48_RELEASE_KEY})")
+    else:
+        kv("status", f"OK (Release {release} >= {_NET_FRAMEWORK_48_RELEASE_KEY})")
+
+    section("WebView2 Runtime")
+    wv2 = _detect_webview2_runtime()
+    kv("version", wv2 or "NOT INSTALLED")
+
+    section("Environment overrides")
+    for name in ("PYTHONNET_RUNTIME", "PYTHONNET_PYDLL", "DOTNET_ROOT", "PATH"):
+        kv(name, os.environ.get(name, "n/a") if name != "PATH" else "(omitted; long)")
+
+    section("import clr")
+    try:
+        import clr  # noqa: F401, PLC0415
+        kv("status", "OK")
+    except Exception as exc:
+        kv("status", f"FAILED: {type(exc).__name__}: {exc}")
+        lines.append("---traceback---")
+        lines.append(traceback.format_exc())
+
+    section("import sqlite3 + LOCALAPPDATA DB")
+    try:
+        import sqlite3 as _sql  # noqa: PLC0415
+        db_path = user_root / "db" / "cvm_financials.db"
+        kv("db_path", db_path)
+        kv("exists_before", db_path.exists())
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        conn = _sql.connect(str(db_path))
+        rows = conn.execute("SELECT sqlite_version()").fetchone()
+        conn.close()
+        kv("sqlite_version", rows[0] if rows else "n/a")
+        kv("status", "OK")
+    except Exception as exc:
+        kv("status", f"FAILED: {type(exc).__name__}: {exc}")
+
+    log_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return log_path
+
+
+def _run_diagnostic_mode() -> None:
+    """`--diagnose-runtime` entrypoint. Writes report + opens it in Notepad."""
+    _configure_bundled_data_paths()
+    log_path = _diagnose_runtime_to_file()
+    summary = (
+        f"Diagnostico salvo em:\n{log_path}\n\n"
+        "Clique em OK para abrir o arquivo no Notepad."
+    )
+    _show_fatal_messagebox(title="CVM Analytics — diagnostico de runtime", body=summary)
+    try:
+        os.startfile(str(log_path))  # type: ignore[attr-defined]
+    except Exception:
+        pass
+    sys.exit(0)
+
+
 def _preflight_pywebview_backend() -> None:
     """Verify the pythonnet / .NET CLR backend can load on Windows.
 
-    pywebview on Windows uses WinForms + EdgeChromium, both of which depend
-    on pythonnet (`clr`). pythonnet's .NET assembly needs
-    `Python.Runtime.deps.json` next to `Python.Runtime.dll` so the CLR can
-    resolve framework references. If the bundle is missing that file (as
-    in v0.3.0), the import below raises `RuntimeError: Failed to resolve
-    Python.Runtime.Loader.Initialize`.
+    Performs three checks in order, before attempting `import clr`:
 
-    Catch that case and show a friendly Windows MessageBox via ctypes so
-    the user does not see a raw Python traceback. Then exit non-zero.
+    1. Confirm `Python.Runtime.dll` and `Python.Runtime.deps.json` are
+       present in the bundle. Missing files indicate a packaging
+       regression (the v0.3.0 root cause).
+    2. Confirm .NET Framework 4.8 or later is installed via the standard
+       Windows registry probe. pywebview's WinForms backend depends on
+       pythonnet's netfx loader, which requires .NET Framework on the
+       target machine.
+    3. Confirm Microsoft Edge WebView2 Runtime is installed. Without it
+       pywebview can still create a window, but content rendering fails.
+
+    On failure: shows a precise, user-actionable MessageBox naming the
+    missing prerequisite, points the user at `--diagnose-runtime`, and
+    exits non-zero.
     """
     if not _bundled():
         return
+
+    runtime_dir = _bundle_dir() / "pythonnet" / "runtime"
+    dll = runtime_dir / "Python.Runtime.dll"
+    deps = runtime_dir / "Python.Runtime.deps.json"
+    if not dll.exists() or not deps.exists():
+        missing = []
+        if not dll.exists():
+            missing.append("Python.Runtime.dll")
+        if not deps.exists():
+            missing.append("Python.Runtime.deps.json")
+        _show_fatal_messagebox(
+            title="CVM Analytics — instalacao corrompida",
+            body=(
+                "O bundle do CVM Analytics esta incompleto.\n\n"
+                f"Arquivo(s) ausente(s): {', '.join(missing)}\n"
+                f"Local esperado: {runtime_dir}\n\n"
+                "Acoes sugeridas:\n"
+                " 1) Reextrair o ZIP da release em uma pasta nova.\n"
+                " 2) Baixar novamente a release oficial do GitHub.\n"
+                " 3) Verificar o SHA-256 do arquivo baixado.\n\n"
+                f"Diagnostico detalhado: rode\n  {sys.executable} --diagnose-runtime"
+            ),
+        )
+        _log_recovery(_user_data_root(), f"preflight missing bundle files: {missing}")
+        sys.exit(1)
+
+    release = _detect_net_framework_release()
+    if release is None or release < _NET_FRAMEWORK_48_RELEASE_KEY:
+        observed = "nao instalado" if release is None else f"Release={release}"
+        _show_fatal_messagebox(
+            title="CVM Analytics — pre-requisito ausente",
+            body=(
+                "O CVM Analytics requer Microsoft .NET Framework 4.8 ou superior.\n\n"
+                f"Detectado: {observed}\n"
+                f"Requerido: Release >= {_NET_FRAMEWORK_48_RELEASE_KEY} (.NET Framework 4.8)\n\n"
+                "Como resolver:\n"
+                " 1) Instalar o '.NET Framework 4.8 Runtime' a partir de:\n"
+                "    https://dotnet.microsoft.com/download/dotnet-framework/net48\n"
+                " 2) Reiniciar o computador.\n"
+                " 3) Abrir o CVM Analytics novamente.\n\n"
+                f"Diagnostico detalhado: rode\n  {sys.executable} --diagnose-runtime"
+            ),
+        )
+        _log_recovery(_user_data_root(), f"preflight .NET Framework missing: release={release}")
+        sys.exit(1)
+
+    wv2 = _detect_webview2_runtime()
+    if wv2 is None:
+        _show_fatal_messagebox(
+            title="CVM Analytics — pre-requisito ausente",
+            body=(
+                "O CVM Analytics requer o Microsoft Edge WebView2 Runtime.\n\n"
+                "Detectado: nao instalado\n\n"
+                "Como resolver:\n"
+                " 1) Baixar e instalar o 'Evergreen Standalone Installer' em:\n"
+                "    https://developer.microsoft.com/microsoft-edge/webview2/\n"
+                " 2) Abrir o CVM Analytics novamente.\n\n"
+                f"Diagnostico detalhado: rode\n  {sys.executable} --diagnose-runtime"
+            ),
+        )
+        _log_recovery(_user_data_root(), "preflight WebView2 missing")
+        sys.exit(1)
+
     try:
         import clr  # noqa: F401, PLC0415
     except Exception as exc:
+        log_path = _diagnose_runtime_to_file()
         _show_fatal_messagebox(
-            title="CVM Analytics — falha ao iniciar",
+            title="CVM Analytics — falha ao carregar runtime .NET",
             body=(
-                "Nao foi possivel carregar o componente .NET do pywebview "
-                "(pythonnet / clr_loader).\n\n"
+                "Pre-requisitos detectados, mas o componente .NET do pywebview "
+                "ainda nao carregou.\n\n"
                 f"Detalhe tecnico:\n{type(exc).__name__}: {exc}\n\n"
-                "Acoes sugeridas:\n"
-                " 1) Reinstalar/atualizar o Microsoft Edge WebView2 Runtime.\n"
-                " 2) Confirmar que o Windows tem .NET Framework 4.8 ou superior.\n"
-                " 3) Reextrair o ZIP em uma pasta nao bloqueada e rodar:\n"
-                "    Get-ChildItem -Recurse | Unblock-File\n"
-                " 4) Reportar este erro com a versao da release."
+                f"Um diagnostico completo foi salvo em:\n{log_path}\n\n"
+                "Por favor anexe esse arquivo ao reportar o problema."
             ),
         )
         _log_recovery(_user_data_root(), f"preflight clr import failed: {exc!r}")
@@ -361,6 +627,9 @@ def _start_standalone_server(standalone: Path) -> tuple[subprocess.Popen[bytes],
 
 def main() -> None:
     args = sys.argv[1:]
+    if "--diagnose-runtime" in args:
+        _run_diagnostic_mode()
+        return  # _run_diagnostic_mode calls sys.exit; defensive
     dev_mode = "--dev" in args
     debug_mode = "--debug" in args
 
