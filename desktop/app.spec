@@ -9,6 +9,7 @@
 # Uso: pyinstaller desktop/app.spec --noconfirm
 # Saída: dist/CVMAnalytics/CVMAnalytics.exe
 
+import pythonnet
 from pathlib import Path
 
 ROOT = Path(SPECPATH).parent  # repo root (spec está em desktop/, ROOT é um nível acima)
@@ -27,6 +28,21 @@ if NODE_EXE.exists():
 # Bundled PowerShell helper used by the auto-updater to swap files after exit.
 datas.append((str(UPDATE_HELPER), "."))
 
+# v0.3.1: pythonnet's .NET assembly cannot bind its dependencies without
+# Python.Runtime.deps.json sitting next to Python.Runtime.dll. PyInstaller's
+# default collector only ships the .dll, which causes:
+#
+#   RuntimeError: Failed to resolve Python.Runtime.Loader.Initialize from
+#   <bundle>\_internal\pythonnet\runtime\Python.Runtime.dll
+#
+# Ship the full runtime/ directory verbatim. .deps.json is mandatory; .xml
+# and .pdb are small and harmless to ship.
+PYTHONNET_RUNTIME = Path(pythonnet.__file__).parent / "runtime"
+if PYTHONNET_RUNTIME.is_dir():
+    for runtime_file in PYTHONNET_RUNTIME.iterdir():
+        if runtime_file.is_file():
+            datas.append((str(runtime_file), "pythonnet/runtime"))
+
 a = Analysis(
     [str(ROOT / "desktop" / "app.py")],
     pathex=[str(ROOT)],
@@ -42,7 +58,10 @@ a = Analysis(
         "src.read_service",
         "src.db",
         # clr/pythonnet necessário para pywebview no Windows
+        "clr",
         "clr_loader",
+        "clr_loader.netfx",
+        "clr_loader.hostfxr",
         "pythonnet",
     ],
     hookspath=[],
@@ -72,6 +91,12 @@ a = Analysis(
 
 pyz = PYZ(a.pure)
 
+# v0.3.1: UPX disabled entirely. UPX-compressed .NET assemblies are a
+# well-known source of "Failed to resolve" loader errors and AV false
+# positives on Windows SmartScreen. The size win is not worth the
+# reliability hit for a release-grade build.
+USE_UPX = False
+
 exe = EXE(
     pyz,
     a.scripts,
@@ -81,7 +106,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=USE_UPX,
     console=False,  # sem janela de console
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -96,7 +121,13 @@ coll = COLLECT(
     a.binaries,
     a.datas,
     strip=False,
-    upx=True,
-    upx_exclude=[],
+    upx=USE_UPX,
+    upx_exclude=[
+        # Belt-and-suspenders: even if UPX is re-enabled later, never
+        # compress .NET / native loader assets or WebView2 helpers.
+        "Python.Runtime.dll",
+        "ClrLoader.dll",
+        "WebView2Loader.dll",
+    ],
     name="CVMAnalytics",
 )

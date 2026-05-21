@@ -187,6 +187,56 @@ def _wal_safe_copy_sqlite(source: Path, destination: Path) -> None:
         src.close()
 
 
+def _preflight_pywebview_backend() -> None:
+    """Verify the pythonnet / .NET CLR backend can load on Windows.
+
+    pywebview on Windows uses WinForms + EdgeChromium, both of which depend
+    on pythonnet (`clr`). pythonnet's .NET assembly needs
+    `Python.Runtime.deps.json` next to `Python.Runtime.dll` so the CLR can
+    resolve framework references. If the bundle is missing that file (as
+    in v0.3.0), the import below raises `RuntimeError: Failed to resolve
+    Python.Runtime.Loader.Initialize`.
+
+    Catch that case and show a friendly Windows MessageBox via ctypes so
+    the user does not see a raw Python traceback. Then exit non-zero.
+    """
+    if not _bundled():
+        return
+    try:
+        import clr  # noqa: F401, PLC0415
+    except Exception as exc:
+        _show_fatal_messagebox(
+            title="CVM Analytics — falha ao iniciar",
+            body=(
+                "Nao foi possivel carregar o componente .NET do pywebview "
+                "(pythonnet / clr_loader).\n\n"
+                f"Detalhe tecnico:\n{type(exc).__name__}: {exc}\n\n"
+                "Acoes sugeridas:\n"
+                " 1) Reinstalar/atualizar o Microsoft Edge WebView2 Runtime.\n"
+                " 2) Confirmar que o Windows tem .NET Framework 4.8 ou superior.\n"
+                " 3) Reextrair o ZIP em uma pasta nao bloqueada e rodar:\n"
+                "    Get-ChildItem -Recurse | Unblock-File\n"
+                " 4) Reportar este erro com a versao da release."
+            ),
+        )
+        _log_recovery(_user_data_root(), f"preflight clr import failed: {exc!r}")
+        sys.exit(1)
+
+
+def _show_fatal_messagebox(*, title: str, body: str) -> None:
+    """Show a native Windows MessageBox without requiring any GUI toolkit."""
+    try:
+        import ctypes  # noqa: PLC0415
+        # MB_OK | MB_ICONERROR | MB_TOPMOST = 0x00010000 | 0x00000010 = 0x00010010
+        ctypes.windll.user32.MessageBoxW(0, body, title, 0x00010010)
+    except Exception:
+        # If even MessageBoxW fails, fall back to stderr.
+        try:
+            sys.stderr.write(f"[{title}] {body}\n")
+        except Exception:
+            pass
+
+
 def _ensure_db_initialized() -> None:
     """Ensure the runtime DB has the required schema.
 
@@ -317,6 +367,7 @@ def main() -> None:
     _configure_bundled_data_paths()
     _migrate_legacy_db_once()
     _ensure_db_initialized()
+    _preflight_pywebview_backend()
     bridge = CVMBridge()
     server_proc: subprocess.Popen[bytes] | None = None
 
