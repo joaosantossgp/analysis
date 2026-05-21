@@ -2,7 +2,12 @@
 
 ## Status
 
-**Proof-of-concept.** This package exists in parallel to `apps/web/` (Next.js). It does **not** replace the production UI. The released desktop executable still ships the Next.js standalone server.
+**Phase 1.5 proof-of-concept.** This package exists in parallel to `apps/web/` (Next.js). It does **not** replace the production UI. The released desktop executable still ships the Next.js standalone server.
+
+Two screens prove the architecture:
+
+- **Runtime health** — `CVMBridge.get_health()` rendering status, version, dialect.
+- **Companies directory** — `CVMBridge.get_companies(...)` with debounced search, pagination, loading/error/empty states. Powered by TanStack Query.
 
 ## Goal
 
@@ -78,6 +83,6 @@ Output is a static SPA at `apps/desktop-web/dist/`. Phase 2 will wire this dir i
 
 - Does not run inside the packaged exe.
 - Does not replace any Next.js route.
-- Does not implement routing — single screen only.
-- Does not implement state caching (TanStack Query comes in Phase 1.5).
+- Does not implement routing — top-tab toggle only. Phase 2 will add a real router.
+- Uses TanStack Query for the companies screen (added in Phase 1.5).
 - Does not call FastAPI. Bridge-only.

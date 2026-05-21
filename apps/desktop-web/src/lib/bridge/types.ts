@@ -17,24 +17,51 @@ export type CompanyDirectoryItem = {
   cd_cvm: number;
   company_name: string;
   ticker_b3: string | null;
+  setor_analitico: string | null;
+  setor_cvm: string | null;
+  sector_name: string;
   sector_slug: string;
+  anos_disponiveis: number[];
+  total_rows: number;
   has_financial_data: boolean;
+  coverage_rank: number | null;
+  gics_sector?: string | null;
+  gics_sector_slug?: string | null;
+  gics_industry_group?: string | null;
+  gics_industry?: string | null;
+  gics_sub_industry?: string | null;
+};
+
+export type CompanyDirectoryPagination = {
+  page: number;
+  page_size: number;
+  total_items: number;
+  total_pages: number;
+  has_next: boolean;
+  has_previous: boolean;
+};
+
+export type CompanyDirectoryFilters = {
+  search: string;
+  sector: string | null;
 };
 
 export type CompanyDirectoryPage = {
   items: CompanyDirectoryItem[];
-  pagination: {
-    page: number;
-    page_size: number;
-    total_items: number;
-    total_pages: number;
-    has_next: boolean;
-    has_previous: boolean;
-  };
-  applied_filters: {
-    search: string;
-    sector: string | null;
-  };
+  pagination: CompanyDirectoryPagination;
+  applied_filters: CompanyDirectoryFilters;
+  /** Bridge instrumentation. Optional, present when CVMBridge times the call. */
+  _bridge_ms?: number;
+  /** Present only on error (bridge swallows exceptions). */
+  error?: string;
+};
+
+/** Loose parameter shape — CVMBridge.get_companies uses .get() on every key. */
+export type CompaniesQuery = {
+  search?: string;
+  sector_slug?: string | null;
+  page?: number;
+  page_size?: number;
 };
 
 export type PingResult = {

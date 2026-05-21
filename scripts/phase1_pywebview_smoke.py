@@ -78,17 +78,40 @@ def main() -> None:
         height=700,
     )
 
-    # Background timer to close the window after 8 seconds — keeps the
-    # smoke unattended.
+    # Background timer to close the window after 12 seconds — keeps the
+    # smoke unattended. Long enough for TanStack Query to issue both the
+    # health and companies fetches end-to-end.
     def _autoclose() -> None:
-        time.sleep(8)
+        time.sleep(12)
         try:
             print("[smoke] auto-closing window")
             window.destroy()
         except Exception:
             pass
 
+    # Background bridge-tap: independent verification that the Python side
+    # is reachable. Mirrors what the React app does via window.pywebview.api.
+    def _bridge_tap() -> None:
+        time.sleep(4)  # let pywebview inject api
+        try:
+            print(f"[smoke] bridge.ping: {bridge.ping()}")
+            health = bridge.get_health()
+            print(
+                f"[smoke] bridge.get_health: status={health.get('status')} "
+                f"dialect={health.get('database_dialect')}"
+            )
+            page = bridge.get_companies({"page": 1, "page_size": 3})
+            items = page.get("items", [])
+            total = page.get("pagination", {}).get("total_items")
+            print(
+                f"[smoke] bridge.get_companies: total={total} "
+                f"first={items[0]['company_name'] if items else 'none'}"
+            )
+        except Exception as exc:
+            print(f"[smoke] bridge tap error: {exc!r}")
+
     threading.Thread(target=_autoclose, daemon=True).start()
+    threading.Thread(target=_bridge_tap, daemon=True).start()
     try:
         webview.start()
     finally:
