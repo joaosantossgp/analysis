@@ -150,30 +150,15 @@ try {
 }
 
 # ---------------------------------------------------------------------------
-# Passo 4.5 — Copiar SQLite local para a pasta distribuivel
+# Phase 0 contract: do NOT copy the dev DB into the bundle.
+# The packaged app provisions its DB under %LOCALAPPDATA%\CVMAnalytics\db
+# at first launch (see desktop/app.py::_migrate_legacy_db_once). Shipping the
+# dev DB into dist/ would either be wasted bytes (user has their own runtime
+# DB under LOCALAPPDATA) or unsafe (the old auto-updater overwrote user data
+# with the bundled DB).
 # ---------------------------------------------------------------------------
-Write-Host "[5.5/5] Copiando SQLite local para o distribuivel..." -ForegroundColor Yellow
 
 $DistDir = Join-Path $Root "dist\CVMAnalytics"
-$SourceDb = Join-Path $Root "data\db\cvm_financials.db"
-$TargetDbDir = Join-Path $DistDir "data\db"
-$TargetDb = Join-Path $TargetDbDir "cvm_financials.db"
-
-if (-not (Test-Path $SourceDb)) {
-    throw "SQLite local nao encontrado em $SourceDb. Rode scripts/seed_web_smoke_db.py ou restaure data/db/cvm_financials.db antes de empacotar."
-}
-
-New-Item -ItemType Directory -Force $TargetDbDir | Out-Null
-Copy-Item -Force $SourceDb $TargetDb
-
-foreach ($suffix in @("-wal", "-shm")) {
-    $sidecar = "$SourceDb$suffix"
-    if (Test-Path $sidecar) {
-        Copy-Item -Force $sidecar "$TargetDb$suffix"
-    }
-}
-
-Write-Host "  OK: SQLite copiado para $TargetDb" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
 # Resultado
