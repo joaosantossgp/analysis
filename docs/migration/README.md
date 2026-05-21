@@ -32,7 +32,7 @@ To:
 
 | Phase | Name | Status | Notes |
 |---|---|---|---|
-| Phase 0 | User-data safety net | Released as v0.3.0; soak pending | Runtime DB moved to LOCALAPPDATA; update helper hardened |
+| Phase 0 | User-data safety net | Released as v0.3.1 (hotfix over v0.3.0); soak pending | Runtime DB moved to LOCALAPPDATA; update helper hardened; pywebview/.NET startup fixed in v0.3.1 |
 | Phase 1 | Parallel Vite SPA shell | Not started | Do not delete Next yet |
 | Phase 2 | Wire Vite SPA into pywebview | Not started | Remove production Node only after prototype works |
 | Phase 3 | Mandatory legacy deletion | Not started | Delete Next/FastAPI legacy only after parity |

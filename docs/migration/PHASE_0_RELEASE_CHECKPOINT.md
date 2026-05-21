@@ -9,7 +9,20 @@
 
 ## Status
 
-Phase 0 is released.
+Phase 0 is released. **v0.3.0 was superseded by v0.3.1 due to a packaging bug.**
+
+### v0.3.1 hotfix
+
+- Tag: v0.3.1
+- GitHub Release: https://github.com/joaosantossgp/analisys/releases/tag/v0.3.1
+- Artifact: CVMAnalytics-windows-v0.3.1.zip
+- SHA-256: f7c648336d67321780ee5add53a0f94daba394417943c5315a6fe4575bae6105
+
+**Root cause of v0.3.0 failure:** `Python.Runtime.deps.json` was missing from `_internal/pythonnet/runtime/`. PyInstaller's default collector shipped only `Python.Runtime.dll`. Without the sibling `.deps.json`, the .NET CLR could not bind the assembly's framework references, so pywebview's WinForms backend crashed with `RuntimeError: Failed to resolve Python.Runtime.Loader.Initialize`. The bug was invisible on developer machines because the dev Python install provided the missing pieces on PATH.
+
+**Fix:** `desktop/app.spec` now walks `pythonnet/runtime/` and ships every file (`dll`, `deps.json`, `xml`, `pdb`). UPX disabled entirely as belt-and-suspenders. Startup preflight (`_preflight_pywebview_backend`) catches `import clr` failures and shows a native MessageBox instead of a raw traceback.
+
+**Validated against the published v0.3.1 asset:** `gh release download` → MOTW (ZoneId=3) → `Expand-Archive` → launch → process alive after 25s with 20 `msedgewebview2.exe` child processes.
 
 ## What Phase 0 solved
 
