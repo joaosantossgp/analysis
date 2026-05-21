@@ -35,7 +35,7 @@ The authoritative runtime is the packaged Windows desktop executable. The Vercel
 │    • Bundled node.exe              – runs the standalone       │
 │                                                                │
 │  User-writable data lives outside the install dir:             │
-│    %LOCALAPPDATA%\CVMAnalytics\db\cvm_financials.db            │
+│    %USERPROFILE%\Documents\CVMAnalytics\db\cvm_financials.db   │
 └────────────────────────────────────────────────────────────────┘
 ```
 
@@ -54,18 +54,36 @@ A migration to a static Vite + React frontend and removal of the bundled Node ru
 
 ## User Data Location
 
+Active runtime data root (Phase 3C and later):
+
 ```
-%LOCALAPPDATA%\CVMAnalytics\
+%USERPROFILE%\Documents\CVMAnalytics\
   db\
     cvm_financials.db            ← active runtime database
   output\                        ← Excel exports
   logs\                          ← refresh / app logs
   cache\
-  backup\                        ← legacy DB snapshots on first migration
-  update_rollback\               ← pre-update snapshots of swapped bundle files
-  versions\                      ← staged update bundles
+  backup\                        ← legacy DB snapshots from migration
   recovery.log
 ```
+
+Resolution priority for the active root:
+
+1. `CVMANALYTICS_DATA_DIR` environment variable (operator override).
+2. `%USERPROFILE%\Documents\CVMAnalytics` (Phase 3C default).
+3. `%LOCALAPPDATA%\CVMAnalytics` (pre-Phase-3C fallback if `USERPROFILE`
+   is unset, e.g. service accounts).
+
+Updater-internal staging is kept separately under
+`%LOCALAPPDATA%\CVMAnalytics\` (`versions/`, `update_rollback/`). These
+paths are deny-listed by the updater allowlist and are unrelated to the
+runtime data root above.
+
+Legacy migration: on first launch under v0.7.0+, if the Documents data
+root has no database, the app does a WAL-safe `sqlite3 .backup` copy
+from the first existing legacy source (LocalAppData, then install-dir).
+Legacy originals are never moved or deleted, and Documents DB is never
+overwritten if it already exists.
 
 User data is never written under the install directory. The updater can never overwrite these paths.
 
@@ -90,7 +108,7 @@ python scripts/runtime_doctor.py --require-canonical
 python -m desktop.app --dev
 ```
 
-Dev-mode database lives at `data/db/cvm_financials.db` (repo-relative). The LOCALAPPDATA contract only applies to the packaged executable.
+Dev-mode database lives at `data/db/cvm_financials.db` (repo-relative). The Documents data-root contract only applies to the packaged executable.
 
 Headless and HTTP alternatives:
 
@@ -182,7 +200,7 @@ tests/           Pytest suite
 - Windows-only. macOS and Linux are not supported targets.
 - Requires Microsoft Edge WebView2 runtime (preinstalled on Windows 11; usually present on recent Windows 10).
 - First boot of the packaged app spawns a Node.js child process for the embedded Next standalone server. Node is bundled but will be removed in Phase 2.
-- The dev database under `data/db/cvm_financials.db` is for developer use only. End users do not need it; the packaged app provisions its own DB under `%LOCALAPPDATA%`.
+- The dev database under `data/db/cvm_financials.db` is for developer use only. End users do not need it; the packaged app provisions its own DB under `%USERPROFILE%\Documents\CVMAnalytics` (with WAL-safe migration from legacy `%LOCALAPPDATA%` if present).
 - No telemetry. No crash reporting service is wired into the local desktop app.
 
 ## License

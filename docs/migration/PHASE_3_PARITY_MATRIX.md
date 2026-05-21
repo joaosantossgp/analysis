@@ -1,14 +1,13 @@
 # Phase 3 - Functional Parity Matrix
 
-Status: Phase 3A shipped in `v0.5.0` with the first missing Vite screen
-(financial statements). Phase 3B is **partial**: v0.6.0 shipped the Vite
-Update Base screen and bridge plumbing; v0.6.1 added the
-`get_database_diagnostics` bridge method, a real local-DB diagnostics panel
-(actual row counts for `companies`, `financial_reports`, `refresh_jobs`,
-`company_refresh_status`, `qa_logs`), post-job row-count delta detection,
-and app-updater vs data-updater wording. Parity is not declared complete
-until the user confirms that running the flow from a downloaded release
-visibly populates the runtime DB. The default runtime is still Next/Node.
+Status: Phase 3A shipped in `v0.5.0` (financial statements). Phase 3B
+shipped in `v0.6.0` and was accepted in `v0.6.1` (Update Base + DB
+diagnostics + post-job delta). Phase 3C shipped in `v0.7.0`: 3C.0
+standardised the persistent runtime data root at
+`%USERPROFILE%\Documents\CVMAnalytics` with WAL-safe migration from the
+legacy `%LOCALAPPDATA%\CVMAnalytics` location, and 3C.1 added the Vite
+Indicadores screen at `/empresas/:cdCvm/indicadores`. The default
+runtime is still Next/Node.
 
 Scope of this document:
 
@@ -26,10 +25,10 @@ Scope of this document:
 | Company directory (`/empresas`) | Search, sector filter, pagination, card/list modes, loading/error states, desktop bridge loader. | Implemented as Vite root with debounced search and pagination. Sector filters and card/list mode are missing. | Existing `get_companies`; optional `get_company_filters`. | P0 | Medium | Medium | Add sector filters and view parity before default switch. |
 | Company detail overview (`/empresas/[cd_cvm]?aba=visao-geral`) | Header, company metadata, year selector, annual KPI overview, freshness/download controls, request-refresh controls. | Implemented route `/empresas/:cdCvm` with header and annual KPI table. Missing freshness/download/request-refresh controls and richer KPI cards/charts. | Existing `get_company_info`, `get_company_years`, `get_company_kpis`, `get_refresh_status`, `request_refresh`. | P0 | Medium | Medium | Complete controls after statements and export. |
 | Financial statements (`/empresas/[cd_cvm]?aba=demonstracoes&stmt=...`) | Statement tab with DRE/BPA/BPP/DFC selector, row filter, sticky account column, compact money formatting, empty/error states. | Implemented in Phase 3A as `/empresas/:cdCvm/demonstrativos?stmt=DRE`. Uses DRE/BPA/BPP/DFC selector, row filter, loading/error/empty states, real data table. | Existing `get_company_statement`, plus existing company info/year methods. | P0 | Medium | Medium | Done for first parity slice. Later add manual year selection if needed. |
-| KPIs / indicators | Annual and quarterly KPI bundle available; Next overview uses KPI cards/tables and chart panels. | Partial: annual KPI table only. No quarterly view or chart panel. | Existing `get_company_kpis`. | P0 | Medium | Medium | Add complete annual/quarterly indicator screen after export or sectors. |
+| KPIs / indicators | Annual and quarterly KPI bundle available; Next overview uses KPI cards/tables and chart panels. | **Implemented in Phase 3C.1 (v0.7.0)** at `/empresas/:cdCvm/indicadores`: year multi-select with "Last 5" / "All" presets, KPI summary cards (Receita líquida, EBITDA, Lucro líquido, Margem líquida) for latest selected year, annual table + quarterly table with categoria/unidade columns, unit-aware formatting (R$ mn / % / x / bps), missing values rendered as em dash. | Existing `get_company_kpis`, `get_company_years`. | P0 | Medium | Medium | Done for parity slice. Add chart panels in a later iteration. |
 | Sectors directory (`/setores`) | GICS sector/sub-sector directory with counts, snapshots, company previews, empty/error states. | Missing. | Existing `get_sectors`. | P0 | Medium | Medium | Port after company-level essentials. |
 | Sector detail (`/setores/[slug]`, `/setores/[slug]/[sub_slug]`) | Year selector, aggregate KPIs, yearly overview, company table, breadcrumbs. | Missing. | Existing `get_sector_detail`, `get_sub_sector_detail`. | P0 | Medium | Medium | Port with sectors directory as one coherent slice. |
-| Update base / refresh data (`/atualizar-base`) | Administrative refresh dashboard: base health, scopes, filters, job progress, history, cancel flow. | **Partial.** v0.6.0 wired the screen; v0.6.1 added the real local-DB diagnostics panel (db_path, db_size, row counts for `companies`, `financial_reports`, `refresh_jobs`, `company_refresh_status`, `qa_logs`), post-job delta with explicit warning when a job finishes but no rows are inserted, app-updater vs data-updater wording, and a saner default `limit` of 5. User has not yet accepted parity — needs a successful empty-DB → populated-DB run from the downloaded release. | Existing `get_base_health`, `request_refresh`, `cancel_refresh`, `get_refresh_status`; new `get_database_diagnostics`. | P0 | High | High | Validate empty-DB run end-to-end from a downloaded release before marking complete. |
+| Update base / refresh data (`/atualizar-base`) | Administrative refresh dashboard: base health, scopes, filters, job progress, history, cancel flow. | **Implemented (v0.6.1 accepted).** v0.7.0 adds the Documents data root and `data_root` field in the diagnostics panel. | Existing `get_base_health`, `request_refresh`, `cancel_refresh`, `get_refresh_status`; new `get_database_diagnostics`. | P0 | High | High | Done. Operator filters (sector / status) can be added later. |
 | Single-company refresh controls | Next company detail can request a period refresh and show progress. | Missing. | Existing `request_refresh`, `get_refresh_status`. | P0 | Medium | High | Port before Vite default; write path but already bridged. |
 | Excel export / save flows | Next has Excel export/download button and desktop bridge save/download path. | Missing. | Existing `save_company_excel`, `download_company_excel`. | P0 | Medium | Medium | Recommended next narrow slice: add export action to company detail/statements. |
 | Auto-updater UI | Next shows floating update prompt through `check_update` / `apply_update`; local snooze only. | Missing. | Existing `check_update`, `apply_update`, `snooze_update`, `get_update_progress`. | P0 | Medium | High | Required before default switch so users keep in-app update prompts. |

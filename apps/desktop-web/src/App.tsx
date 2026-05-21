@@ -3,6 +3,7 @@ import { HashRouter, NavLink, Route, Routes } from "react-router-dom";
 import { BridgeStatus } from "./components/BridgeStatus";
 import { CompaniesPage } from "./routes/CompaniesPage";
 import { CompanyDetailPage } from "./routes/CompanyDetailPage";
+import { CompanyKpisPage } from "./routes/CompanyKpisPage";
 import { CompanyStatementsPage } from "./routes/CompanyStatementsPage";
 import { HealthPage } from "./routes/HealthPage";
 import { UpdateBasePage } from "./routes/UpdateBasePage";
@@ -42,6 +43,10 @@ export function App() {
             <Route
               path="/empresas/:cdCvm/demonstrativos"
               element={<CompanyStatementsPage />}
+            />
+            <Route
+              path="/empresas/:cdCvm/indicadores"
+              element={<CompanyKpisPage />}
             />
           </Routes>
         </main>

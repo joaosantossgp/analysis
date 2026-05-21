@@ -2,15 +2,18 @@
 
 ## Status
 
-**Phase 3B experimental runtime.** This package exists in parallel to `apps/web/` (Next.js). It does **not** replace the default production UI yet. The default desktop executable still starts the Next.js standalone server through bundled Node; passing `--vite` starts this Vite SPA instead.
+**Phase 3C experimental runtime.** This package exists in parallel to `apps/web/` (Next.js). It does **not** replace the default production UI yet. The default desktop executable still starts the Next.js standalone server through bundled Node; passing `--vite` starts this Vite SPA instead.
 
-Five screens with dynamic routing prove the architecture:
+Screens with dynamic routing prove the architecture:
 
 - **Companies directory** (`/`) — `CVMBridge.get_companies(...)` with debounced search, pagination, loading/error/empty states. Powered by TanStack Query.
 - **Company detail** (`/empresas/:cdCvm`) — dynamic route. Fetches `get_company_info`, `get_company_years`, and `get_company_kpis` in parallel. Header card + annual KPI table with format-aware cells (pct/money/ratio).
+- **Indicadores (KPIs)** (`/empresas/:cdCvm/indicadores`) — Phase 3C.1. Year multi-select with "Last 5" / "All" presets, KPI summary cards for the latest selected year, annual + quarterly tables with unit-aware formatting (R$ mn / % / x / bps). Missing values render as em dash.
 - **Financial statements** (`/empresas/:cdCvm/demonstrativos?stmt=DRE`) — DRE/BPA/BPP/DFC matrix via `get_company_statement`, with real data, statement switching, row filtering, loading/error/empty states.
-- **Update Base** (`/atualizar-base`) — local database health, empty-DB guidance, guarded refresh start with optional CVM-code targeting, job polling, logs, history, cancel, and LOCALAPPDATA storage note through `get_base_health`, `request_refresh`, `get_refresh_status`, and `cancel_refresh`.
+- **Update Base** (`/atualizar-base`) — local database health, empty-DB guidance, real DB diagnostics panel (db_path, data_root, row counts via `get_database_diagnostics`), post-job row-count delta with explicit warning when a refresh inserts zero rows, guarded refresh start with optional CVM-code targeting, job polling, logs, history, cancel.
 - **Runtime health** (`/health`) — `CVMBridge.get_health()` rendering status, version, dialect.
+
+Persistent data root (Phase 3C.0): `%USERPROFILE%\Documents\CVMAnalytics` by default; override with `CVMANALYTICS_DATA_DIR`. On first launch the app does a WAL-safe `sqlite3.backup` from any legacy `%LOCALAPPDATA%\CVMAnalytics\db\cvm_financials.db` or `<install-dir>\data\db\cvm_financials.db` it finds. Legacy originals are never moved or deleted.
 
 Router: `react-router-dom` v7 with `HashRouter` (portable across `file://`, `http://127.0.0.1:<port>`, and pywebview's `http_server=True`).
 

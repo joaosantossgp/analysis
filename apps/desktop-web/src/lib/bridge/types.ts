@@ -215,6 +215,7 @@ export type CancelRefreshResponse = {
 
 export type DatabaseDiagnostics = {
   db_path: string | null;
+  data_root: string | null;
   db_exists: boolean;
   db_size_bytes: number;
   is_empty: boolean;

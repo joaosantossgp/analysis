@@ -57,12 +57,41 @@ def _runtime_dir() -> Path:
     return _repo_root()
 
 
-def _user_data_root() -> Path:
-    """Authoritative location for user-writable runtime data on Windows.
+def _documents_data_root() -> Path | None:
+    """Default Phase 3C user-visible data root: %USERPROFILE%\\Documents\\CVMAnalytics."""
+    profile = os.environ.get("USERPROFILE")
+    if not profile:
+        return None
+    return Path(profile) / "Documents" / _USER_DATA_DIR_NAME
 
-    Resolves to %LOCALAPPDATA%\\CVMAnalytics, or falls back to the system temp
-    directory if LOCALAPPDATA is unset (non-Windows test environments).
+
+def _legacy_localappdata_root() -> Path:
+    """Pre-Phase-3C location of runtime data: %LOCALAPPDATA%\\CVMAnalytics.
+
+    Still used by the updater (`desktop/updater.py`) and `update_helper.ps1`
+    for staging/rollback. Kept as a migration source for the active runtime
+    data root.
     """
+    base = os.environ.get("LOCALAPPDATA") or tempfile.gettempdir()
+    return Path(base) / _USER_DATA_DIR_NAME
+
+
+def _user_data_root() -> Path:
+    """Authoritative location for user-writable runtime data.
+
+    Resolution order:
+      1. ``CVMANALYTICS_DATA_DIR`` env var (operator override).
+      2. ``%USERPROFILE%\\Documents\\CVMAnalytics`` (Phase 3C default).
+      3. ``%LOCALAPPDATA%\\CVMAnalytics`` (pre-3C default; kept as fallback
+         when USERPROFILE is missing, e.g. service accounts).
+      4. ``<tempdir>/CVMAnalytics`` (non-Windows / test fallback).
+    """
+    override = os.environ.get("CVMANALYTICS_DATA_DIR")
+    if override:
+        return Path(override)
+    docs = _documents_data_root()
+    if docs is not None:
+        return docs
     base = os.environ.get("LOCALAPPDATA") or tempfile.gettempdir()
     return Path(base) / _USER_DATA_DIR_NAME
 
@@ -96,20 +125,31 @@ def _configure_bundled_data_paths() -> None:
 
 
 def _migrate_legacy_db_once() -> None:
-    """Migrate any pre-Phase-0 install-dir DB into LOCALAPPDATA.
+    """Migrate any pre-Phase-3C runtime DB into the active user data root.
 
-    Idempotency comes from target-existence check, not a sentinel file.
-    If the user's runtime DB already exists at the target location, we
-    never touch it.
+    The active runtime data root is resolved by `_user_data_root()` and now
+    defaults to ``%USERPROFILE%\\Documents\\CVMAnalytics`` (Phase 3C). This
+    function copies (never moves, never deletes) a legacy DB from older
+    locations into the active root when, and only when, the active root has
+    no DB of its own.
+
+    Source priority (first existing wins):
+      1. ``%LOCALAPPDATA%\\CVMAnalytics\\db\\cvm_financials.db`` (Phase 0
+         through 3B).
+      2. ``<install-dir>\\data\\db\\cvm_financials.db`` (pre-Phase-0).
+
+    Idempotency comes from the target-existence check, not a sentinel file.
+    If the user's runtime DB already exists at the active root, we never
+    touch it.
 
     WAL safety: we use sqlite3.Connection.backup() on a read-only handle of
     the source. The Backup API captures a consistent snapshot including any
     uncheckpointed pages in -wal, so the target file is self-contained and
     safe to open in any journal mode without the original sidecars.
 
-    Recovery: if the target is missing AND no legacy DB is found, we log
-    the situation and return — downstream code initializes a fresh DB via
-    migrations.
+    Recovery: if the active target is missing AND no legacy DB is found,
+    we log the situation and return — downstream code initializes a fresh
+    DB via migrations.
 
     Must run after _configure_bundled_data_paths so paths are provisioned.
     """
@@ -122,12 +162,25 @@ def _migrate_legacy_db_once() -> None:
     if target_db.exists():
         return  # user already has a runtime DB; never overwrite
 
-    legacy_root = _legacy_install_data_root()
-    legacy_db = (
-        legacy_root / "db" / "cvm_financials.db" if legacy_root else None
-    )
+    candidates: list[tuple[str, Path]] = []
+    localappdata_root = _legacy_localappdata_root()
+    # Avoid recursive copy if the active root resolves to the same
+    # LOCALAPPDATA path (e.g. operator override on a service account).
+    if localappdata_root.resolve() != user_root.resolve():
+        candidates.append(("localappdata", localappdata_root / "db" / "cvm_financials.db"))
+    install_root = _legacy_install_data_root()
+    if install_root is not None:
+        candidates.append(("install_dir", install_root / "db" / "cvm_financials.db"))
 
-    if legacy_db is None or not legacy_db.exists():
+    legacy_label: str | None = None
+    legacy_db: Path | None = None
+    for label, candidate in candidates:
+        if candidate.exists():
+            legacy_label = label
+            legacy_db = candidate
+            break
+
+    if legacy_db is None:
         _log_recovery(
             user_root,
             "no target DB and no legacy DB found; downstream will init fresh",
@@ -135,7 +188,7 @@ def _migrate_legacy_db_once() -> None:
         return
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    backup_dir = user_root / "backup" / f"legacy-db-{timestamp}"
+    backup_dir = user_root / "backup" / f"legacy-db-{legacy_label}-{timestamp}"
     try:
         backup_dir.mkdir(parents=True, exist_ok=True)
         # Informational raw-file snapshot. May be WAL-inconsistent without
@@ -164,7 +217,11 @@ def _migrate_legacy_db_once() -> None:
             pass
         return
 
-    _log_recovery(user_root, f"migrated legacy DB from {legacy_db}")
+    _log_recovery(
+        user_root,
+        f"migrated legacy DB from {legacy_db} (source={legacy_label}); "
+        "original kept in place",
+    )
 
 
 def _wal_safe_copy_sqlite(source: Path, destination: Path) -> None:

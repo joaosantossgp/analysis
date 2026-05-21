@@ -595,7 +595,9 @@ class CVMBridge:
         try:
             svc = self._svc()
             db_path = svc.settings.paths.db_path
+            data_dir = svc.settings.paths.data_dir
             db_path_str = str(db_path)
+            data_root_str = str(data_dir)
             db_exists = db_path.exists()
             db_size_bytes = int(db_path.stat().st_size) if db_exists else 0
 
@@ -650,6 +652,7 @@ class CVMBridge:
                 except Exception as exc:
                     return self._sanitize_for_json({
                         "db_path": db_path_str,
+                        "data_root": data_root_str,
                         "db_exists": db_exists,
                         "db_size_bytes": db_size_bytes,
                         "is_empty": True,
@@ -668,6 +671,7 @@ class CVMBridge:
 
             return self._sanitize_for_json({
                 "db_path": db_path_str,
+                "data_root": data_root_str,
                 "db_exists": db_exists,
                 "db_size_bytes": db_size_bytes,
                 "is_empty": is_empty,
@@ -679,6 +683,7 @@ class CVMBridge:
         except Exception as exc:
             return self._sanitize_for_json({
                 "db_path": None,
+                "data_root": None,
                 "db_exists": False,
                 "db_size_bytes": 0,
                 "is_empty": True,

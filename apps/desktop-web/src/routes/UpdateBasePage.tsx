@@ -258,7 +258,7 @@ function PageHeader({ bridgeReady }: { bridgeReady: boolean }) {
           <h2 className="text-2xl font-semibold text-zinc-50">Atualizar Base</h2>
           <p className="max-w-2xl text-sm leading-6 text-zinc-400">
             Downloads CVM filings and writes them into the local SQLite database under
-            <span className="mx-1 font-mono text-zinc-300">%LOCALAPPDATA%\CVMAnalytics\db</span>.
+            <span className="mx-1 font-mono text-zinc-300">Documents\CVMAnalytics\db</span>.
             This is the <em>data</em> refresh, not the application updater.
           </p>
         </div>
@@ -327,6 +327,12 @@ function DatabaseDiagnosticsPanel({
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="text-lg font-semibold text-zinc-100">Local database</h3>
+          {diagnostics.data_root ? (
+            <p className="mt-1 text-xs text-zinc-500">
+              Data root:{" "}
+              <span className="font-mono text-zinc-300">{diagnostics.data_root}</span>
+            </p>
+          ) : null}
           <p className="mt-1 font-mono text-xs text-zinc-400">
             {diagnostics.db_path ?? "path unavailable"}
           </p>
@@ -731,26 +737,38 @@ function OptionalCvmField({
 function LocalDataPanel() {
   return (
     <article className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-5 shadow-lg">
-      <h3 className="text-lg font-semibold text-zinc-100">Local storage</h3>
+      <h3 className="text-lg font-semibold text-zinc-100">Dados locais</h3>
       <dl className="mt-4 space-y-3 text-sm">
         <div>
-          <dt className="text-xs uppercase tracking-wider text-zinc-500">Runtime root</dt>
-          <dd className="mt-1 font-mono text-xs text-zinc-200">%LOCALAPPDATA%\CVMAnalytics</dd>
-        </div>
-        <div>
-          <dt className="text-xs uppercase tracking-wider text-zinc-500">Database</dt>
+          <dt className="text-xs uppercase tracking-wider text-zinc-500">Default data root</dt>
           <dd className="mt-1 font-mono text-xs text-zinc-200">
-            %LOCALAPPDATA%\CVMAnalytics\db\cvm_financials.db
+            %USERPROFILE%\Documents\CVMAnalytics
           </dd>
+          <p className="mt-1 text-[11px] leading-4 text-zinc-500">
+            The exact path used by this runtime is shown above in
+            <span className="ml-1">Local database</span>.
+          </p>
         </div>
         <div>
-          <dt className="text-xs uppercase tracking-wider text-zinc-500">Output reports</dt>
-          <dd className="mt-1 font-mono text-xs text-zinc-200">%LOCALAPPDATA%\CVMAnalytics\output</dd>
+          <dt className="text-xs uppercase tracking-wider text-zinc-500">Override</dt>
+          <dd className="mt-1 font-mono text-xs text-zinc-200">CVMANALYTICS_DATA_DIR</dd>
+          <p className="mt-1 text-[11px] leading-4 text-zinc-500">
+            Set this environment variable to redirect db / output / logs / cache.
+          </p>
+        </div>
+        <div>
+          <dt className="text-xs uppercase tracking-wider text-zinc-500">Legacy migration</dt>
+          <dd className="mt-1 text-xs text-zinc-300">
+            On first launch, if no Documents DB exists, the app copies any DB found at
+            <span className="ml-1 font-mono">%LOCALAPPDATA%\CVMAnalytics\db</span> or
+            <span className="ml-1 font-mono">&lt;install-dir&gt;\data\db</span> into
+            Documents. The original files are never moved or deleted.
+          </dd>
         </div>
       </dl>
       <p className="mt-4 text-xs leading-5 text-zinc-500">
-        Refresh data stays on this machine. The app downloads public CVM filings and writes local
-        SQLite data and generated reports under the desktop user-data folder.
+        Dados locais salvos em <span className="font-mono">Documents\CVMAnalytics</span>.
+        Refresh data stays on this machine — no cloud storage.
       </p>
     </article>
   );
