@@ -1836,7 +1836,11 @@ class CVMReadService:
             blocks=blocks,
         )
 
-    def build_company_excel_export(self, cd_cvm: int) -> tuple[str, bytes]:
+    def build_company_excel_export(
+        self,
+        cd_cvm: int,
+        statement_type: Optional[str] = None,
+    ) -> tuple[str, bytes]:
         company_info = self.get_company_info_dict(cd_cvm)
         if not company_info:
             raise ValueError(f"Empresa {cd_cvm} nao encontrada.")
@@ -1845,29 +1849,42 @@ class CVMReadService:
         if not years:
             raise ValueError(f"Empresa {cd_cvm} nao possui anos disponiveis para exportacao.")
 
-        statements = {
-            stmt_type: self.get_statement_dataframe(cd_cvm, years, stmt_type)
-            for stmt_type in EXPORT_STATEMENT_TYPES
-        }
-        exportable_statements = {
-            stmt_type: df
-            for stmt_type, df in statements.items()
-            if df is not None and not df.empty
-        }
-        extra_sheets = [
-            stmt_type
-            for stmt_type in ("DVA", "DMPL")
-            if stmt_type in exportable_statements
-        ]
-        kpis_df = self.get_kpi_bundle(cd_cvm, years).quarterly_dataframe()
+        if statement_type:
+            df = self.get_statement_dataframe(cd_cvm, years, statement_type)
+            statements = {statement_type: df}
+            exportable_statements = {
+                statement_type: df
+            } if df is not None and not df.empty else {}
+            extra_sheets = [statement_type] if statement_type in ("DVA", "DMPL") else []
+            kpis_df = pd.DataFrame()
+        else:
+            statements = {
+                stmt_type: self.get_statement_dataframe(cd_cvm, years, stmt_type)
+                for stmt_type in EXPORT_STATEMENT_TYPES
+            }
+            exportable_statements = {
+                stmt_type: df
+                for stmt_type, df in statements.items()
+                if df is not None and not df.empty
+            }
+            extra_sheets = [
+                stmt_type
+                for stmt_type in ("DVA", "DMPL")
+                if stmt_type in exportable_statements
+            ]
+            kpis_df = self.get_kpi_bundle(cd_cvm, years).quarterly_dataframe()
 
         exporter = ExcelExporter(
             company_info=company_info,
             statements=exportable_statements,
             kpis_df=kpis_df,
             extra_sheets=extra_sheets,
+            statement_type=statement_type,
         )
-        return build_excel_filename(company_info), exporter.export()
+        return (
+            build_excel_filename(company_info, statement_type=statement_type),
+            exporter.export(statement_type=statement_type)
+        )
 
     def get_health_snapshot(
         self,

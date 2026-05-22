@@ -288,8 +288,16 @@ class CVMBridge:
                     "ok": False,
                     "error": "cd_cvm ausente ou invalido",
                 })
+            statement_type = p.get("statement_type")
+            if statement_type:
+                statement_type = str(statement_type).upper()
+                if statement_type not in ("DRE", "BPA", "BPP", "DFC", "DVA", "DMPL"):
+                    return self._sanitize_for_json({
+                        "ok": False,
+                        "error": f"Tipo de demonstracao invalido: {statement_type}",
+                    })
             svc = self._svc()
-            filename, payload = svc.build_company_excel_export(cd_cvm)
+            filename, payload = svc.build_company_excel_export(cd_cvm, statement_type=statement_type)
             output_dir = Path(svc.settings.paths.output_dir)
             output_dir.mkdir(parents=True, exist_ok=True)
             target = self._unique_output_path(output_dir, filename)
@@ -763,12 +771,12 @@ class CVMBridge:
             return self._sanitize_for_json({
                 **cached_status,
                 "progress": progress,
-                "apply_supported": False,
+                "apply_supported": True,
             })
         try:
             from desktop.__version__ import __version__  # noqa: PLC0415
             from desktop.updater import UpdateChecker  # noqa: PLC0415
-
+ 
             checker = UpdateChecker()
             status = checker.get_latest_release_status(__version__)
             if status.get("update_available") and status.get("zip_url"):
@@ -797,7 +805,7 @@ class CVMBridge:
             return self._sanitize_for_json({
                 **status,
                 "progress": progress,
-                "apply_supported": False,
+                "apply_supported": True,
             })
         except Exception as exc:
             return self._sanitize_for_json({
@@ -810,7 +818,7 @@ class CVMBridge:
                 "status": "check_failed",
                 "error": f"Could not check GitHub Releases: {exc}",
                 "progress": progress,
-                "apply_supported": False,
+                "apply_supported": True,
             })
 
     @staticmethod

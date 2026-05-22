@@ -75,20 +75,25 @@ def build_excel_file_stem(
     company_info: dict,
     *,
     generated_at: datetime | None = None,
+    statement_type: str | None = None,
 ) -> str:
     """Retorna o file stem padrao usado pelos downloads de Excel."""
     timestamp = generated_at or datetime.now()
     ticker = company_info.get("ticker_b3") or f"cvm{company_info.get('cd_cvm', '')}"
     safe_ticker = str(ticker).replace(" ", "_").replace("/", "-")
-    return f"{safe_ticker}_{timestamp.strftime('%Y%m%d')}"
+    stem = f"{safe_ticker}_{timestamp.strftime('%Y%m%d')}"
+    if statement_type:
+        stem = f"{safe_ticker}_{statement_type}_{timestamp.strftime('%Y%m%d')}"
+    return stem
 
 
 def build_excel_filename(
     company_info: dict,
     *,
     generated_at: datetime | None = None,
+    statement_type: str | None = None,
 ) -> str:
-    return f"{build_excel_file_stem(company_info, generated_at=generated_at)}.xlsx"
+    return f"{build_excel_file_stem(company_info, generated_at=generated_at, statement_type=statement_type)}.xlsx"
 
 
 class ExcelExporter:
@@ -112,11 +117,13 @@ class ExcelExporter:
         statements: dict[str, pd.DataFrame],
         kpis_df: pd.DataFrame,
         extra_sheets: Optional[list[str]] = None,
+        statement_type: Optional[str] = None,
     ):
         self.info       = company_info
         self.stmts      = statements
         self.kpis       = kpis_df
         self.extra      = extra_sheets or []
+        self.statement_type = statement_type
         self._wb:  xlsxwriter.Workbook | None = None
         self._fmt: dict = {}
 
@@ -124,22 +131,29 @@ class ExcelExporter:
     # API pública
     # ──────────────────────────────────────────────────────────────────────
 
-    def export(self) -> bytes:
+    def export(self, statement_type: Optional[str] = None) -> bytes:
         """Retorna o workbook como bytes. Pronto para download ou escrita em disco."""
+        stmt_t = statement_type or self.statement_type
         buf = io.BytesIO()
         self._wb = xlsxwriter.Workbook(buf, {"in_memory": True, "nan_inf_to_errors": True})
         self._build_formats()
 
         self._write_capa()
-        self._write_general()
-        self._write_kpis()
-        for stmt in ["DRE", "BPA", "BPP", "DFC"]:
-            if stmt in self.stmts and not self.stmts[stmt].empty:
-                self._write_statement(stmt)
-        for stmt in ["DVA", "DMPL"]:
-            if stmt in self.extra and stmt in self.stmts and not self.stmts[stmt].empty:
-                self._write_statement(stmt)
-        self._write_metadata()
+        if not stmt_t:
+            self._write_general()
+            self._write_kpis()
+            for stmt in ["DRE", "BPA", "BPP", "DFC"]:
+                if stmt in self.stmts and not self.stmts[stmt].empty:
+                    self._write_statement(stmt)
+            for stmt in ["DVA", "DMPL"]:
+                if stmt in self.extra and stmt in self.stmts and not self.stmts[stmt].empty:
+                    self._write_statement(stmt)
+        else:
+            if stmt_t in self.stmts and not self.stmts[stmt_t].empty:
+                self._write_statement(stmt_t)
+            elif stmt_t in ["DVA", "DMPL"] and stmt_t in self.extra and stmt_t in self.stmts and not self.stmts[stmt_t].empty:
+                self._write_statement(stmt_t)
+        self._write_metadata(statement_type=stmt_t)
 
         self._wb.close()
         buf.seek(0)
@@ -560,7 +574,7 @@ class ExcelExporter:
     # Aba METADADOS
     # ──────────────────────────────────────────────────────────────────────
 
-    def _write_metadata(self):
+    def _write_metadata(self, statement_type: Optional[str] = None):
         ws = self._wb.add_worksheet("METADADOS")
         ws.set_column("A:A", 30)
         ws.set_column("B:B", 60)
@@ -573,10 +587,13 @@ class ExcelExporter:
 
         info = self.info
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        stmts_present = ", ".join(
-            k for k in ["DRE", "BPA", "BPP", "DFC", "DVA", "DMPL"]
-            if k in self.stmts and not self.stmts[k].empty
-        )
+        if statement_type:
+            stmts_present = statement_type
+        else:
+            stmts_present = ", ".join(
+                k for k in ["DRE", "BPA", "BPP", "DFC", "DVA", "DMPL"]
+                if k in self.stmts and not self.stmts[k].empty
+            )
 
         rows = [
             ("Empresa",              info.get("company_name", "—"),          ""),

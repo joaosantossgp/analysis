@@ -3,6 +3,7 @@ import type {
   AppStatusPayload,
   LocalPathInfo,
   OpenStatusPathResult,
+  UpdateProgressStatus,
 } from "../bridge/types";
 
 const BROWSER_REASON =
@@ -41,6 +42,34 @@ export async function openStatusPath(
     throw new Error(response.error || `Could not open ${kind} path.`);
   }
   return response;
+}
+
+export async function triggerCheckUpdate(): Promise<{ available: boolean; version?: string; zip_url?: string; error?: string }> {
+  if (getBridgeMode() === "browser") {
+    return { available: false, error: "Unavailable in browser preview mode." };
+  }
+  return callBridge("check_update", {});
+}
+
+export async function triggerApplyUpdate(): Promise<{ started: boolean; error?: string }> {
+  if (getBridgeMode() === "browser") {
+    return { started: false, error: "Unavailable in browser preview mode." };
+  }
+  return callBridge("apply_update", {});
+}
+
+export async function fetchUpdateProgress(): Promise<UpdateProgressStatus> {
+  if (getBridgeMode() === "browser") {
+    return { status: "idle", percent: 0, error: null };
+  }
+  return callBridge("get_update_progress", {});
+}
+
+export async function triggerSnoozeUpdate(): Promise<{ ok: boolean; error?: string }> {
+  if (getBridgeMode() === "browser") {
+    return { ok: false, error: "Unavailable in browser preview mode." };
+  }
+  return callBridge("snooze_update", {});
 }
 
 function browserFallbackStatus(): AppStatusPayload {

@@ -12,6 +12,7 @@ import type { ExportCompanyResult } from "@/lib/bridge/types";
 
 type Props = {
   cdCvm: number;
+  statementType?: string;
   scopeLabel?: string;
   scopeNote?: string;
   className?: string;
@@ -21,12 +22,15 @@ const SUCCESS_DISPLAY_MS = 12_000;
 
 export function ExportCompanyButton({
   cdCvm,
-  scopeLabel = "Full company workbook",
+  statementType,
+  scopeLabel,
   scopeNote,
   className,
 }: Props) {
   const bridgeMode = getBridgeMode();
   const isDesktop = bridgeMode === "desktop";
+  
+  const finalScopeLabel = scopeLabel || (statementType ? `Demonstrativo ${statementType}` : "Full company workbook");
 
   const outputDirQuery = useQuery<OutputDirOutcome>({
     queryKey: ["output-dir"],
@@ -39,7 +43,7 @@ export function ExportCompanyButton({
   const [lastError, setLastError] = useState<string | null>(null);
 
   const mutation = useMutation({
-    mutationFn: () => exportCompanyWorkbook(cdCvm, { reveal: false }),
+    mutationFn: () => exportCompanyWorkbook(cdCvm, { reveal: false, statementType }),
     onSuccess: (outcome) => {
       setLastOutcome(outcome);
       if (outcome.mode === "desktop" && outcome.result.error) {
@@ -98,7 +102,7 @@ export function ExportCompanyButton({
           {isRunning ? "Exportando…" : "Exportar Excel"}
         </button>
         <span className="text-[10px] uppercase tracking-widest text-zinc-500">
-          {scopeLabel}
+          {finalScopeLabel}
         </span>
       </div>
       {scopeNote ? (
@@ -111,6 +115,7 @@ export function ExportCompanyButton({
         successResult={successResult}
         errorMessage={errorMessage}
         isRunning={isRunning}
+        statementType={statementType}
       />
     </div>
   );
@@ -123,6 +128,7 @@ function StatusLine({
   successResult,
   errorMessage,
   isRunning,
+  statementType,
 }: {
   isUnsupported: boolean;
   outputDir: string | null;
@@ -130,6 +136,7 @@ function StatusLine({
   successResult: ExportCompanyResult | null;
   errorMessage: string | null;
   isRunning: boolean;
+  statementType?: string;
 }) {
   if (isUnsupported) {
     return (
@@ -176,7 +183,9 @@ function StatusLine({
   if (isRunning) {
     return (
       <p className="text-[11px] text-amber-300">
-        Generating workbook (statements + KPIs)…
+        {statementType
+          ? `Generating workbook (${statementType} scope)…`
+          : "Generating workbook (statements + KPIs)…"}
       </p>
     );
   }

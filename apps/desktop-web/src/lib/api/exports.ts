@@ -22,7 +22,7 @@ export type OutputDirOutcome =
 
 export async function exportCompanyWorkbook(
   cdCvm: number,
-  options: { reveal?: boolean } = {},
+  options: { reveal?: boolean; statementType?: string } = {},
 ): Promise<ExportCompanyOutcome> {
   const mode: BridgeMode = getBridgeMode();
   if (mode === "browser") {
@@ -31,6 +31,7 @@ export async function exportCompanyWorkbook(
   const result = await callBridge("export_company_excel", {
     cd_cvm: cdCvm,
     reveal: options.reveal ?? false,
+    statement_type: options.statementType,
   });
   return { mode: "desktop", result };
 }

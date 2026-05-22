@@ -509,6 +509,10 @@ export interface BridgeApi {
   export_company_excel(params: Record<string, unknown>): Promise<ExportCompanyResult>;
   get_output_dir(params?: Record<string, unknown>): Promise<OutputDirInfo>;
   get_sub_sector_detail(params: Record<string, unknown>): Promise<SectorDetailResponse>;
+  check_update(params?: Record<string, unknown>): Promise<{ available: boolean; version?: string; zip_url?: string; error?: string }>;
+  apply_update(params?: Record<string, unknown>): Promise<{ started: boolean; error?: string }>;
+  get_update_progress(params?: Record<string, unknown>): Promise<UpdateProgressStatus>;
+  snooze_update(params?: Record<string, unknown>): Promise<{ ok: boolean; error?: string }>;
 }
 
 declare global {

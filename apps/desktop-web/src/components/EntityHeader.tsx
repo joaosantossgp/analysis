@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { fetchCompanyInfo, type CompanyInfoResult } from "@/lib/api/companyDetail";
 import { ExportCompanyButton } from "./ExportCompanyButton";
@@ -10,6 +10,12 @@ export interface EntityHeaderProps {
 }
 
 export function EntityHeader({ cdCvm, activeTab }: EntityHeaderProps) {
+  const [searchParams] = useSearchParams();
+  const rawStmt = searchParams.get("stmt");
+  const activeStatement = (rawStmt && ["DRE", "BPA", "BPP", "DFC"].includes(rawStmt.toUpperCase()))
+    ? rawStmt.toUpperCase()
+    : "DRE";
+
   const query = useQuery<CompanyInfoResult>({
     queryKey: ["company-info", cdCvm],
     queryFn: () => fetchCompanyInfo(cdCvm),
@@ -123,8 +129,8 @@ export function EntityHeader({ cdCvm, activeTab }: EntityHeaderProps) {
           </p>
         ) : null}
 
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-4 border-t border-zinc-800 pt-4">
-          <div className="flex flex-wrap gap-2 text-xs">
+        <div className="mt-6 flex flex-wrap items-start justify-between gap-4 border-t border-zinc-800 pt-4">
+          <div className="flex flex-wrap gap-2 text-xs mt-1">
             <TabLink to={`/empresas/${cdCvm}`} active={activeTab === "overview"}>
               Overview
             </TabLink>
@@ -135,10 +141,19 @@ export function EntityHeader({ cdCvm, activeTab }: EntityHeaderProps) {
               Indicadores
             </TabLink>
           </div>
-          <ExportCompanyButton
-            cdCvm={info.cd_cvm}
-            scopeNote="Full company workbook — includes DRE, BPA, BPP, DFC (plus DVA/DMPL when available) and KPIs."
-          />
+          <div className="flex flex-col md:flex-row gap-6 items-start">
+            {activeTab === "statements" && (
+              <ExportCompanyButton
+                cdCvm={info.cd_cvm}
+                statementType={activeStatement}
+                scopeNote={`Only the cover, ${activeStatement} sheet, and metadata.`}
+              />
+            )}
+            <ExportCompanyButton
+              cdCvm={info.cd_cvm}
+              scopeNote="Full company workbook — includes DRE, BPA, BPP, DFC (plus DVA/DMPL when available) and KPIs."
+            />
+          </div>
         </div>
       </article>
     </div>

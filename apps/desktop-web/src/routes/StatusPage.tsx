@@ -5,6 +5,8 @@ import {
   fetchAppStatus,
   openStatusPath,
   type StatusPathKind,
+  triggerApplyUpdate,
+  fetchUpdateProgress,
 } from "@/lib/api/appStatus";
 import { PageHeader as UnifiedPageHeader } from "@/components/PageHeader";
 import { whenBridgeReady } from "@/lib/bridge/adapter";
@@ -15,6 +17,7 @@ import type {
   DiagnosticsSummary,
   LocalPathInfo,
   UpdateStatus,
+  UpdateProgressStatus,
 } from "@/lib/bridge/types";
 
 const PATH_ORDER: StatusPathKind[] = ["data", "database", "output", "logs", "cache"];
@@ -299,6 +302,75 @@ function UpdateCard({
   onCheckUpdates: () => void;
 }) {
   const tone = updateTone(update);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<UpdateProgressStatus | null>(update?.progress ?? null);
+  const [isApplying, setIsApplying] = useState(false);
+
+  // Sync initial/updated progress from props
+  useEffect(() => {
+    if (update?.progress) {
+      setProgress(update.progress);
+    }
+  }, [update?.progress]);
+
+  // Poll update progress if status is downloading or swapping
+  useEffect(() => {
+    let intervalId: any = null;
+    const currentStatus = progress?.status;
+    const active = currentStatus === "downloading" || currentStatus === "swapping";
+
+    if (active) {
+      setIsApplying(true);
+      intervalId = setInterval(async () => {
+        try {
+          const prog = await fetchUpdateProgress();
+          setProgress(prog);
+          if (prog.status === "error") {
+            setLocalError(prog.error || "Erro durante a atualização");
+            setIsApplying(false);
+            clearInterval(intervalId);
+          } else if (prog.status === "idle" || prog.status === "success") {
+            setIsApplying(false);
+            clearInterval(intervalId);
+          }
+        } catch (err) {
+          setLocalError(err instanceof Error ? err.message : String(err));
+          setIsApplying(false);
+          clearInterval(intervalId);
+        }
+      }, 1000);
+    } else {
+      setIsApplying(false);
+    }
+
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [progress?.status]);
+
+  const handleApplyUpdate = async () => {
+    setLocalError(null);
+    setShowConfirm(false);
+    setIsApplying(true);
+    setProgress({ status: "downloading", percent: 0, error: null });
+    try {
+      const result = await triggerApplyUpdate();
+      if (!result.started) {
+        setLocalError(result.error || "Não foi possível iniciar a atualização.");
+        setIsApplying(false);
+        setProgress(null);
+      }
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : String(err));
+      setIsApplying(false);
+      setProgress(null);
+    }
+  };
+
+  const hasUpdate = update?.update_available;
+  const canApply = update?.apply_supported && !isApplying;
+
   return (
     <Card title="Software update" eyebrow="GitHub Releases" tone={tone}>
       {!update ? (
@@ -312,43 +384,119 @@ function UpdateCard({
                 <Field label="Current" value={update.current_version ?? "unknown"} mono />
                 <Field label="Latest" value={update.latest_version ?? "unknown"} mono />
                 <Field label="Checked" value={formatDateTime(update.checked_at ?? null)} />
-                <Field label="Install from Vite" value="not enabled" tone="warn" />
+                <Field
+                  label="Install from Vite"
+                  value={update.apply_supported ? "supported" : "not supported"}
+                  tone={update.apply_supported ? "good" : "warn"}
+                />
               </dl>
             </div>
-            <button
-              type="button"
-              disabled={checking}
-              onClick={onCheckUpdates}
-              className="rounded-md border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200 hover:border-cyan-700 hover:text-cyan-100 disabled:cursor-not-allowed disabled:text-zinc-600"
-            >
-              {checking ? "Checking..." : "Check now"}
-            </button>
+            {!isApplying && (
+              <button
+                type="button"
+                disabled={checking}
+                onClick={onCheckUpdates}
+                className="rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200 hover:border-cyan-700 hover:text-cyan-100 disabled:cursor-not-allowed disabled:text-zinc-600 font-mono"
+              >
+                {checking ? "Checking..." : "Check now"}
+              </button>
+            )}
           </div>
-          {update.release_url ? (
+
+          {hasUpdate && canApply && !showConfirm && (
+            <div className="mt-4">
+              <button
+                type="button"
+                onClick={() => setShowConfirm(true)}
+                className="w-full sm:w-auto rounded bg-cyan-600 hover:bg-cyan-500 px-4 py-2 text-xs font-semibold text-white transition-colors"
+              >
+                Instalar atualização
+              </button>
+            </div>
+          )}
+
+          {showConfirm && (
+            <div className="mt-4 rounded border border-amber-500/20 bg-amber-500/5 p-4 space-y-3">
+              <h4 className="text-xs uppercase tracking-wider font-semibold text-amber-200">
+                Confirmar Atualização de Software
+              </h4>
+              <p className="text-xs text-zinc-300 leading-relaxed">
+                O aplicativo será fechado e reiniciado para aplicar a versão{" "}
+                <span className="font-mono text-zinc-100 font-semibold">
+                  {update.latest_version}
+                </span>
+                . Seus dados locais (banco de dados, relatórios e planilhas exportadas) serão preservados.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={handleApplyUpdate}
+                  className="rounded bg-amber-600 hover:bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white transition-colors"
+                >
+                  Confirmar e Fechar App
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowConfirm(false)}
+                  className="rounded border border-zinc-750 hover:border-zinc-500 px-3 py-1.5 text-xs font-semibold text-zinc-300 transition-colors"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )}
+
+          {isApplying && (
+            <div className="mt-4 rounded border border-cyan-500/20 bg-cyan-950/40 p-4 space-y-3">
+              <div className="flex justify-between items-center text-xs">
+                <span className="font-semibold text-cyan-200 capitalize">
+                  {progress?.status === "downloading"
+                    ? "Baixando atualização..."
+                    : progress?.status === "swapping"
+                      ? "Substituindo arquivos..."
+                      : "Preparando..."}
+                </span>
+                <span className="font-mono text-cyan-100 font-bold">{progress?.percent ?? 0}%</span>
+              </div>
+              <div className="w-full bg-zinc-800 rounded-full h-1.5 overflow-hidden">
+                <div
+                  className="bg-cyan-500 h-1.5 rounded-full transition-all duration-300"
+                  style={{ width: `${progress?.percent ?? 0}%` }}
+                />
+              </div>
+              <p className="text-[11px] text-zinc-400">
+                Por favor, não feche o aplicativo. O processo será concluído automaticamente.
+              </p>
+            </div>
+          )}
+
+          {update.release_url && !isApplying && !showConfirm ? (
             <a
               href={update.release_url}
               target="_blank"
               rel="noreferrer"
-              className="mt-4 inline-flex rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200 hover:border-zinc-500 hover:text-zinc-100"
+              className="mt-4 inline-flex rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200 hover:border-zinc-500 hover:text-zinc-100 transition-colors"
             >
               Open release page
             </a>
           ) : null}
-          {update.error ? (
+
+          {(localError || update.error) && (
             <InlineError>
-              {update.status === "check_failed"
-                ? "Could not check GitHub Releases. Check your internet connection or try again later."
-                : update.error}
+              {localError ||
+                (update.status === "check_failed"
+                  ? "Could not check GitHub Releases. Check your internet connection or try again later."
+                  : update.error)}
             </InlineError>
-          ) : null}
-          <p className="mt-4 border-t border-zinc-800 pt-3 text-xs leading-5 text-zinc-500">
-            This card checks the app release/version. Atualizar Base refreshes local CVM
-            financial data and is managed on its own screen.
-          </p>
-          <p className="mt-2 text-xs text-amber-200">
-            Applying software updates from Vite is intentionally unsupported in this screen;
-            existing updater staging remains unchanged.
-          </p>
+          )}
+
+          <div className="mt-4 border-t border-zinc-800 pt-3 text-[11px] leading-relaxed text-zinc-500 space-y-2">
+            <p>
+              <span className="font-semibold text-zinc-400">Nota:</span> Esta atualização altera a versão do software via GitHub Releases.
+              Para atualizar os dados das empresas (demonstrativos CVM), utilize a tela{" "}
+              <span className="font-semibold text-zinc-400">Atualizar Base</span>.
+            </p>
+          </div>
         </>
       )}
     </Card>
