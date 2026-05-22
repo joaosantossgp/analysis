@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
+import { ExportCompanyButton } from "@/components/ExportCompanyButton";
 import {
   fetchCompanyInfo,
   fetchCompanyKpis,
@@ -151,6 +152,12 @@ function CompanyHeaderCard({ info }: { info: CompanyInfo }) {
           {info.read_availability_message}
         </p>
       ) : null}
+      <div className="mt-4 border-t border-zinc-800 pt-4">
+        <ExportCompanyButton
+          cdCvm={info.cd_cvm}
+          scopeNote="Includes DRE, BPA, BPP, DFC (plus DVA/DMPL when available) and the full KPI bundle."
+        />
+      </div>
     </article>
   );
 }

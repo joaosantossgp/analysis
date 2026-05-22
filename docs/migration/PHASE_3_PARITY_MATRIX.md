@@ -12,7 +12,13 @@ filter chips + result count + reset, and new routes `/setores` and
 `/setores/:slug` provide GICS sector browsing and per-sector company
 tables (no invented aggregate KPIs — only counts, coverage, and the
 company list backed by `CVMBridge.get_sectors` /
-`get_sector_detail`). The default runtime is still Next/Node.
+`get_sector_detail`). Phase 3E ships in `v0.9.0`: full company
+workbook Excel export available from company detail, financial
+statements, and indicadores screens. Writes to the persistent
+`Documents/CVMAnalytics/output/` folder via two new bridge methods
+(`export_company_excel`, `get_output_dir`); the legacy
+`save_company_excel` (which writes to `~/Downloads`) is left in
+place for the Next UI. The default runtime is still Next/Node.
 
 Scope of this document:
 
@@ -35,7 +41,7 @@ Scope of this document:
 | Sector detail (`/setores/[slug]`, `/setores/[slug]/[sub_slug]`) | Year selector, aggregate KPIs, yearly overview, company table, breadcrumbs. | **Phase 3D (v0.8.0)**: implemented at `/setores/:slug`. Breadcrumb, company count + base-year header, year selector (`?ano=`), in-sector company search (`?q=`), company table with name / ticker / CVM / sub-industry, links to company detail and to the directory filtered by sector. Sub-sector detail route (`/setores/[slug]/[sub_slug]`) not yet ported — Next still serves it. | Existing `get_sector_detail`; `get_sub_sector_detail` still on Next. | P0 | Medium | Medium | Sub-sector detail can be a follow-up slice. |
 | Update base / refresh data (`/atualizar-base`) | Administrative refresh dashboard: base health, scopes, filters, job progress, history, cancel flow. | **Implemented (v0.6.1 accepted).** v0.7.0 adds the Documents data root and `data_root` field in the diagnostics panel. | Existing `get_base_health`, `request_refresh`, `cancel_refresh`, `get_refresh_status`; new `get_database_diagnostics`. | P0 | High | High | Done. Operator filters (sector / status) can be added later. |
 | Single-company refresh controls | Next company detail can request a period refresh and show progress. | Missing. | Existing `request_refresh`, `get_refresh_status`. | P0 | Medium | High | Port before Vite default; write path but already bridged. |
-| Excel export / save flows | Next has Excel export/download button and desktop bridge save/download path. | Missing. | Existing `save_company_excel`, `download_company_excel`. | P0 | Medium | Medium | Recommended next narrow slice: add export action to company detail/statements. |
+| Excel export / save flows | Next has Excel export/download button and desktop bridge save/download path (writes to `~/Downloads`). | **Phase 3E (v0.9.0)**: full company workbook export from `/empresas/:cdCvm`, `/empresas/:cdCvm/demonstrativos`, and `/empresas/:cdCvm/indicadores`. Reusable `ExportCompanyButton` with idle/running/success/error/unsupported states, shows destination path, file name, file size, and collision-safe suffix. Writes to `Documents/CVMAnalytics/output/`. Per-statement export not yet supported (backend emits one workbook per company). | New bridge `export_company_excel`, `get_output_dir`. Existing `build_company_excel_export`. | P0 | Medium | Medium | Done for parity slice. |
 | Auto-updater UI | Next shows floating update prompt through `check_update` / `apply_update`; local snooze only. | Missing. | Existing `check_update`, `apply_update`, `snooze_update`, `get_update_progress`. | P0 | Medium | High | Required before default switch so users keep in-app update prompts. |
 | Health / status (`/health`) | API/desktop health indicator and route-level problem states. | Implemented as `/health` with bridge health payload. | Existing `get_health`. | P1 | Low | Low | Done enough; polish copy after P0 features. |
 | Settings / about | No dedicated production settings route found; status is mostly health/update prompt. | No dedicated settings/about route. | `get_health`, updater methods if added. | P2 | Low | Low | Defer unless user asks. |
@@ -61,13 +67,19 @@ Scope of this document:
 - Phase 3C.1: KPI/Indicadores route at `/empresas/:cdCvm/indicadores`.
 - Phase 3D: company directory filters (search/sector/URL chips/reset), GICS
   sectors directory at `/setores`, sector detail at `/setores/:slug`.
+- Phase 3E: full company workbook Excel export from company detail,
+  statements, and indicadores screens, writing into
+  `Documents/CVMAnalytics/output/` via new narrow bridge methods.
 
 ## Remaining P0 Before Vite Can Become Default
 
-- Company detail controls for refresh, freshness, and export.
+- Company detail controls for refresh / freshness (single-company request_refresh wiring).
 - Complete KPI/indicator parity beyond the annual table (chart panels).
 - Sub-sector detail route at `/setores/:slug/:sub_slug` (Phase 3D ported the
   top-level sector detail; sub-sector remains on Next).
+- Per-statement Excel export (currently the backend only emits a full company
+  workbook; Vite exposes that scope clearly but cannot scope to DRE/BPA/etc.
+  without a backend addition).
 - Update-base advanced filters/suggestions beyond the constrained Vite refresh
   action, if required before the default switch.
 - Auto-updater prompt/progress UI.
@@ -126,11 +138,31 @@ Why these slices:
 - Strong parity proof: exercises GICS classification, sector-scoped company
   queries, and URL-driven filter persistence inside Vite.
 
+## Phase 3E Implemented Surface
+
+Selected surface: full-company Excel export, available from company
+detail, financial statements, and indicadores screens.
+
+Why this slice:
+
+- High user value: closes the most-requested export workflow without
+  forcing users back to the Next UI.
+- Existing backend: `CVMReadService.build_company_excel_export` already
+  emits a complete `.xlsx` (DRE/BPA/BPP/DFC plus DVA/DMPL when present
+  and the quarterly KPI bundle). No `excel_exporter.py` changes.
+- Narrow new bridge surface: `export_company_excel` writes into
+  `<settings.output_dir>/` (which resolves to
+  `Documents/CVMAnalytics/output/` in packaged mode) and returns
+  `{ok, file_path, file_name, output_dir, size_bytes, revealed,
+  error?}`. `get_output_dir` exposes the destination path for the UI.
+- Collision-safe: existing files are never overwritten; the bridge
+  appends `(1)`, `(2)`, ... to the file stem.
+- Persistent: exports land in the user-data root protected by the
+  Phase 0 updater allowlist, so updates never delete them.
+
 ## Recommended Next Screen
 
-Recommended next narrow slice: Excel export/save action on company detail and
-the statements screen.
-
-Reason: it is P0, high-value, already backed by existing bridge methods
-(`save_company_excel`, `download_company_excel`), and much lower risk than the
-write-heavy update-base dashboard.
+Recommended next narrow slice: single-company refresh controls on
+company detail, using existing `request_refresh` / `get_refresh_status`
+methods. This closes the remaining write-side gap inside the company
+detail flow and unlocks the auto-updater UI parity track.

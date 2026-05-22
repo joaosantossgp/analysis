@@ -288,6 +288,22 @@ export type SectorDetailResponse = {
   error?: string;
 };
 
+export type ExportCompanyResult = {
+  ok: boolean;
+  file_path?: string;
+  file_name?: string;
+  output_dir?: string;
+  size_bytes?: number;
+  revealed?: boolean;
+  error?: string;
+};
+
+export type OutputDirInfo = {
+  path: string | null;
+  exists: boolean;
+  error?: string;
+};
+
 export type DatabaseDiagnostics = {
   db_path: string | null;
   data_root: string | null;
@@ -333,6 +349,8 @@ export interface BridgeApi {
   get_company_filters(params?: Record<string, unknown>): Promise<CompanyFiltersResponse>;
   get_sectors(params?: Record<string, unknown>): Promise<SectorDirectoryResponse>;
   get_sector_detail(params: Record<string, unknown>): Promise<SectorDetailResponse>;
+  export_company_excel(params: Record<string, unknown>): Promise<ExportCompanyResult>;
+  get_output_dir(params?: Record<string, unknown>): Promise<OutputDirInfo>;
 }
 
 declare global {

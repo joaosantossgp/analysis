@@ -265,6 +265,73 @@ class CVMBridge:
         except Exception as exc:
             return {"error": str(exc)}
 
+    def export_company_excel(self, params=None) -> dict:
+        """Phase 3E — write the company workbook into the persistent
+        ``output/`` folder under the runtime data root (Documents/CVMAnalytics
+        in packaged mode). Distinct from ``save_company_excel``, which
+        writes to ``~/Downloads`` for the legacy Next UI.
+
+        Returns the absolute output file path, the generated filename, and
+        a flag indicating whether the file explorer reveal succeeded.
+        Collisions are resolved by suffixing `` (1)``, `` (2)``, ... so an
+        existing export is never overwritten.
+        """
+        p = params or {}
+        try:
+            cd_cvm = int(p.get("cd_cvm", 0))
+            if cd_cvm <= 0:
+                return self._sanitize_for_json({
+                    "ok": False,
+                    "error": "cd_cvm ausente ou invalido",
+                })
+            svc = self._svc()
+            filename, payload = svc.build_company_excel_export(cd_cvm)
+            output_dir = Path(svc.settings.paths.output_dir)
+            output_dir.mkdir(parents=True, exist_ok=True)
+            target = self._unique_output_path(output_dir, filename)
+            target.write_bytes(payload)
+            reveal = bool(p.get("reveal", False))
+            revealed = self._reveal_in_file_explorer(str(target)) if reveal else False
+            return self._sanitize_for_json({
+                "ok": True,
+                "file_path": str(target),
+                "file_name": target.name,
+                "output_dir": str(output_dir),
+                "size_bytes": int(target.stat().st_size),
+                "revealed": revealed,
+            })
+        except Exception as exc:
+            return self._sanitize_for_json({"ok": False, "error": str(exc)})
+
+    def get_output_dir(self, params=None) -> dict:
+        """Return the absolute path of the persistent output folder so the
+        Vite UI can show users where exports will land."""
+        try:
+            svc = self._svc()
+            output_dir = Path(svc.settings.paths.output_dir)
+            return self._sanitize_for_json({
+                "path": str(output_dir),
+                "exists": output_dir.exists(),
+            })
+        except Exception as exc:
+            return self._sanitize_for_json({
+                "path": None,
+                "exists": False,
+                "error": str(exc),
+            })
+
+    @staticmethod
+    def _unique_output_path(output_dir: Path, filename: str) -> Path:
+        safe_name = Path(str(filename or "export.xlsx")).name
+        stem = Path(safe_name).stem or "export"
+        suffix = Path(safe_name).suffix or ".xlsx"
+        candidate = output_dir / safe_name
+        counter = 1
+        while candidate.exists():
+            candidate = output_dir / f"{stem} ({counter}){suffix}"
+            counter += 1
+        return candidate
+
     @staticmethod
     def _save_bytes_to_downloads(filename: str, payload: bytes) -> str:
         downloads_dir = Path.home() / "Downloads"

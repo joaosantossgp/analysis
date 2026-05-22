@@ -39,6 +39,7 @@ To:
 | Phase 3B | Update Base / Refresh Data parity slice | Released as v0.6.0 | Vite route `/atualizar-base` uses the existing desktop refresh bridge methods for base health, guarded refresh start, optional CVM-code targeting, polling, logs, cancel, and empty-DB guidance. Default remains Next. |
 | Phase 3C | Persistent Documents data root + Vite Indicadores | Released as v0.7.0 | Default runtime data root is `%USERPROFILE%\Documents\CVMAnalytics` (WAL-safe migration from `%LOCALAPPDATA%`); new `/empresas/:cdCvm/indicadores` route with year multi-select and KPI cards. Default remains Next. |
 | Phase 3D | Sectors + company directory filters | Released as v0.8.0 | Vite directory gains GICS sector filter, URL-driven chips, CVM-code search, dense table; new `/setores` and `/setores/:slug` routes for sector browsing and per-sector company tables. No invented aggregate metrics. Default remains Next. |
+| Phase 3E | Excel export from Vite | Released as v0.9.0 | Full company workbook export from company detail, statements, and indicadores screens. Writes to `Documents/CVMAnalytics/output/` via new narrow bridge methods (`export_company_excel`, `get_output_dir`). Collision-safe naming, status surface in UI. Default remains Next. |
 | Phase 3 | Mandatory legacy deletion | Not started | Delete Next/FastAPI legacy only after parity, a default-Vite soak release, and explicit user approval. |
 | Phase 4 | Polish/performance | Not started | Startup, logging, AV/code-signing review |
 

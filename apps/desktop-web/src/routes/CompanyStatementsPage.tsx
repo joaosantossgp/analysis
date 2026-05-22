@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
+import { ExportCompanyButton } from "@/components/ExportCompanyButton";
 import {
   fetchCompanyInfo,
   fetchCompanyYears,
@@ -162,6 +163,12 @@ function StatementsHeader({
             <dd className="font-mono text-zinc-200">{info.latest_readable_year ?? "—"}</dd>
           </div>
         </dl>
+      </div>
+      <div className="mt-4 border-t border-zinc-800 pt-4">
+        <ExportCompanyButton
+          cdCvm={info.cd_cvm}
+          scopeNote="Full company workbook — backend currently emits one .xlsx per company (all statements + KPIs). Per-statement scope is not yet supported by the export pipeline."
+        />
       </div>
     </article>
   );

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
+import { ExportCompanyButton } from "@/components/ExportCompanyButton";
 import {
   fetchCompanyInfo,
   fetchCompanyKpis,
@@ -122,6 +123,12 @@ function CompanyHeaderCard({ info, cdCvm }: { info: CompanyInfo; cdCvm: number }
         <span className="rounded-md border border-cyan-500/50 bg-cyan-500/10 px-3 py-1.5 text-cyan-100">
           Indicadores
         </span>
+      </div>
+      <div className="mt-4 border-t border-zinc-800 pt-4">
+        <ExportCompanyButton
+          cdCvm={info.cd_cvm}
+          scopeNote="KPIs are included in the full company workbook (no KPI-only export in the backend)."
+        />
       </div>
     </article>
   );
