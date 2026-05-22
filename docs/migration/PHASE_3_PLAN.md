@@ -2,10 +2,10 @@
 
 > Note: this document was originally titled "Phase 3 — Legacy Deletion". After the Phase 4 default flip in `v0.14.0`, the canonical name for the legacy-deletion phase is **Phase 5**. The file path is kept for backward compatibility with old links.
 
-Status: **Superseded by Phase 5A/5B.** The desktop-side legacy runtime was
+Status: **Superseded by Phase 5A/5B/5C.** The desktop-side legacy runtime was
 removed in `v0.15.0`. Do not use this older broad-deletion plan to remove
-`apps/web/` or `apps/api/`; both remain source-only / hosted surfaces pending
-explicit approval.
+`apps/web/` or `apps/api/`; Phase 5C kept both as documented source-only /
+hosted surfaces outside the desktop package and default desktop CI.
 
 The original plan assumed Next.js, FastAPI, bundled Node, `apps/web/`, and
 `apps/api/` could all be deleted together. Phase 5A narrowed that scope:

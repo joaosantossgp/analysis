@@ -1,28 +1,9 @@
-name: Perf Guardrails
+name: Legacy Web Perf Guardrails
 
 on:
-  push:
-    branches:
-      - main
-      - "task/**"
-    paths:
-      - "apps/web/**"
-      - "apps/api/**"
-      - "src/**"
-      - "desktop/**"
-      - "scripts/perf_guardrail.py"
-      - "docs/perf/**"
-      - ".github/workflows/perf-guardrails.yml"
-  pull_request:
-    paths:
-      - "apps/web/**"
-      - "apps/api/**"
-      - "src/**"
-      - "desktop/**"
-      - "scripts/perf_guardrail.py"
-      - "docs/perf/**"
-      - ".github/workflows/perf-guardrails.yml"
-  merge_group:
+  # apps/web is no longer part of the packaged desktop product. Keep these
+  # guardrails available for manual hosted-web audits, but do not block desktop
+  # CI/release on legacy Next route budgets.
   workflow_dispatch:
 
 jobs:

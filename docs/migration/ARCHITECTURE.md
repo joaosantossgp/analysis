@@ -160,9 +160,9 @@ contain user financial data:
 | **Python core (untouchable bridge surface)** | `src/read_service.py`, `src/refresh_service.py`, `src/refresh_job_worker.py`, `src/refresh_jobs.py`, `src/db.py`, `src/database.py`, `src/settings.py`, `src/contracts.py`, `src/scraper.py`, `src/standardizer.py`, `src/kpi_engine.py`, `src/excel_exporter.py` |
 | **Desktop shell** | `desktop/app.py`, `desktop/bridge.py`, `desktop/updater.py`, `desktop/update_helper.ps1`, `desktop/__version__.py`, `desktop/services.py` |
 | **Packaging** | `desktop/app.spec`, `desktop/build_desktop.ps1`, `.github/workflows/release-desktop.yml` |
-| **Legacy Next UI** | `apps/web/app/**`, `apps/web/components/**`, `apps/web/lib/**`, `apps/web/next.config.ts`, `apps/web/package.json` |
-| **Legacy FastAPI** | `apps/api/app/**`, `apps/api/worker.py`, `apps/api/Dockerfile`, `railway.toml` |
-| **New Vite SPA** | `apps/desktop-web/**` |
+| **Source-only / hosted Next UI** | `apps/web/app/**`, `apps/web/components/**`, `apps/web/lib/**`, `apps/web/next.config.ts`, `apps/web/package.json` |
+| **Hosted/development FastAPI** | `apps/api/app/**`, `apps/api/worker.py`, `apps/api/Dockerfile`, `railway.toml` |
+| **Packaged Vite SPA** | `apps/desktop-web/**` |
 | **Smoke / harness scripts** | `scripts/phase1_pywebview_smoke.py`, `scripts/test_motw_strip.py`, `scripts/test_motw_explorer.ps1`, `scripts/test_motw_launch.ps1`, `scripts/test_ci_v034_full.ps1`, `scripts/test_ci_v033_motw.ps1` |
 | **Migration docs** | `docs/migration/*.md` |
 
@@ -200,7 +200,9 @@ contain user financial data:
 | `get_update_progress` | progress payload | No (yet) |
 | `snooze_update` | `{ok}` | No (yet) |
 
-**Phase 1.7 / 2.5 priority:** port the un-checked rows. Each is a thin facade in `apps/desktop-web/src/lib/api/` + one TanStack Query usage. No new Python code.
+The packaged desktop UI now lives in `apps/desktop-web`. Source-only hosted
+surfaces in `apps/web` / `apps/api` are documented separately and are not part
+of the desktop package.
 
 ---
 

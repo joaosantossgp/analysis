@@ -52,7 +52,7 @@ UI Component
 - **NO Direct SQLite:** Frontend code cannot issue SQL queries or communicate with SQLite directly. SQLite is entirely managed by the Python backend.
 - **NO Hardcoded Filesystem Paths:** Never hardcode absolute or local filesystem paths (like `C:\Users\...` or `CVMAnalytics/...`) in frontend components. Use bridge methods (like `get_output_dir()`) to query paths dynamically from the backend.
 - **NO Semantic Inflation:** Never invent, calculate, or alter financial data semantics on the frontend during migration. If the backend returns a certain data structure, preserve it exactly.
-- **NO Eager Source Deletion:** Do not delete `apps/web` or `apps/api` without explicit user approval. They are source-only / hosted surfaces outside the packaged desktop runtime. `desktop/node_portable` was removed in Phase 5B and must not be reintroduced.
+- **NO Eager Source Deletion:** Do not delete `apps/web` or `apps/api` without explicit hosted-surface retirement approval. Phase 5C kept them as source-only / hosted surfaces outside the packaged desktop runtime. `desktop/node_portable` was removed in Phase 5B and must not be reintroduced.
 
 ---
 

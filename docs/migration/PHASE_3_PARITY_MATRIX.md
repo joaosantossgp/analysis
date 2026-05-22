@@ -39,14 +39,17 @@ preflight, and flat-root ZIP contract all unchanged.**
 bundle no longer contains `node.exe` or `web_standalone/`; `--legacy` warns and
 continues into Vite. `apps/web/` and `apps/api/` remain source-only / hosted
 surfaces outside the desktop package.**
+**Phase 5C keeps those source-only / hosted surfaces documented and removes
+legacy Next/perf jobs from default desktop CI.**
 
 Scope of this document:
 
-- Compare the current Next UI (`apps/web`) with the Vite SPA (`apps/desktop-web`).
-- Identify P0 gaps before Vite can become the default desktop runtime.
+- Preserve the historical comparison between the former Next UI (`apps/web`) and
+  the Vite SPA (`apps/desktop-web`).
+- Record the P0 gaps that were closed before Vite became the default desktop runtime.
 - Record incremental P0 parity slices ported into Vite.
-- Keep legacy deletion out of scope. Phase 3 deletion still requires explicit
-  approval after parity, a default-Vite soak release, and updater safety checks.
+- Keep source-only hosted-surface deletion out of scope. Phase 5C chose to keep
+  `apps/web` / `apps/api` documented rather than delete them.
 
 ## Parity Table
 

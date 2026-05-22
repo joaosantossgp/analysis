@@ -1,9 +1,9 @@
 /**
  * Sectors API facade.
  *
- * Wraps CVMBridge.get_sectors / get_sector_detail. Mirrors the parity with
- * the Next /setores routes: the Python read-service is the authoritative
- * source of GICS sector aggregation. Vite never aggregates locally.
+ * Wraps CVMBridge.get_sectors / get_sector_detail. The Python read-service is
+ * the authoritative source of GICS sector aggregation. Vite never aggregates
+ * locally.
  */
 import { callBridge, getBridgeMode, type BridgeMode } from "../bridge/adapter";
 import type {
@@ -95,4 +95,3 @@ export async function fetchSubSectorDetail(
   }
   return { mode: "desktop", detail: payload, notFound: false };
 }
-

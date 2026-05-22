@@ -81,7 +81,8 @@ npm run test:e2e
 Desde `v0.15.0`, este app **nao e mais compilado no desktop Windows**. O pacote
 `dist/CVMAnalytics/` usa `apps/desktop-web/` (Vite) como unica UI empacotada.
 `apps/web/` permanece no repositorio como app Next.js source-only / hospedado
-historico, pendente de decisao explicita antes de qualquer delecao.
+historico. Phase 5C decidiu manter esta superficie documentada, mas fora do
+runtime desktop e fora do CI desktop padrao.
 
 ## Deploy hospedado (historico / opcional)
 

@@ -51,6 +51,7 @@ To:
 | Phase 4 | Vite default + Next/Node fallback (`--legacy`) | Released as v0.14.0; hotfix v0.14.1 | Default startup loads the Vite SPA with no Node process. `CVMAnalytics.exe --legacy` launches the previous Next/Node UI from the same bundle. `--vite` kept as an explicit alias of the default. No legacy code deleted; updater allowlist, user-data root, MOTW strip, preflight, and ZIP flat-root contract all unchanged. `v0.14.1` adds a one-shot startup GICS backfill from the bundled `data/import/gics_mapping.csv`: fixes the Vite sectors/sector-filter screens for user DBs that had only CVM/B3 labels and no GICS classification. |
 | Phase 5A | Legacy deletion audit + plan | Done | Audit-only phase. Output: [PHASE_5_LEGACY_DELETION_AUDIT.md](PHASE_5_LEGACY_DELETION_AUDIT.md). Found that `apps/web/` is also deployed to Vercel and `apps/api/` is the Railway-hosted FastAPI used by data-pipeline CI workflows — both are dual-use products, not pure desktop legacy. Phase 5B narrowed to desktop-bundle cleanup only. |
 | Phase 5B | Desktop-side legacy deletion (`--legacy` flag, `web_standalone`, `node.exe`, `desktop/node_portable/`) | Released as v0.15.0 | Removed the packaged Next/Node runtime from the desktop bundle. `apps/web/`, `apps/api/`, `railway.toml`, and `landing/` stay in source and are not packaged. |
+| Phase 5C | Source-only / hosted-surface cleanup decision | Done | Output: [PHASE_5C_SOURCE_LEGACY_CLEANUP.md](PHASE_5C_SOURCE_LEGACY_CLEANUP.md). Kept `apps/web/`, `apps/api/`, and `railway.toml` as documented source-only/hosted surfaces; removed default CI blockers for legacy Next/perf jobs. |
 | Phase 6 | Polish/performance | Not started | Startup, logging, AV/code-signing review. Was previously called "Phase 4". |
 
 See [PHASE_0_RELEASE_CHECKPOINT.md](PHASE_0_RELEASE_CHECKPOINT.md) for the v0.3.0 release record, validation list, and known hygiene issues.
@@ -67,7 +68,7 @@ As of `v0.15.0` the packaged desktop app loads only the Vite SPA and does not sp
 .\CVMAnalytics.exe --legacy     # unsupported; warns, then continues into Vite
 ```
 
-Phase 5B removed the desktop-side legacy package path: `desktop/node_portable/`, `_internal/node.exe`, `_internal/web_standalone/`, the Next build step, and the runtime branch that started the Next standalone server. `apps/web/` and `apps/api/` remain source-only / hosted surfaces pending explicit deletion approval.
+Phase 5B removed the desktop-side legacy package path: `desktop/node_portable/`, `_internal/node.exe`, `_internal/web_standalone/`, the Next build step, and the runtime branch that started the Next standalone server. Phase 5C kept `apps/web/` and `apps/api/` as documented source-only / hosted surfaces, outside the default desktop CI and outside the package.
 
 ## Critical constraints
 

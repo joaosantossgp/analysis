@@ -618,7 +618,7 @@ class CVMBridge:
     # ------------------------------------------------------------------
 
     def get_app_status(self, params=None) -> dict:
-        """Compact local runtime status for the experimental Vite UI."""
+        """Compact local runtime status for the packaged Vite UI."""
         p = params or {}
         force_update_check = self._truthy(p.get("force_update_check", False))
         try:

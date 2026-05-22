@@ -1,5 +1,8 @@
 # Performance Baseline
 
+> Historical baseline. Phase 5C moved these Next/API performance guardrails out
+> of default desktop CI. Use this document only for manual hosted-web/API audits.
+
 Baseline captured for task #239 on 2026-05-03 from the backend worktree.
 
 ## Validation Commands
@@ -7,7 +10,9 @@ Baseline captured for task #239 on 2026-05-03 from the backend worktree.
 - `python -m pytest tests -q` -> 160 passed
 - `python -m pytest apps/api/tests -q` -> 97 passed
 - `python scripts/perf_guardrail.py check --baseline docs/perf/performance_baseline.json --report perf-guardrail-report.json` -> PASS
-- `.\desktop\build_desktop.ps1 -SkipNextBuild` -> `dist/CVMAnalytics`, total size ~88 MB
+- Historical desktop build at that time used `.\desktop\build_desktop.ps1 -SkipNextBuild`.
+  Current desktop builds use `.\desktop\build_desktop.ps1 -SkipViteBuild` after a
+  successful Vite build.
 
 ## API Guardrail Snapshot
 
@@ -31,7 +36,7 @@ Baseline captured for task #239 on 2026-05-03 from the backend worktree.
 
 ## Cold Start Probe
 
-Measured by monkeypatching `webview.create_window` and `webview.start` while running `desktop.app.main()` against the generated standalone server:
+Measured by monkeypatching `webview.create_window` and `webview.start` while running the then-current desktop app against the generated standalone server:
 
 - `desktop_start_seconds=0.722`
-- The probe covers Python startup plus standalone Next server readiness, without opening a GUI window.
+- The probe covered Python startup plus standalone Next server readiness, without opening a GUI window. It is not the current Vite-only desktop baseline.

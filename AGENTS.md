@@ -73,8 +73,12 @@ Prefer targeted plans, small diffs, and focused validation commands.
 
 ## 4. Validation expectations
 
-- TypeScript: `npx tsc --noEmit` in `apps/web/` after any TSX/TS edit.
-- Python: `pytest tests/` for `src/`, `pytest apps/api/tests/` for the API.
+- Desktop UI TypeScript: `npm --prefix apps/desktop-web run typecheck` after any
+  desktop UI TS/TSX edit.
+- Source-only hosted web TypeScript: `npm --prefix apps/web run typecheck` after
+  any `apps/web/` TS/TSX edit.
+- Python: `pytest tests/` for desktop/core paths, `pytest apps/api/tests/` when
+  intentionally editing the hosted API.
 - UI-observable changes: start the dev server and verify when feasible (browser preview, screenshot, snapshot).
 - If validation is skipped, say why explicitly in the wrap-up.
 
@@ -145,7 +149,12 @@ Each task type has a minimal extra rule on top of the principles. Match the mode
 ## 8. Canonical product
 
 - **Shipped runtime:** `dist/CVMAnalytics/CVMAnalytics.exe` (built via `desktop/build_desktop.ps1`).
-- **Architecture:** pywebview wraps the Next.js standalone bundle from `apps/web/`; data is local SQLite at `data/db/cvm_financials.db`.
-- **`apps/web`** is the UI source compiled into the desktop bundle.
-- **`apps/api`** is optional for local/dev HTTP — not the primary deployment target.
-- Validate product bugs against desktop mode (`ANALISYS_DESKTOP_MODE=1`) and/or local API + DB, not remote URLs.
+- **Architecture:** pywebview serves the static Vite SPA from `apps/desktop-web`
+  / `_internal/desktop-web` and talks to Python through `desktop/bridge.py`.
+- **Data root:** packaged users store runtime data under
+  `%USERPROFILE%\Documents\CVMAnalytics`.
+- **`apps/desktop-web`** is the only UI source compiled into the desktop bundle.
+- **`apps/web`** is source-only hosted/legacy Next.js; it is not packaged.
+- **`apps/api`** is source-only hosted/development FastAPI; it is not packaged.
+- Validate product bugs against the packaged desktop app and the Documents data
+  root, not remote URLs.

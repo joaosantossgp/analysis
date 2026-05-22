@@ -7,7 +7,7 @@
 
 ## 1. O que e o projeto
 
-Extrai demonstracoes financeiras historicas de companhias listadas na CVM, organiza em SQLite local (PostgreSQL opcional) e expoe os dados via app desktop pywebview (Next.js UI + bridge Python) e API FastAPI read-only para dev/local. O foco e produzir output confiavel, legivel e verificavel sem misturar periodos, versoes ou linhas conflitantes.
+Extrai demonstracoes financeiras historicas de companhias listadas na CVM, organiza em SQLite local (PostgreSQL opcional) e expoe os dados via app desktop pywebview (Vite UI estatica + bridge Python) e API FastAPI read-only para hospedagem/dev/local. O foco e produzir output confiavel, legivel e verificavel sem misturar periodos, versoes ou linhas conflitantes.
 
 **Objetivo final:** pipeline unico que recebe empresa + ano inicial/final, persiste demonstracoes e metadados em banco e disponibiliza consulta/exportacao via app desktop, API HTTP e Excel auditavel.
 
@@ -23,7 +23,7 @@ Extrai demonstracoes financeiras historicas de companhias listadas na CVM, organ
 
 **Prioridade 3 (concluida):** padronizacao por dicionario de contas (`STANDARD_NAME`), aba `PADRONIZACAO` no Excel.
 
-**Prioridades 4-8 (concluidas):** expansao em massa (449 empresas), vetorizacao + WAL + paralelismo, V2 web (Next.js) + API (FastAPI), app desktop pywebview com Next.js standalone embutido, testes automatizados.
+**Prioridades 4-8 (concluidas):** expansao em massa (449 empresas), vetorizacao + WAL + paralelismo, V2 web (Next.js) + API (FastAPI), migracao do app desktop para pywebview com Vite estatico empacotado, testes automatizados.
 
 ---
 
@@ -87,8 +87,8 @@ Abas **QA_LOG** e **QA_Errors** sao obrigatorias para rastreabilidade.
 **5. Consulta**
 - `src/read_service.py` e a fonte de verdade da camada de leitura
 - `apps/api` (FastAPI) e o adaptador HTTP fino sobre `read_service`
-- `apps/web` (Next.js) consome `apps/api`
-- App desktop usa o bridge Python direto via `desktop/bridge.py`, evitando o salto HTTP em runtime local
+- `apps/web` (Next.js) consome `apps/api` quando usado como superficie hospedada/source-only
+- App desktop usa o Vite SPA em `apps/desktop-web` e o bridge Python direto via `desktop/bridge.py`, evitando o salto HTTP em runtime local
 
 ### Modelo de cobertura
 
@@ -117,15 +117,16 @@ cvm_repots_capture/
 |   |-- statement_summary.py    # Resumos de demonstracoes
 |   |-- ticker_map.py           # Mapa CVM -> ticker
 |   `-- utils.py                # Helpers compartilhados
-|-- desktop/                    # App desktop oficial (pywebview + Next.js)
+|-- desktop/                    # App desktop oficial (pywebview + Vite estatico)
 |   |-- app.py                  # Entry point pywebview
 |   |-- bridge.py               # Bridge Python expondo read/refresh para a UI
 |   |-- services.py             # Logica de negocio compartilhada
 |   |-- build_desktop.ps1       # Script de build do .exe via PyInstaller
 |   `-- updater.py              # Auto-updater do desktop
 |-- apps/
-|   |-- api/                    # FastAPI read-only (adaptador HTTP)
-|   `-- web/                    # Next.js (UI embutida no desktop + dev server)
+|   |-- api/                    # FastAPI read-only (adaptador HTTP hospedado/dev)
+|   |-- desktop-web/            # Vite SPA empacotada no desktop
+|   `-- web/                    # Next.js source-only / hospedado historico
 |-- scripts/                    # Setup, batches, dicionario canonico e validacoes
 |-- archive/                    # Scripts e governanca antigos
 |-- tests/                      # Suite pytest
@@ -151,8 +152,9 @@ cvm_repots_capture/
 
 **Stack:**
 - Python: 3.11+, pandas, polars, sqlalchemy, requests, yfinance, pywebview, PyInstaller
-- Web: Next.js 16, TypeScript, Tailwind v4, `@base-ui/react`
-- API: FastAPI (read-only)
+- Desktop UI: Vite, React, TypeScript, Tailwind v4
+- Web hospedado/source-only: Next.js 16, TypeScript, Tailwind v4, `@base-ui/react`
+- API hospedada/dev: FastAPI (read-only)
 - DB: SQLite local + PostgreSQL opcional via `DATABASE_URL`
 
 **Convencoes:**
@@ -166,9 +168,9 @@ cvm_repots_capture/
 ## 7. Estado atual
 
 - Banco local SQLite com suporte opcional a PostgreSQL via `DATABASE_URL`
-- App desktop oficial: `desktop/app.py` (pywebview + Next.js standalone bundled como `dist/CVMAnalytics/CVMAnalytics.exe`)
-- API FastAPI read-only em `apps/api` para dev/local HTTP
-- Web UI em `apps/web` (Next.js 16, App Router)
+- App desktop oficial: `desktop/app.py` (pywebview + Vite estatico em `dist/CVMAnalytics/CVMAnalytics.exe`)
+- API FastAPI read-only em `apps/api` para Railway/dev/local HTTP; nao e empacotada no desktop
+- Web UI source-only em `apps/web` (Next.js 16, App Router); nao e empacotada no desktop
 - Automacao e batches via `scripts/batch_completo.py` e `scripts/atualizar_todos.py`
 
 **Proximas prioridades:**

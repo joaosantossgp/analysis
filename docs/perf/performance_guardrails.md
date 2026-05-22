@@ -1,5 +1,10 @@
 # Performance Guardrails
 
+> Phase 5C status: these guardrails are **manual legacy hosted-web checks**.
+> They target `apps/web` / `apps/api` and no longer run on default desktop CI.
+> The packaged desktop product uses `apps/desktop-web` and is validated by the
+> Vite typecheck/build plus desktop package smoke.
+
 Issue: `#138`
 Owner lane: `ops-quality`
 

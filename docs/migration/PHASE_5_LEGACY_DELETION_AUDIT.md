@@ -1,9 +1,10 @@
 # Phase 5 Legacy Deletion Audit
 
 > Status: **Phase 5B implemented for v0.15.0.** This document started as the
-> Phase 5A audit and now records the final deletion decisions. Phase 5B touched
-> only the desktop bundle/runtime path — never the live hosted products on
-> Vercel and Railway.
+> Phase 5A audit and now records the final desktop-bundle deletion decisions.
+> Phase 5B touched only the desktop bundle/runtime path. Phase 5C records the
+> separate source-only / hosted-surface decision in
+> `PHASE_5C_SOURCE_LEGACY_CLEANUP.md`.
 
 ## Phase 5B Final Deletion Decisions
 
@@ -429,6 +430,7 @@ v0.14.1 → v0.15.0 update applied end-to-end at least once
 
 **Phase 5B package/runtime removal is complete.**
 
-Recommended next step: soak `v0.15.0` before deleting any remaining source-only
-legacy folders. `apps/web/` and `apps/api/` should remain until the user
-explicitly approves source-tree deletion and hosted-product retirement.
+Recommended next step: keep soaking the Vite-only desktop runtime. Phase 5C
+kept `apps/web/` and `apps/api/` as documented source-only / hosted surfaces
+outside the desktop package and default desktop CI. Delete them only after a
+separate hosted-surface retirement approval.

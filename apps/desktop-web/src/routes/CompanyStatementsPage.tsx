@@ -222,7 +222,7 @@ function StatementTable({
     return (
       <EmptyState
         title={`${statementType} has no rows for ${selectedYears.join(", ")}`}
-        message="Try another statement type or refresh this company in the legacy update workflow."
+        message="Try another statement type or refresh this company from Update Base."
       />
     );
   }

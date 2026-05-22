@@ -7,7 +7,7 @@ from unittest.mock import patch
 from desktop import app
 
 
-def test_configure_bundled_data_paths_points_sqlite_to_runtime_dir(
+def test_configure_bundled_data_paths_points_sqlite_to_documents_root(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -18,17 +18,18 @@ def test_configure_bundled_data_paths_points_sqlite_to_runtime_dir(
     monkeypatch.setattr(app.sys, "_MEIPASS", str(tmp_path / "_internal"), raising=False)
     monkeypatch.setattr(app.sys, "executable", str(exe_path))
 
-    with patch.dict(environ, {}, clear=True):
+    with patch.dict(environ, {"USERPROFILE": str(tmp_path)}, clear=True):
         app._configure_bundled_data_paths()
 
-        assert Path(app.os.environ["CVM_DATA_DIR"]) == tmp_path / "data"
-        assert Path(app.os.environ["CVM_DB_DIR"]) == tmp_path / "data" / "db"
+        data_root = tmp_path / "Documents" / "CVMAnalytics"
+        assert Path(app.os.environ["CVM_DATA_DIR"]) == data_root
+        assert Path(app.os.environ["CVM_DB_DIR"]) == data_root / "db"
         assert (
             Path(app.os.environ["SQLITE_PATH"])
-            == tmp_path / "data" / "db" / "cvm_financials.db"
+            == data_root / "db" / "cvm_financials.db"
         )
-        assert Path(app.os.environ["CVM_OUTPUT_DIR"]) == tmp_path / "output"
-        assert Path(app.os.environ["CVM_LOG_DIR"]) == tmp_path / "output" / "logs"
+        assert Path(app.os.environ["CVM_OUTPUT_DIR"]) == data_root / "output"
+        assert Path(app.os.environ["CVM_LOG_DIR"]) == data_root / "logs"
 
 
 def test_configure_bundled_data_paths_does_not_override_explicit_sqlite_path(

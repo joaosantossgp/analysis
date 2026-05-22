@@ -1,9 +1,9 @@
 /**
  * Companies API facade.
  *
- * Calls CVMBridge.get_companies via the bridge adapter. Phase 1.5 only —
- * Phase 2 will route through the same facade once we drop the
- * embedded Next.js server.
+ * Calls CVMBridge.get_companies via the bridge adapter. The packaged desktop
+ * app no longer includes the old Next.js server; this bridge is the production
+ * data path.
  */
 import { callBridge, getBridgeMode, type BridgeMode } from "../bridge/adapter";
 import type {
