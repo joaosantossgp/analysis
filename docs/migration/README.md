@@ -18,7 +18,7 @@ To:
 - static Vite + React + TypeScript frontend loaded by pywebview
 - no production Next standalone server
 - no production Node runtime
-- protected user data under `%LOCALAPPDATA%\CVMAnalytics`
+- protected user data under `%USERPROFILE%\Documents\CVMAnalytics`
 
 ## Non-goals
 
@@ -41,6 +41,7 @@ To:
 | Phase 3D | Sectors + company directory filters | Released as v0.8.0 | Vite directory gains GICS sector filter, URL-driven chips, CVM-code search, dense table; new `/setores` and `/setores/:slug` routes for sector browsing and per-sector company tables. No invented aggregate metrics. Default remains Next. |
 | Phase 3E | Excel export from Vite | Released as v0.9.0 | Full company workbook export from company detail, statements, and indicadores screens. Writes to `Documents/CVMAnalytics/output/` via new narrow bridge methods (`export_company_excel`, `get_output_dir`). Collision-safe naming, status surface in UI. Default remains Next. |
 | Phase 3F | Single-company refresh controls | Released as v0.10.0 | Vite company detail can start a company-specific refresh, poll existing backend status/freshness fields, and refresh company data after terminal status. No new Python bridge method or schema change. Default remains Next. |
+| Phase 3G | App status / updater / diagnostics UI | Released as v0.11.0 | New Vite `/status` screen shows runtime version/mode, bridge status, local data paths, SQLite counts, GitHub release check status, compact logs, and runtime probes. Adds narrow bridge methods `get_app_status` and `open_status_path`; software update application remains intentionally unsupported in Vite. Default remains Next. |
 | Phase 3 | Mandatory legacy deletion | Not started | Delete Next/FastAPI legacy only after parity, a default-Vite soak release, and explicit user approval. |
 | Phase 4 | Polish/performance | Not started | Startup, logging, AV/code-signing review |
 
@@ -80,4 +81,6 @@ For Phase 2 and later runtime changes, local `dist/` validation is not enough. V
 - ZIP root is flat: `CVMAnalytics.exe` plus `_internal/`.
 - Default mode still launches the Next/Node UI.
 - `--vite` mode launches the Vite UI without starting `node.exe`.
-- Updater staging and helper swap preserve `%LOCALAPPDATA%\CVMAnalytics` user data.
+- Updater staging and helper swap preserve user data. Active runtime data stays
+  under `%USERPROFILE%\Documents\CVMAnalytics`; updater staging/rollback stays
+  under `%LOCALAPPDATA%\CVMAnalytics`.

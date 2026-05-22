@@ -4,15 +4,17 @@ Status: **DO NOT EXECUTE WITHOUT EXPLICIT USER APPROVAL.**
 
 Phase 3 deletes the Next.js + FastAPI + bundled Node stack once the Vite SPA reaches parity with the production UI. This is the largest single change in the migration and is irreversible without git revert.
 
-Phase 3A/3B are not deletion. They are parity-planning and incremental
-screen-port phases. Their active checklist is `PHASE_3_PARITY_MATRIX.md`.
+Phase 3A through 3G are not deletion. They are parity-planning and
+incremental screen-port phases. Their active checklist is
+`PHASE_3_PARITY_MATRIX.md`. Current latest parity release: `v0.11.0`
+with Vite `/status` diagnostics; default startup is still Next/Node.
 
 ---
 
 ## Pre-conditions (all must be true)
 
 1. **Vite SPA parity**: every P0 item in `PHASE_3_PARITY_MATRIX.md` is complete, and every production Next route has an equivalent Vite route exercised in a packaged build smoke.
-2. **`v0.6.0+` released** with both UIs bundled, `--vite` exercised by real users for at least one soak window (suggest 1–2 weeks).
+2. **A future default-Vite release shipped and soaked** with both UIs bundled first, `--vite` exercised by real users for at least one soak window (suggest 1–2 weeks), and all P0 parity gaps closed.
 3. **Manual sign-off from the user**: explicit "OK to delete Next / Node / FastAPI".
 4. **No regression** in the Phase 0 contract (LOCALAPPDATA DB, MOTW strip, updater allowlist, recovery scenarios) after switching default to Vite.
 5. **Default switched and soaked**: a release where the default mode is Vite (Next becomes opt-in via `--legacy` or similar) ships and survives a soak window before deletion.
