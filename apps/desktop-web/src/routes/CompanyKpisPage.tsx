@@ -1,18 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
-import { ExportCompanyButton } from "@/components/ExportCompanyButton";
+import { EntityHeader } from "@/components/EntityHeader";
+import { KpiTrendCharts } from "@/components/KpiTrendCharts";
 import {
-  fetchCompanyInfo,
   fetchCompanyKpis,
   fetchCompanyYears,
-  type CompanyInfoResult,
   type CompanyKpisResult,
   type CompanyYearsResultUI,
 } from "@/lib/api/companyDetail";
 import { whenBridgeReady } from "@/lib/bridge/adapter";
-import type { CompanyInfo, TabularData, TabularRow } from "@/lib/bridge/types";
+import type { TabularData, TabularRow } from "@/lib/bridge/types";
 
 const DEFAULT_RECENT_YEARS = 5;
 
@@ -37,121 +36,12 @@ export function CompanyKpisPage() {
 
   return (
     <section className="space-y-6">
-      <BackLink cdCvm={cdCvm} />
-      <KpiHeader cdCvm={cdCvm} bridgeReady={bridgeReady} />
-      <KpiBody cdCvm={cdCvm} bridgeReady={bridgeReady} />
+      <EntityHeader cdCvm={cdCvm} activeTab="kpis" />
+      {bridgeReady && <KpiBody cdCvm={cdCvm} bridgeReady={bridgeReady} />}
     </section>
   );
 }
 
-function BackLink({ cdCvm }: { cdCvm: number }) {
-  return (
-    <Link
-      to={`/empresas/${cdCvm}`}
-      className="inline-flex items-center text-xs text-zinc-400 hover:text-zinc-200"
-    >
-      ← Back to company
-    </Link>
-  );
-}
-
-function KpiHeader({ cdCvm, bridgeReady }: { cdCvm: number; bridgeReady: boolean }) {
-  const query = useQuery<CompanyInfoResult>({
-    queryKey: ["company-info", cdCvm],
-    queryFn: () => fetchCompanyInfo(cdCvm),
-    enabled: bridgeReady,
-  });
-  if (!bridgeReady || query.isLoading) {
-    return <CardSkeleton title="Loading company…" />;
-  }
-  if (query.isError) {
-    return <ErrorState message={query.error instanceof Error ? query.error.message : String(query.error)} />;
-  }
-  if (!query.data) return <CardSkeleton title="Loading…" />;
-  if (query.data.mode === "browser") return <BrowserModeBanner reason={query.data.reason} />;
-  if (query.data.mode === "desktop-not-found") {
-    return (
-      <ErrorState
-        title="Company not found"
-        message={
-          query.data.catalog_lookup_pending
-            ? "The CVM catalog lookup is still in progress. Try again in a moment."
-            : `No record for CVM code ${query.data.cd_cvm}.`
-        }
-      />
-    );
-  }
-  return <CompanyHeaderCard info={query.data.info} cdCvm={cdCvm} />;
-}
-
-function CompanyHeaderCard({ info, cdCvm }: { info: CompanyInfo; cdCvm: number }) {
-  return (
-    <article className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-6 shadow-lg">
-      <header className="flex flex-wrap items-baseline justify-between gap-3">
-        <div>
-          <p className="text-xs uppercase tracking-widest text-zinc-500">
-            Indicadores financeiros
-          </p>
-          <h2 className="text-2xl font-semibold text-zinc-50">{info.company_name}</h2>
-        </div>
-        <div className="text-right">
-          <div className="font-mono text-xs text-zinc-500">CVM {info.cd_cvm}</div>
-          {info.ticker_b3 ? (
-            <div className="font-mono text-sm text-zinc-200">{info.ticker_b3}</div>
-          ) : null}
-        </div>
-      </header>
-      <dl className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-        <Field label="Sector" value={info.setor_cvm} />
-        <Field label="Latest year" value={info.latest_readable_year?.toString() ?? null} mono />
-        <Field label="Years readable" value={String(info.readable_years_count)} mono />
-        <Field label="Has financial data" value={info.has_local_financial_reports ? "yes" : "no"} />
-      </dl>
-      <div className="mt-4 flex flex-wrap gap-2 text-xs">
-        <Link
-          to={`/empresas/${cdCvm}`}
-          className="rounded-md border border-zinc-700 px-3 py-1.5 text-zinc-200 hover:border-cyan-600 hover:text-cyan-100"
-        >
-          Overview
-        </Link>
-        <Link
-          to={`/empresas/${cdCvm}/demonstrativos`}
-          className="rounded-md border border-zinc-700 px-3 py-1.5 text-zinc-200 hover:border-cyan-600 hover:text-cyan-100"
-        >
-          Financial statements
-        </Link>
-        <span className="rounded-md border border-cyan-500/50 bg-cyan-500/10 px-3 py-1.5 text-cyan-100">
-          Indicadores
-        </span>
-      </div>
-      <div className="mt-4 border-t border-zinc-800 pt-4">
-        <ExportCompanyButton
-          cdCvm={info.cd_cvm}
-          scopeNote="KPIs are included in the full company workbook (no KPI-only export in the backend)."
-        />
-      </div>
-    </article>
-  );
-}
-
-function Field({
-  label,
-  value,
-  mono = false,
-}: {
-  label: string;
-  value: string | null;
-  mono?: boolean;
-}) {
-  return (
-    <div className="space-y-0.5">
-      <dt className="text-xs uppercase tracking-wider text-zinc-500">{label}</dt>
-      <dd className={mono ? "font-mono text-sm text-zinc-200" : "text-sm text-zinc-200"}>
-        {value ?? "—"}
-      </dd>
-    </div>
-  );
-}
 
 function KpiBody({ cdCvm, bridgeReady }: { cdCvm: number; bridgeReady: boolean }) {
   const yearsQuery = useQuery<CompanyYearsResultUI>({
@@ -221,6 +111,8 @@ function KpiBody({ cdCvm, bridgeReady }: { cdCvm: number; bridgeReady: boolean }
       />
 
       <KpiSummaryCards bundle={bundle} selectedYears={selectedYears} />
+
+      {bundle && <KpiTrendCharts bundle={bundle} />}
 
       <KpiTableCard
         title="Annual indicators"
@@ -319,7 +211,7 @@ function YearSelector({
   );
 }
 
-const SUMMARY_KPI_IDS = ["RECEITA_LIQUIDA", "EBITDA", "LUCRO_LIQUIDO", "MARGEM_LIQUIDA"];
+const SUMMARY_KPI_IDS = ["MG_EBITDA", "MG_LIQ", "ROE", "DIV_EBITDA"];
 
 function KpiSummaryCards({
   bundle,

@@ -508,6 +508,7 @@ export interface BridgeApi {
   get_sector_detail(params: Record<string, unknown>): Promise<SectorDetailResponse>;
   export_company_excel(params: Record<string, unknown>): Promise<ExportCompanyResult>;
   get_output_dir(params?: Record<string, unknown>): Promise<OutputDirInfo>;
+  get_sub_sector_detail(params: Record<string, unknown>): Promise<SectorDetailResponse>;
 }
 
 declare global {

@@ -66,3 +66,33 @@ export async function fetchSectorDetail(
   }
   return { mode: "desktop", detail: payload, notFound: false };
 }
+
+export async function fetchSubSectorDetail(
+  sectorSlug: string,
+  subIndustrySlug: string,
+  year: number | null = null,
+): Promise<SectorDetailResult> {
+  const mode: BridgeMode = getBridgeMode();
+  if (mode === "browser") {
+    return { mode: "browser", detail: null, notFound: false, reason: BROWSER_REASON };
+  }
+  const params: Record<string, unknown> = {
+    sector_slug: sectorSlug,
+    sub_industry_slug: subIndustrySlug,
+  };
+  if (year !== null && Number.isFinite(year)) {
+    params.year = year;
+  }
+  const payload: SectorDetailResponse = await callBridge(
+    "get_sub_sector_detail",
+    params,
+  );
+  if (payload.error) {
+    throw new Error(payload.error);
+  }
+  if (payload.not_found) {
+    return { mode: "desktop", detail: null, notFound: true };
+  }
+  return { mode: "desktop", detail: payload, notFound: false };
+}
+

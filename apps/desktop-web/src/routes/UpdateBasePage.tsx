@@ -15,6 +15,7 @@ import {
   startBaseRefresh,
   type StartRefreshParams,
 } from "@/lib/api/updateBase";
+import { PageHeader as UnifiedPageHeader } from "@/components/PageHeader";
 import { whenBridgeReady } from "@/lib/bridge/adapter";
 import type {
   BaseHealthSnapshot,
@@ -250,28 +251,21 @@ export function UpdateBasePage() {
 function PageHeader({ bridgeReady }: { bridgeReady: boolean }) {
   return (
     <header className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-6 shadow-lg">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="space-y-2">
-          <p className="text-xs uppercase tracking-widest text-zinc-500">
-            Local data refresh
-          </p>
-          <h2 className="text-2xl font-semibold text-zinc-50">Atualizar Base</h2>
-          <p className="max-w-2xl text-sm leading-6 text-zinc-400">
-            Downloads CVM filings and writes them into the local SQLite database under
-            <span className="mx-1 font-mono text-zinc-300">Documents\CVMAnalytics\db</span>.
-            This is the <em>data</em> refresh, not the application updater.
-          </p>
-        </div>
-        <span
-          className={
-            bridgeReady
-              ? "rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-200"
-              : "rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs text-amber-200"
-          }
-        >
-          {bridgeReady ? "Bridge ready" : "Connecting bridge"}
-        </span>
-      </div>
+      <UnifiedPageHeader
+        title="Atualizar Base"
+        subtitle="Downloads CVM filings and writes them into the local SQLite database under Documents\CVMAnalytics\db. This is the data refresh, not the application updater."
+        actions={
+          <span
+            className={
+              bridgeReady
+                ? "rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-200 font-mono"
+                : "rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs text-amber-200 font-mono"
+            }
+          >
+            {bridgeReady ? "Bridge ready" : "Connecting bridge"}
+          </span>
+        }
+      />
     </header>
   );
 }

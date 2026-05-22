@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { fetchHealth, type HealthResult } from "@/lib/api/health";
 import { whenBridgeReady, type BridgeMode } from "@/lib/bridge/adapter";
+import { PageHeader } from "@/components/PageHeader";
 
 type LoadState =
   | { kind: "idle" }
@@ -36,11 +37,11 @@ export function HealthCard() {
   }, []);
 
   return (
-    <section className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-6 shadow-lg">
-      <header className="mb-4 flex items-baseline justify-between">
-        <h2 className="text-lg font-semibold text-zinc-100">Runtime health</h2>
-        <span className="text-xs text-zinc-500">via pywebview bridge</span>
-      </header>
+    <section className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-6 shadow-lg space-y-4">
+      <PageHeader
+        title="Runtime health"
+        subtitle="via pywebview bridge"
+      />
       <Body state={state} />
     </section>
   );

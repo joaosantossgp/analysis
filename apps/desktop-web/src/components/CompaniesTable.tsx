@@ -257,7 +257,7 @@ function FilterBar({
           placeholder="Company name, ticker, or CVM code…"
           value={searchInput}
           onChange={(event) => onSearchInput(event.target.value)}
-          className="w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600"
+          className="w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-cyan-600 focus:outline-none focus:ring-1 focus:ring-cyan-600"
         />
       </div>
       <div className="min-w-[220px]">
@@ -272,7 +272,7 @@ function FilterBar({
           value={selectedSector}
           onChange={(event) => onSectorChange(event.target.value)}
           disabled={sectorsLoading || sectorsError}
-          className="w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600 disabled:opacity-50"
+          className="w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 focus:border-cyan-600 focus:outline-none focus:ring-1 focus:ring-cyan-600 disabled:opacity-50"
         >
           <option value="">
             {sectorsLoading
@@ -452,9 +452,9 @@ function CompanyRow({
       <td className="px-3 py-2">
         <Link
           to={`/empresas/${company.cd_cvm}`}
-          className="block focus:outline-none focus:ring-1 focus:ring-emerald-600"
+          className="block focus:outline-none focus:ring-1 focus:ring-cyan-600"
         >
-          <div className="font-medium text-zinc-100 group-hover:text-emerald-300">
+          <div className="font-medium text-zinc-100 group-hover:text-cyan-300">
             {company.company_name}
           </div>
         </Link>

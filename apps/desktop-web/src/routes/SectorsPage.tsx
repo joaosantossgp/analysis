@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { fetchSectors, type SectorDirectoryResult, type SectorGroupBy } from "@/lib/api/sectors";
 import { whenBridgeReady } from "@/lib/bridge/adapter";
+import { PageHeader } from "@/components/PageHeader";
 
 function normalizeGroupBy(value: string | null): SectorGroupBy {
   return value === "sub_sector" ? "sub_sector" : "sector";
@@ -45,18 +46,14 @@ export function SectorsPage() {
   };
 
   return (
-    <section className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-6 shadow-lg">
-      <header className="mb-4 flex flex-wrap items-baseline justify-between gap-4">
-        <div>
-          <h2 className="text-lg font-semibold text-zinc-100">
-            Sectors directory
-          </h2>
-          <p className="text-xs text-zinc-500">
-            GICS hub view — counts and coverage from the local CVM database.
-          </p>
-        </div>
-        <Status query={query} groups={items.length} totalCompanies={totalCompanies} />
-      </header>
+    <section className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-6 shadow-lg space-y-4">
+      <PageHeader
+        title="Sectors directory"
+        subtitle="GICS hub view — counts and coverage from the local CVM database."
+        actions={
+          <Status query={query} groups={items.length} totalCompanies={totalCompanies} />
+        }
+      />
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <GroupTab
@@ -222,16 +219,22 @@ function SectorRow({
 }) {
   // Detail page is keyed by GICS hub sector slug. Sub-industries point at
   // their parent sector so the user lands somewhere meaningful.
-  const detailSlug =
-    groupBy === "sub_sector" ? item.parent_sector_slug : item.sector_slug;
+  const linkTo =
+    groupBy === "sub_sector"
+      ? item.parent_sector_slug && item.sector_slug
+        ? `/setores/${item.parent_sector_slug}/${item.sector_slug}`
+        : null
+      : item.sector_slug
+      ? `/setores/${item.sector_slug}`
+      : null;
   const subIndustryCount = item.sub_industries?.length ?? 0;
   return (
     <tr className="group hover:bg-zinc-900/50">
       <td className="px-3 py-2">
-        {detailSlug ? (
+        {linkTo ? (
           <Link
-            to={`/setores/${detailSlug}`}
-            className="font-medium text-zinc-100 group-hover:text-emerald-300"
+            to={linkTo}
+            className="font-medium text-zinc-100 group-hover:text-cyan-300"
           >
             {item.sector_name}
           </Link>
@@ -259,7 +262,7 @@ function SectorRow({
       <td className="px-3 py-2 text-xs">
         <Link
           to={`/?sector=${encodeURIComponent(item.sector_slug)}`}
-          className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-300 hover:border-emerald-700 hover:text-emerald-300"
+          className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-300 hover:border-cyan-700 hover:text-cyan-300"
         >
           View companies →
         </Link>

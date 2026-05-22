@@ -6,6 +6,7 @@ import {
   openStatusPath,
   type StatusPathKind,
 } from "@/lib/api/appStatus";
+import { PageHeader as UnifiedPageHeader } from "@/components/PageHeader";
 import { whenBridgeReady } from "@/lib/bridge/adapter";
 import type {
   AppStatusPayload,
@@ -131,32 +132,25 @@ function PageHeader({
   const runtime = status?.runtime;
   return (
     <header className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-5 shadow-lg">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="space-y-2">
-          <p className="text-xs uppercase tracking-widest text-zinc-500">
-            Local desktop status
-          </p>
-          <h2 className="text-2xl font-semibold text-zinc-50">Status</h2>
-          <p className="max-w-3xl text-sm leading-6 text-zinc-400">
-            Runtime, local data, database, software updater, and diagnostics for
-            the experimental Vite desktop mode. Software update is separate from
-            Atualizar Base.
-          </p>
-        </div>
-        <div className="flex flex-col items-end gap-2 text-right">
-          <StatusPill tone={runtime?.bridge_status === "ready" ? "good" : "warn"}>
-            {loading ? "Connecting bridge" : `Bridge ${runtime?.bridge_status ?? "unknown"}`}
-          </StatusPill>
-          <button
-            type="button"
-            disabled={checking}
-            onClick={onCheckUpdates}
-            className="rounded-md border border-cyan-700/70 bg-cyan-500/10 px-3 py-1.5 text-xs font-medium text-cyan-100 hover:bg-cyan-500/15 disabled:cursor-not-allowed disabled:border-zinc-800 disabled:bg-zinc-900 disabled:text-zinc-600"
-          >
-            {checking ? "Checking releases..." : "Check software update"}
-          </button>
-        </div>
-      </div>
+      <UnifiedPageHeader
+        title="Status"
+        subtitle="Runtime, local data, database, software updater, and diagnostics for the experimental Vite desktop mode. Software update is separate from Atualizar Base."
+        actions={
+          <div className="flex flex-col items-end gap-2 text-right">
+            <StatusPill tone={runtime?.bridge_status === "ready" ? "good" : "warn"}>
+              {loading ? "Connecting bridge" : `Bridge ${runtime?.bridge_status ?? "unknown"}`}
+            </StatusPill>
+            <button
+              type="button"
+              disabled={checking}
+              onClick={onCheckUpdates}
+              className="rounded-md border border-cyan-700/70 bg-cyan-500/10 px-3 py-1.5 text-xs font-medium text-cyan-100 hover:bg-cyan-500/15 disabled:cursor-not-allowed disabled:border-zinc-800 disabled:bg-zinc-900 disabled:text-zinc-600 font-mono"
+            >
+              {checking ? "Checking releases..." : "Check software update"}
+            </button>
+          </div>
+        }
+      />
     </header>
   );
 }

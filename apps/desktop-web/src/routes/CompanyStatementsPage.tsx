@@ -1,12 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
-import { ExportCompanyButton } from "@/components/ExportCompanyButton";
+import { EntityHeader } from "@/components/EntityHeader";
 import {
-  fetchCompanyInfo,
   fetchCompanyYears,
-  type CompanyInfoResult,
   type CompanyYearsResultUI,
 } from "@/lib/api/companyDetail";
 import {
@@ -67,19 +65,7 @@ export function CompanyStatementsPage() {
 
   return (
     <section className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <Link
-          to={`/empresas/${cdCvm}`}
-          className="inline-flex items-center text-xs text-zinc-400 hover:text-zinc-200"
-        >
-          ← Back to company overview
-        </Link>
-        <Link to="/" className="text-xs text-zinc-500 hover:text-zinc-300">
-          Company directory
-        </Link>
-      </div>
-
-      <StatementsHeader cdCvm={cdCvm} bridgeReady={bridgeReady} />
+      <EntityHeader cdCvm={cdCvm} activeTab="statements" />
 
       <StatementSelector
         active={statementType}
@@ -92,85 +78,6 @@ export function CompanyStatementsPage() {
         bridgeReady={bridgeReady}
       />
     </section>
-  );
-}
-
-function StatementsHeader({
-  cdCvm,
-  bridgeReady,
-}: {
-  cdCvm: number;
-  bridgeReady: boolean;
-}) {
-  const query = useQuery<CompanyInfoResult>({
-    queryKey: ["company-info", cdCvm],
-    queryFn: () => fetchCompanyInfo(cdCvm),
-    enabled: bridgeReady,
-  });
-
-  if (!bridgeReady || query.isLoading) {
-    return <CardSkeleton title="Loading company context..." />;
-  }
-  if (query.isError) {
-    return (
-      <ErrorState
-        title="Company context unavailable"
-        message={query.error instanceof Error ? query.error.message : String(query.error)}
-      />
-    );
-  }
-  if (query.data?.mode === "browser") {
-    return <BrowserModeBanner reason={query.data.reason} />;
-  }
-  if (query.data?.mode === "desktop-not-found") {
-    return (
-      <ErrorState
-        title="Company not found"
-        message={`No local catalog entry for CVM ${query.data.cd_cvm}.`}
-      />
-    );
-  }
-
-  const info = query.data?.info;
-  if (!info) {
-    return <CardSkeleton title="Loading company context..." />;
-  }
-
-  return (
-    <article className="rounded-lg border border-zinc-800 bg-zinc-900/70 p-6 shadow-lg">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="space-y-2">
-          <p className="text-xs uppercase tracking-widest text-zinc-500">
-            Financial statements
-          </p>
-          <h2 className="text-2xl font-semibold text-zinc-50">{info.company_name}</h2>
-          <p className="max-w-2xl text-sm leading-6 text-zinc-400">
-            Auditable CVM statement matrix through the existing Python bridge. Values are displayed as
-            compact Brazilian reais converted from CVM's stored R$ thousands.
-          </p>
-        </div>
-        <dl className="grid min-w-48 grid-cols-2 gap-3 text-right text-sm">
-          <div>
-            <dt className="text-xs uppercase tracking-wider text-zinc-500">CVM</dt>
-            <dd className="font-mono text-zinc-200">{info.cd_cvm}</dd>
-          </div>
-          <div>
-            <dt className="text-xs uppercase tracking-wider text-zinc-500">Ticker</dt>
-            <dd className="font-mono text-zinc-200">{info.ticker_b3 ?? "—"}</dd>
-          </div>
-          <div className="col-span-2">
-            <dt className="text-xs uppercase tracking-wider text-zinc-500">Latest year</dt>
-            <dd className="font-mono text-zinc-200">{info.latest_readable_year ?? "—"}</dd>
-          </div>
-        </dl>
-      </div>
-      <div className="mt-4 border-t border-zinc-800 pt-4">
-        <ExportCompanyButton
-          cdCvm={info.cd_cvm}
-          scopeNote="Full company workbook — backend currently emits one .xlsx per company (all statements + KPIs). Per-statement scope is not yet supported by the export pipeline."
-        />
-      </div>
-    </article>
   );
 }
 

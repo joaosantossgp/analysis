@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { fetchSectorDetail, type SectorDetailResult } from "@/lib/api/sectors";
 import { whenBridgeReady } from "@/lib/bridge/adapter";
+import { PageHeader } from "@/components/PageHeader";
 
 function parseYear(raw: string | null): number | null {
   if (!raw) return null;
@@ -74,22 +75,19 @@ export function SectorDetailPage() {
     setSearchParams(next, { replace: true });
   };
 
-  return (
-    <section className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-6 shadow-lg">
-      <Breadcrumbs sectorName={detail?.sector_name ?? slug} />
+  const breadcrumbsList = useMemo(() => [
+    { label: "Sectors", to: "/setores" },
+    { label: detail?.sector_name ?? slug },
+  ], [detail, slug]);
 
-      <header className="mt-2 mb-4 flex flex-wrap items-baseline justify-between gap-4">
-        <div>
-          <h2 className="text-lg font-semibold text-zinc-100">
-            {detail?.sector_name ?? "Sector"}
-          </h2>
-          <p className="text-xs text-zinc-500">
-            GICS sector ·{" "}
-            <code className="font-mono">CVMBridge.get_sector_detail</code>
-          </p>
-        </div>
-        <Status query={query} notFound={notFound} />
-      </header>
+  return (
+    <section className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-6 shadow-lg space-y-4">
+      <PageHeader
+        title={detail?.sector_name ?? "Sector"}
+        subtitle="GICS sector · CVMBridge.get_sector_detail"
+        breadcrumbs={breadcrumbsList}
+        actions={<Status query={query} notFound={notFound} />}
+      />
 
       <BodyHeader detail={detail} onYearChange={setYear} />
 
@@ -111,17 +109,7 @@ export function SectorDetailPage() {
   );
 }
 
-function Breadcrumbs({ sectorName }: { sectorName: string }) {
-  return (
-    <nav aria-label="breadcrumb" className="text-xs text-zinc-500">
-      <Link to="/setores" className="hover:text-zinc-200">
-        Sectors
-      </Link>
-      <span className="mx-2 text-zinc-700">/</span>
-      <span className="text-zinc-300">{sectorName}</span>
-    </nav>
-  );
-}
+// Breadcrumbs component removed as it is now unified in @/components/PageHeader
 
 function Status({
   query,
@@ -170,7 +158,7 @@ function BodyHeader({
           value={detail.selected_year}
           onChange={(event) => onYearChange(Number.parseInt(event.target.value, 10))}
           disabled={detail.available_years.length === 0}
-          className="rounded border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs text-zinc-100 focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600 disabled:opacity-50"
+          className="rounded border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs text-zinc-100 focus:border-cyan-600 focus:outline-none focus:ring-1 focus:ring-cyan-600 disabled:opacity-50"
         >
           {detail.available_years.length === 0 ? (
             <option value={detail.selected_year}>{detail.selected_year}</option>
@@ -184,7 +172,7 @@ function BodyHeader({
         </select>
         <Link
           to={`/?sector=${encodeURIComponent(detail.sector_slug)}`}
-          className="ml-2 rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-300 hover:border-emerald-700 hover:text-emerald-300"
+          className="ml-2 rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-300 hover:border-cyan-700 hover:text-cyan-300"
         >
           Open in directory →
         </Link>
@@ -219,7 +207,7 @@ function CompanyFilterBar({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         disabled={disabled}
-        className="w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600 disabled:opacity-50"
+        className="w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-cyan-600 focus:outline-none focus:ring-1 focus:ring-cyan-600 disabled:opacity-50"
       />
     </div>
   );
@@ -339,7 +327,7 @@ function CompanyTable({
               <td className="px-3 py-2">
                 <Link
                   to={`/empresas/${company.cd_cvm}`}
-                  className="font-medium text-zinc-100 group-hover:text-emerald-300"
+                  className="font-medium text-zinc-100 group-hover:text-cyan-300"
                 >
                   {company.company_name}
                 </Link>

@@ -8,6 +8,7 @@ import { CompanyStatementsPage } from "./routes/CompanyStatementsPage";
 import { HealthPage } from "./routes/HealthPage";
 import { SectorDetailPage } from "./routes/SectorDetailPage";
 import { SectorsPage } from "./routes/SectorsPage";
+import { SubSectorDetailPage } from "./routes/SubSectorDetailPage";
 import { StatusPage } from "./routes/StatusPage";
 import { UpdateBasePage } from "./routes/UpdateBasePage";
 
@@ -42,6 +43,7 @@ export function App() {
             <Route path="/atualizar-base" element={<UpdateBasePage />} />
             <Route path="/setores" element={<SectorsPage />} />
             <Route path="/setores/:slug" element={<SectorDetailPage />} />
+            <Route path="/setores/:sectorSlug/:subSectorSlug" element={<SubSectorDetailPage />} />
             <Route
               path="/empresas/:cdCvm"
               element={<CompanyDetailPage />}
