@@ -52,7 +52,7 @@ To:
 | Phase 5A | Legacy deletion audit + plan | Done | Audit-only phase. Output: [PHASE_5_LEGACY_DELETION_AUDIT.md](PHASE_5_LEGACY_DELETION_AUDIT.md). Found that `apps/web/` is also deployed to Vercel and `apps/api/` is the Railway-hosted FastAPI used by data-pipeline CI workflows — both are dual-use products, not pure desktop legacy. Phase 5B narrowed to desktop-bundle cleanup only. |
 | Phase 5B | Desktop-side legacy deletion (`--legacy` flag, `web_standalone`, `node.exe`, `desktop/node_portable/`) | Released as v0.15.0 | Removed the packaged Next/Node runtime from the desktop bundle. `apps/web/`, `apps/api/`, `railway.toml`, and `landing/` stay in source and are not packaged. |
 | Phase 5C | Source-only / hosted-surface cleanup decision | Done | Output: [PHASE_5C_SOURCE_LEGACY_CLEANUP.md](PHASE_5C_SOURCE_LEGACY_CLEANUP.md). Kept `apps/web/`, `apps/api/`, and `railway.toml` as documented source-only/hosted surfaces; removed default CI blockers for legacy Next/perf jobs. |
-| Phase 6 | Polish/performance | Not started | Startup, logging, AV/code-signing review. Was previously called "Phase 4". |
+| Phase 6 | Stable Release / Final Product Pass | Released as v0.17.0 | Completed product hardening audit, standardized KPI cells display/styling, monospaced tabular fonts, non-blocking diagnostics mode, and final release validation. |
 
 See [PHASE_0_RELEASE_CHECKPOINT.md](PHASE_0_RELEASE_CHECKPOINT.md) for the v0.3.0 release record, validation list, and known hygiene issues.
 

@@ -40,11 +40,11 @@ The authoritative runtime is the packaged Windows desktop executable. The Vercel
 
 - **Python (`src/`)** owns the data pipeline, SQLite access, KPI engine, refresh worker, and Excel export.
 - **pywebview** hosts WebView2 and exposes Python callables to JavaScript as `window.pywebview.api`.
-- **Vite + React + TypeScript** under `apps/desktop-web/` builds to a static SPA served from a local loopback HTTP server. This is the only packaged desktop UI runtime as of `v0.15.0`.
+- **Vite + React + TypeScript** under `apps/desktop-web/` builds to a static SPA served from a local loopback HTTP server. This is the only packaged desktop UI runtime.
 - **Next.js 16** under `apps/web/` remains in source as a source-only legacy / hosted web app. It is not packaged into the desktop app.
 - **FastAPI (`apps/api/`)** remains in source for the hosted Railway API and API tests. It is not started or packaged by the desktop runtime.
 
-The Phase 3 sequence ported every P0 production screen into Vite (statements, KPIs, sectors, Excel export, refresh, status/updater). Phase 4 (`v0.14.0`) made Vite the default. Phase 5B (`v0.15.0`) removed the desktop-packaged Next/Node runtime. Phase 5C keeps `apps/web/` and `apps/api/` as documented source-only/hosted surfaces and stops default CI from treating them as desktop blockers. See `docs/migration/`.
+The Phase 3 sequence ported every P0 production screen into Vite (statements, KPIs, sectors, Excel export, refresh, status/updater). Phase 4 (`v0.14.0`) made Vite the default. Phase 5B (`v0.15.0`) removed the desktop-packaged Next/Node runtime. Phase 5C kept source-only/hosted surfaces. Phase 6 (`v0.17.0`) completed the final product hardening audit, standardized KPI/monospaced styling, and finalized the stable release pass. See `docs/migration/`.
 
 ## Runtime Model
 
@@ -180,7 +180,7 @@ The repository is in the middle of a multi-phase simplification of the desktop r
 | Phase 5A | Legacy deletion audit | Done. Found `apps/web/` and `apps/api/` are source-only / hosted products, not desktop package dependencies. |
 | Phase 5B | Remove desktop-packaged Next/Node runtime | **Released as `v0.15.0`.** The desktop package no longer ships `node.exe`, `web_standalone/`, or the Next standalone runtime. |
 | Phase 5C | Source-only / hosted-surface cleanup decision | Done. Kept `apps/web/`, `apps/api/`, and `railway.toml` documented as non-packaged surfaces; removed default CI blockers for legacy Next/perf jobs. |
-| Phase 6 | Polish, code signing, AV review | Not started |
+| Phase 6 | Stable Release / Final Product Pass | **Released (v0.17.0)** |
 
 See:
 
@@ -214,7 +214,7 @@ tests/           Pytest suite
 
 - Windows-only. macOS and Linux are not supported targets.
 - Requires Microsoft Edge WebView2 runtime (preinstalled on Windows 11; usually present on recent Windows 10).
-- As of `v0.15.0` the packaged desktop app is Vite-only and does not spawn a Node.js child process. `CVMAnalytics.exe --legacy` is unsupported and continues into Vite after a warning.
+- The packaged desktop app is Vite-only and does not spawn a Node.js child process. `CVMAnalytics.exe --legacy` is unsupported and continues into Vite after a warning.
 - The dev database under `data/db/cvm_financials.db` is for developer use only. End users do not need it; the packaged app provisions its own DB under `%USERPROFILE%\Documents\CVMAnalytics` (with WAL-safe migration from legacy `%LOCALAPPDATA%` if present).
 - No telemetry. No crash reporting service is wired into the local desktop app.
 

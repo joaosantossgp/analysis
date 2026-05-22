@@ -2,7 +2,7 @@
 
 ## Status
 
-**Phase 5B desktop runtime (`v0.15.0`).** This package is the **only packaged desktop UI**. The legacy Next.js stack under `apps/web/` remains in the source tree, but it is no longer bundled into `CVMAnalytics.exe`; the package no longer ships `web_standalone/` or `node.exe`. `CVMAnalytics.exe --legacy` now shows a short unsupported-runtime warning and continues into the Vite UI. `v0.14.1` added the idempotent startup GICS backfill: it reads `_internal/data/import/gics_mapping.csv` and populates `companies.gics_sector / gics_sector_slug / gics_sub_industry` for rows whose GICS fields are empty.
+**Stable desktop runtime (`v0.17.0`).** This package is the **only packaged desktop UI**. The legacy Next.js stack under `apps/web/` remains in the source tree, but it is no longer bundled into `CVMAnalytics.exe`; the package no longer ships `web_standalone/` or `node.exe`. `CVMAnalytics.exe --legacy` now shows a short unsupported-runtime warning and continues into the Vite UI. `v0.14.1` added the idempotent startup GICS backfill: it reads `_internal/data/import/gics_mapping.csv` and populates `companies.gics_sector / gics_sector_slug / gics_sub_industry` for rows whose GICS fields are empty.
 
 Screens with dynamic routing prove the architecture:
 
@@ -99,7 +99,7 @@ Output is a static SPA at `apps/desktop-web/dist/`.
 
 ## Phase 5B — Vite-only packaged launch mode
 
-As of `v0.15.0` the packaged desktop executable loads this Vite SPA as the only packaged UI runtime. The Next standalone server and bundled Node runtime are no longer included.
+The packaged desktop executable loads this Vite SPA as the only packaged UI runtime. The Next standalone server and bundled Node runtime are no longer included.
 
 ```powershell
 # packaged — Vite default (no Node process)

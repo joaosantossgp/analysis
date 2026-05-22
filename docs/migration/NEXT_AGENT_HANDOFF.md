@@ -41,7 +41,7 @@ This is the **primary entry point** for any AI agent or human contributor pickin
 | **Phase 5A** | Legacy deletion audit | Done. Found `apps/web/` and `apps/api/` are not desktop package dependencies and should stay unless source deletion is approved. | See `PHASE_5_LEGACY_DELETION_AUDIT.md` |
 | **Phase 5B** | Desktop-side legacy runtime removal | **Released as `v0.15.0`.** Removed packaged Next/Node runtime: no `node.exe`, no `web_standalone/`, no Next build step. `--legacy` warns and continues into Vite. | See `PHASE_5_LEGACY_DELETION_AUDIT.md` |
 | **Phase 5C** | Source-only / hosted-surface cleanup decision | Done. Kept `apps/web/`, `apps/api/`, and `railway.toml` as source-only/hosted surfaces. Default CI now targets Python core and `apps/desktop-web`; legacy web perf guardrails are manual. | See `PHASE_5C_SOURCE_LEGACY_CLEANUP.md` |
-| **Phase 6** | Polish, code signing, AV/UPX review | Not started. Was previously called "Phase 4". | — |
+| **Phase 6** | Stable Release / Final Product Pass | **Released (v0.17.0)** | Standardized formatting, non-blocking diagnostics, and final validation. |
 
 ---
 
