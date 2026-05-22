@@ -515,15 +515,25 @@ def _run_diagnostic_mode() -> None:
     """`--diagnose-runtime` entrypoint. Writes report + opens it in Notepad."""
     _configure_bundled_data_paths()
     log_path = _diagnose_runtime_to_file()
+    is_headless = "--non-interactive" in sys.argv or "--headless" in sys.argv
+    is_redirected = sys.stdout is None or not sys.stdout.isatty()
+    non_interactive = is_headless or is_redirected
     summary = (
         f"Diagnostico salvo em:\n{log_path}\n\n"
         "Clique em OK para abrir o arquivo no Notepad."
     )
-    _show_fatal_messagebox(title="CVM Analytics — diagnostico de runtime", body=summary)
-    try:
-        os.startfile(str(log_path))  # type: ignore[attr-defined]
-    except Exception:
-        pass
+    if non_interactive:
+        try:
+            print("CVM Analytics - Diagnostico de runtime concluido.")
+            print(f"Diagnostico salvo em: {log_path}")
+        except Exception:
+            pass
+    else:
+        _show_fatal_messagebox(title="CVM Analytics — diagnostico de runtime", body=summary)
+        try:
+            os.startfile(str(log_path))  # type: ignore[attr-defined]
+        except Exception:
+            pass
     sys.exit(0)
 
 

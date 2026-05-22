@@ -1,9 +1,11 @@
 name: Legacy Web Perf Guardrails
 
+# This workflow is obsolete for the packaged desktop runtime.
+# It is retained only for source-only hosted web/performance audits.
+# apps/web is no longer part of the packaged desktop product. Keep these
+# guardrails available for manual hosted-web audits, but do not block desktop
+# CI/release on legacy Next route budgets.
 on:
-  # apps/web is no longer part of the packaged desktop product. Keep these
-  # guardrails available for manual hosted-web audits, but do not block desktop
-  # CI/release on legacy Next route budgets.
   workflow_dispatch:
 
 jobs:

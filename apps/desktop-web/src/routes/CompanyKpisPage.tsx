@@ -12,6 +12,7 @@ import {
 } from "@/lib/api/companyDetail";
 import { whenBridgeReady } from "@/lib/bridge/adapter";
 import type { TabularData, TabularRow } from "@/lib/bridge/types";
+import { formatKpiCell, formatUnit } from "@/lib/formatters";
 
 const DEFAULT_RECENT_YEARS = 5;
 
@@ -406,39 +407,7 @@ function KpiTable({
   );
 }
 
-function formatUnit(formatType: unknown): string {
-  const f = typeof formatType === "string" ? formatType.toLowerCase() : "";
-  if (f === "pct") return "%";
-  if (f === "money") return "R$";
-  if (f === "ratio") return "x";
-  if (f === "bps") return "bps";
-  return "—";
-}
 
-function formatKpiCell(value: unknown, formatType: unknown): string {
-  if (value === null || value === undefined || value === "") return "—";
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    const s = String(value);
-    return s.length > 0 ? s : "—";
-  }
-  const format = typeof formatType === "string" ? formatType.toLowerCase() : "";
-  if (format === "pct") {
-    return `${(value * 100).toFixed(1)}%`;
-  }
-  if (format === "money") {
-    if (Math.abs(value) >= 1_000_000) {
-      return `${(value / 1_000_000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mn`;
-    }
-    return value.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
-  }
-  if (format === "ratio") {
-    return `${value.toFixed(2)}x`;
-  }
-  if (format === "bps") {
-    return `${Math.round(value)} bps`;
-  }
-  return value.toLocaleString("pt-BR", { maximumFractionDigits: 2 });
-}
 
 function CardSkeleton({ title }: { title: string }) {
   return (

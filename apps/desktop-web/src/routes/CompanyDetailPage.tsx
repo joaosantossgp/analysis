@@ -12,6 +12,7 @@ import {
 } from "@/lib/api/companyDetail";
 import { whenBridgeReady } from "@/lib/bridge/adapter";
 import type { TabularRow } from "@/lib/bridge/types";
+import { formatKpiCell } from "@/lib/formatters";
 
 const MAX_KPI_YEARS = 5;
 
@@ -224,22 +225,6 @@ function KpiTable({
       </table>
     </div>
   );
-}
-
-function formatKpiCell(value: unknown, formatType: unknown): string {
-  if (value === null || value === undefined || value === "") return "—";
-  if (typeof value !== "number" || !Number.isFinite(value)) return String(value);
-  const format = typeof formatType === "string" ? formatType : "";
-  if (format === "pct") {
-    return `${(value * 100).toFixed(1)}%`;
-  }
-  if (format === "money") {
-    return value.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
-  }
-  if (format === "ratio") {
-    return value.toFixed(2);
-  }
-  return value.toLocaleString("pt-BR", { maximumFractionDigits: 2 });
 }
 
 function BrowserModeBanner({ reason }: { reason: string }) {

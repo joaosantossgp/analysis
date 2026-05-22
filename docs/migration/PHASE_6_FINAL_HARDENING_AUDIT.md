@@ -158,11 +158,23 @@ We recommend executing these specific fixes in Phase 6B:
 
 ## Release Readiness
 
-*   **Status:** **ready for stable after minor fixes**
-*   **Blockers:** None. No P0 blockers were identified. The current runtime is functional and ready for stable compilation once the P1 polish list is executed.
+*   **Status:** **READY FOR STABLE RELEASE**
+*   **Blockers:** None. All Phase 6A issues have been resolved in Phase 6B.
 
 ---
 
 ## Recommendation
 
-Proceed immediately to **Phase 6B (Fixes)** to resolve the cell formatting, non-interactive CLI diagnostics, and tabular-nums styling issues.
+The packaged desktop product is fully validated and ready for stable release as version `v0.17.0`.
+
+---
+
+## Phase 6B Completion Note
+
+All four minor hardening fixes from Phase 6B have been applied and successfully validated:
+1. **KPI Formatting Consistency:** Extracted a shared `formatKpiCell` and `formatUnit` formatter to `apps/desktop-web/src/lib/formatters.ts` and successfully imported/used it in both `CompanyDetailPage.tsx` and `CompanyKpisPage.tsx`.
+2. **Non-blocking Diagnostics:** Modified `_run_diagnostic_mode()` in `desktop/app.py` to detect headless/non-interactive contexts, output path/summary to stdout, and exit cleanly without triggering a blocking native `MessageBoxW` or spawning notepad.
+3. **Tabular Numbers Styling:** Added global `.font-mono` styling rule in `apps/desktop-web/src/index.css` to enforce `font-variant-numeric: tabular-nums;`.
+4. **Obsolete Workflow Comment:** Added a comment header to `.github/workflows/perf-guardrails.yml` clarifying its obsolete status for the packaged desktop app.
+
+All changes were locally validated with typecheck, build, compile checks, and diagnostics checks. The packaged desktop application has been built as version `v0.17.0` and validated.
