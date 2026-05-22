@@ -150,10 +150,21 @@ function Body({
   }
   if (items.length === 0) {
     return (
-      <p className="text-sm text-zinc-400">
-        No sectors available. Run Update Base to populate company data, then
-        return to this screen.
-      </p>
+      <div className="space-y-3 rounded border border-amber-500/30 bg-amber-500/5 p-4 text-sm leading-relaxed text-amber-100">
+        <p className="font-medium">No GICS classifications found in the local database.</p>
+        <p className="text-amber-100/80">
+          The Vite sectors directory only renders the 11 official GICS hubs.
+          Your runtime DB has companies but none carry GICS fields, so this
+          screen is empty.
+        </p>
+        <p className="text-amber-100/80">
+          Fix: install / launch <span className="font-mono">CVMAnalytics.exe</span>{" "}
+          v0.14.1 or later — startup runs a one-shot GICS backfill from the
+          bundled mapping CSV. Alternatively, run <span className="font-mono">scripts/backfill_company_gics.py</span>{" "}
+          or <span className="font-mono">scripts/import_company_gics.py</span>{" "}
+          against your DB before relaunching.
+        </p>
+      </div>
     );
   }
   return <SectorsTable items={items} groupBy={groupBy} />;

@@ -2,7 +2,7 @@
 
 ## Status
 
-**Phase 4 default UI (`v0.14.0`).** This package is now the **default** desktop UI. The legacy Next.js stack under `apps/web/` is still packaged and reachable through `CVMAnalytics.exe --legacy`. No legacy code was deleted; the bundle still ships `web_standalone/`, `node.exe`, and FastAPI dependencies. Legacy deletion is gated on a clean soak of the `v0.14.0` default flip plus explicit user approval.
+**Phase 4 default UI (`v0.14.0`, hotfix `v0.14.1`).** This package is now the **default** desktop UI. The legacy Next.js stack under `apps/web/` is still packaged and reachable through `CVMAnalytics.exe --legacy`. No legacy code was deleted; the bundle still ships `web_standalone/`, `node.exe`, and FastAPI dependencies. `v0.14.1` adds an idempotent startup GICS backfill: it reads `_internal/data/import/gics_mapping.csv` and populates `companies.gics_sector / gics_sector_slug / gics_sub_industry` for rows whose GICS fields are empty. Fixes the sectors / sector-filter screens for user DBs that only carried CVM/B3 labels. Legacy deletion is gated on a clean soak of `v0.14.1` plus explicit user approval.
 
 Screens with dynamic routing prove the architecture:
 

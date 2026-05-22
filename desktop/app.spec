@@ -17,6 +17,7 @@ STANDALONE_DIR = ROOT / "apps" / "web" / ".next" / "standalone"
 VITE_DIST_DIR = ROOT / "apps" / "desktop-web" / "dist"
 NODE_EXE = ROOT / "desktop" / "node_portable" / "node.exe"
 UPDATE_HELPER = ROOT / "desktop" / "update_helper.ps1"
+GICS_MAPPING_CSV = ROOT / "data" / "import" / "gics_mapping.csv"
 
 datas = []
 
@@ -35,6 +36,14 @@ if NODE_EXE.exists():
 
 # Bundled PowerShell helper used by the auto-updater to swap files after exit.
 datas.append((str(UPDATE_HELPER), "."))
+
+# v0.14.1 hotfix: ship the canonical GICS mapping CSV so the startup
+# backfill in desktop/app.py::_ensure_gics_backfilled can populate
+# companies.gics_* on user DBs that were seeded before GICS columns were
+# filled. Without this asset, the Vite sectors / sector-filter screens
+# render only "Sem classificacao GICS".
+if GICS_MAPPING_CSV.exists():
+    datas.append((str(GICS_MAPPING_CSV), "data/import"))
 
 # v0.3.1: pythonnet's .NET assembly cannot bind its dependencies without
 # Python.Runtime.deps.json sitting next to Python.Runtime.dll. PyInstaller's

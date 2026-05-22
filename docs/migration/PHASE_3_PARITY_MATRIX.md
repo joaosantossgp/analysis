@@ -242,6 +242,18 @@ Why these slices:
 - Per-statement Excel export: Allows users on the statements page to download a scoped workbook containing only the relevant statement sheets (DRE, BPA, BPP, or DFC), preventing clutter and matching ticker-scoped output.
 - Software updater UI: Adds the update workflow to Vite, allowing users to safely check, confirm, download, stage, and apply updates out-of-process using the robust `update_helper.ps1` script without losing user data or database states.
 
+## v0.14.1 GICS Backfill Hotfix
+
+User reported the Vite sectors screen showed only "Sem classificacao GICS" with 109 companies. Root cause: the user's runtime DB carried CVM/B3 sector labels in `setor_cvm` but no values in `companies.gics_sector` / `gics_sub_industry`. The Vite sectors screen and the company directory sector filter both only render the 11 official GICS hubs (`src/gics_manual_mapping.py::GICS_11_SECTORS`), so without GICS values they render empty.
+
+Fix shipped in `v0.14.1`:
+
+- `desktop/app.spec` ships `data/import/gics_mapping.csv` as `_internal/data/import/gics_mapping.csv`.
+- `desktop/app.py::_ensure_gics_backfilled` runs on every packaged startup (after `_ensure_db_initialized`, before `_preflight_pywebview_backend`). It reads the CSV, restricts to mapping rows whose `gics_sector` matches one of the 11 canonical labels, and UPDATEs only rows where `gics_sector IS NULL` or empty. Never overwrites a populated GICS row, never touches financial data, never modifies `setor_cvm` / `setor_analitico`. Logged to `Documents/CVMAnalytics/recovery.log`.
+- `apps/desktop-web/src/routes/SectorsPage.tsx` empty-state now spells out the GICS-coverage condition and points the user at `v0.14.1` and at `scripts/backfill_company_gics.py` / `scripts/import_company_gics.py` for self-recovery.
+
+Validated locally: launching `v0.14.1` against a DB with `gics_sector=NULL` for all 109 companies populated 11 GICS hubs (Energy=3, Materials=8, Industrials=12, Consumer Discretionary=17, Consumer Staples=9, Health Care=6, Financials=20, Information Technology=3, Communication Services=6, Utilities=22, Real Estate=3) and 44 sub-industries. Relaunch produced no additional log lines.
+
 ## Phase 4 Implemented Surfaces
 
 Selected surfaces: Vite default startup + `--legacy` fallback flag.
