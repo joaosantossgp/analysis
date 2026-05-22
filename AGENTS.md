@@ -8,6 +8,7 @@ Canonical operating rules for AI agents in this project. English-only. ~120 line
 - For long-running autonomous PRs, also read `docs/governance/autonomous-mode.md`.
 - Before touching `src/` or `apps/api/`, also read `docs/CONTEXT.md`.
 - Before touching `apps/web/`, the per-directory `apps/web/AGENTS.md` is auto-loaded.
+- Before implementing or reviewing any Vite UI screen in `apps/desktop-web`, read and follow: [docs/skills/CVMANALYTICS_VITE_UI_SKILL.md](file:///c:/Users/jadaojoao/Documents/Projetos/analisys/docs/skills/CVMANALYTICS_VITE_UI_SKILL.md).
 - Active reference docs live in `docs/reference/`. ADRs live in `docs/decisions/`.
 - Anything in `docs/archive/` is historical — do not treat as current contract. (Note: there is no `docs/archive/` directory; stale planning docs were deleted. History lives in git log.)
 

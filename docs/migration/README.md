@@ -1,5 +1,8 @@
 # Desktop Runtime Migration
 
+> [!IMPORTANT]
+> Before implementing or reviewing any Vite UI screen in `apps/desktop-web`, read and follow: [docs/skills/CVMANALYTICS_VITE_UI_SKILL.md](file:///c:/Users/jadaojoao/Documents/Projetos/analisys/docs/skills/CVMANALYTICS_VITE_UI_SKILL.md).
+
 ## Goal
 
 Simplify the production desktop runtime from:

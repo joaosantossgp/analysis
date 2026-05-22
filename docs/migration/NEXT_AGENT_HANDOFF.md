@@ -2,6 +2,9 @@
 
 This is the **primary entry point** for any AI agent or human contributor picking up the migration. Read this first.
 
+> [!IMPORTANT]
+> Before implementing or reviewing any Vite UI screen in `apps/desktop-web`, read and follow: [docs/skills/CVMANALYTICS_VITE_UI_SKILL.md](file:///c:/Users/jadaojoao/Documents/Projetos/analisys/docs/skills/CVMANALYTICS_VITE_UI_SKILL.md).
+
 ---
 
 ## TL;DR
