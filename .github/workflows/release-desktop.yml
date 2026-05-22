@@ -29,13 +29,13 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
-          cache-dependency-path: apps/web/package-lock.json
+          cache-dependency-path: apps/desktop-web/package-lock.json
 
       - name: Install Python dependencies
         run: pip install -r requirements.txt
 
-      - name: Install Node dependencies
-        run: npm ci --prefix apps/web
+      - name: Install Vite desktop UI dependencies
+        run: npm ci --prefix apps/desktop-web
 
       - name: Resolve version
         id: ver

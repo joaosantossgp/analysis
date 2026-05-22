@@ -19,7 +19,7 @@ export async function fetchHealth(): Promise<HealthResult> {
       mode: "browser",
       payload: null,
       reason:
-        "Running in browser mode — pywebview bridge is unavailable. Launch via `python -m desktop.app --dev` and point the Next dev to this Vite shell, or run the packaged exe.",
+        "Running in browser mode — pywebview bridge is unavailable. Launch via `python -m desktop.app --dev` for Vite dev shell testing, or run the packaged exe.",
     };
   }
   const payload = await callBridge("get_health", {});

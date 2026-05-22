@@ -11,7 +11,7 @@ All the validation commands used during this migration, in one place. Copy/paste
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/test_ci_v034_full.ps1
 ```
 Downloads the latest `v0.3.4` zip from GitHub via `gh`, applies MOTW to 155 binaries, launches the bundled exe, simulates an updater swap with planted user data, and reports:
-- Fresh install: alive, WebView2 children, LOCALAPPDATA DB created.
+- Fresh install: alive, WebView2 children, Documents data root preserved/created.
 - Updater contract: exe + `_internal/` swapped, user data preserved byte-for-byte, rollback snapshot.
 
 ### Mark-of-the-Web reproduction (no updater path)
@@ -101,30 +101,34 @@ print('first company:', info['company_name'])
 
 ---
 
-## Phase 2 — Packaged `--vite` mode
+## Phase 5B — Packaged Vite-only mode
 
-### Build packaged exe with both UIs
+### Build packaged exe
 ```powershell
-.\desktop\build_desktop.ps1                     # builds Next + Vite + PyInstaller (fresh)
-.\desktop\build_desktop.ps1 -SkipNextBuild      # if Next dist still good
-.\desktop\build_desktop.ps1 -SkipViteBuild      # if Vite dist still good
-.\desktop\build_desktop.ps1 -SkipNextBuild -SkipViteBuild  # PyInstaller only
+.\desktop\build_desktop.ps1                     # builds Vite + PyInstaller (fresh)
+.\desktop\build_desktop.ps1 -SkipViteBuild      # PyInstaller only if Vite dist still good
 .\desktop\build_desktop.ps1 -Version 0.3.5      # explicit version
 ```
 
-### Default mode (Next, the released behaviour)
+### Default mode (Vite)
 ```powershell
 .\dist\CVMAnalytics\CVMAnalytics.exe
 ```
-Expect: `node.exe` + WebView2 children spawn; window opens; LOCALAPPDATA DB created.
+Expect: no `node.exe`; WebView2 children spawn; window opens; Documents data root is preserved.
 
-### `--vite` mode (Phase 2 opt-in)
+### `--vite` mode (alias)
 ```powershell
 .\dist\CVMAnalytics\CVMAnalytics.exe --vite
 ```
-Expect: **no `node.exe`**; pywebview window; LOCALAPPDATA DB created.
+Expect: no `node.exe`; pywebview window; Documents data root is preserved.
 
-### Process count comparison (run both, measure)
+### `--legacy` mode (unsupported)
+```powershell
+.\dist\CVMAnalytics\CVMAnalytics.exe --legacy
+```
+Expect: native warning that the legacy Next/Node runtime was removed, then the Vite UI opens. No `node.exe`.
+
+### Process count comparison (run all supported aliases, measure)
 ```bash
 python <<'PYEOF'
 import subprocess, time
@@ -135,11 +139,11 @@ for n in ('CVMAnalytics.exe','node.exe','msedgewebview2.exe'):
     subprocess.run(['taskkill.exe','/F','/IM',n,'/T'], capture_output=True)
 time.sleep(2)
 baseline = {'node': count('node.exe'), 'wv2': count('msedgewebview2.exe')}
-for flag in ([], ['--vite']):
+for flag in ([], ['--vite'], ['--legacy']):
     p = subprocess.Popen([r'dist\CVMAnalytics\CVMAnalytics.exe', *flag],
         creationflags=subprocess.DETACHED_PROCESS|subprocess.CREATE_NEW_PROCESS_GROUP, close_fds=True)
     time.sleep(20)
-    label = '--vite' if flag else 'default'
+    label = ' '.join(flag) if flag else 'default'
     print(f'{label}: alive={p.poll() is None} node={count(\"node.exe\")-baseline[\"node\"]} wv2_delta={count(\"msedgewebview2.exe\")-baseline[\"wv2\"]}')
     subprocess.run(['taskkill.exe','/F','/PID',str(p.pid),'/T'], capture_output=True)
     subprocess.run(['taskkill.exe','/F','/IM','msedgewebview2.exe','/T'], capture_output=True)
@@ -154,6 +158,12 @@ npm --prefix apps/desktop-web run build
 python -m desktop.app --vite
 ```
 
+### Vite dev server (source checkout only)
+```bash
+python -m desktop.app --dev
+```
+Expect: starts or reuses Vite dev server on `127.0.0.1:5173`.
+
 ---
 
 ## Diagnostics (any phase)
@@ -162,13 +172,15 @@ python -m desktop.app --vite
 ```powershell
 .\dist\CVMAnalytics\CVMAnalytics.exe --diagnose-runtime
 ```
-Writes `%LOCALAPPDATA%\CVMAnalytics\diagnostics-<utc>.log` and opens it in Notepad. Use for user bug reports.
+Writes `%USERPROFILE%\Documents\CVMAnalytics\diagnostics-<utc>.log` and opens it in Notepad. Use for user bug reports.
 
 ### Inspect bundle layout
 ```bash
 ls dist/CVMAnalytics/
 ls dist/CVMAnalytics/_internal/
-du -sh dist/CVMAnalytics/_internal/{desktop-web,web_standalone,node.exe} 2>/dev/null
+test -d dist/CVMAnalytics/_internal/desktop-web
+test ! -e dist/CVMAnalytics/_internal/web_standalone
+test ! -e dist/CVMAnalytics/_internal/node.exe
 ```
 
 ### Verify zip layout pre-release
@@ -201,9 +213,9 @@ for n in ('CVMAnalytics.exe','node.exe','msedgewebview2.exe','pythonw.exe'):
 "
 ```
 
-### Wipe LOCALAPPDATA (use with caution — destroys user DB)
+### Wipe Documents runtime data (use with caution — destroys user DB)
 ```bash
-rm -rf "$LOCALAPPDATA/CVMAnalytics"
+rm -rf "$USERPROFILE/Documents/CVMAnalytics"
 ```
 
 ### Wipe test sandboxes

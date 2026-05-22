@@ -391,7 +391,7 @@ export type DatabaseDiagnostics = {
 
 export type AppRuntimeStatus = {
   version: string;
-  runtime_mode: "vite" | "next" | "next-dev" | "unknown" | string;
+  runtime_mode: "vite" | "vite-dev" | "next" | "next-dev" | "unknown" | string;
   bridge_status: "ready" | "error" | "unknown" | string;
   frozen: boolean;
   desktop_shell: string | null;

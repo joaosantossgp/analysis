@@ -3,7 +3,7 @@
 #
 # Uso:
 #   .\desktop\build_desktop.ps1
-#   .\desktop\build_desktop.ps1 -SkipNextBuild   # pula o next build (UI nao mudou)
+#   .\desktop\build_desktop.ps1 -SkipViteBuild   # reutiliza dist/ existente
 #   .\desktop\build_desktop.ps1 -Version 0.2.0   # versao explícita (default: git describe --tags --always)
 #   .\desktop\build_desktop.ps1 -Verbose
 #
@@ -12,11 +12,9 @@
 #
 # Requisitos:
 #   - Python com pyinstaller, pywebview instalados  (pip install -r requirements.txt)
-#   - Node.js instalado (node no PATH)
-#   - npm instalado
+#   - Node.js + npm instalados apenas para compilar apps/desktop-web
 
 param(
-    [switch]$SkipNextBuild,
     [switch]$SkipViteBuild,
     [switch]$Verbose,
     [string]$Version = ""
@@ -24,7 +22,6 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Root    = Split-Path $PSScriptRoot -Parent
-$WebDir  = Join-Path $Root "apps\web"
 $ViteDir = Join-Path $Root "apps\desktop-web"
 $DesktopDir = $PSScriptRoot
 
@@ -34,31 +31,13 @@ Write-Host "  Root: $Root"
 Write-Host ""
 
 # ---------------------------------------------------------------------------
-# Passo 1 — Next.js standalone build
-# ---------------------------------------------------------------------------
-if (-not $SkipNextBuild) {
-    Write-Host "[1/5] next build (output: standalone)..." -ForegroundColor Yellow
-    Push-Location $WebDir
-    try {
-        & node_modules\.bin\next build
-        if ($LASTEXITCODE -ne 0) { throw "next build falhou (exit $LASTEXITCODE)" }
-    } finally {
-        Pop-Location
-    }
-    Write-Host "  OK: .next/standalone/ gerado" -ForegroundColor Green
-} else {
-    Write-Host "[1/5] Pulando next build (-SkipNextBuild)" -ForegroundColor Gray
-}
-
-# ---------------------------------------------------------------------------
-# Passo 1.6 - Vite static SPA build (apps/desktop-web)
+# Passo 1 - Vite static SPA build (apps/desktop-web)
 # Produces apps/desktop-web/dist/ which app.spec bundles to _internal/desktop-web/.
-# Optional: pass -SkipViteBuild to reuse the prior build (or skip the Vite mode
-# entirely if the dist directory is missing - app.spec just won't include it).
+# Optional: pass -SkipViteBuild to reuse the prior build.
 # ---------------------------------------------------------------------------
 if (-not $SkipViteBuild) {
     if (Test-Path (Join-Path $ViteDir "package.json")) {
-        Write-Host "[1.5/5] vite build (apps/desktop-web)..." -ForegroundColor Yellow
+        Write-Host "[1/3] vite build (apps/desktop-web)..." -ForegroundColor Yellow
         Push-Location $ViteDir
         try {
             if (-not (Test-Path "node_modules")) {
@@ -73,16 +52,21 @@ if (-not $SkipViteBuild) {
         }
         Write-Host "  OK: apps/desktop-web/dist/ gerado" -ForegroundColor Green
     } else {
-        Write-Host "[1.5/5] apps/desktop-web ausente - pulando vite build" -ForegroundColor Gray
+        Write-Host "[1/3] apps/desktop-web ausente - pulando vite build" -ForegroundColor Gray
     }
 } else {
-    Write-Host "[1.5/5] Pulando vite build (-SkipViteBuild)" -ForegroundColor Gray
+    Write-Host "[1/3] Pulando vite build (-SkipViteBuild)" -ForegroundColor Gray
+}
+
+$ViteIndex = Join-Path $ViteDir "dist\index.html"
+if (-not (Test-Path $ViteIndex)) {
+    throw "Vite build nao encontrado em $ViteIndex. Rode sem -SkipViteBuild."
 }
 
 # ---------------------------------------------------------------------------
-# Passo 1.5 — Injetar versao em desktop/__version__.py
+# Passo 2 — Injetar versao em desktop/__version__.py
 # ---------------------------------------------------------------------------
-Write-Host "[2/5] Injetando versao em desktop/__version__.py..." -ForegroundColor Yellow
+Write-Host "[2/3] Injetando versao em desktop/__version__.py..." -ForegroundColor Yellow
 
 if (-not $Version) {
     # Full describe: exact tag (v0.2.0) or commits after tag (v0.2.0-5-gabcdef).
@@ -109,61 +93,9 @@ $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 Write-Host "  OK: versao $Version injetada em __version__.py" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-# Passo 2 — Copiar public/ e .next/static/ para dentro de standalone/
-# (Next.js nao copia esses assets automaticamente no standalone output)
+# Passo 3 — PyInstaller
 # ---------------------------------------------------------------------------
-Write-Host "[3/5] Copiando assets estaticos para standalone/..." -ForegroundColor Yellow
-
-$StandaloneDir = Join-Path $WebDir ".next\standalone"
-$PublicSrc     = Join-Path $WebDir "public"
-$StaticSrc     = Join-Path $WebDir ".next\static"
-$PublicDst     = Join-Path $StandaloneDir "public"
-$StaticDst     = Join-Path $StandaloneDir ".next\static"
-
-if (-not (Test-Path $StandaloneDir)) {
-    throw "standalone/ nao encontrado em $StandaloneDir. Execute o next build primeiro."
-}
-if (Test-Path $PublicSrc) {
-    Copy-Item -Recurse -Force $PublicSrc $PublicDst
-    Get-ChildItem $PublicDst -Recurse -Include *.mp4 -ErrorAction SilentlyContinue | Remove-Item -Force
-    Write-Host "  OK: public/ copiado" -ForegroundColor Green
-} else {
-    Write-Host "  (sem public/ para copiar)" -ForegroundColor Gray
-}
-if (Test-Path $StaticSrc) {
-    if (-not (Test-Path (Split-Path $StaticDst -Parent))) {
-        New-Item -ItemType Directory -Force (Split-Path $StaticDst -Parent) | Out-Null
-    }
-    Copy-Item -Recurse -Force $StaticSrc $StaticDst
-    Write-Host "  OK: .next/static/ copiado" -ForegroundColor Green
-}
-
-# ---------------------------------------------------------------------------
-# Passo 3 — Preparar node.exe portátil
-# Copia o node.exe do sistema para desktop/node_portable/
-# (PyInstaller inclui esse arquivo no bundle via app.spec)
-# ---------------------------------------------------------------------------
-Write-Host "[4/5] Preparando node.exe portátil..." -ForegroundColor Yellow
-
-$NodePortableDir = Join-Path $DesktopDir "node_portable"
-$NodePortableExe = Join-Path $NodePortableDir "node.exe"
-
-if (-not (Test-Path $NodePortableExe)) {
-    $NodeSys = (Get-Command node -ErrorAction SilentlyContinue)
-    if (-not $NodeSys) {
-        throw "node nao encontrado no PATH. Instale o Node.js em https://nodejs.org"
-    }
-    New-Item -ItemType Directory -Force $NodePortableDir | Out-Null
-    Copy-Item $NodeSys.Source $NodePortableExe
-    Write-Host "  OK: node.exe copiado de $($NodeSys.Source)" -ForegroundColor Green
-} else {
-    Write-Host "  OK: node_portable/node.exe ja existe" -ForegroundColor Green
-}
-
-# ---------------------------------------------------------------------------
-# Passo 4 — PyInstaller
-# ---------------------------------------------------------------------------
-Write-Host "[5/5] PyInstaller bundle..." -ForegroundColor Yellow
+Write-Host "[3/3] PyInstaller bundle..." -ForegroundColor Yellow
 
 $SpecFile = Join-Path $DesktopDir "app.spec"
 if (-not (Test-Path $SpecFile)) {
@@ -182,11 +114,11 @@ try {
 
 # ---------------------------------------------------------------------------
 # Phase 0 contract: do NOT copy the dev DB into the bundle.
-# The packaged app provisions its DB under %LOCALAPPDATA%\CVMAnalytics\db
+# The packaged app provisions its DB under %USERPROFILE%\Documents\CVMAnalytics\db
 # at first launch (see desktop/app.py::_migrate_legacy_db_once). Shipping the
 # dev DB into dist/ would either be wasted bytes (user has their own runtime
-# DB under LOCALAPPDATA) or unsafe (the old auto-updater overwrote user data
-# with the bundled DB).
+# DB under Documents) or unsafe (the old auto-updater overwrote user data with
+# the bundled DB).
 # ---------------------------------------------------------------------------
 
 $DistDir = Join-Path $Root "dist\CVMAnalytics"

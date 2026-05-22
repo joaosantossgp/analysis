@@ -35,6 +35,10 @@ desktop UI; `CVMAnalytics.exe --legacy` keeps the previous Next/Node UI
 reachable from the same bundle; `--vite` kept as an alias of the default.
 No legacy code deleted; updater allowlist, user-data root, MOTW strip,
 preflight, and flat-root ZIP contract all unchanged.**
+**Phase 5B ships in `v0.15.0`: the packaged desktop app is Vite-only. The
+bundle no longer contains `node.exe` or `web_standalone/`; `--legacy` warns and
+continues into Vite. `apps/web/` and `apps/api/` remain source-only / hosted
+surfaces outside the desktop package.**
 
 Scope of this document:
 
@@ -73,7 +77,8 @@ Scope of this document:
 
 ## Already Done In Vite
 
-- Static Vite SPA bundled and launchable with `CVMAnalytics.exe --vite`.
+- Static Vite SPA bundled and launchable with `CVMAnalytics.exe` and
+  `CVMAnalytics.exe --vite`.
 - Bridge readiness and typed adapter.
 - Health route.
 - Company directory with search and pagination.
@@ -103,17 +108,16 @@ Scope of this document:
 - None. All core P0 parity gaps were closed at `v0.13.0`. Vite became the
   default in `v0.14.0` (Phase 4).
 
-## Remaining Before Legacy Deletion
+## Remaining Before Source-Only Legacy Deletion
 
 - ✅ All P0 features above are complete and validated in `--vite`.
 - ✅ A release ships with Vite as the default while Next remains available as a
   fallback (`v0.14.0`, Phase 4: bare-flag → Vite; `--legacy` → Next/Node).
-- ⏳ That default-Vite release must soak on real machines for 1–2 weeks before
-  legacy deletion is considered.
-- ⏳ Phase 0 updater/user-data/MOTW contract must be revalidated against the
-  Phase 4 release ZIP.
-- ⏳ User must explicitly approve deleting Next, Node, FastAPI, and related
-  bundle entries (Phase 5).
+- ✅ Phase 5B removes the packaged desktop Next/Node runtime in `v0.15.0`.
+- ⏳ `v0.15.0` should soak before deleting any remaining source-only legacy
+  folders.
+- ⏳ User must explicitly approve deleting `apps/web/`, `apps/api/`, hosted API
+  deployment config, or non-desktop workflows.
 
 ## Phase 3A Implemented Screen
 

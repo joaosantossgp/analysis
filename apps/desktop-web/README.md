@@ -2,7 +2,7 @@
 
 ## Status
 
-**Phase 4 default UI (`v0.14.0`, hotfix `v0.14.1`).** This package is now the **default** desktop UI. The legacy Next.js stack under `apps/web/` is still packaged and reachable through `CVMAnalytics.exe --legacy`. No legacy code was deleted; the bundle still ships `web_standalone/`, `node.exe`, and FastAPI dependencies. `v0.14.1` adds an idempotent startup GICS backfill: it reads `_internal/data/import/gics_mapping.csv` and populates `companies.gics_sector / gics_sector_slug / gics_sub_industry` for rows whose GICS fields are empty. Fixes the sectors / sector-filter screens for user DBs that only carried CVM/B3 labels. Legacy deletion is gated on a clean soak of `v0.14.1` plus explicit user approval.
+**Phase 5B desktop runtime (`v0.15.0`).** This package is the **only packaged desktop UI**. The legacy Next.js stack under `apps/web/` remains in the source tree, but it is no longer bundled into `CVMAnalytics.exe`; the package no longer ships `web_standalone/` or `node.exe`. `CVMAnalytics.exe --legacy` now shows a short unsupported-runtime warning and continues into the Vite UI. `v0.14.1` added the idempotent startup GICS backfill: it reads `_internal/data/import/gics_mapping.csv` and populates `companies.gics_sector / gics_sector_slug / gics_sub_industry` for rows whose GICS fields are empty.
 
 Screens with dynamic routing prove the architecture:
 
@@ -23,7 +23,7 @@ Router: `react-router-dom` v7 with `HashRouter` (portable across `file://`, `htt
 
 ## Goal
 
-Prove that a static Vite + React + TypeScript build can drive the existing Python bridge (`desktop/bridge.py::CVMBridge`) without an embedded Node runtime. Once the prototype reaches parity and soaks successfully, Phase 3 may replace `apps/web/` and remove the bundled `node.exe`.
+Run the packaged desktop UI as a static Vite + React + TypeScript build against the existing Python bridge (`desktop/bridge.py::CVMBridge`) without an embedded Node runtime.
 
 ## What is here
 
@@ -83,7 +83,7 @@ Open `http://127.0.0.1:5173/`. The `HealthCard` will show a yellow "Browser-mode
 
 ```bash
 cd <repo root>
-python -m desktop.app --vite
+python -m desktop.app
 ```
 
 This serves the built static assets from `apps/desktop-web/dist/` over a loopback HTTP server and opens them inside pywebview with the real `CVMBridge()` attached. For live Vite dev-server testing, use `python scripts/phase1_pywebview_smoke.py --manual`.
@@ -97,19 +97,22 @@ npm run build
 
 Output is a static SPA at `apps/desktop-web/dist/`.
 
-## Phase 4 — Vite as the default launch mode
+## Phase 5B — Vite-only packaged launch mode
 
-As of `v0.14.0` the packaged desktop executable loads this Vite SPA by default. The Next standalone server stays bundled and is reachable only when `--legacy` is passed.
+As of `v0.15.0` the packaged desktop executable loads this Vite SPA as the only packaged UI runtime. The Next standalone server and bundled Node runtime are no longer included.
 
 ```powershell
 # packaged — Vite default (no Node process)
 .\dist\CVMAnalytics\CVMAnalytics.exe
 .\dist\CVMAnalytics\CVMAnalytics.exe --vite     # alias of default
 
-# packaged — Next/Node legacy fallback
+# packaged — unsupported legacy flag; warns, then continues into Vite
 .\dist\CVMAnalytics\CVMAnalytics.exe --legacy
 
-# dev (against apps/desktop-web/dist/, bare flag also defaults to Vite)
+# dev (starts/uses the Vite dev server at 127.0.0.1:5173)
+python -m desktop.app --dev
+
+# source mode against apps/desktop-web/dist/
 python -m desktop.app
 
 # dev with live reload (Vite dev server + pywebview, interactive)
@@ -123,11 +126,11 @@ In default / `--vite` mode:
 - `%USERPROFILE%\Documents\CVMAnalytics\db\cvm_financials.db` is read/written exactly as in legacy mode unless `CVMANALYTICS_DATA_DIR` overrides it.
 - **No `node.exe` process is launched.** Verified end-to-end against the packaged exe.
 
-`--legacy` keeps the previous behavior unchanged: the bundled `node.exe` runs `_internal/web_standalone/server.js` and pywebview loads the Next UI. This path remains in the bundle and is exercised in the Phase 4 release validation contract.
+`--legacy` no longer starts Next/Node. It writes a recovery-log entry, shows a short warning, and proceeds with the Vite UI so old shortcuts still open the application.
 
 ## What this does NOT change
 
-- Does not remove Next.js, FastAPI, `web_standalone/`, or bundled `node.exe`. All four remain packaged so `--legacy` continues to work.
+- Does not delete `apps/web/` or `apps/api/` from source. They are not part of the packaged desktop runtime.
 - Does not change the user-data contract. Data still lives under `%USERPROFILE%\Documents\CVMAnalytics`.
 - Does not change the updater allowlist/denylist or the flat-root ZIP contract.
 - Does not call FastAPI. Bridge-only.

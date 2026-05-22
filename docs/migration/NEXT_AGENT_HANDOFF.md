@@ -10,10 +10,10 @@ This is the **primary entry point** for any AI agent or human contributor pickin
 ## TL;DR
 
 - **What we are doing:** rebuilding the desktop app's UI runtime from `Next.js standalone + bundled Node + pywebview` to `static Vite SPA + pywebview` while keeping Python authoritative and user data safe.
-- **Where we are:** Phase 4 shipped as `v0.14.0`, with a hotfix `v0.14.1` that adds a startup GICS backfill. The default UI is the Vite SPA; `CVMAnalytics.exe --legacy` keeps the previous Next/Node UI reachable from the same bundle. `v0.13.0` (Phase 3I) was the last release where Next was the default. Phase 3J was an audit-only readiness pass between 3I and 4.
-- **What is released:** `v0.14.1` on GitHub is the current target. Default startup loads Vite with no `node.exe` process; `--legacy` spawns the bundled `node.exe` and the Next standalone server; `--vite` is preserved as an alias of the default. The bundle now also ships `_internal/data/import/gics_mapping.csv` and runs an idempotent startup backfill that fills `companies.gics_sector / gics_sector_slug / gics_sub_industry` for rows seeded before GICS columns were populated. No legacy code was deleted; the bundle still ships `web_standalone/`, `node.exe`, FastAPI deps, and `apps/web/`. The updater allowlist, MOTW strip, preflight, persistent-data root, and flat-root ZIP contract are all unchanged from `v0.13.0`.
-- **What is next:** Phase 5A (legacy deletion audit) is **done** — see [PHASE_5_LEGACY_DELETION_AUDIT.md](PHASE_5_LEGACY_DELETION_AUDIT.md). It found that `apps/web/` is also Vercel-deployed and `apps/api/` is the Railway-hosted FastAPI used by data-pipeline workflows, so neither can be deleted as part of the desktop cleanup. The narrowed Phase 5B target is the desktop bundle only (`--legacy` branch in `desktop/app.py`, the `web_standalone`/`node.exe` data entries in `desktop/app.spec`, `desktop/node_portable/`, the Next build step in `desktop/build_desktop.ps1`, and the Node setup steps in `.github/workflows/release-desktop.yml`). Recommended: ship one more release with `--legacy` still available before the deletion. Wait for explicit user approval before starting Phase 5B.
-- **Hard rule:** do not delete `apps/web/`, `apps/api/`, `desktop/node_portable/`, FastAPI deps, the `web_standalone` data entry, or the `--legacy` branch in `desktop/app.py` until the user explicitly approves Phase 5.
+- **Where we are:** Phase 5B shipped as `v0.15.0`. The packaged desktop app is Vite-only: `CVMAnalytics.exe` and `CVMAnalytics.exe --vite` load the static Vite UI, and `CVMAnalytics.exe --legacy` warns that the legacy runtime was removed before continuing into Vite. `v0.14.1` is the last accepted release that still packaged the Next/Node fallback.
+- **What is released:** `v0.15.0` is the current target. The desktop bundle no longer ships `_internal/node.exe`, `_internal/web_standalone/`, or `desktop/node_portable/`. The bundle still ships `_internal/desktop-web/`, `_internal/data/import/gics_mapping.csv`, `update_helper.ps1`, pythonnet runtime files, and the Python core. The updater allowlist, MOTW strip, preflight, persistent-data root, and flat-root ZIP contract are unchanged.
+- **What is next:** Soak `v0.15.0` on real machines. If stable, decide separately whether to delete source-only legacy folders. `apps/web/` remains a source-only / hosted Next app; `apps/api/` remains the Railway-hosted FastAPI used by CI/data-pipeline workflows. Neither should be deleted without explicit approval.
+- **Hard rule:** do not delete `apps/web/`, `apps/api/`, `railway.toml`, or hosted/development workflows unless the user explicitly approves source-tree deletion.
 
 ---
 
@@ -38,17 +38,16 @@ This is the **primary entry point** for any AI agent or human contributor pickin
 | **Phase 3I** | Excel statement export scope + software updater prompt/apply/restart UI | **Released as `v0.13.0`.** Added statement-scoped exports (DRE/BPA/BPP/DFC) to Documents output folder. Software updater prompt, progress bar, extraction staging, and out-of-process helper execution. | See `PHASE_3_PARITY_MATRIX.md` |
 | **Phase 3J** | Default switch readiness audit | Done. Audit-only phase. No code changes. Confirmed all P0 parity closed and identified the runtime + docs changes required for Phase 4. | See `PHASE_3_PARITY_MATRIX.md` |
 | **Phase 4** | Vite default + Next/Node fallback (`--legacy`) | **Released as `v0.14.0`.** Default startup loads the Vite SPA with no Node process. `--legacy` spawns the bundled `node.exe` and the Next standalone server. `--vite` kept as an explicit alias of the default. No legacy code deleted; updater allowlist and user-data contract unchanged. | See `PHASE_3_PLAN.md` |
-| **Phase 5** | Delete legacy: Next, Node, FastAPI, apps/web, apps/api | **Not started.** Gated on a clean soak of `v0.14.0` and explicit user approval. Was previously called "Phase 3". | See `PHASE_3_PLAN.md` |
+| **Phase 5A** | Legacy deletion audit | Done. Found `apps/web/` and `apps/api/` are not desktop package dependencies and should stay unless source deletion is approved. | See `PHASE_5_LEGACY_DELETION_AUDIT.md` |
+| **Phase 5B** | Desktop-side legacy runtime removal | **Released as `v0.15.0`.** Removed packaged Next/Node runtime: no `node.exe`, no `web_standalone/`, no Next build step. `--legacy` warns and continues into Vite. | See `PHASE_5_LEGACY_DELETION_AUDIT.md` |
 | **Phase 6** | Polish, code signing, AV/UPX review | Not started. Was previously called "Phase 4". | — |
 
 ---
 
 ## Hard constraints (do not violate)
 
-- **Do not delete** `apps/web/`, `apps/api/`, `desktop/node_portable/`, or any `_internal/web_standalone/` reference.
-- **Do not remove** Node from `desktop/app.spec` data entries.
-- **Do not remove** FastAPI dependencies from `requirements.txt`.
-- **Do not remove** the `--legacy` branch in `desktop/app.py::main()` — it is the user's only fallback to the previous Next/Node UI.
+- **Do not delete** `apps/web/`, `apps/api/`, `railway.toml`, or hosted/development workflows without explicit source-deletion approval.
+- **Do not reintroduce** Node, Next standalone, `desktop/node_portable/`, or `_internal/web_standalone/` into the packaged desktop app.
 - **Do not modify** `desktop/bridge.py` method signatures (the Vite SPA mirrors them in `apps/desktop-web/src/lib/bridge/types.ts`).
 - **Do not modify** `desktop/update_helper.ps1` user-data deny-list (`data`, `output`, `logs`, `cache`, `tmp`, `backup`, `versions`, `update_rollback`).
 - **Do not modify** `desktop/app.py::_migrate_legacy_db_once` or `_wal_safe_copy_sqlite` — they protect user DBs.
@@ -66,17 +65,13 @@ This is the **primary entry point** for any AI agent or human contributor pickin
 │              CVMAnalytics.exe (frozen Python)           │
 │                                                          │
 │  desktop/app.py main()                                   │
-│   ├─ default / --vite mode  (Phase 4 default)             │
+│   ├─ default / --vite mode  (Vite-only packaged UI)        │
 │   │   ├─ http.server.ThreadingHTTPServer serving         │
 │   │   │   _internal/desktop-web/  (Vite SPA dist)        │
 │   │   └─ pywebview window  → http://127.0.0.1:<port>     │
 │   │                                                       │
-│   ├─ --legacy mode  (Next/Node fallback)                  │
-│   │   ├─ subprocess: node.exe _internal/web_standalone/  │
-│   │   │   server.js (Next.js standalone)                 │
-│   │   └─ pywebview window  → http://127.0.0.1:<port>     │
-│   │                                                       │
-│   ├─ --dev mode → spawn `next dev` from apps/web/         │
+│   ├─ --legacy → warning + Vite UI (no Node/Next)          │
+│   ├─ --dev (source mode) → Vite dev server on :5173       │
 │   ├─ --diagnose-runtime → write log + exit                │
 │   │                                                       │
 │   └─ Common to all modes:                                 │
@@ -108,8 +103,8 @@ Full architecture map in `ARCHITECTURE.md`.
 | `desktop/build_desktop.ps1` | Build orchestrator | Yes |
 | `src/settings.py` | Path resolution from env vars (SQLITE_PATH etc.) | Read-only contract; do not change env names |
 | `src/database.py` | `init_db_tables` (SQLAlchemy `create_all`) | Read-only contract |
-| `apps/web/**` | Legacy Next.js UI — default runtime | DO NOT TOUCH UNTIL PHASE 3 |
-| `apps/api/**` | Legacy FastAPI — not used in desktop runtime | DO NOT TOUCH UNTIL PHASE 3 |
+| `apps/web/**` | Source-only / hosted Next.js UI; not packaged in desktop | Do not delete without approval |
+| `apps/api/**` | Hosted Railway FastAPI + API tests; not packaged in desktop | Do not delete without approval |
 | `apps/desktop-web/**` | Vite SPA (new) | Yes, primary work area |
 | `.github/workflows/release-desktop.yml` | CI: builds + publishes Windows bundle on tag push | Yes |
 | `scripts/phase1_pywebview_smoke.py` | Dev runner with `--manual` / `--timeout` | Yes |
@@ -120,14 +115,14 @@ Full architecture map in `ARCHITECTURE.md`.
 
 ## Immediate next task
 
-`v0.14.0` shipped the Vite default + `--legacy` fallback. The next item is the soak window before any deletion work.
+`v0.15.0` shipped the Vite-only packaged desktop runtime. The next item is soak and monitoring before any source-tree deletion work.
 
-1. Monitor real-world `v0.14.0` use for 1–2 weeks. Watch for failure modes that only appear when Vite is the default startup: loopback HTTP server bind failures, WebView2 cold-start regressions, AV/SmartScreen reaction to the changed launch path, missing `--legacy` discoverability for users who hit Vite-only bugs.
+1. Monitor real-world `v0.15.0` use. Watch for failure modes that only appear after the Next/Node fallback is gone: loopback HTTP server bind failures, WebView2 cold-start regressions, AV/SmartScreen reaction to the smaller bundle, and old shortcuts that still pass `--legacy`.
 2. Keep `PHASE_3_PARITY_MATRIX.md` current. If a real-world bug surfaces, record it there and fix on the Vite side rather than re-defaulting to Next.
 3. Keep `/status` focused on diagnostics; do not turn it into a broad settings system unless the user asks.
-4. After a clean soak, propose Phase 5 (legacy deletion) and wait for explicit user approval before touching `apps/web/`, `apps/api/`, `desktop/node_portable/`, FastAPI dependencies, or the `--legacy` branch in `desktop/app.py`.
+4. Do not delete `apps/web/` or `apps/api/` without explicit approval. They are source-only / hosted products outside the packaged desktop runtime.
 
-Do NOT start Phase 5 deletion until `v0.14.0` has soaked cleanly and the user explicitly approves deletion.
+Do NOT start source-tree deletion until `v0.15.0` has soaked cleanly and the user explicitly approves deletion.
 
 ---
 
@@ -154,7 +149,7 @@ After tagging `vX.Y.Z` and pushing:
 
 1. CI workflow `release-desktop.yml` builds Windows bundle on `windows-latest`.
 2. Bundles run `desktop/build_desktop.ps1 -Version X.Y.Z` (which builds Next + Vite + PyInstaller).
-3. CI archives the bundle with **flat root** layout (`CVMAnalytics.exe` + `_internal/` at top), verified by the post-archive step in the workflow.
+3. CI archives the Vite-only bundle with **flat root** layout (`CVMAnalytics.exe` + `_internal/` at top), verified by the post-archive step in the workflow.
 4. CI publishes the zip + `.sha256` to the GitHub Release.
 5. The auto-updater in users' running apps will pick up the new release on next launch and download it via SHA-256-verified flow.
 6. `update_helper.ps1` allowlist swaps `CVMAnalytics.exe` + `_internal/` only; never touches `data/`, `output/`, `logs/`, `cache/`.
@@ -169,10 +164,10 @@ Phase 2 is not considered release-validated until the published GitHub ZIP and S
 
 | Decision | Reason |
 |---|---|
-| Did NOT delete `apps/web/` | Still the source for the `--legacy` Next standalone bundle. Delete only after Phase 5. |
-| Did NOT delete `apps/api/` | Provides HTTP contract for hosted-mode dev and the legacy bundle. Audit before removing. |
-| Did NOT remove Node bundling | `--legacy` still requires the bundled `node.exe`. Node removal is Phase 5. |
-| DID switch default to Vite in `v0.14.0` | All P0 parity gaps closed at `v0.13.0`. `--legacy` keeps Next as a fallback. |
+| Did NOT delete `apps/web/` | It remains source-only / hosted legacy. Delete only after explicit approval. |
+| Did NOT delete `apps/api/` | It remains the Railway-hosted FastAPI and API test surface. Delete only after explicit approval. |
+| DID remove Node bundling in `v0.15.0` | Packaged desktop runtime no longer supports Next/Node fallback. |
+| DID keep `--legacy` accepted | It warns and continues into Vite so old shortcuts still open the app. |
 | Did NOT add Sentry / crash reporting | User explicitly declined telemetry. |
 | Did NOT migrate to Tauri / Electron | User scoped this to pywebview + WebView2. |
 | Did NOT change SQLite to DuckDB / Parquet | Out of scope. User confirmed SQLite stays. |

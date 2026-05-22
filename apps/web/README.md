@@ -76,9 +76,12 @@ npm run test:unit
 npm run test:e2e
 ```
 
-## Produto empacotado (prioridade)
+## Produto empacotado
 
-A UI deste app e compilada no **desktop Windows**: `desktop/build_desktop.ps1` → **`dist/CVMAnalytics/`**. Em runtime empacotado, `ANALISYS_DESKTOP_MODE=1` e os dados vêm da **bridge Python** + SQLite local — **nao** dependa de Vercel/Railway para reproduzir o uso principal.
+Desde `v0.15.0`, este app **nao e mais compilado no desktop Windows**. O pacote
+`dist/CVMAnalytics/` usa `apps/desktop-web/` (Vite) como unica UI empacotada.
+`apps/web/` permanece no repositorio como app Next.js source-only / hospedado
+historico, pendente de decisao explicita antes de qualquer delecao.
 
 ## Deploy hospedado (historico / opcional)
 
@@ -88,6 +91,6 @@ Deploy remoto (Vercel, Railway, etc.) **nao** e o fluxo oficial para quem usa ap
 
 - O app usa Server Components por padrao; `"use client"` fica restrito a interacao e URL state.
 - O autocomplete da home usa `app/api/company-search/route.ts` como proxy interno.
-- A fonte de verdade da aplicacao continua sendo a API V2.
+- A fonte de verdade deste app source-only continua sendo a API V2.
 - O Design System documenta o produto; nao substitui a navegacao de produto.
 - O layout raiz usa um video ambiente sutil apenas na faixa superior da pagina, com overlay escuro para preservar contraste.

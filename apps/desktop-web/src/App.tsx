@@ -22,7 +22,7 @@ export function App() {
       <div className="mx-auto flex min-h-full max-w-5xl flex-col gap-6 px-6 py-8">
         <header className="space-y-2">
           <p className="text-xs uppercase tracking-widest text-zinc-500">
-            Experimental Vite runtime
+            Vite desktop runtime
           </p>
           <h1 className="text-3xl font-semibold text-zinc-50">
             CVM Analytics
@@ -61,7 +61,7 @@ export function App() {
 
         <footer className="mt-auto space-y-2 pt-6 text-xs text-zinc-600">
           <BridgeStatus />
-          <p>apps/desktop-web · opt-in --vite runtime</p>
+          <p>apps/desktop-web · packaged Vite runtime</p>
         </footer>
       </div>
     </HashRouter>

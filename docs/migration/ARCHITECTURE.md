@@ -1,6 +1,27 @@
 # Current Architecture Map
 
-Snapshot of the desktop runtime as of Phase 2 (commit `8291613`).
+Snapshot updated after Phase 5B / `v0.15.0`: the packaged desktop runtime is
+Vite-only. Older Next/Node sections below are historical context for Phase 2-4
+and no longer describe the current package.
+
+## Current packaged process tree
+
+```
+CVMAnalytics.exe (PyInstaller bootstrap)
+└─ python (frozen) running desktop/app.py main()
+   ├─ pywebview window  (WebView2 / Edge Chromium)
+   │   └─ HTML/JS from http://127.0.0.1:<random>
+   ├─ thread: http.server.ThreadingHTTPServer
+   │   └─ serves _internal/desktop-web/ (Vite SPA dist)
+   ├─ thread: desktop-update-check
+   └─ thread: desktop-refresh-worker
+```
+
+No `node.exe`. No `web_standalone/`. `--legacy` warns and continues into Vite.
+
+---
+
+## Historical Phase 2 Snapshot
 
 ## Process tree
 
@@ -30,20 +51,39 @@ CVMAnalytics.exe (PyInstaller bootstrap)
 
 No `node.exe`. No Next standalone server. Same CVMBridge / WebView2 stack.
 
-### `--dev` mode (Next dev server)
+### `--dev` mode (source Vite dev server)
 ```
 python -m desktop.app --dev
 ├─ pywebview window
-└─ subprocess: npm.cmd run dev  (apps/web)
-    └─ next dev on 127.0.0.1:3000
+└─ subprocess: npm.cmd run dev  (apps/desktop-web)
+    └─ Vite dev server on 127.0.0.1:5173
 ```
 
 ### `--diagnose-runtime` mode
-No window. Writes diagnostic log to `%LOCALAPPDATA%\CVMAnalytics\diagnostics-<utc>.log`, opens in Notepad, exits.
+No window. Writes diagnostic log to `%USERPROFILE%\Documents\CVMAnalytics\diagnostics-<utc>.log`, opens in Notepad, exits.
 
 ---
 
-## File layout in the packaged exe
+## Current file layout in the packaged exe
+
+```
+dist/CVMAnalytics/
+├── CVMAnalytics.exe
+└── _internal/
+    ├── desktop-web/
+    │   ├── index.html
+    │   └── assets/
+    ├── data/import/gics_mapping.csv
+    ├── pythonnet/runtime/
+    ├── update_helper.ps1
+    └── (Python stdlib + site-packages)
+```
+
+The package must not contain `_internal/node.exe` or `_internal/web_standalone/`.
+
+---
+
+## Historical Phase 2 file layout in the packaged exe
 
 ```
 dist/CVMAnalytics/
@@ -76,10 +116,10 @@ Total ~202 MB packaged, ~78-87 MB compressed.
 
 ---
 
-## File layout in `%LOCALAPPDATA%\CVMAnalytics\`
+## File layout in `%USERPROFILE%\Documents\CVMAnalytics\`
 
 ```
-%LOCALAPPDATA%\CVMAnalytics\
+%USERPROFILE%\Documents\CVMAnalytics\
 ├── db/
 │   ├── cvm_financials.db                  ← authoritative runtime DB
 │   ├── cvm_financials.db-shm              (SQLite WAL shared memory)
@@ -92,6 +132,15 @@ Total ~202 MB packaged, ~78-87 MB compressed.
 │       ├── cvm_financials.db              (raw copy)
 │       ├── cvm_financials.db-wal          (raw copy)
 │       └── cvm_financials.db-shm          (raw copy)
+├── recovery.log                            ← migrator + init events
+└── diagnostics-<utc-ts>.log                ← from --diagnose-runtime or preflight failures
+```
+
+Updater staging remains under `%LOCALAPPDATA%\CVMAnalytics\` and does not
+contain user financial data:
+
+```
+%LOCALAPPDATA%\CVMAnalytics\
 ├── update_rollback/                        ← created on every update
 │   └── <utc-ts>/
 │       ├── CVMAnalytics.exe               (pre-swap copy)
@@ -99,8 +148,6 @@ Total ~202 MB packaged, ~78-87 MB compressed.
 ├── versions/                               ← staged updates before swap
 │   └── <version>/                          (extracted new bundle)
 ├── snooze.json                             ← updater snooze state
-├── recovery.log                            ← migrator + init events
-├── diagnostics-<utc-ts>.log                ← from --diagnose-runtime or preflight failures
 └── update_error.log                        ← helper script errors
 ```
 
@@ -209,26 +256,23 @@ git push tag vX.Y.Z
   ├─ checkout
   ├─ setup-python 3.11 + setup-node 22
   ├─ pip install -r requirements.txt
-  ├─ npm ci --prefix apps/web
+  ├─ npm ci --prefix apps/desktop-web
   ├─ desktop/build_desktop.ps1 -Version X.Y.Z
-  │     ├─ next build (apps/web)
-  │     ├─ vite build (apps/desktop-web)         ← Phase 2 addition
-  │     ├─ copy public + .next/static into standalone
+  │     ├─ vite build (apps/desktop-web)
   │     ├─ inject version into desktop/__version__.py
-  │     ├─ copy system node.exe → desktop/node_portable/
   │     └─ pyinstaller desktop/app.spec
   ├─ Compress-Archive -Path dist\CVMAnalytics\*  ← FLAT root, post-verify
   ├─ verify zip root contains CVMAnalytics.exe + _internal (workflow fails if not)
   ├─ SHA-256 sidecar
   └─ softprops/action-gh-release@v2 publish
         ↓
-GitHub Release v0.3.X with:
+GitHub Release vX.Y.Z with:
   - CVMAnalytics-windows-vX.Y.Z.zip
   - CVMAnalytics-windows-vX.Y.Z.zip.sha256
   - CVMAnalytics-windows.zip (latest alias)
   - CVMAnalytics-windows.zip.sha256
         ↓
-Auto-updater in running v0.3.X (X-1) clients
+Auto-updater in running vX.Y.Z-1 clients
   ├─ desktop/updater.py polls api.github.com/.../releases/latest
   ├─ Downloads zip, validates SHA-256, extracts to LOCALAPPDATA/versions/X.Y.Z/
   └─ Spawns update_helper.ps1 staged current → swap allowlist entries → relaunch

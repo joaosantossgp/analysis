@@ -26,8 +26,9 @@ CVMAnalytics is a local-first Windows desktop financial data tool for Brazilian 
 - **Authoritative Runtime:** A packaged Windows executable (`dist/CVMAnalytics/CVMAnalytics.exe` built via `desktop/build_desktop.ps1`).
 - **No Production Server:** The target architecture uses `pywebview` with a static Vite frontend, running without any bundled Node runtime or Next standalone server process.
 - **Launch Modes:**
-  - `CVMAnalytics.exe` $\rightarrow$ launches the legacy Next.js / Node.js standalone UI (Default).
-  - `CVMAnalytics.exe --vite` $\rightarrow$ launches the new experimental Vite static UI (No Node process).
+  - `CVMAnalytics.exe` $\rightarrow$ launches the Vite static UI (No Node process).
+  - `CVMAnalytics.exe --vite` $\rightarrow$ alias of the default Vite static UI.
+  - `CVMAnalytics.exe --legacy` $\rightarrow$ unsupported; warns, then continues into Vite.
 
 ---
 
@@ -51,7 +52,7 @@ UI Component
 - **NO Direct SQLite:** Frontend code cannot issue SQL queries or communicate with SQLite directly. SQLite is entirely managed by the Python backend.
 - **NO Hardcoded Filesystem Paths:** Never hardcode absolute or local filesystem paths (like `C:\Users\...` or `CVMAnalytics/...`) in frontend components. Use bridge methods (like `get_output_dir()`) to query paths dynamically from the backend.
 - **NO Semantic Inflation:** Never invent, calculate, or alter financial data semantics on the frontend during migration. If the backend returns a certain data structure, preserve it exactly.
-- **NO Eager Deletion:** Do not delete legacy Next.js (`apps/web`), FastAPI (`apps/api`), or portable Node (`desktop/node_portable`) files. They must remain intact and functional until Vite parity is 100% verified and the user explicitly approves deletion.
+- **NO Eager Source Deletion:** Do not delete `apps/web` or `apps/api` without explicit user approval. They are source-only / hosted surfaces outside the packaged desktop runtime. `desktop/node_portable` was removed in Phase 5B and must not be reintroduced.
 
 ---
 
@@ -212,14 +213,14 @@ Promote component reuse. Do not duplicate tabular views or cards across separate
 
 A Vite UI screen is considered complete **only** if it passes all the following:
 - [ ] **Browser Parity:** Works in standard browser preview using fallback/mock data.
-- [ ] **Desktop Shell:** Launches and functions under `CVMAnalytics.exe --vite`.
+- [ ] **Desktop Shell:** Launches and functions under `CVMAnalytics.exe`.
 - [ ] **State Handling:** Covers loading, error, empty, and data-loaded states correctly.
 - [ ] **Bridge Security:** Uses typed facades in `src/lib/api/` and never directly invokes `window.pywebview.api`.
 - [ ] **Formatting:** Financial values display correct units, numbers use tabular-nums layout, missing values render as `—`.
 - [ ] **No Traceback:** If an error occurs, it is caught gracefully without raw traceback in the main UI.
 - [ ] **Typecheck:** Compiles with zero TypeScript errors (`npm run typecheck`).
 - [ ] **Production Build:** Bundles successfully (`npm run build`).
-- [ ] **Next Compatibility:** Packaged executable `CVMAnalytics.exe` without `--vite` still loads the legacy Next/Node UI flawlessly.
+- [ ] **No Node Runtime:** Packaged executable starts the Vite UI without spawning `node.exe`; `_internal/node.exe` and `_internal/web_standalone/` are absent.
 - [ ] **Data Safety:** Persistent user directories (`%USERPROFILE%\Documents\CVMAnalytics`) are preserved.
 
 ---

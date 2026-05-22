@@ -4,20 +4,17 @@ CVM Analytics — entry point pywebview.
 Uso:
   python -m desktop.app             # Vite SPA default (no Node process)
   python -m desktop.app --vite      # alias of default Vite mode
-  python -m desktop.app --legacy    # Next.js standalone via bundled node.exe
-  python -m desktop.app --dev       # legacy Next.js dev server on :3000
+  python -m desktop.app --legacy    # unsupported; warns, then opens Vite
+  python -m desktop.app --dev       # Vite dev server on :5173 (source mode)
   python -m desktop.app --debug     # opens DevTools in whichever mode is active
   python -m desktop.app --diagnose-runtime  # write diagnostics log and exit
 
-Phase 4 (v0.14.0): default UI switched from Next/Node to the Vite SPA. The
-Next/Node runtime stays packaged and is reachable via --legacy. No legacy
-files were deleted; the updater, bundle layout, and user-data contract are
-unchanged.
+Phase 5B (v0.15.0): the packaged desktop runtime is Vite only. The legacy
+Next/Node runtime is no longer bundled. The updater, bundle layout, and
+user-data contract remain unchanged.
 
 When packaged via PyInstaller (sys.frozen=True):
   - Vite SPA loaded from sys._MEIPASS/desktop-web/index.html (default).
-  - Next standalone loaded from sys._MEIPASS/web_standalone/server.js (--legacy).
-  - node.exe loaded from sys._MEIPASS/node.exe when --legacy is used.
 """
 
 from __future__ import annotations
@@ -41,11 +38,15 @@ from desktop.bridge import CVMBridge
 _USER_DATA_DIR_NAME = "CVMAnalytics"
 _RECOVERY_LOG_NAME = "recovery.log"
 
-_DEV_PORT = 3000
-_DEV_URL = f"http://127.0.0.1:{_DEV_PORT}"
+_VITE_DEV_PORT = 5173
+_VITE_DEV_URL = f"http://127.0.0.1:{_VITE_DEV_PORT}"
 _WIDTH, _HEIGHT = 1280, 820
 _BG = "#0a0a0a"
 _STARTUP_TIMEOUT = 15  # segundos — bundle pode demorar mais no primeiro boot
+_LEGACY_REMOVED_MESSAGE = (
+    "Legacy Next/Node runtime was removed. Please launch without --legacy.\n\n"
+    "CVMAnalytics will continue with the Vite desktop UI."
+)
 
 
 def _bundled() -> bool:
@@ -381,7 +382,7 @@ def _detect_webview2_runtime() -> str | None:
 
 
 def _diagnose_runtime_to_file() -> Path:
-    """Collect runtime diagnostics into a file under LOCALAPPDATA.
+    """Collect runtime diagnostics into a file under the user data root.
 
     Designed to run BEFORE any clr / pywebview import so that a broken
     .NET environment cannot prevent diagnostic collection. The resulting
@@ -491,7 +492,7 @@ def _diagnose_runtime_to_file() -> Path:
         lines.append("---traceback---")
         lines.append(traceback.format_exc())
 
-    section("import sqlite3 + LOCALAPPDATA DB")
+    section("import sqlite3 + Documents DB")
     try:
         import sqlite3 as _sql  # noqa: PLC0415
         db_path = user_root / "db" / "cvm_financials.db"
@@ -640,6 +641,37 @@ def _show_fatal_messagebox(*, title: str, body: str) -> None:
             sys.stderr.write(f"[{title}] {body}\n")
         except Exception:
             pass
+
+
+def _show_warning_messagebox(*, title: str, body: str, timeout_ms: int = 5000) -> None:
+    """Show a short native warning without blocking startup indefinitely."""
+    try:
+        import ctypes  # noqa: PLC0415
+        # MB_OK | MB_ICONWARNING | MB_TOPMOST = 0x00010000 | 0x00000030
+        flags = 0x00010030
+        timeout = getattr(ctypes.windll.user32, "MessageBoxTimeoutW", None)
+        if timeout is not None:
+            timeout(0, body, title, flags, 0, timeout_ms)
+        else:
+            ctypes.windll.user32.MessageBoxW(0, body, title, flags)
+    except Exception:
+        try:
+            sys.stderr.write(f"[{title}] {body}\n")
+        except Exception:
+            pass
+
+
+def _warn_legacy_removed() -> None:
+    message = _LEGACY_REMOVED_MESSAGE
+    _log_recovery(_user_data_root(), "unsupported --legacy flag used; continuing in Vite mode")
+    try:
+        print(f"[desktop] {message.replace(chr(10), ' ')}")
+    except Exception:
+        pass
+    _show_warning_messagebox(
+        title="CVM Analytics — legacy runtime removed",
+        body=message,
+    )
 
 
 def _ensure_db_initialized() -> None:
@@ -801,33 +833,8 @@ def _log_recovery(user_root: Path, message: str) -> None:
         pass
 
 
-def _web_dir() -> Path:
-    return _repo_root() / "apps" / "web"
-
-
-def _standalone_path() -> Path:
-    if _bundled():
-        return _bundle_dir() / "web_standalone" / "server.js"
-    return _web_dir() / ".next" / "standalone" / "server.js"
-
-
-def _node_exe() -> str:
-    """Retorna o caminho do node a usar: bundled primeiro, depois PATH."""
-    if _bundled():
-        node = _bundle_dir() / "node.exe"
-        if node.exists():
-            return str(node)
-    return "node"
-
-
 def _npm_cmd() -> str:
     return "npm.cmd" if os.name == "nt" else "npm"
-
-
-def _free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
 
 
 def _port_open(port: int) -> bool:
@@ -858,6 +865,10 @@ def _vite_dist_path() -> Path:
     return _repo_root() / "apps" / "desktop-web" / "dist"
 
 
+def _vite_app_dir() -> Path:
+    return _repo_root() / "apps" / "desktop-web"
+
+
 def _start_vite_static_server(dist: Path) -> tuple[object, int]:
     """Serve `dist/` over a loopback HTTP server.
 
@@ -867,8 +878,8 @@ def _start_vite_static_server(dist: Path) -> tuple[object, int]:
     Rationale for HTTP over `file://`: WebView2 blocks several Web Platform
     features (fetch, importmaps, cross-origin isolation) when content is
     loaded from `file://`. A local HTTP server avoids that class of
-    problems and gives the SPA the same origin-style guarantees Next has
-    today. The server binds to a random free loopback port so multiple
+    problems and gives the SPA normal same-origin HTTP behavior. The server
+    binds to a random free loopback port so multiple
     instances do not collide.
     """
     from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer  # noqa: PLC0415
@@ -896,46 +907,38 @@ def _start_vite_static_server(dist: Path) -> tuple[object, int]:
     return server, port
 
 
-def _start_dev_server() -> tuple[subprocess.Popen[bytes], int]:
-    web_dir = _web_dir()
-    if not (web_dir / "package.json").exists():
-        sys.exit(f"[desktop] Web app nao encontrado em {web_dir}.")
+def _start_vite_dev_server() -> tuple[subprocess.Popen[bytes] | None, str]:
+    vite_dir = _vite_app_dir()
+    if not (vite_dir / "package.json").exists():
+        sys.exit(f"[desktop] Vite app nao encontrado em {vite_dir}.")
 
     env = {**os.environ, "BROWSER": "none", "ANALISYS_DESKTOP_MODE": "1"}
+    if _port_open(_VITE_DEV_PORT):
+        return None, _VITE_DEV_URL
+
     proc = subprocess.Popen(
         [
             _npm_cmd(),
             "run",
             "dev",
             "--",
-            "--hostname",
+            "--host",
             "127.0.0.1",
             "--port",
-            str(_DEV_PORT),
+            str(_VITE_DEV_PORT),
         ],
-        cwd=str(web_dir),
+        cwd=str(vite_dir),
         env=env,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-    return proc, _DEV_PORT
-
-
-def _start_standalone_server(standalone: Path) -> tuple[subprocess.Popen[bytes], int]:
-    port = _free_port()
-    env = {
-        **os.environ,
-        "PORT": str(port),
-        "HOSTNAME": "127.0.0.1",
-        "ANALISYS_DESKTOP_MODE": "1",
-    }
-    proc = subprocess.Popen(
-        [_node_exe(), str(standalone)],
-        env=env,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    return proc, port
+    if not _wait_for_port(_VITE_DEV_PORT, timeout=30):
+        proc.terminate()
+        sys.exit(
+            f"[desktop] Vite dev server nao respondeu na porta {_VITE_DEV_PORT} "
+            "apos 30s."
+        )
+    return proc, _VITE_DEV_URL
 
 
 def main() -> None:
@@ -945,11 +948,7 @@ def main() -> None:
         return  # _run_diagnostic_mode calls sys.exit; defensive
     dev_mode = "--dev" in args
     debug_mode = "--debug" in args
-    # Phase 4 (v0.14.0): Vite is the default UI; Next/Node only via --legacy.
-    # --vite is preserved as an explicit alias of the default so existing
-    # shortcuts and docs keep working.
-    legacy_mode = "--legacy" in args
-    vite_mode = ("--vite" in args) or (not legacy_mode and not dev_mode)
+    legacy_requested = "--legacy" in args
 
     _configure_bundled_data_paths()
     # Strip Mark-of-the-Web from bundle DLLs BEFORE any .NET load attempt.
@@ -960,42 +959,22 @@ def main() -> None:
     _ensure_db_initialized()
     _ensure_gics_backfilled()
     _preflight_pywebview_backend()
+    if legacy_requested:
+        _warn_legacy_removed()
     bridge = CVMBridge()
     server_proc: subprocess.Popen[bytes] | None = None
     static_server: object | None = None
 
-    if legacy_mode:
-        standalone = _standalone_path()
-        if not standalone.exists():
-            sys.exit(
-                f"[desktop] Standalone server não encontrado em {standalone}.\n"
-                "Execute primeiro:\n"
-                "  .\\desktop\\build_desktop.ps1\n"
-                "(ou: npm --prefix apps/web run build)"
-            )
-        server_proc, port = _start_standalone_server(standalone)
-        if not _wait_for_port(port):
-            server_proc.terminate()
-            sys.exit(
-                f"[desktop] Servidor standalone não respondeu na porta {port} "
-                f"após {_STARTUP_TIMEOUT}s."
-            )
-        url = f"http://127.0.0.1:{port}"
-    elif dev_mode:
-        if _port_open(_DEV_PORT):
-            url = _DEV_URL
-        else:
-            server_proc, port = _start_dev_server()
-            if not _wait_for_port(port, timeout=30):
-                server_proc.terminate()
-                sys.exit(
-                    f"[desktop] Next.js dev server nao respondeu na porta {port} "
-                    "apos 30s."
-                )
-            url = _DEV_URL
+    if dev_mode and not _bundled():
+        server_proc, url = _start_vite_dev_server()
     else:
-        # Default mode (or explicit --vite alias): serve the static Vite SPA
-        # over a loopback HTTP server. No node.exe spawned.
+        # Default mode (and explicit --vite / legacy-flag fallback): serve the
+        # static Vite SPA over a loopback HTTP server. No node.exe spawned.
+        if dev_mode and _bundled():
+            _log_recovery(
+                _user_data_root(),
+                "unsupported --dev flag in packaged build; continuing in Vite mode",
+            )
         dist = _vite_dist_path()
         index_html = dist / "index.html"
         if not index_html.exists():
@@ -1012,7 +991,7 @@ def main() -> None:
         print(f"[desktop] vite mode: serving {dist} on {url}")
 
     webview.create_window(
-        "CVM Analytics" + (" (Legacy)" if legacy_mode else ""),
+        "CVM Analytics",
         url=url,
         js_api=bridge,
         width=_WIDTH,

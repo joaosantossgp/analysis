@@ -1,12 +1,20 @@
-# Phase 5 — Legacy Deletion (PLANNED, NOT STARTED)
+# Phase 5 — Legacy Deletion (HISTORICAL PLAN)
 
 > Note: this document was originally titled "Phase 3 — Legacy Deletion". After the Phase 4 default flip in `v0.14.0`, the canonical name for the legacy-deletion phase is **Phase 5**. The file path is kept for backward compatibility with old links.
 
-Status: **DO NOT EXECUTE WITHOUT EXPLICIT USER APPROVAL.**
+Status: **Superseded by Phase 5A/5B.** The desktop-side legacy runtime was
+removed in `v0.15.0`. Do not use this older broad-deletion plan to remove
+`apps/web/` or `apps/api/`; both remain source-only / hosted surfaces pending
+explicit approval.
 
-Phase 5 deletes the Next.js + FastAPI + bundled Node stack once the Vite SPA has shipped as the default runtime and survived a soak window. This is the largest single change in the migration and is irreversible without git revert.
+The original plan assumed Next.js, FastAPI, bundled Node, `apps/web/`, and
+`apps/api/` could all be deleted together. Phase 5A narrowed that scope:
+`apps/web/` and `apps/api/` are not desktop package dependencies and were kept.
 
-Phase 3A through 3I were parity-planning and incremental screen-port phases. Phase 3J was the readiness audit. **Phase 4 shipped as `v0.14.0`**: Vite became the default; `CVMAnalytics.exe --legacy` keeps the previous Next/Node UI reachable from the same bundle; no legacy code was deleted. Their active checklist is `PHASE_3_PARITY_MATRIX.md`.
+Phase 3A through 3I were parity-planning and incremental screen-port phases.
+Phase 3J was the readiness audit. Phase 4 shipped as `v0.14.0`: Vite became
+the default. Phase 5B shipped as `v0.15.0`: the packaged desktop app became
+Vite-only and no longer ships Node or Next standalone.
 
 ---
 

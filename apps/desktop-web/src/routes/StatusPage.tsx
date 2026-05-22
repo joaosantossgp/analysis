@@ -164,8 +164,8 @@ function RuntimeCard({ status }: { status: AppStatusPayload }) {
   const errorCount = status.diagnostics.errors.length;
   const mode = runtime.runtime_mode;
   const modeLabel =
-    mode === "legacy"
-      ? "legacy (Next/Node)"
+    mode === "vite-dev"
+      ? "vite dev"
       : mode === "vite"
         ? "vite (default)"
         : mode;
@@ -188,8 +188,9 @@ function RuntimeCard({ status }: { status: AppStatusPayload }) {
         {warningCount === 1 ? "" : "s"}.
       </p>
       <p className="mt-2 text-[11px] leading-relaxed text-zinc-500">
-        Need the previous UI? Close the app and relaunch{" "}
-        <span className="font-mono text-zinc-300">CVMAnalytics.exe --legacy</span> to fall back to the Next/Node runtime. No legacy code was removed.
+        Packaged desktop uses only the Vite UI. The legacy Next/Node runtime is
+        no longer bundled, and no <span className="font-mono text-zinc-300">node.exe</span>{" "}
+        process is expected.
       </p>
     </Card>
   );

@@ -31,9 +31,7 @@ The authoritative runtime is the packaged Windows desktop executable. The Vercel
 │    • Python core (src/)            – pipeline, DB, KPIs        │
 │    • pywebview window              – WebView2 / Edge Chromium  │
 │    • desktop/bridge.py             – window.pywebview.api      │
-│    • Vite static SPA               – default UI, no Node       │
-│    • Next.js standalone server     – legacy fallback (--legacy)│
-│    • Bundled node.exe              – spawned only for --legacy │
+│    • Vite static SPA               – only packaged UI runtime  │
 │                                                                │
 │  User-writable data lives outside the install dir:             │
 │    %USERPROFILE%\Documents\CVMAnalytics\db\cvm_financials.db   │
@@ -42,26 +40,26 @@ The authoritative runtime is the packaged Windows desktop executable. The Vercel
 
 - **Python (`src/`)** owns the data pipeline, SQLite access, KPI engine, refresh worker, and Excel export.
 - **pywebview** hosts WebView2 and exposes Python callables to JavaScript as `window.pywebview.api`.
-- **Vite + React + TypeScript** under `apps/desktop-web/` builds to a static SPA served from a local loopback HTTP server. This is the default UI as of `v0.14.0`.
-- **Next.js 16** under `apps/web/` still builds to a standalone server and remains packaged as a legacy fallback reachable through `CVMAnalytics.exe --legacy`. It is not deleted.
-- **FastAPI (`apps/api/`)** is the HTTP contract for an optional dev workflow. It is not started in the packaged desktop runtime and remains packaged for the legacy path.
+- **Vite + React + TypeScript** under `apps/desktop-web/` builds to a static SPA served from a local loopback HTTP server. This is the only packaged desktop UI runtime as of `v0.15.0`.
+- **Next.js 16** under `apps/web/` remains in source as a source-only legacy / hosted web app. It is not packaged into the desktop app.
+- **FastAPI (`apps/api/`)** remains in source for the hosted Railway API and API tests. It is not started or packaged by the desktop runtime.
 
-The Phase 3 sequence ported every P0 production screen into Vite (statements, KPIs, sectors, Excel export, refresh, status/updater). Phase 4 (`v0.14.0`) made Vite the default while keeping Next/Node/FastAPI intact behind `--legacy`. Legacy deletion is gated on a soak window plus explicit approval. See `docs/migration/`.
+The Phase 3 sequence ported every P0 production screen into Vite (statements, KPIs, sectors, Excel export, refresh, status/updater). Phase 4 (`v0.14.0`) made Vite the default. Phase 5B (`v0.15.0`) removed the desktop-packaged Next/Node runtime. Source-tree deletion for `apps/web/` and `apps/api/` remains pending explicit approval. See `docs/migration/`.
 
 ## Runtime Model
 
 - Local-first. Authoritative runtime is the Windows desktop app.
 - Default runtime: the desktop app launches Python, serves the Vite SPA over a loopback HTTP server, and loads it inside the pywebview window. No `node.exe` process is spawned.
-- Legacy runtime (`--legacy`): the desktop app spawns the bundled `node.exe`, which runs the Next.js standalone server, which serves the legacy UI to WebView2. Behavior is identical to releases up to and including `v0.13.0`.
-- All data calls in either mode go through `window.pywebview.api` directly to Python — no HTTP roundtrip to a separate backend.
+- `--legacy` is no longer supported in the packaged app. It shows a short warning and continues into the Vite UI.
+- All desktop data calls go through `window.pywebview.api` directly to Python — no HTTP roundtrip to a separate backend.
 
 ### Launch Modes
 
 ```
 CVMAnalytics.exe              Vite default (no Node process)
 CVMAnalytics.exe --vite       alias of default Vite mode
-CVMAnalytics.exe --legacy     Next/Node fallback (spawns bundled node.exe)
-CVMAnalytics.exe --dev        legacy Next.js dev server (developer only)
+CVMAnalytics.exe --legacy     unsupported; warns, then continues into Vite
+CVMAnalytics.exe --dev        packaged build ignores dev flag; source mode uses Vite dev server
 CVMAnalytics.exe --debug      open DevTools in the active mode
 CVMAnalytics.exe --diagnose-runtime   write diagnostics log and exit
 ```
@@ -108,8 +106,8 @@ User data is never written under the install directory. The updater can never ov
 pip install -r requirements.txt
 pip install -r apps/api/requirements-dev.txt
 
-# Web deps (only needed when running the dev UI)
-cd apps/web && npm install && cd ../..
+# Vite desktop UI deps (only needed when running/building the dev UI)
+cd apps/desktop-web && npm install && cd ../..
 
 # Initialize the dev DB (repo-relative path used in dev mode)
 python scripts/setup_db.py
@@ -118,7 +116,7 @@ python scripts/setup_companies_table.py
 # Validate environment
 python scripts/runtime_doctor.py --require-canonical
 
-# Run the desktop app in dev mode against the Next dev server
+# Run the desktop app in dev mode against the Vite dev server
 python -m desktop.app --dev
 ```
 
@@ -134,8 +132,8 @@ python main.py --companies PETROBRAS --start_year 2021 --end_year 2025
 uvicorn apps.api.app.main:app --reload
 # → Swagger at http://127.0.0.1:8000/docs
 
-# Web dev server only
-cd apps/web && npm run dev
+# Vite UI dev server only
+cd apps/desktop-web && npm run dev
 ```
 
 ## Desktop Build
@@ -144,8 +142,8 @@ cd apps/web && npm run dev
 # From the repo root
 .\desktop\build_desktop.ps1
 
-# Or, after a successful prior next build:
-.\desktop\build_desktop.ps1 -SkipNextBuild
+# Or, after a successful prior Vite build:
+.\desktop\build_desktop.ps1 -SkipViteBuild
 
 # Result
 .\dist\CVMAnalytics\CVMAnalytics.exe
@@ -153,11 +151,9 @@ cd apps/web && npm run dev
 
 The build script:
 
-1. Runs `next build` with `output: "standalone"` (skippable with `-SkipNextBuild`).
-2. Copies `public/` and `.next/static/` into the standalone tree (Next.js does not do this automatically).
-3. Copies the system `node.exe` into `desktop/node_portable/`.
-4. Injects the version into `desktop/__version__.py`.
-5. Runs `pyinstaller desktop/app.spec` to produce `dist/CVMAnalytics/`.
+1. Runs the Vite build in `apps/desktop-web/`.
+2. Injects the version into `desktop/__version__.py`.
+3. Runs `pyinstaller desktop/app.spec` to produce `dist/CVMAnalytics/`.
 
 The packaged folder contains only `CVMAnalytics.exe` and `_internal/`. No user data and no dev database are bundled.
 
@@ -180,8 +176,9 @@ The repository is in the middle of a multi-phase simplification of the desktop r
 | Phase 2 | Wire Vite SPA into pywebview | **Released as opt-in `--vite` (`v0.4.0`)** |
 | Phase 3A–3I | Incremental Vite parity slices | **Released through `v0.13.0`**: statements, Update Base, Documents data root, KPIs, KPI charts, sectors, sub-sector detail, Excel export (full + per-statement), single-company refresh, status/diagnostics, software updater UI |
 | Phase 3J | Default switch readiness audit | Done |
-| Phase 4 | Vite default + Next/Node fallback (`--legacy`) | **Released as `v0.14.0`.** Default startup now loads the Vite SPA with no Node process. Legacy Next/Node UI remains packaged and reachable via `--legacy`. No legacy code deleted. |
-| Phase 5 (was "Phase 3") | Delete legacy Next/FastAPI/Node/`apps/web`/`apps/api`/`node_portable` | Not started; gated on a soak window for the `v0.14.0` default flip and explicit user approval |
+| Phase 4 | Vite default + Next/Node fallback (`--legacy`) | **Released as `v0.14.0`, hotfix `v0.14.1`.** Default startup loads the Vite SPA with no Node process. |
+| Phase 5A | Legacy deletion audit | Done. Found `apps/web/` and `apps/api/` are source-only / hosted products, not desktop package dependencies. |
+| Phase 5B | Remove desktop-packaged Next/Node runtime | **Released as `v0.15.0`.** The desktop package no longer ships `node.exe`, `web_standalone/`, or the Next standalone runtime. |
 | Phase 6 | Polish, code signing, AV review | Not started |
 
 See:
@@ -194,8 +191,9 @@ See:
 
 ```
 desktop/         pywebview wrapper, PyInstaller spec, updater, build script
-apps/web/        Next.js 16 standalone UI (bundled into the .exe)
-apps/api/        Optional FastAPI read-only service for dev/local HTTP
+apps/desktop-web/ Vite static SPA packaged into the .exe
+apps/web/        Source-only legacy / hosted Next.js 16 UI, not packaged
+apps/api/        Hosted Railway FastAPI + API tests, not packaged
 src/             Python core: scraper, KPI engine, refresh/read services
 main.py          CLI entry point for headless refresh
 scripts/         Setup, batches, diagnostics, validation helpers
@@ -207,15 +205,15 @@ tests/           Pytest suite
 
 ## Roadmap
 
-- Soak `v0.14.0` (Vite default + `--legacy` fallback) on real machines for 1–2 weeks. Collect any failure modes that only appear when Vite is the default startup.
-- After a clean soak, propose Phase 5: delete `apps/web/`, `apps/api/`, `desktop/node_portable/`, the `web_standalone` data entry, and the `--legacy` branch — only with explicit user approval.
+- Soak `v0.15.0` on real machines. Collect any failures now that the packaged desktop app has no Next/Node fallback.
+- Do not delete `apps/web/` or `apps/api/` without explicit approval; they remain source-only / hosted surfaces outside the desktop package.
 - Phase 6: code signing, AV/UPX review, startup logging improvements.
 
 ## Known Limitations
 
 - Windows-only. macOS and Linux are not supported targets.
 - Requires Microsoft Edge WebView2 runtime (preinstalled on Windows 11; usually present on recent Windows 10).
-- As of `v0.14.0` the default startup is the Vite SPA and does not spawn a Node.js child process. `CVMAnalytics.exe --legacy` still spawns the bundled `node.exe` for the Next.js standalone fallback. Node removal is deferred until the Vite default soak is complete and legacy deletion is approved.
+- As of `v0.15.0` the packaged desktop app is Vite-only and does not spawn a Node.js child process. `CVMAnalytics.exe --legacy` is unsupported and continues into Vite after a warning.
 - The dev database under `data/db/cvm_financials.db` is for developer use only. End users do not need it; the packaged app provisions its own DB under `%USERPROFILE%\Documents\CVMAnalytics` (with WAL-safe migration from legacy `%LOCALAPPDATA%` if present).
 - No telemetry. No crash reporting service is wired into the local desktop app.
 

@@ -1,13 +1,50 @@
 # Phase 5 Legacy Deletion Audit
 
-> Status: **Phase 5A audit only.** Nothing is deleted in this commit. The audit
-> output drives a later, controlled Phase 5B that touches only the desktop
-> bundle — never the live hosted products on Vercel and Railway.
+> Status: **Phase 5B implemented for v0.15.0.** This document started as the
+> Phase 5A audit and now records the final deletion decisions. Phase 5B touched
+> only the desktop bundle/runtime path — never the live hosted products on
+> Vercel and Railway.
+
+## Phase 5B Final Deletion Decisions
+
+Accepted implementation path:
+
+```
+CVMAnalytics.exe              -> Vite UI only
+CVMAnalytics.exe --vite       -> Vite alias
+CVMAnalytics.exe --legacy     -> unsupported warning, then Vite UI
+CVMAnalytics.exe --dev        -> source mode starts/uses Vite dev server on :5173;
+                                 packaged build ignores dev and opens Vite
+CVMAnalytics.exe --debug      -> opens DevTools in the active Vite mode
+CVMAnalytics.exe --diagnose-runtime   -> write diagnostics log and exit
+```
+
+Removed from the packaged desktop app:
+
+```
+Next.js standalone server   (_internal/web_standalone/)
+bundled node.exe            (_internal/node.exe)
+desktop/node_portable/      (build artifact source for node.exe)
+Next build/copy steps       (desktop/build_desktop.ps1)
+Next/Node data entries      (desktop/app.spec)
+```
+
+Kept in source tree:
+
+```
+apps/web/        source-only legacy / hosted Next.js app, not packaged
+apps/api/        Railway-hosted FastAPI + API tests, not packaged
+railway.toml     hosted API deployment config
+landing/         marketing site
+```
+
+No persistent user-data path, database migration, updater allowlist, ZIP root
+contract, Python data pipeline, or Vite bridge contract was changed.
 
 ## Current Runtime Model
 
-Baseline release: **`v0.14.1`** (manually accepted after the `v0.14.0` Phase 4
-default flip + GICS-backfill hotfix).
+Phase 5A baseline release: **`v0.14.1`** (manually accepted after the `v0.14.0`
+Phase 4 default flip + GICS-backfill hotfix).
 
 ```
 CVMAnalytics.exe              -> Vite default (no Node process)
@@ -45,7 +82,7 @@ Python core
 + PyInstaller
 ```
 
-After Phase 5B the bundle should NOT contain:
+After Phase 5B the bundle does NOT contain:
 
 ```
 Next.js standalone server   (web_standalone/)
@@ -55,7 +92,7 @@ desktop/node_portable/      (build artifact dir)
 --dev branch (Next dev) in desktop/app.py
 ```
 
-The bundle should still contain:
+The bundle still contains:
 
 ```
 desktop-web/ (Vite SPA)
@@ -201,9 +238,9 @@ Risk: a `v0.14.1` user who applies an update to `v0.15.0` (the post-Phase-5B
 release) will lose the `--legacy` escape hatch on the next launch. The release
 notes must call this out.
 
-## Fallback Strategy
+## Historical Fallback Strategy
 
-Three options were considered:
+Three options were considered during Phase 5A:
 
 - **A. Remove `--legacy` immediately in Phase 5B.** Lowest cost, but the user
   has only had one accepted release (`v0.14.1`) on the Vite default. If a
@@ -220,15 +257,13 @@ The user explicitly approved Phase 5A as an audit, not the deletion. The Phase
 between the default flip and any deletion. `v0.14.1` was accepted **once**,
 manually, on a single machine.
 
-**Recommended: B (Keep `--legacy` for one more release, then remove in Phase 5C).**
+Final Phase 5B decision: the user explicitly approved immediate removal after
+manually accepting `v0.14.1`. The implementation keeps the flag only as an
+unsupported warning + Vite fallback so old shortcuts still open the app.
 
-If the user prefers A, Phase 5B can proceed immediately with the deletion list
-below. The deletion list is identical in both options — option B just delays
-the merge by one release.
+## Executed Phase 5B Deletion List
 
-## Proposed Phase 5B Deletion List
-
-Only paths whose sole consumer is the desktop `--legacy` runtime:
+Only paths whose sole consumer was the desktop `--legacy` runtime:
 
 ```
 desktop/node_portable/                      (entire directory, 87 MB)
@@ -245,7 +280,7 @@ landing/         — Static GitHub Pages site, independent.
 src/read_service.py NotFoundError import — keep; apps/api remains.
 ```
 
-## Proposed Phase 5B Modification List
+## Executed Phase 5B Modification List
 
 ```
 desktop/app.py
@@ -253,7 +288,8 @@ desktop/app.py
   - Remove _web_dir(), _standalone_path(), _node_exe(), _npm_cmd().
   - Remove _start_dev_server(), _start_standalone_server().
   - Remove legacy_mode + dev_mode parsing and branches in main().
-  - Keep `--vite` accepted as a no-op alias for one more release, then drop.
+  - Keep `--vite` accepted as a no-op alias.
+  - Keep `--legacy` accepted only as an unsupported warning + Vite fallback.
   - Update window title (drop the "(Legacy)" suffix branch).
   - Update module docstring.
 
@@ -273,10 +309,11 @@ desktop/build_desktop.ps1
   - Renumber remaining steps; rewrite the file-level docstring.
 
 .github/workflows/release-desktop.yml
-  - Remove the `uses: actions/setup-node@v4` step (line 28-32).
-  - Remove the `Install Node dependencies` step (`npm ci --prefix apps/web`).
-  - Leave everything else untouched (flat-root verify, SHA-256 sidecars,
-    publish step).
+  - Keep `actions/setup-node@v4`, scoped to `apps/desktop-web`, because Vite
+    still needs Node to build.
+  - Remove the `npm ci --prefix apps/web` step.
+  - Install only `apps/desktop-web` dependencies.
+  - Leave flat-root verify, SHA-256 sidecars, and publish step untouched.
 
 apps/desktop-web/src/routes/StatusPage.tsx
   - Drop the "--legacy" fallback hint added in v0.14.0 (or rewrite to point at
@@ -390,24 +427,8 @@ v0.14.1 → v0.15.0 update applied end-to-end at least once
 
 ## Recommendation
 
-**Ready for a narrow Phase 5B controlled deletion — recommended path: option B.**
+**Phase 5B package/runtime removal is complete.**
 
-Phase 5B should:
-
-1. Ship `v0.15.0` that removes only the desktop-side `--legacy` runtime path
-   plus the bundled `node.exe` and `web_standalone/`. Concretely: delete
-   `desktop/node_portable/` and modify `desktop/app.py`, `desktop/bridge.py`,
-   `desktop/app.spec`, `desktop/build_desktop.ps1`, and
-   `.github/workflows/release-desktop.yml` per the lists above.
-2. **Not touch** `apps/web/`, `apps/api/`, `railway.toml`, `landing/`, or any
-   non-desktop CI workflow. The Vercel-deployed web app and the
-   Railway-hosted FastAPI are live products, not legacy fallbacks.
-3. **Not touch** the `apps.api.app.dependencies::NotFoundError` import in
-   `src/read_service.py`. The hosted API stays alive; the import resolves.
-
-Option B (one more `--legacy` release before the deletion) is the lower-risk
-path because `v0.14.1` only has one manual acceptance. Phase 5B can adopt
-option A if the user explicitly requests immediate removal.
-
-Do **not** rename the legacy-deletion phase any further; this document is now
-the canonical reference for what Phase 5B and (if needed) Phase 5C will do.
+Recommended next step: soak `v0.15.0` before deleting any remaining source-only
+legacy folders. `apps/web/` and `apps/api/` should remain until the user
+explicitly approves source-tree deletion and hosted-product retirement.
