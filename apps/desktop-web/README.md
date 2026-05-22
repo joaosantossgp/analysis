@@ -1,8 +1,8 @@
-# apps/desktop-web — Vite SPA desktop runtime prototype
+# apps/desktop-web — Vite SPA desktop runtime (default UI)
 
 ## Status
 
-**Phase 3I experimental runtime.** This package exists in parallel to `apps/web/` (Next.js). It does **not** replace the default production UI yet. The default desktop executable still starts the Next.js standalone server through bundled Node; passing `--vite` starts this Vite SPA instead.
+**Phase 4 default UI (`v0.14.0`).** This package is now the **default** desktop UI. The legacy Next.js stack under `apps/web/` is still packaged and reachable through `CVMAnalytics.exe --legacy`. No legacy code was deleted; the bundle still ships `web_standalone/`, `node.exe`, and FastAPI dependencies. Legacy deletion is gated on a clean soak of the `v0.14.0` default flip plus explicit user approval.
 
 Screens with dynamic routing prove the architecture:
 
@@ -97,34 +97,38 @@ npm run build
 
 Output is a static SPA at `apps/desktop-web/dist/`.
 
-## Phase 2 — opt-in `--vite` launch mode
+## Phase 4 — Vite as the default launch mode
 
-The packaged desktop executable now ships the Vite SPA alongside the Next standalone server. The default mode is unchanged (Next). Pass `--vite` to load this SPA instead:
+As of `v0.14.0` the packaged desktop executable loads this Vite SPA by default. The Next standalone server stays bundled and is reachable only when `--legacy` is passed.
 
 ```powershell
-# packaged
-.\dist\CVMAnalytics\CVMAnalytics.exe --vite
+# packaged — Vite default (no Node process)
+.\dist\CVMAnalytics\CVMAnalytics.exe
+.\dist\CVMAnalytics\CVMAnalytics.exe --vite     # alias of default
 
-# dev (against apps/desktop-web/dist/)
-python -m desktop.app --vite
+# packaged — Next/Node legacy fallback
+.\dist\CVMAnalytics\CVMAnalytics.exe --legacy
+
+# dev (against apps/desktop-web/dist/, bare flag also defaults to Vite)
+python -m desktop.app
 
 # dev with live reload (Vite dev server + pywebview, interactive)
 python scripts/phase1_pywebview_smoke.py --manual
 ```
 
-In `--vite` mode:
+In default / `--vite` mode:
 
 - pywebview loads `_internal/desktop-web/index.html` over a local HTTP server bound to a free port (`http.server.ThreadingHTTPServer`). No `file://` origin issues with WebView2.
-- The Python bridge is the same `CVMBridge()` the Next mode uses.
-- `%USERPROFILE%\Documents\CVMAnalytics\db\cvm_financials.db` is read/written exactly as in default mode unless `CVMANALYTICS_DATA_DIR` overrides it.
+- The Python bridge is the same `CVMBridge()` the legacy mode uses.
+- `%USERPROFILE%\Documents\CVMAnalytics\db\cvm_financials.db` is read/written exactly as in legacy mode unless `CVMANALYTICS_DATA_DIR` overrides it.
 - **No `node.exe` process is launched.** Verified end-to-end against the packaged exe.
 
-The current default still launches the Next standalone server via the bundled `node.exe`. Removing Node and `web_standalone/` is deferred to Phase 3 (only after parity).
+`--legacy` keeps the previous behavior unchanged: the bundled `node.exe` runs `_internal/web_standalone/server.js` and pywebview loads the Next UI. This path remains in the bundle and is exercised in the Phase 4 release validation contract.
 
-## What this does NOT do yet
+## What this does NOT change
 
-- Does not become the default desktop runtime.
-- Does not remove Next.js, FastAPI, `web_standalone/`, or bundled `node.exe`.
-- Does not cover every production screen yet: advanced update-base filters beyond standard refresh remain on the legacy Next path. (Per-statement Excel export and software updater UI are now implemented in Vite!)
-- Uses TanStack Query for directory, sectors, detail, refresh, status, and export status screens.
+- Does not remove Next.js, FastAPI, `web_standalone/`, or bundled `node.exe`. All four remain packaged so `--legacy` continues to work.
+- Does not change the user-data contract. Data still lives under `%USERPROFILE%\Documents\CVMAnalytics`.
+- Does not change the updater allowlist/denylist or the flat-root ZIP contract.
 - Does not call FastAPI. Bridge-only.
+- Uses TanStack Query for directory, sectors, detail, refresh, status, and export status screens.

@@ -1,25 +1,24 @@
-# Phase 3 — Legacy Deletion (PLANNED, NOT STARTED)
+# Phase 5 — Legacy Deletion (PLANNED, NOT STARTED)
+
+> Note: this document was originally titled "Phase 3 — Legacy Deletion". After the Phase 4 default flip in `v0.14.0`, the canonical name for the legacy-deletion phase is **Phase 5**. The file path is kept for backward compatibility with old links.
 
 Status: **DO NOT EXECUTE WITHOUT EXPLICIT USER APPROVAL.**
 
-Phase 3 deletes the Next.js + FastAPI + bundled Node stack once the Vite SPA reaches parity with the production UI. This is the largest single change in the migration and is irreversible without git revert.
+Phase 5 deletes the Next.js + FastAPI + bundled Node stack once the Vite SPA has shipped as the default runtime and survived a soak window. This is the largest single change in the migration and is irreversible without git revert.
 
-Phase 3A through 3I are not deletion. They are parity-planning and
-incremental screen-port phases. Their active checklist is
-`PHASE_3_PARITY_MATRIX.md`. Current latest parity release: `v0.13.0`
-with Vite statement export scope and software updater UI; default startup is still Next/Node.
+Phase 3A through 3I were parity-planning and incremental screen-port phases. Phase 3J was the readiness audit. **Phase 4 shipped as `v0.14.0`**: Vite became the default; `CVMAnalytics.exe --legacy` keeps the previous Next/Node UI reachable from the same bundle; no legacy code was deleted. Their active checklist is `PHASE_3_PARITY_MATRIX.md`.
 
 ---
 
 ## Pre-conditions (all must be true)
 
-1. **Vite SPA parity**: every P0 item in `PHASE_3_PARITY_MATRIX.md` is complete, and every production Next route has an equivalent Vite route exercised in a packaged build smoke.
-2. **A future default-Vite release shipped and soaked** with both UIs bundled first, `--vite` exercised by real users for at least one soak window (suggest 1–2 weeks), and all P0 parity gaps closed.
-3. **Manual sign-off from the user**: explicit "OK to delete Next / Node / FastAPI".
-4. **No regression** in the Phase 0 contract (LOCALAPPDATA DB, MOTW strip, updater allowlist, recovery scenarios) after switching default to Vite.
-5. **Default switched and soaked**: a release where the default mode is Vite (Next becomes opt-in via `--legacy` or similar) ships and survives a soak window before deletion.
+1. ✅ **Vite SPA parity**: every P0 item in `PHASE_3_PARITY_MATRIX.md` is complete, and every production Next route has an equivalent Vite route exercised in a packaged build smoke. (Closed at `v0.13.0` / Phase 3I.)
+2. ✅ **Default flip released**: Phase 4 / `v0.14.0` shipped with Vite as the default and Next as opt-in via `--legacy`. Both UIs still bundled.
+3. ⏳ **Soak window**: the `v0.14.0` default-Vite release must run on real machines for at least one soak window (1–2 weeks) without unresolved Vite-default regressions.
+4. ⏳ **Manual sign-off from the user**: explicit "OK to delete Next / Node / FastAPI".
+5. ⏳ **No regression** in the Phase 0 contract (Documents DB, MOTW strip, updater allowlist, recovery scenarios) after switching default to Vite.
 
-If any pre-condition is not met, **do not start Phase 3**.
+If any pre-condition is not met, **do not start Phase 5**.
 
 ---
 
@@ -51,7 +50,7 @@ The following are candidates for removal once Vite reaches parity:
 
 ### Runtime deletions
 - `desktop/app.py`:
-  - Default branch in `main()` flips to Vite (was `--vite`-only).
+  - Remove the `--legacy` branch in `main()` (the Vite default is already in place from Phase 4).
   - `--dev` branch removed (or repurposed for Vite dev server).
   - Remove `_web_dir`, `_standalone_path`, `_node_exe`, `_npm_cmd`, `_start_dev_server`, `_start_standalone_server`.
   - Remove the `_DEV_PORT`, `_DEV_URL` constants.
@@ -69,16 +68,16 @@ The following are candidates for removal once Vite reaches parity:
 
 Each step is a separate commit. Easier to revert one step if smoke fails.
 
-1. **Verify parity matrix.** Re-confirm every Next route has a Vite equivalent. Keep `PHASE_3_PARITY_MATRIX.md` current.
-2. **Default flip.** Ship `vX.Y.0` where Vite is the default and Next is opt-in (e.g. `--legacy`). Both UIs still bundled.
-3. **Soak window.** 1–2 weeks. Watch issue tracker. If users report Vite-mode bugs, fix and re-soak. **Do not proceed unless the soak is clean.**
-4. **Remove Next runtime path from `desktop/app.py`.** Single commit: deletes `--legacy` branch, `_start_standalone_server`, `_start_dev_server`, etc. `--vite` no longer needed as a flag (it's the only mode).
-5. **Remove Node + web_standalone from `app.spec` + build script.** Single commit. Bundle drops 114 MB.
+1. ✅ **Verify parity matrix.** Done at `v0.13.0` / Phase 3I.
+2. ✅ **Default flip.** Shipped as `v0.14.0` / Phase 4. Vite default; Next reachable via `--legacy`. Both UIs still bundled.
+3. ⏳ **Soak window.** 1–2 weeks against `v0.14.0`. Watch issue tracker. If users report Vite-default bugs, fix and re-soak. **Do not proceed unless the soak is clean.**
+4. **Remove `--legacy` runtime path from `desktop/app.py`.** Single commit: deletes the `legacy_mode` branch, `_start_standalone_server`, `_start_dev_server`, `_standalone_path`, `_node_exe`, `_npm_cmd`, `_DEV_PORT`, `_DEV_URL`, and the `--legacy`/`--dev` flag parsing. `--vite` becomes a no-op alias or is also removed.
+5. **Remove Node + web_standalone from `app.spec` + build script.** Single commit. Bundle drops ~114 MB.
 6. **Delete `apps/web/`.** Single commit. Big diff. CI workflow update.
 7. **Delete `apps/api/`.** Single commit. Update `requirements.txt` family.
 8. **Delete `desktop/node_portable/`.** Trivial.
 9. **Update docs and release `vX.Y.1`.** Mark phase tracker complete.
-10. **Phase 4 starts.** Code signing, AV/UPX review.
+10. **Phase 6 starts.** Code signing, AV/UPX review.
 
 ---
 

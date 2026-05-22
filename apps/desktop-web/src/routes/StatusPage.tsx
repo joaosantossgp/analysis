@@ -137,7 +137,7 @@ function PageHeader({
     <header className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-5 shadow-lg">
       <UnifiedPageHeader
         title="Status"
-        subtitle="Runtime, local data, database, software updater, and diagnostics for the experimental Vite desktop mode. Software update is separate from Atualizar Base."
+        subtitle="Runtime, local data, database, software updater, and diagnostics for the default Vite desktop mode. Software update is separate from Atualizar Base."
         actions={
           <div className="flex flex-col items-end gap-2 text-right">
             <StatusPill tone={runtime?.bridge_status === "ready" ? "good" : "warn"}>
@@ -162,6 +162,13 @@ function RuntimeCard({ status }: { status: AppStatusPayload }) {
   const runtime = status.runtime;
   const warningCount = status.diagnostics.warnings.length;
   const errorCount = status.diagnostics.errors.length;
+  const mode = runtime.runtime_mode;
+  const modeLabel =
+    mode === "legacy"
+      ? "legacy (Next/Node)"
+      : mode === "vite"
+        ? "vite (default)"
+        : mode;
   return (
     <Card
       title="Runtime"
@@ -170,7 +177,7 @@ function RuntimeCard({ status }: { status: AppStatusPayload }) {
     >
       <dl className="grid gap-3 text-sm sm:grid-cols-2">
         <Field label="Version" value={runtime.version} mono />
-        <Field label="Mode" value={`${runtime.runtime_mode} experimental`} />
+        <Field label="Mode" value={modeLabel} />
         <Field label="Bridge" value={runtime.bridge_status} tone={runtime.bridge_status === "ready" ? "good" : "warn"} />
         <Field label="Packaged" value={runtime.frozen ? "yes" : "no"} />
         <Field label="Shell" value={runtime.desktop_shell ?? "unknown"} />
@@ -179,6 +186,10 @@ function RuntimeCard({ status }: { status: AppStatusPayload }) {
       <p className="mt-4 border-t border-zinc-800 pt-3 text-xs text-zinc-500">
         Diagnostics: {errorCount} error{errorCount === 1 ? "" : "s"} · {warningCount} warning
         {warningCount === 1 ? "" : "s"}.
+      </p>
+      <p className="mt-2 text-[11px] leading-relaxed text-zinc-500">
+        Need the previous UI? Close the app and relaunch{" "}
+        <span className="font-mono text-zinc-300">CVMAnalytics.exe --legacy</span> to fall back to the Next/Node runtime. No legacy code was removed.
       </p>
     </Card>
   );

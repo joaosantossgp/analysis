@@ -2,13 +2,22 @@
 CVM Analytics — entry point pywebview.
 
 Uso:
-  python -m desktop.app --dev    # inicia/reusa Next.js dev server em :3000
-  python -m desktop.app          # standalone server em .next/standalone/server.js
-  python -m desktop.app --debug  # abre DevTools no modo que estiver ativo
+  python -m desktop.app             # Vite SPA default (no Node process)
+  python -m desktop.app --vite      # alias of default Vite mode
+  python -m desktop.app --legacy    # Next.js standalone via bundled node.exe
+  python -m desktop.app --dev       # legacy Next.js dev server on :3000
+  python -m desktop.app --debug     # opens DevTools in whichever mode is active
+  python -m desktop.app --diagnose-runtime  # write diagnostics log and exit
 
-Quando empacotado via PyInstaller (sys.frozen=True):
-  - server.js lido de sys._MEIPASS/web_standalone/server.js
-  - node.exe lido de sys._MEIPASS/node.exe (copiado pelo build_desktop.ps1)
+Phase 4 (v0.14.0): default UI switched from Next/Node to the Vite SPA. The
+Next/Node runtime stays packaged and is reachable via --legacy. No legacy
+files were deleted; the updater, bundle layout, and user-data contract are
+unchanged.
+
+When packaged via PyInstaller (sys.frozen=True):
+  - Vite SPA loaded from sys._MEIPASS/desktop-web/index.html (default).
+  - Next standalone loaded from sys._MEIPASS/web_standalone/server.js (--legacy).
+  - node.exe loaded from sys._MEIPASS/node.exe when --legacy is used.
 """
 
 from __future__ import annotations
@@ -811,10 +820,11 @@ def main() -> None:
         return  # _run_diagnostic_mode calls sys.exit; defensive
     dev_mode = "--dev" in args
     debug_mode = "--debug" in args
-    # Phase 2 experimental mode: serve the static Vite SPA over a local
-    # HTTP server. Does not launch Node, does not start the Next standalone.
-    # Default mode is unchanged.
-    vite_mode = "--vite" in args
+    # Phase 4 (v0.14.0): Vite is the default UI; Next/Node only via --legacy.
+    # --vite is preserved as an explicit alias of the default so existing
+    # shortcuts and docs keep working.
+    legacy_mode = "--legacy" in args
+    vite_mode = ("--vite" in args) or (not legacy_mode and not dev_mode)
 
     _configure_bundled_data_paths()
     # Strip Mark-of-the-Web from bundle DLLs BEFORE any .NET load attempt.
@@ -828,34 +838,7 @@ def main() -> None:
     server_proc: subprocess.Popen[bytes] | None = None
     static_server: object | None = None
 
-    if vite_mode:
-        dist = _vite_dist_path()
-        index_html = dist / "index.html"
-        if not index_html.exists():
-            sys.exit(
-                f"[desktop] Vite build nao encontrado em {dist}.\n"
-                "Para gerar localmente:\n"
-                "  npm --prefix apps/desktop-web run build\n"
-                "Para empacotar:\n"
-                "  .\\desktop\\build_desktop.ps1\n"
-                "(verifique se o passo do Vite ficou habilitado)."
-            )
-        static_server, port = _start_vite_static_server(dist)
-        url = f"http://127.0.0.1:{port}/"
-        print(f"[desktop] vite mode: serving {dist} on {url}")
-    elif dev_mode:
-        if _port_open(_DEV_PORT):
-            url = _DEV_URL
-        else:
-            server_proc, port = _start_dev_server()
-            if not _wait_for_port(port, timeout=30):
-                server_proc.terminate()
-                sys.exit(
-                    f"[desktop] Next.js dev server nao respondeu na porta {port} "
-                    "apos 30s."
-                )
-            url = _DEV_URL
-    else:
+    if legacy_mode:
         standalone = _standalone_path()
         if not standalone.exists():
             sys.exit(
@@ -872,9 +855,38 @@ def main() -> None:
                 f"após {_STARTUP_TIMEOUT}s."
             )
         url = f"http://127.0.0.1:{port}"
+    elif dev_mode:
+        if _port_open(_DEV_PORT):
+            url = _DEV_URL
+        else:
+            server_proc, port = _start_dev_server()
+            if not _wait_for_port(port, timeout=30):
+                server_proc.terminate()
+                sys.exit(
+                    f"[desktop] Next.js dev server nao respondeu na porta {port} "
+                    "apos 30s."
+                )
+            url = _DEV_URL
+    else:
+        # Default mode (or explicit --vite alias): serve the static Vite SPA
+        # over a loopback HTTP server. No node.exe spawned.
+        dist = _vite_dist_path()
+        index_html = dist / "index.html"
+        if not index_html.exists():
+            sys.exit(
+                f"[desktop] Vite build nao encontrado em {dist}.\n"
+                "Para gerar localmente:\n"
+                "  npm --prefix apps/desktop-web run build\n"
+                "Para empacotar:\n"
+                "  .\\desktop\\build_desktop.ps1\n"
+                "(verifique se o passo do Vite ficou habilitado)."
+            )
+        static_server, port = _start_vite_static_server(dist)
+        url = f"http://127.0.0.1:{port}/"
+        print(f"[desktop] vite mode: serving {dist} on {url}")
 
     webview.create_window(
-        "CVM Analytics" + (" (Vite)" if vite_mode else ""),
+        "CVM Analytics" + (" (Legacy)" if legacy_mode else ""),
         url=url,
         js_api=bridge,
         width=_WIDTH,

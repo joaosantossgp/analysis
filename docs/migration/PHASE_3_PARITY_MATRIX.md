@@ -1,4 +1,4 @@
-# Phase 3 - Functional Parity Matrix
+# Phase 3 / 4 - Functional Parity Matrix
 
 Status: Phase 3A shipped in `v0.5.0` (financial statements). Phase 3B
 shipped in `v0.6.0` and was accepted in `v0.6.1` (Update Base + DB
@@ -21,14 +21,20 @@ statements, and indicadores screens. Writes to the persistent
 place for the Next UI. Phase 3F ships in `v0.10.0`: company detail
 now has single-company refresh controls with status/freshness display,
 polling, and success/error feedback, using existing
-`request_refresh` / `get_refresh_status` bridge methods. The default
-runtime is still Next/Node. Phase 3G ships in `v0.11.0`: Vite gains
-`/status`, a compact app status / updater check / diagnostics screen
-showing runtime version/mode, bridge status, local data paths, SQLite
-counts, latest GitHub release status, compact logs, and runtime probes.
-It adds narrow bridge methods `get_app_status` and `open_status_path`.
-Phase 3H ships in `v0.12.0` (Navigation polish, custom KPI trend charts, sub-sector detail).
-Phase 3I ships in `v0.13.0` (Per-statement Excel export scope + software updater prompt/apply/restart UI in Vite).
+`request_refresh` / `get_refresh_status` bridge methods. Phase 3G ships
+in `v0.11.0`: Vite gains `/status`, a compact app status / updater
+check / diagnostics screen showing runtime version/mode, bridge status,
+local data paths, SQLite counts, latest GitHub release status, compact
+logs, and runtime probes. It adds narrow bridge methods `get_app_status`
+and `open_status_path`. Phase 3H ships in `v0.12.0` (Navigation polish,
+custom KPI trend charts, sub-sector detail). Phase 3I ships in `v0.13.0`
+(Per-statement Excel export scope + software updater prompt/apply/restart
+UI in Vite). Phase 3J was the audit-only readiness pass between 3I and 4,
+no release tag. **Phase 4 ships in `v0.14.0`: Vite becomes the default
+desktop UI; `CVMAnalytics.exe --legacy` keeps the previous Next/Node UI
+reachable from the same bundle; `--vite` kept as an alias of the default.
+No legacy code deleted; updater allowlist, user-data root, MOTW strip,
+preflight, and flat-root ZIP contract all unchanged.**
 
 Scope of this document:
 
@@ -94,18 +100,20 @@ Scope of this document:
 
 ## Remaining P0 Before Vite Can Become Default
 
-- None. All core P0 parity gaps closed.
-- GitHub-downloaded release validation after each runtime parity slice.
+- None. All core P0 parity gaps were closed at `v0.13.0`. Vite became the
+  default in `v0.14.0` (Phase 4).
 
 ## Remaining Before Legacy Deletion
 
-- All P0 features above are complete and validated in `--vite`.
-- A release ships with Vite as the default while Next remains available as a
-  fallback.
-- That default-Vite release soaks on real machines.
-- Phase 0 updater/user-data/MOTW contract is revalidated.
-- User explicitly approves deleting Next, Node, FastAPI, and related bundle
-  entries.
+- ✅ All P0 features above are complete and validated in `--vite`.
+- ✅ A release ships with Vite as the default while Next remains available as a
+  fallback (`v0.14.0`, Phase 4: bare-flag → Vite; `--legacy` → Next/Node).
+- ⏳ That default-Vite release must soak on real machines for 1–2 weeks before
+  legacy deletion is considered.
+- ⏳ Phase 0 updater/user-data/MOTW contract must be revalidated against the
+  Phase 4 release ZIP.
+- ⏳ User must explicitly approve deleting Next, Node, FastAPI, and related
+  bundle entries (Phase 5).
 
 ## Phase 3A Implemented Screen
 
@@ -234,6 +242,16 @@ Why these slices:
 - Per-statement Excel export: Allows users on the statements page to download a scoped workbook containing only the relevant statement sheets (DRE, BPA, BPP, or DFC), preventing clutter and matching ticker-scoped output.
 - Software updater UI: Adds the update workflow to Vite, allowing users to safely check, confirm, download, stage, and apply updates out-of-process using the robust `update_helper.ps1` script without losing user data or database states.
 
+## Phase 4 Implemented Surfaces
+
+Selected surfaces: Vite default startup + `--legacy` fallback flag.
+
+Why these slices:
+- Default switch: every P0 production screen has shipped in Vite through `v0.13.0`. Keeping Next as the default added Node startup latency, a `node.exe` process, and an extra failure surface without paying back parity work.
+- `--legacy` flag: gives users (and support) a documented one-flag rollback to the previous UI without uninstalling, downgrading, or losing data. Required because Phase 5 deletion is not approved yet.
+- `--vite` alias: keeps existing shortcuts, docs, and muscle memory working.
+- No bundle deletion: `apps/web/`, `apps/api/`, `desktop/node_portable/node.exe`, the `web_standalone` data entry, and FastAPI dependencies all remain so `--legacy` continues to work bit-for-bit.
+
 ## Recommended Next Steps
 
-Evaluate making Vite the default runtime switch, since all P0 parity gaps are resolved, while Next/Node/FastAPI remain as legacy fallbacks. Do not delete legacy code yet.
+Soak `v0.14.0` (Vite default + `--legacy` fallback) on real machines for 1–2 weeks. After a clean soak, propose Phase 5 (mandatory legacy deletion) and wait for explicit user approval before touching `apps/web/`, `apps/api/`, `desktop/node_portable/`, the `web_standalone` data entry, FastAPI dependencies, or the `--legacy` branch in `desktop/app.py::main()`.

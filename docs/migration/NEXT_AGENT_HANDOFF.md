@@ -10,10 +10,10 @@ This is the **primary entry point** for any AI agent or human contributor pickin
 ## TL;DR
 
 - **What we are doing:** rebuilding the desktop app's UI runtime from `Next.js standalone + bundled Node + pywebview` to `static Vite SPA + pywebview` while keeping Python authoritative and user data safe.
-- **Where we are:** Phase 3I shipped as `v0.13.0` (Vite Excel statement export scope + software updater prompt/apply/restart UI). Phase 3H shipped as `v0.12.0`. Next still default.
-- **What is released:** `v0.13.0` on GitHub is the current target. Vite includes statement-scoped Excel exports, software update prompt with progress bar, staging extraction and out-of-process restart helper execution, consistent headers, breadcrumbs, custom SVG trend charts, and GICS sub-sector detail route. Default mode is still Next/Node.
-- **What is next:** Evaluate switching default startup to Vite since all P0 parity gaps are resolved. Legacy deletion remains Phase 3 and is not approved.
-- **Hard rule:** do not delete `apps/web/`, `apps/api/`, `desktop/node_portable/`, FastAPI deps, or remove Node from `desktop/app.spec` until the user explicitly approves Phase 3.
+- **Where we are:** Phase 4 shipped as `v0.14.0`. The default UI is now the Vite SPA; `CVMAnalytics.exe --legacy` keeps the previous Next/Node UI reachable from the same bundle. `v0.13.0` (Phase 3I) was the last release where Next was the default. Phase 3J was an audit-only readiness pass between 3I and 4.
+- **What is released:** `v0.14.0` on GitHub is the current target. Default startup loads Vite with no `node.exe` process; `--legacy` spawns the bundled `node.exe` and the Next standalone server; `--vite` is preserved as an alias of the default. No legacy code was deleted; the bundle still ships `web_standalone/`, `node.exe`, FastAPI deps, and `apps/web/`. The updater allowlist, MOTW strip, preflight, persistent-data root, and flat-root ZIP contract are all unchanged from `v0.13.0`.
+- **What is next:** soak `v0.14.0` (Vite default) on real machines for 1–2 weeks. Watch for issues unique to default-Vite startup. After a clean soak, propose Phase 5 (mandatory legacy deletion) and wait for explicit user approval before touching `apps/web/`, `apps/api/`, `desktop/node_portable/`, or removing Node/FastAPI from the bundle.
+- **Hard rule:** do not delete `apps/web/`, `apps/api/`, `desktop/node_portable/`, FastAPI deps, the `web_standalone` data entry, or the `--legacy` branch in `desktop/app.py` until the user explicitly approves Phase 5.
 
 ---
 
@@ -36,8 +36,10 @@ This is the **primary entry point** for any AI agent or human contributor pickin
 | **Phase 3G** | App status / updater / diagnostics UI | **Released as `v0.11.0`.** New Vite `/status` route adds a compact diagnostics dashboard: app version, runtime mode, bridge state, packaged flag, local data/db/output/log/cache paths, SQLite row counts, latest report year, GitHub latest-release check, compact recovery/update/refresh log rows, and runtime probes for .NET/WebView2/pythonnet/SQLite. Adds narrow bridge methods `get_app_status` and `open_status_path`; existing updater apply/staging methods are unchanged and not exposed as a Vite install action. | See `PHASE_3_PARITY_MATRIX.md` |
 | **Phase 3H** | Navigation Polish + KPI Chart Panels + Sub-sector Detail | **Released as `v0.12.0`.** Added breadcrumbs, page headers, unified EntityHeader. Lightweight custom SVG trend charts with null-gap handling. New GICS sub-sector detail route `/setores/:sectorSlug/:subSectorSlug` backed by bridge `get_sub_sector_detail`. | See `PHASE_3_PARITY_MATRIX.md` |
 | **Phase 3I** | Excel statement export scope + software updater prompt/apply/restart UI | **Released as `v0.13.0`.** Added statement-scoped exports (DRE/BPA/BPP/DFC) to Documents output folder. Software updater prompt, progress bar, extraction staging, and out-of-process helper execution. | See `PHASE_3_PARITY_MATRIX.md` |
-| **Phase 3** | Delete legacy: Next, Node, FastAPI, apps/web, apps/api | **Not started.** Gated on Vite screen parity. | See `PHASE_3_PLAN.md` |
-| **Phase 4** | Polish, code signing, AV/UPX review | Not started. | — |
+| **Phase 3J** | Default switch readiness audit | Done. Audit-only phase. No code changes. Confirmed all P0 parity closed and identified the runtime + docs changes required for Phase 4. | See `PHASE_3_PARITY_MATRIX.md` |
+| **Phase 4** | Vite default + Next/Node fallback (`--legacy`) | **Released as `v0.14.0`.** Default startup loads the Vite SPA with no Node process. `--legacy` spawns the bundled `node.exe` and the Next standalone server. `--vite` kept as an explicit alias of the default. No legacy code deleted; updater allowlist and user-data contract unchanged. | See `PHASE_3_PLAN.md` |
+| **Phase 5** | Delete legacy: Next, Node, FastAPI, apps/web, apps/api | **Not started.** Gated on a clean soak of `v0.14.0` and explicit user approval. Was previously called "Phase 3". | See `PHASE_3_PLAN.md` |
+| **Phase 6** | Polish, code signing, AV/UPX review | Not started. Was previously called "Phase 4". | — |
 
 ---
 
@@ -46,10 +48,11 @@ This is the **primary entry point** for any AI agent or human contributor pickin
 - **Do not delete** `apps/web/`, `apps/api/`, `desktop/node_portable/`, or any `_internal/web_standalone/` reference.
 - **Do not remove** Node from `desktop/app.spec` data entries.
 - **Do not remove** FastAPI dependencies from `requirements.txt`.
+- **Do not remove** the `--legacy` branch in `desktop/app.py::main()` — it is the user's only fallback to the previous Next/Node UI.
 - **Do not modify** `desktop/bridge.py` method signatures (the Vite SPA mirrors them in `apps/desktop-web/src/lib/bridge/types.ts`).
 - **Do not modify** `desktop/update_helper.ps1` user-data deny-list (`data`, `output`, `logs`, `cache`, `tmp`, `backup`, `versions`, `update_rollback`).
 - **Do not modify** `desktop/app.py::_migrate_legacy_db_once` or `_wal_safe_copy_sqlite` — they protect user DBs.
-- **Do not change** the default startup branch in `desktop/app.py::main()` to Vite until the user explicitly approves.
+- **Do not change** the default branch in `desktop/app.py::main()` away from Vite. The Vite default was approved and shipped in `v0.14.0`; reverting it requires explicit user approval.
 - **Do not** introduce telemetry, Sentry, or external crash reporting in the desktop runtime.
 - **Do not** rewrite git history.
 - **Do not** force-push.
@@ -63,14 +66,14 @@ This is the **primary entry point** for any AI agent or human contributor pickin
 │              CVMAnalytics.exe (frozen Python)           │
 │                                                          │
 │  desktop/app.py main()                                   │
-│   ├─ default mode (no flag)                              │
-│   │   ├─ subprocess: node.exe _internal/web_standalone/  │
-│   │   │   server.js (Next.js standalone)                 │
-│   │   └─ pywebview window  → http://127.0.0.1:<port>     │
-│   │                                                       │
-│   ├─ --vite mode                                          │
+│   ├─ default / --vite mode  (Phase 4 default)             │
 │   │   ├─ http.server.ThreadingHTTPServer serving         │
 │   │   │   _internal/desktop-web/  (Vite SPA dist)        │
+│   │   └─ pywebview window  → http://127.0.0.1:<port>     │
+│   │                                                       │
+│   ├─ --legacy mode  (Next/Node fallback)                  │
+│   │   ├─ subprocess: node.exe _internal/web_standalone/  │
+│   │   │   server.js (Next.js standalone)                 │
 │   │   └─ pywebview window  → http://127.0.0.1:<port>     │
 │   │                                                       │
 │   ├─ --dev mode → spawn `next dev` from apps/web/         │
@@ -117,13 +120,14 @@ Full architecture map in `ARCHITECTURE.md`.
 
 ## Immediate next task
 
-Suggested before any default switch:
+`v0.14.0` shipped the Vite default + `--legacy` fallback. The next item is the soak window before any deletion work.
 
-1. Keep `PHASE_3_PARITY_MATRIX.md` current.
-2. Recommended next narrow slices: KPI chart parity, sub-sector detail route (`/setores/:slug/:sub_slug`), per-statement Excel export scope (backend addition), and an explicit update prompt/apply/progress decision if the Vite default switch requires it.
+1. Monitor real-world `v0.14.0` use for 1–2 weeks. Watch for failure modes that only appear when Vite is the default startup: loopback HTTP server bind failures, WebView2 cold-start regressions, AV/SmartScreen reaction to the changed launch path, missing `--legacy` discoverability for users who hit Vite-only bugs.
+2. Keep `PHASE_3_PARITY_MATRIX.md` current. If a real-world bug surfaces, record it there and fix on the Vite side rather than re-defaulting to Next.
 3. Keep `/status` focused on diagnostics; do not turn it into a broad settings system unless the user asks.
+4. After a clean soak, propose Phase 5 (legacy deletion) and wait for explicit user approval before touching `apps/web/`, `apps/api/`, `desktop/node_portable/`, FastAPI dependencies, or the `--legacy` branch in `desktop/app.py`.
 
-Do NOT start Phase 3 deletion until every P0 parity gap is closed, Vite has shipped as the default with a fallback and soaked, and the user explicitly approves deletion.
+Do NOT start Phase 5 deletion until `v0.14.0` has soaked cleanly and the user explicitly approves deletion.
 
 ---
 
@@ -165,10 +169,10 @@ Phase 2 is not considered release-validated until the published GitHub ZIP and S
 
 | Decision | Reason |
 |---|---|
-| Did NOT delete `apps/web/` | Production default still uses it. Delete only after Vite reaches parity. |
-| Did NOT delete `apps/api/` | Provides HTTP contract for hosted-mode dev. Audit before removing. |
-| Did NOT remove Node bundling | Phase 2's `--vite` is opt-in. Default still needs Node. |
-| Did NOT switch default to Vite | Vite SPA does not cover all production screens yet. |
+| Did NOT delete `apps/web/` | Still the source for the `--legacy` Next standalone bundle. Delete only after Phase 5. |
+| Did NOT delete `apps/api/` | Provides HTTP contract for hosted-mode dev and the legacy bundle. Audit before removing. |
+| Did NOT remove Node bundling | `--legacy` still requires the bundled `node.exe`. Node removal is Phase 5. |
+| DID switch default to Vite in `v0.14.0` | All P0 parity gaps closed at `v0.13.0`. `--legacy` keeps Next as a fallback. |
 | Did NOT add Sentry / crash reporting | User explicitly declined telemetry. |
 | Did NOT migrate to Tauri / Electron | User scoped this to pywebview + WebView2. |
 | Did NOT change SQLite to DuckDB / Parquet | Out of scope. User confirmed SQLite stays. |

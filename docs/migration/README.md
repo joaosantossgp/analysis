@@ -47,8 +47,10 @@ To:
 | Phase 3G | App status / updater / diagnostics UI | Released as v0.11.0 | New Vite `/status` screen shows runtime version/mode, bridge status, local data paths, SQLite counts, GitHub release check status, compact logs, and runtime probes. Adds narrow bridge methods `get_app_status` and `open_status_path`; software update application remains intentionally unsupported in Vite. Default remains Next. |
 | Phase 3H | Navigation Polish + KPI Chart Panels + Sub-sector Detail | Released as v0.12.0 | Consistent page headers, breadcrumbs, and unified EntityHeader across Vite. Custom SVG trend charts for KPIs (ROE, margins, leverage) with gap-handling. New `/setores/:sectorSlug/:subSectorSlug` route parity for GICS sub-sectors using bridge method `get_sub_sector_detail`. Default remains Next. |
 | Phase 3I | Final P0 Parity: Excel statement export scope + software updater prompt/apply/restart UI | Released as v0.13.0 | Statement-scoped Excel exports (DRE/BPA/BPP/DFC) to Documents output folder. Software updater prompt, staging progress bar, confirmation checks, and out-of-process restart helper swap. |
-| Phase 3 | Mandatory legacy deletion | Not started | Delete Next/FastAPI legacy only after parity, a default-Vite soak release, and explicit user approval. |
-| Phase 4 | Polish/performance | Not started | Startup, logging, AV/code-signing review |
+| Phase 3J | Default switch readiness audit | Done | Audit-only phase. Confirmed all P0 parity gaps closed at v0.13.0 and identified the runtime changes required for Phase 4. |
+| Phase 4 | Vite default + Next/Node fallback (`--legacy`) | Released as v0.14.0 | Default startup loads the Vite SPA with no Node process. `CVMAnalytics.exe --legacy` launches the previous Next/Node UI from the same bundle. `--vite` kept as an explicit alias of the default. No legacy code deleted; updater allowlist, user-data root, MOTW strip, preflight, and ZIP flat-root contract all unchanged. |
+| Phase 5 | Mandatory legacy deletion | Not started | Delete Next/FastAPI legacy only after a clean soak of the Phase 4 default-Vite release and explicit user approval. Was previously called "Phase 3". |
+| Phase 6 | Polish/performance | Not started | Startup, logging, AV/code-signing review. Was previously called "Phase 4". |
 
 See [PHASE_0_RELEASE_CHECKPOINT.md](PHASE_0_RELEASE_CHECKPOINT.md) for the v0.3.0 release record, validation list, and known hygiene issues.
 
@@ -56,12 +58,15 @@ See [PHASE_0_RELEASE_CHECKPOINT.md](PHASE_0_RELEASE_CHECKPOINT.md) for the v0.3.
 
 The authoritative runtime remains the packaged Windows desktop executable.
 
-Default startup still uses the legacy Next.js standalone server and bundled Node runtime. The Vite path is explicit and experimental:
+As of `v0.14.0` the default startup loads the Vite SPA and does not spawn `node.exe`. The Next/Node UI is still packaged and reachable via `--legacy`:
 
 ```powershell
-.\CVMAnalytics.exe          # default Next/Node UI
-.\CVMAnalytics.exe --vite   # experimental Vite SPA, no Node process expected
+.\CVMAnalytics.exe              # Vite default (no Node process)
+.\CVMAnalytics.exe --vite       # alias of default Vite mode
+.\CVMAnalytics.exe --legacy     # Next/Node legacy fallback (spawns bundled node.exe)
 ```
+
+No legacy code was deleted in Phase 4. `apps/web/`, `apps/api/`, `desktop/node_portable/node.exe`, the `web_standalone` data entry in `desktop/app.spec`, and FastAPI dependencies all remain in place to keep `--legacy` working.
 
 ## Critical constraints
 
@@ -84,8 +89,9 @@ For Phase 2 and later runtime changes, local `dist/` validation is not enough. V
 
 - SHA-256 sidecar matches.
 - ZIP root is flat: `CVMAnalytics.exe` plus `_internal/`.
-- Default mode still launches the Next/Node UI.
-- `--vite` mode launches the Vite UI without starting `node.exe`.
+- Default mode launches the Vite UI without starting `node.exe` (Phase 4 contract).
+- `--vite` mode also launches the Vite UI and does not start `node.exe` (alias).
+- `--legacy` mode launches the Next/Node UI and spawns exactly one bundled `node.exe`.
 - Updater staging and helper swap preserve user data. Active runtime data stays
   under `%USERPROFILE%\Documents\CVMAnalytics`; updater staging/rollback stays
   under `%LOCALAPPDATA%\CVMAnalytics`.

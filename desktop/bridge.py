@@ -723,12 +723,14 @@ class CVMBridge:
     @staticmethod
     def _runtime_mode() -> str:
         argv = {str(arg).lower() for arg in sys.argv}
+        if "--legacy" in argv:
+            return "legacy"
         if "--vite" in argv:
             return "vite"
         if "--dev" in argv:
             return "next-dev"
         if getattr(sys, "frozen", False):
-            return "next"
+            return "vite"
         return "unknown"
 
     def _status_path_map(self) -> dict[str, Path]:
