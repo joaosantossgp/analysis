@@ -10,9 +10,9 @@ This is the **primary entry point** for any AI agent or human contributor pickin
 ## TL;DR
 
 - **What we are doing:** rebuilding the desktop app's UI runtime from `Next.js standalone + bundled Node + pywebview` to `static Vite SPA + pywebview` while keeping Python authoritative and user data safe.
-- **Where we are:** Phase 3H shipped as `v0.12.0` (Vite navigation polish, KPI charts, and sub-sector detail route). Phase 3G shipped as `v0.11.0` (Vite app status / updater check / diagnostics screen). Next still default.
-- **What is released:** `v0.12.0` on GitHub is the current target. Vite includes consistent headers, breadcrumbs, custom SVG trend charts for key metrics, and sub-sector detail `/setores/:sectorSlug/:subSectorSlug`. Default mode is still Next/Node.
-- **What is next:** keep closing P0 gaps in `PHASE_3_PARITY_MATRIX.md` before any default switch. Remaining P0: per-statement export scope (backend addition), update prompt/apply/progress parity if required, and testing. Legacy deletion remains Phase 3 and is not approved.
+- **Where we are:** Phase 3I shipped as `v0.13.0` (Vite Excel statement export scope + software updater prompt/apply/restart UI). Phase 3H shipped as `v0.12.0`. Next still default.
+- **What is released:** `v0.13.0` on GitHub is the current target. Vite includes statement-scoped Excel exports, software update prompt with progress bar, staging extraction and out-of-process restart helper execution, consistent headers, breadcrumbs, custom SVG trend charts, and GICS sub-sector detail route. Default mode is still Next/Node.
+- **What is next:** Evaluate switching default startup to Vite since all P0 parity gaps are resolved. Legacy deletion remains Phase 3 and is not approved.
 - **Hard rule:** do not delete `apps/web/`, `apps/api/`, `desktop/node_portable/`, FastAPI deps, or remove Node from `desktop/app.spec` until the user explicitly approves Phase 3.
 
 ---
@@ -35,6 +35,7 @@ This is the **primary entry point** for any AI agent or human contributor pickin
 | **Phase 3F** | Single-company refresh controls | **Released as `v0.10.0`.** Vite company detail now has `CompanyRefreshPanel`, using `request_refresh({cd_cvm})` and `get_refresh_status({cd_cvm})` through a typed facade. Surfaces real backend status/freshness/progress fields, polls active statuses every 2s, and invalidates company info/year/KPI/statement/directory queries after terminal status. No Python bridge method, schema, updater, migration, or pipeline changes. | See `PHASE_3_PARITY_MATRIX.md` |
 | **Phase 3G** | App status / updater / diagnostics UI | **Released as `v0.11.0`.** New Vite `/status` route adds a compact diagnostics dashboard: app version, runtime mode, bridge state, packaged flag, local data/db/output/log/cache paths, SQLite row counts, latest report year, GitHub latest-release check, compact recovery/update/refresh log rows, and runtime probes for .NET/WebView2/pythonnet/SQLite. Adds narrow bridge methods `get_app_status` and `open_status_path`; existing updater apply/staging methods are unchanged and not exposed as a Vite install action. | See `PHASE_3_PARITY_MATRIX.md` |
 | **Phase 3H** | Navigation Polish + KPI Chart Panels + Sub-sector Detail | **Released as `v0.12.0`.** Added breadcrumbs, page headers, unified EntityHeader. Lightweight custom SVG trend charts with null-gap handling. New GICS sub-sector detail route `/setores/:sectorSlug/:subSectorSlug` backed by bridge `get_sub_sector_detail`. | See `PHASE_3_PARITY_MATRIX.md` |
+| **Phase 3I** | Excel statement export scope + software updater prompt/apply/restart UI | **Released as `v0.13.0`.** Added statement-scoped exports (DRE/BPA/BPP/DFC) to Documents output folder. Software updater prompt, progress bar, extraction staging, and out-of-process helper execution. | See `PHASE_3_PARITY_MATRIX.md` |
 | **Phase 3** | Delete legacy: Next, Node, FastAPI, apps/web, apps/api | **Not started.** Gated on Vite screen parity. | See `PHASE_3_PLAN.md` |
 | **Phase 4** | Polish, code signing, AV/UPX review | Not started. | — |
 

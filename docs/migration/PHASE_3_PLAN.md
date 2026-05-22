@@ -4,10 +4,10 @@ Status: **DO NOT EXECUTE WITHOUT EXPLICIT USER APPROVAL.**
 
 Phase 3 deletes the Next.js + FastAPI + bundled Node stack once the Vite SPA reaches parity with the production UI. This is the largest single change in the migration and is irreversible without git revert.
 
-Phase 3A through 3G are not deletion. They are parity-planning and
+Phase 3A through 3I are not deletion. They are parity-planning and
 incremental screen-port phases. Their active checklist is
-`PHASE_3_PARITY_MATRIX.md`. Current latest parity release: `v0.11.0`
-with Vite `/status` diagnostics; default startup is still Next/Node.
+`PHASE_3_PARITY_MATRIX.md`. Current latest parity release: `v0.13.0`
+with Vite statement export scope and software updater UI; default startup is still Next/Node.
 
 ---
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-**Phase 3H experimental runtime.** This package exists in parallel to `apps/web/` (Next.js). It does **not** replace the default production UI yet. The default desktop executable still starts the Next.js standalone server through bundled Node; passing `--vite` starts this Vite SPA instead.
+**Phase 3I experimental runtime.** This package exists in parallel to `apps/web/` (Next.js). It does **not** replace the default production UI yet. The default desktop executable still starts the Next.js standalone server through bundled Node; passing `--vite` starts this Vite SPA instead.
 
 Screens with dynamic routing prove the architecture:
 
@@ -125,6 +125,6 @@ The current default still launches the Next standalone server via the bundled `n
 
 - Does not become the default desktop runtime.
 - Does not remove Next.js, FastAPI, `web_standalone/`, or bundled `node.exe`.
-- Does not cover every production screen yet: complete KPI/indicator chart parity, sub-sector detail route (`/setores/[slug]/[sub_slug]`), per-statement Excel export scope (backend currently emits one workbook per company), advanced update-base filters, and updater prompt/apply/progress parity remain on the legacy Next path.
-- Uses TanStack Query for directory, sectors, detail, refresh, and export status screens.
+- Does not cover every production screen yet: advanced update-base filters beyond standard refresh remain on the legacy Next path. (Per-statement Excel export and software updater UI are now implemented in Vite!)
+- Uses TanStack Query for directory, sectors, detail, refresh, status, and export status screens.
 - Does not call FastAPI. Bridge-only.

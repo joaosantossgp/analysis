@@ -26,8 +26,9 @@ runtime is still Next/Node. Phase 3G ships in `v0.11.0`: Vite gains
 `/status`, a compact app status / updater check / diagnostics screen
 showing runtime version/mode, bridge status, local data paths, SQLite
 counts, latest GitHub release status, compact logs, and runtime probes.
-It adds narrow bridge methods `get_app_status` and `open_status_path`;
-software update application remains intentionally unsupported in Vite.
+It adds narrow bridge methods `get_app_status` and `open_status_path`.
+Phase 3H ships in `v0.12.0` (Navigation polish, custom KPI trend charts, sub-sector detail).
+Phase 3I ships in `v0.13.0` (Per-statement Excel export scope + software updater prompt/apply/restart UI in Vite).
 
 Scope of this document:
 
@@ -50,8 +51,8 @@ Scope of this document:
 | Sector detail (`/setores/[slug]`, `/setores/[slug]/[sub_slug]`) | Year selector, aggregate KPIs, yearly overview, company table, breadcrumbs. | **Phase 3D (v0.8.0)**: implemented `/setores/:slug`. **Phase 3H (v0.12.0)**: implemented `/setores/:sectorSlug/:subSectorSlug` sub-sector detail route parity backed by `get_sub_sector_detail`. | Existing `get_sector_detail`, `get_sub_sector_detail`. | P0 | Medium | Medium | Done. |
 | Update base / refresh data (`/atualizar-base`) | Administrative refresh dashboard: base health, scopes, filters, job progress, history, cancel flow. | **Implemented (v0.6.1 accepted).** v0.7.0 adds the Documents data root and `data_root` field in the diagnostics panel. | Existing `get_base_health`, `request_refresh`, `cancel_refresh`, `get_refresh_status`; new `get_database_diagnostics`. | P0 | High | High | Done. Operator filters (sector / status) can be added later. |
 | Single-company refresh controls | Next company detail can request a period refresh and show progress. | **Phase 3F (v0.10.0)**: Vite company detail uses the existing bridge `request_refresh({ cd_cvm })` single-company path and `get_refresh_status({ cd_cvm })` for polling. No new Python bridge methods, no schema changes, no direct SQLite reads from frontend. | Existing `request_refresh`, `get_refresh_status`; existing `RefreshStatusDTO` / `RefreshDispatchDTO`. | P0 | Medium | High | Done for parity slice; keep an eye on real-world stalled-job messaging. |
-| Excel export / save flows | Next has Excel export/download button and desktop bridge save/download path (writes to `~/Downloads`). | **Phase 3E (v0.9.0)**: full company workbook export from `/empresas/:cdCvm`, `/empresas/:cdCvm/demonstrativos`, and `/empresas/:cdCvm/indicadores`. Reusable `ExportCompanyButton` with idle/running/success/error/unsupported states, shows destination path, file name, file size, and collision-safe suffix. Writes to `Documents/CVMAnalytics/output/`. Per-statement export not yet supported (backend emits one workbook per company). | New bridge `export_company_excel`, `get_output_dir`. Existing `build_company_excel_export`. | P0 | Medium | Medium | Done for parity slice. |
-| Software update check UI | Next shows floating update prompt through `check_update` / `apply_update`; local snooze only. | **Phase 3G (v0.11.0) partial:** `/status` checks GitHub Releases, shows current/latest version, update-available/up-to-date/check-failed state, release link, checked-at timestamp, and clear offline/failure copy. It intentionally does **not** apply updates from Vite. | New `get_app_status` backed by `UpdateChecker.get_latest_release_status`; existing `check_update` / `apply_update` / `snooze_update` / `get_update_progress` unchanged. | P0 | Medium | High | Status/check done. If default switch requires an active update prompt, install/apply/progress parity is still a follow-up. |
+| Excel export / save flows | Next has Excel export/download button and desktop bridge save/download path (writes to `~/Downloads`). | **Phase 3E (v0.9.0)**: full company workbook export from `/empresas/:cdCvm`, `/empresas/:cdCvm/demonstrativos`, and `/empresas/:cdCvm/indicadores`. **Phase 3I (v0.13.0)**: statement-scoped Excel export added (DRE, BPA, BPP, DFC), writing file `<TICKER>_<STMT>_<YYYYMMDD>.xlsx` to `Documents/CVMAnalytics/output/`. | New bridge `export_company_excel` parameter `statement_type`, `get_output_dir`. Existing `build_company_excel_export` extended to filter sheets. | P0 | Medium | Medium | Done. |
+| Software update check UI | Next shows floating update prompt through `check_update` / `apply_update`; local snooze only. | **Phase 3G (v0.11.0) partial:** `/status` checks GitHub Releases, shows current/latest version. **Phase 3I (v0.13.0)**: interactive updater prompt, progress bar for downloading/extracting, safety confirmation, out-of-process restart helper execution, and status polling. | `check_update`, `apply_update`, `get_update_progress` facade, `get_app_status`. | P0 | Medium | High | Done. |
 | App status / diagnostics (`/status`) | No dedicated production settings/status page found; status is split between health and update prompt. | **Phase 3G (v0.11.0): implemented.** Compact dashboard with runtime card, local data paths, database card, software update card, recent warnings/logs, and runtime diagnostics. Validated from GitHub-downloaded Vite asset in browser fallback and through packaged `--vite` launch + direct bridge status call. | New `get_app_status`, new `open_status_path`; existing `get_database_diagnostics` extended with latest report year/period and refresh error count. | P0 | Medium | Medium | Done for diagnostics/check slice. Keep `/status` focused; do not turn it into broad settings. |
 | Data path visibility | Next surfaces some data/update context but no compact local path inventory. | **Phase 3G (v0.11.0): implemented.** Shows data root, DB path, output, logs, and cache path, with copy buttons and safe symbolic folder-open actions in desktop mode. Browser preview shows unsupported/fallback states. | New `get_app_status`, `open_status_path`; existing `get_output_dir` still used by export flows. | P0 | Low | Low | Done. |
 | Runtime diagnostics | CLI `--diagnose-runtime` writes a local log and opens Notepad. No Vite summary screen. | **Phase 3G (v0.11.0): implemented as summary.** Shows .NET Framework, WebView2, pythonnet, SQLite, DB path, data root, and compact errors/warnings. It does not dump environment details or full logs. | New `get_app_status` reuses existing runtime probe helpers from `desktop/app.py` and SQLite/pythonnet checks. | P0 | Medium | Medium | Done as compact UI summary; full `--diagnose-runtime` remains available. |
@@ -61,7 +62,7 @@ Scope of this document:
 | Filter/sort behavior | Directory sector filter, update-base status/range filters, statements row filter. | Directory search only; statements row filter added in Phase 3A. | Existing filter methods. | P0 | Medium | Medium | Add per-screen filters as each route is ported. |
 | Navigation patterns | Site header, route tabs, URL search params for tabs/years/statements, breadcrumbs. | **Phase 3H (v0.12.0)**: implemented cohesive PageHeader, breadcrumbs, unified EntityHeader across company/sector detail screens, and active tab states. | No new data. | P0 | Medium | Low | Done. |
 | Loading/error/empty states | Route loading/error files, skeletons, `ApiUnavailableState`, empty cards. | Basic states for health, directory, detail; statements has loading/error/empty/filter-empty. | No new data. | P0 | Medium | Medium | Standardize reusable Vite state components after more screens exist. |
-| Modals/dialogs/actions | Update confirmation modal, update prompt modal, refresh actions, export action feedback. | Refresh and export action feedback exist for the Vite company/detail flows. Updater prompt/confirmation remains missing. | Refresh, export, and updater bridge methods. | P0 | Medium | High | Port updater action surface next; avoid broad modal framework work. |
+| Modals/dialogs/actions | Update confirmation modal, update prompt modal, refresh actions, export action feedback. | Refresh and export action feedback exist. Phase 3I adds the update confirmation and progress modal on `/status`. | Refresh, export, and updater bridge methods. | P0 | Medium | High | Done. |
 | Browser/dev fallback | Next falls back to HTTP/API routes outside desktop mode. | Vite API facades return clear browser-mode banners when pywebview bridge is unavailable. | No new data. | P1 | Low | Low | Keep pattern. |
 
 ## Already Done In Vite
@@ -88,17 +89,12 @@ Scope of this document:
 - Phase 3G: app status / diagnostics screen at `/status`, with runtime
   version/mode, bridge state, local data paths, SQLite counts, GitHub
   release check, compact logs, and runtime probe summary.
+- Phase 3H: Navigation polish, custom KPI trend charts, sub-sector detail route.
+- Phase 3I: Per-statement Excel export scope + software updater prompt/apply/restart UI.
 
 ## Remaining P0 Before Vite Can Become Default
 
-- Per-statement Excel export (currently the backend only emits a full company
-  workbook; Vite exposes that scope clearly but cannot scope to DRE/BPA/etc.
-  without a backend addition).
-- Update-base advanced filters/suggestions beyond the constrained Vite refresh
-  action, if required before the default switch.
-- Update prompt/apply/progress parity if the default-Vite switch requires the
-  legacy floating software update prompt behavior; Phase 3G only implements
-  non-destructive update status/check.
+- None. All core P0 parity gaps closed.
 - GitHub-downloaded release validation after each runtime parity slice.
 
 ## Remaining Before Legacy Deletion
@@ -230,6 +226,14 @@ Why these slices:
 - KPI Chart Panels: Lightweight custom SVG line charts to visualize trends for margins, ROE, and leverage, natively aligned with the dark workstation theme and handling data gaps cleanly.
 - Sub-sector detail route: Parity for `/setores/:sectorSlug/:subSectorSlug` using `get_sub_sector_detail` bridge queries, displaying sub-sector companies and their basic indicators without inventing aggregate metrics.
 
-## Recommended Next Screen
+## Phase 3I Implemented Surfaces
 
-Recommended next narrow slices: per-statement Excel export scope if the backend is extended, and an explicit update prompt/apply/progress decision before making Vite the default. Do not delete legacy code or make Vite default yet.
+Selected surfaces: Per-statement Excel Export Scope + Vite Software Updater Prompt/Apply/Restart UI.
+
+Why these slices:
+- Per-statement Excel export: Allows users on the statements page to download a scoped workbook containing only the relevant statement sheets (DRE, BPA, BPP, or DFC), preventing clutter and matching ticker-scoped output.
+- Software updater UI: Adds the update workflow to Vite, allowing users to safely check, confirm, download, stage, and apply updates out-of-process using the robust `update_helper.ps1` script without losing user data or database states.
+
+## Recommended Next Steps
+
+Evaluate making Vite the default runtime switch, since all P0 parity gaps are resolved, while Next/Node/FastAPI remain as legacy fallbacks. Do not delete legacy code yet.
