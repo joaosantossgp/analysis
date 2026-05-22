@@ -67,3 +67,7 @@ desktop/node_portable/
 
 # Repomix merged-repo dump (large generated artifact)
 repomix-output.*
+
+# Release validation directories
+release_validation_*/
+
