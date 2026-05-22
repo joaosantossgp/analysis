@@ -383,6 +383,96 @@ export type DatabaseDiagnostics = {
   latest_success_at: string | null;
   latest_attempt_at: string | null;
   latest_error: string | null;
+  latest_report_year?: number | null;
+  latest_period_label?: string | null;
+  refresh_errors_count?: number | null;
+  error?: string;
+};
+
+export type AppRuntimeStatus = {
+  version: string;
+  runtime_mode: "vite" | "next" | "next-dev" | "unknown" | string;
+  bridge_status: "ready" | "error" | "unknown" | string;
+  frozen: boolean;
+  desktop_shell: string | null;
+  local_first: boolean;
+};
+
+export type LocalPathInfo = {
+  kind: "data" | "database" | "output" | "logs" | "cache" | string;
+  path: string;
+  exists: boolean;
+  is_file: boolean;
+  is_dir: boolean;
+};
+
+export type UpdateProgressStatus = {
+  status: string;
+  percent: number;
+  error: string | null;
+};
+
+export type UpdateStatus = {
+  current_version: string | null;
+  latest_version: string | null;
+  latest_tag?: string | null;
+  update_available: boolean;
+  release_url?: string | null;
+  zip_url?: string | null;
+  sha256_url?: string | null;
+  asset_name?: string | null;
+  sha256_asset_name?: string | null;
+  checked_at?: string | null;
+  status:
+    | "available"
+    | "up_to_date"
+    | "check_failed"
+    | "asset_missing"
+    | "snoozed"
+    | "no_release"
+    | "available_cached"
+    | "unknown"
+    | string;
+  error?: string | null;
+  can_apply?: boolean;
+  apply_supported: boolean;
+  progress?: UpdateProgressStatus;
+};
+
+export type DiagnosticsSummary = {
+  ok: boolean;
+  version?: string | null;
+  dotnet_status?: string | null;
+  webview2_version?: string | null;
+  pythonnet_status?: string | null;
+  sqlite_status?: string | null;
+  db_path?: string | null;
+  data_root?: string | null;
+  errors: string[];
+  warnings: string[];
+};
+
+export type DiagnosticLogEntry = {
+  source: string;
+  severity: "info" | "warning" | "error" | string;
+  timestamp?: string | null;
+  message: string;
+};
+
+export type AppStatusPayload = {
+  runtime: AppRuntimeStatus;
+  paths: Partial<Record<"data" | "database" | "output" | "logs" | "cache", LocalPathInfo>>;
+  database: DatabaseDiagnostics | null;
+  update: UpdateStatus | null;
+  diagnostics: DiagnosticsSummary;
+  recent: DiagnosticLogEntry[];
+  error?: string;
+};
+
+export type OpenStatusPathResult = {
+  ok: boolean;
+  kind: string;
+  path: string | null;
   error?: string;
 };
 
@@ -399,6 +489,8 @@ export type PingResult = {
 export interface BridgeApi {
   ping(params?: Record<string, unknown>): Promise<PingResult>;
   get_health(params?: Record<string, unknown>): Promise<HealthPayload>;
+  get_app_status(params?: Record<string, unknown>): Promise<AppStatusPayload>;
+  open_status_path(params: Record<string, unknown>): Promise<OpenStatusPathResult>;
   get_companies(params: Record<string, unknown>): Promise<CompanyDirectoryPage>;
   get_company_info(params: Record<string, unknown>): Promise<CompanyInfo>;
   get_company_years(params: Record<string, unknown>): Promise<CompanyYearsResult>;

@@ -18,6 +18,7 @@ import sys
 import tempfile
 import time
 import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
@@ -44,6 +45,88 @@ def _parse_version(tag: str) -> tuple[int, ...]:
 
 
 class UpdateChecker:
+    def get_latest_release_status(self, current_version: str) -> dict:
+        """Return a non-destructive GitHub release status for diagnostics UI.
+
+        This does not download, stage, or apply anything. The existing
+        `check_for_update` / `download_and_stage` contract remains unchanged.
+        """
+        checked_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        base = {
+            "current_version": current_version,
+            "latest_version": None,
+            "latest_tag": None,
+            "update_available": False,
+            "release_url": None,
+            "zip_url": None,
+            "sha256_url": None,
+            "asset_name": None,
+            "sha256_asset_name": None,
+            "checked_at": checked_at,
+            "status": "unknown",
+            "error": None,
+            "can_apply": False,
+        }
+        try:
+            resp = requests.get(
+                f"{_API_BASE}/repos/{GITHUB_REPO}/releases/latest",
+                headers={"Accept": "application/vnd.github+json"},
+                timeout=10,
+            )
+            resp.raise_for_status()
+        except Exception as exc:
+            return {
+                **base,
+                "status": "check_failed",
+                "error": f"Could not check GitHub Releases: {exc}",
+            }
+
+        data = resp.json()
+        tag = str(data.get("tag_name") or "")
+        if not tag:
+            return {
+                **base,
+                "status": "no_release",
+                "error": "Latest GitHub Release did not include a tag.",
+            }
+
+        latest_version = tag.lstrip("v")
+        release_url = data.get("html_url") or None
+        zip_url, sha256_url = self._find_asset_urls(data.get("assets", []), tag)
+        zip_name = f"CVMAnalytics-windows-v{latest_version}.zip"
+        sha256_name = f"{zip_name}.sha256"
+        remote_ver = _parse_version(tag)
+        local_ver = _parse_version(current_version)
+        update_available = remote_ver > local_ver and bool(zip_url)
+        snoozed = self.is_snoozed(tag) if remote_ver > local_ver else False
+
+        status = "up_to_date"
+        error = None
+        can_apply = False
+        if remote_ver > local_ver and not zip_url:
+            status = "asset_missing"
+            error = f"Latest release {tag} does not include {zip_name}."
+        elif snoozed:
+            status = "snoozed"
+        elif update_available:
+            status = "available"
+            can_apply = bool(zip_url)
+
+        return {
+            **base,
+            "latest_version": latest_version,
+            "latest_tag": tag,
+            "update_available": bool(update_available and not snoozed),
+            "release_url": release_url,
+            "zip_url": zip_url,
+            "sha256_url": sha256_url,
+            "asset_name": zip_name if zip_url else None,
+            "sha256_asset_name": sha256_name if sha256_url else None,
+            "status": status,
+            "error": error,
+            "can_apply": can_apply and not snoozed,
+        }
+
     def check_for_update(self, current_version: str) -> dict | None:
         """
         Query GitHub for the latest release and return update info if a newer

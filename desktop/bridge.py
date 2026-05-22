@@ -9,11 +9,14 @@ from __future__ import annotations
 
 import dataclasses
 import base64
+import json
 import math
 import os
 import subprocess
+import sys
 import threading
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +30,7 @@ class CVMBridge:
         self._company_info_lock = threading.RLock()
         # auto-updater state
         self._update_info: dict | None = None
+        self._latest_update_status: dict | None = None
         self._update_progress: dict = {"status": "idle", "percent": 0, "error": None}
         self._update_lock = threading.Lock()
 
@@ -602,8 +606,370 @@ class CVMBridge:
             return self._sanitize_for_json({"ok": False, "error": str(exc)})
 
     # ------------------------------------------------------------------
-    # Health / diagnostico
+    # App status / Health / diagnostico
     # ------------------------------------------------------------------
+
+    def get_app_status(self, params=None) -> dict:
+        """Compact local runtime status for the experimental Vite UI."""
+        p = params or {}
+        force_update_check = self._truthy(p.get("force_update_check", False))
+        try:
+            from desktop.__version__ import __version__  # noqa: PLC0415
+
+            svc = self._svc()
+            paths = svc.settings.paths
+            path_map = self._status_path_map()
+            database = self.get_database_diagnostics({})
+            update = self._get_software_update_status(force=force_update_check)
+            diagnostics = self._runtime_diagnostics_summary(paths)
+            recent = self._collect_recent_diagnostics(paths, database)
+            return self._sanitize_for_json({
+                "runtime": {
+                    "version": __version__,
+                    "runtime_mode": self._runtime_mode(),
+                    "bridge_status": "ready",
+                    "frozen": bool(getattr(sys, "frozen", False)),
+                    "desktop_shell": "pywebview/WebView2",
+                    "local_first": True,
+                },
+                "paths": {
+                    key: self._path_payload(key, value)
+                    for key, value in path_map.items()
+                },
+                "database": database,
+                "update": update,
+                "diagnostics": diagnostics,
+                "recent": recent,
+            })
+        except Exception as exc:
+            return self._sanitize_for_json({
+                "runtime": {
+                    "version": "unknown",
+                    "runtime_mode": self._runtime_mode(),
+                    "bridge_status": "error",
+                    "frozen": bool(getattr(sys, "frozen", False)),
+                    "desktop_shell": "pywebview/WebView2",
+                    "local_first": True,
+                },
+                "paths": {},
+                "database": None,
+                "update": None,
+                "diagnostics": {
+                    "ok": False,
+                    "errors": [str(exc)],
+                    "warnings": [],
+                },
+                "recent": [],
+                "error": str(exc),
+            })
+
+    def open_status_path(self, params=None) -> dict:
+        """Open one of the known local diagnostics folders.
+
+        Deliberately accepts only symbolic path kinds; the UI cannot pass an
+        arbitrary filesystem path to this method.
+        """
+        p = params or {}
+        kind = str(p.get("kind") or "").strip().lower()
+        try:
+            path_map = self._status_path_map()
+            if kind not in path_map:
+                return self._sanitize_for_json({
+                    "ok": False,
+                    "kind": kind,
+                    "path": None,
+                    "error": "unsupported_path_kind",
+                })
+            target = Path(path_map[kind])
+            if kind == "database":
+                target = target.parent
+            if kind in {"data", "output", "logs", "cache"}:
+                target.mkdir(parents=True, exist_ok=True)
+            if not target.exists():
+                return self._sanitize_for_json({
+                    "ok": False,
+                    "kind": kind,
+                    "path": str(target),
+                    "error": "path_not_found",
+                })
+            self._open_local_folder(target)
+            return self._sanitize_for_json({
+                "ok": True,
+                "kind": kind,
+                "path": str(target),
+            })
+        except Exception as exc:
+            return self._sanitize_for_json({
+                "ok": False,
+                "kind": kind,
+                "path": None,
+                "error": str(exc),
+            })
+
+    @staticmethod
+    def _truthy(value: Any) -> bool:
+        if isinstance(value, str):
+            return value.strip().lower() in {"1", "true", "yes", "sim", "on"}
+        return bool(value)
+
+    @staticmethod
+    def _runtime_mode() -> str:
+        argv = {str(arg).lower() for arg in sys.argv}
+        if "--vite" in argv:
+            return "vite"
+        if "--dev" in argv:
+            return "next-dev"
+        if getattr(sys, "frozen", False):
+            return "next"
+        return "unknown"
+
+    def _status_path_map(self) -> dict[str, Path]:
+        paths = self._svc().settings.paths
+        return {
+            "data": Path(paths.data_dir),
+            "database": Path(paths.db_path),
+            "output": Path(paths.output_dir),
+            "logs": Path(paths.logs_dir),
+            "cache": Path(paths.cache_dir),
+        }
+
+    @staticmethod
+    def _path_payload(kind: str, path: Path) -> dict:
+        path = Path(path)
+        return {
+            "kind": kind,
+            "path": str(path),
+            "exists": path.exists(),
+            "is_file": path.is_file(),
+            "is_dir": path.is_dir(),
+        }
+
+    @staticmethod
+    def _open_local_folder(target: Path) -> None:
+        if os.name == "nt":
+            os.startfile(str(target))  # type: ignore[attr-defined]
+            return
+        if sys.platform == "darwin":
+            subprocess.Popen(["open", str(target)])
+            return
+        subprocess.Popen(["xdg-open", str(target)])
+
+    def _get_software_update_status(self, *, force: bool = False) -> dict:
+        with self._update_lock:
+            cached_status = dict(self._latest_update_status or {})
+            cached_info = dict(self._update_info or {})
+            progress = dict(self._update_progress)
+        if cached_status and not force:
+            return self._sanitize_for_json({
+                **cached_status,
+                "progress": progress,
+                "apply_supported": False,
+            })
+        try:
+            from desktop.__version__ import __version__  # noqa: PLC0415
+            from desktop.updater import UpdateChecker  # noqa: PLC0415
+
+            checker = UpdateChecker()
+            status = checker.get_latest_release_status(__version__)
+            if status.get("update_available") and status.get("zip_url"):
+                update_info = {
+                    "version": status.get("latest_version"),
+                    "tag": status.get("latest_tag"),
+                    "zip_url": status.get("zip_url"),
+                    "sha256_url": status.get("sha256_url"),
+                }
+                with self._update_lock:
+                    self._update_info = update_info
+            elif status.get("status") == "check_failed" and cached_info:
+                status = {
+                    **status,
+                    "status": "available_cached",
+                    "latest_version": cached_info.get("version"),
+                    "latest_tag": cached_info.get("tag"),
+                    "zip_url": cached_info.get("zip_url"),
+                    "sha256_url": cached_info.get("sha256_url"),
+                    "update_available": True,
+                    "error": status.get("error"),
+                }
+            with self._update_lock:
+                self._latest_update_status = dict(status)
+                progress = dict(self._update_progress)
+            return self._sanitize_for_json({
+                **status,
+                "progress": progress,
+                "apply_supported": False,
+            })
+        except Exception as exc:
+            return self._sanitize_for_json({
+                "current_version": None,
+                "latest_version": None,
+                "latest_tag": None,
+                "update_available": False,
+                "release_url": None,
+                "checked_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "status": "check_failed",
+                "error": f"Could not check GitHub Releases: {exc}",
+                "progress": progress,
+                "apply_supported": False,
+            })
+
+    @staticmethod
+    def _runtime_diagnostics_summary(paths: Any) -> dict:
+        warnings: list[str] = []
+        errors: list[str] = []
+        try:
+            from desktop.__version__ import __version__ as app_version  # noqa: PLC0415
+        except Exception:
+            app_version = "unknown"
+        dotnet_status = "unavailable"
+        webview2_version = None
+        try:
+            from desktop import app as desktop_app  # noqa: PLC0415
+
+            release = desktop_app._detect_net_framework_release()
+            min_release = desktop_app._NET_FRAMEWORK_48_RELEASE_KEY
+            if release is None:
+                dotnet_status = "not_detected"
+                warnings.append(".NET Framework 4.8 registry key was not detected.")
+            elif int(release) < int(min_release):
+                dotnet_status = f"pre_4_8:{release}"
+                warnings.append(f".NET Framework release {release} is below {min_release}.")
+            else:
+                dotnet_status = f"ok:{release}"
+            webview2_version = desktop_app._detect_webview2_runtime()
+            if not webview2_version:
+                warnings.append("Microsoft Edge WebView2 Runtime was not detected.")
+        except Exception as exc:
+            warnings.append(f"Runtime prerequisite probe failed: {exc}")
+
+        pythonnet_status = "unknown"
+        try:
+            import clr  # noqa: F401, PLC0415
+
+            pythonnet_status = "ok"
+        except Exception as exc:
+            pythonnet_status = f"error:{type(exc).__name__}"
+            errors.append(f"pythonnet import failed: {exc}")
+
+        sqlite_status = "unknown"
+        try:
+            import sqlite3  # noqa: PLC0415
+
+            db_path = Path(paths.db_path)
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+            with sqlite3.connect(str(db_path)) as conn:
+                row = conn.execute("SELECT sqlite_version()").fetchone()
+            sqlite_status = f"ok:{row[0] if row else 'unknown'}"
+        except Exception as exc:
+            sqlite_status = f"error:{type(exc).__name__}"
+            errors.append(f"SQLite probe failed: {exc}")
+
+        return {
+            "ok": len(errors) == 0,
+            "version": app_version,
+            "dotnet_status": dotnet_status,
+            "webview2_version": webview2_version,
+            "pythonnet_status": pythonnet_status,
+            "sqlite_status": sqlite_status,
+            "db_path": str(paths.db_path),
+            "data_root": str(paths.data_dir),
+            "errors": errors,
+            "warnings": warnings,
+        }
+
+    def _collect_recent_diagnostics(self, paths: Any, database: dict | None) -> list[dict]:
+        entries: list[dict] = []
+
+        latest_error = (database or {}).get("latest_error") if isinstance(database, dict) else None
+        if latest_error:
+            entries.append({
+                "source": "company_refresh_status",
+                "severity": "error",
+                "timestamp": (database or {}).get("latest_attempt_at"),
+                "message": str(latest_error),
+            })
+
+        recovery_log = Path(paths.data_dir) / "recovery.log"
+        for line in self._tail_text_lines(recovery_log, limit=4):
+            entries.append({
+                "source": "recovery.log",
+                "severity": "warning" if "failed" in line.lower() else "info",
+                "timestamp": self._parse_bracket_timestamp(line),
+                "message": self._trim_log_line(line),
+            })
+
+        update_log = Path(os.environ.get("LOCALAPPDATA") or Path(paths.data_dir)) / "CVMAnalytics" / "update_error.log"
+        for line in self._tail_text_lines(update_log, limit=4):
+            entries.append({
+                "source": "update_error.log",
+                "severity": "error" if "error" in line.lower() else "info",
+                "timestamp": self._parse_bracket_timestamp(line),
+                "message": self._trim_log_line(line),
+            })
+
+        refresh_log = Path(paths.logs_dir) / "refresh_runs.jsonl"
+        for line in self._tail_text_lines(refresh_log, limit=6):
+            entry = self._refresh_log_entry(line)
+            if entry:
+                entries.append(entry)
+
+        entries.sort(key=lambda item: str(item.get("timestamp") or ""), reverse=True)
+        return entries[:12]
+
+    @staticmethod
+    def _tail_text_lines(path: Path, *, limit: int) -> list[str]:
+        try:
+            if not path.exists() or not path.is_file():
+                return []
+            size = path.stat().st_size
+            with path.open("rb") as fh:
+                fh.seek(max(0, size - 65536))
+                data = fh.read().decode("utf-8", errors="replace")
+            return [line for line in data.splitlines() if line.strip()][-limit:]
+        except Exception:
+            return []
+
+    @staticmethod
+    def _parse_bracket_timestamp(line: str) -> str | None:
+        if not line.startswith("[") or "]" not in line:
+            return None
+        return line[1:line.find("]")]
+
+    @staticmethod
+    def _trim_log_line(line: str, *, max_len: int = 320) -> str:
+        text = " ".join(str(line).split())
+        if len(text) <= max_len:
+            return text
+        return text[: max_len - 1] + "..."
+
+    def _refresh_log_entry(self, line: str) -> dict | None:
+        try:
+            payload = json.loads(line)
+        except Exception:
+            payload = {}
+        if not isinstance(payload, dict):
+            return None
+        status = str(payload.get("status") or payload.get("state") or "refresh")
+        message = (
+            payload.get("message")
+            or payload.get("error")
+            or payload.get("latest_error")
+            or f"Refresh result: {status}"
+        )
+        timestamp = (
+            payload.get("finished_at")
+            or payload.get("completed_at")
+            or payload.get("started_at")
+            or payload.get("accepted_at")
+        )
+        lower = f"{status} {message}".lower()
+        severity = "error" if "error" in lower or "failed" in lower else "info"
+        return {
+            "source": "refresh_runs.jsonl",
+            "severity": severity,
+            "timestamp": timestamp,
+            "message": self._trim_log_line(str(message)),
+        }
 
     def get_base_health(self, params=None) -> dict:
         p = params or {}
@@ -678,6 +1044,9 @@ class CVMBridge:
             latest_success_at: str | None = None
             latest_attempt_at: str | None = None
             latest_error: str | None = None
+            latest_report_year: int | None = None
+            latest_period_label: str | None = None
+            refresh_errors_count: int | None = None
 
             if db_exists:
                 try:
@@ -694,6 +1063,21 @@ class CVMBridge:
                                 counts[table] = int(cur.fetchone()[0] or 0)
                             except Exception:
                                 counts[table] = None
+                        if "financial_reports" in present:
+                            try:
+                                cur.execute(
+                                    'SELECT "REPORT_YEAR", "PERIOD_LABEL" '
+                                    'FROM "financial_reports" '
+                                    'WHERE "REPORT_YEAR" IS NOT NULL '
+                                    'ORDER BY "REPORT_YEAR" DESC, "PERIOD_LABEL" DESC '
+                                    "LIMIT 1"
+                                )
+                                row = cur.fetchone()
+                                if row:
+                                    latest_report_year = int(row[0]) if row[0] is not None else None
+                                    latest_period_label = str(row[1]) if row[1] else None
+                            except Exception:
+                                pass
                         if "company_refresh_status" in present:
                             try:
                                 cur.execute(
@@ -716,6 +1100,15 @@ class CVMBridge:
                                     latest_error = str(row[0])
                             except Exception:
                                 pass
+                            try:
+                                cur.execute(
+                                    "SELECT COUNT(*) FROM \"company_refresh_status\" "
+                                    "WHERE last_error IS NOT NULL AND last_error <> ''"
+                                )
+                                row = cur.fetchone()
+                                refresh_errors_count = int(row[0] or 0) if row else 0
+                            except Exception:
+                                pass
                 except Exception as exc:
                     return self._sanitize_for_json({
                         "db_path": db_path_str,
@@ -727,6 +1120,9 @@ class CVMBridge:
                         "latest_success_at": None,
                         "latest_attempt_at": None,
                         "latest_error": None,
+                        "latest_report_year": None,
+                        "latest_period_label": None,
+                        "refresh_errors_count": None,
                         "error": f"sqlite_open_failed: {exc}",
                     })
 
@@ -746,6 +1142,9 @@ class CVMBridge:
                 "latest_success_at": latest_success_at,
                 "latest_attempt_at": latest_attempt_at,
                 "latest_error": latest_error,
+                "latest_report_year": latest_report_year,
+                "latest_period_label": latest_period_label,
+                "refresh_errors_count": refresh_errors_count,
             })
         except Exception as exc:
             return self._sanitize_for_json({
@@ -764,6 +1163,9 @@ class CVMBridge:
                 "latest_success_at": None,
                 "latest_attempt_at": None,
                 "latest_error": None,
+                "latest_report_year": None,
+                "latest_period_label": None,
+                "refresh_errors_count": None,
                 "error": str(exc),
             })
 
