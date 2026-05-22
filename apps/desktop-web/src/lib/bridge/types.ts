@@ -207,6 +207,69 @@ export type RefreshJobListResponse = {
   error?: string;
 };
 
+export type CompanyRefreshTrackingState =
+  | "idle"
+  | "queued"
+  | "running"
+  | "stalled"
+  | "success"
+  | "no_data"
+  | "error"
+  | string;
+
+export type CompanyRefreshStatus = {
+  cd_cvm: number;
+  company_name: string;
+  source_scope?: string | null;
+  job_id?: string | null;
+  stage?: string | null;
+  queue_position?: number | null;
+  last_attempt_at?: string | null;
+  last_success_at?: string | null;
+  last_status?: string | null;
+  last_error?: string | null;
+  last_start_year?: number | null;
+  last_end_year?: number | null;
+  last_rows_inserted?: number | null;
+  progress_current?: number | null;
+  progress_total?: number | null;
+  progress_message?: string | null;
+  started_at?: string | null;
+  heartbeat_at?: string | null;
+  finished_at?: string | null;
+  updated_at?: string | null;
+  read_model_updated_at?: string | null;
+  estimated_progress_pct?: number | null;
+  estimated_eta_seconds?: number | null;
+  estimated_total_seconds?: number | null;
+  elapsed_seconds?: number | null;
+  estimated_completion_at?: string | null;
+  estimate_confidence?: string | null;
+  tracking_state?: CompanyRefreshTrackingState | null;
+  progress_mode?: string | null;
+  is_retry_allowed?: boolean;
+  status_reason_code?: string | null;
+  status_reason_message?: string | null;
+  has_readable_current_data?: boolean;
+  readable_years_count?: number;
+  latest_readable_year?: number | null;
+  latest_attempt_outcome?: string | null;
+  latest_attempt_reason_code?: string | null;
+  latest_attempt_reason_message?: string | null;
+  latest_attempt_retryable?: boolean;
+  read_availability_code?: string | null;
+  read_availability_message?: string | null;
+  freshness_summary_code?: string | null;
+  freshness_summary_message?: string | null;
+  freshness_summary_severity?: "success" | "warning" | "error" | "info" | string | null;
+  source_label?: string | null;
+};
+
+export type CompanyRefreshStatusListResponse = {
+  items: CompanyRefreshStatus[];
+  error?: string;
+};
+
 export type CancelRefreshResponse = {
   ok: boolean;
   message?: string;
@@ -343,7 +406,9 @@ export interface BridgeApi {
   get_company_statement(params: Record<string, unknown>): Promise<StatementMatrix>;
   get_base_health(params: Record<string, unknown>): Promise<BaseHealthSnapshot>;
   request_refresh(params: Record<string, unknown>): Promise<RefreshDispatchResponse>;
-  get_refresh_status(params?: Record<string, unknown>): Promise<RefreshJobStatus | RefreshJobListResponse>;
+  get_refresh_status(
+    params?: Record<string, unknown>,
+  ): Promise<RefreshJobStatus | RefreshJobListResponse | CompanyRefreshStatusListResponse>;
   cancel_refresh(params: Record<string, unknown>): Promise<CancelRefreshResponse>;
   get_database_diagnostics(params?: Record<string, unknown>): Promise<DatabaseDiagnostics>;
   get_company_filters(params?: Record<string, unknown>): Promise<CompanyFiltersResponse>;

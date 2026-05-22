@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
 import { ExportCompanyButton } from "@/components/ExportCompanyButton";
+import { CompanyRefreshPanel } from "@/components/CompanyRefreshPanel";
 import {
   fetchCompanyInfo,
   fetchCompanyKpis,
@@ -41,6 +42,7 @@ export function CompanyDetailPage() {
     <section className="space-y-6">
       <BackLink />
       <DetailHeader cdCvm={cdCvm} bridgeReady={bridgeReady} />
+      <CompanyRefreshPanel cdCvm={cdCvm} bridgeReady={bridgeReady} />
       <YearsKpiPanel cdCvm={cdCvm} bridgeReady={bridgeReady} />
     </section>
   );

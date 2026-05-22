@@ -44,7 +44,7 @@ The authoritative runtime is the packaged Windows desktop executable. The Vercel
 - **Next.js 16** under `apps/web/` builds to a standalone server that runs locally and renders the UI.
 - **FastAPI (`apps/api/`)** is the HTTP contract for an optional dev workflow. It is not started in the packaged desktop runtime.
 
-A migration to a static Vite + React frontend and removal of the bundled Node runtime is planned. See `docs/migration/`.
+A migration to a static Vite + React frontend is in progress behind the opt-in `--vite` flag. The default runtime still uses Next.js + bundled Node. See `docs/migration/`.
 
 ## Runtime Model
 
@@ -162,9 +162,10 @@ The repository is in the middle of a multi-phase simplification of the desktop r
 | Phase | Goal | Status |
 |---|---|---|
 | Phase 0 | User-data safety net | **Released** |
-| Phase 1 | Parallel Vite SPA shell | Not started |
-| Phase 2 | Wire Vite SPA into pywebview, remove Node | Not started |
-| Phase 3 | Delete legacy Next/FastAPI/Node | Not started |
+| Phase 1 | Parallel Vite SPA shell | Done |
+| Phase 2 | Wire Vite SPA into pywebview | **Released as opt-in `--vite`** |
+| Phase 3A-3F | Incremental Vite parity slices | In progress through `v0.10.0`: statements, Update Base, Documents data root, KPIs, sectors, Excel export, and single-company refresh controls |
+| Phase 3 | Delete legacy Next/FastAPI/Node | Not started; requires parity, default-Vite soak, updater safety checks, and explicit approval |
 | Phase 4 | Polish, code signing, AV review | Not started |
 
 See:
@@ -190,16 +191,16 @@ tests/           Pytest suite
 
 ## Roadmap
 
-- Phase 1: parallel Vite + React + TanStack Router SPA under `apps/desktop-web/`, in addition to the current Next.js UI.
-- Phase 2: wire the SPA into pywebview, remove the bundled `node.exe` and `_internal/web_standalone/`.
-- Phase 3: delete `apps/api/` and the legacy `apps/web/` once the Vite UI reaches parity.
+- Continue Phase 3 parity in `apps/desktop-web/`: updater UI, KPI chart parity, sub-sector detail, per-statement export scope, and navigation polish.
+- Ship and soak a release where Vite becomes the default while the legacy Next runtime remains available as fallback.
+- Delete `apps/api/`, `apps/web/`, bundled Node, and `web_standalone/` only after explicit approval.
 - Phase 4: code signing, AV/UPX review, startup logging improvements.
 
 ## Known Limitations
 
 - Windows-only. macOS and Linux are not supported targets.
 - Requires Microsoft Edge WebView2 runtime (preinstalled on Windows 11; usually present on recent Windows 10).
-- First boot of the packaged app spawns a Node.js child process for the embedded Next standalone server. Node is bundled but will be removed in Phase 2.
+- Default packaged startup still spawns a Node.js child process for the embedded Next standalone server. `CVMAnalytics.exe --vite` uses the experimental Vite SPA without starting Node. Node removal is deferred until Vite parity and default-mode soak are complete.
 - The dev database under `data/db/cvm_financials.db` is for developer use only. End users do not need it; the packaged app provisions its own DB under `%USERPROFILE%\Documents\CVMAnalytics` (with WAL-safe migration from legacy `%LOCALAPPDATA%` if present).
 - No telemetry. No crash reporting service is wired into the local desktop app.
 

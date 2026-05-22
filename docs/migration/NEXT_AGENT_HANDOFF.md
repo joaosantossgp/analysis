@@ -7,9 +7,9 @@ This is the **primary entry point** for any AI agent or human contributor pickin
 ## TL;DR
 
 - **What we are doing:** rebuilding the desktop app's UI runtime from `Next.js standalone + bundled Node + pywebview` to `static Vite SPA + pywebview` while keeping Python authoritative and user data safe.
-- **Where we are:** Phase 3E shipped as `v0.9.0` (full-company Excel export from company detail / statements / indicadores). Phase 3D shipped at `v0.8.0` (sectors + directory filters). Next still default.
-- **What is released:** `v0.9.0` on GitHub is the current target. Vite SPA now exports a full company workbook (DRE/BPA/BPP/DFC + DVA/DMPL + KPIs) into `Documents/CVMAnalytics/output/` via two new narrow bridge methods (`export_company_excel`, `get_output_dir`); collision-safe naming. Default mode is still Next/Node.
-- **What is next:** keep closing P0 gaps in `PHASE_3_PARITY_MATRIX.md` before any default switch. Remaining P0: single-company refresh controls, KPI charts, sub-sector detail route, per-statement export scope (backend addition), updater UI. Legacy deletion remains Phase 3 and is not approved.
+- **Where we are:** Phase 3F shipped as `v0.10.0` (single-company refresh controls on Vite company detail). Phase 3E shipped as `v0.9.0` (full-company Excel export). Next still default.
+- **What is released:** `v0.10.0` on GitHub is the current target. Vite company detail now starts a company-specific refresh through the existing bridge, shows real backend status/freshness fields, polls active refreshes, and invalidates company data after terminal status. Default mode is still Next/Node.
+- **What is next:** keep closing P0 gaps in `PHASE_3_PARITY_MATRIX.md` before any default switch. Remaining P0: updater UI, KPI charts, sub-sector detail route, per-statement export scope (backend addition), navigation/state polish. Legacy deletion remains Phase 3 and is not approved.
 - **Hard rule:** do not delete `apps/web/`, `apps/api/`, `desktop/node_portable/`, FastAPI deps, or remove Node from `desktop/app.spec` until the user explicitly approves Phase 3.
 
 ---
@@ -29,6 +29,7 @@ This is the **primary entry point** for any AI agent or human contributor pickin
 | **Phase 3C.1** | Indicators (KPIs) Vite parity slice | **Released as `v0.7.0`.** New route `/empresas/:cdCvm/indicadores` with year multi-select, KPI summary cards, annual + quarterly tables, unit-aware formatting. | See `PHASE_3_PARITY_MATRIX.md` |
 | **Phase 3D** | Sectors + company directory filters | **Released as `v0.8.0`.** Companies directory gains sector filter, URL-driven search/sector/page persistence, chips with per-filter clear, reset action, dense table columns (CVM / ticker / sub-industry / years / rows / coverage dot). New routes `/setores` (GICS sectors and sub-industries) and `/setores/:slug` (sector detail with year selector and in-sector company filter). | See `PHASE_3_PARITY_MATRIX.md` |
 | **Phase 3E** | Excel export from Vite | **Released as `v0.9.0`.** Reusable `ExportCompanyButton` wired into `/empresas/:cdCvm`, `/empresas/:cdCvm/demonstrativos`, and `/empresas/:cdCvm/indicadores`. Calls new bridge `export_company_excel`, writes the existing `build_company_excel_export` workbook into `Documents/CVMAnalytics/output/`. Idle/running/success/error/unsupported states surface destination path, file name, file size; collision-safe `(N)` suffix. `get_output_dir` exposes the destination path before any export runs. Legacy `save_company_excel` (writes to `~/Downloads`) untouched so Next continues to behave identically. | See `PHASE_3_PARITY_MATRIX.md` |
+| **Phase 3F** | Single-company refresh controls | **Released as `v0.10.0`.** Vite company detail now has `CompanyRefreshPanel`, using `request_refresh({cd_cvm})` and `get_refresh_status({cd_cvm})` through a typed facade. Surfaces real backend status/freshness/progress fields, polls active statuses every 2s, and invalidates company info/year/KPI/statement/directory queries after terminal status. No Python bridge method, schema, updater, migration, or pipeline changes. | See `PHASE_3_PARITY_MATRIX.md` |
 | **Phase 3** | Delete legacy: Next, Node, FastAPI, apps/web, apps/api | **Not started.** Gated on Vite screen parity. | See `PHASE_3_PLAN.md` |
 | **Phase 4** | Polish, code signing, AV/UPX review | Not started. | — |
 
@@ -80,7 +81,7 @@ This is the **primary entry point** for any AI agent or human contributor pickin
 └─────────────────────────────────────────────────────────┘
 ```
 
-User data: `%LOCALAPPDATA%\CVMAnalytics\` (db, output, logs, cache, backup, update_rollback, versions, recovery.log, diagnostics-*.log).
+Runtime user data: `%USERPROFILE%\Documents\CVMAnalytics\` by default (db, output, logs, cache, backup, recovery.log). Updater staging/rollback remains under `%LOCALAPPDATA%\CVMAnalytics\`.
 
 Full architecture map in `ARCHITECTURE.md`.
 
@@ -113,8 +114,8 @@ Full architecture map in `ARCHITECTURE.md`.
 Suggested before any default switch:
 
 1. Keep `PHASE_3_PARITY_MATRIX.md` current.
-2. Recommended next narrow slice: single-company refresh controls on company detail, using existing `request_refresh` / `get_refresh_status` methods.
-3. Other remaining P0 areas: KPI chart parity, sub-sector detail route (`/setores/:slug/:sub_slug`), per-statement Excel export scope (backend addition), updater UI, navigation polish.
+2. Recommended next narrow slice: auto-updater prompt/progress UI, using existing updater bridge methods.
+3. Other remaining P0 areas: KPI chart parity, sub-sector detail route (`/setores/:slug/:sub_slug`), per-statement Excel export scope (backend addition), navigation polish.
 
 Do NOT start Phase 3 deletion until every P0 parity gap is closed, Vite has shipped as the default with a fallback and soaked, and the user explicitly approves deletion.
 
@@ -172,7 +173,7 @@ Phase 2 is not considered release-validated until the published GitHub ZIP and S
 
 ## Glossary
 
-- **LOCALAPPDATA contract:** runtime user data lives in `%LOCALAPPDATA%\CVMAnalytics\` (db, output, logs, cache, etc.). Set up by `_configure_bundled_data_paths()` in bundled mode. Dev mode uses repo-relative paths.
+- **Runtime data contract:** runtime user data lives in `%USERPROFILE%\Documents\CVMAnalytics\` by default (db, output, logs, cache, backup, etc.). `CVMANALYTICS_DATA_DIR` can override it. Updater staging and rollback remain under `%LOCALAPPDATA%\CVMAnalytics\`.
 - **MOTW (Mark-of-the-Web):** Windows zone-of-origin marker. Extraction via Explorer "Extract All" propagates it to inner files; .NET Framework's `loadFromRemoteSources` policy then refuses to load `Python.Runtime.dll`. v0.3.3 strips MOTW from bundled binaries at startup.
 - **Bridge adapter:** the Vite SPA's single chokepoint for `window.pywebview.api` calls. Located at `apps/desktop-web/src/lib/bridge/adapter.ts`. Components never touch the global directly.
 - **Updater allowlist:** the only two top-level entries the helper may overwrite during an update: `CVMAnalytics.exe` and `_internal/`. All other paths (especially user-data dirs) are denied.

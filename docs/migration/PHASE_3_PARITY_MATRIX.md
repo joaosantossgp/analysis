@@ -18,7 +18,11 @@ statements, and indicadores screens. Writes to the persistent
 `Documents/CVMAnalytics/output/` folder via two new bridge methods
 (`export_company_excel`, `get_output_dir`); the legacy
 `save_company_excel` (which writes to `~/Downloads`) is left in
-place for the Next UI. The default runtime is still Next/Node.
+place for the Next UI. Phase 3F ships in `v0.10.0`: company detail
+now has single-company refresh controls with status/freshness display,
+polling, and success/error feedback, using existing
+`request_refresh` / `get_refresh_status` bridge methods. The default
+runtime is still Next/Node.
 
 Scope of this document:
 
@@ -34,13 +38,13 @@ Scope of this document:
 |---|---|---|---|---|---|---|---|
 | Home / dashboard (`/`) | Marketing-style home with company search hero, trust strip, and feature grid. Desktop mode uses `HomeDesktopLoader`. | Vite root is the company directory, not a home dashboard. | `get_companies`, `get_company_suggestions`, `get_populares`, `get_em_destaque`, `get_health` if home stats are restored. | P1 | Medium | Low | Defer. Directory-first startup is acceptable for the experimental runtime; polish later. |
 | Company directory (`/empresas`) | Search, sector filter, pagination, card/list modes, loading/error states, desktop bridge loader. | **Phase 3D (v0.8.0)**: debounced search by name/ticker/CVM code, GICS sector filter, URL-driven `?search=&sector=&page=`, filter chips with per-filter clear, reset action, result count, empty/filtered-empty/error/loading/browser states, dense table with company / ticker / CVM / sector / sub-industry / years / rows / data dot. Card/list toggle still missing (Next-only). | Existing `get_companies`, new `get_company_filters` facade. | P0 | Medium | Medium | Card/list mode optional before default switch. |
-| Company detail overview (`/empresas/[cd_cvm]?aba=visao-geral`) | Header, company metadata, year selector, annual KPI overview, freshness/download controls, request-refresh controls. | Implemented route `/empresas/:cdCvm` with header and annual KPI table. Missing freshness/download/request-refresh controls and richer KPI cards/charts. | Existing `get_company_info`, `get_company_years`, `get_company_kpis`, `get_refresh_status`, `request_refresh`. | P0 | Medium | Medium | Complete controls after statements and export. |
+| Company detail overview (`/empresas/[cd_cvm]?aba=visao-geral`) | Header, company metadata, year selector, annual KPI overview, freshness/download controls, request-refresh controls. | **Phase 3F (v0.10.0)**: implemented route `/empresas/:cdCvm` with header, annual KPI table, full-company Excel export, and single-company refresh panel. The panel surfaces backend freshness/status fields (`tracking_state`, `freshness_summary_*`, attempt timestamps, readable-year fields, progress/ETA when present), starts an on-demand company refresh, polls active jobs every 2s, and invalidates company queries when refresh finishes. Richer KPI cards/charts remain Next-only. | Existing `get_company_info`, `get_company_years`, `get_company_kpis`, `get_refresh_status`, `request_refresh`, `export_company_excel`, `get_output_dir`. | P0 | Medium | Medium | Detail controls done for this slice; KPI chart parity can follow. |
 | Financial statements (`/empresas/[cd_cvm]?aba=demonstracoes&stmt=...`) | Statement tab with DRE/BPA/BPP/DFC selector, row filter, sticky account column, compact money formatting, empty/error states. | Implemented in Phase 3A as `/empresas/:cdCvm/demonstrativos?stmt=DRE`. Uses DRE/BPA/BPP/DFC selector, row filter, loading/error/empty states, real data table. | Existing `get_company_statement`, plus existing company info/year methods. | P0 | Medium | Medium | Done for first parity slice. Later add manual year selection if needed. |
 | KPIs / indicators | Annual and quarterly KPI bundle available; Next overview uses KPI cards/tables and chart panels. | **Implemented in Phase 3C.1 (v0.7.0)** at `/empresas/:cdCvm/indicadores`: year multi-select with "Last 5" / "All" presets, KPI summary cards (Receita líquida, EBITDA, Lucro líquido, Margem líquida) for latest selected year, annual table + quarterly table with categoria/unidade columns, unit-aware formatting (R$ mn / % / x / bps), missing values rendered as em dash. | Existing `get_company_kpis`, `get_company_years`. | P0 | Medium | Medium | Done for parity slice. Add chart panels in a later iteration. |
 | Sectors directory (`/setores`) | GICS sector/sub-sector directory with counts, snapshots, company previews, empty/error states. | **Phase 3D (v0.8.0)**: implemented at `/setores`. GICS sector vs sub-industry tab (`?visao=sub_sector`), company count + latest year columns, sub-industry count, link to filtered companies directory and to sector detail. No invented aggregate metrics — snapshot fields are present on the DTO but not surfaced unless future copy clarifies meaning. | Existing `get_sectors`. | P0 | Medium | Medium | Done for parity slice. |
 | Sector detail (`/setores/[slug]`, `/setores/[slug]/[sub_slug]`) | Year selector, aggregate KPIs, yearly overview, company table, breadcrumbs. | **Phase 3D (v0.8.0)**: implemented at `/setores/:slug`. Breadcrumb, company count + base-year header, year selector (`?ano=`), in-sector company search (`?q=`), company table with name / ticker / CVM / sub-industry, links to company detail and to the directory filtered by sector. Sub-sector detail route (`/setores/[slug]/[sub_slug]`) not yet ported — Next still serves it. | Existing `get_sector_detail`; `get_sub_sector_detail` still on Next. | P0 | Medium | Medium | Sub-sector detail can be a follow-up slice. |
 | Update base / refresh data (`/atualizar-base`) | Administrative refresh dashboard: base health, scopes, filters, job progress, history, cancel flow. | **Implemented (v0.6.1 accepted).** v0.7.0 adds the Documents data root and `data_root` field in the diagnostics panel. | Existing `get_base_health`, `request_refresh`, `cancel_refresh`, `get_refresh_status`; new `get_database_diagnostics`. | P0 | High | High | Done. Operator filters (sector / status) can be added later. |
-| Single-company refresh controls | Next company detail can request a period refresh and show progress. | Missing. | Existing `request_refresh`, `get_refresh_status`. | P0 | Medium | High | Port before Vite default; write path but already bridged. |
+| Single-company refresh controls | Next company detail can request a period refresh and show progress. | **Phase 3F (v0.10.0)**: Vite company detail uses the existing bridge `request_refresh({ cd_cvm })` single-company path and `get_refresh_status({ cd_cvm })` for polling. No new Python bridge methods, no schema changes, no direct SQLite reads from frontend. | Existing `request_refresh`, `get_refresh_status`; existing `RefreshStatusDTO` / `RefreshDispatchDTO`. | P0 | Medium | High | Done for parity slice; keep an eye on real-world stalled-job messaging. |
 | Excel export / save flows | Next has Excel export/download button and desktop bridge save/download path (writes to `~/Downloads`). | **Phase 3E (v0.9.0)**: full company workbook export from `/empresas/:cdCvm`, `/empresas/:cdCvm/demonstrativos`, and `/empresas/:cdCvm/indicadores`. Reusable `ExportCompanyButton` with idle/running/success/error/unsupported states, shows destination path, file name, file size, and collision-safe suffix. Writes to `Documents/CVMAnalytics/output/`. Per-statement export not yet supported (backend emits one workbook per company). | New bridge `export_company_excel`, `get_output_dir`. Existing `build_company_excel_export`. | P0 | Medium | Medium | Done for parity slice. |
 | Auto-updater UI | Next shows floating update prompt through `check_update` / `apply_update`; local snooze only. | Missing. | Existing `check_update`, `apply_update`, `snooze_update`, `get_update_progress`. | P0 | Medium | High | Required before default switch so users keep in-app update prompts. |
 | Health / status (`/health`) | API/desktop health indicator and route-level problem states. | Implemented as `/health` with bridge health payload. | Existing `get_health`. | P1 | Low | Low | Done enough; polish copy after P0 features. |
@@ -49,7 +53,7 @@ Scope of this document:
 | Filter/sort behavior | Directory sector filter, update-base status/range filters, statements row filter. | Directory search only; statements row filter added in Phase 3A. | Existing filter methods. | P0 | Medium | Medium | Add per-screen filters as each route is ported. |
 | Navigation patterns | Site header, route tabs, URL search params for tabs/years/statements, breadcrumbs. | Simple nav plus company links. Statements route uses query param `stmt`. | No new data. | P0 | Medium | Low | Add cohesive Vite navigation before default switch. |
 | Loading/error/empty states | Route loading/error files, skeletons, `ApiUnavailableState`, empty cards. | Basic states for health, directory, detail; statements has loading/error/empty/filter-empty. | No new data. | P0 | Medium | Medium | Standardize reusable Vite state components after more screens exist. |
-| Modals/dialogs/actions | Update confirmation modal, update prompt modal, refresh actions, export action feedback. | Missing. | Refresh and updater bridge methods. | P0 | Medium | High | Port action surfaces one at a time; avoid broad modal framework work. |
+| Modals/dialogs/actions | Update confirmation modal, update prompt modal, refresh actions, export action feedback. | Refresh and export action feedback exist for the Vite company/detail flows. Updater prompt/confirmation remains missing. | Refresh, export, and updater bridge methods. | P0 | Medium | High | Port updater action surface next; avoid broad modal framework work. |
 | Browser/dev fallback | Next falls back to HTTP/API routes outside desktop mode. | Vite API facades return clear browser-mode banners when pywebview bridge is unavailable. | No new data. | P1 | Low | Low | Keep pattern. |
 
 ## Already Done In Vite
@@ -70,10 +74,12 @@ Scope of this document:
 - Phase 3E: full company workbook Excel export from company detail,
   statements, and indicadores screens, writing into
   `Documents/CVMAnalytics/output/` via new narrow bridge methods.
+- Phase 3F: single-company refresh controls on `/empresas/:cdCvm`, with
+  status/freshness display, 2s active polling, dispatch feedback, and
+  query invalidation after terminal status.
 
 ## Remaining P0 Before Vite Can Become Default
 
-- Company detail controls for refresh / freshness (single-company request_refresh wiring).
 - Complete KPI/indicator parity beyond the annual table (chart panels).
 - Sub-sector detail route at `/setores/:slug/:sub_slug` (Phase 3D ported the
   top-level sector detail; sub-sector remains on Next).
@@ -160,9 +166,32 @@ Why this slice:
 - Persistent: exports land in the user-data root protected by the
   Phase 0 updater allowlist, so updates never delete them.
 
+## Phase 3F Implemented Surface
+
+Selected surface: single-company refresh controls on company detail.
+
+Why this slice:
+
+- High user value: a user can refresh the company they are already
+  inspecting without moving back to the global Update Base screen.
+- Existing backend: `CVMBridge.request_refresh` already routes
+  `{cd_cvm}` with no batch signals to `CVMReadService.request_company_refresh`,
+  and `get_refresh_status({cd_cvm})` already returns `RefreshStatusDTO`
+  rows from `company_refresh_status`.
+- Narrow frontend surface: one typed facade, one reusable panel, and the
+  existing company detail route mount. No Python method, schema, updater,
+  migration, or pipeline change was required.
+- Real freshness only: the UI displays backend-provided status and freshness
+  fields (`tracking_state`, `freshness_summary_*`, `read_availability_*`,
+  attempt timestamps, progress fields, ETA fields) and does not fabricate
+  data age metrics.
+- Refresh-safe query behavior: active company refreshes poll every 2s and
+  invalidate company info, years, KPIs, statements, and directory queries
+  after the active status becomes terminal.
+
 ## Recommended Next Screen
 
-Recommended next narrow slice: single-company refresh controls on
-company detail, using existing `request_refresh` / `get_refresh_status`
-methods. This closes the remaining write-side gap inside the company
-detail flow and unlocks the auto-updater UI parity track.
+Recommended next narrow slice: auto-updater prompt/progress UI, using
+the existing updater bridge methods. KPI chart parity and the
+sub-sector detail route are also remaining P0 candidates, but updater UI
+is the remaining write/action surface users expect in the packaged app.
