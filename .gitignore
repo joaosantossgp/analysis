@@ -71,3 +71,6 @@ repomix-output.*
 # Release validation directories
 release_validation_*/
 
+# Historical archive — all local-only, never committed (root-only)
+/archive/
+

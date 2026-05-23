@@ -167,7 +167,7 @@ The packaged folder contains only `CVMAnalytics.exe` and `_internal/`. No user d
 
 ## Migration Status
 
-The repository is in the middle of a multi-phase simplification of the desktop runtime.
+The desktop runtime migration is complete as of v0.17.0. All phases are released. The table below is kept as historical reference.
 
 | Phase | Goal | Status |
 |---|---|---|
@@ -186,29 +186,50 @@ See:
 
 - [docs/migration/README.md](docs/migration/README.md) — phase tracker
 - [docs/migration/PHASE_0_USER_DATA_SAFETY.md](docs/migration/PHASE_0_USER_DATA_SAFETY.md) — Phase 0 spec and validation
-- [docs/migration/NEXT_AGENT_HANDOFF.md](docs/migration/NEXT_AGENT_HANDOFF.md) — handoff for the next contributor
+- [docs/migration/NEXT_AGENT_HANDOFF.md](docs/migration/NEXT_AGENT_HANDOFF.md) — detailed phase history (historical; migration complete as of v0.17.0)
 
 ## Repository Structure
 
 ```
-desktop/         pywebview wrapper, PyInstaller spec, updater, build script
-apps/desktop-web/ Vite static SPA packaged into the .exe
-apps/web/        Source-only legacy / hosted Next.js 16 UI, not packaged
-apps/api/        Hosted Railway FastAPI + API tests, not packaged
-src/             Python core: scraper, KPI engine, refresh/read services
-main.py          CLI entry point for headless refresh
-scripts/         Setup, batches, diagnostics, validation helpers
-landing/         Marketing landing page
-data/            Dev-mode SQLite DB + raw inputs (gitignored)
-docs/            Active documentation, migration docs, ADRs
-tests/           Pytest suite
+desktop/          pywebview shell, PyInstaller spec, updater, build script
+apps/desktop-web/ Vite static SPA packaged into the .exe  ← only packaged UI
+apps/web/         Source-only hosted Next.js 16 UI, not packaged
+apps/api/         Hosted Railway FastAPI + API tests, not packaged
+src/              Python core: scraper, KPI engine, refresh/read services
+main.py           CLI entry point for headless refresh
+scripts/          Setup, batches, diagnostics, validation helpers
+landing/          Marketing landing page
+data/             Dev-mode SQLite DB + raw inputs (gitignored)
+docs/             Active documentation, migration docs, ADRs
+tests/            pytest suite
+config/           canonical_accounts.csv — CVM account mapping (referenced by src/)
 ```
+
+See [docs/reference/repository-map.md](docs/reference/repository-map.md) for a full folder, workflow, and documentation status map.
+
+## Contributor Orientation
+
+**"I want to change the desktop UI"** → `apps/desktop-web/src/`. Read `docs/skills/CVMANALYTICS_VITE_UI_SKILL.md` first. Run `python -m desktop.app --dev` to see changes live. Components call Python exclusively through `lib/bridge/adapter.ts` — never call `window.pywebview.api` directly.
+
+**"I want to change data or financial logic"** → `src/`. The Python core owns the pipeline, KPI engine, DB access, refresh worker, and Excel export. Read `docs/CONTEXT.md` before touching financial calculations or column conventions.
+
+**"I want to change packaging or the updater"** → `desktop/`. The PyInstaller spec is `desktop/app.spec`. Build script is `desktop/build_desktop.ps1`. Auto-updater is `desktop/updater.py` + `desktop/update_helper.ps1`. Do not change these without re-running the full release pipeline — a wrong path in the spec produces a broken EXE with no obvious build-time error.
+
+**"I want to change the hosted API or Next.js web surface"** → `apps/api/` (FastAPI, Railway) and `apps/web/` (Next.js 16). These surfaces are not packaged into `CVMAnalytics.exe` and do not affect the desktop runtime. Read `docs/reference/interface-map.md` before modifying any API contract.
+
+**"Which docs are current vs historical?"** → `docs/reference/repository-map.md` for a full map. Short answer: `docs/reference/` and `docs/decisions/` are active. `docs/migration/` is completed history. `docs/reference/sitemap.md` and `docs/reference/interface-map.md` describe the hosted web surface, not the desktop.
+
+**What not to touch casually:**
+- `desktop/app.spec` — PyInstaller spec; a wrong entry produces a broken EXE
+- `desktop/build_desktop.ps1` — build pipeline; test end-to-end before merging
+- `.github/workflows/release-desktop.yml` — changes affect artifacts downloaded by real users
+- `src/settings.py` — user data paths; wrong changes break the live DB location
+- `config/canonical_accounts.csv` — referenced by `src/settings.py` and 8+ scripts; moving requires coordinated multi-file update
 
 ## Roadmap
 
-- Keep `apps/web/` and `apps/api/` documented as source-only / hosted surfaces outside the desktop package.
-- Future deletion of those folders requires a separate retirement decision for the hosted web/API surfaces and their workflows.
-- Phase 6: code signing, AV/UPX review, startup logging improvements.
+- `apps/web/` and `apps/api/` remain as documented source-only / hosted surfaces. Deletion requires a separate retirement decision.
+- Known deferred items: code signing (SmartScreen warning on download), AV/UPX review.
 
 ## Known Limitations
 

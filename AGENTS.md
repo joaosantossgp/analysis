@@ -5,12 +5,13 @@ Canonical operating rules for AI agents in this project. English-only. ~120 line
 ## 1. How to read this file
 
 - This is the **default** contract. Read once per session.
+- For a full map of every folder, workflow, and doc status, see `docs/reference/repository-map.md`.
 - For long-running autonomous PRs, also read `docs/governance/autonomous-mode.md`.
 - Before touching `src/` or `apps/api/`, also read `docs/CONTEXT.md`.
 - Before touching `apps/web/`, the per-directory `apps/web/AGENTS.md` is auto-loaded.
-- Before implementing or reviewing any Vite UI screen in `apps/desktop-web`, read and follow: [docs/skills/CVMANALYTICS_VITE_UI_SKILL.md](file:///c:/Users/jadaojoao/Documents/Projetos/analisys/docs/skills/CVMANALYTICS_VITE_UI_SKILL.md).
-- Active reference docs live in `docs/reference/`. ADRs live in `docs/decisions/`.
-- Anything in `docs/archive/` is historical — do not treat as current contract. (Note: there is no `docs/archive/` directory; stale planning docs were deleted. History lives in git log.)
+- Before implementing or reviewing any Vite UI screen in `apps/desktop-web`, read and follow: [docs/skills/CVMANALYTICS_VITE_UI_SKILL.md](docs/skills/CVMANALYTICS_VITE_UI_SKILL.md).
+- Active reference docs live in `docs/reference/`. ADRs live in `docs/decisions/`. Migration history lives in `docs/migration/` (all phases complete as of v0.17.0).
+- `archive/` (at root) is historical — governance snapshots and old experiments. Do not treat as current contract.
 
 ## 2. Principles
 

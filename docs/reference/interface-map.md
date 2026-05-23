@@ -1,5 +1,8 @@
 # Interface Map - Frontend routes x API endpoints
 
+> [!NOTE]
+> This document maps routes and API endpoints for the **hosted web surface** (`apps/web/` + `apps/api/`), not the desktop app. The desktop app communicates via `window.pywebview.api` — see [`docs/migration/ARCHITECTURE.md`](../migration/ARCHITECTURE.md) for the bridge surface map.
+
 **Leitura obrigatoria antes de tocar `apps/web` ou `apps/api`.**
 
 Este documento e a fonte de verdade sobre quais rotas o frontend tem, qual e o

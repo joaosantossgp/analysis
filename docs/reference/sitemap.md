@@ -1,5 +1,8 @@
 # SITEMAP and IA Blueprint - Webapp CVM
 
+> [!NOTE]
+> This document describes the information architecture of the **hosted web app** (`apps/web/`), not the desktop app. It is retained as reference for the source-only hosted surface pending a retirement decision. The packaged desktop product uses the Vite SPA in `apps/desktop-web/`.
+
 Status: draft approved for incremental implementation
 Owner: Product + Architecture
 Last update: 2026-04-09
