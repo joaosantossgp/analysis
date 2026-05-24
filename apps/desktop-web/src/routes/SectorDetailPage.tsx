@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchSectorDetail, type SectorDetailResult } from "@/lib/api/sectors";
 import { whenBridgeReady } from "@/lib/bridge/adapter";
 import { PageHeader } from "@/components/PageHeader";
+import { StateBanner } from "@/components/feedback/StateBanner";
 
 function parseYear(raw: string | null): number | null {
   if (!raw) return null;
@@ -102,7 +103,6 @@ export function SectorDetailPage() {
         notFound={notFound}
         detail={detail}
         filteredCompanies={filteredCompanies}
-        hasCompanyFilter={companyFilter.length > 0}
         onClearCompanyFilter={() => setCompanyFilter("")}
       />
     </section>
@@ -118,12 +118,12 @@ function Status({
   query: ReturnType<typeof useQuery<SectorDetailResult>>;
   notFound: boolean;
 }) {
-  if (query.isLoading) return <span className="text-xs text-zinc-500">Loading…</span>;
-  if (query.isFetching) return <span className="text-xs text-amber-300">Refreshing…</span>;
-  if (query.isError) return <span className="text-xs text-rose-400">Error</span>;
-  if (notFound) return <span className="text-xs text-rose-400">Not found</span>;
+  if (query.isLoading) return <span className="text-xs text-zinc-500">◌ Loading…</span>;
+  if (query.isFetching) return <span className="text-xs text-amber-300">↻ Refreshing…</span>;
+  if (query.isError) return <span className="text-xs text-rose-400">! Error</span>;
+  if (notFound) return <span className="text-xs text-rose-400">! Not found</span>;
   if (query.data?.mode === "browser")
-    return <span className="text-xs text-amber-300">Browser mode</span>;
+    return <span className="text-xs text-amber-300">▲ Browser mode</span>;
   return null;
 }
 
@@ -218,7 +218,6 @@ function Body({
   notFound,
   detail,
   filteredCompanies,
-  hasCompanyFilter,
   onClearCompanyFilter,
 }: {
   query: ReturnType<typeof useQuery<SectorDetailResult>>;
@@ -238,63 +237,68 @@ function Body({
     ticker_b3: string | null;
     gics_sub_industry: string | null;
   }>;
-  hasCompanyFilter: boolean;
   onClearCompanyFilter: () => void;
 }) {
   if (query.isError) {
     return (
-      <p
-        role="alert"
-        className="rounded border border-rose-900/60 bg-rose-950/40 p-3 text-sm text-rose-300"
-      >
-        {query.error instanceof Error ? query.error.message : String(query.error)}
-      </p>
+      <StateBanner
+        variant="error"
+        message={query.error instanceof Error ? query.error.message : String(query.error)}
+        onRetry={() => { void query.refetch(); }}
+      />
     );
   }
   if (query.data?.mode === "browser") {
     return (
-      <div className="space-y-2 rounded border border-amber-900/60 bg-amber-950/30 p-3 text-sm text-amber-200">
-        <p className="font-medium">Browser-mode preview</p>
-        <p className="text-amber-200/80">{query.data.reason}</p>
-      </div>
+      <StateBanner
+        variant="browser-only"
+        message={query.data.reason}
+      />
     );
   }
   if (notFound) {
     return (
-      <div className="space-y-2 rounded border border-rose-900/60 bg-rose-950/40 p-3 text-sm text-rose-200">
-        <p>Sector not found in the local database.</p>
+      <StateBanner
+        variant="empty"
+        title="Setor não encontrado"
+        message="Este setor não existe no banco de dados local."
+      >
         <Link
           to="/setores"
-          className="rounded border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs text-zinc-200 hover:bg-zinc-800"
+          className="rounded border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs text-zinc-200 hover:bg-zinc-800 focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-zinc-500/70"
         >
-          Back to sectors
+          Voltar para setores
         </Link>
-      </div>
+      </StateBanner>
     );
   }
   if (query.isLoading || !detail) {
-    return <p className="text-sm text-zinc-500">Loading sector detail…</p>;
+    return <StateBanner variant="loading" />;
   }
   if (detail.companies.length === 0) {
     return (
-      <p className="text-sm text-zinc-400">
-        No companies recorded in this sector. Run Update Base to populate
-        company data.
-      </p>
+      <StateBanner
+        variant="empty"
+        title="Sem empresas"
+        message="Nenhuma empresa registrada neste setor. Execute Atualizar Base para popular os dados."
+      />
     );
   }
   if (filteredCompanies.length === 0) {
     return (
-      <div className="space-y-2 rounded border border-zinc-800 bg-zinc-950/40 p-4 text-sm text-zinc-300">
-        <p>No companies match the filter inside {hasCompanyFilter ? "this sector" : "the sector"}.</p>
+      <StateBanner
+        variant="empty"
+        title="Sem resultados"
+        message="Nenhuma empresa corresponde ao filtro aplicado neste setor."
+      >
         <button
           type="button"
           onClick={onClearCompanyFilter}
-          className="rounded border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs text-zinc-200 hover:bg-zinc-800"
+          className="rounded border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs text-zinc-200 hover:bg-zinc-800 focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-zinc-500/70"
         >
-          Clear filter
+          Limpar filtro
         </button>
-      </div>
+      </StateBanner>
     );
   }
   return <CompanyTable companies={filteredCompanies} />;
@@ -315,10 +319,10 @@ function CompanyTable({
       <table className="w-full border-collapse text-sm">
         <thead>
           <tr className="bg-zinc-900/80 text-left text-[10px] uppercase tracking-wider text-zinc-500">
-            <th className="px-3 py-2 font-medium">Company</th>
-            <th className="px-3 py-2 font-medium">Ticker</th>
-            <th className="px-3 py-2 font-medium">CVM</th>
-            <th className="px-3 py-2 font-medium">Sub-industry</th>
+            <th scope="col" className="px-3 py-2 font-medium">Company</th>
+            <th scope="col" className="px-3 py-2 font-medium">Ticker</th>
+            <th scope="col" className="px-3 py-2 font-medium">CVM</th>
+            <th scope="col" className="px-3 py-2 font-medium">Sub-industry</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-zinc-800/80 text-zinc-200">

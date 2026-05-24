@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchSectors, type SectorDirectoryResult, type SectorGroupBy } from "@/lib/api/sectors";
 import { whenBridgeReady } from "@/lib/bridge/adapter";
 import { PageHeader } from "@/components/PageHeader";
+import { StateBanner } from "@/components/feedback/StateBanner";
 
 function normalizeGroupBy(value: string | null): SectorGroupBy {
   return value === "sub_sector" ? "sub_sector" : "sector";
@@ -82,11 +83,11 @@ function Status({
   groups: number;
   totalCompanies: number;
 }) {
-  if (query.isLoading) return <span className="text-xs text-zinc-500">Loading…</span>;
-  if (query.isFetching) return <span className="text-xs text-amber-300">Refreshing…</span>;
-  if (query.isError) return <span className="text-xs text-rose-400">Error</span>;
+  if (query.isLoading) return <span className="text-xs text-zinc-500">◌ Loading…</span>;
+  if (query.isFetching) return <span className="text-xs text-amber-300">↻ Refreshing…</span>;
+  if (query.isError) return <span className="text-xs text-rose-400">! Error</span>;
   if (query.data?.mode === "browser")
-    return <span className="text-xs text-amber-300">Browser mode</span>;
+    return <span className="text-xs text-amber-300">▲ Browser mode</span>;
   return (
     <span className="font-mono text-xs text-zinc-400">
       {groups.toLocaleString("pt-BR")} groups · {totalCompanies.toLocaleString("pt-BR")} companies
@@ -109,8 +110,8 @@ function GroupTab({
       onClick={onClick}
       className={
         active
-          ? "rounded border border-zinc-600 bg-zinc-800 px-3 py-1 text-xs font-medium text-zinc-100"
-          : "rounded border border-zinc-800 bg-transparent px-3 py-1 text-xs text-zinc-400 hover:border-zinc-600 hover:text-zinc-200"
+          ? "rounded border border-zinc-600 bg-zinc-800 px-3 py-1 text-xs font-medium text-zinc-100 focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-cyan-500/70"
+          : "rounded border border-zinc-800 bg-transparent px-3 py-1 text-xs text-zinc-400 hover:border-zinc-600 hover:text-zinc-200 focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-zinc-500/70"
       }
     >
       {label}
@@ -129,42 +130,31 @@ function Body({
 }) {
   if (query.isError) {
     return (
-      <p
-        role="alert"
-        className="rounded border border-rose-900/60 bg-rose-950/40 p-3 text-sm text-rose-300"
-      >
-        {query.error instanceof Error ? query.error.message : String(query.error)}
-      </p>
+      <StateBanner
+        variant="error"
+        message={query.error instanceof Error ? query.error.message : String(query.error)}
+        onRetry={() => { void query.refetch(); }}
+      />
     );
   }
   if (query.data?.mode === "browser") {
     return (
-      <div className="space-y-2 rounded border border-amber-900/60 bg-amber-950/30 p-3 text-sm text-amber-200">
-        <p className="font-medium">Browser-mode preview</p>
-        <p className="text-amber-200/80">{query.data.reason}</p>
-      </div>
+      <StateBanner
+        variant="browser-only"
+        message={query.data.reason}
+      />
     );
   }
   if (query.isLoading || query.data?.mode !== "desktop") {
-    return <p className="text-sm text-zinc-500">Loading sectors…</p>;
+    return <StateBanner variant="loading" />;
   }
   if (items.length === 0) {
     return (
-      <div className="space-y-3 rounded border border-amber-500/30 bg-amber-500/5 p-4 text-sm leading-relaxed text-amber-100">
-        <p className="font-medium">No GICS classifications found in the local database.</p>
-        <p className="text-amber-100/80">
-          The Vite sectors directory only renders the 11 official GICS hubs.
-          Your runtime DB has companies but none carry GICS fields, so this
-          screen is empty.
-        </p>
-        <p className="text-amber-100/80">
-          Fix: install / launch <span className="font-mono">CVMAnalytics.exe</span>{" "}
-          v0.14.1 or later — startup runs a one-shot GICS backfill from the
-          bundled mapping CSV. Alternatively, run <span className="font-mono">scripts/backfill_company_gics.py</span>{" "}
-          or <span className="font-mono">scripts/import_company_gics.py</span>{" "}
-          against your DB before relaunching.
-        </p>
-      </div>
+      <StateBanner
+        variant="empty"
+        title="Sem classificações GICS"
+        message="Nenhuma empresa no banco local possui campos GICS. Abra o CVMAnalytics.exe v0.14.1+ para executar o backfill automático — o startup faz o import a partir do CSV embutido."
+      />
     );
   }
   return <SectorsTable items={items} groupBy={groupBy} />;
@@ -190,17 +180,17 @@ function SectorsTable({
       <table className="w-full border-collapse text-sm">
         <thead>
           <tr className="bg-zinc-900/80 text-left text-[10px] uppercase tracking-wider text-zinc-500">
-            <th className="px-3 py-2 font-medium">
+            <th scope="col" className="px-3 py-2 font-medium">
               {groupBy === "sub_sector" ? "Sub-industry" : "Sector"}
             </th>
             {groupBy === "sub_sector" ? (
-              <th className="px-3 py-2 font-medium">Parent sector</th>
+              <th scope="col" className="px-3 py-2 font-medium">Parent sector</th>
             ) : (
-              <th className="px-3 py-2 font-medium">Sub-industries</th>
+              <th scope="col" className="px-3 py-2 font-medium">Sub-industries</th>
             )}
-            <th className="px-3 py-2 text-right font-medium">Companies</th>
-            <th className="px-3 py-2 text-right font-medium">Latest year</th>
-            <th className="px-3 py-2 font-medium">Actions</th>
+            <th scope="col" className="px-3 py-2 text-right font-medium">Companies</th>
+            <th scope="col" className="px-3 py-2 text-right font-medium">Latest year</th>
+            <th scope="col" className="px-3 py-2 font-medium">Actions</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-zinc-800/80 text-zinc-200">
