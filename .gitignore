@@ -74,3 +74,15 @@ release_validation_*/
 # Historical archive — all local-only, never committed (root-only)
 /archive/
 
+# Local scratch space — drafts, experimental scripts, generated workbooks,
+# downloaded release artifacts for verification. Never committed.
+/scratch/
+
+# Playwright MCP local trace/cache
+/.playwright-mcp/
+
+# Packaged Windows release artifacts. The canonical distribution channel is
+# the GitHub Release, not the repo tree. Local copies stay out of git.
+/CVMAnalytics-windows*.zip
+/CVMAnalytics-windows*.zip.sha256
+
