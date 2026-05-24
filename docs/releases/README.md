@@ -2,13 +2,14 @@
 
 This directory holds per-version release notes for the CVMAnalytics desktop product.
 
-The **current stable baseline is `v0.18.3`** (Excel export print & filter polish). The packaged Windows desktop EXE distributed via [GitHub Releases](https://github.com/joaosantossgp/analisys/releases) is the authoritative distribution channel — this directory is a **partial** local copy of the per-version notes, not the source of truth.
+The **current stable baseline is `v0.19.0`** (analyst-ready Excel model — refined). The packaged Windows desktop EXE distributed via [GitHub Releases](https://github.com/joaosantossgp/analisys/releases) is the authoritative distribution channel — this directory is a **partial** local copy of the per-version notes, not the source of truth.
 
 ## Current
 
 | Version | Notes |
 |---|---|
-| `v0.18.3` | [v0.18.3.md](v0.18.3.md) — current stable, Excel export print & filter polish |
+| `v0.19.0` | [v0.19.0.md](v0.19.0.md) — current stable, refined analyst Excel model |
+| `v0.18.3` | [v0.18.3.md](v0.18.3.md) — Excel export print & filter polish |
 | `v0.18.2` | [v0.18.2.md](v0.18.2.md) — analyst-ready Excel export |
 | `v0.18.1` | [v0.18.1.md](v0.18.1.md) — Terminal UI patch |
 | `v0.18.0` | [v0.18.0.md](v0.18.0.md) — Terminal UI release |
