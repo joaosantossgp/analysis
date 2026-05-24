@@ -28,5 +28,14 @@ export default defineConfig({
     emptyOutDir: true,
     sourcemap: true,
     target: "es2022",
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ["react", "react-dom"],
+          router: ["react-router-dom"],
+          query: ["@tanstack/react-query"],
+        },
+      },
+    },
   },
 });

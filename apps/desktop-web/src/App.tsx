@@ -1,18 +1,52 @@
+import { lazy, Suspense } from "react";
 import { HashRouter, Route, Routes } from "react-router-dom";
 
 import { CommandBar } from "./components/command/CommandBar";
 import { useCommandPalette } from "./components/command/useCommandPalette";
+import { StateBanner } from "./components/feedback/StateBanner";
 import { TerminalShell } from "./components/shell/TerminalShell";
-import { CompaniesPage } from "./routes/CompaniesPage";
-import { CompanyDetailPage } from "./routes/CompanyDetailPage";
-import { CompanyKpisPage } from "./routes/CompanyKpisPage";
-import { CompanyStatementsPage } from "./routes/CompanyStatementsPage";
-import { HealthPage } from "./routes/HealthPage";
-import { SectorDetailPage } from "./routes/SectorDetailPage";
-import { SectorsPage } from "./routes/SectorsPage";
-import { SubSectorDetailPage } from "./routes/SubSectorDetailPage";
-import { StatusPage } from "./routes/StatusPage";
-import { UpdateBasePage } from "./routes/UpdateBasePage";
+
+// Route pages are lazy-loaded so the initial bundle only ships the shell,
+// command palette, and routing logic. Each route chunk is fetched on first
+// navigation, which dramatically reduces first-load parse time.
+const CompaniesPage = lazy(() =>
+  import("./routes/CompaniesPage").then((m) => ({ default: m.CompaniesPage })),
+);
+const CompanyDetailPage = lazy(() =>
+  import("./routes/CompanyDetailPage").then((m) => ({ default: m.CompanyDetailPage })),
+);
+const CompanyKpisPage = lazy(() =>
+  import("./routes/CompanyKpisPage").then((m) => ({ default: m.CompanyKpisPage })),
+);
+const CompanyStatementsPage = lazy(() =>
+  import("./routes/CompanyStatementsPage").then((m) => ({ default: m.CompanyStatementsPage })),
+);
+const HealthPage = lazy(() =>
+  import("./routes/HealthPage").then((m) => ({ default: m.HealthPage })),
+);
+const SectorDetailPage = lazy(() =>
+  import("./routes/SectorDetailPage").then((m) => ({ default: m.SectorDetailPage })),
+);
+const SectorsPage = lazy(() =>
+  import("./routes/SectorsPage").then((m) => ({ default: m.SectorsPage })),
+);
+const SubSectorDetailPage = lazy(() =>
+  import("./routes/SubSectorDetailPage").then((m) => ({ default: m.SubSectorDetailPage })),
+);
+const StatusPage = lazy(() =>
+  import("./routes/StatusPage").then((m) => ({ default: m.StatusPage })),
+);
+const UpdateBasePage = lazy(() =>
+  import("./routes/UpdateBasePage").then((m) => ({ default: m.UpdateBasePage })),
+);
+
+function RouteFallback() {
+  return (
+    <div style={{ padding: "24px 20px" }}>
+      <StateBanner variant="loading" />
+    </div>
+  );
+}
 
 // HashRouter (not BrowserRouter) for portability across pywebview origins:
 // file:// (PyInstaller _MEIPASS), http://127.0.0.1:<port> (Vite dev), and
@@ -30,27 +64,29 @@ function AppShellWithPalette() {
   return (
     <>
       <TerminalShell onOpenPalette={palette.open_}>
-        <Routes>
-          <Route path="/" element={<CompaniesPage />} />
-          <Route path="/status" element={<StatusPage />} />
-          <Route path="/health" element={<HealthPage />} />
-          <Route path="/atualizar-base" element={<UpdateBasePage />} />
-          <Route path="/setores" element={<SectorsPage />} />
-          <Route path="/setores/:slug" element={<SectorDetailPage />} />
-          <Route
-            path="/setores/:sectorSlug/:subSectorSlug"
-            element={<SubSectorDetailPage />}
-          />
-          <Route path="/empresas/:cdCvm" element={<CompanyDetailPage />} />
-          <Route
-            path="/empresas/:cdCvm/demonstrativos"
-            element={<CompanyStatementsPage />}
-          />
-          <Route
-            path="/empresas/:cdCvm/indicadores"
-            element={<CompanyKpisPage />}
-          />
-        </Routes>
+        <Suspense fallback={<RouteFallback />}>
+          <Routes>
+            <Route path="/" element={<CompaniesPage />} />
+            <Route path="/status" element={<StatusPage />} />
+            <Route path="/health" element={<HealthPage />} />
+            <Route path="/atualizar-base" element={<UpdateBasePage />} />
+            <Route path="/setores" element={<SectorsPage />} />
+            <Route path="/setores/:slug" element={<SectorDetailPage />} />
+            <Route
+              path="/setores/:sectorSlug/:subSectorSlug"
+              element={<SubSectorDetailPage />}
+            />
+            <Route path="/empresas/:cdCvm" element={<CompanyDetailPage />} />
+            <Route
+              path="/empresas/:cdCvm/demonstrativos"
+              element={<CompanyStatementsPage />}
+            />
+            <Route
+              path="/empresas/:cdCvm/indicadores"
+              element={<CompanyKpisPage />}
+            />
+          </Routes>
+        </Suspense>
       </TerminalShell>
       <CommandBar
         open={palette.open}

@@ -9,6 +9,7 @@ import {
   type CompanyFiltersResult,
 } from "@/lib/api/companies";
 import { whenBridgeReady } from "@/lib/bridge/adapter";
+import { StateBanner } from "@/components/feedback/StateBanner";
 
 const PAGE_SIZE = 25;
 
@@ -204,16 +205,16 @@ function Status({
   hasFilters: boolean;
 }) {
   if (query.isFetching && query.data) {
-    return <span className="text-xs text-amber-300">Refreshing…</span>;
+    return <span className="text-xs text-amber-300">↻ Refreshing…</span>;
   }
   if (query.isLoading) {
-    return <span className="text-xs text-zinc-500">Loading…</span>;
+    return <span className="text-xs text-zinc-500">◌ Loading…</span>;
   }
   if (query.isError) {
-    return <span className="text-xs text-rose-400">Error</span>;
+    return <span className="text-xs text-rose-400">! Error</span>;
   }
   if (query.data?.mode === "browser") {
-    return <span className="text-xs text-amber-300">Browser mode</span>;
+    return <span className="text-xs text-amber-300">▲ Browser mode</span>;
   }
   return (
     <span className="font-mono text-xs text-zinc-400">
@@ -362,45 +363,43 @@ function Body({
 }) {
   if (query.isError) {
     return (
-      <p
-        role="alert"
-        className="rounded border border-rose-900/60 bg-rose-950/40 p-3 text-sm text-rose-300"
-      >
-        {query.error instanceof Error ? query.error.message : String(query.error)}
-      </p>
+      <StateBanner
+        variant="error"
+        message={query.error instanceof Error ? query.error.message : String(query.error)}
+        onRetry={() => { void query.refetch(); }}
+      />
     );
   }
   if (query.data?.mode === "browser") {
-    return (
-      <div className="space-y-2 rounded border border-amber-900/60 bg-amber-950/30 p-3 text-sm text-amber-200">
-        <p className="font-medium">Browser-mode preview</p>
-        <p className="text-amber-200/80">{query.data.reason}</p>
-      </div>
-    );
+    return <StateBanner variant="browser-only" message={query.data.reason} />;
   }
   if (query.isLoading || !isDesktop) {
-    return <p className="text-sm text-zinc-500">Loading directory…</p>;
+    return <StateBanner variant="loading" title="Carregando diretório…" />;
   }
   if (items.length === 0) {
     if (hasFilters) {
       return (
-        <div className="space-y-2 rounded border border-zinc-800 bg-zinc-950/40 p-4 text-sm text-zinc-300">
-          <p>No companies match the active filters.</p>
+        <StateBanner
+          variant="empty"
+          title="Sem resultados"
+          message="Nenhuma empresa corresponde aos filtros ativos."
+        >
           <button
             type="button"
             onClick={onResetAll}
-            className="rounded border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs text-zinc-200 hover:bg-zinc-800"
+            className="rounded border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs text-zinc-200 hover:bg-zinc-800 focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-zinc-500/70"
           >
             Reset filters
           </button>
-        </div>
+        </StateBanner>
       );
     }
     return (
-      <p className="text-sm text-zinc-400">
-        No companies found in the local database. Run Update Base to populate
-        data.
-      </p>
+      <StateBanner
+        variant="empty"
+        title="Sem empresas"
+        message="Nenhuma empresa no banco local. Execute Atualizar Base para popular os dados."
+      />
     );
   }
   return <CompaniesGrid items={items} />;
@@ -416,14 +415,14 @@ function CompaniesGrid({
       <table className="w-full border-collapse text-sm">
         <thead>
           <tr className="bg-zinc-900/80 text-left text-[10px] uppercase tracking-wider text-zinc-500">
-            <th className="px-3 py-2 font-medium">Company</th>
-            <th className="px-3 py-2 font-medium">Ticker</th>
-            <th className="px-3 py-2 font-medium">CVM</th>
-            <th className="px-3 py-2 font-medium">Sector</th>
-            <th className="px-3 py-2 font-medium">Sub-industry</th>
-            <th className="px-3 py-2 font-medium">Years</th>
-            <th className="px-3 py-2 text-right font-medium">Rows</th>
-            <th className="px-3 py-2 text-center font-medium">Data</th>
+            <th scope="col" className="px-3 py-2 font-medium">Company</th>
+            <th scope="col" className="px-3 py-2 font-medium">Ticker</th>
+            <th scope="col" className="px-3 py-2 font-medium">CVM</th>
+            <th scope="col" className="px-3 py-2 font-medium">Sector</th>
+            <th scope="col" className="px-3 py-2 font-medium">Sub-industry</th>
+            <th scope="col" className="px-3 py-2 font-medium">Years</th>
+            <th scope="col" className="px-3 py-2 text-right font-medium">Rows</th>
+            <th scope="col" className="px-3 py-2 text-center font-medium">Data</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-zinc-800/80 text-zinc-200">

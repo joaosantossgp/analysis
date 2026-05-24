@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { memo, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 
@@ -312,7 +312,10 @@ function KpiTable({
   rows: TabularRow[];
   years: number[];
 }) {
-  const yearColumns = years.map((y) => String(y)).filter((year) => columns.includes(year));
+  const yearColumns = useMemo(
+    () => years.map((y) => String(y)).filter((year) => columns.includes(year)),
+    [years, columns],
+  );
   const showDelta = columns.includes("DELTA_YOY_PCT");
   return (
     <div className="overflow-x-auto">
@@ -331,77 +334,97 @@ function KpiTable({
               textTransform: "uppercase",
             }}
           >
-            <th className="sticky left-0 px-2 py-2 font-medium" style={{ background: "var(--color-surface-2)" }}>
+            <th scope="col" className="sticky left-0 px-2 py-2 font-medium" style={{ background: "var(--color-surface-2)" }}>
               KPI
             </th>
-            <th className="px-2 py-2 font-medium">Categoria</th>
-            <th className="px-2 py-2 font-medium">Unidade</th>
-            <th className="px-2 py-2 font-medium">Trend</th>
+            <th scope="col" className="px-2 py-2 font-medium">Categoria</th>
+            <th scope="col" className="px-2 py-2 font-medium">Unidade</th>
+            <th scope="col" className="px-2 py-2 font-medium">Trend</th>
             {yearColumns.map((c) => (
-              <th key={c} className="px-2 py-2 text-right font-medium">
+              <th scope="col" key={c} className="px-2 py-2 text-right font-medium">
                 {c}
               </th>
             ))}
-            {showDelta ? <th className="px-2 py-2 text-right font-medium">ΔYoY</th> : null}
+            {showDelta ? <th scope="col" className="px-2 py-2 text-right font-medium">ΔYoY</th> : null}
           </tr>
         </thead>
         <tbody style={{ color: "var(--color-text-secondary)" }}>
           {rows.map((row, i) => (
-            <tr
+            <KpiTableRow
               key={String(row.KPI_ID ?? i)}
-              style={{ borderBottom: "1px solid var(--color-border-subtle)" }}
-            >
-              <td
-                className="sticky left-0 px-2 py-2"
-                style={{
-                  background: "var(--color-surface-2)",
-                  color: "var(--color-text-primary)",
-                  minWidth: 210,
-                }}
-              >
-                <div className="flex flex-col gap-1">
-                  <span>{String(row.KPI_NOME ?? row.KPI_ID ?? "—")}</span>
-                  {row.KPI_ID ? (
-                    <span
-                      className="font-mono"
-                      style={{ color: "var(--color-text-tertiary)", fontSize: "var(--text-2xs)" }}
-                    >
-                      {String(row.KPI_ID)}
-                    </span>
-                  ) : null}
-                </div>
-              </td>
-              <td className="px-2 py-2" style={{ color: "var(--color-text-tertiary)", fontSize: "var(--text-xs)" }}>
-                {String(row.CATEGORIA ?? "—")}
-              </td>
-              <td className="px-2 py-2 font-mono" style={{ color: "var(--color-text-tertiary)", fontSize: "var(--text-xs)" }}>
-                {formatUnit(row.FORMAT_TYPE)}
-              </td>
-              <td className="px-2 py-2">
-                <Sparkline
-                  values={yearColumns.map((year) => numericOrNull(row[year]))}
-                  width={84}
-                  height={24}
-                  label={`${String(row.KPI_NOME ?? row.KPI_ID ?? "KPI")} trend`}
-                />
-              </td>
-              {yearColumns.map((c) => (
-                <td key={c} className="px-2 py-2 text-right">
-                  <NumberCell value={row[c]} formatType={row.FORMAT_TYPE} />
-                </td>
-              ))}
-              {showDelta ? (
-                <td className="px-2 py-2 text-right">
-                  <DeltaBadge value={row.DELTA_YOY_PCT} />
-                </td>
-              ) : null}
-            </tr>
+              row={row}
+              yearColumns={yearColumns}
+              showDelta={showDelta}
+            />
           ))}
         </tbody>
       </table>
     </div>
   );
 }
+
+const KpiTableRow = memo(function KpiTableRow({
+  row,
+  yearColumns,
+  showDelta,
+}: {
+  row: TabularRow;
+  yearColumns: string[];
+  showDelta: boolean;
+}) {
+  const sparklineValues = useMemo(
+    () => yearColumns.map((year) => numericOrNull(row[year])),
+    [row, yearColumns],
+  );
+  return (
+    <tr style={{ borderBottom: "1px solid var(--color-border-subtle)" }}>
+      <td
+        className="sticky left-0 px-2 py-2"
+        style={{
+          background: "var(--color-surface-2)",
+          color: "var(--color-text-primary)",
+          minWidth: 210,
+        }}
+      >
+        <div className="flex flex-col gap-1">
+          <span>{String(row.KPI_NOME ?? row.KPI_ID ?? "—")}</span>
+          {row.KPI_ID ? (
+            <span
+              className="font-mono"
+              style={{ color: "var(--color-text-tertiary)", fontSize: "var(--text-2xs)" }}
+            >
+              {String(row.KPI_ID)}
+            </span>
+          ) : null}
+        </div>
+      </td>
+      <td className="px-2 py-2" style={{ color: "var(--color-text-tertiary)", fontSize: "var(--text-xs)" }}>
+        {String(row.CATEGORIA ?? "—")}
+      </td>
+      <td className="px-2 py-2 font-mono" style={{ color: "var(--color-text-tertiary)", fontSize: "var(--text-xs)" }}>
+        {formatUnit(row.FORMAT_TYPE)}
+      </td>
+      <td className="px-2 py-2">
+        <Sparkline
+          values={sparklineValues}
+          width={84}
+          height={24}
+          label={`${String(row.KPI_NOME ?? row.KPI_ID ?? "KPI")} trend`}
+        />
+      </td>
+      {yearColumns.map((c) => (
+        <td key={c} className="px-2 py-2 text-right">
+          <NumberCell value={row[c]} formatType={row.FORMAT_TYPE} />
+        </td>
+      ))}
+      {showDelta ? (
+        <td className="px-2 py-2 text-right">
+          <DeltaBadge value={row.DELTA_YOY_PCT} />
+        </td>
+      ) : null}
+    </tr>
+  );
+});
 
 function ExportPanel({ cdCvm }: { cdCvm: number }) {
   return (

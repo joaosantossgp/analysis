@@ -281,6 +281,11 @@ function KpiGridBody({
   selectedYears: number[];
   isQuarterly: boolean;
 }) {
+  const { columns, rows } = useMemo(
+    () => (table ? buildKpiGrid(table, selectedYears, isQuarterly) : { columns: [], rows: [] }),
+    [table, selectedYears, isQuarterly],
+  );
+
   if (loading) return <StateBanner variant="loading" title="Carregando KPIs…" />;
   if (error) {
     return (
@@ -304,7 +309,6 @@ function KpiGridBody({
     );
   }
 
-  const { columns, rows } = buildKpiGrid(table, selectedYears, isQuarterly);
   return (
     <FinancialDataGrid
       labelHeader="KPI"

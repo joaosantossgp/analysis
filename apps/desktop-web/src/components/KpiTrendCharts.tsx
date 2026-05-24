@@ -1,5 +1,7 @@
+import { useMemo } from "react";
+
 import { Panel } from "@/components/surface/Panel";
-import { TabularData } from "@/lib/bridge/types";
+import type { TabularData } from "@/lib/bridge/types";
 
 interface DataPoint {
   year: number;
@@ -13,34 +15,49 @@ interface TrendChartProps {
   colorVar: string;
 }
 
-export function KpiTrendCharts({ bundle }: { bundle: { annual: TabularData; years: number[] } | null }) {
-  if (!bundle || bundle.years.length === 0) return null;
+function getTrendData(annual: TabularData, years: number[], kpiId: string): DataPoint[] {
+  const row = annual.rows.find((r) => String(r.KPI_ID ?? "").trim() === kpiId);
+  if (!row) return years.map((yr) => ({ year: yr, value: null }));
+  return years.map((yr) => {
+    const val = row[String(yr)];
+    return { year: yr, value: typeof val === "number" ? val : null };
+  });
+}
 
-  const years = [...bundle.years].sort((a, b) => a - b);
+export function KpiTrendCharts({
+  bundle,
+}: {
+  bundle: { annual: TabularData; years: number[] } | null;
+}) {
+  const sortedYears = useMemo(
+    () => (bundle ? [...bundle.years].sort((a, b) => a - b) : []),
+    [bundle],
+  );
 
-  // Extract trend data for key KPIs
-  const getTrendData = (kpiId: string): DataPoint[] => {
-    const row = bundle.annual.rows.find((r) => String(r.KPI_ID ?? "").trim() === kpiId);
-    if (!row) return years.map((yr) => ({ year: yr, value: null }));
-    return years.map((yr) => {
-      const val = row[String(yr)];
-      return {
-        year: yr,
-        value: typeof val === "number" ? val : null,
-      };
-    });
-  };
+  const ebitdaData = useMemo(
+    () => (bundle ? getTrendData(bundle.annual, sortedYears, "MG_EBITDA") : []),
+    [bundle, sortedYears],
+  );
+  const netMarginData = useMemo(
+    () => (bundle ? getTrendData(bundle.annual, sortedYears, "MG_LIQ") : []),
+    [bundle, sortedYears],
+  );
+  const roeData = useMemo(
+    () => (bundle ? getTrendData(bundle.annual, sortedYears, "ROE") : []),
+    [bundle, sortedYears],
+  );
+  const leverageData = useMemo(
+    () => (bundle ? getTrendData(bundle.annual, sortedYears, "DIV_EBITDA") : []),
+    [bundle, sortedYears],
+  );
 
-  const ebitdaMarginData = getTrendData("MG_EBITDA");
-  const netMarginData = getTrendData("MG_LIQ");
-  const roeData = getTrendData("ROE");
-  const leverageData = getTrendData("DIV_EBITDA");
+  if (!bundle || sortedYears.length === 0) return null;
 
   return (
     <div className="grid gap-4 md:grid-cols-2">
       <TrendChartCard
         title="Margem EBITDA"
-        data={ebitdaMarginData}
+        data={ebitdaData}
         formatType="pct"
         colorVar="--color-id-ticker"
       />
@@ -67,84 +84,84 @@ export function KpiTrendCharts({ bundle }: { bundle: { annual: TabularData; year
 }
 
 function TrendChartCard({ title, data, formatType, colorVar }: TrendChartProps) {
-  const nonNullValues = data.map((d) => d.value).filter((v): v is number => v !== null);
-  const hasData = nonNullValues.length > 0;
+  // All layout calculations memoized — only recomputes when data changes.
+  const chart = useMemo(() => {
+    const viewWidth = 400;
+    const viewHeight = 160;
+    const padLeft = 55;
+    const padRight = 15;
+    const padTop = 15;
+    const padBottom = 25;
+    const chartWidth = viewWidth - padLeft - padRight;
+    const chartHeight = viewHeight - padTop - padBottom;
 
-  let minY = 0;
-  let maxY = 1;
+    const nonNullValues = data.map((d) => d.value).filter((v): v is number => v !== null);
+    const hasData = nonNullValues.length > 0;
 
-  if (hasData) {
-    minY = Math.min(...nonNullValues);
-    maxY = Math.max(...nonNullValues);
-    // If minY and maxY are the same, give some padding to prevent division by zero
-    if (minY === maxY) {
-      minY -= Math.abs(minY) * 0.1 || 1;
-      maxY += Math.abs(maxY) * 0.1 || 1;
+    let minY = 0;
+    let maxY = 1;
+    if (hasData) {
+      minY = Math.min(...nonNullValues);
+      maxY = Math.max(...nonNullValues);
+      if (minY === maxY) {
+        minY -= Math.abs(minY) * 0.1 || 1;
+        maxY += Math.abs(maxY) * 0.1 || 1;
+      }
     }
-  }
+    const range = maxY - minY;
+    const paddingY = range * 0.15 || 0.1;
+    const yMinBound = minY - paddingY;
+    const yMaxBound = maxY + paddingY;
 
-  // Add 15% padding on Y boundaries for visual breathing room
-  const range = maxY - minY;
-  const paddingY = range * 0.15 || 0.1;
-  const yMinBound = minY - paddingY;
-  const yMaxBound = maxY + paddingY;
+    const years = data.map((d) => d.year);
+    const minX = years.length ? Math.min(...years) : 0;
+    const maxX = years.length ? Math.max(...years) : 0;
 
-  // ViewBox layout dimensions
-  const viewWidth = 400;
-  const viewHeight = 160;
+    const scaleX = (year: number) =>
+      minX === maxX
+        ? padLeft + chartWidth / 2
+        : padLeft + ((year - minX) / (maxX - minX)) * chartWidth;
 
-  const padLeft = 55;
-  const padRight = 15;
-  const padTop = 15;
-  const padBottom = 25;
+    const scaleY = (val: number) =>
+      padTop + chartHeight - ((val - yMinBound) / (yMaxBound - yMinBound)) * chartHeight;
 
-  const chartWidth = viewWidth - padLeft - padRight;
-  const chartHeight = viewHeight - padTop - padBottom;
+    // Pre-build SVG path string
+    let pathD = "";
+    let drawing = false;
+    for (const p of data) {
+      if (p.value !== null) {
+        const x = scaleX(p.year);
+        const y = scaleY(p.value);
+        pathD += drawing ? ` L ${x} ${y}` : `M ${x} ${y}`;
+        drawing = true;
+      } else {
+        drawing = false;
+      }
+    }
 
-  const years = data.map((d) => d.year);
-  const minX = Math.min(...years);
-  const maxX = Math.max(...years);
+    const gridValues = [
+      yMinBound + paddingY,
+      (yMinBound + yMaxBound) / 2,
+      yMaxBound - paddingY,
+    ];
 
-  const scaleX = (year: number) => {
-    if (minX === maxX) return padLeft + chartWidth / 2;
-    return padLeft + ((year - minX) / (maxX - minX)) * chartWidth;
-  };
+    const gridLines = gridValues.map((gVal) => ({ gVal, yPos: scaleY(gVal) }));
+    const xLabels = years.map((year) => ({ year, xPos: scaleX(year) }));
+    const dataDots = data
+      .filter((p): p is DataPoint & { value: number } => p.value !== null)
+      .map((p) => ({ x: scaleX(p.year), y: scaleY(p.value), year: p.year, value: p.value }));
 
-  const scaleY = (val: number) => {
-    return padTop + chartHeight - ((val - yMinBound) / (yMaxBound - yMinBound)) * chartHeight;
-  };
+    return { hasData, pathD, gridLines, xLabels, dataDots, viewWidth, viewHeight, padLeft, padRight };
+  }, [data]);
 
-  // Format labels helper
   const formatVal = (val: number): string => {
-    if (formatType === "pct") {
-      return `${(val * 100).toFixed(1)}%`;
-    }
-    if (formatType === "ratio") {
-      return `${val.toFixed(1)}x`;
-    }
+    if (formatType === "pct") return `${(val * 100).toFixed(1)}%`;
+    if (formatType === "ratio") return `${val.toFixed(1)}x`;
     return val.toLocaleString("pt-BR", { maximumFractionDigits: 1 });
   };
 
-  // Generate SVG path string with gap-handling logic
-  let pathD = "";
-  let drawing = false;
-  data.forEach((p) => {
-    if (p.value !== null) {
-      const x = scaleX(p.year);
-      const y = scaleY(p.value);
-      if (!drawing) {
-        pathD += `M ${x} ${y}`;
-        drawing = true;
-      } else {
-        pathD += ` L ${x} ${y}`;
-      }
-    } else {
-      drawing = false;
-    }
-  });
-
-  // Calculate 3 grid lines (bottom, middle, top)
-  const gridValues = [yMinBound + paddingY, (yMinBound + yMaxBound) / 2, yMaxBound - paddingY];
+  const { hasData, pathD, gridLines, xLabels, dataDots, viewWidth, viewHeight, padLeft, padRight } =
+    chart;
 
   return (
     <Panel dense headingLevel={4} title={title}>
@@ -168,50 +185,43 @@ function TrendChartCard({ title, data, formatType, colorVar }: TrendChartProps) 
             className="w-full h-auto overflow-visible select-none"
             aria-label={`Trend chart for ${title}`}
           >
-            {/* Grid Lines & Y labels */}
-            {gridValues.map((gVal, idx) => {
-              const yPos = scaleY(gVal);
-              return (
-                <g key={idx} className="opacity-40">
-                  <line
-                    x1={padLeft}
-                    y1={yPos}
-                    x2={viewWidth - padRight}
-                    y2={yPos}
-                    stroke="var(--color-border-subtle)"
-                    strokeWidth={1}
-                    strokeDasharray="4 4"
-                  />
-                  <text
-                    x={padLeft - 8}
-                    y={yPos + 3}
-                    textAnchor="end"
-                    fill="var(--color-text-tertiary)"
-                    className="font-mono text-[9px]"
-                  >
-                    {formatVal(gVal)}
-                  </text>
-                </g>
-              );
-            })}
+            {/* Grid lines & Y labels */}
+            {gridLines.map(({ gVal, yPos }, idx) => (
+              <g key={idx} className="opacity-40">
+                <line
+                  x1={padLeft}
+                  y1={yPos}
+                  x2={viewWidth - padRight}
+                  y2={yPos}
+                  stroke="var(--color-border-subtle)"
+                  strokeWidth={1}
+                  strokeDasharray="4 4"
+                />
+                <text
+                  x={padLeft - 8}
+                  y={yPos + 3}
+                  textAnchor="end"
+                  fill="var(--color-text-tertiary)"
+                  className="font-mono text-[9px]"
+                >
+                  {formatVal(gVal)}
+                </text>
+              </g>
+            ))}
 
             {/* X labels */}
-            {years.map((year, idx) => {
-              const xPos = scaleX(year);
-              const yPos = viewHeight - 8;
-              return (
-                <text
-                  key={idx}
-                  x={xPos}
-                  y={yPos}
-                  textAnchor="middle"
-                  fill="var(--color-text-tertiary)"
-                  className="font-mono text-[9px] opacity-75"
-                >
-                  {year}
-                </text>
-              );
-            })}
+            {xLabels.map(({ year, xPos }, idx) => (
+              <text
+                key={idx}
+                x={xPos}
+                y={viewHeight - 8}
+                textAnchor="middle"
+                fill="var(--color-text-tertiary)"
+                className="font-mono text-[9px] opacity-75"
+              >
+                {year}
+              </text>
+            ))}
 
             {/* Trend line */}
             <path
@@ -224,26 +234,20 @@ function TrendChartCard({ title, data, formatType, colorVar }: TrendChartProps) 
             />
 
             {/* Data points */}
-            {data.map((p, idx) => {
-              if (p.value === null) return null;
-              const x = scaleX(p.year);
-              const y = scaleY(p.value);
-              return (
-                <g key={idx} className="group/dot">
-                  <circle
-                    cx={x}
-                    cy={y}
-                    r={3}
-                    fill="var(--color-surface-1)"
-                    stroke={`var(${colorVar})`}
-                    strokeWidth={1.5}
-                    className="transition-all duration-150 group-hover/dot:r-4"
-                  />
-                  {/* Tooltip on hover */}
-                  <title>{`${p.year}: ${formatVal(p.value)}`}</title>
-                </g>
-              );
-            })}
+            {dataDots.map(({ x, y, year, value }, idx) => (
+              <g key={idx} className="group/dot">
+                <circle
+                  cx={x}
+                  cy={y}
+                  r={3}
+                  fill="var(--color-surface-1)"
+                  stroke={`var(${colorVar})`}
+                  strokeWidth={1.5}
+                  className="transition-all duration-150 group-hover/dot:r-4"
+                />
+                <title>{`${year}: ${formatVal(value)}`}</title>
+              </g>
+            ))}
           </svg>
         </div>
       )}
