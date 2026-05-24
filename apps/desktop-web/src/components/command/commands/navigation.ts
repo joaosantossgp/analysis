@@ -38,6 +38,15 @@ export function buildNavigationCommands(navigate: NavigateFunction): Command[] {
       run: goto("/atualizar-base"),
     },
     {
+      id: "nav:company-universe",
+      group: "navigation",
+      glyph: "route",
+      label: "Company universe",
+      secondary: "/company-universe",
+      keywords: ["database", "download", "ranking", "setup", "universe", "b3"],
+      run: goto("/company-universe"),
+    },
+    {
       id: "nav:status",
       group: "navigation",
       glyph: "route",

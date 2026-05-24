@@ -19,6 +19,9 @@ const CompaniesPage = lazy(() =>
 const CompanyDetailPage = lazy(() =>
   import("./routes/CompanyDetailPage").then((m) => ({ default: m.CompanyDetailPage })),
 );
+const CompanyUniversePage = lazy(() =>
+  import("./routes/CompanyUniversePage").then((m) => ({ default: m.CompanyUniversePage })),
+);
 const CompanyKpisPage = lazy(() =>
   import("./routes/CompanyKpisPage").then((m) => ({ default: m.CompanyKpisPage })),
 );
@@ -130,6 +133,7 @@ function AppShellWithPalette() {
             <Route path="/status" element={<StatusPage />} />
             <Route path="/health" element={<HealthPage />} />
             <Route path="/atualizar-base" element={<UpdateBasePage />} />
+            <Route path="/company-universe" element={<CompanyUniversePage />} />
             <Route path="/setores" element={<SectorsPage />} />
             <Route path="/setores/:slug" element={<SectorDetailPage />} />
             <Route

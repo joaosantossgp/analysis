@@ -32,6 +32,14 @@ function subNavFor(pathname: string, params: Record<string, string | undefined>)
     ];
   }
 
+  // Database module subtabs.
+  if (pathname.startsWith("/atualizar-base") || pathname.startsWith("/company-universe")) {
+    return [
+      { to: "/atualizar-base", label: "Atualizar base", end: true },
+      { to: "/company-universe", label: "Company universe" },
+    ];
+  }
+
   // Setores hub keeps breadcrumb-based navigation inside the page itself;
   // no top-level sub-nav for now.
   return [];

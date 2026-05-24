@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 
 import {
   cancelRefresh,
@@ -212,6 +213,8 @@ export function UpdateBasePage() {
 
       <UpdateScopeNotice />
 
+      <CompanyUniverseEntryPanel />
+
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <RefreshControlPanel
           mode={mode}
@@ -284,6 +287,28 @@ function UpdateScopeNotice() {
         (5–20) makes the first job finish quickly and proves the pipeline end-to-end. Increase
         it once the row counts below confirm data is landing.
       </p>
+    </article>
+  );
+}
+
+function CompanyUniverseEntryPanel() {
+  return (
+    <article className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 p-4 text-sm text-cyan-50">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="text-base font-semibold text-cyan-50">Company universe downloader</h3>
+          <p className="mt-1 max-w-3xl text-xs leading-5 text-cyan-50/80">
+            Choose Top 100, Top 200, Top 500, or all B3 companies and start the
+            matching CVM download flow. This is available even after first launch.
+          </p>
+        </div>
+        <Link
+          to="/company-universe"
+          className="rounded-md border border-cyan-400/50 bg-cyan-400/15 px-4 py-2 text-xs font-medium text-cyan-50 hover:bg-cyan-400/20"
+        >
+          Open company universe
+        </Link>
+      </div>
     </article>
   );
 }

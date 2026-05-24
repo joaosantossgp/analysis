@@ -23,9 +23,18 @@ import { StateBanner } from "@/components/feedback/StateBanner";
 type Props = {
   initialState: OnboardingState;
   onDone: () => void;
+  onCancel?: () => void;
+  cancelLabel?: string;
+  surface?: "first-run" | "page";
 };
 
-export function FirstRunOnboarding({ initialState, onDone }: Props) {
+export function FirstRunOnboarding({
+  initialState,
+  onDone,
+  onCancel,
+  cancelLabel = "Configure later",
+  surface = "first-run",
+}: Props) {
   const queryClient = useQueryClient();
   const [selectedPreset, setSelectedPreset] =
     useState<CompanyUniversePreset>("top_200");
@@ -120,19 +129,27 @@ export function FirstRunOnboarding({ initialState, onDone }: Props) {
     onDone();
   }
 
+  function handleSecondary() {
+    if (onCancel) {
+      onCancel();
+      return;
+    }
+    skipMutation.mutate();
+  }
+
   return (
     <main
-      className="min-h-full"
+      className={surface === "first-run" ? "min-h-full" : "min-h-full rounded-lg border border-border-subtle"}
       style={{
         background: "var(--color-surface-1)",
         color: "var(--color-text-primary)",
-        padding: "48px 20px",
+        padding: surface === "first-run" ? "48px 20px" : "24px",
       }}
     >
       <section className="mx-auto flex w-full max-w-5xl flex-col gap-5">
         <header className="border-b border-border-subtle pb-5">
           <p className="font-mono text-xs uppercase tracking-wider text-action-primary">
-            Initial setup
+            {surface === "first-run" ? "Initial setup" : "Data setup"}
           </p>
           <h1 className="mt-2 text-2xl font-semibold text-text-primary">
             Set up your company universe
@@ -179,7 +196,7 @@ export function FirstRunOnboarding({ initialState, onDone }: Props) {
             </div>
 
             <p className="text-xs text-text-tertiary">
-              You can change or expand this later in Settings &gt; Data.
+              You can change or expand this later in Database &gt; Company universe.
             </p>
 
             {startedSelection.warning ? (
@@ -226,11 +243,11 @@ export function FirstRunOnboarding({ initialState, onDone }: Props) {
               <Button
                 type="button"
                 variant="ghost"
-                disabled={cardsDisabled || skipMutation.isPending}
-                loading={skipMutation.isPending}
-                onClick={() => skipMutation.mutate()}
+                disabled={cardsDisabled || (!onCancel && skipMutation.isPending)}
+                loading={!onCancel && skipMutation.isPending}
+                onClick={handleSecondary}
               >
-                Configure later
+                {cancelLabel}
               </Button>
               <Button
                 type="button"
