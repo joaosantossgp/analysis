@@ -1,8 +1,167 @@
 @import "tailwindcss";
 
-@theme {
-  --color-bg: #0a0a0a;
+/* ────────────────────────────────────────────────────────────────────────
+   Fonts — bundled locally, no online dependency. License: see
+   public/fonts/LICENSES.md (SIL OFL 1.1).
+   ──────────────────────────────────────────────────────────────────────── */
+
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/Inter-Variable.woff2") format("woff2");
+  /* Metric-override for "Segoe UI" / system-ui fallback to minimize CLS
+     during font swap. Values tuned to Inter's average advance widths. */
+  size-adjust: 107%;
+  ascent-override: 90%;
+  descent-override: 22%;
+  line-gap-override: 0%;
 }
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/JetBrainsMono-Regular.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/JetBrainsMono-Medium.woff2") format("woff2");
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   CVMAnalytics Terminal — design tokens.
+   See docs at plan §5 (Audit-Desk Terminal). All app components consume
+   these via Tailwind v4 utility classes (bg-surface-2, text-num-pos, etc.).
+   ──────────────────────────────────────────────────────────────────────── */
+
+@theme {
+  /* Fonts */
+  --font-sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Mono", "Consolas", ui-monospace, monospace;
+
+  /* Surfaces (structural neutral) */
+  --color-surface-0: #000000;
+  --color-surface-1: #0a0a0a;
+  --color-surface-2: #141414;
+  --color-surface-3: #1c1c1c;
+  --color-surface-4: #242424;
+
+  /* Borders */
+  --color-border-subtle: #1f1f1f;
+  --color-border-default: #2a2a2a;
+  --color-border-strong: #3a3a3a;
+  --color-border-focus: #ff7a1a;
+
+  /* Text */
+  --color-text-primary: #e6e6e6;
+  --color-text-secondary: #b3b3b3;
+  --color-text-tertiary: #707070;
+  --color-text-disabled: #4a4a4a;
+  --color-text-inverse: #0a0a0a;
+
+  /* State (status badges, banners) */
+  --color-state-ok: #4ade80;
+  --color-state-warn: #fbbf24;
+  --color-state-err: #f87171;
+  --color-state-info: #60a5fa;
+
+  /* Financial numeric (distinct from state) */
+  --color-num-pos: #22c55e;
+  --color-num-neg: #ef4444;
+  --color-num-neutral: #a3a3a3;
+  --color-num-flag-high: #fbbf24;
+  --color-num-flag-low: #fb923c;
+
+  /* Identifier (cyan — tickers, CVM codes, links) */
+  --color-id-ticker: #22d3ee;
+  --color-id-link: #67e8f9;
+
+  /* Action (orange — primary action, focus, active nav) */
+  --color-action-primary: #ff7a1a;
+  --color-action-primary-hover: #ff9040;
+  --color-action-primary-active: #e0660a;
+  --color-action-muted: #b54a08;
+
+  /* Chart palette (discrete categorical) */
+  --color-chart-1: #22d3ee;
+  --color-chart-2: #fbbf24;
+  --color-chart-3: #4ade80;
+  --color-chart-4: #f472b6;
+  --color-chart-5: #a78bfa;
+  --color-chart-6: #fb923c;
+
+  /* Spacing (4px base) */
+  --spacing-0: 0;
+  --spacing-px: 1px;
+  --spacing-1: 4px;
+  --spacing-2: 8px;
+  --spacing-3: 12px;
+  --spacing-4: 16px;
+  --spacing-5: 20px;
+  --spacing-6: 24px;
+  --spacing-8: 32px;
+  --spacing-10: 40px;
+  --spacing-12: 48px;
+  --spacing-16: 64px;
+
+  /* Row heights (data grids) */
+  --row-h-compact: 24px;
+  --row-h-default: 28px;
+  --row-h-comfortable: 36px;
+
+  /* Type scale — body default 13px for density */
+  --text-2xs: 10px;
+  --text-2xs--line-height: 14px;
+  --text-xs: 11px;
+  --text-xs--line-height: 16px;
+  --text-sm: 12px;
+  --text-sm--line-height: 18px;
+  --text-base: 13px;
+  --text-base--line-height: 20px;
+  --text-md: 14px;
+  --text-md--line-height: 20px;
+  --text-lg: 16px;
+  --text-lg--line-height: 22px;
+  --text-xl: 18px;
+  --text-xl--line-height: 24px;
+  --text-2xl: 22px;
+  --text-2xl--line-height: 28px;
+  --text-3xl: 28px;
+  --text-3xl--line-height: 32px;
+
+  /* Radii — capped at 6px, no pill, no fully rounded */
+  --radius-none: 0;
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+
+  /* Elevation — reserved for drawer/overlay only */
+  --shadow-drawer:
+    0 0 0 1px var(--color-border-strong),
+    -8px 0 24px -8px rgba(0, 0, 0, 0.6);
+  --shadow-overlay:
+    0 0 0 1px var(--color-border-strong),
+    0 12px 32px -8px rgba(0, 0, 0, 0.8);
+
+  /* Z-index scale */
+  --z-base: 0;
+  --z-sticky: 10;
+  --z-drawer: 40;
+  --z-overlay: 50;
+  --z-palette: 60;
+  --z-toast: 70;
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   App base
+   ──────────────────────────────────────────────────────────────────────── */
 
 html,
 body,
@@ -10,6 +169,25 @@ body,
   height: 100%;
 }
 
+html {
+  font-family: var(--font-sans);
+  background-color: var(--color-surface-1);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-surface-1);
+  color: var(--color-text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Mono numeric utility — tabular figures on every monospace usage. */
 .font-mono {
   font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
 }

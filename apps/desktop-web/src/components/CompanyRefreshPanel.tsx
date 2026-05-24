@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
 import {
   useMutation,
   useQuery,
@@ -6,6 +6,7 @@ import {
   type QueryClient,
 } from "@tanstack/react-query";
 
+import { Button } from "@/components/ui/Button";
 import {
   companyRefreshProgress,
   fetchCompanyRefreshStatus,
@@ -15,15 +16,17 @@ import {
   type CompanyRefreshStatusResult,
 } from "@/lib/api/companyRefresh";
 import type { CompanyRefreshStatus, RefreshDispatchResponse } from "@/lib/bridge/types";
+import { Panel } from "@/components/surface/Panel";
 
 const ACTIVE_POLL_MS = 2_000;
 
 type Props = {
   cdCvm: number;
   bridgeReady: boolean;
+  className?: string;
 };
 
-export function CompanyRefreshPanel({ cdCvm, bridgeReady }: Props) {
+export function CompanyRefreshPanel({ cdCvm, bridgeReady, className }: Props) {
   const queryClient = useQueryClient();
   const wasActiveRef = useRef(false);
 
@@ -68,32 +71,32 @@ export function CompanyRefreshPanel({ cdCvm, bridgeReady }: Props) {
     !bridgeReady || Boolean(browserReason) || isActive || refreshMutation.isPending;
 
   return (
-    <article className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-6 shadow-lg">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h3 className="text-lg font-semibold text-zinc-100">Company refresh</h3>
-          <p className="mt-1 text-xs text-zinc-500">
-            On-demand CVM ingest for this company only.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
+    <Panel
+      className={className}
+      dense
+      headingLevel={3}
+      title="Company refresh"
+      subtitle="On-demand CVM ingest for this company only."
+      actions={
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <StatusPill status={status} loading={!bridgeReady || statusQuery.isLoading} />
-          <button
-            type="button"
+          <Button
+            variant="primary"
+            size="xs"
             disabled={disabled}
+            loading={refreshMutation.isPending}
             onClick={() => refreshMutation.mutate()}
-            className="rounded-md border border-cyan-800 bg-cyan-950/40 px-3 py-1.5 text-xs font-medium text-cyan-100 hover:border-cyan-600 focus:outline-none focus:ring-1 focus:ring-cyan-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {buttonLabel({
               active: isActive,
               pending: refreshMutation.isPending,
               ready: bridgeReady,
             })}
-          </button>
+          </Button>
         </div>
-      </header>
-
-      <div className="mt-4 space-y-3">
+      }
+    >
+      <div className="space-y-3">
         {browserReason ? <BrowserNotice reason={browserReason} /> : null}
         {statusQuery.isError ? <ErrorNotice error={statusQuery.error} /> : null}
         {refreshMutation.isError ? <ErrorNotice error={refreshMutation.error} /> : null}
@@ -106,7 +109,7 @@ export function CompanyRefreshPanel({ cdCvm, bridgeReady }: Props) {
           isFetching={statusQuery.isFetching}
         />
       </div>
-    </article>
+    </Panel>
   );
 }
 
@@ -127,16 +130,25 @@ function StatusPill({
 }) {
   const state = loading ? "loading" : normalizedTrackingState(status);
   const label = formatStateLabel(state);
-  const className =
+  const color =
     state === "success" || state === "already_current"
-      ? "border-emerald-500/30 text-emerald-200"
+      ? "var(--color-state-ok)"
       : state === "error" || state === "stalled"
-        ? "border-rose-500/30 text-rose-200"
+        ? "var(--color-state-err)"
         : state === "queued" || state === "running" || state === "loading"
-          ? "border-amber-500/30 text-amber-200"
-          : "border-zinc-700 text-zinc-400";
+          ? "var(--color-state-warn)"
+          : "var(--color-text-tertiary)";
   return (
-    <span className={`rounded-full border px-2 py-0.5 text-xs capitalize ${className}`}>
+    <span
+      className="font-mono capitalize"
+      style={{
+        border: `1px solid ${color}`,
+        borderRadius: "var(--radius-sm)",
+        color,
+        fontSize: "var(--text-xs)",
+        padding: "2px 7px",
+      }}
+    >
       {label}
     </span>
   );
@@ -152,11 +164,25 @@ function StatusBody({
   isFetching: boolean;
 }) {
   if (loading) {
-    return <p className="text-sm text-zinc-400">Loading refresh status...</p>;
+    return (
+      <p style={{ color: "var(--color-text-secondary)", fontSize: "var(--text-sm)", margin: 0 }}>
+        Loading refresh status...
+      </p>
+    );
   }
   if (!status) {
     return (
-      <p className="rounded border border-zinc-800 bg-zinc-950/50 p-3 text-sm text-zinc-400">
+      <p
+        style={{
+          background: "var(--color-surface-1)",
+          border: "1px solid var(--color-border-subtle)",
+          borderRadius: "var(--radius-sm)",
+          color: "var(--color-text-secondary)",
+          fontSize: "var(--text-sm)",
+          margin: 0,
+          padding: 10,
+        }}
+      >
         No refresh status recorded yet. Starting a refresh will enqueue the
         standard 2010-current company ingest.
       </p>
@@ -173,23 +199,38 @@ function StatusBody({
 
   return (
     <div className="space-y-4">
-      <p className={summaryClass(status.freshness_summary_severity)}>
+      <p style={summaryStyle(status.freshness_summary_severity)}>
         {summary}
         {isFetching && isActiveCompanyRefresh(status) ? (
-          <span className="ml-2 text-amber-300">Polling...</span>
+          <span className="ml-2" style={{ color: "var(--color-state-warn)" }}>
+            Polling...
+          </span>
         ) : null}
       </p>
 
       {progress != null ? (
         <div>
-          <div className="mb-2 flex justify-between text-xs text-zinc-500">
+          <div
+            className="mb-2 flex justify-between"
+            style={{ color: "var(--color-text-tertiary)", fontSize: "var(--text-xs)" }}
+          >
             <span>{status.progress_message || formatStage(status.stage)}</span>
             <span>{progress}%</span>
           </div>
-          <div className="h-2 overflow-hidden rounded-full bg-zinc-800">
+          <div
+            className="h-2 overflow-hidden"
+            style={{
+              background: "var(--color-surface-3)",
+              borderRadius: "var(--radius-sm)",
+            }}
+          >
             <div
-              className="h-full rounded-full bg-cyan-400 transition-all"
-              style={{ width: `${progress}%` }}
+              className="h-full transition-all"
+              style={{
+                background: "var(--color-id-ticker)",
+                borderRadius: "var(--radius-sm)",
+                width: `${progress}%`,
+              }}
             />
           </div>
         </div>
@@ -207,16 +248,14 @@ function StatusBody({
       </dl>
 
       {status.estimated_eta_seconds != null && isActiveCompanyRefresh(status) ? (
-        <p className="text-xs text-zinc-500">
+        <p style={{ color: "var(--color-text-tertiary)", fontSize: "var(--text-xs)" }}>
           ETA: {formatDuration(status.estimated_eta_seconds)}
           {status.estimate_confidence ? ` (${status.estimate_confidence})` : ""}
         </p>
       ) : null}
 
       {status.last_error ? (
-        <p className="rounded border border-rose-900/60 bg-rose-950/40 p-3 text-sm text-rose-300">
-          {status.last_error}
-        </p>
+        <Notice tone="error">{status.last_error}</Notice>
       ) : null}
     </div>
   );
@@ -233,8 +272,23 @@ function Field({
 }) {
   return (
     <div>
-      <dt className="text-xs uppercase tracking-wider text-zinc-500">{label}</dt>
-      <dd className={mono ? "mt-1 font-mono text-sm text-zinc-100" : "mt-1 text-sm text-zinc-100"}>
+      <dt
+        style={{
+          color: "var(--color-text-tertiary)",
+          fontSize: "var(--text-xs)",
+          letterSpacing: "0.04em",
+          textTransform: "uppercase",
+        }}
+      >
+        {label}
+      </dt>
+      <dd
+        className={mono ? "mt-1 font-mono" : "mt-1"}
+        style={{
+          color: "var(--color-text-primary)",
+          fontSize: "var(--text-sm)",
+        }}
+      >
         {value}
       </dd>
     </div>
@@ -242,38 +296,66 @@ function Field({
 }
 
 function BrowserNotice({ reason }: { reason: string }) {
-  return (
-    <p className="rounded border border-amber-900/60 bg-amber-950/30 p-3 text-sm text-amber-200">
-      {reason}
-    </p>
-  );
+  return <Notice tone="warning">{reason}</Notice>;
 }
 
 function ErrorNotice({ error }: { error: unknown }) {
   return (
-    <p role="alert" className="rounded border border-rose-900/60 bg-rose-950/40 p-3 text-sm text-rose-300">
+    <Notice tone="error" role="alert">
       {error instanceof Error ? error.message : String(error)}
+    </Notice>
+  );
+}
+
+type NoticeTone = "neutral" | "success" | "warning" | "error";
+
+function Notice({
+  tone,
+  role,
+  children,
+}: {
+  tone: NoticeTone;
+  role?: "alert" | "status";
+  children: ReactNode;
+}) {
+  return (
+    <p role={role} style={noticeStyle(tone)}>
+      {children}
     </p>
   );
+}
+
+function noticeStyle(tone: NoticeTone): CSSProperties {
+  const color =
+    tone === "success"
+      ? "var(--color-state-ok)"
+      : tone === "warning"
+        ? "var(--color-state-warn)"
+        : tone === "error"
+          ? "var(--color-state-err)"
+          : "var(--color-text-secondary)";
+  return {
+    background: "var(--color-surface-1)",
+    border: `1px solid ${tone === "neutral" ? "var(--color-border-subtle)" : color}`,
+    borderRadius: "var(--radius-sm)",
+    color,
+    fontSize: "var(--text-sm)",
+    margin: 0,
+    padding: 10,
+  };
 }
 
 function DispatchNotice({ result }: { result: RefreshDispatchResponse }) {
   const ok = result.status !== "error";
   return (
-    <p
-      className={
-        ok
-          ? "rounded border border-emerald-900/60 bg-emerald-950/30 p-3 text-sm text-emerald-200"
-          : "rounded border border-rose-900/60 bg-rose-950/40 p-3 text-sm text-rose-300"
-      }
-    >
+    <Notice tone={ok ? "success" : "error"}>
       {result.message || formatStateLabel(result.status)}
       {result.job_id ? (
         <span className="ml-2 font-mono text-xs opacity-80">
           {shortJobId(result.job_id)}
         </span>
       ) : null}
-    </p>
+    </Notice>
   );
 }
 
@@ -292,18 +374,11 @@ function buttonLabel({
   return "Refresh company";
 }
 
-function summaryClass(severity: string | null | undefined): string {
-  const base = "rounded border p-3 text-sm";
-  if (severity === "success") {
-    return `${base} border-emerald-900/60 bg-emerald-950/30 text-emerald-200`;
-  }
-  if (severity === "warning") {
-    return `${base} border-amber-900/60 bg-amber-950/30 text-amber-200`;
-  }
-  if (severity === "error") {
-    return `${base} border-rose-900/60 bg-rose-950/40 text-rose-300`;
-  }
-  return `${base} border-zinc-800 bg-zinc-950/50 text-zinc-300`;
+function summaryStyle(severity: string | null | undefined): CSSProperties {
+  if (severity === "success") return noticeStyle("success");
+  if (severity === "warning") return noticeStyle("warning");
+  if (severity === "error") return noticeStyle("error");
+  return noticeStyle("neutral");
 }
 
 function formatStateLabel(value: string | null | undefined): string {

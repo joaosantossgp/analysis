@@ -1,74 +1,19 @@
-import { useEffect, useState } from "react";
-
-import {
-  callBridge,
-  getBridgeMode,
-  whenBridgeReady,
-  type BridgeMode,
-} from "@/lib/bridge/adapter";
-
-type Probe =
-  | { kind: "init" }
-  | { kind: "checking"; mode: BridgeMode }
-  | { kind: "ready"; mode: BridgeMode; pingTs: number | null; lastCheckedAt: number }
-  | { kind: "browser"; lastCheckedAt: number }
-  | { kind: "error"; message: string };
+import { useBridgeStatus, type BridgeProbe } from "@/hooks/useBridgeStatus";
 
 /**
- * Footer indicator that surfaces the live bridge state. Calls `ping` once
- * on mount (and again every 30 s) so the user can see whether the
- * pywebview <-> Python connection is alive without opening DevTools.
+ * Inline bridge indicator. Kept as a thin presentational wrapper around the
+ * shared `useBridgeStatus` hook so pages that still import this component
+ * (e.g. inline diagnostics) keep working without forcing a second polling
+ * cadence. The TerminalShell uses `StatusStrip` instead.
  */
 export function BridgeStatus() {
-  const [probe, setProbe] = useState<Probe>({ kind: "init" });
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function check() {
-      const mode = await whenBridgeReady();
-      if (cancelled) return;
-      if (mode === "browser") {
-        setProbe({ kind: "browser", lastCheckedAt: Date.now() });
-        return;
-      }
-      setProbe({ kind: "checking", mode });
-      try {
-        const { ts } = await callBridge("ping", {});
-        if (cancelled) return;
-        setProbe({
-          kind: "ready",
-          mode,
-          pingTs: typeof ts === "number" ? ts : null,
-          lastCheckedAt: Date.now(),
-        });
-      } catch (err) {
-        if (cancelled) return;
-        setProbe({
-          kind: "error",
-          message: err instanceof Error ? err.message : String(err),
-        });
-      }
-    }
-
-    check();
-    const interval = window.setInterval(() => {
-      if (getBridgeMode() === "desktop") {
-        void check();
-      }
-    }, 30_000);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-    };
-  }, []);
-
+  const probe = useBridgeStatus();
   return (
     <div
       role="status"
       aria-live="polite"
-      className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-500"
+      className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs"
+      style={{ color: "var(--color-text-tertiary)" }}
     >
       <ModeBadge probe={probe} />
       <Detail probe={probe} />
@@ -76,11 +21,11 @@ export function BridgeStatus() {
   );
 }
 
-function ModeBadge({ probe }: { probe: Probe }) {
+function ModeBadge({ probe }: { probe: BridgeProbe }) {
   const { label, classes } = badgeFor(probe);
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 font-mono ${classes}`}
+      className={`inline-flex items-center gap-1 rounded-sm border px-2 py-0.5 font-mono ${classes}`}
     >
       <span aria-hidden="true">●</span>
       {label}
@@ -88,7 +33,7 @@ function ModeBadge({ probe }: { probe: Probe }) {
   );
 }
 
-function Detail({ probe }: { probe: Probe }) {
+function Detail({ probe }: { probe: BridgeProbe }) {
   switch (probe.kind) {
     case "init":
       return <span>Detecting bridge…</span>;
@@ -98,21 +43,31 @@ function Detail({ probe }: { probe: Probe }) {
       return (
         <span>
           last ping ok
-          {probe.pingTs ? ` at ${new Date(probe.pingTs * 1000).toLocaleTimeString("pt-BR")}` : null}
+          {probe.pingTs
+            ? ` at ${new Date(probe.pingTs * 1000).toLocaleTimeString("pt-BR")}`
+            : null}
         </span>
       );
     case "browser":
       return (
         <span>
-          Open via <code className="font-mono">python scripts/phase1_pywebview_smoke.py --manual</code> for real data.
+          Open via{" "}
+          <code className="font-mono">
+            python scripts/phase1_pywebview_smoke.py --manual
+          </code>{" "}
+          for real data.
         </span>
       );
     case "error":
-      return <span className="text-rose-400">bridge error: {probe.message}</span>;
+      return (
+        <span style={{ color: "var(--color-state-err)" }}>
+          bridge error: {probe.message}
+        </span>
+      );
   }
 }
 
-function badgeFor(probe: Probe): { label: string; classes: string } {
+function badgeFor(probe: BridgeProbe): { label: string; classes: string } {
   switch (probe.kind) {
     case "init":
       return { label: "init", classes: "border-zinc-700 bg-zinc-900 text-zinc-300" };

@@ -1,3 +1,4 @@
+import { Panel } from "@/components/surface/Panel";
 import { TabularData } from "@/lib/bridge/types";
 
 interface DataPoint {
@@ -9,7 +10,7 @@ interface TrendChartProps {
   title: string;
   data: DataPoint[];
   formatType: "pct" | "ratio" | string;
-  color: string;
+  colorVar: string;
 }
 
 export function KpiTrendCharts({ bundle }: { bundle: { annual: TabularData; years: number[] } | null }) {
@@ -41,31 +42,31 @@ export function KpiTrendCharts({ bundle }: { bundle: { annual: TabularData; year
         title="Margem EBITDA"
         data={ebitdaMarginData}
         formatType="pct"
-        color="#38bdf8" // accent-info (Teal/Sky)
+        colorVar="--color-id-ticker"
       />
       <TrendChartCard
         title="Margem Líquida"
         data={netMarginData}
         formatType="pct"
-        color="#06b6d4" // Cyan
+        colorVar="--color-chart-2"
       />
       <TrendChartCard
         title="Retorno s/ Patrimônio (ROE)"
         data={roeData}
         formatType="pct"
-        color="#22c55e" // accent-success (Green)
+        colorVar="--color-num-pos"
       />
       <TrendChartCard
         title="Alavancagem (Dívida Líq. / EBITDA)"
         data={leverageData}
         formatType="ratio"
-        color="#f5a524" // accent-primary (Amber)
+        colorVar="--color-action-primary"
       />
     </div>
   );
 }
 
-function TrendChartCard({ title, data, formatType, color }: TrendChartProps) {
+function TrendChartCard({ title, data, formatType, colorVar }: TrendChartProps) {
   const nonNullValues = data.map((d) => d.value).filter((v): v is number => v !== null);
   const hasData = nonNullValues.length > 0;
 
@@ -146,14 +147,19 @@ function TrendChartCard({ title, data, formatType, color }: TrendChartProps) {
   const gridValues = [yMinBound + paddingY, (yMinBound + yMaxBound) / 2, yMaxBound - paddingY];
 
   return (
-    <article className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-4 shadow-lg flex flex-col justify-between">
-      <header className="mb-2">
-        <h4 className="text-xs uppercase tracking-wider text-zinc-400 font-semibold">{title}</h4>
-      </header>
-
+    <Panel dense headingLevel={4} title={title}>
       {!hasData ? (
-        <div className="h-32 flex items-center justify-center border border-dashed border-zinc-800 rounded bg-zinc-950/20">
-          <span className="text-xs text-zinc-600">Nenhum dado histórico disponível</span>
+        <div
+          className="flex h-32 items-center justify-center"
+          style={{
+            background: "var(--color-surface-1)",
+            border: "1px dashed var(--color-border-subtle)",
+            borderRadius: "var(--radius-sm)",
+          }}
+        >
+          <span style={{ color: "var(--color-text-tertiary)", fontSize: "var(--text-xs)" }}>
+            Nenhum dado histórico disponível
+          </span>
         </div>
       ) : (
         <div className="relative w-full">
@@ -172,7 +178,7 @@ function TrendChartCard({ title, data, formatType, color }: TrendChartProps) {
                     y1={yPos}
                     x2={viewWidth - padRight}
                     y2={yPos}
-                    stroke="rgba(255, 255, 255, 0.08)"
+                    stroke="var(--color-border-subtle)"
                     strokeWidth={1}
                     strokeDasharray="4 4"
                   />
@@ -180,7 +186,7 @@ function TrendChartCard({ title, data, formatType, color }: TrendChartProps) {
                     x={padLeft - 8}
                     y={yPos + 3}
                     textAnchor="end"
-                    fill="#747b88"
+                    fill="var(--color-text-tertiary)"
                     className="font-mono text-[9px]"
                   >
                     {formatVal(gVal)}
@@ -199,7 +205,7 @@ function TrendChartCard({ title, data, formatType, color }: TrendChartProps) {
                   x={xPos}
                   y={yPos}
                   textAnchor="middle"
-                  fill="#747b88"
+                  fill="var(--color-text-tertiary)"
                   className="font-mono text-[9px] opacity-75"
                 >
                   {year}
@@ -211,7 +217,7 @@ function TrendChartCard({ title, data, formatType, color }: TrendChartProps) {
             <path
               d={pathD}
               fill="none"
-              stroke={color}
+              stroke={`var(${colorVar})`}
               strokeWidth={2}
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -228,10 +234,10 @@ function TrendChartCard({ title, data, formatType, color }: TrendChartProps) {
                     cx={x}
                     cy={y}
                     r={3}
-                    fill="#08090b"
-                    stroke={color}
+                    fill="var(--color-surface-1)"
+                    stroke={`var(${colorVar})`}
                     strokeWidth={1.5}
-                    className="transition-all duration-150 group-hover/dot:r-4 group-hover/dot:stroke-zinc-100"
+                    className="transition-all duration-150 group-hover/dot:r-4"
                   />
                   {/* Tooltip on hover */}
                   <title>{`${p.year}: ${formatVal(p.value)}`}</title>
@@ -241,6 +247,6 @@ function TrendChartCard({ title, data, formatType, color }: TrendChartProps) {
           </svg>
         </div>
       )}
-    </article>
+    </Panel>
   );
 }

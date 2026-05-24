@@ -26,6 +26,9 @@ export function formatKpiCell(value: unknown, formatType: unknown): string {
   if (format === "ratio") {
     return `${value.toFixed(2)}x`;
   }
+  if (format === "integer") {
+    return Math.round(value).toLocaleString("pt-BR");
+  }
   if (format === "bps") {
     return `${Math.round(value)} bps`;
   }

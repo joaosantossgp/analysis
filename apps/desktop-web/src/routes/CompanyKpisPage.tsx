@@ -2,8 +2,17 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
+import {
+  FinancialDataGrid,
+  type FinancialGridColumn,
+  type FinancialGridRow,
+} from "@/components/data/FinancialDataGrid";
+import { MetricTape, type MetricTapeItem } from "@/components/data/MetricTape";
 import { EntityHeader } from "@/components/EntityHeader";
+import { StateBanner } from "@/components/feedback/StateBanner";
 import { KpiTrendCharts } from "@/components/KpiTrendCharts";
+import { Panel } from "@/components/surface/Panel";
+import { Button } from "@/components/ui/Button";
 import {
   fetchCompanyKpis,
   fetchCompanyYears,
@@ -11,10 +20,11 @@ import {
   type CompanyYearsResultUI,
 } from "@/lib/api/companyDetail";
 import { whenBridgeReady } from "@/lib/bridge/adapter";
-import type { TabularData, TabularRow } from "@/lib/bridge/types";
-import { formatKpiCell, formatUnit } from "@/lib/formatters";
+import type { KPIBundle, TabularData, TabularRow } from "@/lib/bridge/types";
+import { formatUnit } from "@/lib/formatters";
 
 const DEFAULT_RECENT_YEARS = 5;
+const SUMMARY_KPI_IDS = ["MG_EBITDA", "MG_LIQ", "ROE", "DIV_EBITDA"] as const;
 
 export function CompanyKpisPage() {
   const params = useParams<{ cdCvm: string }>();
@@ -32,17 +42,16 @@ export function CompanyKpisPage() {
   }, []);
 
   if (!Number.isFinite(cdCvm) || cdCvm <= 0) {
-    return <ErrorState message={`Invalid CVM code: "${params.cdCvm}"`} />;
+    return <StateBanner variant="error" message={`CVM inválido: "${params.cdCvm}"`} />;
   }
 
   return (
-    <section className="space-y-6">
+    <section className="space-y-4">
       <EntityHeader cdCvm={cdCvm} activeTab="kpis" />
-      {bridgeReady && <KpiBody cdCvm={cdCvm} bridgeReady={bridgeReady} />}
+      <KpiBody cdCvm={cdCvm} bridgeReady={bridgeReady} />
     </section>
   );
 }
-
 
 function KpiBody({ cdCvm, bridgeReady }: { cdCvm: number; bridgeReady: boolean }) {
   const yearsQuery = useQuery<CompanyYearsResultUI>({
@@ -74,12 +83,21 @@ function KpiBody({ cdCvm, bridgeReady }: { cdCvm: number; bridgeReady: boolean }
     enabled: bridgeReady && selectedYears.length > 0,
   });
 
+  const bundle =
+    kpiQuery.data?.mode === "desktop" ? kpiQuery.data.bundle : null;
+  const metricItems = useMemo(
+    () => buildMetricTapeItems(bundle, selectedYears),
+    [bundle, selectedYears],
+  );
+
   if (!bridgeReady || yearsQuery.isLoading) {
-    return <CardSkeleton title="Loading available years…" />;
+    return <StateBanner variant="loading" title="Carregando anos disponíveis…" />;
   }
   if (yearsQuery.isError) {
     return (
-      <ErrorState
+      <StateBanner
+        variant="error"
+        onRetry={() => yearsQuery.refetch()}
         message={
           yearsQuery.error instanceof Error
             ? yearsQuery.error.message
@@ -89,35 +107,33 @@ function KpiBody({ cdCvm, bridgeReady }: { cdCvm: number; bridgeReady: boolean }
     );
   }
   if (yearsQuery.data?.mode === "browser") {
-    return <BrowserModeBanner reason={yearsQuery.data.reason} />;
+    return <StateBanner variant="browser-only" message={yearsQuery.data.reason} />;
   }
   if (sortedYears.length === 0) {
     return (
-      <EmptyState
-        title="No annual data"
-        body="This company has no annual rows in the local database. Run Atualizar Base to populate, then refresh."
+      <StateBanner
+        variant="empty"
+        title="Sem dados anuais"
+        message="Sem linhas anuais no banco local. Rode Atualizar Base para popular e tente de novo."
       />
     );
   }
 
-  const bundle =
-    kpiQuery.data?.mode === "desktop" ? kpiQuery.data.bundle : null;
-
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <YearSelector
         available={sortedYears}
         selected={selectedYears}
         onChange={setSelectedYears}
       />
 
-      <KpiSummaryCards bundle={bundle} selectedYears={selectedYears} />
+      <MetricTape items={metricItems} ariaLabel="Resumo de indicadores" />
 
-      {bundle && <KpiTrendCharts bundle={bundle} />}
+      {bundle ? <KpiTrendCharts bundle={bundle} /> : null}
 
-      <KpiTableCard
+      <KpiGridPanel
         title="Annual indicators"
-        subtitle={`Annual KPIs for ${selectedYears.length} year(s).`}
+        subtitle={`Annual KPI matrix · ${selectedYears.join(", ")}`}
         loading={kpiQuery.isLoading}
         fetching={kpiQuery.isFetching}
         error={kpiQuery.error}
@@ -125,9 +141,9 @@ function KpiBody({ cdCvm, bridgeReady }: { cdCvm: number; bridgeReady: boolean }
         selectedYears={selectedYears}
       />
 
-      <KpiTableCard
+      <KpiGridPanel
         title="Quarterly indicators"
-        subtitle="Quarterly cuts when the local DB has period rows for the selected years."
+        subtitle="Quarterly cuts when local period rows exist."
         loading={kpiQuery.isLoading}
         fetching={kpiQuery.isFetching}
         error={kpiQuery.error}
@@ -164,31 +180,21 @@ function YearSelector({
     onChange(desc.slice(0, DEFAULT_RECENT_YEARS).sort((a, b) => a - b));
   }
   return (
-    <article className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-4 shadow-lg">
-      <header className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-        <div>
-          <h3 className="text-sm font-semibold text-zinc-100">Years</h3>
-          <p className="text-xs text-zinc-500">
-            Pick which years to load. KPI matrix returns one column per year.
-          </p>
-        </div>
-        <div className="flex gap-2 text-xs">
-          <button
-            type="button"
-            onClick={selectRecent}
-            className="rounded-md border border-zinc-700 px-2 py-1 text-zinc-300 hover:border-cyan-600 hover:text-cyan-100"
-          >
+    <Panel
+      dense
+      title="Years"
+      subtitle="Pick which periods feed the KPI matrix."
+      actions={
+        <div className="flex gap-2">
+          <Button size="xs" onClick={selectRecent}>
             Last {DEFAULT_RECENT_YEARS}
-          </button>
-          <button
-            type="button"
-            onClick={selectAll}
-            className="rounded-md border border-zinc-700 px-2 py-1 text-zinc-300 hover:border-cyan-600 hover:text-cyan-100"
-          >
+          </Button>
+          <Button size="xs" onClick={selectAll}>
             All
-          </button>
+          </Button>
         </div>
-      </header>
+      }
+    >
       <div className="flex flex-wrap gap-2">
         {available.map((year) => {
           const active = selectedSet.has(year);
@@ -197,79 +203,30 @@ function YearSelector({
               key={year}
               type="button"
               onClick={() => toggle(year)}
-              className={
-                active
-                  ? "rounded-md border border-cyan-500/50 bg-cyan-500/10 px-3 py-1 font-mono text-xs text-cyan-100"
-                  : "rounded-md border border-zinc-700 px-3 py-1 font-mono text-xs text-zinc-300 hover:border-zinc-500"
-              }
+              className="font-mono focus-visible:outline focus-visible:outline-1"
+              style={{
+                background: active ? "var(--color-surface-3)" : "transparent",
+                border: `1px solid ${
+                  active ? "var(--color-action-primary)" : "var(--color-border-default)"
+                }`,
+                borderRadius: "var(--radius-sm)",
+                color: active ? "var(--color-action-primary)" : "var(--color-text-secondary)",
+                fontSize: "var(--text-xs)",
+                height: 24,
+                outlineColor: "var(--color-border-focus)",
+                padding: "2px 9px",
+              }}
             >
               {year}
             </button>
           );
         })}
       </div>
-    </article>
+    </Panel>
   );
 }
 
-const SUMMARY_KPI_IDS = ["MG_EBITDA", "MG_LIQ", "ROE", "DIV_EBITDA"];
-
-function KpiSummaryCards({
-  bundle,
-  selectedYears,
-}: {
-  bundle: { annual: TabularData } | null;
-  selectedYears: number[];
-}) {
-  if (!bundle) {
-    return null;
-  }
-  const latestYear = selectedYears.length ? Math.max(...selectedYears) : null;
-  if (latestYear == null) return null;
-  const yearCol = String(latestYear);
-  const rowsById = new Map<string, TabularRow>();
-  for (const row of bundle.annual.rows) {
-    const id = String(row.KPI_ID ?? "").trim();
-    if (id) rowsById.set(id, row);
-  }
-  const cards = SUMMARY_KPI_IDS.map((id) => {
-    const row = rowsById.get(id);
-    if (!row) {
-      return { id, label: humanizeKpiId(id), value: null, format: null };
-    }
-    return {
-      id,
-      label: String(row.KPI_NOME ?? humanizeKpiId(id)),
-      value: row[yearCol] ?? null,
-      format: typeof row.FORMAT_TYPE === "string" ? row.FORMAT_TYPE : null,
-    };
-  });
-  return (
-    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-      {cards.map((card) => (
-        <article
-          key={card.id}
-          className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-4 shadow-lg"
-        >
-          <p className="text-xs uppercase tracking-wider text-zinc-500">{card.label}</p>
-          <p className="mt-2 font-mono text-xl font-semibold text-zinc-100">
-            {formatKpiCell(card.value, card.format)}
-          </p>
-          <p className="mt-1 text-[11px] text-zinc-500">Latest year: {latestYear}</p>
-        </article>
-      ))}
-    </div>
-  );
-}
-
-function humanizeKpiId(id: string): string {
-  return id
-    .toLowerCase()
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function KpiTableCard({
+function KpiGridPanel({
   title,
   subtitle,
   loading,
@@ -289,28 +246,29 @@ function KpiTableCard({
   isQuarterly?: boolean;
 }) {
   return (
-    <article className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-5 shadow-lg">
-      <header className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
-        <div>
-          <h3 className="text-lg font-semibold text-zinc-100">{title}</h3>
-          <p className="text-xs text-zinc-500">{subtitle}</p>
-        </div>
-        {fetching && !loading ? (
-          <span className="text-xs text-amber-300">Refreshing…</span>
-        ) : null}
-      </header>
-      <KpiTableBody
+    <Panel
+      title={title}
+      subtitle={subtitle}
+      actions={
+        fetching && !loading ? (
+          <span className="font-mono" style={{ color: "var(--color-state-warn)", fontSize: "var(--text-xs)" }}>
+            refreshing
+          </span>
+        ) : null
+      }
+    >
+      <KpiGridBody
         loading={loading}
         error={error}
         table={table}
         selectedYears={selectedYears}
         isQuarterly={isQuarterly}
       />
-    </article>
+    </Panel>
   );
 }
 
-function KpiTableBody({
+function KpiGridBody({
   loading,
   error,
   table,
@@ -323,132 +281,121 @@ function KpiTableBody({
   selectedYears: number[];
   isQuarterly: boolean;
 }) {
-  if (loading) {
-    return <p className="text-sm text-zinc-400">Loading KPIs…</p>;
-  }
+  if (loading) return <StateBanner variant="loading" title="Carregando KPIs…" />;
   if (error) {
     return (
-      <ErrorState
+      <StateBanner
+        variant="error"
         message={error instanceof Error ? error.message : String(error)}
       />
     );
   }
   if (!table || table.rows.length === 0 || table.columns.length === 0) {
     return (
-      <EmptyState
-        title={isQuarterly ? "No quarterly KPI rows" : "No KPI rows"}
-        body={
+      <StateBanner
+        variant="empty"
+        title={isQuarterly ? "Sem KPIs trimestrais" : "Sem KPIs anuais"}
+        message={
           isQuarterly
-            ? "The local DB has no quarterly KPI rows for the selected years."
-            : "No annual KPI rows for the selected years."
+            ? "Sem linhas trimestrais para os anos selecionados."
+            : "Sem linhas anuais para os anos selecionados."
         }
       />
     );
   }
-  return <KpiTable columns={table.columns} rows={table.rows} years={selectedYears} isQuarterly={isQuarterly} />;
+
+  const { columns, rows } = buildKpiGrid(table, selectedYears, isQuarterly);
+  return (
+    <FinancialDataGrid
+      labelHeader="KPI"
+      columns={columns}
+      rows={rows}
+      emptyMessage="Sem indicadores para exibir."
+    />
+  );
 }
 
-function KpiTable({
-  columns,
-  rows,
-  years,
-  isQuarterly,
-}: {
-  columns: string[];
-  rows: TabularRow[];
-  years: number[];
-  isQuarterly: boolean;
-}) {
-  const yearColumns = years.map((y) => String(y));
+function buildKpiGrid(
+  table: TabularData,
+  selectedYears: number[],
+  isQuarterly: boolean,
+): { columns: FinancialGridColumn[]; rows: FinancialGridRow[] } {
+  const yearColumns = selectedYears.map(String);
   const quarterColumnRegex = /^(?:[1-4]Q|Q[1-4])-?\d{4}$/i;
-  const numericColumns = columns.filter((c) => {
-    if (isQuarterly) {
-      return quarterColumnRegex.test(c) || yearColumns.includes(c);
-    }
-    return yearColumns.includes(c) || c === "DELTA_YOY_PCT";
+  const valueColumns = table.columns.filter((column) => {
+    if (isQuarterly) return quarterColumnRegex.test(column) || yearColumns.includes(column);
+    return yearColumns.includes(column) || column === "DELTA_YOY_PCT";
   });
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full border-collapse text-sm">
-        <thead>
-          <tr className="text-left text-xs uppercase tracking-wider text-zinc-500">
-            <th className="px-2 py-2 font-medium">KPI</th>
-            <th className="px-2 py-2 font-medium">Categoria</th>
-            <th className="px-2 py-2 font-medium">Unidade</th>
-            {numericColumns.map((c) => (
-              <th key={c} className="px-2 py-2 text-right font-medium">
-                {c === "DELTA_YOY_PCT" ? "ΔYoY" : c}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-zinc-800/80 text-zinc-200">
-          {rows.map((row, i) => (
-            <tr key={String(row.KPI_ID ?? i)} className="hover:bg-zinc-900/50">
-              <td className="px-2 py-2 text-zinc-100">
-                {String(row.KPI_NOME ?? row.KPI_ID ?? "—")}
-              </td>
-              <td className="px-2 py-2 text-xs text-zinc-400">
-                {String(row.CATEGORIA ?? "—")}
-              </td>
-              <td className="px-2 py-2 text-xs text-zinc-400">
-                {formatUnit(row.FORMAT_TYPE)}
-              </td>
-              {numericColumns.map((c) => (
-                <td key={c} className="px-2 py-2 text-right font-mono text-xs">
-                  {formatKpiCell(row[c], row.FORMAT_TYPE)}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
+  const latestColumn = valueColumns.filter((c) => c !== "DELTA_YOY_PCT").at(-1);
+  const columns: FinancialGridColumn[] = valueColumns.map((column) => ({
+    id: column,
+    label: column === "DELTA_YOY_PCT" ? "ΔYoY" : column,
+    valueType: column === "DELTA_YOY_PCT" ? "delta" : "number",
+    latest: column === latestColumn,
+  }));
+
+  const rows: FinancialGridRow[] = table.rows.map((row, index) => {
+    const formatType = row.FORMAT_TYPE;
+    const cells: FinancialGridRow["cells"] = {};
+    for (const column of valueColumns) {
+      cells[column] = {
+        value: row[column],
+        valueType: column === "DELTA_YOY_PCT" ? "delta" : kpiValueType(formatType),
+        formatType,
+        tone: column === "DELTA_YOY_PCT" ? "auto" : "neutral",
+      };
+    }
+    return {
+      id: String(row.KPI_ID ?? index),
+      label: String(row.KPI_NOME ?? row.KPI_ID ?? "—"),
+      meta: `${String(row.CATEGORIA ?? "—")} · ${formatUnit(formatType)}`,
+      cells,
+    };
+  });
+  return { columns, rows };
 }
 
+function buildMetricTapeItems(
+  bundle: KPIBundle | null,
+  selectedYears: number[],
+): MetricTapeItem[] {
+  const latestYear = selectedYears.length ? Math.max(...selectedYears) : null;
+  const rowsById = new Map<string, TabularRow>();
+  for (const row of bundle?.annual.rows ?? []) {
+    const id = String(row.KPI_ID ?? "").trim();
+    if (id) rowsById.set(id, row);
+  }
 
-
-function CardSkeleton({ title }: { title: string }) {
-  return (
-    <article className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-6 shadow-lg">
-      <p className="text-sm text-zinc-400">{title}</p>
-    </article>
-  );
+  return SUMMARY_KPI_IDS.map((id) => {
+    const row = rowsById.get(id);
+    return {
+      id,
+      label: row ? String(row.KPI_NOME ?? humanizeKpiId(id)) : humanizeKpiId(id),
+      value: latestYear && row ? row[String(latestYear)] : null,
+      formatType: row?.FORMAT_TYPE,
+      sublabel: latestYear ? `latest ${latestYear}` : "sem ano",
+      delta: row?.DELTA_YOY_PCT ?? null,
+      sparkline: selectedYears.map((year) => numericOrNull(row?.[String(year)])),
+    };
+  });
 }
 
-function EmptyState({ title, body }: { title: string; body: string }) {
-  return (
-    <article className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-5 text-sm text-zinc-300">
-      <p className="font-medium text-zinc-100">{title}</p>
-      <p className="mt-1 text-zinc-400">{body}</p>
-    </article>
-  );
+function kpiValueType(formatType: unknown): FinancialGridColumn["valueType"] {
+  const f = typeof formatType === "string" ? formatType.toLowerCase() : "";
+  if (f === "pct") return "percentage";
+  if (f === "ratio") return "multiple";
+  if (f === "money") return "currency";
+  if (f === "bps") return "integer";
+  return "number";
 }
 
-function BrowserModeBanner({ reason }: { reason: string }) {
-  return (
-    <article className="rounded-lg border border-amber-900/60 bg-amber-950/30 p-6 text-amber-200 shadow-lg">
-      <p className="font-medium">Browser-mode preview</p>
-      <p className="mt-1 text-sm text-amber-200/80">{reason}</p>
-    </article>
-  );
+function numericOrNull(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-function ErrorState({
-  message,
-  title = "Error",
-}: {
-  message: string;
-  title?: string;
-}) {
-  return (
-    <article
-      role="alert"
-      className="rounded-lg border border-rose-900/60 bg-rose-950/40 p-6 text-rose-200 shadow-lg"
-    >
-      <p className="font-medium">{title}</p>
-      <p className="mt-1 text-sm text-rose-200/80">{message}</p>
-    </article>
-  );
+function humanizeKpiId(id: string): string {
+  return id
+    .toLowerCase()
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
 }

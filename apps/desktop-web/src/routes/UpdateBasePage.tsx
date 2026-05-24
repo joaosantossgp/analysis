@@ -16,6 +16,7 @@ import {
   type StartRefreshParams,
 } from "@/lib/api/updateBase";
 import { PageHeader as UnifiedPageHeader } from "@/components/PageHeader";
+import { StateBanner } from "@/components/feedback/StateBanner";
 import { whenBridgeReady } from "@/lib/bridge/adapter";
 import type {
   BaseHealthSnapshot,
@@ -189,7 +190,7 @@ export function UpdateBasePage() {
     <section className="space-y-6">
       <PageHeader bridgeReady={bridgeReady} />
 
-      {browserReason ? <BrowserModeBanner reason={browserReason} /> : null}
+      {browserReason ? <StateBanner variant="browser-only" message={browserReason} /> : null}
 
       <StatusGrid
         health={health}
@@ -960,14 +961,7 @@ function JobHistory({
   );
 }
 
-function BrowserModeBanner({ reason }: { reason: string }) {
-  return (
-    <article className="rounded-lg border border-amber-900/60 bg-amber-950/30 p-4 text-sm text-amber-100">
-      <p className="font-medium">Browser-mode preview</p>
-      <p className="mt-1 text-amber-100/80">{reason}</p>
-    </article>
-  );
-}
+// Inline BrowserModeBanner removed — see @/components/feedback/StateBanner.
 
 function isEmptyDatabase(
   diagnostics: DatabaseDiagnostics | null,

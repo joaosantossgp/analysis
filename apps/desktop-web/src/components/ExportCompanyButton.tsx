@@ -9,6 +9,7 @@ import {
 } from "@/lib/api/exports";
 import { getBridgeMode } from "@/lib/bridge/adapter";
 import type { ExportCompanyResult } from "@/lib/bridge/types";
+import { Button } from "@/components/ui/Button";
 
 type Props = {
   cdCvm: number;
@@ -93,14 +94,15 @@ export function ExportCompanyButton({
   return (
     <div className={className ?? "space-y-2"}>
       <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
+        <Button
+          variant="primary"
+          size="xs"
           onClick={() => mutation.mutate()}
           disabled={isRunning || isUnsupported}
-          className="rounded border border-emerald-800 bg-emerald-950/40 px-3 py-1.5 text-xs font-medium text-emerald-200 hover:border-emerald-600 hover:text-emerald-100 focus:outline-none focus:ring-1 focus:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+          loading={isRunning}
         >
           {isRunning ? "Exportando…" : "Exportar Excel"}
-        </button>
+        </Button>
         <span className="text-[10px] uppercase tracking-widest text-zinc-500">
           {finalScopeLabel}
         </span>
