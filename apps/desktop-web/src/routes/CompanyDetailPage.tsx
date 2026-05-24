@@ -8,7 +8,7 @@ import { MetricTape, type MetricTapeItem } from "@/components/data/MetricTape";
 import { NumberCell } from "@/components/data/NumberCell";
 import { Sparkline } from "@/components/data/Sparkline";
 import { EntityHeader } from "@/components/EntityHeader";
-import { ExportCompanyButton } from "@/components/ExportCompanyButton";
+import { ExportActionPanel } from "@/components/export/ExportActionPanel";
 import { CompanyRefreshPanel } from "@/components/CompanyRefreshPanel";
 import { StateBanner } from "@/components/feedback/StateBanner";
 import { Panel } from "@/components/surface/Panel";
@@ -405,12 +405,12 @@ function KpiTable({
 
 function ExportPanel({ cdCvm }: { cdCvm: number }) {
   return (
-    <Panel dense headingLevel={3} title="Export" subtitle="Excel workbook">
-      <ExportCompanyButton
-        cdCvm={cdCvm}
-        scopeNote="Full company workbook — includes DRE, BPA, BPP, DFC (plus DVA/DMPL when available) and KPIs."
-      />
-    </Panel>
+    <ExportActionPanel
+      cdCvm={cdCvm}
+      title="Report export"
+      description="Workbook local para análise externa em Excel, auditoria e relatórios."
+      scopeNote="Inclui DRE, BPA, BPP, DFC, além de DVA/DMPL quando disponíveis, KPIs e metadados."
+    />
   );
 }
 

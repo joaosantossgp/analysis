@@ -223,12 +223,18 @@ export function EntityHeader({
                 <ExportCompanyButton
                   cdCvm={info.cd_cvm}
                   statementType={activeStatement}
-                  scopeNote={`Only the cover, ${activeStatement} sheet, and metadata.`}
+                  scopeLabel={`${activeStatement} selecionado`}
+                  scopeNote={`Exporta capa, metadados e a aba ${activeStatement}.`}
                 />
               )}
               <ExportCompanyButton
                 cdCvm={info.cd_cvm}
-                scopeNote="Full company workbook — includes DRE, BPA, BPP, DFC (plus DVA/DMPL when available) and KPIs."
+                scopeLabel={activeTab === "kpis" ? "Workbook com KPIs" : "Workbook completo"}
+                scopeNote={
+                  activeTab === "kpis"
+                    ? "O bridge atual exporta o workbook completo da empresa, incluindo KPIs e demonstrativos disponíveis."
+                    : "Inclui demonstrativos disponíveis, KPIs e metadados locais."
+                }
               />
             </div>
           ) : null}
