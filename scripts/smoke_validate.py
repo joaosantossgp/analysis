@@ -64,12 +64,12 @@ def check_database(errors: List[str]) -> None:
 
 
 def run_compileall(errors: List[str]) -> None:
-    cmd = [sys.executable, "-m", "compileall", "src", "dashboard", "scripts"]
+    cmd = [sys.executable, "-m", "compileall", "src", "scripts"]
     result = subprocess.run(cmd, cwd=REPO_ROOT, capture_output=True, text=True)
     if result.returncode != 0:
-        errors.append("compileall falhou em src/dashboard/scripts.")
+        errors.append("compileall falhou em src/scripts.")
     else:
-        print("[OK] compileall em src/dashboard/scripts")
+        print("[OK] compileall em src/scripts")
 
 
 def main() -> int:

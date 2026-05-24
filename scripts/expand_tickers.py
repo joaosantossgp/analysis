@@ -8,7 +8,7 @@ Estratégia em duas etapas:
 
 Saídas:
   - data/metadata/ticker_candidates.csv   ← para revisão manual antes de adicionar
-  - Imprime snippet Python pronto para colar em dashboard/constants.py
+  - Imprime snippet Python pronto para colar em src/ticker_map.py
 
 Uso:
     python scripts/expand_tickers.py                 # busca + valida no Yahoo Finance
@@ -364,7 +364,7 @@ def save_results(settings, all_candidates: list[dict], validated: list[dict]) ->
     # Snippet Python para constants.py
     log.info("")
     log.info("=" * 70)
-    log.info("Snippet para adicionar em dashboard/constants.py → TICKER_MAP:")
+    log.info("Snippet para adicionar em src/ticker_map.py → TICKER_MAP:")
     log.info("=" * 70)
     log.info("    # ── Novos tickers descobertos por expand_tickers.py ────────────────")
     for c in validated:
