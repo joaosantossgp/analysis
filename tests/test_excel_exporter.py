@@ -8,7 +8,13 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.excel_exporter import ExcelExporter, build_excel_filename
+from src.excel_exporter import (
+    DEFAULT_PERIOD_WINDOW,
+    ExcelExporter,
+    build_excel_filename,
+    _period_end_date,
+    _pick_model_periods,
+)
 
 
 def _statement(rows: list[dict[str, object]]) -> pd.DataFrame:
@@ -44,278 +50,311 @@ def _sample_company() -> dict[str, object]:
     }
 
 
-def _sample_statements() -> dict[str, pd.DataFrame]:
+def _wide_statements() -> dict[str, pd.DataFrame]:
+    """Statements with a 5-annual + interleaved-quarter period grid."""
+    period_cols = []
+    for year in (2021, 2022, 2023, 2024, 2025):
+        for q in (1, 2, 3, 4):
+            period_cols.append(f"{q}Q{year - 2000}")
+        period_cols.append(str(year))
+
+    def make_row(cd, ds, base):
+        d = {"CD_CONTA": cd, "DS_CONTA": ds, "STANDARD_NAME": "", "LINE_ID_BASE": cd}
+        for i, p in enumerate(period_cols):
+            d[p] = float(base) * (1 + i * 0.01)
+        return d
+
     return {
         "DRE": _statement([
-            {"CD_CONTA": "3.01", "DS_CONTA": "Receita", "STANDARD_NAME": "", "LINE_ID_BASE": "3.01", "2024": 100.0, "1Q25": 30.0},
-            {"CD_CONTA": "3.03", "DS_CONTA": "Resultado Bruto", "STANDARD_NAME": "", "LINE_ID_BASE": "3.03", "2024": 50.0, "1Q25": 12.0},
-            {"CD_CONTA": "3.05", "DS_CONTA": "EBIT", "STANDARD_NAME": "", "LINE_ID_BASE": "3.05", "2024": 20.0, "1Q25": 5.0},
-            {"CD_CONTA": "3.07", "DS_CONTA": "LAIR", "STANDARD_NAME": "", "LINE_ID_BASE": "3.07", "2024": 16.0, "1Q25": 4.0},
-            {"CD_CONTA": "3.11", "DS_CONTA": "Lucro Liquido", "STANDARD_NAME": "", "LINE_ID_BASE": "3.11", "2024": 12.0, "1Q25": 3.0},
+            make_row("3.01", "Receita",                 1_000_000),
+            make_row("3.02", "Custos",                   -600_000),
+            make_row("3.03", "Resultado Bruto",          400_000),
+            make_row("3.04", "Despesas Operacionais",   -150_000),
+            make_row("3.05", "EBIT",                     250_000),
+            make_row("3.06", "Resultado Financeiro",     -30_000),
+            make_row("3.07", "LAIR",                     220_000),
+            make_row("3.08", "Impostos",                 -60_000),
+            make_row("3.11", "Lucro Liquido",            160_000),
         ]),
         "BPA": _statement([
-            {"CD_CONTA": "1", "DS_CONTA": "Ativo Total", "STANDARD_NAME": "", "LINE_ID_BASE": "1", "2024": 210.0, "1Q25": 220.0},
-            {"CD_CONTA": "1.01", "DS_CONTA": "Ativo Circulante", "STANDARD_NAME": "", "LINE_ID_BASE": "1.01", "2024": 80.0, "1Q25": 82.0},
-            {"CD_CONTA": "1.01.01", "DS_CONTA": "Caixa", "STANDARD_NAME": "", "LINE_ID_BASE": "1.01.01", "2024": 35.0, "1Q25": 34.0},
-            {"CD_CONTA": "1.01.02", "DS_CONTA": "Aplicacoes", "STANDARD_NAME": "", "LINE_ID_BASE": "1.01.02", "2024": 10.0, "1Q25": 12.0},
-            {"CD_CONTA": "1.02", "DS_CONTA": "Ativo Nao Circulante", "STANDARD_NAME": "", "LINE_ID_BASE": "1.02", "2024": 130.0, "1Q25": 138.0},
-            {"CD_CONTA": "1.02.03", "DS_CONTA": "Imobilizado", "STANDARD_NAME": "", "LINE_ID_BASE": "1.02.03", "2024": 90.0, "1Q25": 95.0},
+            make_row("1",       "Ativo Total",         2_100_000),
+            make_row("1.01",    "Ativo Circulante",      800_000),
+            make_row("1.01.01", "Caixa",                 350_000),
+            make_row("1.02",    "Nao Circulante",      1_300_000),
         ]),
         "BPP": _statement([
-            {"CD_CONTA": "2", "DS_CONTA": "Passivo Total", "STANDARD_NAME": "", "LINE_ID_BASE": "2", "2024": 210.0, "1Q25": 220.0},
-            {"CD_CONTA": "2.01", "DS_CONTA": "Passivo Circulante", "STANDARD_NAME": "", "LINE_ID_BASE": "2.01", "2024": 90.0, "1Q25": 95.0},
-            {"CD_CONTA": "2.01.01", "DS_CONTA": "Obrigacoes", "STANDARD_NAME": "", "LINE_ID_BASE": "2.01.01", "2024": 12.0, "1Q25": 13.0},
-            {"CD_CONTA": "2.01.04", "DS_CONTA": "Emprestimos CP", "STANDARD_NAME": "", "LINE_ID_BASE": "2.01.04", "2024": 25.0, "1Q25": 27.0},
-            {"CD_CONTA": "2.02", "DS_CONTA": "Passivo Nao Circulante", "STANDARD_NAME": "", "LINE_ID_BASE": "2.02", "2024": 60.0, "1Q25": 61.0},
-            {"CD_CONTA": "2.02.01", "DS_CONTA": "Emprestimos LP", "STANDARD_NAME": "", "LINE_ID_BASE": "2.02.01", "2024": 40.0, "1Q25": 42.0},
-            {"CD_CONTA": "2.03", "DS_CONTA": "Patrimonio Liquido", "STANDARD_NAME": "", "LINE_ID_BASE": "2.03", "2024": 60.0, "1Q25": 64.0},
-            {"CD_CONTA": "2.03.01", "DS_CONTA": "Capital Social", "STANDARD_NAME": "", "LINE_ID_BASE": "2.03.01", "2024": 30.0, "1Q25": 30.0},
-            {"CD_CONTA": "2.03.04", "DS_CONTA": "Reservas de Lucros", "STANDARD_NAME": "", "LINE_ID_BASE": "2.03.04", "2024": 20.0, "1Q25": 24.0},
+            make_row("2",       "Passivo Total",       2_100_000),
+            make_row("2.01",    "Passivo Circulante",    900_000),
+            make_row("2.01.04", "Emprestimos CP",        250_000),
+            make_row("2.02",    "Passivo Nao Circ.",     600_000),
+            make_row("2.02.01", "Emprestimos LP",        400_000),
+            make_row("2.03",    "Patrimonio Liquido",    600_000),
+            make_row("2.03.01", "Capital",               300_000),
+            make_row("2.03.04", "Reservas",              200_000),
         ]),
         "DFC": _statement([
-            {"CD_CONTA": "6.01", "DS_CONTA": "Fluxo Operacional", "STANDARD_NAME": "", "LINE_ID_BASE": "6.01", "2024": 25.0, "1Q25": 7.0},
-            {"CD_CONTA": "6.01.01", "DS_CONTA": "Caixa Gerado nas Operacoes", "STANDARD_NAME": "", "LINE_ID_BASE": "6.01.01", "2024": 28.0, "1Q25": 8.0},
-            {"CD_CONTA": "6.01.01.03", "DS_CONTA": "Depreciacao e Amortizacao", "STANDARD_NAME": "", "LINE_ID_BASE": "6.01.01.03", "2024": 2.0, "1Q25": 0.5},
-            {"CD_CONTA": "6.02", "DS_CONTA": "Fluxo Investimento", "STANDARD_NAME": "", "LINE_ID_BASE": "6.02", "2024": -12.0, "1Q25": -3.0},
-            {"CD_CONTA": "6.02.01", "DS_CONTA": "Aquisicao de Imobilizado", "STANDARD_NAME": "", "LINE_ID_BASE": "6.02.01", "2024": -10.0, "1Q25": -2.0},
-            {"CD_CONTA": "6.03", "DS_CONTA": "Fluxo Financiamento", "STANDARD_NAME": "", "LINE_ID_BASE": "6.03", "2024": -6.0, "1Q25": -2.0},
-            {"CD_CONTA": "6.03.01", "DS_CONTA": "Captacao de Emprestimos", "STANDARD_NAME": "", "LINE_ID_BASE": "6.03.01", "2024": 9.0, "1Q25": 2.0},
-            {"CD_CONTA": "6.05", "DS_CONTA": "Aumento (Reducao) de Caixa e Equivalentes", "STANDARD_NAME": "", "LINE_ID_BASE": "6.05", "2024": 7.0, "1Q25": 2.0},
-            {"CD_CONTA": "6.05.02", "DS_CONTA": "Saldo Final de Caixa e Equivalentes", "STANDARD_NAME": "", "LINE_ID_BASE": "6.05.02", "2024": 35.0, "1Q25": 34.0},
+            make_row("6.01",       "CFO",        250_000),
+            make_row("6.01.01.03", "Depreciacao", 20_000),
+            make_row("6.02",       "CFI",       -120_000),
+            make_row("6.02.01",    "Capex",     -100_000),
+            make_row("6.03",       "CFF",        -60_000),
+            make_row("6.05",       "Var. Caixa",  70_000),
         ]),
         "DVA": _statement([
-            {"CD_CONTA": "7.08", "DS_CONTA": "Valor Adicionado", "STANDARD_NAME": "", "LINE_ID_BASE": "7.08", "2024": 10.0},
+            make_row("7.08", "Valor Adicionado", 100_000),
         ]),
     }
 
 
-def test_excel_exporter_includes_geral_sheet_in_expected_order():
+# ─── period helpers ──────────────────────────────────────────────────────────
+def test_period_end_date_known_labels():
+    from datetime import date
+    assert _period_end_date("1Q25") == date(2025, 3, 31)
+    assert _period_end_date("2Q25") == date(2025, 6, 30)
+    assert _period_end_date("3Q25") == date(2025, 9, 30)
+    assert _period_end_date("4Q25") == date(2025, 12, 31)
+    assert _period_end_date("2024") == date(2024, 12, 31)
+    assert _period_end_date("garbage") is None
+
+
+def test_pick_model_periods_interleaves_5_years_with_their_quarters():
+    """The default window should produce ~25 columns:
+    1Q21, 2Q21, 3Q21, 4Q21, 2021, 1Q22, ..., 4Q25, 2025."""
+    all_p = []
+    for y in (2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025):
+        for q in (1, 2, 3, 4):
+            all_p.append(f"{q}Q{y - 2000}")
+        all_p.append(str(y))
+
+    window = _pick_model_periods(all_p, annuals=5, quarters_per_year=4)
+    assert len(window) == 25  # 5 annuals + 5 * 4 quarters
+    expected = []
+    for y in (2021, 2022, 2023, 2024, 2025):
+        for q in (1, 2, 3, 4):
+            expected.append(f"{q}Q{y - 2000}")
+        expected.append(str(y))
+    assert window == expected
+
+
+def test_pick_model_periods_falls_back_when_fewer_annuals():
+    all_p = ["2024", "1Q24", "2Q24", "3Q24", "4Q24"]
+    window = _pick_model_periods(all_p, annuals=5, quarters_per_year=4)
+    assert window == ["1Q24", "2Q24", "3Q24", "4Q24", "2024"]
+
+
+# ─── workbook structure ──────────────────────────────────────────────────────
+def test_export_default_window_is_5_by_4():
+    assert DEFAULT_PERIOD_WINDOW == (5, 4)
+
+
+def test_full_export_sheet_layout():
     exporter = ExcelExporter(
         company_info=_sample_company(),
-        statements=_sample_statements(),
+        statements=_wide_statements(),
         kpis_df=_minimal_kpis(),
         extra_sheets=["DVA"],
     )
-
-    workbook_bytes = exporter.export()
-    wb = openpyxl.load_workbook(io.BytesIO(workbook_bytes))
-
-    # v0.19.0: "Financial Statement Model" is the new main analyst sheet,
-    # rendered first. All legacy sheets remain for backward compatibility.
-    assert wb.sheetnames == [
-        "Financial Statement Model",
-        "CAPA",
-        "GERAL",
-        "KPIs",
-        "DRE",
-        "BPA",
-        "BPP",
-        "DFC",
-        "DVA",
-        "METADADOS",
-    ]
+    payload = exporter.export()
+    wb = openpyxl.load_workbook(io.BytesIO(payload))
+    assert wb.sheetnames[0] == "Model"
+    assert wb.sheetnames[1] == "README"
+    for raw in ("raw_DRE", "raw_BPA", "raw_BPP", "raw_DFC", "raw_DVA",
+                 "raw_KPIs", "metadata"):
+        assert raw in wb.sheetnames, f"{raw} missing from workbook"
 
 
-def test_financial_statement_model_sheet_structure():
-    """v0.19.0: validate the analyst-ready main sheet contains all required
-    sections and conventions."""
+def test_raw_sheets_are_hidden_by_default():
     exporter = ExcelExporter(
         company_info=_sample_company(),
-        statements=_sample_statements(),
+        statements=_wide_statements(),
         kpis_df=_minimal_kpis(),
         extra_sheets=["DVA"],
     )
-
-    workbook_bytes = exporter.export()
-    wb = openpyxl.load_workbook(io.BytesIO(workbook_bytes))
-    assert "Financial Statement Model" in wb.sheetnames
-    ws = wb["Financial Statement Model"]
-
-    # Collect non-empty cells in column B (labels)
-    label_col = [
-        ws.cell(row=r, column=2).value
-        for r in range(1, ws.max_row + 1)
-        if ws.cell(row=r, column=2).value is not None
-    ]
-    label_text = " | ".join(str(v) for v in label_col)
-
-    # Conventions block
-    assert "Conventions" in label_text
-    # Title
-    assert any("Financial Statement Model For" in str(v) for v in label_col)
-    # Subtitle
-    assert any("R$ mm" in str(v) for v in label_col)
-    # Company info
-    assert "Company name" in label_text
-    assert "CVM code" in label_text
-    # Period header
-    assert "Fiscal year" in label_text
-    # Statement section headings — all in this one sheet
-    assert "Income Statement" in label_text
-    assert "Balance Sheet" in label_text
-    assert "Cash Flow Statement" in label_text
-    assert "Value Added Statement" in label_text
-    # KPIs section
-    assert "KPIs / Ratios" in label_text
-    # Checks section
-    assert "Checks" in label_text
-    assert "Balance Sheet: Assets" in label_text
-    # Source / Data Quality
-    assert "Source / Data Quality" in label_text
-    assert "Generated by" in label_text
+    payload = exporter.export()
+    wb = openpyxl.load_workbook(io.BytesIO(payload))
+    visible = [name for name in wb.sheetnames if wb[name].sheet_state == "visible"]
+    hidden = [name for name in wb.sheetnames if wb[name].sheet_state == "hidden"]
+    assert "Model" in visible
+    assert "README" in visible
+    for raw in ("raw_DRE", "raw_BPA", "raw_BPP", "raw_DFC", "raw_DVA",
+                 "raw_KPIs", "metadata"):
+        assert raw in hidden, f"{raw} should be hidden, got {wb[raw].sheet_state}"
 
 
-def test_legacy_statement_sheets_have_autofilter_on_header_row():
-    """v0.18.3: legacy DRE/BPA/BPP/DFC sheets get auto-filter on row 1 so
-    analysts can filter CD_CONTA / DS_CONTA / STANDARD_NAME quickly."""
+def test_model_sheet_period_header_has_three_rows():
     exporter = ExcelExporter(
         company_info=_sample_company(),
-        statements=_sample_statements(),
-        kpis_df=_minimal_kpis(),
-        extra_sheets=["DVA"],
-    )
-    workbook_bytes = exporter.export()
-    wb = openpyxl.load_workbook(io.BytesIO(workbook_bytes))
-
-    for stmt_name in ("DRE", "BPA", "BPP", "DFC", "DVA"):
-        ws = wb[stmt_name]
-        # auto_filter.ref is set when ws.autofilter(...) is called by xlsxwriter
-        assert ws.auto_filter.ref is not None, (
-            f"{stmt_name} sheet missing auto-filter range"
-        )
-        # First cell of the range must be A1 (header row)
-        assert ws.auto_filter.ref.startswith("A1"), (
-            f"{stmt_name} auto-filter does not start at A1: {ws.auto_filter.ref}"
-        )
-
-
-def test_financial_statement_model_has_print_setup():
-    """v0.18.3: model sheet has landscape print, fit-to-1-page-wide,
-    repeating header rows, and a print area covering the populated grid."""
-    exporter = ExcelExporter(
-        company_info=_sample_company(),
-        statements=_sample_statements(),
+        statements=_wide_statements(),
         kpis_df=_minimal_kpis(),
     )
-    workbook_bytes = exporter.export()
-    wb = openpyxl.load_workbook(io.BytesIO(workbook_bytes))
-    ws = wb["Financial Statement Model"]
-    assert ws.page_setup.orientation == "landscape"
-    # xlsxwriter writes the fit-to-page flag onto sheetPr/pageSetUpPr rather
-    # than emitting an explicit fitToWidth on pageSetup. Detect either form.
-    fit_flag = (
-        getattr(getattr(ws.sheet_properties, "pageSetUpPr", None),
-                "fitToPage", None)
-        or (ws.page_setup.fitToWidth == 1)
-    )
-    assert fit_flag, "model sheet should be configured to fit to one page wide"
-    # print_title_rows is the openpyxl exposure of repeat_rows. openpyxl
-    # surfaces it with absolute-reference dollar signs.
-    assert ws.print_title_rows == "$1:$21"
-    # A print area must be set
-    assert ws.print_area is not None
-
-
-def test_financial_statement_model_period_header_interleaves_quarters_and_annual():
-    """Periods on the model sheet should sort as: 1Q24, 2Q24, ..., 4Q24, 2024,
-    1Q25, ..., 2025 — matching the reference Equatorial workbook layout."""
-    statements = {
-        "DRE": _statement([
-            {
-                "CD_CONTA": "3.01",
-                "DS_CONTA": "Receita",
-                "STANDARD_NAME": "",
-                "LINE_ID_BASE": "3.01",
-                "2024": 1_000_000.0,
-                "1Q25": 250_000.0,
-                "2Q25": 260_000.0,
-                "3Q25": 270_000.0,
-                "4Q25": 280_000.0,
-                "2025": 1_060_000.0,
-            },
-        ]),
-    }
-    exporter = ExcelExporter(
-        company_info=_sample_company(),
-        statements=statements,
-        kpis_df=_minimal_kpis(),
-    )
-    workbook_bytes = exporter.export()
-    wb = openpyxl.load_workbook(io.BytesIO(workbook_bytes))
-    ws = wb["Financial Statement Model"]
-
-    # Locate period header row by finding "Fiscal year" in column B
+    payload = exporter.export()
+    wb = openpyxl.load_workbook(io.BytesIO(payload))
+    ws = wb["Model"]
+    # Find "Period" row
     period_row = None
     for r in range(1, ws.max_row + 1):
-        if ws.cell(row=r, column=2).value == "Fiscal year":
+        if ws.cell(row=r, column=2).value == "Period":
             period_row = r
             break
     assert period_row is not None
-
-    period_cells = []
-    c = 4  # column D
-    while ws.cell(row=period_row, column=c).value is not None:
-        period_cells.append(str(ws.cell(row=period_row, column=c).value))
-        c += 1
-
-    assert period_cells == ["2024", "1Q25", "2Q25", "3Q25", "4Q25", "2025"]
+    assert ws.cell(row=period_row + 1, column=2).value == "Period end date"
+    assert ws.cell(row=period_row + 2, column=2).value == "Period type"
 
 
-def test_excel_exporter_geral_sheet_preserves_periods_and_expanded_rows():
+def test_model_period_window_is_5_annuals_plus_their_quarters():
     exporter = ExcelExporter(
         company_info=_sample_company(),
-        statements=_sample_statements(),
+        statements=_wide_statements(),
         kpis_df=_minimal_kpis(),
-        extra_sheets=[],
     )
-
-    workbook_bytes = exporter.export()
-    wb = openpyxl.load_workbook(io.BytesIO(workbook_bytes))
-    geral = wb["GERAL"]
-    dre = wb["DRE"]
-
-    first_col = [geral.cell(row, 1).value for row in range(1, geral.max_row + 1) if geral.cell(row, 1).value is not None]
-
-    assert first_col[0] == "DRE — Resumo Condensado"
-    assert "BPA — Resumo Condensado" in first_col
-    assert "BPP — Resumo Condensado" in first_col
-    assert "DFC — Resumo Condensado" in first_col
-    assert first_col.index("BPA — Resumo Condensado") < first_col.index("BPP — Resumo Condensado") < first_col.index("DFC — Resumo Condensado")
-
-    assert "1.01.02" in first_col
-    assert "2.01.01" in first_col
-    assert "6.01.01" in first_col
-    assert "6.01.01.03" in first_col
-    assert "6.02.01" in first_col
-    assert "6.03.01" in first_col
-    assert "6.05" in first_col
-    assert "6.05.02" in first_col
-
-    assert geral["A2"].value == "CD_CONTA"
-    assert geral["B2"].value == "LINHA"
-    assert geral["C2"].value == "2024"
-    assert geral["D2"].value == "1Q25"
-
-    assert dre["A1"].value == "CD_CONTA"
-    assert dre["B2"].value == "Receita"
+    payload = exporter.export()
+    wb = openpyxl.load_workbook(io.BytesIO(payload))
+    ws = wb["Model"]
+    period_row = None
+    for r in range(1, ws.max_row + 1):
+        if ws.cell(row=r, column=2).value == "Period":
+            period_row = r
+            break
+    assert period_row is not None
+    # Collect period labels in row
+    periods = []
+    c = 4
+    while ws.cell(row=period_row, column=c).value is not None:
+        periods.append(str(ws.cell(row=period_row, column=c).value))
+        c += 1
+    # 5 annuals × (4 quarters + 1 annual) = 25 columns expected
+    assert len(periods) == 25
+    # Sanity: contains both 1Q21 and 2025
+    assert "1Q21" in periods
+    assert "2025" in periods
+    # Period end-date row should contain real datetimes for each period
+    for c_idx in range(4, 4 + len(periods)):
+        val = ws.cell(row=period_row + 1, column=c_idx).value
+        assert val is not None, f"missing date at col {c_idx}"
+        assert isinstance(val, datetime) or hasattr(val, "year"), (
+            f"date cell at col {c_idx} is not a date-like: {type(val)}"
+        )
 
 
+def test_workbook_has_no_error_cells():
+    """Critical acceptance test: zero #NUM!/#REF!/#VALUE!/#DIV-0!/#NAME?/#N/A cells."""
+    exporter = ExcelExporter(
+        company_info=_sample_company(),
+        statements=_wide_statements(),
+        kpis_df=_minimal_kpis(),
+        extra_sheets=["DVA"],
+    )
+    payload = exporter.export()
+    wb = openpyxl.load_workbook(io.BytesIO(payload), data_only=False)
+    error_prefixes = ("#NUM!", "#REF!", "#VALUE!", "#DIV/0!", "#NAME?", "#N/A", "#NULL!")
+    for sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+        for row in ws.iter_rows():
+            for cell in row:
+                v = cell.value
+                if isinstance(v, str):
+                    for prefix in error_prefixes:
+                        assert not v.startswith(prefix), (
+                            f"Error cell in {sheet_name}!{cell.coordinate}: {v}"
+                        )
+
+
+def test_model_sheet_contains_required_sections():
+    exporter = ExcelExporter(
+        company_info=_sample_company(),
+        statements=_wide_statements(),
+        kpis_df=_minimal_kpis(),
+        extra_sheets=["DVA"],
+    )
+    payload = exporter.export()
+    wb = openpyxl.load_workbook(io.BytesIO(payload))
+    ws = wb["Model"]
+    labels = [str(ws.cell(row=r, column=2).value or "")
+              for r in range(1, ws.max_row + 1)]
+    body = " | ".join(labels)
+    for section in ("Income Statement", "Balance Sheet", "Cash Flow Statement",
+                     "Value Added Statement", "KPIs / Ratios", "Checks",
+                     "Source / Data Quality"):
+        assert section in body, f"section '{section}' missing from Model sheet"
+    # Computed lines present
+    assert "EBITDA (=)" in body
+    assert "Free Cash Flow (FCF) (=)" in body
+
+
+def test_model_sheet_dva_unavailable_when_absent():
+    stmts = _wide_statements()
+    del stmts["DVA"]
+    exporter = ExcelExporter(
+        company_info=_sample_company(),
+        statements=stmts,
+        kpis_df=_minimal_kpis(),
+    )
+    payload = exporter.export()
+    wb = openpyxl.load_workbook(io.BytesIO(payload))
+    ws = wb["Model"]
+    labels = [str(ws.cell(row=r, column=c).value or "")
+              for r in range(1, ws.max_row + 1)
+              for c in (2, 3, 4)]
+    body = " | ".join(labels)
+    assert "DVA Availability" in body
+    assert "DVA" in body and "unavailable" in body.lower()
+
+
+def test_model_sheet_kpi_formulas_use_iferror():
+    exporter = ExcelExporter(
+        company_info=_sample_company(),
+        statements=_wide_statements(),
+        kpis_df=_minimal_kpis(),
+    )
+    payload = exporter.export()
+    wb = openpyxl.load_workbook(io.BytesIO(payload), data_only=False)
+    ws = wb["Model"]
+    # Find any KPI row by looking for "EBITDA Margin" then sampling its cells
+    target_row = None
+    for r in range(1, ws.max_row + 1):
+        v = ws.cell(row=r, column=2).value
+        if isinstance(v, str) and "EBITDA Margin" in v:
+            target_row = r
+            break
+    assert target_row is not None
+    found_iferror = False
+    for c_idx in range(4, 30):
+        cell_val = ws.cell(row=target_row, column=c_idx).value
+        if isinstance(cell_val, str) and cell_val.startswith("=IFERROR("):
+            found_iferror = True
+            break
+    assert found_iferror, "EBITDA Margin row has no IFERROR formula"
+
+
+# ─── filenames (unchanged) ───────────────────────────────────────────────────
 def test_build_excel_filename_uses_ticker_and_export_date():
     filename = build_excel_filename(
         _sample_company(),
         generated_at=datetime(2026, 4, 9, 14, 30),
     )
-
     assert filename == "EXMP3_20260409.xlsx"
 
 
 def test_build_excel_filename_falls_back_to_cvm_code_without_ticker():
     filename = build_excel_filename(
-        {
-            **_sample_company(),
-            "ticker_b3": None,
-        },
+        {**_sample_company(), "ticker_b3": None},
         generated_at=datetime(2026, 4, 9, 14, 30),
     )
-
     assert filename == "cvm1234_20260409.xlsx"
+
+
+# ─── scoped statement export still works ─────────────────────────────────────
+def test_scoped_statement_export_is_minimal():
+    exporter = ExcelExporter(
+        company_info=_sample_company(),
+        statements=_wide_statements(),
+        kpis_df=_minimal_kpis(),
+        statement_type="DRE",
+    )
+    payload = exporter.export()
+    wb = openpyxl.load_workbook(io.BytesIO(payload))
+    # Scoped export emits only the raw sheet + metadata
+    assert "raw_DRE" in wb.sheetnames
+    assert "metadata" in wb.sheetnames
+    # Should NOT include the Model sheet for scoped exports
+    assert "Model" not in wb.sheetnames

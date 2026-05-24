@@ -1,27 +1,41 @@
 # -*- coding: utf-8 -*-
-"""
-src/excel_exporter.py — Exportador Excel profissional para analistas.
+"""src/excel_exporter.py — Analyst-ready Excel exporter (v0.19.0).
 
-Gera workbook com até 9 abas:
-  CAPA · KPIs · DRE · BPA · BPP · DFC · DVA · DMPL · METADADOS
+Produces a workbook centered on a single user-facing ``Model`` sheet
+that consolidates the Income Statement, Balance Sheet, Cash Flow
+Statement, optional Value Added Statement, KPIs, Checks, and Source /
+Data Quality blocks. The full CVM tree and full period history remain
+available in hidden ``raw_*`` sheets so the workbook stays auditable
+without the model view becoming a data dump.
 
-Uso standalone:
+Visible sheets:
+    Model    — analyst sheet (compact 5-year + 20-quarter window)
+    README   — sheet map, conventions, period policy
+
+Hidden sheets:
+    raw_DRE / raw_BPA / raw_BPP / raw_DFC / raw_DVA (optional)
+    raw_KPIs
+    metadata
+
+The legacy single-statement export path (used when a caller passes
+``statement_type="DRE"`` etc) still produces a tightly-scoped workbook
+that contains only ``Model`` and the relevant ``raw_<TYPE>`` sheet.
+
+Usage::
+
     exp = ExcelExporter(company_info, statements, kpis_df)
-    excel_bytes = exp.export()   # → bytes para st.download_button ou salvar em disco
-
-Uso no Streamlit:
-    st.download_button("Baixar Excel", exp.export(),
-                       file_name=f"{ticker}.xlsx",
-                       mime="application/vnd.ms-excel")
+    excel_bytes = exp.export()
 """
 from __future__ import annotations
 
 import io
+import math
 import re
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
 import numpy as np
+import openpyxl
 import pandas as pd
 import xlsxwriter
 
@@ -29,113 +43,229 @@ from src.statement_summary import build_general_summary_blocks
 
 try:
     from desktop.__version__ import __version__ as _APP_VERSION
-except Exception:  # pragma: no cover - desktop package may be missing in some envs
+except Exception:  # pragma: no cover - desktop package may be absent
     _APP_VERSION = "unknown"
 
+
 # ──────────────────────────────────────────────────────────────────────────────
-# Paleta de cores
+# Color palette — Aptos Narrow / Calibri financial modeling conventions
 # ──────────────────────────────────────────────────────────────────────────────
-C = {
-    "azul_escuro":  "#1B3A5C",   # cabeçalhos de seção
-    "azul_medio":   "#2E6DA4",   # subtotais
-    "azul_claro":   "#D6E4F0",   # fundo subtotal
-    "cinza_claro":  "#F2F2F2",   # linhas pares / placeholders
-    "cinza_texto":  "#808080",   # texto de placeholders
-    "verde_claro":  "#D5F0D5",   # delta positivo
-    "vermelho_claro":"#FFD5D5",  # delta negativo
-    "branco":       "#FFFFFF",
-    "texto_escuro": "#1A1A1A",
-    "vermelho_val": "#C0392B",   # fonte para valores negativos
-    "capa_azul":    "#1B3A5C",
-    "capa_acento":  "#2E86AB",
+PALETTE = {
+    "blue_dark":    "#1F4E78",   # section headings, info labels
+    "blue_input":   "#0070C0",   # manual input convention
+    "green_linked": "#548235",   # linked-from-raw / OK status
+    "orange_fill":  "#FFF2CC",   # output / hardcoded source rows
+    "gray_text":    "#7F7F7F",   # notes
+    "red_warn":     "#C00000",   # warnings, errors
+    "amber":        "#BF8F00",   # warning status
+    "annual_fill":  "#F2F2F2",   # annual period column shading
+    "black":        "#1A1A1A",
 }
 
-# Contas que são subtotais (negrito + fundo) nas demonstrações
-_SUBTOTAIS = {
-    "DRE": {"3.01", "3.03", "3.05", "3.07", "3.11"},
-    "BPA": {"1", "1.01", "1.02"},
-    "BPP": {"2", "2.01", "2.02", "2.03"},
-    "DFC": {"6.01", "6.02", "6.03"},
-    "DVA": {"7.08"},
-    "DMPL": set(),
-}
-
-# Siglas → nomes completos para tab labels
-_STMT_LABELS = {
-    "DRE":  "DRE",
-    "BPA":  "BPA",
-    "BPP":  "BPP",
-    "DFC":  "DFC",
-    "DVA":  "DVA",
-    "DMPL": "DMPL",
-}
-
-# Categorias de KPI na ordem desejada
-_KPI_CATEGORY_ORDER = [
-    "Rentabilidade", "Liquidez", "Endividamento",
-    "Fluxo de Caixa", "Crescimento", "Valuation",
-]
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Financial Statement Model — analyst-ready single-sheet template
-# Style contract extracted from the Wall Street Prep "Equatorial model.xlsx"
-# reference workbook. See docs/releases/v0.18.1.md and the v0.19.0 notes for
-# the visual layout: convention legend, title, company info block, period
-# header, statement sections (Income Statement / Balance Sheet / Cash Flow /
-# DVA / KPIs), checks, and source/data-quality block.
+# Sheet names
 # ──────────────────────────────────────────────────────────────────────────────
-_MODEL_SHEET_NAME = "Financial Statement Model"
+MODEL_SHEET = "Model"
+README_SHEET = "README"
+METADATA_SHEET = "metadata"
+RAW_KPI_SHEET = "raw_KPIs"
 
-# Scale conversion: CVM stores R$ mil (thousands); the model displays R$ mm
-# (millions). One division by 1000 across all numeric writes.
-_MODEL_SCALE_DIVISOR = 1000.0
+_RAW_PREFIX = "raw_"
+_LEGACY_TO_RAW = {
+    "DRE": "raw_DRE",
+    "BPA": "raw_BPA",
+    "BPP": "raw_BPP",
+    "DFC": "raw_DFC",
+    "DVA": "raw_DVA",
+    "DMPL": "raw_DMPL",
+}
 
-# Section heading and indentation conventions
-_DRE_SUBTOTAL_KEYS = {"3.01", "3.03", "3.05", "3.07", "3.11"}
-_BPA_SUBTOTAL_KEYS = {"1", "1.01", "1.02"}
-_BPP_SUBTOTAL_KEYS = {"2", "2.01", "2.02", "2.03"}
-_DFC_SUBTOTAL_KEYS = {"6.01", "6.02", "6.03", "6.05"}
-_DVA_SUBTOTAL_KEYS = {"7.08"}
+# Period window defaults — controlled by ExcelExporter(period_window=(annuals,
+# quarters_per_year)). Annual + 4 quarters per annual = 25 columns by default.
+DEFAULT_PERIOD_WINDOW: tuple[int, int] = (5, 4)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Analyst taxonomy — English labels keyed by CVM CD_CONTA. Falls back to
+# STANDARD_NAME, then DS_CONTA when the code is not in this map.
+# ──────────────────────────────────────────────────────────────────────────────
+_MODEL_LINE_LABELS: dict[str, str] = {
+    # DRE
+    "3.01": "Revenue",
+    "3.02": "Costs",
+    "3.03": "Gross Profit",
+    "3.04": "Operating Expenses",
+    "3.05": "Operating Result (EBIT)",
+    "3.06": "Financial Result",
+    "3.07": "Income Before Taxes",
+    "3.08": "Income Taxes",
+    "3.11": "Net Income",
+    # BPA
+    "1":        "Total Assets",
+    "1.01":     "Current Assets",
+    "1.01.01":  "Cash and Equivalents",
+    "1.02":     "Non-current Assets",
+    # BPP
+    "2":        "Total Liabilities and Equity",
+    "2.01":     "Current Liabilities",
+    "2.01.04":  "Short-term Debt",
+    "2.02":     "Non-current Liabilities",
+    "2.02.01":  "Long-term Debt",
+    "2.03":     "Equity",
+    "2.03.01":  "Capital",
+    "2.03.04":  "Retained Earnings",
+    # DFC
+    "6.01":     "Cash Flow from Operations (CFO)",
+    "6.02":     "Cash Flow from Investing (CFI)",
+    "6.02.01":  "Capex",
+    "6.03":     "Cash Flow from Financing (CFF)",
+    "6.04":     "Effect of FX on Cash",
+    "6.05":     "Change in Cash",
+    "6.01.01.DA": "Depreciation and Amortization",
+}
+
+_DRE_SUBTOTALS = {"3.01", "3.03", "3.05", "3.07", "3.11"}
+_BPA_SUBTOTALS = {"1", "1.01", "1.02"}
+_BPP_SUBTOTALS = {"2", "2.01", "2.02", "2.03"}
+_DFC_SUBTOTALS = {"6.01", "6.02", "6.03", "6.05"}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Period helpers
+# ──────────────────────────────────────────────────────────────────────────────
+_ANNUAL_RX = re.compile(r"^(?:19|20)\d{2}$")
+_QUARTER_RX = re.compile(r"^([1-4])[QT](\d{2,4})$", flags=re.IGNORECASE)
+
+
+def _is_annual_period(label: str) -> bool:
+    return bool(_ANNUAL_RX.match(str(label).strip()))
+
+
+def _parse_quarter(label: str) -> Optional[tuple[int, int]]:
+    """Return (year, quarter) or None for non-quarter labels."""
+    m = _QUARTER_RX.match(str(label).strip())
+    if not m:
+        return None
+    q = int(m.group(1))
+    y_str = m.group(2)
+    year = int(y_str) if len(y_str) == 4 else 2000 + int(y_str)
+    return (year, q)
 
 
 def _period_sort_key(p: str) -> tuple[int, int, int]:
-    """Sort key so periods order as: ..., 1Q24, 2Q24, 3Q24, 4Q24, 2024, 1Q25..."""
+    """Sort periods chronologically: 1Q24, 2Q24, ..., 4Q24, 2024, 1Q25, ..."""
     s = str(p).strip()
-    m_year = re.match(r"^(19|20)\d{2}$", s)
-    if m_year:
+    if _is_annual_period(s):
         return (int(s), 5, 0)
-    m_q = re.match(r"^([1-4])[QT](\d{2,4})$", s, flags=re.IGNORECASE)
-    if m_q:
-        q = int(m_q.group(1))
-        y_str = m_q.group(2)
-        y = int(y_str) if len(y_str) == 4 else 2000 + int(y_str)
-        return (y, q, 1)
+    parsed = _parse_quarter(s)
+    if parsed is not None:
+        year, q = parsed
+        return (year, q, 1)
     return (9999, 9, 9)
 
 
-def _indent_for_code(cd_conta: str) -> int:
-    """4-space-per-level indentation by CVM CD_CONTA depth (root = 0)."""
-    s = str(cd_conta or "").strip()
-    if not s:
-        return 0
-    return max(0, s.count(".")) * 4
+def _period_end_date(label: str) -> Optional[date]:
+    """Map a period label to its end-of-period date.
+
+    Examples::
+
+        "1Q25" -> 2025-03-31
+        "2Q25" -> 2025-06-30
+        "3Q25" -> 2025-09-30
+        "4Q25" -> 2025-12-31
+        "2024" -> 2024-12-31
+    """
+    s = str(label).strip()
+    if _is_annual_period(s):
+        return date(int(s), 12, 31)
+    parsed = _parse_quarter(s)
+    if parsed is None:
+        return None
+    year, q = parsed
+    if q == 1:
+        return date(year, 3, 31)
+    if q == 2:
+        return date(year, 6, 30)
+    if q == 3:
+        return date(year, 9, 30)
+    return date(year, 12, 31)
 
 
-def _suffix_for_row(cd_conta: str, subtotals: set[str]) -> str:
-    """Reference workbook uses `(=)` for subtotals/totals, `(+/-)` for body."""
-    s = str(cd_conta or "").strip()
-    if s in subtotals:
-        return " (=)"
-    return ""
+def _pick_model_periods(
+    all_periods: list[str],
+    annuals: int = 5,
+    quarters_per_year: int = 4,
+) -> list[str]:
+    """Select the analyst window: last N annuals + their quarters.
+
+    Quarters whose year matches one of the selected annuals are kept (up
+    to ``quarters_per_year`` per annual year). The combined set is
+    sorted chronologically so the result is the interleaved layout
+    ``1Q21, 2Q21, 3Q21, 4Q21, 2021, 1Q22, ..., 4Q25, 2025``.
+    """
+    annual_periods = sorted(
+        [p for p in all_periods if _is_annual_period(p)],
+        key=_period_sort_key,
+    )
+    selected_annuals = annual_periods[-annuals:] if annuals > 0 else []
+    selected_years = {int(a) for a in selected_annuals}
+
+    quarter_buckets: dict[int, list[str]] = {}
+    for p in all_periods:
+        parsed = _parse_quarter(p)
+        if parsed is None:
+            continue
+        year, _ = parsed
+        if year in selected_years:
+            quarter_buckets.setdefault(year, []).append(p)
+
+    selected_quarters: list[str] = []
+    for year, qs in quarter_buckets.items():
+        qs_sorted = sorted(qs, key=_period_sort_key)
+        selected_quarters.extend(qs_sorted[-quarters_per_year:] if quarters_per_year > 0 else [])
+
+    combined = list(set(selected_annuals) | set(selected_quarters))
+    combined.sort(key=_period_sort_key)
+    return combined
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Numeric helpers
+# ──────────────────────────────────────────────────────────────────────────────
+_MODEL_SCALE_DIVISOR = 1000.0   # CVM stores R$ mil; Model shows R$ mm
+
+
+def _is_safe_number(value) -> bool:
+    """True iff value is a finite real number safe for write_number()."""
+    if value is None:
+        return False
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, (int, float, np.integer, np.floating)):
+        try:
+            return math.isfinite(float(value))
+        except (TypeError, ValueError):
+            return False
+    return False
+
+
+def _scaled(value) -> Optional[float]:
+    """Scale a raw R$ mil value into R$ mm. Return None if not writable."""
+    if not _is_safe_number(value):
+        return None
+    return float(value) / _MODEL_SCALE_DIVISOR
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Public filename helpers
+# ──────────────────────────────────────────────────────────────────────────────
 def build_excel_file_stem(
     company_info: dict,
     *,
     generated_at: datetime | None = None,
     statement_type: str | None = None,
 ) -> str:
-    """Retorna o file stem padrao usado pelos downloads de Excel."""
     timestamp = generated_at or datetime.now()
     ticker = company_info.get("ticker_b3") or f"cvm{company_info.get('cd_cvm', '')}"
     safe_ticker = str(ticker).replace(" ", "_").replace("/", "-")
@@ -154,19 +284,32 @@ def build_excel_filename(
     return f"{build_excel_file_stem(company_info, generated_at=generated_at, statement_type=statement_type)}.xlsx"
 
 
-class ExcelExporter:
-    """Gera workbook Excel profissional para uma empresa CVM.
+# ──────────────────────────────────────────────────────────────────────────────
+# Exporter
+# ──────────────────────────────────────────────────────────────────────────────
+class ExcelExportError(RuntimeError):
+    """Raised when the post-write validator finds error cells."""
 
-    Parâmetros
+
+class ExcelExporter:
+    """Generates the analyst-ready company workbook.
+
+    Parameters
     ----------
     company_info : dict
-        Saída de CVMQueryLayer.get_company_info().
-    statements   : dict[str, pd.DataFrame]
-        Mapa {stmt_type: df_wide} — saída de CVMQueryLayer.get_statement().
-    kpis_df      : pd.DataFrame
-        Saída de kpi_engine.compute_all_kpis().
-    extra_sheets : list[str], opcional
-        Tipos adicionais a incluir (ex: ["DVA", "DMPL"]) se disponíveis.
+        Output of ``CVMReadService.get_company_info_dict(cd_cvm)``.
+    statements : dict[str, pd.DataFrame]
+        Map of ``stmt_type -> wide pivot``.
+    kpis_df : pd.DataFrame
+        Output of ``KPIBundle.quarterly_dataframe()``.
+    extra_sheets : list[str], optional
+        Extra statement types to include (e.g. ``["DVA"]``).
+    statement_type : str, optional
+        If set, the workbook is scoped to a single statement.
+    period_window : (int, int), optional
+        ``(annuals, quarters_per_year)``. Defaults to ``(5, 4)`` which
+        produces the interleaved 5-year + 4-quarter Equatorial layout
+        (~25 columns).
     """
 
     def __init__(
@@ -176,287 +319,485 @@ class ExcelExporter:
         kpis_df: pd.DataFrame,
         extra_sheets: Optional[list[str]] = None,
         statement_type: Optional[str] = None,
+        period_window: tuple[int, int] = DEFAULT_PERIOD_WINDOW,
     ):
-        self.info       = company_info
-        self.stmts      = statements
-        self.kpis       = kpis_df
-        self.extra      = extra_sheets or []
+        self.info = company_info or {}
+        self.stmts = statements or {}
+        self.kpis = kpis_df if kpis_df is not None else pd.DataFrame()
+        self.extra = extra_sheets or []
         self.statement_type = statement_type
-        self._wb:  xlsxwriter.Workbook | None = None
+        self.period_window = period_window
+        self._wb: Optional[xlsxwriter.Workbook] = None
         self._fmt: dict = {}
+        # raw sheet layouts captured during write so the model sheet can
+        # build formula references back into them
+        self._raw_index: dict[str, dict] = {}
+        # model period window (selected during _write_model_sheet)
+        self._model_periods: list[str] = []
+        # row tracker for Model sheet so checks/KPIs can reference cells
+        self._model_rows: dict[str, int] = {}
 
-    # ──────────────────────────────────────────────────────────────────────
-    # API pública
-    # ──────────────────────────────────────────────────────────────────────
-
+    # ── public API ────────────────────────────────────────────────────────
     def export(self, statement_type: Optional[str] = None) -> bytes:
-        """Retorna o workbook como bytes. Pronto para download ou escrita em disco."""
         stmt_t = statement_type or self.statement_type
         buf = io.BytesIO()
-        self._wb = xlsxwriter.Workbook(buf, {"in_memory": True, "nan_inf_to_errors": True})
+        # nan_inf_to_errors retained as a belt-and-braces safety net; the
+        # _is_safe_number guard plus the post-write validator should mean
+        # nothing reaches Excel's error encoding in normal operation.
+        self._wb = xlsxwriter.Workbook(
+            buf, {"in_memory": True, "nan_inf_to_errors": True}
+        )
         self._build_formats()
-        self._build_model_formats()
 
-        # v0.19.0 — analyst-ready Financial Statement Model is the main sheet.
-        # Rendered only on the full export (no statement_type scope), since
-        # statement-scoped exports are still served by the single-sheet
-        # legacy path used by the bridge.
-        if not stmt_t:
-            self._write_financial_statement_model()
-
-        self._write_capa()
-        if not stmt_t:
-            self._write_general()
-            self._write_kpis()
-            for stmt in ["DRE", "BPA", "BPP", "DFC"]:
-                if stmt in self.stmts and not self.stmts[stmt].empty:
-                    self._write_statement(stmt)
-            for stmt in ["DVA", "DMPL"]:
-                if stmt in self.extra and stmt in self.stmts and not self.stmts[stmt].empty:
-                    self._write_statement(stmt)
+        if stmt_t:
+            # Scoped single-statement export — minimal workbook.
+            self._write_raw_statement(stmt_t)
+            self._write_metadata_sheet(scope=stmt_t)
         else:
-            if stmt_t in self.stmts and not self.stmts[stmt_t].empty:
-                self._write_statement(stmt_t)
-            elif stmt_t in ["DVA", "DMPL"] and stmt_t in self.extra and stmt_t in self.stmts and not self.stmts[stmt_t].empty:
-                self._write_statement(stmt_t)
-        self._write_metadata(statement_type=stmt_t)
+            # Full export. Raw sheets are written first so the Model sheet
+            # can reference their final row coordinates via formulas.
+            for stype in ("DRE", "BPA", "BPP", "DFC"):
+                self._write_raw_statement(stype)
+            for stype in ("DVA", "DMPL"):
+                if stype in self.stmts and not self.stmts[stype].empty:
+                    self._write_raw_statement(stype)
+            self._write_raw_kpi_sheet()
+            self._write_metadata_sheet(scope=None)
+            # Visible analyst sheets are written last so they appear at
+            # the top of the workbook (xlsxwriter ordering).
+            self._write_readme_sheet()
+            self._write_model_sheet()
+            self._reorder_visible_sheets()
 
         self._wb.close()
-        buf.seek(0)
-        return buf.read()
+        payload = buf.getvalue()
 
-    # ──────────────────────────────────────────────────────────────────────
-    # Formatos
-    # ──────────────────────────────────────────────────────────────────────
+        # Post-write validator — catches any error string that slipped
+        # through (e.g. malformed formula references).
+        if not stmt_t:
+            self._validate_no_errors(payload)
 
+        return payload
+
+    # ── formats ───────────────────────────────────────────────────────────
     def _build_formats(self):
         wb = self._wb
 
-        def fmt(**kw) -> xlsxwriter.workbook.Format:
+        def fmt(**kw):
             return wb.add_format(kw)
 
-        base = {"font_name": "Calibri", "font_size": 10, "text_wrap": False}
+        base = {"font_name": "Aptos Narrow", "font_size": 11}
+        base_small = {"font_name": "Aptos Narrow", "font_size": 10}
+
+        # Number formats with bracketed-red negatives (financial modeling
+        # convention). Zero falls back to "-".
+        num_fmt = "#,##0;[Red](#,##0);-"
+        num_fmt_dec = "#,##0.0;[Red](#,##0.0);-"
+        pct_fmt = "0.0%;[Red](0.0%);-"
+        ratio_fmt = '0.00"x";[Red](0.00"x");-'
+        date_fmt = "dd/mm/yy"
 
         self._fmt = {
-            # ── Gerais ──────────────────────────────────────────────────
-            "normal":      fmt(**base),
-            "normal_num":  fmt(**base, num_format="#,##0"),
-            "normal_pct":  fmt(**base, num_format="0.0%"),
-            "normal_2x":   fmt(**base, num_format="0.00x"),
-            "neg_num":     fmt(**base, num_format="#,##0", font_color=C["vermelho_val"]),
-            "neg_pct":     fmt(**base, num_format="0.0%",  font_color=C["vermelho_val"]),
-            "bold":        fmt(**base, bold=True),
+            # ── conventions block ────────────────────────────────────────
+            "conv_header":  fmt(**base, bold=True, italic=True,
+                                font_color=PALETTE["blue_dark"]),
+            "conv_input":   fmt(**base_small, font_color=PALETTE["blue_input"]),
+            "conv_output":  fmt(**base_small, font_color=PALETTE["black"],
+                                bg_color=PALETTE["orange_fill"]),
+            "conv_linked":  fmt(**base_small, font_color=PALETTE["green_linked"]),
+            "conv_calc":    fmt(**base_small, font_color=PALETTE["black"]),
+            "conv_check":   fmt(**base_small, italic=True,
+                                font_color=PALETTE["green_linked"]),
+            "conv_note":    fmt(**base_small, italic=True,
+                                font_color=PALETTE["gray_text"]),
+            "conv_warning": fmt(**base_small, bold=True,
+                                font_color=PALETTE["red_warn"]),
 
-            # ── Cabeçalho de seção (KPIs) ───────────────────────────────
-            "sec_header":  fmt(**base, bold=True,
-                               font_color=C["branco"], bg_color=C["azul_escuro"],
-                               align="left", valign="vcenter"),
-
-            # ── Subtotais (demonstrações) ────────────────────────────────
-            "subtotal":    fmt(**base, bold=True, bg_color=C["azul_claro"]),
-            "subtotal_num":fmt(**base, bold=True, bg_color=C["azul_claro"],
-                               num_format='#,##0;-#,##0;"-"'),
-            "subtotal_neg":fmt(**base, bold=True, bg_color=C["azul_claro"],
-                               num_format='#,##0;(#,##0);"-"', font_color=C["vermelho_val"]),
-
-            # ── Placeholder (KPI futuro) ─────────────────────────────────
-            "placeholder": fmt(**base, italic=True, font_color=C["cinza_texto"],
-                               bg_color=C["cinza_claro"]),
-
-            # ── Cabeçalho de coluna (linha 1) ────────────────────────────
-            "col_header":  fmt(**base, bold=True, bg_color=C["azul_escuro"],
-                               font_color=C["branco"], align="center",
-                               valign="vcenter", border=1),
-            "col_header_l":fmt(**base, bold=True, bg_color=C["azul_escuro"],
-                               font_color=C["branco"], align="left",
-                               valign="vcenter", border=1),
-
-            # ── Delta YoY ────────────────────────────────────────────────
-            "delta_pos":   fmt(**base, bg_color=C["verde_claro"],
-                               num_format="▲ 0.0%", align="center"),
-            "delta_neg":   fmt(**base, bg_color=C["vermelho_claro"],
-                               num_format="▼ 0.0%", align="center"),
-            "delta_zero":  fmt(**base, num_format="0.0%", align="center"),
-
-            # ── Números com alinhamento central (colunas de período) ─────
-            "num_center":  fmt(**base, num_format='#,##0;-#,##0;"-"', align="right"),
-            "pct_center":  fmt(**base, num_format="0.0%",  align="right"),
-            "ratio_center":fmt(**base, num_format="0.00x", align="right"),
-            "neg_center":  fmt(**base, num_format='#,##0;(#,##0);"-"', align="right",
-                               font_color=C["vermelho_val"]),
-
-            # ── Capa ──────────────────────────────────────────────────────
-            "capa_title":  fmt(font_name="Calibri", font_size=22, bold=True,
-                               font_color=C["branco"], bg_color=C["capa_azul"],
-                               valign="vcenter"),
-            "capa_sub":    fmt(font_name="Calibri", font_size=12,
-                               font_color=C["branco"], bg_color=C["capa_azul"],
-                               valign="vcenter"),
-            "capa_label":  fmt(font_name="Calibri", font_size=10, bold=True,
-                               font_color=C["azul_escuro"]),
-            "capa_value":  fmt(font_name="Calibri", font_size=10,
-                               font_color=C["texto_escuro"]),
-            "capa_warn":   fmt(font_name="Calibri", font_size=9, italic=True,
-                               font_color=C["vermelho_val"]),
-
-            # ── Metadados ──────────────────────────────────────────────────
-            "meta_key":    fmt(**base, bold=True, font_color=C["azul_escuro"]),
-            "meta_val":    fmt(**base),
-        }
-
-    # ──────────────────────────────────────────────────────────────────────
-    # Financial Statement Model (main analyst-ready sheet, v0.19.0)
-    # ──────────────────────────────────────────────────────────────────────
-
-    def _build_model_formats(self):
-        wb = self._wb
-
-        def fmt(**kw) -> xlsxwriter.workbook.Format:
-            return wb.add_format(kw)
-
-        # Aptos Narrow (Office 365 default modern font); Calibri is a safe
-        # fallback Excel will resolve when Aptos is unavailable. We declare
-        # Aptos Narrow as the primary so the workbook visually matches the
-        # reference on machines that have it.
-        base = {"font_name": "Aptos Narrow", "font_size": 11}
-
-        num_fmt = '#,##0;(#,##0);"-"'
-        num_fmt_dec = '#,##0.0;(#,##0.0);"-"'
-        pct_fmt = '0.0%;(0.0%);"-"'
-        ratio_fmt = '0.00"x";(0.00"x");"-"'
-
-        self._mfmt = {
-            # Conventions block
-            "conv_header": fmt(**base, bold=True, italic=True,
-                               font_color="#1F4E78"),
-            "conv_input":  fmt(**base, font_color="#0070C0"),
-            "conv_output": fmt(**base, font_color="#3F3F3F", bg_color="#FFF2CC"),
-            "conv_calc":   fmt(**base, font_color="#1A1A1A"),
-            "conv_check":  fmt(**base, font_color="#548235", italic=True),
-            "conv_note":   fmt(**base, font_color="#7F7F7F", italic=True),
-            "conv_warning":fmt(**base, font_color="#C00000", bold=True),
-
-            # Title / subtitle
-            "title": fmt(font_name="Aptos Narrow", font_size=15, bold=True,
-                          font_color="#1F4E78",
-                          top=2, bottom=2, top_color="#1F4E78",
-                          bottom_color="#1F4E78", valign="vcenter"),
+            # ── title / subtitle ──────────────────────────────────────────
+            "title": fmt(font_name="Aptos Narrow", font_size=16, bold=True,
+                          font_color=PALETTE["blue_dark"],
+                          top=2, bottom=2,
+                          top_color=PALETTE["blue_dark"],
+                          bottom_color=PALETTE["blue_dark"],
+                          valign="vcenter"),
             "subtitle": fmt(font_name="Aptos Narrow", font_size=11,
-                             italic=True, font_color="#7F7F7F"),
+                             italic=True, font_color=PALETTE["gray_text"]),
 
-            # Company info block
-            "info_label": fmt(**base, bold=True, font_color="#1F4E78"),
-            "info_value": fmt(**base, font_color="#1A1A1A"),
+            # ── company info block ────────────────────────────────────────
+            "info_label": fmt(**base, bold=True,
+                               font_color=PALETTE["blue_dark"]),
+            "info_value": fmt(**base, font_color=PALETTE["black"]),
 
-            # Period header
-            "period_header_label": fmt(**base, bold=True, top=1, bottom=1,
-                                        font_color="#1F4E78"),
-            "period_header_q":     fmt(**base, bold=True, align="center",
-                                        top=1, bottom=1, font_color="#1F4E78"),
-            "period_header_y":     fmt(**base, bold=True, align="center",
-                                        top=1, bottom=1, font_color="#1F4E78",
-                                        bg_color="#F2F2F2"),
+            # ── period header (3 rows) ────────────────────────────────────
+            "period_label":      fmt(**base, bold=True,
+                                       font_color=PALETTE["blue_dark"],
+                                       top=1, bottom=1),
+            "period_q":          fmt(**base, bold=True, align="center",
+                                       font_color=PALETTE["blue_dark"],
+                                       top=1),
+            "period_y":          fmt(**base, bold=True, align="center",
+                                       font_color=PALETTE["blue_dark"],
+                                       top=1, bg_color=PALETTE["annual_fill"]),
+            "period_date":       fmt(**base_small, align="center",
+                                       num_format=date_fmt,
+                                       font_color=PALETTE["gray_text"]),
+            "period_date_y":     fmt(**base_small, align="center",
+                                       num_format=date_fmt,
+                                       font_color=PALETTE["gray_text"],
+                                       bg_color=PALETTE["annual_fill"]),
+            "period_type":       fmt(**base_small, italic=True, align="center",
+                                       font_color=PALETTE["gray_text"],
+                                       bottom=1),
+            "period_type_y":     fmt(**base_small, italic=True, align="center",
+                                       font_color=PALETTE["gray_text"],
+                                       bottom=1, bg_color=PALETTE["annual_fill"]),
 
-            # Section heading
+            # ── section heading ───────────────────────────────────────────
             "section_heading": fmt(font_name="Aptos Narrow", font_size=13,
-                                    bold=True, font_color="#1F4E78",
-                                    top=2, bottom=2, top_color="#1F4E78",
-                                    bottom_color="#1F4E78"),
+                                    bold=True, font_color=PALETTE["blue_dark"],
+                                    top=2, bottom=2,
+                                    top_color=PALETTE["blue_dark"],
+                                    bottom_color=PALETTE["blue_dark"]),
 
-            # Statement body
-            "label_body":     fmt(**base),
-            "label_subtotal": fmt(**base, bold=True, top=1),
-            "num_body":       fmt(**base, num_format=num_fmt, align="right"),
-            "num_body_y":     fmt(**base, num_format=num_fmt, align="right",
-                                   bg_color="#F2F2F2"),
-            "num_subtotal":   fmt(**base, bold=True, num_format=num_fmt,
-                                   align="right", top=1),
-            "num_subtotal_y": fmt(**base, bold=True, num_format=num_fmt,
-                                   align="right", top=1, bg_color="#F2F2F2"),
+            # ── statement body — linked (green) and calc (black) ─────────
+            "label_body":       fmt(**base),
+            "label_indent":     fmt(**base),  # same — indent via spaces
+            "label_subtotal":   fmt(**base, bold=True, top=1),
+            "num_linked":       fmt(**base, num_format=num_fmt,
+                                     align="right",
+                                     font_color=PALETTE["green_linked"]),
+            "num_linked_y":     fmt(**base, num_format=num_fmt,
+                                     align="right",
+                                     font_color=PALETTE["green_linked"],
+                                     bg_color=PALETTE["annual_fill"]),
+            "num_calc":         fmt(**base, num_format=num_fmt,
+                                     align="right",
+                                     font_color=PALETTE["black"]),
+            "num_calc_y":       fmt(**base, num_format=num_fmt,
+                                     align="right",
+                                     font_color=PALETTE["black"],
+                                     bg_color=PALETTE["annual_fill"]),
+            "num_subtotal":     fmt(**base, bold=True, num_format=num_fmt,
+                                     align="right", top=1),
+            "num_subtotal_y":   fmt(**base, bold=True, num_format=num_fmt,
+                                     align="right", top=1,
+                                     bg_color=PALETTE["annual_fill"]),
 
-            # KPI rows
-            "kpi_label":   fmt(**base, italic=True, font_color="#1A1A1A"),
+            # ── KPI numbers ──────────────────────────────────────────────
+            "kpi_label":   fmt(**base, italic=True,
+                                font_color=PALETTE["black"]),
             "kpi_pct":     fmt(**base, num_format=pct_fmt, align="right"),
             "kpi_pct_y":   fmt(**base, num_format=pct_fmt, align="right",
-                                bg_color="#F2F2F2"),
+                                bg_color=PALETTE["annual_fill"]),
             "kpi_ratio":   fmt(**base, num_format=ratio_fmt, align="right"),
             "kpi_ratio_y": fmt(**base, num_format=ratio_fmt, align="right",
-                                bg_color="#F2F2F2"),
+                                bg_color=PALETTE["annual_fill"]),
             "kpi_num":     fmt(**base, num_format=num_fmt_dec, align="right"),
             "kpi_num_y":   fmt(**base, num_format=num_fmt_dec, align="right",
-                                bg_color="#F2F2F2"),
+                                bg_color=PALETTE["annual_fill"]),
 
-            # Checks
+            # ── checks ────────────────────────────────────────────────────
             "check_label":   fmt(**base),
-            "check_ok":      fmt(**base, font_color="#548235", bold=True),
-            "check_warning": fmt(**base, font_color="#BF8F00", bold=True),
-            "check_error":   fmt(**base, font_color="#C00000", bold=True),
+            "check_ok":      fmt(**base, font_color=PALETTE["green_linked"],
+                                  bold=True),
+            "check_warning": fmt(**base, font_color=PALETTE["amber"],
+                                  bold=True),
+            "check_error":   fmt(**base, font_color=PALETTE["red_warn"],
+                                  bold=True),
             "check_value":   fmt(**base, num_format=num_fmt, align="right"),
 
-            # Source / data quality
-            "source_label": fmt(**base, bold=True, font_color="#1F4E78"),
-            "source_value": fmt(**base, font_color="#3F3F3F"),
-            "source_note":  fmt(**base, italic=True, font_color="#7F7F7F"),
+            # ── source / data quality ─────────────────────────────────────
+            "source_label": fmt(**base, bold=True,
+                                  font_color=PALETTE["blue_dark"]),
+            "source_value": fmt(**base, font_color=PALETTE["black"]),
+            "source_note":  fmt(**base, italic=True,
+                                  font_color=PALETTE["gray_text"]),
+            "source_warning": fmt(**base, italic=True,
+                                    font_color=PALETTE["red_warn"]),
+
+            # ── raw sheet formats (compact, monochrome) ──────────────────
+            "raw_header":     fmt(**base_small, bold=True,
+                                    bg_color=PALETTE["blue_dark"],
+                                    font_color="#FFFFFF", align="left"),
+            "raw_header_num": fmt(**base_small, bold=True,
+                                    bg_color=PALETTE["blue_dark"],
+                                    font_color="#FFFFFF", align="center"),
+            "raw_text":       fmt(**base_small),
+            "raw_text_sub":   fmt(**base_small, bold=True),
+            "raw_num":        fmt(**base_small, num_format=num_fmt,
+                                    align="right"),
+            "raw_num_sub":    fmt(**base_small, bold=True, num_format=num_fmt,
+                                    align="right"),
         }
 
-    def _collect_model_periods(self) -> list[str]:
-        periods: set[str] = set()
+    # ── raw statement sheets ──────────────────────────────────────────────
+    def _write_raw_statement(self, stmt_type: str):
+        df = self.stmts.get(stmt_type)
+        if df is None or df.empty:
+            return
+        sheet_name = _LEGACY_TO_RAW.get(stmt_type, f"raw_{stmt_type}")
+        ws = self._wb.add_worksheet(sheet_name)
+        subtotals = _stmt_subtotals(stmt_type)
+
+        id_cols = [c for c in ("CD_CONTA", "DS_CONTA", "STANDARD_NAME", "LINE_ID_BASE")
+                   if c in df.columns]
+        period_cols = [c for c in df.columns if c not in id_cols]
+        all_cols = id_cols + period_cols
+
+        col_widths = {
+            "CD_CONTA":      14,
+            "DS_CONTA":      44,
+            "STANDARD_NAME": 34,
+            "LINE_ID_BASE":  20,
+        }
+
+        ws.set_row(0, 22)
+        for c_idx, col in enumerate(all_cols):
+            ws.set_column(c_idx, c_idx, col_widths.get(col, 12))
+            ws.write(0, c_idx, col,
+                     self._fmt["raw_header"] if col in id_cols
+                     else self._fmt["raw_header_num"])
+
+        # Index: CD_CONTA -> 1-indexed row number in the raw sheet so the
+        # Model sheet can build cross-sheet formula references.
+        cd_to_row: dict[str, int] = {}
+        period_to_col: dict[str, int] = {}
+        for c_idx, p in enumerate(period_cols, start=len(id_cols)):
+            period_to_col[str(p)] = c_idx
+
+        for r_idx, (_, row) in enumerate(df.iterrows(), start=1):
+            cd = str(row.get("CD_CONTA", "")).strip()
+            is_sub = cd in subtotals
+            cd_to_row[cd] = r_idx + 1  # 1-indexed Excel row
+
+            ws.set_row(r_idx, 15)
+            for c_idx, col in enumerate(all_cols):
+                val = row[col]
+                if col in id_cols:
+                    text = "" if pd.isna(val) else str(val)
+                    ws.write(r_idx, c_idx, text,
+                             self._fmt["raw_text_sub"] if is_sub
+                             else self._fmt["raw_text"])
+                    continue
+                # period numeric — keep raw R$ mil (no scaling) on raw
+                # sheets so analysts can audit the source values.
+                if not _is_safe_number(val):
+                    ws.write_blank(r_idx, c_idx, None,
+                                   self._fmt["raw_num_sub"] if is_sub
+                                   else self._fmt["raw_num"])
+                else:
+                    ws.write_number(r_idx, c_idx, float(val),
+                                    self._fmt["raw_num_sub"] if is_sub
+                                    else self._fmt["raw_num"])
+
+        ws.freeze_panes(1, min(2, len(id_cols)))
+        ws.hide_gridlines(2)
+        # Auto-filter for analyst convenience.
+        ws.autofilter(0, 0, len(df), len(all_cols) - 1)
+        ws.hide()  # raw sheets hidden by default
+
+        self._raw_index[stmt_type] = {
+            "sheet_name": sheet_name,
+            "cd_to_row": cd_to_row,
+            "period_to_col": period_to_col,
+            "id_cols_count": len(id_cols),
+            "n_rows": len(df),
+        }
+
+    # ── raw KPI sheet ─────────────────────────────────────────────────────
+    def _write_raw_kpi_sheet(self):
+        ws = self._wb.add_worksheet(RAW_KPI_SHEET)
+        ws.hide_gridlines(2)
+        kpis = self.kpis
+        if kpis is None or kpis.empty:
+            ws.write(0, 0, "KPIs not available", self._fmt["source_note"])
+            ws.hide()
+            return
+
+        meta_cols = ["CATEGORIA", "KPI_ID", "KPI_NOME", "FORMULA",
+                     "IS_PLACEHOLDER", "FORMAT_TYPE", "HIGHER_IS_BETTER",
+                     "UNIDADE", "DELTA_YOY", "DELTA_YOY_PCT"]
+        present_meta = [c for c in meta_cols if c in kpis.columns]
+        period_cols = [c for c in kpis.columns if c not in meta_cols]
+        all_cols = present_meta + period_cols
+
+        col_widths = {
+            "CATEGORIA": 18, "KPI_ID": 14, "KPI_NOME": 32,
+            "FORMULA": 40, "FORMAT_TYPE": 12, "UNIDADE": 10,
+        }
+        for c_idx, col in enumerate(all_cols):
+            ws.set_column(c_idx, c_idx, col_widths.get(col, 12))
+            ws.write(0, c_idx, str(col), self._fmt["raw_header"])
+
+        for r_idx, (_, kpi_row) in enumerate(kpis.iterrows(), start=1):
+            for c_idx, col in enumerate(all_cols):
+                v = kpi_row.get(col)
+                if col in period_cols and _is_safe_number(v):
+                    ws.write_number(r_idx, c_idx, float(v), self._fmt["raw_num"])
+                elif v is None or (isinstance(v, float) and not math.isfinite(v)) or pd.isna(v):
+                    ws.write_blank(r_idx, c_idx, None, self._fmt["raw_text"])
+                else:
+                    ws.write(r_idx, c_idx, str(v), self._fmt["raw_text"])
+
+        ws.freeze_panes(1, len(present_meta))
+        ws.autofilter(0, 0, len(kpis), len(all_cols) - 1)
+        ws.hide()
+
+    # ── metadata sheet ────────────────────────────────────────────────────
+    def _write_metadata_sheet(self, scope: Optional[str] = None):
+        ws = self._wb.add_worksheet(METADATA_SHEET)
+        ws.set_column("A:A", 30)
+        ws.set_column("B:B", 60)
+        ws.set_column("C:C", 24)
+        ws.set_row(0, 20)
+        ws.write(0, 0, "Field",  self._fmt["raw_header"])
+        ws.write(0, 1, "Value",  self._fmt["raw_header"])
+        ws.write(0, 2, "Notes",  self._fmt["raw_header"])
+
+        info = self.info
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        stmts_present = scope or ", ".join(
+            k for k in ("DRE", "BPA", "BPP", "DFC", "DVA", "DMPL")
+            if k in self.stmts and not self.stmts[k].empty
+        )
+
+        rows = [
+            ("Company",            str(info.get("company_name") or "—"), ""),
+            ("CVM code",           str(info.get("cd_cvm") or "—"),       ""),
+            ("Ticker B3",          str(info.get("ticker_b3") or "—"),    ""),
+            ("CNPJ",               str(info.get("cnpj") or "—"),         ""),
+            ("CVM sector",         str(info.get("setor_cvm") or "—"),    ""),
+            ("Analytic sector",    str(info.get("setor_analitico") or "—"), ""),
+            ("Statements present", stmts_present, "Raw sheets in this workbook"),
+            ("Generated at",       now_str, ""),
+            ("Source",             "CVM — dados.cvm.gov.br", "DFP/ITR filings"),
+            ("App",                f"CVMAnalytics {_APP_VERSION}", ""),
+            ("CVM scale",          "R$ mil (thousands)",
+                                   "Most companies report in thousands of BRL"),
+            ("Model scale",        "R$ mm (millions)",
+                                   "Model sheet divides CVM source by 1,000"),
+            ("Sign convention",    "Costs / expenses appear negative in CVM source", ""),
+            ("D&A on DFC",         "CD_CONTA 6.01.01.* filtered by 'depreci' (excludes financial amortisation)",
+                                   "EBITDA = EBIT + D&A"),
+            ("Window — annual",    str(self.period_window[0]), ""),
+            ("Window — quarters/year", str(self.period_window[1]), ""),
+        ]
+        for r_idx, (k, v, n) in enumerate(rows, start=1):
+            ws.set_row(r_idx, 16)
+            ws.write(r_idx, 0, k, self._fmt["source_label"])
+            ws.write(r_idx, 1, v, self._fmt["source_value"])
+            ws.write(r_idx, 2, n, self._fmt["source_note"])
+        ws.freeze_panes(1, 0)
+        ws.hide_gridlines(2)
+        ws.hide()
+
+    # ── README sheet ──────────────────────────────────────────────────────
+    def _write_readme_sheet(self):
+        ws = self._wb.add_worksheet(README_SHEET)
+        ws.set_column("A:A", 2)
+        ws.set_column("B:B", 30)
+        ws.set_column("C:C", 70)
+        ws.set_row(1, 28)
+        ws.write(1, 1, "README", self._fmt["title"])
+
+        info = self.info
+        company = str(info.get("company_name") or "—")
+        ws.write(2, 1, f"Workbook for {company}", self._fmt["subtitle"])
+
+        section_rows = [
+            ("Main sheet",
+             "`Model` — analyst-curated single sheet with Income Statement, "
+             "Balance Sheet, Cash Flow Statement, optional DVA, KPIs, Checks, "
+             "and Source / Data Quality blocks."),
+            ("Period window",
+             f"Annual: last {self.period_window[0]} fiscal years; "
+             f"Quarterly: up to {self.period_window[1]} quarters per included annual year, "
+             "interleaved chronologically (e.g. 1Q21, 2Q21, 3Q21, 4Q21, 2021, 1Q22, ...)."),
+            ("Units",
+             "Model sheet: R$ mm (millions). CVM source: R$ mil (thousands); "
+             "divided by 1,000 in the Model view. Raw sheets keep R$ mil."),
+            ("Hidden sheets",
+             "Right-click any visible sheet tab → Unhide… to audit raw_DRE / "
+             "raw_BPA / raw_BPP / raw_DFC / raw_DVA / raw_KPIs / metadata. The "
+             "raw sheets preserve the full CVM tree and full period history."),
+            ("Conventions",
+             "Linked values are green (link into raw_*); calculated values are "
+             "black (formula in cell); negative numbers appear red and in "
+             "parentheses; zero displays as `-`."),
+            ("Checks",
+             "Balance Sheet tie, Cash Flow tie, Critical Line Availability, "
+             "Period Completeness, and DVA Availability are computed by formula "
+             "on the Model sheet. The exporter also runs a post-write sweep that "
+             "fails the export if any cell contains an Excel error code."),
+            ("Limitations",
+             "No forecast periods, no LTM column, no per-share / share-count / "
+             "market-price rows, no sector-specific KPIs in v0.19.0. Full CVM "
+             "history is available via the raw sheets."),
+        ]
+        for r_idx, (label, body) in enumerate(section_rows, start=4):
+            ws.set_row(r_idx, 30)
+            ws.write(r_idx, 1, label, self._fmt["info_label"])
+            ws.write(r_idx, 2, body, self._fmt["source_value"])
+
+        ws.hide_gridlines(2)
+        ws.freeze_panes(2, 0)
+
+    # ── Model sheet — main analyst view ───────────────────────────────────
+    def _write_model_sheet(self):
+        ws = self._wb.add_worksheet(MODEL_SHEET)
+        ws.hide_gridlines(2)
+        f = self._fmt
+        info = self.info
+
+        # Period window
+        all_periods: set[str] = set()
         for df in self.stmts.values():
             if df is None or df.empty:
                 continue
             id_cols = {"CD_CONTA", "DS_CONTA", "STANDARD_NAME", "LINE_ID_BASE"}
-            for c in df.columns:
-                if c not in id_cols:
-                    periods.add(str(c))
-        ordered = sorted(periods, key=_period_sort_key)
-        return ordered
+            all_periods.update(str(c) for c in df.columns if c not in id_cols)
+        periods = _pick_model_periods(
+            sorted(all_periods, key=_period_sort_key),
+            annuals=self.period_window[0],
+            quarters_per_year=self.period_window[1],
+        )
+        self._model_periods = periods
 
-    def _period_is_annual(self, period: str) -> bool:
-        return bool(re.match(r"^(19|20)\d{2}$", str(period).strip()))
-
-    def _write_financial_statement_model(self):
-        ws = self._wb.add_worksheet(_MODEL_SHEET_NAME)
-        f = self._mfmt
-        info = self.info or {}
-        periods = self._collect_model_periods()
-
-        # Column widths matched to reference workbook
-        ws.set_column(0, 0, 2)       # A: margin
-        ws.set_column(1, 1, 52)      # B: labels
-        ws.set_column(2, 2, 2.5)     # C: gap
+        # Columns: A margin, B labels, C gap, D+ periods
+        ws.set_column(0, 0, 2)
+        ws.set_column(1, 1, 52)
+        ws.set_column(2, 2, 2.5)
         for idx in range(3, 3 + max(len(periods), 1)):
             ws.set_column(idx, idx, 10)
 
-        ws.hide_gridlines(2)
-
-        # ── Conventions block ───────────────────────────────────────────────
-        # B2 header, D3..D8 legend
+        # Conventions block (rows 1-9, 0-indexed)
         ws.write(1, 1, "Conventions", f["conv_header"])
         ws.write(2, 3, "Input",       f["conv_input"])
         ws.write(3, 3, "Output",      f["conv_output"])
-        ws.write(4, 3, "Calculation", f["conv_calc"])
-        ws.write(5, 3, "Check",       f["conv_check"])
-        ws.write(6, 3, "Note",        f["conv_note"])
-        ws.write(7, 3, "Warning",     f["conv_warning"])
+        ws.write(4, 3, "Linked",      f["conv_linked"])
+        ws.write(5, 3, "Calculation", f["conv_calc"])
+        ws.write(6, 3, "Check (OK)",  f["conv_check"])
+        ws.write(7, 3, "Note",        f["conv_note"])
+        ws.write(8, 3, "Warning",     f["conv_warning"])
+        ws.write(8, 4, "(red) negatives shown as (123)", f["conv_note"])
 
-        # ── Title + subtitle (rows 9-10, 0-indexed 8-9) ──────────────────────
+        # Title + subtitle
         company_name = str(info.get("company_name") or "—")
-        ws.set_row(8, 24)
-        title = f"Financial Statement Model For {company_name}"
-        # Compute span based on number of period columns; min 4 to look balanced
-        title_last_col = max(4, 2 + len(periods))
-        ws.merge_range(8, 1, 8, title_last_col, title, f["title"])
-        ws.write(9, 1, "R$ mm except per share and where indicated", f["subtitle"])
+        ws.set_row(10, 26)
+        last_col = max(4, 2 + len(periods))
+        ws.merge_range(10, 1, 10, last_col,
+                       f"Financial Statement Model — {company_name}",
+                       f["title"])
+        ws.write(11, 1, "R$ mm except per share and where indicated",
+                 f["subtitle"])
 
-        # ── Company info block (rows 12-19, 0-indexed 11-18) ─────────────────
-        latest_year = info.get("latest_year") or (periods[-1] if periods else "—")
-        latest_quarter = "—"
+        # Company info block (rows 13-21)
+        latest_year = info.get("latest_year") or "—"
+        latest_q = "—"
         for p in reversed(periods):
-            m_q = re.match(r"^([1-4])[QT](\d{2,4})$", str(p))
-            if m_q:
-                latest_quarter = p
+            if _parse_quarter(p) is not None:
+                latest_q = p
                 break
-
         rows_info = [
             ("Company name",       company_name),
             ("Ticker",             str(info.get("ticker_b3") or "—")),
@@ -465,769 +806,563 @@ class ExcelExporter:
             ("GICS sector",        str(info.get("setor_analitico") or "—")),
             ("CVM sector",         str(info.get("setor_cvm") or "—")),
             ("Latest fiscal year", str(latest_year)),
-            ("Latest quarter",     str(latest_quarter)),
+            ("Latest quarter",     str(latest_q)),
+            ("Period window",
+             f"{self.period_window[0]} annuals × up to {self.period_window[1]} quarters/year (interleaved)"),
         ]
         for i, (label, value) in enumerate(rows_info):
-            r = 11 + i
+            r = 13 + i
             ws.set_row(r, 14)
             ws.write(r, 1, label, f["info_label"])
             ws.write(r, 3, value, f["info_value"])
 
-        # ── Period header (row 21, 0-indexed 20) ─────────────────────────────
-        period_row = 20
-        ws.set_row(period_row, 18)
-        ws.write(period_row, 1, "Fiscal year", f["period_header_label"])
+        # Period header — 3 rows (label / date / type)
+        header_row = 23
+        ws.set_row(header_row, 18)
+        ws.write(header_row, 1, "Period", f["period_label"])
+        ws.set_row(header_row + 1, 14)
+        ws.write(header_row + 1, 1, "Period end date", f["period_label"])
+        ws.set_row(header_row + 2, 14)
+        ws.write(header_row + 2, 1, "Period type", f["period_label"])
+
         for c_idx, p in enumerate(periods, start=3):
-            if self._period_is_annual(p):
-                ws.write(period_row, c_idx, str(p), f["period_header_y"])
+            is_y = _is_annual_period(p)
+            ws.write(header_row, c_idx, str(p),
+                     f["period_y"] if is_y else f["period_q"])
+            end_date = _period_end_date(p)
+            if end_date is not None:
+                ws.write_datetime(header_row + 1, c_idx,
+                                  datetime(end_date.year, end_date.month,
+                                           end_date.day),
+                                  f["period_date_y"] if is_y else f["period_date"])
             else:
-                ws.write(period_row, c_idx, str(p), f["period_header_q"])
+                ws.write_blank(header_row + 1, c_idx, None,
+                               f["period_date_y"] if is_y else f["period_date"])
+            ws.write(header_row + 2, c_idx,
+                     "Annual" if is_y else "Quarter",
+                     f["period_type_y"] if is_y else f["period_type"])
 
-        # Freeze pane below period header + after label/gap columns
-        ws.freeze_panes(period_row + 2, 3)
+        ws.freeze_panes(header_row + 3, 3)
 
-        # ── Statement sections ──────────────────────────────────────────────
-        cur = period_row + 2
+        cur = header_row + 4
 
-        cur = self._write_model_statement(
+        # Section: Income Statement
+        cur = self._write_model_section(
             ws, cur, periods,
-            stmt_type="DRE",
             heading="Income Statement",
-            subtotals=_DRE_SUBTOTAL_KEYS,
+            stmt_type="DRE",
+            line_codes=["3.01", "3.02", "3.03", "3.04", "3.05",
+                        "3.06", "3.07", "3.08", "3.11"],
+            subtotal_codes=_DRE_SUBTOTALS,
+            indent_codes={"3.02": 1, "3.04": 1, "3.06": 1, "3.08": 1},
         )
+
+        # Computed: EBITDA and D&A
+        cur = self._write_model_da_and_ebitda(ws, cur, periods)
+
+        # Section: Balance Sheet
         cur = self._write_model_balance_sheet(ws, cur, periods)
-        cur = self._write_model_statement(
+
+        # Section: Cash Flow Statement
+        cur = self._write_model_section(
             ws, cur, periods,
-            stmt_type="DFC",
             heading="Cash Flow Statement",
-            subtotals=_DFC_SUBTOTAL_KEYS,
+            stmt_type="DFC",
+            line_codes=["6.01", "6.02", "6.02.01", "6.03", "6.04", "6.05"],
+            subtotal_codes=_DFC_SUBTOTALS,
+            indent_codes={"6.02.01": 1},
         )
-        if "DVA" in self.stmts and not self.stmts["DVA"].empty:
-            cur = self._write_model_statement(
+
+        # Computed: FCF = CFO + Capex (Capex is negative in CVM source)
+        cur = self._write_model_fcf(ws, cur, periods)
+
+        # Section: Value Added Statement (DVA)
+        dva_available = "DVA" in self.stmts and not self.stmts["DVA"].empty
+        if dva_available:
+            cur = self._write_model_section(
                 ws, cur, periods,
-                stmt_type="DVA",
                 heading="Value Added Statement",
-                subtotals=_DVA_SUBTOTAL_KEYS,
+                stmt_type="DVA",
+                line_codes=["7.08"],
+                subtotal_codes={"7.08"},
+                indent_codes={},
             )
 
+        # KPIs
         cur = self._write_model_kpis(ws, cur, periods)
-        cur = self._write_model_checks(ws, cur, periods)
-        cur = self._write_model_source_block(ws, cur, periods)
 
-        # v0.18.3 — analyst-friendly print setup. Landscape, fit to one page
-        # wide (height unrestricted), repeat the conventions/title/period
-        # header rows (1-21) on every printed page, narrow margins.
+        # Checks
+        cur = self._write_model_checks(ws, cur, periods, dva_available)
+
+        # Source / Data Quality
+        cur = self._write_model_source(ws, cur, periods, dva_available)
+
+        # Print setup (carried over from v0.18.3)
         ws.set_landscape()
         ws.set_paper(9)  # A4
         ws.fit_to_pages(1, 0)
-        ws.repeat_rows(0, 20)
+        ws.repeat_rows(0, header_row + 2)
         ws.set_margins(left=0.4, right=0.4, top=0.5, bottom=0.5)
-        ws.set_header(f"&L{_MODEL_SHEET_NAME} &R{info.get('company_name') or ''}")
+        ws.set_header(f"&L{MODEL_SHEET} &R{company_name}")
         ws.set_footer("&LCVMAnalytics &CPage &P of &N &R&D")
         ws.print_area(0, 0, cur, max(3, 2 + len(periods)))
 
     def _write_section_heading(self, ws, row: int, label: str) -> int:
-        f = self._mfmt
         ws.set_row(row, 22)
-        ws.write(row, 1, label, f["section_heading"])
+        ws.write(row, 1, label, self._fmt["section_heading"])
         return row + 2
 
-    def _write_model_statement(
+    def _write_model_section(
         self,
         ws,
         start_row: int,
         periods: list[str],
         *,
-        stmt_type: str,
         heading: str,
-        subtotals: set[str],
+        stmt_type: str,
+        line_codes: list[str],
+        subtotal_codes: set[str],
+        indent_codes: dict[str, int],
     ) -> int:
-        f = self._mfmt
-        df = self.stmts.get(stmt_type)
-        if df is None or df.empty:
+        idx = self._raw_index.get(stmt_type)
+        if idx is None:
             return start_row
-
         row = self._write_section_heading(ws, start_row, heading)
 
-        id_cols = [c for c in ["CD_CONTA", "DS_CONTA", "STANDARD_NAME", "LINE_ID_BASE"]
-                   if c in df.columns]
-        period_cols_in_df = [c for c in df.columns if c not in id_cols]
+        sheet = idx["sheet_name"]
+        cd_to_row = idx["cd_to_row"]
+        period_to_col = idx["period_to_col"]
+        f = self._fmt
 
-        for _, stmt_row in df.iterrows():
-            cd = str(stmt_row.get("CD_CONTA", "")).strip()
-            ds = str(stmt_row.get("DS_CONTA", "") or "").strip()
-            is_subtotal = cd in subtotals
-            indent = _indent_for_code(cd)
-            suffix = _suffix_for_row(cd, subtotals)
-            label = (" " * indent) + ds + suffix
+        for code in line_codes:
+            label = _MODEL_LINE_LABELS.get(code, code)
+            is_sub = code in subtotal_codes
+            indent = indent_codes.get(code, 0)
+            display = ("    " * indent) + label + (" (=)" if is_sub else "")
 
             ws.set_row(row, 14)
-            ws.write(row, 1, label,
-                     f["label_subtotal"] if is_subtotal else f["label_body"])
+            ws.write(row, 1, display,
+                     f["label_subtotal"] if is_sub else f["label_body"])
 
-            for c_idx, period in enumerate(periods, start=3):
-                annual = self._period_is_annual(period)
-                if period not in period_cols_in_df:
-                    cell_fmt = (f["num_subtotal_y"] if is_subtotal and annual
-                                else f["num_subtotal"] if is_subtotal
-                                else f["num_body_y"] if annual
-                                else f["num_body"])
+            raw_row = cd_to_row.get(code)
+            for c_idx, p in enumerate(periods, start=3):
+                is_y = _is_annual_period(p)
+                cell_fmt = (f["num_subtotal_y"] if is_sub and is_y
+                            else f["num_subtotal"] if is_sub
+                            else f["num_linked_y"] if is_y
+                            else f["num_linked"])
+                raw_col = period_to_col.get(p)
+                if raw_row is None or raw_col is None:
                     ws.write_blank(row, c_idx, None, cell_fmt)
                     continue
-                v = stmt_row.get(period)
-                if pd.isna(v) or v is None:
-                    cell_fmt = (f["num_subtotal_y"] if is_subtotal and annual
-                                else f["num_subtotal"] if is_subtotal
-                                else f["num_body_y"] if annual
-                                else f["num_body"])
-                    ws.write_blank(row, c_idx, None, cell_fmt)
-                    continue
-                value_mm = float(v) / _MODEL_SCALE_DIVISOR
-                cell_fmt = (f["num_subtotal_y"] if is_subtotal and annual
-                            else f["num_subtotal"] if is_subtotal
-                            else f["num_body_y"] if annual
-                            else f["num_body"])
-                ws.write_number(row, c_idx, value_mm, cell_fmt)
+                # Build the cross-sheet formula reference. xlsxwriter
+                # requires xl_rowcol_to_cell-style refs for sheet names.
+                cell_ref = xlsxwriter.utility.xl_rowcol_to_cell(raw_row - 1, raw_col)
+                safe_sheet = sheet.replace("'", "''")
+                formula = (
+                    f"=IFERROR('{safe_sheet}'!{cell_ref}/{_MODEL_SCALE_DIVISOR:.0f}"
+                    f',"-")'
+                )
+                ws.write_formula(row, c_idx, formula, cell_fmt)
+
+            # remember the model row for this code so the Checks/KPIs
+            # block can reference back into it
+            self._model_rows[f"{stmt_type}:{code}"] = row + 1  # 1-indexed
             row += 1
 
-        return row + 1  # one blank spacer row after section
+        return row + 1
 
     def _write_model_balance_sheet(self, ws, start_row: int, periods: list[str]) -> int:
-        """Render BPA + BPP under one combined "Balance Sheet" heading."""
-        bpa = self.stmts.get("BPA")
-        bpp = self.stmts.get("BPP")
-        if (bpa is None or bpa.empty) and (bpp is None or bpp.empty):
+        if (("BPA" not in self.stmts or self.stmts["BPA"].empty)
+                and ("BPP" not in self.stmts or self.stmts["BPP"].empty)):
             return start_row
-
         row = self._write_section_heading(ws, start_row, "Balance Sheet")
 
-        for stmt_type, subtotals, sub_label in [
-            ("BPA", _BPA_SUBTOTAL_KEYS, "Assets"),
-            ("BPP", _BPP_SUBTOTAL_KEYS, "Liabilities & Equity"),
-        ]:
-            df = self.stmts.get(stmt_type)
-            if df is None or df.empty:
-                continue
-            f = self._mfmt
+        def block(stype, codes, subs, indents, sub_label):
+            nonlocal row
+            f = self._fmt
             ws.set_row(row, 16)
             ws.write(row, 1, sub_label, f["label_subtotal"])
             row += 1
-
-            id_cols = [c for c in ["CD_CONTA", "DS_CONTA", "STANDARD_NAME", "LINE_ID_BASE"]
-                       if c in df.columns]
-            period_cols_in_df = [c for c in df.columns if c not in id_cols]
-
-            for _, stmt_row in df.iterrows():
-                cd = str(stmt_row.get("CD_CONTA", "")).strip()
-                ds = str(stmt_row.get("DS_CONTA", "") or "").strip()
-                is_subtotal = cd in subtotals
-                indent = _indent_for_code(cd)
-                suffix = _suffix_for_row(cd, subtotals)
-                label = (" " * indent) + ds + suffix
-
+            idx = self._raw_index.get(stype)
+            if idx is None:
+                return
+            sheet = idx["sheet_name"]
+            cd_to_row = idx["cd_to_row"]
+            period_to_col = idx["period_to_col"]
+            for code in codes:
+                label = _MODEL_LINE_LABELS.get(code, code)
+                is_sub = code in subs
+                indent = indents.get(code, 0)
+                display = ("    " * indent) + label + (" (=)" if is_sub else "")
                 ws.set_row(row, 14)
-                ws.write(row, 1, label,
-                         f["label_subtotal"] if is_subtotal else f["label_body"])
-
-                for c_idx, period in enumerate(periods, start=3):
-                    annual = self._period_is_annual(period)
-                    if period not in period_cols_in_df:
-                        cell_fmt = (f["num_subtotal_y"] if is_subtotal and annual
-                                    else f["num_subtotal"] if is_subtotal
-                                    else f["num_body_y"] if annual
-                                    else f["num_body"])
+                ws.write(row, 1, display,
+                         f["label_subtotal"] if is_sub else f["label_body"])
+                raw_row = cd_to_row.get(code)
+                for c_idx, p in enumerate(periods, start=3):
+                    is_y = _is_annual_period(p)
+                    cell_fmt = (f["num_subtotal_y"] if is_sub and is_y
+                                else f["num_subtotal"] if is_sub
+                                else f["num_linked_y"] if is_y
+                                else f["num_linked"])
+                    raw_col = period_to_col.get(p)
+                    if raw_row is None or raw_col is None:
                         ws.write_blank(row, c_idx, None, cell_fmt)
                         continue
-                    v = stmt_row.get(period)
-                    if pd.isna(v) or v is None:
-                        cell_fmt = (f["num_subtotal_y"] if is_subtotal and annual
-                                    else f["num_subtotal"] if is_subtotal
-                                    else f["num_body_y"] if annual
-                                    else f["num_body"])
-                        ws.write_blank(row, c_idx, None, cell_fmt)
-                        continue
-                    value_mm = float(v) / _MODEL_SCALE_DIVISOR
-                    cell_fmt = (f["num_subtotal_y"] if is_subtotal and annual
-                                else f["num_subtotal"] if is_subtotal
-                                else f["num_body_y"] if annual
-                                else f["num_body"])
-                    ws.write_number(row, c_idx, value_mm, cell_fmt)
+                    cell_ref = xlsxwriter.utility.xl_rowcol_to_cell(raw_row - 1, raw_col)
+                    safe_sheet = sheet.replace("'", "''")
+                    formula = (
+                        f"=IFERROR('{safe_sheet}'!{cell_ref}/{_MODEL_SCALE_DIVISOR:.0f}"
+                        f',"-")'
+                    )
+                    ws.write_formula(row, c_idx, formula, cell_fmt)
+                self._model_rows[f"{stype}:{code}"] = row + 1
                 row += 1
-            row += 1  # spacer between Assets and Liab&Equity
+            row += 1
+
+        block("BPA",
+              ["1", "1.01", "1.01.01", "1.02"],
+              _BPA_SUBTOTALS,
+              {"1.01": 1, "1.01.01": 2, "1.02": 1},
+              "Assets")
+        block("BPP",
+              ["2", "2.01", "2.01.04", "2.02", "2.02.01",
+               "2.03", "2.03.01", "2.03.04"],
+              _BPP_SUBTOTALS,
+              {"2.01": 1, "2.01.04": 2, "2.02": 1, "2.02.01": 2,
+               "2.03": 1, "2.03.01": 2, "2.03.04": 2},
+              "Liabilities & Equity")
 
         return row
 
-    def _write_model_kpis(self, ws, start_row: int, periods: list[str]) -> int:
-        f = self._mfmt
-        if self.kpis is None or self.kpis.empty:
+    def _write_model_da_and_ebitda(self, ws, start_row: int, periods: list[str]) -> int:
+        idx = self._raw_index.get("DFC")
+        if idx is None:
             return start_row
+        f = self._fmt
+        # Find first 6.01.01.* row containing "depreci" in DS_CONTA.
+        dfc_df = self.stmts.get("DFC")
+        if dfc_df is None or dfc_df.empty:
+            return start_row
+        da_row_in_raw = None
+        for r_pos, (_, row_data) in enumerate(dfc_df.iterrows(), start=1):
+            cd = str(row_data.get("CD_CONTA", "")).strip()
+            ds = str(row_data.get("DS_CONTA", "") or "").lower()
+            if cd.startswith("6.01.01") and "depreci" in ds:
+                da_row_in_raw = r_pos + 1  # 1-indexed Excel row
+                break
 
+        sheet = idx["sheet_name"]
+        period_to_col = idx["period_to_col"]
+        safe_sheet = sheet.replace("'", "''")
+
+        # Write D&A row
+        row = start_row
+        ws.set_row(row, 14)
+        ws.write(row, 1, "    Depreciation & Amortization (D&A)",
+                 f["label_body"])
+        for c_idx, p in enumerate(periods, start=3):
+            is_y = _is_annual_period(p)
+            cell_fmt = f["num_linked_y"] if is_y else f["num_linked"]
+            raw_col = period_to_col.get(p)
+            if da_row_in_raw is None or raw_col is None:
+                ws.write_blank(row, c_idx, None, cell_fmt)
+                continue
+            cell_ref = xlsxwriter.utility.xl_rowcol_to_cell(da_row_in_raw - 1, raw_col)
+            formula = (
+                f"=IFERROR('{safe_sheet}'!{cell_ref}/{_MODEL_SCALE_DIVISOR:.0f}"
+                f',"-")'
+            )
+            ws.write_formula(row, c_idx, formula, cell_fmt)
+        self._model_rows["COMP:DA"] = row + 1
+        row += 1
+
+        # Write EBITDA = EBIT + D&A
+        ebit_model_row = self._model_rows.get("DRE:3.05")
+        ws.set_row(row, 14)
+        ws.write(row, 1, "EBITDA (=)", f["label_subtotal"])
+        for c_idx, p in enumerate(periods, start=3):
+            is_y = _is_annual_period(p)
+            cell_fmt = f["num_subtotal_y"] if is_y else f["num_subtotal"]
+            if ebit_model_row is None or da_row_in_raw is None:
+                ws.write_blank(row, c_idx, None, cell_fmt)
+                continue
+            col_letter = xlsxwriter.utility.xl_col_to_name(c_idx)
+            ebit_ref = f"{col_letter}{ebit_model_row}"
+            da_ref = f"{col_letter}{self._model_rows['COMP:DA']}"
+            formula = f'=IFERROR({ebit_ref}+{da_ref},"-")'
+            ws.write_formula(row, c_idx, formula, cell_fmt)
+        self._model_rows["COMP:EBITDA"] = row + 1
+        return row + 2
+
+    def _write_model_fcf(self, ws, start_row: int, periods: list[str]) -> int:
+        f = self._fmt
+        cfo_row = self._model_rows.get("DFC:6.01")
+        capex_row = self._model_rows.get("DFC:6.02.01")
+        if cfo_row is None or capex_row is None:
+            return start_row
+        row = start_row
+        ws.set_row(row, 14)
+        ws.write(row, 1, "Free Cash Flow (FCF) (=)", f["label_subtotal"])
+        for c_idx, p in enumerate(periods, start=3):
+            is_y = _is_annual_period(p)
+            cell_fmt = f["num_subtotal_y"] if is_y else f["num_subtotal"]
+            col_letter = xlsxwriter.utility.xl_col_to_name(c_idx)
+            cfo_ref = f"{col_letter}{cfo_row}"
+            capex_ref = f"{col_letter}{capex_row}"
+            # Capex is negative in CVM convention so additive.
+            formula = f'=IFERROR({cfo_ref}+{capex_ref},"-")'
+            ws.write_formula(row, c_idx, formula, cell_fmt)
+        self._model_rows["COMP:FCF"] = row + 1
+        return row + 2
+
+    def _write_model_kpis(self, ws, start_row: int, periods: list[str]) -> int:
+        f = self._fmt
         row = self._write_section_heading(ws, start_row, "KPIs / Ratios")
 
-        meta_cols = {"CATEGORIA", "KPI_ID", "KPI_NOME", "FORMULA",
-                     "IS_PLACEHOLDER", "FORMAT_TYPE", "HIGHER_IS_BETTER",
-                     "UNIDADE", "DELTA_YOY", "DELTA_YOY_PCT"}
-        kpi_period_cols = [str(c) for c in self.kpis.columns if c not in meta_cols]
+        rev = self._model_rows.get("DRE:3.01")
+        gp = self._model_rows.get("DRE:3.03")
+        ebit = self._model_rows.get("DRE:3.05")
+        ebitda = self._model_rows.get("COMP:EBITDA")
+        ni = self._model_rows.get("DRE:3.11")
+        ta = self._model_rows.get("BPA:1")
+        ca = self._model_rows.get("BPA:1.01")
+        cash = self._model_rows.get("BPA:1.01.01")
+        cl = self._model_rows.get("BPP:2.01")
+        st_debt = self._model_rows.get("BPP:2.01.04")
+        lt_debt = self._model_rows.get("BPP:2.02.01")
+        eq = self._model_rows.get("BPP:2.03")
+        cfo = self._model_rows.get("DFC:6.01")
+        capex = self._model_rows.get("DFC:6.02.01")
+        fcf = self._model_rows.get("COMP:FCF")
 
-        current_cat = None
-        for _, kpi_row in self.kpis.iterrows():
-            if bool(kpi_row.get("IS_PLACEHOLDER", False)):
-                continue  # skip placeholder KPIs in the analyst model
+        def cell(letter, mrow):
+            return f"{letter}{mrow}" if mrow else '"-"'
 
-            cat = str(kpi_row.get("CATEGORIA") or "")
-            if cat and cat != current_cat:
-                current_cat = cat
-                ws.set_row(row, 14)
-                ws.write(row, 1, f"  {cat}", f["info_label"])
-                row += 1
-
-            fmt_type = str(kpi_row.get("FORMAT_TYPE") or "ratio").lower()
-            unit = str(kpi_row.get("UNIDADE") or "")
-            kpi_name = str(kpi_row.get("KPI_NOME") or "")
-            label = f"    {kpi_name}"
-            if unit:
-                label = f"{label} ({unit})"
-
+        def write_kpi(label, formula_fn, fmt_pct=True):
+            nonlocal row
             ws.set_row(row, 14)
-            ws.write(row, 1, label, f["kpi_label"])
-
-            for c_idx, period in enumerate(periods, start=3):
-                annual = self._period_is_annual(period)
-                if period not in kpi_period_cols:
-                    blank_fmt = (f["kpi_pct_y"] if fmt_type == "pct" and annual
-                                  else f["kpi_pct"] if fmt_type == "pct"
-                                  else f["kpi_ratio_y"] if annual
-                                  else f["kpi_ratio"])
-                    ws.write_blank(row, c_idx, None, blank_fmt)
-                    continue
-                v = kpi_row.get(period)
-                if v is None or pd.isna(v):
-                    blank_fmt = (f["kpi_pct_y"] if fmt_type == "pct" and annual
-                                  else f["kpi_pct"] if fmt_type == "pct"
-                                  else f["kpi_ratio_y"] if annual
-                                  else f["kpi_ratio"])
-                    ws.write_blank(row, c_idx, None, blank_fmt)
-                    continue
-                if fmt_type == "pct":
-                    cell_fmt = f["kpi_pct_y"] if annual else f["kpi_pct"]
-                elif fmt_type == "ratio":
-                    cell_fmt = f["kpi_ratio_y"] if annual else f["kpi_ratio"]
+            ws.write(row, 1, "    " + label, f["kpi_label"])
+            for c_idx, p in enumerate(periods, start=3):
+                is_y = _is_annual_period(p)
+                if fmt_pct:
+                    cell_fmt = f["kpi_pct_y"] if is_y else f["kpi_pct"]
                 else:
-                    cell_fmt = f["kpi_num_y"] if annual else f["kpi_num"]
-                ws.write_number(row, c_idx, float(v), cell_fmt)
+                    cell_fmt = f["kpi_ratio_y"] if is_y else f["kpi_ratio"]
+                col_letter = xlsxwriter.utility.xl_col_to_name(c_idx)
+                expr = formula_fn(col_letter, c_idx)
+                if expr is None:
+                    ws.write_blank(row, c_idx, None, cell_fmt)
+                else:
+                    ws.write_formula(row, c_idx, expr, cell_fmt)
             row += 1
+
+        # Revenue Growth YoY — reference current vs previous column
+        def rev_growth(col_letter, c_idx):
+            if rev is None or c_idx <= 3:
+                return None
+            prev_letter = xlsxwriter.utility.xl_col_to_name(c_idx - 1)
+            cur_ref = f"{col_letter}{rev}"
+            prev_ref = f"{prev_letter}{rev}"
+            return f'=IFERROR({cur_ref}/{prev_ref}-1,"-")'
+
+        write_kpi("Revenue Growth (period-on-period)", rev_growth, True)
+        write_kpi("Gross Margin",
+                  lambda L, _: f'=IFERROR({cell(L,gp)}/{cell(L,rev)},"-")', True)
+        write_kpi("EBITDA Margin",
+                  lambda L, _: f'=IFERROR({cell(L,ebitda)}/{cell(L,rev)},"-")', True)
+        write_kpi("EBIT Margin",
+                  lambda L, _: f'=IFERROR({cell(L,ebit)}/{cell(L,rev)},"-")', True)
+        write_kpi("Net Margin",
+                  lambda L, _: f'=IFERROR({cell(L,ni)}/{cell(L,rev)},"-")', True)
+        write_kpi("Return on Equity (ROE)",
+                  lambda L, _: f'=IFERROR({cell(L,ni)}/{cell(L,eq)},"-")', True)
+        write_kpi("Return on Assets (ROA)",
+                  lambda L, _: f'=IFERROR({cell(L,ni)}/{cell(L,ta)},"-")', True)
+        write_kpi("Net Debt / EBITDA",
+                  lambda L, _: f'=IFERROR(({cell(L,st_debt)}+{cell(L,lt_debt)}-{cell(L,cash)})/{cell(L,ebitda)},"-")', False)
+        write_kpi("Current Ratio",
+                  lambda L, _: f'=IFERROR({cell(L,ca)}/{cell(L,cl)},"-")', False)
+        write_kpi("CFO / Revenue",
+                  lambda L, _: f'=IFERROR({cell(L,cfo)}/{cell(L,rev)},"-")', True)
+        write_kpi("FCF / Revenue",
+                  lambda L, _: f'=IFERROR({cell(L,fcf)}/{cell(L,rev)},"-")', True)
+        write_kpi("Capex / Revenue",
+                  lambda L, _: f'=IFERROR(-{cell(L,capex)}/{cell(L,rev)},"-")', True)
 
         return row + 1
 
-    def _write_model_checks(self, ws, start_row: int, periods: list[str]) -> int:
-        f = self._mfmt
+    def _write_model_checks(self, ws, start_row: int, periods: list[str], dva_available: bool) -> int:
+        f = self._fmt
         row = self._write_section_heading(ws, start_row, "Checks")
 
-        # Balance Sheet check: Total Assets vs Total Liabilities + Equity
-        bpa = self.stmts.get("BPA")
-        bpp = self.stmts.get("BPP")
-        if (bpa is not None and not bpa.empty
-                and bpp is not None and not bpp.empty):
-            assets_row = bpa[bpa["CD_CONTA"].astype(str) == "1"]
-            liab_row   = bpp[bpp["CD_CONTA"].astype(str) == "2"]
-            ws.set_row(row, 14)
-            ws.write(row, 1, "Balance Sheet: Assets - (Liab. + Equity)",
-                     f["check_label"])
-            all_ok = True
-            for c_idx, period in enumerate(periods, start=3):
-                a_val = None
-                l_val = None
-                if not assets_row.empty and period in assets_row.columns:
-                    a_val = assets_row.iloc[0].get(period)
-                if not liab_row.empty and period in liab_row.columns:
-                    l_val = liab_row.iloc[0].get(period)
-                if (a_val is None or pd.isna(a_val)
-                        or l_val is None or pd.isna(l_val)):
-                    ws.write_blank(row, c_idx, None, f["check_value"])
-                    continue
-                diff_mm = (float(a_val) - float(l_val)) / _MODEL_SCALE_DIVISOR
-                ws.write_number(row, c_idx, diff_mm, f["check_value"])
-                if abs(diff_mm) > 0.5:  # > R$ 500k diff after rounding to R$ mm
-                    all_ok = False
-            ws.write(row, 2, "OK" if all_ok else "WARNING",
-                     f["check_ok"] if all_ok else f["check_warning"])
-            row += 1
+        ta = self._model_rows.get("BPA:1")
+        tle = self._model_rows.get("BPP:2")
 
-        # Period completeness
+        # Balance Sheet tie
         ws.set_row(row, 14)
-        ws.write(row, 1, "Period Completeness (count of periods exported)",
+        ws.write(row, 1, "Balance Sheet: Total Assets − (Liab. + Equity)",
                  f["check_label"])
-        ws.write(row, 2, "OK" if periods else "ERROR",
-                 f["check_ok"] if periods else f["check_error"])
-        # show count under the last period column for visibility
-        for c_idx, period in enumerate(periods, start=3):
-            ws.write_blank(row, c_idx, None, f["check_value"])
-        if periods:
-            ws.write_number(row, 3, float(len(periods)), f["check_value"])
-        row += 1
-
-        # Duplicate Line ID check
-        ws.set_row(row, 14)
-        dup_count = 0
-        for stmt_type in ("DRE", "BPA", "BPP", "DFC", "DVA"):
-            df = self.stmts.get(stmt_type)
-            if df is None or df.empty or "CD_CONTA" not in df.columns:
+        first_col_letter = xlsxwriter.utility.xl_col_to_name(3)
+        last_col_letter = xlsxwriter.utility.xl_col_to_name(2 + len(periods))
+        status_cell = f"{xlsxwriter.utility.xl_col_to_name(3)}{row + 1}"
+        # Status formula references the diffs further right on the same row.
+        ws.write_formula(
+            row, 2,
+            f'=IF(SUMPRODUCT(--(ABS({first_col_letter}{row + 1}:{last_col_letter}{row + 1})>0.5))=0,"OK","ERROR")',
+            f["check_ok"],
+        )
+        for c_idx, _ in enumerate(periods, start=3):
+            col_letter = xlsxwriter.utility.xl_col_to_name(c_idx)
+            if ta is None or tle is None:
+                ws.write_blank(row, c_idx, None, f["check_value"])
                 continue
-            counts = df["CD_CONTA"].astype(str).value_counts()
-            dup_count += int((counts > 1).sum())
-        ws.write(row, 1, "Duplicate CD_CONTA across statements",
-                 f["check_label"])
-        ws.write(row, 2, "OK" if dup_count == 0 else "WARNING",
-                 f["check_ok"] if dup_count == 0 else f["check_warning"])
-        ws.write_number(row, 3, float(dup_count), f["check_value"])
+            formula = f'=IFERROR({col_letter}{ta}-{col_letter}{tle},"-")'
+            ws.write_formula(row, c_idx, formula, f["check_value"])
         row += 1
 
-        # Critical Line Availability (DRE 3.01 Receita, DRE 3.11 Net Income)
+        # Period Completeness
+        n_model = len(periods)
+        n_raw = max(
+            (len(self.stmts[k].columns) - sum(1 for c in self.stmts[k].columns
+                                              if c in ("CD_CONTA", "DS_CONTA",
+                                                       "STANDARD_NAME", "LINE_ID_BASE"))
+             for k in self.stmts if self.stmts[k] is not None and not self.stmts[k].empty),
+            default=0,
+        )
         ws.set_row(row, 14)
-        crit_missing = []
-        dre = self.stmts.get("DRE")
-        if dre is not None and not dre.empty and "CD_CONTA" in dre.columns:
-            present = set(dre["CD_CONTA"].astype(str).tolist())
-            for code, name in [("3.01", "Receita"), ("3.11", "Lucro Líquido")]:
-                if code not in present:
-                    crit_missing.append(f"{code} {name}")
-        else:
-            crit_missing.append("DRE missing entirely")
-        ws.write(row, 1, "Critical line availability (DRE 3.01, 3.11)",
+        ws.write(row, 1,
+                 f"Period Completeness — Model: {n_model}, raw: {n_raw}",
                  f["check_label"])
-        ws.write(row, 2, "OK" if not crit_missing else "WARNING",
-                 f["check_ok"] if not crit_missing else f["check_warning"])
-        if crit_missing:
-            ws.write(row, 3, "; ".join(crit_missing), f["source_value"])
+        ws.write(row, 2, "OK" if n_model > 0 else "ERROR",
+                 f["check_ok"] if n_model > 0 else f["check_error"])
+        row += 1
+
+        # Critical Line Availability — verify the model rows resolved
+        critical_lines = [
+            ("Revenue",      "DRE:3.01"),
+            ("EBITDA",       "COMP:EBITDA"),
+            ("EBIT",         "DRE:3.05"),
+            ("Net Income",   "DRE:3.11"),
+            ("Total Assets", "BPA:1"),
+            ("Total Liab. & Equity", "BPP:2"),
+            ("Cash",         "BPA:1.01.01"),
+            ("ST Debt",      "BPP:2.01.04"),
+            ("LT Debt",      "BPP:2.02.01"),
+            ("Equity",       "BPP:2.03"),
+            ("CFO",          "DFC:6.01"),
+            ("Capex",        "DFC:6.02.01"),
+        ]
+        missing = [name for name, key in critical_lines
+                   if self._model_rows.get(key) is None]
+        ws.set_row(row, 14)
+        ws.write(row, 1, "Critical Line Availability", f["check_label"])
+        ws.write(row, 2, "OK" if not missing else "WARNING",
+                 f["check_ok"] if not missing else f["check_warning"])
+        if missing:
+            ws.write(row, 3, "Missing: " + ", ".join(missing), f["source_warning"])
+        row += 1
+
+        # DVA Availability
+        ws.set_row(row, 14)
+        ws.write(row, 1, "DVA Availability", f["check_label"])
+        ws.write(row, 2, "OK" if dva_available else "WARNING",
+                 f["check_ok"] if dva_available else f["check_warning"])
+        if not dva_available:
+            ws.write(row, 3, "DVA not in current export", f["source_warning"])
         row += 1
 
         return row + 1
 
-    def _write_model_source_block(self, ws, start_row: int, periods: list[str]) -> int:
-        f = self._mfmt
+    def _write_model_source(self, ws, start_row: int, periods: list[str], dva_available: bool) -> int:
+        f = self._fmt
         row = self._write_section_heading(ws, start_row, "Source / Data Quality")
-        info = self.info or {}
+        info = self.info
 
-        stmts_present = [k for k in ("DRE", "BPA", "BPP", "DFC", "DVA", "DMPL")
+        stmts_present = [k for k in ("DRE", "BPA", "BPP", "DFC", "DVA")
                          if k in self.stmts and not self.stmts[k].empty]
         rows_by_stmt = ", ".join(
             f"{k}={len(self.stmts[k])}"
             for k in stmts_present
         ) or "—"
 
-        rows_source = [
-            ("Generated by",       "CVMAnalytics"),
-            ("App version",        str(_APP_VERSION)),
-            ("Export timestamp",   datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
-            ("Company",            str(info.get("company_name") or "—")),
-            ("CVM code",           str(info.get("cd_cvm") or "—")),
-            ("Periods exported",   str(len(periods))),
-            ("Rows by statement",  rows_by_stmt),
-            ("Source",             "CVM filings processed by CVMAnalytics local database"),
-            ("Units",              "Values displayed in R$ mm (millions); CVM source is R$ mil (thousands), divided by 1,000 for this model"),
+        rows_src = [
+            ("Generated by",        "CVMAnalytics"),
+            ("App version",         str(_APP_VERSION)),
+            ("Export timestamp",    datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+            ("Company",             str(info.get("company_name") or "—")),
+            ("CVM code",            str(info.get("cd_cvm") or "—")),
+            ("Period window (Model)",
+             f"Annual: {self.period_window[0]} years; "
+             f"Quarterly: {self.period_window[1]} quarters/year (interleaved)"),
+            ("Periods on Model",    str(len(periods))),
+            ("Raw rows by statement", rows_by_stmt),
+            ("Source",              "CVM filings processed by CVMAnalytics local database"),
+            ("Units",               "Model: R$ mm. CVM source: R$ mil. Conversion: ÷1,000."),
+            ("Full history",        "Available in hidden raw_* sheets."),
         ]
-        for label, value in rows_source:
+        if not dva_available:
+            rows_src.append(
+                ("Note — DVA",
+                 "DVA: unavailable in current export pipeline for this company."),
+            )
+
+        for label, value in rows_src:
             ws.set_row(row, 14)
             ws.write(row, 1, label, f["source_label"])
             ws.write(row, 3, value, f["source_value"])
             row += 1
-
         return row + 1
 
-    # ──────────────────────────────────────────────────────────────────────
-    # Aba CAPA
-    # ──────────────────────────────────────────────────────────────────────
-
-    def _write_capa(self):
-        ws = self._wb.add_worksheet("CAPA")
-        ws.set_column("A:A", 2)
-        ws.set_column("B:B", 22)
-        ws.set_column("C:C", 40)
-        ws.set_column("D:D", 20)
-
-        info = self.info
-        name    = info.get("company_name", "—")
-        ticker  = info.get("ticker_b3") or "—"
-        cd_cvm  = info.get("cd_cvm", "—")
-        setor   = info.get("setor_analitico") or info.get("setor_cvm") or "—"
-        cnpj    = info.get("cnpj") or "—"
-        now_str = datetime.now().strftime("%Y-%m-%d  %H:%M")
-
-        # Título
-        ws.set_row(1, 40)
-        ws.merge_range("B2:D2", name, self._fmt["capa_title"])
-        ws.set_row(2, 25)
-        ws.merge_range("B3:D3", f"{setor}  ·  CVM: {cd_cvm}  ·  {ticker}", self._fmt["capa_sub"])
-
-        # Linha separadora
-        ws.set_row(3, 6)
-        ws.merge_range("B4:D4", "", self._wb.add_format({
-            "bg_color": C["capa_acento"]
-        }))
-
-        # Dados
-        rows_info = [
-            ("Ticker B3",        ticker),
-            ("Código CVM",       str(cd_cvm)),
-            ("CNPJ",             cnpj),
-            ("Setor CVM",        info.get("setor_cvm") or "—"),
-            ("Setor Analítico",  setor),
-            ("Gerado em",        now_str),
-            ("Fonte de dados",   "CVM — dados.cvm.gov.br"),
-            ("Escala valores",   "Ver nota abaixo"),
-            ("Unidade padrão",   "R$ milhares (exceto onde indicado na aba METADADOS)"),
-        ]
-
-        r = 5
-        for label, value in rows_info:
-            ws.set_row(r, 18)
-            ws.write(r, 1, label, self._fmt["capa_label"])
-            ws.write(r, 2, value, self._fmt["capa_value"])
-            r += 1
-
-        # Nota de escala
-        r += 1
-        ws.merge_range(r, 1, r, 3,
-            "⚠  NOTA DE ESCALA: Valores armazenados conforme reportado à CVM. "
-            "A maioria das empresas reporta em R$ mil (milhares). Algumas empresas "
-            "(ex: Ânima) reportam em R$ milhões. Consulte a aba METADADOS para confirmar.",
-            self._fmt["capa_warn"])
-
-        # Ocultar linhas de grade
-        ws.hide_gridlines(2)
-
-    # ──────────────────────────────────────────────────────────────────────
-    # Aba KPIs
-    # ──────────────────────────────────────────────────────────────────────
-
-    def _write_kpis(self):
-        ws = self._wb.add_worksheet("KPIs")
-        kpis = self.kpis
-
-        if kpis is None or kpis.empty:
-            ws.write(0, 0, "KPIs não disponíveis", self._fmt["normal"])
+    # ── sheet ordering and validation ─────────────────────────────────────
+    def _reorder_visible_sheets(self):
+        """Put Model first, README second, then everything else as-is."""
+        worksheets = self._wb.worksheets()
+        if not worksheets:
             return
+        name_to_ws = {ws.name: ws for ws in worksheets}
+        desired_front = [n for n in (MODEL_SHEET, README_SHEET) if n in name_to_ws]
+        rest = [ws for ws in worksheets if ws.name not in desired_front]
+        new_order = [name_to_ws[n] for n in desired_front] + rest
+        # xlsxwriter exposes the worksheets list directly; reordering by
+        # index is the safe way to reposition tabs.
+        for new_idx, ws in enumerate(new_order):
+            ws.index = new_idx
+        self._wb.worksheets_objs = new_order
 
-        # Detectar colunas de anos
-        meta_cols = {"CATEGORIA", "KPI_ID", "KPI_NOME", "FORMULA",
-                     "IS_PLACEHOLDER", "FORMAT_TYPE", "HIGHER_IS_BETTER",
-                     "UNIDADE", "DELTA_YOY", "DELTA_YOY_PCT"}
-        year_cols = [c for c in kpis.columns if c not in meta_cols]
-
-        # ── Cabeçalho ────────────────────────────────────────────────────
-        ws.set_row(0, 22)
-        headers = ["INDICADOR", "FÓRMULA", "UNIDADE"] + [str(y) for y in year_cols] + ["Δ YoY", "Tendência"]
-        col_widths = [32, 42, 8] + [10] * len(year_cols) + [10, 12]
-
-        for c, (h, w) in enumerate(zip(headers, col_widths)):
-            ws.write(0, c, h, self._fmt["col_header_l"] if c < 3 else self._fmt["col_header"])
-            ws.set_column(c, c, w)
-
-        # Freeze header + coluna INDICADOR
-        ws.freeze_panes(1, 1)
-
-        # ── Linhas por categoria ──────────────────────────────────────────
-        row = 1
-        current_cat = None
-        for _, kpi_row in kpis.iterrows():
-            cat = kpi_row["CATEGORIA"]
-
-            # Inserir separador de seção quando muda a categoria
-            if cat != current_cat:
-                current_cat = cat
-                ws.set_row(row, 18)
-                ws.write(row, 0, f"  {cat.upper()}", self._fmt["sec_header"])
-                for _c in range(1, len(headers)):
-                    ws.write_blank(row, _c, None, self._fmt["sec_header"])
-                row += 1
-
-            is_placeholder = bool(kpi_row.get("IS_PLACEHOLDER", False))
-            fmt_type = kpi_row.get("FORMAT_TYPE", "ratio")
-            higher   = bool(kpi_row.get("HIGHER_IS_BETTER", True))
-
-            txt_fmt = self._fmt["placeholder"] if is_placeholder else self._fmt["normal"]
-
-            ws.set_row(row, 16)
-            ws.write(row, 0, kpi_row["KPI_NOME"], txt_fmt)
-            ws.write(row, 1, kpi_row["FORMULA"],  txt_fmt)
-            ws.write(row, 2, kpi_row.get("UNIDADE", ""), txt_fmt)
-
-            # Valores por ano
-            for c_idx, yr in enumerate(year_cols, start=3):
-                v = kpi_row.get(yr)
-                if is_placeholder or v is None:
-                    ws.write_blank(row, c_idx, None, txt_fmt)
-                    continue
-                num_fmt = (self._fmt["pct_center"] if fmt_type == "pct"
-                           else self._fmt["ratio_center"])
-                ws.write_number(row, c_idx, v, num_fmt)
-
-            # Delta YoY
-            delta = kpi_row.get("DELTA_YOY")
-            delta_pct = kpi_row.get("DELTA_YOY_PCT")
-            c_delta  = 3 + len(year_cols)
-            c_trend  = c_delta + 1
-
-            if is_placeholder or delta is None or delta_pct is None:
-                ws.write_blank(row, c_delta, None, txt_fmt)
-                ws.write_blank(row, c_trend, None, txt_fmt)
-            else:
-                is_good = (delta > 0) == higher
-                delta_fmt = (self._fmt["delta_pos"] if is_good
-                             else self._fmt["delta_neg"])
-                ws.write_number(row, c_delta, delta,     (self._fmt["pct_center"]
-                                                           if fmt_type == "pct"
-                                                           else self._fmt["ratio_center"]))
-                trend = "▲" if delta > 0 else ("▼" if delta < 0 else "—")
-                trend_fmt = (self._fmt["delta_pos"] if is_good else
-                             self._fmt["delta_neg"])
-                ws.write(row, c_trend, trend, trend_fmt)
-
-            row += 1
-
-        ws.hide_gridlines(2)
-
-    # ──────────────────────────────────────────────────────────────────────
-    # Abas de demonstrações (DRE / BPA / BPP / DFC / DVA / DMPL)
-    # ──────────────────────────────────────────────────────────────────────
-
-
-    def _get_global_periods(self) -> list[str]:
-        # Coleta todos os períodos únicos de todas as demonstrações e KPIs
-        periods = set()
-
-        # Dos stmts
-        for df in self.stmts.values():
-            if df is not None and not df.empty:
-                id_cols = {"CD_CONTA", "DS_CONTA", "STANDARD_NAME", "LINE_ID_BASE"}
-                for c in df.columns:
-                    if c not in id_cols:
-                        periods.add(str(c))
-
-        # Dos KPIs
-        if self.kpis is not None and not self.kpis.empty:
-            meta_cols = {"CATEGORIA", "KPI_ID", "KPI_NOME", "FORMULA",
-                         "IS_PLACEHOLDER", "FORMAT_TYPE", "HIGHER_IS_BETTER",
-                         "UNIDADE", "DELTA_YOY", "DELTA_YOY_PCT"}
-            for c in self.kpis.columns:
-                if c not in meta_cols:
-                    periods.add(str(c))
-
-        # Sort them by year then quarter (e.g., '2024' < '1Q25' doesn't work out of the box with lexicographical sort if 1Q25 refers to 2025).
-        # Typically the columns are '2020', '2021', '1T25', '1Q25', '2025-03-31'. We need a custom sort key.
-        def _sort_key(p):
-            # If it's a 4-digit year, assume Q4 of that year for sorting purposes.
-            import re
-            m_year = re.match(r"^20\d{2}$", p)
-            if m_year:
-                return (int(p), 5, p)
-            m_quarter = re.match(r"^([1-4])[QT](20\d{2}|\d{2})$", p)
-            if m_quarter:
-                q = int(m_quarter.group(1))
-                y_str = m_quarter.group(2)
-                y = int(y_str) if len(y_str) == 4 else 2000 + int(y_str)
-                return (y, q, p)
-            # Default fallback for other formats
-            return (9999, 9, p)
-
+    def _validate_no_errors(self, payload: bytes) -> None:
+        """Re-open the workbook with openpyxl and abort if any cell holds
+        an Excel error string. Catches accidental #NUM! / #REF! / etc."""
         try:
-            return sorted(list(periods), key=_sort_key)
-        except Exception:
-            return sorted(list(periods))
-
-    def _write_general(self):
-        ws = self._wb.add_worksheet("GERAL")
-        blocks = build_general_summary_blocks(self.stmts)
-
-        global_periods = self._get_global_periods()
-
-        ws.set_column(0, 0, 14)
-        ws.set_column(1, 1, 42)
-
-        if global_periods:
-            ws.set_column(2, 1 + len(global_periods), 13)
-
-        if not blocks:
-            ws.write(0, 0, "Resumo condensado indisponível", self._fmt["normal"])
-            ws.hide_gridlines(2)
+            wb = openpyxl.load_workbook(io.BytesIO(payload), data_only=False)
+        except Exception:  # pragma: no cover - re-open is best-effort
             return
+        try:
+            error_prefixes = ("#NUM!", "#REF!", "#VALUE!", "#DIV/0!",
+                              "#NAME?", "#N/A", "#NULL!")
+            for sheet_name in wb.sheetnames:
+                ws = wb[sheet_name]
+                for row in ws.iter_rows(values_only=False):
+                    for cell in row:
+                        v = cell.value
+                        if isinstance(v, str) and v.startswith("#"):
+                            for prefix in error_prefixes:
+                                if v.startswith(prefix):
+                                    raise ExcelExportError(
+                                        f"Error cell {sheet_name}!{cell.coordinate}: {v}"
+                                    )
+        finally:
+            wb.close()
 
-        row = 0
-        for block in blocks:
-            last_col = max(1, 1 + len(global_periods))
-            ws.write(row, 0, block.title, self._fmt["sec_header"])
-            for c_idx in range(1, last_col + 1):
-                ws.write_blank(row, c_idx, None, self._fmt["sec_header"])
-            row += 1
 
-            headers = ["CD_CONTA", "LINHA"] + [str(col) for col in global_periods]
-            for c_idx, header in enumerate(headers):
-                fmt = self._fmt["col_header_l"] if c_idx < 2 else self._fmt["col_header"]
-                ws.write(row, c_idx, header, fmt)
-            row += 1
-
-            for _, stmt_row in block.rows.iterrows():
-                is_subtotal = bool(stmt_row.get("IS_SUBTOTAL", False))
-                text_fmt = self._fmt["subtotal"] if is_subtotal else self._fmt["normal"]
-                ws.write(row, 0, str(stmt_row.get("CD_CONTA", "")), text_fmt)
-                ws.write(row, 1, str(stmt_row.get("LABEL", "")), text_fmt)
-
-                for c_idx, period_col in enumerate(global_periods, start=2):
-                    # It's possible the block doesn't have this period, or it's NaN
-                    if period_col not in block.rows.columns:
-                        value = None
-                    else:
-                        value = stmt_row.get(period_col)
-
-                    if pd.isna(value) or value is None:
-                        blank_fmt = self._fmt["subtotal_num"] if is_subtotal else self._fmt["normal"]
-                        ws.write_blank(row, c_idx, None, blank_fmt)
-                        continue
-
-                    number = float(value)
-                    if is_subtotal:
-                        num_fmt = self._fmt["subtotal_neg"] if number < 0 else self._fmt["subtotal_num"]
-                    else:
-                        num_fmt = self._fmt["neg_center"] if number < 0 else self._fmt["num_center"]
-                    ws.write_number(row, c_idx, number, num_fmt)
-
-                row += 1
-
-            row += 1
-
-        ws.hide_gridlines(2)
-
-    def _write_statement(self, stmt_type: str):
-        df = self.stmts.get(stmt_type)
-        if df is None or df.empty:
-            return
-
-        label = _STMT_LABELS.get(stmt_type, stmt_type)
-        ws = self._wb.add_worksheet(label)
-        subtotais = _SUBTOTAIS.get(stmt_type, set())
-
-        # Colunas fixas e de período
-        id_cols    = [c for c in ["CD_CONTA", "DS_CONTA", "STANDARD_NAME", "LINE_ID_BASE"]
-                      if c in df.columns]
-        period_cols = [c for c in df.columns if c not in id_cols]
-
-        all_cols = id_cols + period_cols
-        col_widths = {
-            "CD_CONTA":      14,
-            "DS_CONTA":      44,
-            "STANDARD_NAME": 34,
-            "LINE_ID_BASE":  24,
-        }
-
-        # ── Cabeçalho ────────────────────────────────────────────────────
-        ws.set_row(0, 22)
-        for c_idx, col in enumerate(all_cols):
-            w = col_widths.get(col, 13)
-            ws.set_column(c_idx, c_idx, w)
-            fmt = self._fmt["col_header_l"] if col in id_cols else self._fmt["col_header"]
-            ws.write(0, c_idx, col, fmt)
-
-        # Freeze: linha 1 + primeiras 3 colunas
-        freeze_cols = min(3, len(id_cols))
-        ws.freeze_panes(1, freeze_cols)
-
-        # ── Dados ────────────────────────────────────────────────────────
-        for r_idx, (_, row) in enumerate(df.iterrows(), start=1):
-            cd = str(row.get("CD_CONTA", ""))
-            is_subtotal = cd in subtotais
-
-            ws.set_row(r_idx, 15)
-
-            for c_idx, col in enumerate(all_cols):
-                val = row[col]
-                is_period = col in period_cols
-
-                if not is_period:
-                    # Coluna de texto
-                    ws.write(r_idx, c_idx, "" if pd.isna(val) else str(val),
-                             self._fmt["subtotal"] if is_subtotal else self._fmt["normal"])
-                    continue
-
-                # Coluna numérica (período)
-                if pd.isna(val) or val is None:
-                    ws.write_blank(r_idx, c_idx, None,
-                                   self._fmt["subtotal_num"] if is_subtotal
-                                   else self._fmt["normal"])
-                    continue
-
-                v = float(val)
-                if is_subtotal:
-                    fmt = (self._fmt["subtotal_neg"] if v < 0
-                           else self._fmt["subtotal_num"])
-                else:
-                    fmt = (self._fmt["neg_center"] if v < 0
-                           else self._fmt["num_center"])
-                ws.write_number(r_idx, c_idx, v, fmt)
-
-        # v0.18.3 — auto-filter on the header row so analysts can quickly
-        # filter by CD_CONTA / DS_CONTA / STANDARD_NAME on the legacy
-        # statement sheets. Range covers the full populated grid.
-        last_row = len(df)  # data starts at row 1, header at row 0
-        last_col = len(all_cols) - 1
-        if last_row > 0 and last_col >= 0:
-            ws.autofilter(0, 0, last_row, last_col)
-
-        ws.hide_gridlines(2)
-
-    # ──────────────────────────────────────────────────────────────────────
-    # Aba METADADOS
-    # ──────────────────────────────────────────────────────────────────────
-
-    def _write_metadata(self, statement_type: Optional[str] = None):
-        ws = self._wb.add_worksheet("METADADOS")
-        ws.set_column("A:A", 30)
-        ws.set_column("B:B", 60)
-        ws.set_column("C:C", 20)
-
-        ws.set_row(0, 22)
-        ws.write(0, 0, "CAMPO",  self._fmt["col_header_l"])
-        ws.write(0, 1, "VALOR",  self._fmt["col_header_l"])
-        ws.write(0, 2, "NOTAS",  self._fmt["col_header_l"])
-
-        info = self.info
-        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        if statement_type:
-            stmts_present = statement_type
-        else:
-            stmts_present = ", ".join(
-                k for k in ["DRE", "BPA", "BPP", "DFC", "DVA", "DMPL"]
-                if k in self.stmts and not self.stmts[k].empty
-            )
-
-        rows = [
-            ("Empresa",              info.get("company_name", "—"),          ""),
-            ("Código CVM (cd_cvm)",  str(info.get("cd_cvm", "—")),           ""),
-            ("Ticker B3",            info.get("ticker_b3") or "—",           ""),
-            ("CNPJ",                 info.get("cnpj") or "—",                ""),
-            ("Setor CVM",            info.get("setor_cvm") or "—",           ""),
-            ("Setor Analítico",      info.get("setor_analitico") or "—",     ""),
-            ("Demonstrações",        stmts_present,                          "Abas geradas neste workbook"),
-            ("Gerado em",            now_str,                                ""),
-            ("Fonte de dados",       "CVM — dados.cvm.gov.br",               "DFP/ITR"),
-            ("Ferramenta",           "cvm_reports_capture",                  "github / uso interno"),
-            ("Escala padrão CVM",    "R$ milhares (mil)",                    "A maioria das empresas"),
-            ("Atenção escala",       "Verificar empresa — algumas reportam em R$ milhões",
-             "Ex: Ânima Holding reporta em R$ mi"),
-            ("QA_CONFLICT",          "Linhas com conflito de dados excluídas", "QA_CONFLICT=0 aplicado"),
-            ("D&A na DFC",           "CD_CONTA 6.01.01.x filtrado por 'depreci' (exclui amortiz. financeira)",
-             "EBITDA = EBIT + D&A"),
-            ("EBITDA",               "EBIT (3.05) + D&A (DFC 6.01.01.x)",   "Se D&A não encontrado → NaN"),
-            ("Dívida Liq./EBITDA",   "Proxy: PNC - Caixa / EBITDA",          "PNC ≈ dívida financeira LP"),
-            ("Liquidez Seca",        "Sem separação de estoque no nível 1",  "≈ Liquidez Corrente"),
-            ("CAPEX / Receita",      "FCI total (proxy)",                    "Inclui todas saídas de investimento"),
-            ("Placeholders (*)",     "KPIs futuros marcados com * requerem preço de mercado", ""),
-        ]
-
-        for r_idx, (key, val, note) in enumerate(rows, start=1):
-            ws.set_row(r_idx, 16)
-            ws.write(r_idx, 0, key,  self._fmt["meta_key"])
-            ws.write(r_idx, 1, val,  self._fmt["meta_val"])
-            ws.write(r_idx, 2, note, self._fmt["normal"])
-
-        ws.freeze_panes(1, 0)
-        ws.hide_gridlines(2)
+# ──────────────────────────────────────────────────────────────────────────────
+# Helpers used across writers
+# ──────────────────────────────────────────────────────────────────────────────
+def _stmt_subtotals(stmt_type: str) -> set[str]:
+    return {
+        "DRE": _DRE_SUBTOTALS,
+        "BPA": _BPA_SUBTOTALS,
+        "BPP": _BPP_SUBTOTALS,
+        "DFC": _DFC_SUBTOTALS,
+        "DVA": {"7.08"},
+    }.get(stmt_type, set())
