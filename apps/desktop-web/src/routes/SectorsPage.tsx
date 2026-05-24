@@ -110,8 +110,8 @@ function GroupTab({
       onClick={onClick}
       className={
         active
-          ? "rounded border border-zinc-600 bg-zinc-800 px-3 py-1 text-xs font-medium text-zinc-100 focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-cyan-500/70"
-          : "rounded border border-zinc-800 bg-transparent px-3 py-1 text-xs text-zinc-400 hover:border-zinc-600 hover:text-zinc-200 focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-zinc-500/70"
+          ? "rounded border border-zinc-600 bg-zinc-800 px-3 py-1 text-xs font-medium text-zinc-100 focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1"
+          : "rounded border border-zinc-800 bg-transparent px-3 py-1 text-xs text-zinc-400 hover:border-zinc-600 hover:text-zinc-200 focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1"
       }
     >
       {label}
