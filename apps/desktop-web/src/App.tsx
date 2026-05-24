@@ -1,10 +1,14 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { HashRouter, Route, Routes } from "react-router-dom";
 
 import { CommandBar } from "./components/command/CommandBar";
 import { useCommandPalette } from "./components/command/useCommandPalette";
 import { StateBanner } from "./components/feedback/StateBanner";
+import { FirstRunOnboarding } from "./components/onboarding/FirstRunOnboarding";
 import { TerminalShell } from "./components/shell/TerminalShell";
+import { fetchOnboardingState } from "./lib/api/onboarding";
+import { whenBridgeReady } from "./lib/bridge/adapter";
 
 // Route pages are lazy-loaded so the initial bundle only ships the shell,
 // command palette, and routing logic. Each route chunk is fetched on first
@@ -61,6 +65,62 @@ export function App() {
 
 function AppShellWithPalette() {
   const palette = useCommandPalette();
+  const [bridgeReady, setBridgeReady] = useState(false);
+  const [onboardingDismissed, setOnboardingDismissed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    whenBridgeReady().then(() => {
+      if (!cancelled) setBridgeReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const onboardingQuery = useQuery({
+    queryKey: ["onboarding-state"],
+    queryFn: fetchOnboardingState,
+    enabled: bridgeReady && !onboardingDismissed,
+    staleTime: 5_000,
+  });
+
+  if (!bridgeReady || onboardingQuery.isLoading) {
+    return (
+      <div style={{ padding: "24px 20px" }}>
+        <StateBanner variant="loading" title="Preparing workspace…" />
+      </div>
+    );
+  }
+
+  if (onboardingQuery.isError) {
+    return (
+      <div style={{ padding: "24px 20px" }}>
+        <StateBanner
+          variant="error"
+          title="Could not load setup"
+          message={
+            onboardingQuery.error instanceof Error
+              ? onboardingQuery.error.message
+              : String(onboardingQuery.error)
+          }
+          onRetry={() => { void onboardingQuery.refetch(); }}
+        />
+      </div>
+    );
+  }
+
+  const onboardingState =
+    onboardingQuery.data?.mode === "desktop" ? onboardingQuery.data.state : null;
+  if (onboardingState?.should_show && !onboardingDismissed) {
+    return (
+      <FirstRunOnboarding
+        initialState={onboardingState}
+        onDone={() => setOnboardingDismissed(true)}
+      />
+    );
+  }
+
   return (
     <>
       <TerminalShell onOpenPalette={palette.open_}>

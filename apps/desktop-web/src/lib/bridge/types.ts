@@ -207,6 +207,66 @@ export type RefreshJobListResponse = {
   error?: string;
 };
 
+export type CompanyUniversePreset = "top_100" | "top_200" | "top_500" | "all";
+
+export type CompanyUniverseEntry = {
+  cd_cvm: number;
+  ticker: string | null;
+  company_name: string;
+  market_cap: number | null;
+  market_cap_rank: number | null;
+  source: string;
+  source_date: string | null;
+};
+
+export type CompanyUniverseSelection = {
+  preset: CompanyUniversePreset;
+  selected_count: number;
+  company_ids: number[];
+  source: string;
+  source_date: string | null;
+  warning: string | null;
+  companies: CompanyUniverseEntry[];
+};
+
+export type CompanyUniverseProviderStatus = {
+  provider: string;
+  configured: boolean;
+  available: boolean;
+  source?: string | null;
+  source_date?: string | null;
+  ranked_companies?: number | null;
+  message?: string | null;
+};
+
+export type OnboardingState = {
+  first_run_completed: boolean;
+  should_show: boolean;
+  selected_company_universe: CompanyUniversePreset | null;
+  company_universe_source: string | null;
+  company_universe_source_date: string | null;
+  setup_status: string;
+  selected_company_count: number;
+  refresh_job_id: string | null;
+  refresh_job?: RefreshJobStatus;
+  warning: string | null;
+  has_local_financial_data: boolean;
+  market_cap_source_available?: boolean;
+  market_cap_source?: string | null;
+  market_cap_source_date?: string | null;
+  market_cap_snapshot_path?: string | null;
+  market_cap_ranked_companies?: number | null;
+  company_universe_provider_order?: string[];
+  company_universe_provider_status?: CompanyUniverseProviderStatus[];
+  brapi_configured?: boolean;
+  yfinance_universe_provider_enabled?: boolean;
+  error?: string;
+};
+
+export type OnboardingStartResponse = RefreshDispatchResponse & {
+  selection?: CompanyUniverseSelection;
+};
+
 export type CompanyRefreshTrackingState =
   | "idle"
   | "queued"
@@ -502,6 +562,10 @@ export interface BridgeApi {
     params?: Record<string, unknown>,
   ): Promise<RefreshJobStatus | RefreshJobListResponse | CompanyRefreshStatusListResponse>;
   cancel_refresh(params: Record<string, unknown>): Promise<CancelRefreshResponse>;
+  get_onboarding_state(params?: Record<string, unknown>): Promise<OnboardingState>;
+  start_onboarding_setup(params: Record<string, unknown>): Promise<OnboardingStartResponse>;
+  complete_onboarding_setup(params?: Record<string, unknown>): Promise<OnboardingState>;
+  skip_onboarding_setup(params?: Record<string, unknown>): Promise<OnboardingState>;
   get_database_diagnostics(params?: Record<string, unknown>): Promise<DatabaseDiagnostics>;
   get_company_filters(params?: Record<string, unknown>): Promise<CompanyFiltersResponse>;
   get_sectors(params?: Record<string, unknown>): Promise<SectorDirectoryResponse>;

@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from apps.api.app.services.refresh_jobs import ApiRefreshJobManager
 from desktop.bridge import CVMBridge
 from desktop.services import DesktopRefreshJobManager
+from src.company_universe import CompanyUniverseEntry, CompanyUniverseSelection
 from src.contracts import CompanyRefreshResult, RefreshResult
 from src.settings import build_settings
 
@@ -306,3 +307,76 @@ def test_bridge_refresh_methods_delegate_to_manager():
         ("status", {"job_id": "abc"}),
         ("cancel", {"job_id": "abc"}),
     ]
+
+
+def test_bridge_onboarding_starts_refresh_with_resolved_company_ids():
+    selection = CompanyUniverseSelection(
+        preset="top_200",
+        entries=(
+            CompanyUniverseEntry(
+                cd_cvm=9512,
+                ticker="PETR4",
+                company_name="PETROBRAS",
+                market_cap=1.0,
+                market_cap_rank=1,
+                source="test_snapshot",
+                source_date="2026-05-24",
+            ),
+            CompanyUniverseEntry(
+                cd_cvm=4170,
+                ticker="VALE3",
+                company_name="VALE",
+                market_cap=1.0,
+                market_cap_rank=2,
+                source="test_snapshot",
+                source_date="2026-05-24",
+            ),
+        ),
+        source="test_snapshot",
+        source_date="2026-05-24",
+    )
+
+    class FakeOnboarding:
+        def __init__(self):
+            self.started = None
+
+        def get_company_universe_by_preset(self, preset):
+            assert preset == "top_200"
+            return selection
+
+        def mark_setup_started(self, selection_arg, *, refresh_job_id):
+            self.started = (selection_arg, refresh_job_id)
+
+    class FakeManager:
+        def __init__(self):
+            self.params = None
+
+        def request_refresh(self, params):
+            self.params = params
+            return {"status": "running", "job_id": "job-1", "queued": 2}
+
+    class FakeService:
+        def __init__(self):
+            self.invalidated = False
+
+        def invalidate_read_caches(self):
+            self.invalidated = True
+
+    bridge = CVMBridge()
+    fake_onboarding = FakeOnboarding()
+    fake_manager = FakeManager()
+    fake_service = FakeService()
+    bridge._onboarding_service = fake_onboarding
+    bridge._refresh_manager = fake_manager
+    bridge._service = fake_service
+
+    response = bridge.start_onboarding_setup({"preset": "top_200"})
+
+    assert response["status"] == "running"
+    assert response["selection"]["company_ids"] == [9512, 4170]
+    assert fake_manager.params == {
+        "mode": "missing",
+        "company_ids": [9512, 4170],
+    }
+    assert fake_onboarding.started == (selection, "job-1")
+    assert fake_service.invalidated is True

@@ -25,6 +25,7 @@ class CVMBridge:
     def __init__(self) -> None:
         self._service = None
         self._refresh_manager = None
+        self._onboarding_service = None
         self._company_info_cache: dict[int, dict[str, Any]] = {}
         self._company_info_pending: set[int] = set()
         self._company_info_lock = threading.RLock()
@@ -46,6 +47,17 @@ class CVMBridge:
 
             self._refresh_manager = DesktopRefreshJobManager(read_service=self._svc())
         return self._refresh_manager
+
+    def _onboarding(self):
+        if self._onboarding_service is None:
+            from src.company_universe import CompanyUniverseService  # noqa: PLC0415
+
+            svc = self._svc()
+            self._onboarding_service = CompanyUniverseService(
+                settings=svc.settings,
+                read_service=svc,
+            )
+        return self._onboarding_service
 
     # ------------------------------------------------------------------
     # Utilitários
@@ -493,6 +505,91 @@ class CVMBridge:
             return self._sanitize_for_json(self._refresh().cancel_job(params or {}))
         except Exception as exc:
             return self._sanitize_for_json({"ok": False, "message": str(exc)})
+
+    # ------------------------------------------------------------------
+    # First-run onboarding
+    # ------------------------------------------------------------------
+
+    def get_onboarding_state(self, params=None) -> dict:
+        try:
+            state = self._onboarding().get_onboarding_state()
+            job_id = state.get("refresh_job_id")
+            if job_id:
+                state["refresh_job"] = self._refresh().get_refresh_status({"job_id": job_id})
+            return self._sanitize_for_json(state)
+        except Exception as exc:
+            return self._sanitize_for_json({
+                "first_run_completed": False,
+                "should_show": True,
+                "setup_status": "error",
+                "error": str(exc),
+            })
+
+    def start_onboarding_setup(self, params=None) -> dict:
+        p = params or {}
+        preset = str(p.get("preset") or "").strip().lower()
+        try:
+            selection = self._onboarding().get_company_universe_by_preset(preset)
+        except Exception as exc:
+            return self._sanitize_for_json({
+                "status": "error",
+                "job_id": None,
+                "message": str(exc),
+                "status_reason_code": "company_universe_unavailable",
+                "status_reason_message": str(exc),
+                "is_retry_allowed": True,
+            })
+
+        refresh_params: dict[str, Any] = {
+            "mode": "missing",
+            "company_ids": list(selection.company_ids),
+        }
+        for key in ("start_year", "end_year"):
+            if p.get(key) not in (None, ""):
+                refresh_params[key] = p.get(key)
+
+        try:
+            dispatch = self._refresh().request_refresh(refresh_params)
+        except Exception as exc:
+            return self._sanitize_for_json({
+                "status": "error",
+                "job_id": None,
+                "message": str(exc),
+                "status_reason_code": "desktop_refresh_error",
+                "status_reason_message": str(exc),
+                "is_retry_allowed": True,
+                "selection": selection.to_dict(),
+            })
+
+        if str(dispatch.get("status") or "").lower() in {"error", "already_running"}:
+            dispatch["selection"] = selection.to_dict()
+            return self._sanitize_for_json(dispatch)
+
+        job_id = dispatch.get("job_id")
+        self._onboarding().mark_setup_started(
+            selection,
+            refresh_job_id=str(job_id) if job_id else None,
+        )
+        if not job_id:
+            self._onboarding().mark_setup_completed(status=str(dispatch.get("status") or "success"))
+        self._svc().invalidate_read_caches()
+        return self._sanitize_for_json({
+            **dispatch,
+            "selection": selection.to_dict(),
+        })
+
+    def complete_onboarding_setup(self, params=None) -> dict:
+        try:
+            status = str((params or {}).get("status") or "success")
+            return self._sanitize_for_json(self._onboarding().mark_setup_completed(status=status))
+        except Exception as exc:
+            return self._sanitize_for_json({"ok": False, "error": str(exc)})
+
+    def skip_onboarding_setup(self, params=None) -> dict:
+        try:
+            return self._sanitize_for_json(self._onboarding().skip_setup())
+        except Exception as exc:
+            return self._sanitize_for_json({"ok": False, "error": str(exc)})
 
     # ------------------------------------------------------------------
     # Internal refresh worker (drena jobs enfileirados em refresh_jobs)

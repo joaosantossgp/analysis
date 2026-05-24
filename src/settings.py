@@ -85,6 +85,8 @@ class AppPaths:
     base_health_snapshot_path: Path
     processed_presence_index_path: Path
     yfinance_cache_path: Path
+    onboarding_state_path: Path
+    company_universe_snapshot_path: Path
     legacy_data_paths: tuple[Path, ...]
 
     @property
@@ -97,9 +99,14 @@ class AppSettings:
     paths: AppPaths
     database_url: str | None
     cvm_base_url: str
+    brapi_token: str | None
+    brapi_base_url: str
+    brapi_timeout: int
     default_report_type: str
     company_list_timeout: int
     download_timeout: int
+    enable_yfinance_universe_provider: bool
+    yfinance_universe_fetch_limit: int
     max_excel_lock_retries: int
     company_db_max_retries: int
     company_db_retry_backoff_seconds: float
@@ -180,6 +187,15 @@ def build_settings(project_root: Path | None = None) -> AppSettings:
         shared_repo_root,
         Path("data/cvm_account_dictionary.csv"),
     )
+    company_universe_snapshot_path = _prefer_existing_shared_path(
+        _resolve_path(
+            resolved_root,
+            os.getenv("CVM_COMPANY_UNIVERSE_SNAPSHOT_PATH"),
+            metadata_dir / "b3_market_cap_universe_snapshot.csv",
+        ),
+        shared_repo_root,
+        Path("data/metadata/b3_market_cap_universe_snapshot.csv"),
+    )
 
     paths = AppPaths(
         project_root=resolved_root,
@@ -200,6 +216,12 @@ def build_settings(project_root: Path | None = None) -> AppSettings:
         base_health_snapshot_path=cache_dir / "base_health_snapshot.json",
         processed_presence_index_path=cache_dir / "processed_presence_index.json",
         yfinance_cache_path=cache_dir / "yfinance_cache.json",
+        onboarding_state_path=_resolve_path(
+            resolved_root,
+            os.getenv("CVM_ONBOARDING_STATE_PATH"),
+            data_dir / "onboarding_state.json",
+        ),
+        company_universe_snapshot_path=company_universe_snapshot_path,
         legacy_data_paths=(
             data_dir / "raw",
             data_dir / "processed",
@@ -216,9 +238,17 @@ def build_settings(project_root: Path | None = None) -> AppSettings:
             "CVM_BASE_URL",
             "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC",
         ),
+        brapi_token=os.getenv("BRAPI_TOKEN") or os.getenv("CVM_BRAPI_TOKEN") or None,
+        brapi_base_url=os.getenv("BRAPI_BASE_URL", "https://brapi.dev/api"),
+        brapi_timeout=_env_int("BRAPI_TIMEOUT", 15),
         default_report_type=os.getenv("CVM_DEFAULT_REPORT_TYPE", "consolidated"),
         company_list_timeout=_env_int("CVM_COMPANY_LIST_TIMEOUT", 30),
         download_timeout=_env_int("CVM_DOWNLOAD_TIMEOUT", 60),
+        enable_yfinance_universe_provider=_env_bool(
+            "CVM_ENABLE_YFINANCE_UNIVERSE_PROVIDER",
+            False,
+        ),
+        yfinance_universe_fetch_limit=_env_int("CVM_YFINANCE_UNIVERSE_FETCH_LIMIT", 60),
         max_excel_lock_retries=_env_int("CVM_MAX_EXCEL_LOCK_RETRIES", 10),
         company_db_max_retries=_env_int("CVM_COMPANY_DB_MAX_RETRIES", 3),
         company_db_retry_backoff_seconds=_env_float("CVM_COMPANY_DB_RETRY_BACKOFF_SECONDS", 1.2),

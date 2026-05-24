@@ -8,6 +8,7 @@ from sqlalchemy import create_engine, inspect, text, Engine
 from sqlalchemy.exc import OperationalError
 
 from src.gics_manual_mapping import resolve_gics_classification
+from src.company_universe import ensure_company_universe_tables_for_connection
 from src.refresh_jobs import ensure_refresh_runtime_tables_for_connection
 
 logger = logging.getLogger(__name__)
@@ -94,6 +95,7 @@ def init_db_tables(engine: Engine) -> None:
             )
         """))
         ensure_refresh_runtime_tables_for_connection(conn)
+        ensure_company_universe_tables_for_connection(conn)
         _ensure_company_gics_columns(conn)
 
     _index_ddl = [
