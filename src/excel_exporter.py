@@ -514,6 +514,18 @@ class ExcelExporter:
         cur = self._write_model_checks(ws, cur, periods)
         cur = self._write_model_source_block(ws, cur, periods)
 
+        # v0.18.3 — analyst-friendly print setup. Landscape, fit to one page
+        # wide (height unrestricted), repeat the conventions/title/period
+        # header rows (1-21) on every printed page, narrow margins.
+        ws.set_landscape()
+        ws.set_paper(9)  # A4
+        ws.fit_to_pages(1, 0)
+        ws.repeat_rows(0, 20)
+        ws.set_margins(left=0.4, right=0.4, top=0.5, bottom=0.5)
+        ws.set_header(f"&L{_MODEL_SHEET_NAME} &R{info.get('company_name') or ''}")
+        ws.set_footer("&LCVMAnalytics &CPage &P of &N &R&D")
+        ws.print_area(0, 0, cur, max(3, 2 + len(periods)))
+
     def _write_section_heading(self, ws, row: int, label: str) -> int:
         f = self._mfmt
         ws.set_row(row, 22)
@@ -1151,6 +1163,14 @@ class ExcelExporter:
                     fmt = (self._fmt["neg_center"] if v < 0
                            else self._fmt["num_center"])
                 ws.write_number(r_idx, c_idx, v, fmt)
+
+        # v0.18.3 — auto-filter on the header row so analysts can quickly
+        # filter by CD_CONTA / DS_CONTA / STANDARD_NAME on the legacy
+        # statement sheets. Range covers the full populated grid.
+        last_row = len(df)  # data starts at row 1, header at row 0
+        last_col = len(all_cols) - 1
+        if last_row > 0 and last_col >= 0:
+            ws.autofilter(0, 0, last_row, last_col)
 
         ws.hide_gridlines(2)
 
