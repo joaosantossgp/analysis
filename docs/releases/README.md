@@ -2,13 +2,14 @@
 
 This directory holds per-version release notes for the CVMAnalytics desktop product.
 
-The **current stable baseline is `v0.18.1`** (Terminal UI patch). The packaged Windows desktop EXE distributed via [GitHub Releases](https://github.com/joaosantossgp/analisys/releases) is the authoritative distribution channel — this directory is a **partial** local copy of the per-version notes, not the source of truth.
+The **current stable baseline is `v0.18.2`** (analyst-ready Excel export patch). The packaged Windows desktop EXE distributed via [GitHub Releases](https://github.com/joaosantossgp/analisys/releases) is the authoritative distribution channel — this directory is a **partial** local copy of the per-version notes, not the source of truth.
 
 ## Current
 
 | Version | Notes |
 |---|---|
-| `v0.18.1` | [v0.18.1.md](v0.18.1.md) — current stable, Terminal UI patch |
+| `v0.18.2` | [v0.18.2.md](v0.18.2.md) — current stable, analyst-ready Excel export |
+| `v0.18.1` | [v0.18.1.md](v0.18.1.md) — Terminal UI patch |
 | `v0.18.0` | [v0.18.0.md](v0.18.0.md) — Terminal UI release |
 
 ## Historical (release notes present)
