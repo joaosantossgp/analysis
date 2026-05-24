@@ -1,5 +1,8 @@
 # Phase 5 Legacy Deletion Audit
 
+> [!NOTE]
+> **Historical migration document.** Phase 5B implementation completed at `v0.15.0`; migration finalized at `v0.17.0`. Current source of truth: `README.md`, `docs/reference/repository-map.md`.
+
 > Status: **Phase 5B implemented for v0.15.0.** This document started as the
 > Phase 5A audit and now records the final desktop-bundle deletion decisions.
 > Phase 5B touched only the desktop bundle/runtime path. Phase 5C records the

@@ -111,7 +111,7 @@ Full architecture map in `ARCHITECTURE.md`.
 | `.github/workflows/release-desktop.yml` | CI: builds + publishes Windows bundle on tag push | Yes |
 | `scripts/phase1_pywebview_smoke.py` | Dev runner with `--manual` / `--timeout` | Yes |
 | `scripts/test_motw_*.ps1` | MOTW reproduction harnesses | Yes |
-| `scripts/test_ci_v034_full.ps1` | Full Phase 0 contract validation against published asset | Yes |
+| `docs/migration/legacy-release-validation/test_ci_v034_full.ps1` | Full Phase 0 contract validation against published v0.3.4 asset (archived; version-pinned) | Historical |
 
 ---
 
@@ -134,7 +134,7 @@ See `SMOKE_RECIPES.md` for the full list of smoke commands. Quick start:
 
 ```bash
 # Phase 0 contract (LOCALAPPDATA, MOTW, updater allowlist, fresh-install schema)
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/test_ci_v034_full.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File docs/migration/legacy-release-validation/test_ci_v034_full.ps1
 
 # Phase 1.6 interactive (Vite dev + pywebview + real bridge, keep open)
 python scripts/phase1_pywebview_smoke.py --manual

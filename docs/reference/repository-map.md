@@ -17,7 +17,7 @@ Single-stop orientation for contributors and AI agents. Maps every top-level fol
 | `apps/api/` | **Source-only hosted surface** | FastAPI hosted on Railway. Not packaged. Not part of the desktop runtime. `railway.toml` points here. |
 | `tests/` | **Test suite** | pytest for Python core and desktop runtime. Run with `pytest tests/`. |
 | `docs/` | **Documentation** | Active reference, completed migration history, ADRs, performance baselines. See doc status table below. |
-| `scripts/` | **Utility / tooling** | Setup, diagnostics, validation, batch ops. Mix of active and historical scripts. |
+| `scripts/` | **Utility / tooling** | Setup, diagnostics, validation, batch ops. See the `scripts/` cluster table below. |
 | `landing/` | **Marketing surface** | Static HTML deployed to GitHub Pages. Not the product runtime. |
 | `config/` | **Reference data** | `canonical_accounts.csv` — CVM account mapping used by the financial standardizer. Referenced by `src/settings.py` and 8+ scripts. Do not move without updating all callers and re-verifying the packaged build. |
 | `migrations/` | **DB schema** | SQLite migration SQL files. |
@@ -52,6 +52,24 @@ Single-stop orientation for contributors and AI agents. Maps every top-level fol
 
 ---
 
+## `scripts/` Cluster Overview
+
+| Cluster | Files | Status | Notes |
+|---|---|---|---|
+| **CI data pipeline** | `atualizar_todos.py`, `atualizar_dados.ps1`, `batch_completo.py`, `restaurar_historico.py`, `setup_db.py`, `setup_companies_table.py`, `seed_catalog.py`, `seed_web_smoke_db.py` | Active | Referenced from `.github/workflows/*.yml`. High-risk — breaking these breaks CI. |
+| **Desktop diagnostics / dev** | `runtime_doctor.py`, `bootstrap_windows.ps1`, `smoke_validate.py`, `update_base_smoke.py`, `phase1_pywebview_smoke.py`, `db_portability_smoke.py`, `canonicalize_data_layout.py` | Active | Referenced from `README.md`, `COMO_RODAR.md`, `docs/migration/`. |
+| **Data utilities** | `import_company_gics.py`, `backfill_company_gics.py`, `build_canonical_dict.py`, `expand_tickers.py` | Active | Manual maintenance tools. `build_canonical_dict.py` is wired into `src/standardizer.py` error path. |
+| **Excel-export manual QA** | `quick_verify.py`, `verify_consolidation.py`, `verify_line_id_base.py`, `final_verification.py`, `workbook_paths.py` | Active manual QA | Documented in `COMO_RODAR.md` §8. Never CI. `final_verification.py` is a historical bug-fix regression check. |
+| **MOTW / release validation (reusable)** | `test_motw_explorer.ps1`, `test_motw_launch.ps1`, `test_motw_strip.py` | Active | Generic harness, parameterized by ZIP path. Use for any current release. |
+| **Performance benchmarks** | `perf_guardrail.py`, `benchmark_read_paths.py`, `benchmark_real_read_paths.py` | Active (hosted-surface CI) | Wired into `perf-guardrails.yml` (manual-only). |
+| **pytest-discovered tests in `scripts/`** | `test_motw_strip.py`, `test_seed_catalog.py`, `test_update_base_smoke.py` | Active | Discovered via `pytest.ini` `testpaths = tests scripts`. Moving these requires updating `pytest.ini`. |
+| **Dev tooling** | `pr_complete.ps1`, `fix-git-config.ps1`, `worktree_create.ps1`, `worktree_remove.ps1`, `worktree_status.ps1` | Active | Git / worktree helpers. Referenced from `AGENTS.md`, `docs/reference/autonomous-mode.md`. |
+| **Archived (moved out of `scripts/`)** | `docs/migration/legacy-release-validation/test_ci_v033_motw.ps1`, `.../test_ci_v034_full.ps1` | Historical | Version-pinned to v0.3.3 / v0.3.4. Cannot be re-run against current releases. Kept under `docs/migration/` for historical reference. |
+| **Web-surface helper (moved)** | `apps/web/scripts/export_design_system.py` | Active (web only) | Design token exporter for `apps/web/`. Not part of the packaged desktop product. |
+| **Removed (obsolete)** | `calc_financial_kpis.py`, `patch_database_sectors_v2.py`, `gerar_base_analitica.py` | Deleted | Superseded by `src/kpi_engine.py`, `import_company_gics.py`, and modern ingest pipeline. |
+
+---
+
 ## GitHub Actions Workflows
 
 | Workflow file | Status | Trigger | Purpose |
@@ -80,12 +98,17 @@ Single-stop orientation for contributors and AI agents. Maps every top-level fol
 | `docs/governance/autonomous-mode.md` | Operating rules for long-running autonomous AI sessions. |
 | `docs/governance/on-demand-release-evidence.md` | Release evidence protocol for on-demand releases. |
 | `docs/reference/repository-map.md` | This file. Repo orientation and folder/workflow/doc classification. |
-| `docs/reference/perf-baseline.md` | Performance baselines for the Python core. |
+| `docs/REPOSITORY_PROFILE.md` | Canonical GitHub "About" panel values (description, homepage, topics). Apply via `gh` or manually. |
+| `docs/reference/perf-baseline.md` | **Historical hosted-web baseline.** Self-banner notes Phase 5C status. Not the active desktop perf record. |
 | `docs/reference/gics-import.md` | GICS import reference. |
-| `docs/reference/product-page-prompts.md` | Product page copy prompts. |
+| `docs/reference/product-page-prompts.md` | Product page copy prompts (hosted web surface only). |
 | `docs/skills/CVMANALYTICS_VITE_UI_SKILL.md` | Rules for implementing Vite UI screens in `apps/desktop-web/`. Read before any desktop UI change. |
-| `docs/perf/` | Performance benchmarks and guardrails. |
-| `docs/releases/` | Release notes per version (v0.2.0 through v0.17.0). |
+| `docs/perf/app-weight-performance-audit.md` | **Active desktop perf record.** Read-only audit of the packaged Windows runtime (2026-05-19). |
+| `docs/perf/performance_baseline.json` | **Active baseline data.** Reference numeric baseline for desktop perf checks. |
+| `docs/perf/benchmark_read_paths.md` | **Benchmark report.** Issue #134 — read-path benchmark on the CVM query layer (synthetic SQLite). |
+| `docs/perf/polars-benchmark.md` | **Benchmark report.** Issue #110 — Polars vs Pandas comparison on the CVM ingestion pipeline. |
+| `docs/perf/performance_guardrails.md` | **Historical hosted-web guardrails.** Self-banner notes Phase 5C status. Targets `apps/web/` + `apps/api/`, not the desktop bundle. |
+| `docs/releases/` | Release notes per version. See `docs/releases/README.md` for the index and known coverage gaps. |
 | `AGENTS.md` | AI agent operating contract. |
 | `COMO_RODAR.md` | Practical dev/run guide. |
 | `DESIGN.md` | Design system tokens + brand principles. |

@@ -1,5 +1,8 @@
 # Phase 3 / 4 - Functional Parity Matrix
 
+> [!NOTE]
+> **Historical migration document.** Parity tracking completed at Phase 4 (`v0.14.0`) when Vite became the default UI, and final hardening shipped at `v0.17.0`. The screen-by-screen matrix below remains useful as a desktop feature catalogue but is no longer an active parity plan. Current source of truth: `README.md`, `docs/reference/repository-map.md`.
+
 Status: Phase 3A shipped in `v0.5.0` (financial statements). Phase 3B
 shipped in `v0.6.0` and was accepted in `v0.6.1` (Update Base + DB
 diagnostics + post-job delta). Phase 3C shipped in `v0.7.0`: 3C.0

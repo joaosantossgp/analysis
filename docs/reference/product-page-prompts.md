@@ -1,5 +1,8 @@
 # Product Page UI/UX Prompts
 
+> [!NOTE]
+> These prompts describe the **hosted web product page** (`apps/web/`), a source-only / hosted surface that is not packaged into the desktop runtime. For the packaged desktop UI, see `apps/desktop-web/` and `docs/skills/CVMANALYTICS_VITE_UI_SKILL.md`.
+
 This document contains copy-ready prompts for Claude Design or another UI agent.
 Each prompt describes what the screen must contain and how users should interact
 with it. The prompts focus on product content, expected behavior, and required

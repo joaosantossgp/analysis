@@ -1,5 +1,8 @@
 # Phase 0 Release Checkpoint — v0.3.0
 
+> [!NOTE]
+> **Historical migration document.** Phase 0 is complete; the desktop migration shipped through `v0.17.0`. Current source of truth: `README.md`, `docs/reference/repository-map.md`, and the v0.17.0 release notes.
+
 ## Release
 
 - Tag: v0.3.0
@@ -76,7 +79,7 @@ Phase 0 is released. **v0.3.0 was superseded by v0.3.1 due to a packaging bug.**
 
 **Fix in v0.3.4:** `.github/workflows/release-desktop.yml` now uses `Compress-Archive -Path dist\CVMAnalytics\*` (contents only), plus a post-archive verification step that fails the workflow if `CVMAnalytics.exe` and `_internal` are not both at the archive root.
 
-**Validated on the published v0.3.4 asset (`scripts/test_ci_v034_full.ps1`):**
+**Validated on the published v0.3.4 asset (`docs/migration/legacy-release-validation/test_ci_v034_full.ps1`):**
 
 - Asset layout: roots = `['CVMAnalytics.exe', '_internal']` (flat, updater-compatible).
 - Fresh install with MOTW applied to 155 binaries: process alive 30s, 19 `msedgewebview2.exe` children, LOCALAPPDATA DB created.

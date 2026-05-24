@@ -1,5 +1,8 @@
 # Phase 1 — Parallel Vite SPA Shell
 
+> [!NOTE]
+> **Historical migration document.** Phase 1 is complete; the Vite SPA became the only desktop UI at `v0.15.0` (Phase 5B) and the migration finished at `v0.17.0`. Statements like "default desktop runtime still uses Next + Node" reflect the Phase 1 era only. Current source of truth: `README.md`, `docs/reference/repository-map.md`.
+
 Covers Phase 1, Phase 1.5, and Phase 1.6. Released as code on `main` but not as a tagged binary release. Default desktop runtime still uses Next + Node (Phase 0 `v0.3.4` behaviour). The Vite SPA in `apps/desktop-web/` exists in parallel.
 
 ---

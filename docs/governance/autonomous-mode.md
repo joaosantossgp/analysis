@@ -36,7 +36,7 @@ Before changing any versioned file in autonomous mode:
 Official lanes:
 
 - `lane:frontend` — `apps/web/**`
-- `lane:backend` — `apps/api/**`, `src/**`, `desktop/**`, `dashboard/**`, `tests/**`
+- `lane:backend` — `apps/api/**`, `src/**`, `desktop/**`, `apps/desktop-web/**`, `tests/**`
 - `lane:ops-quality` — `.github/**`, `docs/**`, root docs, operational scripts
 - `lane:master` — cross-cutting execution lane with broad write access
 

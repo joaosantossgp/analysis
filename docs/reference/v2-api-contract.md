@@ -1,5 +1,8 @@
 # V2 API Contract
 
+> [!NOTE]
+> This document maps the **hosted FastAPI surface** (`apps/api/`, deployed via Railway), a source-only / hosted surface that is not packaged into the desktop runtime. The packaged desktop product communicates with Python through `window.pywebview.api` — see `docs/migration/ARCHITECTURE.md` for the bridge surface map (historical, but still the most complete record).
+
 ## Escopo
 
 Contrato HTTP da Fase 1 da V2 em `apps/api`.

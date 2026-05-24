@@ -1,5 +1,8 @@
 # Phase 5C Source-only Legacy Cleanup
 
+> [!NOTE]
+> **Historical migration document.** Phase 5C shipped as `v0.16.0`; final hardening completed at `v0.17.0`. Current source of truth: `README.md`, `docs/reference/repository-map.md`.
+
 ## Current Desktop Runtime
 
 Accepted baseline: `v0.15.0`.

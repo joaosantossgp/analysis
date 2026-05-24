@@ -1,5 +1,8 @@
 # Phase 6 Final Hardening Audit
 
+> [!NOTE]
+> **Historical migration document.** Phase 6 hardening shipped as the `v0.17.0` stable release. Findings below were addressed in the release. Current source of truth: `README.md`, `docs/reference/repository-map.md`, and `docs/releases/v0.17.0.md`.
+
 This audit evaluates the packaged Windows desktop runtime of CVMAnalytics for performance, package size, cold start, stability, auto-updater behavior, logs/error handling, UI/UX consistency, and CI workflows.
 
 ---

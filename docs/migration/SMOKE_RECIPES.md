@@ -1,5 +1,8 @@
 # Smoke Recipes
 
+> [!NOTE]
+> **Historical migration document.** Recipes were collected during the desktop migration, complete as of `v0.17.0`. Some commands (MOTW reproduction, updater contract) still apply to current releases; others were one-time validations for specific phases. Use `scripts/test_motw_launch.ps1` and `scripts/test_motw_explorer.ps1` for current release validation. For current product state, see `README.md` and `docs/reference/repository-map.md`.
+
 All the validation commands used during this migration, in one place. Copy/paste-ready.
 
 ---
@@ -8,7 +11,7 @@ All the validation commands used during this migration, in one place. Copy/paste
 
 ### Full Phase 0 contract against a published release asset
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/test_ci_v034_full.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File docs/migration/legacy-release-validation/test_ci_v034_full.ps1
 ```
 Downloads the latest `v0.3.4` zip from GitHub via `gh`, applies MOTW to 155 binaries, launches the bundled exe, simulates an updater swap with planted user data, and reports:
 - Fresh install: alive, WebView2 children, Documents data root preserved/created.

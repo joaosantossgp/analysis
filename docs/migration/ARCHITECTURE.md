@@ -1,5 +1,8 @@
 # Current Architecture Map
 
+> [!NOTE]
+> **Historical migration document.** The desktop runtime migration is complete as of `v0.17.0`. This file is a snapshot from Phase 5B / `v0.15.0` and is not the current architecture source of truth. For the current product, see `README.md`, `docs/reference/repository-map.md`, and the v0.17.0 release notes. Architecture sections below remain useful as reference but may lag the current package.
+
 Snapshot updated after Phase 5B / `v0.15.0`: the packaged desktop runtime is
 Vite-only. Older Next/Node sections below are historical context for Phase 2-4
 and no longer describe the current package.
@@ -163,7 +166,7 @@ contain user financial data:
 | **Source-only / hosted Next UI** | `apps/web/app/**`, `apps/web/components/**`, `apps/web/lib/**`, `apps/web/next.config.ts`, `apps/web/package.json` |
 | **Hosted/development FastAPI** | `apps/api/app/**`, `apps/api/worker.py`, `apps/api/Dockerfile`, `railway.toml` |
 | **Packaged Vite SPA** | `apps/desktop-web/**` |
-| **Smoke / harness scripts** | `scripts/phase1_pywebview_smoke.py`, `scripts/test_motw_strip.py`, `scripts/test_motw_explorer.ps1`, `scripts/test_motw_launch.ps1`, `scripts/test_ci_v034_full.ps1`, `scripts/test_ci_v033_motw.ps1` |
+| **Smoke / harness scripts** | `scripts/phase1_pywebview_smoke.py`, `scripts/test_motw_strip.py`, `scripts/test_motw_explorer.ps1`, `scripts/test_motw_launch.ps1`, `docs/migration/legacy-release-validation/test_ci_v034_full.ps1`, `docs/migration/legacy-release-validation/test_ci_v033_motw.ps1` (archived) |
 | **Migration docs** | `docs/migration/*.md` |
 
 ---

@@ -1,5 +1,11 @@
 # Phase 5 — Legacy Deletion (HISTORICAL PLAN)
 
+> [!WARNING]
+> **Filename / title mismatch.** This file is named `PHASE_3_PLAN.md` but its content is the **Phase 5** legacy-deletion plan. The original Phase 3 was renamed Phase 5 after the Phase 4 default flip in `v0.14.0`. The file path is preserved only for link stability (old commits, PRs, and docs still reference the old path). It is **not an active plan** — Phase 5B already shipped in `v0.15.0` and the migration completed at `v0.17.0`.
+
+> [!NOTE]
+> **Historical migration document.** This plan was superseded; Phase 5B (`v0.15.0`) actually removed the desktop-side legacy runtime, and the migration completed at `v0.17.0`. Current source of truth: `README.md`, `docs/reference/repository-map.md`.
+
 > Note: this document was originally titled "Phase 3 — Legacy Deletion". After the Phase 4 default flip in `v0.14.0`, the canonical name for the legacy-deletion phase is **Phase 5**. The file path is kept for backward compatibility with old links.
 
 Status: **Superseded by Phase 5A/5B/5C.** The desktop-side legacy runtime was

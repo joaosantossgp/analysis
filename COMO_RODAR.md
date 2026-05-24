@@ -235,14 +235,30 @@ npm run build
 npm run test:e2e
 ```
 
-Validacoes de workbook/exportacao:
+Validacoes de workbook/exportacao (QA manual; rode somente apos gerar o
+XLSX via `main.py` ou pelo export do desktop). Nao sao requisitos de
+setup nem rodam em CI.
+
+QA estrutural reutilizavel (rode contra qualquer workbook gerado, ajuste
+`--xlsx` conforme necessario):
 
 ```powershell
+python scripts/quick_verify.py --xlsx output/reports/PETROBRAS_financials.xlsx
 python scripts/verify_consolidation.py --xlsx output/reports/PETROBRAS_financials.xlsx
 python scripts/verify_line_id_base.py --xlsx output/reports/PETROBRAS_financials.xlsx
-python scripts/quick_verify.py --xlsx output/reports/PETROBRAS_financials.xlsx
+```
+
+Verificacao historica de bug-fixes (campanha antiga de 4 bugs: cobertura
+de anos, replicacao BPP, totais BPA, recorte consolidado). Mantida para
+regressao manual contra o export da Petrobras; nao e parte do fluxo
+normal:
+
+```powershell
 python scripts/final_verification.py --xlsx output/reports/PETROBRAS_financials.xlsx
 ```
+
+Todos compartilham o helper `scripts/workbook_paths.py` (resolucao de
+caminho XLSX padrao/legado).
 
 ---
 

@@ -1,5 +1,8 @@
 # Phase 0 — User Data Safety
 
+> [!NOTE]
+> **Historical migration document.** Phase 0 user-data safety contract was implemented and validated through `v0.17.0`. The user-data root and updater contract described here remain accurate but are no longer an active migration plan. Current source of truth: `README.md`, `docs/reference/repository-map.md`.
+
 ## Purpose
 
 Protect user data before any frontend/runtime migration.

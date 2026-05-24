@@ -1,5 +1,8 @@
 # Phase 6C Stable Release / Final Product Pass
 
+> [!NOTE]
+> **Historical migration document.** Phase 6C completed and shipped as the `v0.17.0` stable release. Current source of truth: `README.md`, `docs/reference/repository-map.md`, and `docs/releases/v0.17.0.md`.
+
 ## Current Runtime
 The desktop application is built with a lightweight, local-first runtime containing no Node or Next.js servers in production:
 *   **Backend / Processing Core:** Python with standard library utilities.

@@ -1,5 +1,8 @@
 # Phase 2 — Opt-in `--vite` Runtime in Packaged Exe
 
+> [!NOTE]
+> **Historical migration document.** Phase 2 (`--vite` as opt-in) was superseded by Phase 4 (`v0.14.0`, Vite as default) and Phase 5B (`v0.15.0`, Next/Node fully removed from the desktop bundle). Current source of truth: `README.md`, `docs/reference/repository-map.md`.
+
 Commit `8291613` `feat(desktop): Phase 2 — opt-in --vite runtime alongside Next default`.
 
 Status: **implemented on `main`, not yet tagged / released.** Released `v0.3.4` does not have this flag.
@@ -212,7 +215,7 @@ Phase 3 reclaims ~114 MB once Vite reaches parity.
 If/when the user approves shipping Phase 2:
 
 1. Build locally: `.\desktop\build_desktop.ps1` (rebuilds Next + Vite + PyInstaller).
-2. Smoke: `python scripts/test_ci_v034_full.ps1` against the local build to confirm Phase 0 regressions pass.
+2. Smoke: `python docs/migration/legacy-release-validation/test_ci_v034_full.ps1` against the local build to confirm Phase 0 regressions pass.
 3. Smoke: launch packaged exe with and without `--vite`; verify process count and LOCALAPPDATA DB.
 4. Tag `v0.3.5` with release notes saying `--vite` is opt-in / experimental, default is unchanged Next runtime.
 5. Push tag — CI publishes the bundle automatically.
