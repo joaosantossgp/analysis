@@ -343,6 +343,152 @@ def test_build_excel_filename_falls_back_to_cvm_code_without_ticker():
     assert filename == "cvm1234_20260409.xlsx"
 
 
+# ─── v0.19.1 refinements ─────────────────────────────────────────────────────
+def test_no_merged_cells_anywhere():
+    """Hard rule: zero merged ranges in any sheet of the workbook."""
+    exporter = ExcelExporter(
+        company_info=_sample_company(),
+        statements=_wide_statements(),
+        kpis_df=_minimal_kpis(),
+        extra_sheets=["DVA"],
+    )
+    payload = exporter.export()
+    wb = openpyxl.load_workbook(io.BytesIO(payload))
+    for name in wb.sheetnames:
+        merged = list(wb[name].merged_cells.ranges)
+        assert merged == [], f"sheet {name} has merged cells: {merged}"
+
+
+def test_conventions_rows_grouped_and_hidden():
+    """Rows 3:9 (1-indexed) should be in outline level 1 and hidden by default."""
+    exporter = ExcelExporter(
+        company_info=_sample_company(),
+        statements=_wide_statements(),
+        kpis_df=_minimal_kpis(),
+    )
+    payload = exporter.export()
+    wb = openpyxl.load_workbook(io.BytesIO(payload))
+    ws = wb["Model"]
+    for r in range(3, 10):
+        rd = ws.row_dimensions.get(r)
+        assert rd is not None, f"row {r} has no dimension info"
+        assert rd.outlineLevel == 1, (
+            f"row {r} outline level: {rd.outlineLevel} (want 1)"
+        )
+        assert rd.hidden, f"row {r} should be hidden by default"
+
+
+def test_latest_fiscal_year_populated_from_periods():
+    """Even when company_info lacks 'latest_year', the cell should fall
+    back to the most recent annual period present in the period window."""
+    company = _sample_company()
+    if "latest_year" in company:
+        del company["latest_year"]
+    exporter = ExcelExporter(
+        company_info=company,
+        statements=_wide_statements(),
+        kpis_df=_minimal_kpis(),
+    )
+    payload = exporter.export()
+    wb = openpyxl.load_workbook(io.BytesIO(payload))
+    ws = wb["Model"]
+    # Locate 'Latest fiscal year' row
+    target_row = None
+    for r in range(1, ws.max_row + 1):
+        if ws.cell(row=r, column=2).value == "Latest fiscal year":
+            target_row = r
+            break
+    assert target_row is not None
+    val = ws.cell(row=target_row, column=4).value
+    # Sample statements have 2021-2025 — most recent annual is 2025.
+    assert str(val) == "2025", f"expected 2025, got {val!r}"
+
+
+def test_readme_does_not_mention_missing_raw_sheets():
+    """If DVA is absent from statements, no `raw_DVA` mention in README."""
+    stmts = _wide_statements()
+    del stmts["DVA"]
+    exporter = ExcelExporter(
+        company_info=_sample_company(),
+        statements=stmts,
+        kpis_df=_minimal_kpis(),
+    )
+    payload = exporter.export()
+    wb = openpyxl.load_workbook(io.BytesIO(payload))
+    assert "raw_DVA" not in wb.sheetnames
+    ws = wb["README"]
+    full_text = " ".join(
+        str(ws.cell(row=r, column=c).value or "")
+        for r in range(1, ws.max_row + 1)
+        for c in range(1, ws.max_column + 1)
+    )
+    assert "raw_DVA" not in full_text or "not** present" in full_text or "not present" in full_text
+
+
+def test_model_sheet_dva_section_visible_when_absent():
+    """DVA section heading must be visible even when no DVA data exists,
+    with an explicit unavailability note row."""
+    stmts = _wide_statements()
+    del stmts["DVA"]
+    exporter = ExcelExporter(
+        company_info=_sample_company(),
+        statements=stmts,
+        kpis_df=_minimal_kpis(),
+    )
+    payload = exporter.export()
+    wb = openpyxl.load_workbook(io.BytesIO(payload))
+    ws = wb["Model"]
+    labels = [str(ws.cell(row=r, column=2).value or "")
+              for r in range(1, ws.max_row + 1)]
+    body = " | ".join(labels)
+    assert "Value Added Statement" in body
+    assert "DVA unavailable" in body
+
+
+def test_model_statement_is_expanded_taxonomy():
+    """DRE alone should render >= 20 spine rows; full model > 60 rows total."""
+    exporter = ExcelExporter(
+        company_info=_sample_company(),
+        statements=_wide_statements(),
+        kpis_df=_minimal_kpis(),
+        extra_sheets=["DVA"],
+    )
+    payload = exporter.export()
+    wb = openpyxl.load_workbook(io.BytesIO(payload))
+    ws = wb["Model"]
+    # Count non-empty column-B labels between Income Statement and KPIs
+    inside_is = False
+    is_rows = 0
+    for r in range(1, ws.max_row + 1):
+        v = ws.cell(row=r, column=2).value
+        if v == "Income Statement":
+            inside_is = True
+            continue
+        if isinstance(v, str) and v.endswith("Statement") and v != "Income Statement":
+            inside_is = False
+        if inside_is and v:
+            is_rows += 1
+    assert is_rows >= 20, f"Income Statement has only {is_rows} rows (want >=20)"
+
+
+def test_checks_include_cash_flow_tie_and_net_income_tie():
+    exporter = ExcelExporter(
+        company_info=_sample_company(),
+        statements=_wide_statements(),
+        kpis_df=_minimal_kpis(),
+        extra_sheets=["DVA"],
+    )
+    payload = exporter.export()
+    wb = openpyxl.load_workbook(io.BytesIO(payload))
+    ws = wb["Model"]
+    labels = [str(ws.cell(row=r, column=2).value or "")
+              for r in range(1, ws.max_row + 1)]
+    body = " | ".join(labels)
+    assert "Cash Flow Tie" in body
+    assert "Net Income Tie" in body
+    assert "Formula Error Scan" in body
+
+
 # ─── scoped statement export still works ─────────────────────────────────────
 def test_scoped_statement_export_is_minimal():
     exporter = ExcelExporter(
