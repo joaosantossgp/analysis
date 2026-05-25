@@ -1456,20 +1456,144 @@ class DesktopRefreshJobManager:
                     return {"items": []}
             if job_id:
                 job = self._jobs.get(str(job_id))
-                if job is None:
-                    return {
-                        "state": "not_found",
-                        "job_id": str(job_id),
-                        "processed": 0,
-                        "failures": 0,
-                        "current_cvm": None,
-                        "log_lines": [],
-                    }
-                return self._public_job(job)
+                if job is not None:
+                    return self._public_job(job)
+                db_job = self._lookup_db_worker_job(str(job_id))
+                if db_job is not None:
+                    return db_job
+                return {
+                    "state": "not_found",
+                    "job_id": str(job_id),
+                    "processed": 0,
+                    "failures": 0,
+                    "current_cvm": None,
+                    "log_lines": [],
+                }
 
             jobs = [self._public_job(job) for job in self._jobs.values()]
+        # Single-company refresh jobs live in the refresh_jobs table (drained
+        # by RefreshJobWorker), not in DesktopRefreshJobManager's JSON store.
+        # Surface them alongside batch jobs so UpdateBasePage / onboarding see
+        # all in-flight work.
+        jobs.extend(self._synthesize_db_worker_jobs())
         jobs.sort(key=lambda row: str(row.get("updated_at") or ""), reverse=True)
         return {"items": jobs}
+
+    DB_WORKER_HISTORY_LIMIT = 10
+
+    def _synthesize_db_worker_jobs(self) -> list[dict[str, Any]]:
+        try:
+            from src.refresh_jobs import (  # noqa: PLC0415
+                ensure_refresh_runtime_tables_for_connection,
+            )
+            from sqlalchemy import text  # noqa: PLC0415
+
+            engine = self._read_service().engine
+            with engine.connect() as conn:
+                ensure_refresh_runtime_tables_for_connection(conn)
+                active_rows = conn.execute(
+                    text(
+                        """
+                        SELECT *
+                        FROM refresh_jobs
+                        WHERE state IN ('queued', 'running')
+                        ORDER BY requested_at DESC, id ASC
+                        """
+                    )
+                ).mappings().all()
+                # Recent terminal rows so single-company runs show up in
+                # JobHistory next to batch jobs. Ordered by finished_at desc
+                # with requested_at fallback for rows missing finished_at.
+                terminal_rows = conn.execute(
+                    text(
+                        """
+                        SELECT *
+                        FROM refresh_jobs
+                        WHERE state NOT IN ('queued', 'running')
+                        ORDER BY COALESCE(finished_at, requested_at) DESC, id DESC
+                        LIMIT :limit
+                        """
+                    ),
+                    {"limit": int(self.DB_WORKER_HISTORY_LIMIT)},
+                ).mappings().all()
+        except Exception:
+            return []
+        return [
+            self._db_worker_job_to_public(dict(row))
+            for row in (*active_rows, *terminal_rows)
+        ]
+
+    def _lookup_db_worker_job(self, job_id: str) -> dict[str, Any] | None:
+        try:
+            from src.refresh_jobs import (  # noqa: PLC0415
+                ensure_refresh_runtime_tables_for_connection,
+            )
+            from sqlalchemy import text  # noqa: PLC0415
+
+            engine = self._read_service().engine
+            with engine.connect() as conn:
+                ensure_refresh_runtime_tables_for_connection(conn)
+                row = conn.execute(
+                    text(
+                        """
+                        SELECT *
+                        FROM refresh_jobs
+                        WHERE id = :id
+                        """
+                    ),
+                    {"id": str(job_id)},
+                ).mappings().fetchone()
+        except Exception:
+            return None
+        if row is None:
+            return None
+        return self._db_worker_job_to_public(dict(row))
+
+    @staticmethod
+    def _db_worker_job_to_public(row: dict[str, Any]) -> dict[str, Any]:
+        state = str(row.get("state") or "").strip().lower()
+        # Normalize DB-worker terminal states to the vocabulary used by the
+        # JSON-batch manager so the frontend (isTerminalRefreshJob) treats
+        # them uniformly.
+        if state in {"no_data"}:
+            state = "success"
+        elif state in {"error", "failed"}:
+            state = "error"
+        progress_total = int(row.get("progress_total") or 1) or 1
+        progress_current = int(row.get("progress_current") or 0)
+        message = row.get("progress_message") or row.get("error_message") or ""
+        log_lines: list[str] = []
+        if message:
+            log_lines.append(str(message))
+        return {
+            "job_id": str(row.get("id") or ""),
+            "state": state,
+            "status": state,
+            "mode": "single",
+            "stage": row.get("stage"),
+            "queued": 1,
+            "processed": 1 if state in {"success", "error", "cancelled"} else progress_current,
+            "failures": 1 if state == "error" else 0,
+            "current_cvm": int(row.get("cd_cvm")) if row.get("cd_cvm") is not None else None,
+            "log_lines": log_lines,
+            "accepted_at": row.get("requested_at"),
+            "started_at": row.get("started_at"),
+            "finished_at": row.get("finished_at"),
+            # Prefer finished_at for terminal rows so JobHistory sort
+            # surfaces the most recent run first; fall back to heartbeat
+            # (running), then started_at, then requested_at (queued).
+            "updated_at": (
+                row.get("finished_at")
+                or row.get("heartbeat_at")
+                or row.get("started_at")
+                or row.get("requested_at")
+            ),
+            "error": row.get("error_message"),
+            "result": None,
+            "source": "db_worker",
+            "progress_current": progress_current,
+            "progress_total": progress_total,
+        }
 
     def cancel_job(self, params: dict[str, Any] | None = None) -> dict[str, Any]:
         job_id = str((params or {}).get("job_id") or "")

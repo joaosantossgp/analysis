@@ -200,6 +200,11 @@ export type RefreshJobStatus = {
   updated_at?: string | null;
   error?: string | null;
   result?: Record<string, unknown> | null;
+  /** "batch" (DesktopRefreshJobManager) or "db_worker" (refresh_jobs table). */
+  source?: "batch" | "db_worker" | string | null;
+  /** Present on synthesized db_worker jobs; absent on batch jobs. */
+  progress_current?: number | null;
+  progress_total?: number | null;
 };
 
 export type RefreshJobListResponse = {
@@ -541,6 +546,77 @@ export type PingResult = {
   ts: number;
 };
 
+export type DataCoverageStatus =
+  | "complete"
+  | "partial"
+  | "no_financial"
+  | "failed"
+  | "unmapped"
+  | "ignored";
+
+export type DataCoverageFilterId =
+  | "all"
+  | "no_dfp"
+  | "no_itr"
+  | "no_financial"
+  | "stale"
+  | "failed"
+  | "ticker_unmapped"
+  | "cvm_unmapped"
+  | "no_registry"
+  | "ignored";
+
+export type DataCoverageRow = {
+  cd_cvm: number;
+  company_name: string;
+  ticker: string | null;
+  ticker_mapped: boolean;
+  cvm_valid: boolean;
+  has_registry: boolean;
+  has_dfp: boolean;
+  has_itr: boolean;
+  latest_dfp_year: number | null;
+  latest_itr_period: string | null;
+  last_status: string | null;
+  last_attempt_at: string | null;
+  last_success_at: string | null;
+  last_error: string | null;
+  update_failed: boolean;
+  is_stale: boolean;
+  ignored: boolean;
+  ignored_reason: string | null;
+  status: DataCoverageStatus;
+};
+
+export type DataCoverageSummary = {
+  total: number;
+  complete: number;
+  partial: number;
+  no_financial: number;
+  failed: number;
+  stale: number;
+  unmapped: number;
+  ignored: number;
+};
+
+export type SetCompanyIgnoredResponse = {
+  ok: boolean;
+  cd_cvm?: number;
+  ignored?: boolean;
+  ignored_at?: string | null;
+  ignored_reason?: string | null;
+  error?: string;
+};
+
+export type DataCoverageResponse = {
+  generated_at: string | null;
+  stale_cutoff_year: number | null;
+  summary: DataCoverageSummary;
+  filter_counts: Partial<Record<DataCoverageFilterId, number>>;
+  rows: DataCoverageRow[];
+  error?: string;
+};
+
 /**
  * Complete bridge method surface. Add new methods here as Phase 1 grows.
  * Keep parameter shapes loose (Record<string, unknown>) — Python normalises
@@ -567,6 +643,8 @@ export interface BridgeApi {
   complete_onboarding_setup(params?: Record<string, unknown>): Promise<OnboardingState>;
   skip_onboarding_setup(params?: Record<string, unknown>): Promise<OnboardingState>;
   get_database_diagnostics(params?: Record<string, unknown>): Promise<DatabaseDiagnostics>;
+  get_data_coverage(params?: Record<string, unknown>): Promise<DataCoverageResponse>;
+  set_company_ignored(params: Record<string, unknown>): Promise<SetCompanyIgnoredResponse>;
   get_company_filters(params?: Record<string, unknown>): Promise<CompanyFiltersResponse>;
   get_sectors(params?: Record<string, unknown>): Promise<SectorDirectoryResponse>;
   get_sector_detail(params: Record<string, unknown>): Promise<SectorDetailResponse>;

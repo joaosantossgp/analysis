@@ -241,6 +241,11 @@ def _ensure_refresh_status_schema(conn) -> None:
         "heartbeat_at": "TEXT",
         "finished_at": "TEXT",
         "read_model_updated_at": "TEXT",
+        # `ignored` flips a company out of the active Data Coverage view.
+        # Additive non-null default — safe for existing rows.
+        "ignored": "INTEGER NOT NULL DEFAULT 0",
+        "ignored_at": "TEXT",
+        "ignored_reason": "TEXT",
     }
     for name, ddl in missing_columns.items():
         if name not in columns:

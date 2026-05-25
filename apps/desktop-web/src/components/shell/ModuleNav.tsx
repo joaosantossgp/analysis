@@ -35,7 +35,10 @@ const MODULES: ModuleDef[] = [
     id: "database",
     label: "Database",
     to: "/atualizar-base",
-    matches: (p) => p.startsWith("/atualizar-base") || p.startsWith("/company-universe"),
+    matches: (p) =>
+      p.startsWith("/atualizar-base")
+      || p.startsWith("/company-universe")
+      || p.startsWith("/data-coverage"),
   },
   {
     id: "diagnostics",

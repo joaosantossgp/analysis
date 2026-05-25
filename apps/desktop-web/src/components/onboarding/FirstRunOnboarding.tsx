@@ -75,6 +75,12 @@ export function FirstRunOnboarding({
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["onboarding-state"] });
       void queryClient.invalidateQueries({ queryKey: ["companies"] });
+      // Onboarding seeds the local DB — refresh derived views so the
+      // first post-onboarding navigation already shows fresh data.
+      void queryClient.invalidateQueries({ queryKey: ["data-coverage"] });
+      void queryClient.invalidateQueries({ queryKey: ["base-health"] });
+      void queryClient.invalidateQueries({ queryKey: ["db-diagnostics"] });
+      void queryClient.invalidateQueries({ queryKey: ["sectors"] });
     },
   });
 

@@ -976,7 +976,10 @@ def test_company_excel_export_returns_binary_workbook(client: TestClient):
     assert 'filename="PETR4_' in response.headers["content-disposition"]
 
     workbook = openpyxl.load_workbook(io.BytesIO(response.content))
-    assert workbook.sheetnames[:4] == ["CAPA", "GERAL", "KPIs", "DRE"]
+    assert workbook.sheetnames[:2] == ["Model", "README"]
+    for sheet_name in ("raw_DRE", "raw_BPA", "raw_BPP", "raw_DFC", "raw_KPIs", "metadata"):
+        assert sheet_name in workbook.sheetnames
+        assert workbook[sheet_name].sheet_state == "hidden"
 
 
 def test_company_excel_export_uses_all_available_years(client: TestClient):
@@ -984,10 +987,10 @@ def test_company_excel_export_uses_all_available_years(client: TestClient):
 
     assert response.status_code == 200
     workbook = openpyxl.load_workbook(io.BytesIO(response.content))
-    dre = workbook["DRE"]
+    dre = workbook["raw_DRE"]
+    headers = {str(cell.value) for cell in dre[1] if cell.value is not None}
 
-    assert dre["E1"].value == "2023"
-    assert dre["F1"].value == "2024"
+    assert {"2023", "2024"}.issubset(headers)
 
 
 def test_company_excel_export_returns_404_for_unknown_company(client: TestClient):

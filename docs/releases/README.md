@@ -2,13 +2,14 @@
 
 This directory holds per-version release notes for the CVMAnalytics desktop product.
 
-The **current stable baseline is `v0.20.1`** (company universe entry point). The packaged Windows desktop EXE distributed via [GitHub Releases](https://github.com/joaosantossgp/analisys/releases) is the authoritative distribution channel — this directory is a **partial** local copy of the per-version notes, not the source of truth.
+The **current release is `v0.21.0`** (Data Operations UX). The packaged Windows desktop EXE distributed via [GitHub Releases](https://github.com/joaosantossgp/analisys/releases) is the authoritative distribution channel — this directory is a **partial** local copy of the per-version notes, not the source of truth.
 
 ## Current
 
 | Version | Notes |
 |---|---|
-| `v0.20.1` | [v0.20.1.md](v0.20.1.md) — current stable, company universe entry point |
+| `v0.21.0` | [v0.21.0.md](v0.21.0.md) — Data Operations UX (Data Coverage page, virtualized table, real-time updates, bulk ignore) |
+| `v0.20.1` | [v0.20.1.md](v0.20.1.md) — company universe entry point |
 | `v0.20.0` | [v0.20.0.md](v0.20.0.md) — first-run company universe setup |
 | `v0.19.1` | [v0.19.1.md](v0.19.1.md) — refined analyst model (no merges, expanded taxonomy) |
 | `v0.19.0` | [v0.19.0.md](v0.19.0.md) — refined analyst Excel model |

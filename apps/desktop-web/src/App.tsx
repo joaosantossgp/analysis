@@ -46,6 +46,9 @@ const StatusPage = lazy(() =>
 const UpdateBasePage = lazy(() =>
   import("./routes/UpdateBasePage").then((m) => ({ default: m.UpdateBasePage })),
 );
+const DataCoveragePage = lazy(() =>
+  import("./routes/DataCoveragePage").then((m) => ({ default: m.DataCoveragePage })),
+);
 
 function RouteFallback() {
   return (
@@ -133,6 +136,7 @@ function AppShellWithPalette() {
             <Route path="/status" element={<StatusPage />} />
             <Route path="/health" element={<HealthPage />} />
             <Route path="/atualizar-base" element={<UpdateBasePage />} />
+            <Route path="/data-coverage" element={<DataCoveragePage />} />
             <Route path="/company-universe" element={<CompanyUniversePage />} />
             <Route path="/setores" element={<SectorsPage />} />
             <Route path="/setores/:slug" element={<SectorDetailPage />} />

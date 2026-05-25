@@ -114,6 +114,11 @@ export function UpdateBasePage() {
     financialReports: number;
   } | null>(null);
 
+  // Remember the last terminal job we already invalidated for so we only
+  // broadcast cache invalidation once per job transition, not on every
+  // poll tick.
+  const invalidatedJobRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (!trackedJob) return;
     if (isActiveRefreshJob(trackedJob) && lastStartSnapshotRef.current?.jobId !== trackedJob.job_id) {
@@ -123,11 +128,37 @@ export function UpdateBasePage() {
         financialReports: diagnostics?.row_counts.financial_reports ?? null,
       };
       setPostJobDelta(null);
+      invalidatedJobRef.current = null;
     }
-    if (isTerminalRefreshJob(trackedJob)) {
-      void queryClient.invalidateQueries({ queryKey: ["base-health"] });
-      void queryClient.invalidateQueries({ queryKey: ["companies"] });
-      void queryClient.invalidateQueries({ queryKey: ["db-diagnostics"] });
+    if (
+      isTerminalRefreshJob(trackedJob)
+      && invalidatedJobRef.current !== trackedJob.job_id
+    ) {
+      invalidatedJobRef.current = trackedJob.job_id;
+      // Fan out invalidation to every query whose backing data may have
+      // changed during the refresh. Keys mirror those registered across
+      // the app (see queryKey usages); missing one here means a page
+      // would silently serve stale data after a refresh completes.
+      const keys: Array<readonly unknown[]> = [
+        ["base-health"],
+        ["companies"],
+        ["company-filters"],
+        ["db-diagnostics"],
+        ["sectors"],
+        ["sector-detail"],
+        ["sub-sector-detail"],
+        ["company-info"],
+        ["company-years"],
+        ["company-kpis"],
+        ["company-statement"],
+        ["company-refresh-status"],
+        ["onboarding-state"],
+        ["app-status"],
+        ["data-coverage"],
+      ];
+      for (const queryKey of keys) {
+        void queryClient.invalidateQueries({ queryKey });
+      }
       const snap = lastStartSnapshotRef.current;
       if (snap && snap.jobId === trackedJob.job_id && diagnostics) {
         const dC = (diagnostics.row_counts.companies ?? 0) - (snap.companies ?? 0);
@@ -215,6 +246,21 @@ export function UpdateBasePage() {
 
       <CompanyUniverseEntryPanel />
 
+      <QuickActionsRow
+        disabled={actionDisabled}
+        running={isRunning}
+        pending={startMutation.isPending}
+        onRun={(quickMode) =>
+          startMutation.mutate({
+            mode: quickMode,
+            limit,
+            startYear,
+            endYear,
+            cdCvm: parsedCompanyCode,
+          })
+        }
+      />
+
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <RefreshControlPanel
           mode={mode}
@@ -245,6 +291,9 @@ export function UpdateBasePage() {
         loading={jobsQuery.isLoading || jobQuery.isLoading}
         error={jobsQuery.error ?? jobQuery.error ?? cancelMutation.error}
         cancelling={cancelMutation.isPending}
+        lastSuccessAt={diagnostics?.latest_success_at ?? null}
+        throughputPerHour={health?.throughput_per_hour ?? null}
+        throughputConfidence={health?.throughput_confidence ?? null}
         onSelectJob={setSelectedJobId}
         onCancel={(jobId) => cancelMutation.mutate(jobId)}
       />
@@ -257,17 +306,25 @@ function PageHeader({ bridgeReady }: { bridgeReady: boolean }) {
     <header className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-6 shadow-lg">
       <UnifiedPageHeader
         title="Atualizar Base"
-        subtitle="Downloads CVM filings and writes them into the local SQLite database under Documents\CVMAnalytics\db. This is the data refresh, not the application updater."
+        subtitle="Mantém seu banco local do CVMAnalytics atualizado e mostra o histórico das execuções."
         actions={
-          <span
-            className={
-              bridgeReady
-                ? "rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-200 font-mono"
-                : "rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs text-amber-200 font-mono"
-            }
-          >
-            {bridgeReady ? "Bridge ready" : "Connecting bridge"}
-          </span>
+          <div className="flex items-center gap-3">
+            <Link
+              to="/data-coverage"
+              className="rounded-full border border-zinc-700 bg-zinc-800/60 px-3 py-1 text-xs text-zinc-200 font-mono hover:text-white"
+            >
+              Cobertura de dados →
+            </Link>
+            <span
+              className={
+                bridgeReady
+                  ? "rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-200 font-mono"
+                  : "rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs text-amber-200 font-mono"
+              }
+            >
+              {bridgeReady ? "Bridge ready" : "Connecting bridge"}
+            </span>
+          </div>
         }
       />
     </header>
@@ -794,6 +851,79 @@ function LocalDataPanel() {
   );
 }
 
+function QuickActionsRow({
+  disabled,
+  running,
+  pending,
+  onRun,
+}: {
+  disabled: boolean;
+  running: boolean;
+  pending: boolean;
+  onRun: (mode: RefreshMode) => void;
+}) {
+  const actions: Array<{
+    mode: RefreshMode;
+    label: string;
+    detail: string;
+    accent: string;
+  }> = [
+    {
+      mode: "missing",
+      label: "Atualizar dados faltantes",
+      detail: "Preenche lacunas de empresas com cobertura parcial.",
+      accent: "border-cyan-500/40 bg-cyan-500/10 text-cyan-100 hover:bg-cyan-500/20",
+    },
+    {
+      mode: "failed",
+      label: "Repetir falhas",
+      detail: "Reprocessa apenas empresas com erro na última tentativa.",
+      accent: "border-amber-500/40 bg-amber-500/10 text-amber-100 hover:bg-amber-500/20",
+    },
+    {
+      mode: "full",
+      label: "Atualização completa",
+      detail: "Reprocessa todas as empresas do escopo selecionado.",
+      accent: "border-zinc-700 bg-zinc-900/60 text-zinc-100 hover:border-zinc-500",
+    },
+  ];
+  return (
+    <article className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-5 shadow-lg">
+      <header className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-zinc-300">
+            Ações rápidas
+          </h3>
+          <p className="mt-0.5 text-xs text-zinc-500">
+            Usa o escopo (anos / limite / CVM) configurado abaixo.
+          </p>
+        </div>
+        {running ? (
+          <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-xs text-amber-100">
+            Já existe uma atualização em andamento
+          </span>
+        ) : null}
+      </header>
+      <div className="grid gap-3 sm:grid-cols-3">
+        {actions.map((a) => (
+          <button
+            key={a.mode}
+            type="button"
+            disabled={disabled}
+            onClick={() => onRun(a.mode)}
+            className={`rounded-md border p-3 text-left disabled:cursor-not-allowed disabled:opacity-50 ${a.accent}`}
+          >
+            <span className="block text-sm font-medium">
+              {pending ? "Iniciando…" : a.label}
+            </span>
+            <span className="mt-1 block text-xs leading-5 opacity-80">{a.detail}</span>
+          </button>
+        ))}
+      </div>
+    </article>
+  );
+}
+
 function JobPanel({
   job,
   jobs,
@@ -801,6 +931,9 @@ function JobPanel({
   loading,
   error,
   cancelling,
+  lastSuccessAt,
+  throughputPerHour,
+  throughputConfidence,
   onSelectJob,
   onCancel,
 }: {
@@ -810,27 +943,35 @@ function JobPanel({
   loading: boolean;
   error: unknown;
   cancelling: boolean;
+  lastSuccessAt: string | null;
+  throughputPerHour: number | null;
+  throughputConfidence: string | null;
   onSelectJob: (jobId: string | null) => void;
   onCancel: (jobId: string) => void;
 }) {
   const progress = refreshProgress(job);
+  const active = job ? isActiveRefreshJob(job) : false;
   return (
     <article className="rounded-lg border border-zinc-800 bg-zinc-900/60 shadow-lg">
       <header className="flex flex-wrap items-start justify-between gap-3 border-b border-zinc-800 p-5">
         <div>
-          <h3 className="text-lg font-semibold text-zinc-100">Refresh job status</h3>
+          <h3 className="text-lg font-semibold text-zinc-100">
+            {active ? "Atualizando dados das empresas" : "Status das atualizações"}
+          </h3>
           <p className="mt-1 text-xs text-zinc-500">
-            Persisted job history is stored in the local user-data folder.
+            {lastSuccessAt
+              ? `Última atualização bem-sucedida: ${formatDateTime(lastSuccessAt)}`
+              : "Nenhuma atualização bem-sucedida registrada ainda."}
           </p>
         </div>
-        {job && isActiveRefreshJob(job) ? (
+        {job && active ? (
           <button
             type="button"
             disabled={cancelling}
             onClick={() => onCancel(job.job_id)}
             className="rounded-md border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200 hover:border-rose-700 hover:text-rose-200 disabled:opacity-50"
           >
-            {cancelling ? "Cancelling..." : "Cancel"}
+            {cancelling ? "Cancelando…" : "Cancelar"}
           </button>
         ) : null}
       </header>
@@ -838,12 +979,18 @@ function JobPanel({
       <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_18rem]">
         <div className="space-y-4">
           {loading && !job ? (
-            <p className="text-sm text-zinc-500">Loading refresh status...</p>
+            <p className="text-sm text-zinc-500">Carregando status…</p>
           ) : job ? (
-            <CurrentJob job={job} progress={progress} />
+            <ActiveJobCard
+              job={job}
+              jobs={jobs}
+              progress={progress}
+              throughputPerHour={throughputPerHour}
+              throughputConfidence={throughputConfidence}
+            />
           ) : (
             <p className="rounded border border-zinc-800 bg-zinc-950/50 p-4 text-sm text-zinc-400">
-              No refresh job has been started in this runtime yet.
+              Nenhuma atualização foi iniciada neste runtime ainda.
             </p>
           )}
 
@@ -862,22 +1009,51 @@ function JobPanel({
   );
 }
 
-function CurrentJob({ job, progress }: { job: RefreshJobStatus; progress: number }) {
+function ActiveJobCard({
+  job,
+  jobs,
+  progress,
+  throughputPerHour,
+  throughputConfidence,
+}: {
+  job: RefreshJobStatus;
+  jobs: RefreshJobStatus[];
+  progress: number;
+  throughputPerHour: number | null;
+  throughputConfidence: string | null;
+}) {
+  const active = isActiveRefreshJob(job);
+  const summary = extractResultSummary(job);
+  const planning = extractPlanningStats(job);
+  const eta = formatEta(job, jobs, throughputPerHour, throughputConfidence);
+  const stepLabel = job.stage
+    ? formatStageHuman(job.stage)
+    : active
+      ? "Aguardando etapa"
+      : formatJobStatePtBr(job.state);
   return (
     <div className="space-y-4 rounded border border-zinc-800 bg-zinc-950/50 p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="font-mono text-xs text-zinc-500">{shortJobId(job.job_id)}</p>
           <h4 className="mt-1 text-base font-semibold text-zinc-100">
-            {formatJobState(job.state)}
+            {active
+              ? "Atualizando dados das empresas"
+              : `Última execução: ${formatJobStatePtBr(job.state)}`}
           </h4>
+          <p className="mt-1 text-xs text-zinc-400">
+            Processando {formatInt(job.processed)} de {formatInt(job.queued)} empresas
+          </p>
+          <p className="mt-1 text-xs text-zinc-400">
+            Etapa atual: <span className="text-zinc-200">{stepLabel}</span>
+          </p>
         </div>
         <span className={jobBadgeClass(job.state)}>{job.mode ?? "refresh"}</span>
       </div>
 
       <div>
         <div className="mb-2 flex justify-between text-xs text-zinc-500">
-          <span>{job.stage ? formatStage(job.stage) : "Waiting for stage"}</span>
+          <span>{stepLabel}</span>
           <span>{progress}%</span>
         </div>
         <div className="h-2 overflow-hidden rounded-full bg-zinc-800">
@@ -889,10 +1065,26 @@ function CurrentJob({ job, progress }: { job: RefreshJobStatus; progress: number
       </div>
 
       <dl className="grid gap-3 text-sm sm:grid-cols-4">
-        <Field label="Queued" value={formatInt(job.queued)} />
-        <Field label="Processed" value={formatInt(job.processed)} />
-        <Field label="Failures" value={formatInt(job.failures)} />
-        <Field label="Elapsed" value={formatElapsed(job)} />
+        <Field
+          label="Empresas atualizadas"
+          value={formatInt(summary?.success_count ?? null)}
+        />
+        <Field
+          label="Sem dados novos"
+          value={formatInt(
+            (summary?.no_data_count ?? 0)
+              + (planning?.skipped_companies_all_complete ?? 0),
+          )}
+        />
+        <Field label="Falhas" value={formatInt(summary?.error_count ?? job.failures)} />
+        <Field
+          label={active ? "Tempo / Restante" : "Tempo"}
+          value={
+            active
+              ? `${formatElapsed(job)}${eta ? ` · ${eta}` : ""}`
+              : formatElapsed(job)
+          }
+        />
       </dl>
 
       {job.error ? (
@@ -902,6 +1094,61 @@ function CurrentJob({ job, progress }: { job: RefreshJobStatus; progress: number
       ) : null}
     </div>
   );
+}
+
+function extractResultSummary(job: RefreshJobStatus): {
+  success_count: number;
+  no_data_count: number;
+  error_count: number;
+} | null {
+  const result = job.result as Record<string, unknown> | null | undefined;
+  if (!result || typeof result !== "object") return null;
+  const summary = (result as { summary?: unknown }).summary;
+  if (!summary || typeof summary !== "object") return null;
+  const s = summary as Record<string, unknown>;
+  return {
+    success_count: Number(s.success_count ?? 0),
+    no_data_count: Number(s.no_data_count ?? 0),
+    error_count: Number(s.error_count ?? 0),
+  };
+}
+
+function extractPlanningStats(
+  job: RefreshJobStatus,
+): { skipped_companies_all_complete: number } | null {
+  const result = job.result as Record<string, unknown> | null | undefined;
+  if (!result || typeof result !== "object") return null;
+  const planning = (result as { planning_stats?: unknown }).planning_stats;
+  if (!planning || typeof planning !== "object") return null;
+  return {
+    skipped_companies_all_complete: Number(
+      (planning as Record<string, unknown>).skipped_companies_all_complete ?? 0,
+    ),
+  };
+}
+
+function formatJobStatePtBr(value: string | null | undefined): string {
+  const v = String(value ?? "").toLowerCase();
+  if (v === "success") return "Concluída";
+  if (v === "error") return "Falha";
+  if (v === "running") return "Em execução";
+  if (v === "queued") return "Na fila";
+  if (v === "cancelled") return "Cancelada";
+  if (v === "interrupted") return "Interrompida";
+  if (v === "already_current") return "Já atualizada";
+  return formatJobState(value);
+}
+
+function formatStageHuman(stage: string): string {
+  const map: Record<string, string> = {
+    queued: "Na fila",
+    planning: "Planejando",
+    download_extract: "Baixando arquivos da CVM",
+    process_data: "Processando dados",
+    persist_reports: "Gravando no banco local",
+    finalizing: "Finalizando",
+  };
+  return map[stage] ?? formatStage(stage);
 }
 
 function Field({ label, value }: { label: string; value: string }) {
@@ -949,7 +1196,7 @@ function JobHistory({
   return (
     <aside className="rounded border border-zinc-800 bg-zinc-950/50">
       <header className="border-b border-zinc-800 px-4 py-3">
-        <h4 className="text-sm font-medium text-zinc-100">History</h4>
+        <h4 className="text-sm font-medium text-zinc-100">Histórico</h4>
       </header>
       <div className="max-h-96 overflow-auto">
         {jobs.length ? (
@@ -967,19 +1214,19 @@ function JobHistory({
               >
                 <span className="flex items-center justify-between gap-2">
                   <span className="font-mono text-xs text-zinc-400">{shortJobId(item.job_id)}</span>
-                  <span className={jobBadgeClass(item.state)}>{formatJobState(item.state)}</span>
+                  <span className={jobBadgeClass(item.state)}>{formatJobStatePtBr(item.state)}</span>
                 </span>
                 <span className="mt-2 block text-xs text-zinc-500">
                   {formatDateTime(item.updated_at ?? item.started_at ?? item.accepted_at ?? null)}
                 </span>
                 <span className="mt-1 block text-xs text-zinc-500">
-                  {formatInt(item.processed)} / {formatInt(item.queued)} processed
+                  {formatInt(item.processed)} de {formatInt(item.queued)} processadas
                 </span>
               </button>
             ))}
           </div>
         ) : (
-          <p className="p-4 text-sm text-zinc-500">No persisted jobs.</p>
+          <p className="p-4 text-sm text-zinc-500">Nenhuma execução registrada.</p>
         )}
       </div>
     </aside>
@@ -1055,6 +1302,118 @@ function formatElapsed(job: RefreshJobStatus): string {
   const minutes = Math.floor(seconds / 60);
   const remainder = seconds % 60;
   return minutes > 0 ? `${minutes}m ${remainder}s` : `${remainder}s`;
+}
+
+const ETA_MIN_CURRENT_ELAPSED_SECONDS = 15;
+const ETA_MIN_HISTORY_SAMPLES = 2;
+const ETA_HISTORY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const ETA_MIN_RATE_PER_SECOND = 1 / (6 * 60 * 60);
+const ETA_MAX_RATE_PER_SECOND = 10;
+const ETA_MAX_SECONDS = 72 * 60 * 60;
+
+function formatEta(
+  job: RefreshJobStatus,
+  jobs: RefreshJobStatus[],
+  fallbackThroughputPerHour: number | null,
+  fallbackThroughputConfidence: string | null,
+): string | null {
+  if (!isActiveRefreshJob(job)) return null;
+  const queued = safePositiveNumber(job.queued);
+  const processed = safeNonNegativeNumber(job.processed);
+  if (queued == null || processed == null) return null;
+  if (queued <= 0 || processed >= queued) return null;
+
+  const ratePerSec =
+    currentRunRatePerSecond(job, processed)
+    ?? historicalRatePerSecond(job, jobs)
+    ?? fallbackRatePerSecond(fallbackThroughputPerHour, fallbackThroughputConfidence);
+  if (ratePerSec == null) return null;
+
+  const remainingSec = (queued - processed) / ratePerSec;
+  if (
+    !Number.isFinite(remainingSec)
+    || remainingSec <= 0
+    || remainingSec > ETA_MAX_SECONDS
+  ) {
+    return null;
+  }
+  if (remainingSec < 90) return `~${Math.max(1, Math.round(remainingSec))}s`;
+  const minutes = Math.round(remainingSec / 60);
+  if (minutes < 90) return `~${minutes}m`;
+  const hours = (remainingSec / 3600).toFixed(1);
+  return `~${hours}h`;
+}
+
+function currentRunRatePerSecond(
+  job: RefreshJobStatus,
+  processed: number,
+): number | null {
+  if (processed <= 0) return null;
+  const start = parseTimestampMs(job.started_at ?? job.accepted_at);
+  if (start == null) return null;
+  const elapsedSec = (Date.now() - start) / 1000;
+  if (elapsedSec < ETA_MIN_CURRENT_ELAPSED_SECONDS || elapsedSec > ETA_MAX_SECONDS) {
+    return null;
+  }
+  return normalizeEtaRate(processed / elapsedSec);
+}
+
+function historicalRatePerSecond(
+  activeJob: RefreshJobStatus,
+  jobs: RefreshJobStatus[],
+): number | null {
+  const activeMode = String(activeJob.mode ?? "").trim().toLowerCase();
+  if (!activeMode) return null;
+  const now = Date.now();
+  const rates = jobs
+    .filter((candidate) => candidate.job_id !== activeJob.job_id)
+    .filter((candidate) => String(candidate.state ?? "").toLowerCase() === "success")
+    .filter((candidate) => String(candidate.mode ?? "").trim().toLowerCase() === activeMode)
+    .map((candidate) => {
+      const processed = safePositiveNumber(candidate.processed);
+      const start = parseTimestampMs(candidate.started_at ?? candidate.accepted_at);
+      const end = parseTimestampMs(candidate.finished_at ?? candidate.updated_at);
+      if (processed == null || start == null || end == null) return null;
+      if (now - end > ETA_HISTORY_WINDOW_MS || end <= start) return null;
+      return normalizeEtaRate(processed / ((end - start) / 1000));
+    })
+    .filter((rate): rate is number => rate != null)
+    .sort((a, b) => a - b);
+
+  if (rates.length < ETA_MIN_HISTORY_SAMPLES) return null;
+  return rates[Math.floor(rates.length / 2)] ?? null;
+}
+
+function fallbackRatePerSecond(
+  fallbackThroughputPerHour: number | null,
+  fallbackThroughputConfidence: string | null,
+): number | null {
+  const confidence = String(fallbackThroughputConfidence ?? "").toLowerCase();
+  if (confidence !== "medium" && confidence !== "high") return null;
+  const perHour = safePositiveNumber(fallbackThroughputPerHour);
+  return perHour == null ? null : normalizeEtaRate(perHour / 3600);
+}
+
+function normalizeEtaRate(value: number): number | null {
+  if (!Number.isFinite(value)) return null;
+  if (value < ETA_MIN_RATE_PER_SECOND || value > ETA_MAX_RATE_PER_SECOND) return null;
+  return value;
+}
+
+function safePositiveNumber(value: unknown): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function safeNonNegativeNumber(value: unknown): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function parseTimestampMs(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) && !Number.isNaN(parsed) ? parsed : null;
 }
 
 function jobBadgeClass(state: string | null | undefined): string {

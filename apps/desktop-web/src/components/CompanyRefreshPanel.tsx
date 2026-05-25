@@ -119,6 +119,12 @@ function invalidateCompanyData(queryClient: QueryClient, cdCvm: number) {
   void queryClient.invalidateQueries({ queryKey: ["company-kpis"] });
   void queryClient.invalidateQueries({ queryKey: ["company-statement"] });
   void queryClient.invalidateQueries({ queryKey: ["companies"] });
+  // Single-company refresh changes coverage rows too — keep the
+  // Data Coverage page fresh without forcing the user to revisit it.
+  void queryClient.invalidateQueries({ queryKey: ["data-coverage"] });
+  void queryClient.invalidateQueries({ queryKey: ["db-diagnostics"] });
+  void queryClient.invalidateQueries({ queryKey: ["base-health"] });
+  void queryClient.invalidateQueries({ queryKey: ["refresh-jobs"] });
 }
 
 function StatusPill({

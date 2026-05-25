@@ -1072,6 +1072,361 @@ class CVMBridge:
             "message": self._trim_log_line(str(message)),
         }
 
+    def set_company_ignored(self, params=None) -> dict:
+        """Toggle the per-company `ignored` flag in company_refresh_status.
+
+        Lets operators hide companies that intentionally have no data
+        (delisted, no public filings, etc.) so the Data Coverage view
+        focuses on actionable issues.
+        """
+        import sqlite3  # noqa: PLC0415
+        from datetime import datetime as _dt  # noqa: PLC0415
+
+        p = params or {}
+        try:
+            cd_cvm = int(p.get("cd_cvm") or 0)
+        except Exception:
+            return self._sanitize_for_json({
+                "ok": False,
+                "error": "cd_cvm invalido",
+            })
+        if cd_cvm <= 0:
+            return self._sanitize_for_json({
+                "ok": False,
+                "error": "cd_cvm obrigatorio",
+            })
+        ignored_flag = 1 if self._truthy(p.get("ignored", True)) else 0
+        reason_raw = p.get("reason")
+        reason = str(reason_raw).strip() if reason_raw else None
+        now_iso = _dt.now().isoformat(timespec="seconds")
+
+        try:
+            from src.refresh_jobs import (  # noqa: PLC0415
+                ensure_refresh_runtime_tables_for_connection,
+            )
+            from sqlalchemy import text as _text  # noqa: PLC0415
+
+            svc = self._svc()
+            with svc.engine.begin() as conn:
+                ensure_refresh_runtime_tables_for_connection(conn)
+                # INSERT-or-UPDATE so flipping ignored on a company that has
+                # never been touched by the refresh pipeline still works.
+                conn.execute(
+                    _text(
+                        """
+                        INSERT INTO company_refresh_status (
+                            cd_cvm, company_name, source_scope,
+                            last_attempt_at, last_status, last_start_year, last_end_year,
+                            updated_at, ignored, ignored_at, ignored_reason
+                        ) VALUES (
+                            :cd_cvm, :company_name, 'local',
+                            NULL, NULL, NULL, NULL,
+                            :updated_at, :ignored, :ignored_at, :ignored_reason
+                        )
+                        ON CONFLICT(cd_cvm) DO UPDATE SET
+                            ignored = excluded.ignored,
+                            ignored_at = excluded.ignored_at,
+                            ignored_reason = excluded.ignored_reason,
+                            updated_at = excluded.updated_at
+                        """
+                    ),
+                    {
+                        "cd_cvm": int(cd_cvm),
+                        "company_name": str(p.get("company_name") or cd_cvm),
+                        "updated_at": now_iso,
+                        "ignored": int(ignored_flag),
+                        "ignored_at": now_iso if ignored_flag else None,
+                        "ignored_reason": reason if ignored_flag else None,
+                    },
+                )
+            svc.invalidate_read_caches()
+            return self._sanitize_for_json({
+                "ok": True,
+                "cd_cvm": int(cd_cvm),
+                "ignored": bool(ignored_flag),
+                "ignored_at": now_iso if ignored_flag else None,
+                "ignored_reason": reason if ignored_flag else None,
+            })
+        except Exception as exc:
+            return self._sanitize_for_json({
+                "ok": False,
+                "error": str(exc),
+            })
+
+    def get_data_coverage(self, params=None) -> dict:
+        """Data Coverage / Missing Data report for the active CVM universe.
+
+        Joins three sources:
+          1. Active company universe (cached CVM catalog).
+          2. `financial_reports` — latest DFP (PERIOD_LABEL == REPORT_YEAR)
+             and latest ITR (interim) per cd_cvm.
+          3. `company_refresh_status` — last update status + error.
+          4. TICKER_MAP — ticker resolution.
+
+        Returns rows with a derived `status` and per-filter boolean flags so
+        the frontend can render summary cards, filter chips, and the table
+        from a single payload.
+        """
+        import sqlite3  # noqa: PLC0415
+        from datetime import datetime as _dt  # noqa: PLC0415
+
+        try:
+            from src.ticker_map import TICKER_MAP  # noqa: PLC0415
+            from desktop.services import IntelligentSelectorService  # noqa: PLC0415
+
+            svc = self._svc()
+            selector = IntelligentSelectorService(settings=svc.settings)
+            universe = selector._load_active_universe()
+            db_path = svc.settings.paths.db_path
+            db_exists = db_path.exists()
+            now_year = _dt.now().year
+            stale_cutoff_year = now_year - 2
+
+            latest_dfp: dict[int, int] = {}
+            latest_itr: dict[int, str] = {}
+            company_rows: dict[int, dict[str, Any]] = {}
+            refresh_rows: dict[int, dict[str, Any]] = {}
+
+            if db_exists:
+                with sqlite3.connect(str(db_path)) as conn:
+                    conn.row_factory = sqlite3.Row
+                    cur = conn.cursor()
+                    cur.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table'"
+                    )
+                    present = {row[0] for row in cur.fetchall()}
+
+                    if "financial_reports" in present:
+                        try:
+                            cur.execute(
+                                'SELECT "CD_CVM" AS cd_cvm, MAX("REPORT_YEAR") AS y '
+                                'FROM "financial_reports" '
+                                'WHERE "CD_CVM" IS NOT NULL '
+                                '  AND "PERIOD_LABEL" = CAST("REPORT_YEAR" AS TEXT) '
+                                'GROUP BY "CD_CVM"'
+                            )
+                            for row in cur.fetchall():
+                                if row["cd_cvm"] is not None and row["y"] is not None:
+                                    latest_dfp[int(row["cd_cvm"])] = int(row["y"])
+                        except Exception:
+                            pass
+                        try:
+                            cur.execute(
+                                'SELECT "CD_CVM" AS cd_cvm, MAX("PERIOD_LABEL") AS p '
+                                'FROM "financial_reports" '
+                                'WHERE "CD_CVM" IS NOT NULL '
+                                '  AND "PERIOD_LABEL" IS NOT NULL '
+                                '  AND "PERIOD_LABEL" <> CAST("REPORT_YEAR" AS TEXT) '
+                                'GROUP BY "CD_CVM"'
+                            )
+                            for row in cur.fetchall():
+                                if row["cd_cvm"] is not None and row["p"]:
+                                    latest_itr[int(row["cd_cvm"])] = str(row["p"])
+                        except Exception:
+                            pass
+
+                    if "companies" in present:
+                        try:
+                            cur.execute(
+                                "SELECT cd_cvm, company_name, updated_at "
+                                'FROM "companies" WHERE cd_cvm IS NOT NULL'
+                            )
+                            for row in cur.fetchall():
+                                company_rows[int(row["cd_cvm"])] = dict(row)
+                        except Exception:
+                            pass
+
+                    if "company_refresh_status" in present:
+                        crs_cols: set[str] = set()
+                        try:
+                            cur.execute('PRAGMA table_info("company_refresh_status")')
+                            crs_cols = {str(r[1]).lower() for r in cur.fetchall()}
+                        except Exception:
+                            crs_cols = set()
+                        has_ignored = "ignored" in crs_cols
+                        ignored_select = ", ignored" if has_ignored else ""
+                        ignored_reason_select = (
+                            ", ignored_reason" if "ignored_reason" in crs_cols else ""
+                        )
+                        try:
+                            cur.execute(
+                                "SELECT cd_cvm, last_status, last_attempt_at, "
+                                "last_success_at, last_error"
+                                + ignored_select
+                                + ignored_reason_select
+                                + ' FROM "company_refresh_status" '
+                                + "WHERE cd_cvm IS NOT NULL"
+                            )
+                            for row in cur.fetchall():
+                                refresh_rows[int(row["cd_cvm"])] = dict(row)
+                        except Exception:
+                            pass
+
+            rows: list[dict[str, Any]] = []
+            summary = {
+                "total": 0,
+                "complete": 0,
+                "partial": 0,
+                "no_financial": 0,
+                "failed": 0,
+                "stale": 0,
+                "unmapped": 0,
+                "ignored": 0,
+            }
+            filter_counts: dict[str, int] = {
+                "all": 0,
+                "no_dfp": 0,
+                "no_itr": 0,
+                "no_financial": 0,
+                "stale": 0,
+                "failed": 0,
+                "ticker_unmapped": 0,
+                "cvm_unmapped": 0,
+                "no_registry": 0,
+                "ignored": 0,
+            }
+
+            for item in universe:
+                try:
+                    cd = int(item["cd_cvm"])
+                except Exception:
+                    continue
+                company_name = str(item.get("company_name") or f"CVM {cd}")
+                ticker = TICKER_MAP.get(cd)
+                ticker_mapped = bool(ticker)
+                cvm_valid = cd > 0
+                has_registry = cd in company_rows
+                if has_registry:
+                    reg = company_rows[cd]
+                    if reg.get("company_name"):
+                        company_name = str(reg["company_name"])
+                dfp_year = latest_dfp.get(cd)
+                itr_period = latest_itr.get(cd)
+                has_dfp = dfp_year is not None
+                has_itr = itr_period is not None
+                refresh = refresh_rows.get(cd, {})
+                last_status = str(refresh.get("last_status") or "").strip().lower()
+                last_error = refresh.get("last_error") or None
+                last_attempt_at = refresh.get("last_attempt_at") or None
+                last_success_at = refresh.get("last_success_at") or None
+                ignored = bool(int(refresh.get("ignored") or 0))
+                ignored_reason = refresh.get("ignored_reason") or None
+                update_failed = last_status in {"error", "failed", "dispatch_failed"}
+                is_stale = has_dfp and int(dfp_year) < stale_cutoff_year
+
+                if ignored:
+                    status = "ignored"
+                elif update_failed:
+                    status = "failed"
+                elif not has_dfp and not has_itr:
+                    status = "no_financial"
+                elif not ticker_mapped or not has_registry:
+                    status = "unmapped"
+                elif not has_dfp or not has_itr or is_stale:
+                    status = "partial"
+                else:
+                    status = "complete"
+
+                summary["total"] += 1
+                if status == "complete":
+                    summary["complete"] += 1
+                elif status == "partial":
+                    summary["partial"] += 1
+                elif status == "no_financial":
+                    summary["no_financial"] += 1
+                elif status == "failed":
+                    summary["failed"] += 1
+                elif status == "unmapped":
+                    summary["unmapped"] += 1
+                elif status == "ignored":
+                    summary["ignored"] += 1
+                if is_stale and not ignored:
+                    summary["stale"] += 1
+
+                # `all` is "everything with an open issue" — exclude ignored rows
+                # so the operator's hidden list stays out of the default view.
+                if not ignored and status != "complete":
+                    filter_counts["all"] += 1
+                if not ignored and not has_dfp:
+                    filter_counts["no_dfp"] += 1
+                if not ignored and not has_itr:
+                    filter_counts["no_itr"] += 1
+                if not ignored and not has_dfp and not has_itr:
+                    filter_counts["no_financial"] += 1
+                if not ignored and is_stale:
+                    filter_counts["stale"] += 1
+                if not ignored and update_failed:
+                    filter_counts["failed"] += 1
+                if not ignored and not ticker_mapped:
+                    filter_counts["ticker_unmapped"] += 1
+                if not ignored and not cvm_valid:
+                    filter_counts["cvm_unmapped"] += 1
+                if not ignored and not has_registry:
+                    filter_counts["no_registry"] += 1
+                if ignored:
+                    filter_counts["ignored"] += 1
+
+                rows.append({
+                    "cd_cvm": cd,
+                    "company_name": company_name,
+                    "ticker": ticker,
+                    "ticker_mapped": ticker_mapped,
+                    "cvm_valid": cvm_valid,
+                    "has_registry": has_registry,
+                    "has_dfp": has_dfp,
+                    "has_itr": has_itr,
+                    "latest_dfp_year": dfp_year,
+                    "latest_itr_period": itr_period,
+                    "last_status": last_status or None,
+                    "last_attempt_at": last_attempt_at,
+                    "last_success_at": last_success_at,
+                    "last_error": last_error,
+                    "update_failed": update_failed,
+                    "is_stale": is_stale,
+                    "ignored": ignored,
+                    "ignored_reason": str(ignored_reason) if ignored_reason else None,
+                    "status": status,
+                })
+
+            rows.sort(
+                key=lambda r: (
+                    {
+                        "failed": 0,
+                        "no_financial": 1,
+                        "partial": 2,
+                        "unmapped": 3,
+                        "complete": 4,
+                        "ignored": 6,
+                    }.get(str(r.get("status")), 5),
+                    str(r.get("company_name") or "").upper(),
+                )
+            )
+
+            return self._sanitize_for_json({
+                "generated_at": _dt.now().isoformat(timespec="seconds"),
+                "stale_cutoff_year": int(stale_cutoff_year),
+                "summary": summary,
+                "filter_counts": filter_counts,
+                "rows": rows,
+            })
+        except Exception as exc:
+            return self._sanitize_for_json({
+                "generated_at": None,
+                "stale_cutoff_year": None,
+                "summary": {
+                    "total": 0,
+                    "complete": 0,
+                    "partial": 0,
+                    "no_financial": 0,
+                    "failed": 0,
+                    "stale": 0,
+                    "unmapped": 0,
+                },
+                "filter_counts": {},
+                "rows": [],
+                "error": str(exc),
+            })
+
     def get_base_health(self, params=None) -> dict:
         p = params or {}
         try:

@@ -33,9 +33,14 @@ function subNavFor(pathname: string, params: Record<string, string | undefined>)
   }
 
   // Database module subtabs.
-  if (pathname.startsWith("/atualizar-base") || pathname.startsWith("/company-universe")) {
+  if (
+    pathname.startsWith("/atualizar-base")
+    || pathname.startsWith("/company-universe")
+    || pathname.startsWith("/data-coverage")
+  ) {
     return [
       { to: "/atualizar-base", label: "Atualizar base", end: true },
+      { to: "/data-coverage", label: "Cobertura de dados" },
       { to: "/company-universe", label: "Company universe" },
     ];
   }
