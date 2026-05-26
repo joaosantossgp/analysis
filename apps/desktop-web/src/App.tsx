@@ -13,6 +13,9 @@ import { whenBridgeReady } from "./lib/bridge/adapter";
 // Route pages are lazy-loaded so the initial bundle only ships the shell,
 // command palette, and routing logic. Each route chunk is fetched on first
 // navigation, which dramatically reduces first-load parse time.
+const HomePage = lazy(() =>
+  import("./routes/HomePage").then((m) => ({ default: m.HomePage })),
+);
 const CompaniesPage = lazy(() =>
   import("./routes/CompaniesPage").then((m) => ({ default: m.CompaniesPage })),
 );
@@ -27,9 +30,6 @@ const CompanyKpisPage = lazy(() =>
 );
 const CompanyStatementsPage = lazy(() =>
   import("./routes/CompanyStatementsPage").then((m) => ({ default: m.CompanyStatementsPage })),
-);
-const HealthPage = lazy(() =>
-  import("./routes/HealthPage").then((m) => ({ default: m.HealthPage })),
 );
 const SectorDetailPage = lazy(() =>
   import("./routes/SectorDetailPage").then((m) => ({ default: m.SectorDetailPage })),
@@ -48,6 +48,9 @@ const UpdateBasePage = lazy(() =>
 );
 const DataCoveragePage = lazy(() =>
   import("./routes/DataCoveragePage").then((m) => ({ default: m.DataCoveragePage })),
+);
+const DevDataOpsPage = lazy(() =>
+  import("./routes/DevDataOpsPage").then((m) => ({ default: m.DevDataOpsPage })),
 );
 
 function RouteFallback() {
@@ -132,9 +135,9 @@ function AppShellWithPalette() {
       <TerminalShell onOpenPalette={palette.open_}>
         <Suspense fallback={<RouteFallback />}>
           <Routes>
-            <Route path="/" element={<CompaniesPage />} />
+            <Route path="/" element={<HomePage />} />
+            <Route path="/empresas" element={<CompaniesPage />} />
             <Route path="/status" element={<StatusPage />} />
-            <Route path="/health" element={<HealthPage />} />
             <Route path="/atualizar-base" element={<UpdateBasePage />} />
             <Route path="/data-coverage" element={<DataCoveragePage />} />
             <Route path="/company-universe" element={<CompanyUniversePage />} />
@@ -153,6 +156,7 @@ function AppShellWithPalette() {
               path="/empresas/:cdCvm/indicadores"
               element={<CompanyKpisPage />}
             />
+            <Route path="/dev/data-ops" element={<DevDataOpsPage />} />
           </Routes>
         </Suspense>
       </TerminalShell>

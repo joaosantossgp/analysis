@@ -456,7 +456,7 @@ export type DatabaseDiagnostics = {
 
 export type AppRuntimeStatus = {
   version: string;
-  runtime_mode: "vite" | "vite-dev" | "next" | "next-dev" | "unknown" | string;
+  runtime_mode: "vite" | "vite-dev" | "unknown" | string;
   bridge_status: "ready" | "error" | "unknown" | string;
   frozen: boolean;
   desktop_shell: string | null;
@@ -655,6 +655,13 @@ export interface BridgeApi {
   apply_update(params?: Record<string, unknown>): Promise<{ started: boolean; error?: string }>;
   get_update_progress(params?: Record<string, unknown>): Promise<UpdateProgressStatus>;
   snooze_update(params?: Record<string, unknown>): Promise<{ ok: boolean; error?: string }>;
+  // Dev tools — only callable from /dev/data-ops (DEV build + flag)
+  dev_reset_onboarding(params?: Record<string, unknown>): Promise<{ ok: boolean; error?: string }>;
+  dev_reset_universe(params?: Record<string, unknown>): Promise<{ ok: boolean; error?: string }>;
+  dev_reset_jobs(params?: Record<string, unknown>): Promise<{ ok: boolean; error?: string }>;
+  dev_simulate_refresh(params: { mode: "success" | "partial" | "fail" | "slow" }): Promise<{ ok: boolean; mode: string; job_id?: string; error?: string }>;
+  dev_start_small_setup(params?: { count?: number }): Promise<{ status: string; job_id?: string; message?: string }>;
+  dev_get_raw_state(params?: Record<string, unknown>): Promise<{ app_settings?: Array<{ key: string; value: string | null; updated_at: string | null }>; refresh_jobs?: Array<Record<string, unknown>>; error?: string }>;
 }
 
 declare global {

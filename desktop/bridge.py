@@ -592,6 +592,205 @@ class CVMBridge:
             return self._sanitize_for_json({"ok": False, "error": str(exc)})
 
     # ------------------------------------------------------------------
+    # Dev tools — only callable from /dev/data-ops (DEV build + flag)
+    # Never add user-visible entry points to these methods.
+    # ------------------------------------------------------------------
+
+    def dev_reset_onboarding(self, params=None) -> dict:
+        try:
+            svc = self._onboarding()
+            blank: dict = {
+                "first_run_completed": False,
+                "should_show": True,
+                "selected_company_universe": None,
+                "company_universe_source": None,
+                "company_universe_source_date": None,
+                "setup_status": None,
+                "selected_company_count": 0,
+                "refresh_job_id": None,
+                "warning": None,
+            }
+            svc._write_state(blank)  # type: ignore[attr-defined]
+            svc._write_app_settings(blank)  # type: ignore[attr-defined]
+            return self._sanitize_for_json({"ok": True})
+        except Exception as exc:
+            return self._sanitize_for_json({"ok": False, "error": str(exc)})
+
+    def dev_reset_universe(self, params=None) -> dict:
+        try:
+            from sqlalchemy import text  # noqa: PLC0415
+            with self._svc().engine.begin() as conn:
+                conn.execute(text("DELETE FROM company_universe"))
+            return self._sanitize_for_json({"ok": True})
+        except Exception as exc:
+            return self._sanitize_for_json({"ok": False, "error": str(exc)})
+
+    def dev_reset_jobs(self, params=None) -> dict:
+        try:
+            from sqlalchemy import text  # noqa: PLC0415
+            with self._svc().engine.begin() as conn:
+                conn.execute(text("DELETE FROM refresh_jobs"))
+                conn.execute(text("DELETE FROM company_refresh_status"))
+            return self._sanitize_for_json({"ok": True})
+        except Exception as exc:
+            return self._sanitize_for_json({"ok": False, "error": str(exc)})
+
+    def dev_simulate_refresh(self, params=None) -> dict:
+        """Insert synthetic job rows so UI can exercise all terminal states.
+
+        mode=success  — one job in state=success (instant)
+        mode=fail     — one job in state=error  (instant)
+        mode=partial  — two jobs: one success, one error (instant)
+        mode=slow     — one RUNNING job that advances through stages over ~12s
+                        (background thread; the worker ignores RUNNING rows)
+        """
+        import threading  # noqa: PLC0415
+        import uuid  # noqa: PLC0415
+        from datetime import datetime  # noqa: PLC0415
+        from sqlalchemy import text  # noqa: PLC0415
+        from src.refresh_jobs import ensure_refresh_runtime_tables  # noqa: PLC0415
+
+        mode = str((params or {}).get("mode") or "success").lower()
+        engine = self._svc().engine
+        ensure_refresh_runtime_tables(engine)
+
+        _MOCK_CVM = 99999999
+        _MOCK_NAME = "DEV_MOCK_COMPANY"
+        now = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S")
+
+        def _upsert(job_id: str, state: str, stage: str | None = None,
+                    cur: int = 0, tot: int = 10, err: str | None = None,
+                    finished: bool = False) -> None:
+            fin = now if finished else None
+            with engine.begin() as conn:
+                conn.execute(text("DELETE FROM refresh_jobs WHERE id = :id"), {"id": job_id})
+                conn.execute(
+                    text(
+                        "INSERT INTO refresh_jobs "
+                        "(id, cd_cvm, company_name, source_scope, start_year, end_year, "
+                        " state, stage, requested_at, started_at, finished_at, "
+                        " progress_current, progress_total, error_message) "
+                        "VALUES (:id, :cvm, :name, 'dev_mock', 2024, 2024, "
+                        ":state, :stage, :now, :now, :fin, :cur, :tot, :err)"
+                    ),
+                    {
+                        "id": job_id, "cvm": _MOCK_CVM, "name": _MOCK_NAME,
+                        "state": state, "stage": stage, "now": now, "fin": fin,
+                        "cur": cur, "tot": tot, "err": err,
+                    },
+                )
+
+        if mode in ("success", "partial", "fail"):
+            jid = str(uuid.uuid4())
+            if mode == "success":
+                _upsert(jid, "success", "finalizing", 10, 10, finished=True)
+            elif mode == "fail":
+                _upsert(jid, "error", None, 0, 10,
+                        err="[dev_simulate] Simulated failure", finished=True)
+            else:  # partial
+                _upsert(str(uuid.uuid4()), "success", "finalizing", 10, 10, finished=True)
+                _upsert(str(uuid.uuid4()), "error", None, 3, 10,
+                        err="[dev_simulate] Simulated partial failure", finished=True)
+            return self._sanitize_for_json({"ok": True, "mode": mode, "job_id": jid})
+
+        # slow — advance through stages in background; worker ignores RUNNING rows
+        jid = str(uuid.uuid4())
+        _upsert(jid, "running", "planning", 0, 10)
+
+        def _advance() -> None:
+            import time as _t  # noqa: PLC0415
+            stages = [
+                ("download_extract", 2, 10),
+                ("process_data", 5, 10),
+                ("persist_reports", 8, 10),
+                ("finalizing", 9, 10),
+            ]
+            for stage, cur, tot in stages:
+                _t.sleep(3)
+                with engine.begin() as conn:
+                    conn.execute(
+                        text(
+                            "UPDATE refresh_jobs SET stage=:stage, progress_current=:cur, "
+                            "progress_total=:tot WHERE id=:id"
+                        ),
+                        {"stage": stage, "cur": cur, "tot": tot, "id": jid},
+                    )
+            _t.sleep(2)
+            with engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "UPDATE refresh_jobs SET state='success', stage='finalizing', "
+                        "progress_current=10, progress_total=10, "
+                        "finished_at=:now WHERE id=:id"
+                    ),
+                    {"now": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S"), "id": jid},
+                )
+
+        threading.Thread(target=_advance, daemon=True).start()
+        return self._sanitize_for_json({"ok": True, "mode": "slow", "job_id": jid})
+
+    def dev_start_small_setup(self, params=None) -> dict:
+        """Run request_refresh against the first N companies already in the local DB.
+
+        No external API calls — uses companies already stored.
+        """
+        count = min(int((params or {}).get("count") or 5), 10)
+        try:
+            page = self._svc().list_companies(page=1, page_size=count, search="")
+            cd_cvms = [int(c["cd_cvm"]) for c in page.get("items", [])]
+            if not cd_cvms:
+                return self._sanitize_for_json({
+                    "status": "error",
+                    "message": "No companies in local DB yet. Run a preset first.",
+                })
+            return self._sanitize_for_json(
+                self._refresh().request_refresh({
+                    "mode": "missing",
+                    "company_ids": cd_cvms,
+                })
+            )
+        except Exception as exc:
+            return self._sanitize_for_json({"status": "error", "message": str(exc)})
+
+    def dev_get_raw_state(self, params=None) -> dict:
+        """Return raw app_settings and recent refresh_jobs for the dev inspector."""
+        try:
+            from sqlalchemy import text  # noqa: PLC0415
+            engine = self._svc().engine
+            with engine.connect() as conn:
+                settings_rows = [
+                    {"key": str(r[0]), "value": str(r[1]) if r[1] is not None else None,
+                     "updated_at": str(r[2]) if r[2] is not None else None}
+                    for r in conn.execute(
+                        text("SELECT key, value, updated_at FROM app_settings ORDER BY key")
+                    )
+                ]
+                jobs_rows = [
+                    {
+                        "id": str(r[0]), "cd_cvm": int(r[1]),
+                        "company_name": r[2],
+                        "state": str(r[3]), "stage": r[4],
+                        "progress_current": r[5], "progress_total": r[6],
+                        "error_message": r[7],
+                        "requested_at": r[8], "started_at": r[9], "finished_at": r[10],
+                    }
+                    for r in conn.execute(
+                        text(
+                            "SELECT id, cd_cvm, company_name, state, stage, "
+                            "progress_current, progress_total, error_message, "
+                            "requested_at, started_at, finished_at "
+                            "FROM refresh_jobs ORDER BY requested_at DESC LIMIT 30"
+                        )
+                    )
+                ]
+            return self._sanitize_for_json({
+                "app_settings": settings_rows,
+                "refresh_jobs": jobs_rows,
+            })
+        except Exception as exc:
+            return self._sanitize_for_json({"error": str(exc)})
+
+    # ------------------------------------------------------------------
     # Internal refresh worker (drena jobs enfileirados em refresh_jobs)
     # ------------------------------------------------------------------
 
