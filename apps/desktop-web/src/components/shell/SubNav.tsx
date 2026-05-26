@@ -24,27 +24,6 @@ function subNavFor(pathname: string, params: Record<string, string | undefined>)
     ];
   }
 
-  // Diagnostics module subtabs.
-  if (pathname.startsWith("/status") || pathname.startsWith("/health")) {
-    return [
-      { to: "/status", label: "Status" },
-      { to: "/health", label: "Bridge health" },
-    ];
-  }
-
-  // Database module subtabs.
-  if (
-    pathname.startsWith("/atualizar-base")
-    || pathname.startsWith("/company-universe")
-    || pathname.startsWith("/data-coverage")
-  ) {
-    return [
-      { to: "/atualizar-base", label: "Atualizar base", end: true },
-      { to: "/data-coverage", label: "Cobertura de dados" },
-      { to: "/company-universe", label: "Company universe" },
-    ];
-  }
-
   // Setores hub keeps breadcrumb-based navigation inside the page itself;
   // no top-level sub-nav for now.
   return [];

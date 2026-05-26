@@ -11,13 +11,22 @@ export function buildNavigationCommands(navigate: NavigateFunction): Command[] {
   const goto = (path: string) => () => navigate(path);
   return [
     {
+      id: "nav:home",
+      group: "navigation",
+      glyph: "route",
+      label: "Início",
+      secondary: "/",
+      keywords: ["home", "início", "dashboard", "status", "atualizar"],
+      run: goto("/"),
+    },
+    {
       id: "nav:companies",
       group: "navigation",
       glyph: "route",
       label: "Empresas",
-      secondary: "/",
+      secondary: "/empresas",
       keywords: ["companies", "directory", "diretório", "empresas"],
-      run: goto("/"),
+      run: goto("/empresas"),
     },
     {
       id: "nav:sectors",
@@ -38,31 +47,22 @@ export function buildNavigationCommands(navigate: NavigateFunction): Command[] {
       run: goto("/atualizar-base"),
     },
     {
-      id: "nav:company-universe",
+      id: "nav:data-coverage",
       group: "navigation",
       glyph: "route",
-      label: "Company universe",
-      secondary: "/company-universe",
-      keywords: ["database", "download", "ranking", "setup", "universe", "b3"],
-      run: goto("/company-universe"),
+      label: "Cobertura de dados",
+      secondary: "/data-coverage",
+      keywords: ["coverage", "cobertura", "pendentes", "missing"],
+      run: goto("/data-coverage"),
     },
     {
       id: "nav:status",
       group: "navigation",
       glyph: "route",
-      label: "Status",
+      label: "Sistema",
       secondary: "/status",
-      keywords: ["diagnostics", "status", "runtime"],
+      keywords: ["diagnostics", "status", "runtime", "sistema", "versão"],
       run: goto("/status"),
-    },
-    {
-      id: "nav:health",
-      group: "navigation",
-      glyph: "route",
-      label: "Bridge health",
-      secondary: "/health",
-      keywords: ["health", "bridge", "diagnostics"],
-      run: goto("/health"),
     },
   ];
 }

@@ -823,27 +823,25 @@ function CoverageTable({
                 </Td>
                 <Td>
                   <div style={{ display: "flex", gap: 6, whiteSpace: "nowrap" }}>
-                    <button
-                      type="button"
-                      onClick={() => onRetry(row.cd_cvm)}
-                      disabled={row.ignored || disabled || retryingCvm === row.cd_cvm}
-                      title={row.ignored ? "Empresa ignorada" : undefined}
-                      style={{
-                        background: "var(--color-surface-3)",
-                        border: "1px solid var(--color-border-subtle)",
-                        borderRadius: "var(--radius-sm)",
-                        color: "var(--color-text-primary)",
-                        cursor: row.ignored || disabled ? "not-allowed" : "pointer",
-                        fontSize: "var(--text-xs)",
-                        padding: "4px 8px",
-                        opacity:
-                          row.ignored || (disabled && retryingCvm !== row.cd_cvm)
-                            ? 0.5
-                            : 1,
-                      }}
-                    >
-                      {retryingCvm === row.cd_cvm ? "Enviando…" : "Atualizar"}
-                    </button>
+                    {row.status === "failed" ? (
+                      <button
+                        type="button"
+                        onClick={() => onRetry(row.cd_cvm)}
+                        disabled={disabled || retryingCvm === row.cd_cvm}
+                        style={{
+                          background: "var(--color-surface-3)",
+                          border: "1px solid var(--color-border-subtle)",
+                          borderRadius: "var(--radius-sm)",
+                          color: "var(--color-text-primary)",
+                          cursor: disabled ? "not-allowed" : "pointer",
+                          fontSize: "var(--text-xs)",
+                          padding: "4px 8px",
+                          opacity: disabled && retryingCvm !== row.cd_cvm ? 0.5 : 1,
+                        }}
+                      >
+                        {retryingCvm === row.cd_cvm ? "Enviando…" : "Tentar novamente"}
+                      </button>
+                    ) : null}
                     <Link
                       to={`/empresas/${row.cd_cvm}`}
                       style={{
