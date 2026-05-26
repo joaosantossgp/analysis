@@ -10,8 +10,8 @@ Uso:
   python -m desktop.app --diagnose-runtime  # write diagnostics log and exit
 
 Phase 5B (v0.15.0): the packaged desktop runtime is Vite only. The legacy
-Next/Node runtime is no longer bundled. The updater, bundle layout, and
-user-data contract remain unchanged.
+web runtime is no longer bundled. The updater, bundle layout, and user-data
+contract remain unchanged.
 
 When packaged via PyInstaller (sys.frozen=True):
   - Vite SPA loaded from sys._MEIPASS/desktop-web/index.html (default).
@@ -44,7 +44,7 @@ _WIDTH, _HEIGHT = 1280, 820
 _BG = "#0a0a0a"
 _STARTUP_TIMEOUT = 15  # segundos — bundle pode demorar mais no primeiro boot
 _LEGACY_REMOVED_MESSAGE = (
-    "Legacy Next/Node runtime was removed. Please launch without --legacy.\n\n"
+    "Legacy web runtime was removed. Please launch without --legacy.\n\n"
     "CVMAnalytics will continue with the Vite desktop UI."
 )
 
@@ -979,7 +979,7 @@ def main() -> None:
         server_proc, url = _start_vite_dev_server()
     else:
         # Default mode (and explicit --vite / legacy-flag fallback): serve the
-        # static Vite SPA over a loopback HTTP server. No node.exe spawned.
+        # static Vite SPA over a loopback HTTP server.
         if dev_mode and _bundled():
             _log_recovery(
                 _user_data_root(),

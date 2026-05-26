@@ -285,7 +285,7 @@ class CVMBridge:
         """Phase 3E — write the company workbook into the persistent
         ``output/`` folder under the runtime data root (Documents/CVMAnalytics
         in packaged mode). Distinct from ``save_company_excel``, which
-        writes to ``~/Downloads`` for the legacy Next UI.
+        writes to ``~/Downloads`` for the old browser download flow.
 
         Returns the absolute output file path, the generated filename, and
         a flag indicating whether the file explorer reveal succeeded.

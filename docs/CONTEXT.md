@@ -23,7 +23,7 @@ Extrai demonstracoes financeiras historicas de companhias listadas na CVM, organ
 
 **Prioridade 3 (concluida):** padronizacao por dicionario de contas (`STANDARD_NAME`), aba `PADRONIZACAO` no Excel.
 
-**Prioridades 4-8 (concluidas):** expansao em massa (449 empresas), vetorizacao + WAL + paralelismo, V2 web (Next.js) + API (FastAPI), migracao do app desktop para pywebview com Vite estatico empacotado, testes automatizados.
+**Prioridades 4-8 (concluidas):** expansao em massa (449 empresas), vetorizacao + WAL + paralelismo, API FastAPI, migracao do app desktop para pywebview com Vite estatico empacotado, testes automatizados. A antiga UI Next.js foi removida da arvore ativa.
 
 ---
 
@@ -87,7 +87,6 @@ Abas **QA_LOG** e **QA_Errors** sao obrigatorias para rastreabilidade.
 **5. Consulta**
 - `src/read_service.py` e a fonte de verdade da camada de leitura
 - `apps/api` (FastAPI) e o adaptador HTTP fino sobre `read_service`
-- `apps/web` (Next.js) consome `apps/api` quando usado como superficie hospedada/source-only
 - App desktop usa o Vite SPA em `apps/desktop-web` e o bridge Python direto via `desktop/bridge.py`, evitando o salto HTTP em runtime local
 
 ### Modelo de cobertura
@@ -125,8 +124,7 @@ cvm_repots_capture/
 |   `-- updater.py              # Auto-updater do desktop
 |-- apps/
 |   |-- api/                    # FastAPI read-only (adaptador HTTP hospedado/dev)
-|   |-- desktop-web/            # Vite SPA empacotada no desktop
-|   `-- web/                    # Next.js source-only / hospedado historico
+|   `-- desktop-web/            # Vite SPA empacotada no desktop
 |-- scripts/                    # Setup, batches, dicionario canonico e validacoes
 |-- archive/                    # Scripts e governanca antigos
 |-- tests/                      # Suite pytest
@@ -153,7 +151,6 @@ cvm_repots_capture/
 **Stack:**
 - Python: 3.11+, pandas, polars, sqlalchemy, requests, yfinance, pywebview, PyInstaller
 - Desktop UI: Vite, React, TypeScript, Tailwind v4
-- Web hospedado/source-only: Next.js 16, TypeScript, Tailwind v4, `@base-ui/react`
 - API hospedada/dev: FastAPI (read-only)
 - DB: SQLite local + PostgreSQL opcional via `DATABASE_URL`
 
@@ -170,7 +167,7 @@ cvm_repots_capture/
 - Banco local SQLite com suporte opcional a PostgreSQL via `DATABASE_URL`
 - App desktop oficial: `desktop/app.py` (pywebview + Vite estatico em `dist/CVMAnalytics/CVMAnalytics.exe`)
 - API FastAPI read-only em `apps/api` para Railway/dev/local HTTP; nao e empacotada no desktop
-- Web UI source-only em `apps/web` (Next.js 16, App Router); nao e empacotada no desktop
+- UI ativa em `apps/desktop-web`; a antiga UI Next.js em `apps/web` foi removida
 - Automacao e batches via `scripts/batch_completo.py` e `scripts/atualizar_todos.py`
 
 **Proximas prioridades:**

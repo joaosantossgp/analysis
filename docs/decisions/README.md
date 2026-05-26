@@ -14,8 +14,8 @@ This directory holds the durable architectural decisions made on this project.
 | # | Title |
 |---|---|
 | [0001](0001-desktop-folder.md) | Desktop folder layout |
-| [0002](0002-student-pack-v2-stack.md) | V2 stack with GitHub Student Pack |
-| [0003](0003-v2-selection-criteria.md) | V2 framework selection criteria |
-| [0004](0004-first-remote-runtime-railway-vercel.md) | First remote runtime: Railway + Vercel (later retired in favor of desktop) |
+| [0002](0002-student-pack-v2-stack.md) | V2 stack with GitHub Student Pack (historical; frontend superseded by Vite desktop app) |
+| [0003](0003-v2-selection-criteria.md) | V2 framework selection criteria (historical) |
+| [0004](0004-first-remote-runtime-railway-vercel.md) | First remote runtime: Railway + Vercel (historical; desktop is active runtime) |
 | [0005](0005-offline-governance-ledger.md) | Offline governance ledger pattern (used once for LT-0001; superseded by the simplified AGENTS.md flow) |
 | [0006](0006-auth-desktop.md) | Authentication for the desktop app |

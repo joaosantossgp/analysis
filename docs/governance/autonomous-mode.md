@@ -35,8 +35,8 @@ Before changing any versioned file in autonomous mode:
 
 Official lanes:
 
-- `lane:frontend` — `apps/web/**`
-- `lane:backend` — `apps/api/**`, `src/**`, `desktop/**`, `apps/desktop-web/**`, `tests/**`
+- `lane:frontend` — `apps/desktop-web/**`
+- `lane:backend` — `apps/api/**`, `src/**`, `desktop/**`, `tests/**`
 - `lane:ops-quality` — `.github/**`, `docs/**`, root docs, operational scripts
 - `lane:master` — cross-cutting execution lane with broad write access
 
@@ -89,7 +89,6 @@ While the child task is open or in review, the parent task is `status:blocked`. 
 In autonomous mode, the heavy guardrails are active:
 
 - `.github/workflows/pr-issue-guardrails.yml` enforces the issue/PR contract when the PR carries the `flow:autonomous` label.
-- `.github/workflows/perf-guardrails.yml` runs on touched runtime paths.
 - `.github/guardrails/path-policy.json` enforces lane/risk constraints on critical paths.
 
 For interactive PRs (no `flow:autonomous` label), these checks are skipped or relaxed.

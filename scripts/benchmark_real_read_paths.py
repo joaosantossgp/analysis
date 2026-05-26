@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Benchmark real local read paths used by the desktop app.
 
-This complements scripts/perf_guardrail.py, which uses a synthetic dataset.
 It does not modify the database.
 """
 from __future__ import annotations

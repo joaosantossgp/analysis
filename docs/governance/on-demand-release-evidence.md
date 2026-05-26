@@ -13,15 +13,14 @@ Mudancas sem impacto no on-demand podem apenas declarar "nao aplicavel" no PR.
 
 ## Gates automatizados
 
-O job `test-web` do workflow `CI` deve passar com estes passos:
+O workflow `CI` deve passar nos gates ativos:
 
-- `Run web unit tests`: executa `npm run test:unit`.
-- `Seed web smoke database`: executa `python ../../scripts/seed_web_smoke_db.py`.
-- `Run on-demand Playwright smoke`: executa `npm run test:e2e -- tests/smoke.spec.ts`.
+- Python core tests: `pytest tests -q`.
+- Vite desktop UI typecheck: `npm run typecheck` em `apps/desktop-web`.
+- Vite desktop UI build: `npm run build` em `apps/desktop-web`.
 
-O smoke cobre entrada por busca, sugestoes same-origin, detalhe sem historico e
-navegacao mobile critica. Os unitarios cobrem polling/wait, handoff de sucesso,
-outcomes terminais e cenarios mistos de dados legiveis.
+Quando a mudanca tocar `apps/api`, rode tambem `pytest apps/api/tests -q`.
+Quando a mudanca tocar UI observavel, valide o fluxo no desktop/Vite dev shell.
 
 ## Smoke Atualizar Base (`/atualizar-base`)
 
@@ -85,7 +84,7 @@ python -m pytest scripts/test_update_base_smoke.py -q
   mostram copy e CTA coerentes.
 - Mixed readable outcomes: erro/no-data retryable preserva a leitura existente
   quando `has_readable_current_data=true`.
-- CI evidence: linkar o run do workflow `CI` com `test-web` verde.
+- CI evidence: linkar o run do workflow `CI` com Python core e Vite desktop UI verdes.
 - Manual evidence: anexar screenshot/trace apenas quando a PR muda UI visivel
   ou comportamento de navegacao que o smoke nao consegue demonstrar sozinho.
 

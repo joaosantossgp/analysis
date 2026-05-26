@@ -13,6 +13,9 @@ archive/
 # Scratchpad and review artifacts — transient, not code
 .workflow/.scratchpad/
 
+# Stale UI audit reports — reference apps/web (removed) and are not active code
+data/reports/
+
 # Reference documents — binary, for human reading only
 docs/vendor/
 
@@ -20,8 +23,7 @@ docs/vendor/
 .venv/
 
 # Node.js
-apps/web/node_modules/
-apps/web/.next/
+node_modules/
 
 # Binary and large files
 *.xlsx

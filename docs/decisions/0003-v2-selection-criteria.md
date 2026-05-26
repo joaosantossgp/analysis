@@ -1,10 +1,14 @@
 # 0003 - Criterios de escolha da V2
 
-- **Status:** accepted
+- **Status:** historical; superseded for active frontend/runtime by `docs/active-project-map.md`
 - **Data:** 2026-04-09
 - **Autor:** human+ai
 
 ## Contexto
+
+> Current note (2026-05-26): this ADR records the criteria used for the old V2
+> web-stack choice. The active application frontend is now
+> `apps/desktop-web`; do not use this ADR as current UI implementation guidance.
 
 O ADR 0002 ja congelou a stack recomendada da V2 como `Next.js` + `FastAPI` +
 `PostgreSQL` + `Ubuntu Linux`.

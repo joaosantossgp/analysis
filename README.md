@@ -41,15 +41,22 @@ The authoritative runtime is the packaged Windows desktop executable. The Vercel
 - **Python (`src/`)** owns the data pipeline, SQLite access, KPI engine, refresh worker, and Excel export.
 - **pywebview** hosts WebView2 and exposes Python callables to JavaScript as `window.pywebview.api`.
 - **Vite + React + TypeScript** under `apps/desktop-web/` builds to a static SPA served from a local loopback HTTP server. This is the only packaged desktop UI runtime.
-- **Next.js 16** under `apps/web/` remains in source as a source-only legacy / hosted web app. It is not packaged into the desktop app.
-- **FastAPI (`apps/api/`)** remains in source for the hosted Railway API and API tests. It is not started or packaged by the desktop runtime.
+- **FastAPI (`apps/api/`)** remains in source as an HTTP API/development backend adapter and API test surface. It is not started or packaged by the desktop runtime.
 
-The Phase 3 sequence ported every P0 production screen into Vite (statements, KPIs, sectors, Excel export, refresh, status/updater). Phase 4 (`v0.14.0`) made Vite the default. Phase 5B (`v0.15.0`) removed the desktop-packaged Next/Node runtime. Phase 5C kept source-only/hosted surfaces. Phase 6 (`v0.17.0`) completed the final product hardening audit, standardized KPI/monospaced styling, and finalized the stable release pass. See `docs/migration/`.
+The Phase 3 sequence ported every P0 production screen into Vite (statements, KPIs, sectors, Excel export, refresh, status/updater). Phase 4 (`v0.14.0`) made Vite the default. Phase 5B (`v0.15.0`) removed the desktop-packaged Node runtime. The old source-only Next.js app was later removed from the active tree to avoid ambiguity. Phase 6 (`v0.17.0`) completed the final product hardening audit, standardized KPI/monospaced styling, and finalized the stable release pass. See `docs/migration/` for historical detail.
+
+## Active Application Source of Truth
+
+- Active frontend: `apps/desktop-web` (Vite + React + TypeScript).
+- Active runtime integration: pywebview loads the Vite build and exposes `desktop/bridge.py` through `window.pywebview.api`.
+- Do not create or modify Next.js routes, pages, layouts, API routes, or components. The old `apps/web` Next.js app was removed.
+- Do not infer current architecture from archived, migration, release, or legacy folders. Inspect `apps/desktop-web`, `desktop/`, `src/`, and `apps/api` before changing app behavior.
+- If a file appears legacy or unused, report it instead of modifying it.
 
 ## Runtime Model
 
 - Local-first. Authoritative runtime is the Windows desktop app.
-- Default runtime: the desktop app launches Python, serves the Vite SPA over a loopback HTTP server, and loads it inside the pywebview window. No `node.exe` process is spawned.
+- Default runtime: the desktop app launches Python, serves the Vite SPA over a loopback HTTP server, and loads it inside the pywebview window. No bundled Node process is spawned.
 - `--legacy` is no longer supported in the packaged app. It shows a short warning and continues into the Vite UI.
 - All desktop data calls go through `window.pywebview.api` directly to Python — no HTTP roundtrip to a separate backend.
 
@@ -176,10 +183,10 @@ The desktop runtime migration is complete as of v0.17.0. All phases are released
 | Phase 2 | Wire Vite SPA into pywebview | **Released as opt-in `--vite` (`v0.4.0`)** |
 | Phase 3A–3I | Incremental Vite parity slices | **Released through `v0.13.0`**: statements, Update Base, Documents data root, KPIs, KPI charts, sectors, sub-sector detail, Excel export (full + per-statement), single-company refresh, status/diagnostics, software updater UI |
 | Phase 3J | Default switch readiness audit | Done |
-| Phase 4 | Vite default + Next/Node fallback (`--legacy`) | **Released as `v0.14.0`, hotfix `v0.14.1`.** Default startup loads the Vite SPA with no Node process. |
-| Phase 5A | Legacy deletion audit | Done. Found `apps/web/` and `apps/api/` are source-only / hosted products, not desktop package dependencies. |
-| Phase 5B | Remove desktop-packaged Next/Node runtime | **Released as `v0.15.0`.** The desktop package no longer ships `node.exe`, `web_standalone/`, or the Next standalone runtime. |
-| Phase 5C | Source-only / hosted-surface cleanup decision | Done. Kept `apps/web/`, `apps/api/`, and `railway.toml` documented as non-packaged surfaces; removed default CI blockers for legacy Next/perf jobs. |
+| Phase 4 | Vite default + legacy fallback (`--legacy`) | **Released as `v0.14.0`, hotfix `v0.14.1`.** Default startup loads the Vite SPA with no Node process. |
+| Phase 5A | Legacy deletion audit | Done. Confirmed `apps/desktop-web` was the desktop UI and the old web app was not a package dependency. |
+| Phase 5B | Remove desktop-packaged Node runtime | **Released as `v0.15.0`.** The desktop package no longer ships a bundled Node runtime or standalone web server. |
+| Phase 5C | Legacy source cleanup | Done. The old Next.js app was removed from the active tree; active scripts and docs now point at `apps/desktop-web`. |
 | Phase 6 | Stable Release / Final Product Pass | **Released (v0.17.0)** |
 
 See:
@@ -193,8 +200,7 @@ See:
 ```
 desktop/          pywebview shell, PyInstaller spec, updater, build script
 apps/desktop-web/ Vite static SPA packaged into the .exe  ← only packaged UI
-apps/web/         Source-only hosted Next.js 16 UI, not packaged
-apps/api/         Hosted Railway FastAPI + API tests, not packaged
+apps/api/         HTTP API/development backend adapter + API tests, not desktop UI
 src/              Python core: scraper, KPI engine, refresh/read services
 main.py           CLI entry point for headless refresh
 scripts/          Setup, batches, diagnostics, validation helpers
@@ -215,9 +221,9 @@ See [docs/reference/repository-map.md](docs/reference/repository-map.md) for a f
 
 **"I want to change packaging or the updater"** → `desktop/`. The PyInstaller spec is `desktop/app.spec`. Build script is `desktop/build_desktop.ps1`. Auto-updater is `desktop/updater.py` + `desktop/update_helper.ps1`. Do not change these without re-running the full release pipeline — a wrong path in the spec produces a broken EXE with no obvious build-time error.
 
-**"I want to change the hosted API or Next.js web surface"** → `apps/api/` (FastAPI, Railway) and `apps/web/` (Next.js 16). These surfaces are not packaged into `CVMAnalytics.exe` and do not affect the desktop runtime. Read `docs/reference/interface-map.md` before modifying any API contract.
+**"I want to change the HTTP API"** → `apps/api/` (FastAPI) and shared read logic in `src/`. The API is not the desktop UI and does not affect pywebview routing unless a bridge/API contract also changes. Read `docs/reference/v2-api-contract.md` before modifying any API contract.
 
-**"Which docs are current vs historical?"** → `docs/reference/repository-map.md` for a full map. Short answer: `docs/reference/` and `docs/decisions/` are active. `docs/migration/` is completed history. `docs/reference/sitemap.md` and `docs/reference/interface-map.md` describe the hosted web surface, not the desktop.
+**"Which docs are current vs historical?"** → `docs/active-project-map.md` and `docs/reference/repository-map.md` for the active map. Short answer: `docs/reference/` and `docs/decisions/` are active only when they do not conflict with the active Vite desktop map. `docs/migration/` is completed history.
 
 **What not to touch casually:**
 - `desktop/app.spec` — PyInstaller spec; a wrong entry produces a broken EXE
@@ -228,7 +234,6 @@ See [docs/reference/repository-map.md](docs/reference/repository-map.md) for a f
 
 ## Roadmap
 
-- `apps/web/` and `apps/api/` remain as documented source-only / hosted surfaces. Deletion requires a separate retirement decision.
 - Known deferred items: code signing (SmartScreen warning on download), AV/UPX review.
 
 ## Known Limitations

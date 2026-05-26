@@ -2,7 +2,15 @@
 
 ## Status
 
-**Stable desktop runtime (`v0.17.0`).** This package is the **only packaged desktop UI**. The legacy Next.js stack under `apps/web/` remains in the source tree, but it is no longer bundled into `CVMAnalytics.exe`; the package no longer ships `web_standalone/` or `node.exe`. `CVMAnalytics.exe --legacy` now shows a short unsupported-runtime warning and continues into the Vite UI. `v0.14.1` added the idempotent startup GICS backfill: it reads `_internal/data/import/gics_mapping.csv` and populates `companies.gics_sector / gics_sector_slug / gics_sub_industry` for rows whose GICS fields are empty.
+**Stable desktop runtime (`v0.17.0+`).** This package is the **only packaged desktop UI**. The legacy Next.js app was removed from the active tree; the package does not ship legacy standalone server assets or a bundled Node runtime. `CVMAnalytics.exe --legacy` now shows a short unsupported-runtime warning and continues into the Vite UI. `v0.14.1` added the idempotent startup GICS backfill: it reads `_internal/data/import/gics_mapping.csv` and populates `companies.gics_sector / gics_sector_slug / gics_sub_industry` for rows whose GICS fields are empty.
+
+## Active Application Source of Truth
+
+- Active frontend work happens here, in `apps/desktop-web`.
+- Runtime data access goes through `src/lib/api/*` -> `src/lib/bridge/adapter.ts` -> `window.pywebview.api` -> `desktop/bridge.py`.
+- Do not create or modify Next.js routes, pages, API routes, or components. The old `apps/web` app is not part of the active CVMAnalytics app.
+- Do not infer current UI architecture from archived, migration, release, or legacy docs. Inspect this Vite app before changing UI.
+- If a file appears legacy or unused, report it instead of modifying it.
 
 Screens with dynamic routing prove the architecture:
 
@@ -99,7 +107,7 @@ Output is a static SPA at `apps/desktop-web/dist/`.
 
 ## Phase 5B — Vite-only packaged launch mode
 
-The packaged desktop executable loads this Vite SPA as the only packaged UI runtime. The Next standalone server and bundled Node runtime are no longer included.
+The packaged desktop executable loads this Vite SPA as the only packaged UI runtime. Legacy standalone server assets and the bundled Node runtime are no longer included.
 
 ```powershell
 # packaged — Vite default (no Node process)
@@ -124,14 +132,13 @@ In default / `--vite` mode:
 - pywebview loads `_internal/desktop-web/index.html` over a local HTTP server bound to a free port (`http.server.ThreadingHTTPServer`). No `file://` origin issues with WebView2.
 - The Python bridge is the same `CVMBridge()` the legacy mode uses.
 - `%USERPROFILE%\Documents\CVMAnalytics\db\cvm_financials.db` is read/written exactly as in legacy mode unless `CVMANALYTICS_DATA_DIR` overrides it.
-- **No `node.exe` process is launched.** Verified end-to-end against the packaged exe.
+- **No bundled Node runtime is launched.** Verified end-to-end against the packaged exe.
 
-`--legacy` no longer starts Next/Node. It writes a recovery-log entry, shows a short warning, and proceeds with the Vite UI so old shortcuts still open the application.
+`--legacy` no longer starts a legacy web runtime. It writes a recovery-log entry, shows a short warning, and proceeds with the Vite UI so old shortcuts still open the application.
 
 ## What this does NOT change
 
-- Does not delete `apps/web/` or `apps/api/` from source. They are not part of the packaged desktop runtime.
+- Does not call FastAPI. Bridge-only.
 - Does not change the user-data contract. Data still lives under `%USERPROFILE%\Documents\CVMAnalytics`.
 - Does not change the updater allowlist/denylist or the flat-root ZIP contract.
-- Does not call FastAPI. Bridge-only.
 - Uses TanStack Query for directory, sectors, detail, refresh, status, and export status screens.

@@ -52,7 +52,7 @@ UI Component
 - **NO Direct SQLite:** Frontend code cannot issue SQL queries or communicate with SQLite directly. SQLite is entirely managed by the Python backend.
 - **NO Hardcoded Filesystem Paths:** Never hardcode absolute or local filesystem paths (like `C:\Users\...` or `CVMAnalytics/...`) in frontend components. Use bridge methods (like `get_output_dir()`) to query paths dynamically from the backend.
 - **NO Semantic Inflation:** Never invent, calculate, or alter financial data semantics on the frontend during migration. If the backend returns a certain data structure, preserve it exactly.
-- **NO Eager Source Deletion:** Do not delete `apps/web` or `apps/api` without explicit hosted-surface retirement approval. Phase 5C kept them as source-only / hosted surfaces outside the packaged desktop runtime. `desktop/node_portable` was removed in Phase 5B and must not be reintroduced.
+- **NO Next.js Work:** Do not create, restore, or modify Next.js routes, pages, API routes, or components. The old `apps/web` app was removed from the active tree. `desktop/node_portable` was removed in Phase 5B and must not be reintroduced.
 
 ---
 
@@ -220,7 +220,7 @@ A Vite UI screen is considered complete **only** if it passes all the following:
 - [ ] **No Traceback:** If an error occurs, it is caught gracefully without raw traceback in the main UI.
 - [ ] **Typecheck:** Compiles with zero TypeScript errors (`npm run typecheck`).
 - [ ] **Production Build:** Bundles successfully (`npm run build`).
-- [ ] **No Node Runtime:** Packaged executable starts the Vite UI without spawning `node.exe`; `_internal/node.exe` and `_internal/web_standalone/` are absent.
+- [ ] **No Bundled Node Runtime:** Packaged executable starts the Vite UI without spawning a bundled Node runtime or packaged legacy web server.
 - [ ] **Data Safety:** Persistent user directories (`%USERPROFILE%\Documents\CVMAnalytics`) are preserved.
 
 ---
@@ -266,4 +266,4 @@ When wrapping up a task, your final report **must** follow this format:
 - Potential bugs, environment requirements, or edge cases.
 ```
 
-No agent should recommend deleting Next/Node/FastAPI code unless Vite parity is fully achieved, tested in a released version, and approved by the user.
+No agent should recreate the removed Next.js app or infer current UI architecture from historical migration docs. `apps/api` remains a FastAPI HTTP adapter, not the active frontend.

@@ -18,7 +18,7 @@ GICS_MAPPING_CSV = ROOT / "data" / "import" / "gics_mapping.csv"
 datas = []
 
 # Phase 5B: desktop package ships only the static Vite SPA. The legacy
-# Next standalone and bundled node.exe are intentionally not included.
+# standalone web runtime is intentionally not included.
 if VITE_DIST_DIR.exists():
     datas.append((str(VITE_DIST_DIR), "desktop-web"))
 

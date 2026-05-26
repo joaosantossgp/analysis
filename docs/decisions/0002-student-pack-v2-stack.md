@@ -1,10 +1,14 @@
 # 0002 — Stack recomendada para a V2 com GitHub Student Developer Pack
 
-- **Status:** accepted
+- **Status:** historical; superseded for active frontend/runtime by `docs/active-project-map.md`
 - **Data:** 2026-04-07
 - **Autor:** human+ai
 
 ## Contexto
+
+> Current note (2026-05-26): this ADR records the old V2 web-stack decision.
+> The active application frontend is now the Vite desktop app in
+> `apps/desktop-web`; the old Next.js app was removed from the active tree.
 
 O projeto atual ja funciona com:
 - pipeline e scraper em Python;

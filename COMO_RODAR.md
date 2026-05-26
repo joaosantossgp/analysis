@@ -52,10 +52,10 @@ pip install -r requirements.txt
 pip install -r apps/api/requirements-dev.txt
 ```
 
-Se for usar a web:
+Se for trabalhar na interface desktop:
 
 ```powershell
-cd apps/web
+cd apps/desktop-web
 npm install
 cd ..\..
 ```
@@ -146,7 +146,7 @@ python scripts/batch_completo.py --dry-run
 python scripts/atualizar_todos.py --anos 2024 2025
 ```
 
-Smoke seguro do fluxo web/API + bridge da pagina **Atualizar base** (default
+Smoke seguro do fluxo API + bridge da pagina **Atualizar base** (default
 `mode=missing`, `limit=1`; live so com `--confirm-live`):
 
 ```powershell
@@ -189,30 +189,34 @@ Invoke-RestMethod http://127.0.0.1:8000/companies/filters
 
 ---
 
-## 7. Subir o web app da V2
+## 7. Subir a UI desktop Vite
 
-O web app em `apps/web` e mantido para desenvolvimento local e para o desktop standalone. Ele nao e mais o canal publico em Vercel.
+A UI ativa fica em `apps/desktop-web`. Ela e uma SPA Vite carregada pelo
+desktop pywebview. O app antigo em Next.js (`apps/web`) foi removido da arvore
+ativa.
 
 Em outro terminal:
 
 ```powershell
-cd apps/web
-Copy-Item .env.example .env.local
+cd apps/desktop-web
 npm run dev
 ```
 
 Abrir:
-- app web: `http://127.0.0.1:3000`
+- preview Vite: `http://127.0.0.1:5173`
 
-Rotas desta fase:
+Rotas principais:
 - `/`
 - `/empresas`
 - `/empresas/[cd_cvm]`
+- `/setores`
+- `/atualizar-base`
+- `/status`
 
 Observacoes:
-- `API_BASE_URL` fica em `apps/web/.env.local`
-- o frontend consome apenas a API V2
-- `apps/web/app/api/company-search/route.ts` faz o proxy interno do autocomplete
+- no app real, os dados passam pelo bridge `window.pywebview.api`
+- componentes React devem chamar as facades em `apps/desktop-web/src/lib/api/`
+- para testar com bridge real, prefira `python -m desktop.app --dev`
 
 ---
 
@@ -225,14 +229,11 @@ pytest tests/ -q
 pytest apps/api/tests -q
 ```
 
-Web:
+Desktop UI:
 
 ```powershell
-cd apps/web
-npm run lint
-npm run typecheck
-npm run build
-npm run test:e2e
+npm --prefix apps/desktop-web run typecheck
+npm --prefix apps/desktop-web run build
 ```
 
 Validacoes de workbook/exportacao (QA manual; rode somente apos gerar o
@@ -262,14 +263,14 @@ caminho XLSX padrao/legado).
 
 ---
 
-## 9. Desktop pywebview (Fase 3)
+## 9. Desktop pywebview
 
-App nativo com janela pywebview + UI Next.js. O bridge Python responde
+App nativo com janela pywebview + UI Vite. O bridge Python responde
 diretamente, sem precisar do servidor FastAPI para leitura.
 
 ### Modo dev (recomendado para desenvolvimento)
 
-O comando abaixo inicia ou reutiliza o Next.js dev server em `127.0.0.1:3000`
+O comando abaixo inicia ou reutiliza o Vite dev server em `127.0.0.1:5173`
 e abre a janela pywebview. FastAPI nao e necessario para a leitura local,
 porque o bridge Python responde direto para a UI.
 
@@ -279,8 +280,7 @@ python -m desktop.app --dev
 
 ### Modo standalone (sem npm run dev)
 
-Gere o executavel; o app empacotado sobe o servidor Node.js embutido
-automaticamente:
+Gere o executavel; o app empacotado serve a build Vite estatica por HTTP local:
 
 ```powershell
 .\desktop\build_desktop.ps1
@@ -294,9 +294,9 @@ automaticamente:
 
 | Flag | Efeito |
 |---|---|
-| `--dev` | Inicia ou reutiliza `http://127.0.0.1:3000` (Next.js dev server) |
+| `--dev` | Inicia ou reutiliza `http://127.0.0.1:5173` (Vite dev server) |
 | `--debug` | Abre DevTools no modo ativo |
-| (nenhuma) | Inicia `.next/standalone/server.js` e carrega o app |
+| (nenhuma) | Serve `apps/desktop-web/dist` ou `_internal/desktop-web` e carrega o app |
 
 ### Teste de sanidade (com `--debug`)
 
@@ -321,6 +321,5 @@ await window.pywebview.api.get_companies({page: 1, page_size: 5})
 | `runtime_doctor.py` falha com `venv-broken` | Recrie a `.venv` com `python -m venv .venv`. |
 | App desktop abre sem empresas | Rode `setup_db.py`, `setup_companies_table.py` e atualize dados. |
 | API responde `503` | Valide o banco, tabelas obrigatorias e o `runtime_doctor.py`. |
-| Web app sem dados | Verifique `API_BASE_URL` e se `uvicorn apps.api.app.main:app --reload` esta rodando. |
 | Erro de permissao no PowerShell | Rode `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`. |
-| Servidor standalone nao respondeu | Verifique se `node` esta no PATH e se o build foi concluido com sucesso. |
+| UI Vite nao abriu no desktop | Rode `npm --prefix apps/desktop-web run build` ou use `python -m desktop.app --dev`. |

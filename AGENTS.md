@@ -8,10 +8,22 @@ Canonical operating rules for AI agents in this project. English-only. ~120 line
 - For a full map of every folder, workflow, and doc status, see `docs/reference/repository-map.md`.
 - For long-running autonomous PRs, also read `docs/governance/autonomous-mode.md`.
 - Before touching `src/` or `apps/api/`, also read `docs/CONTEXT.md`.
-- Before touching `apps/web/`, the per-directory `apps/web/AGENTS.md` is auto-loaded.
 - Before implementing or reviewing any Vite UI screen in `apps/desktop-web`, read and follow: [docs/skills/CVMANALYTICS_VITE_UI_SKILL.md](docs/skills/CVMANALYTICS_VITE_UI_SKILL.md).
 - Active reference docs live in `docs/reference/`. ADRs live in `docs/decisions/`. Migration history lives in `docs/migration/` (all phases complete as of v0.17.0).
 - `archive/` (at root) is historical — governance snapshots and old experiments. Do not treat as current contract.
+
+## Active Application Source of Truth
+
+- The active frontend is the Vite app in `apps/desktop-web`.
+- The active runtime integration is the desktop pywebview/backend bridge:
+  `apps/desktop-web/src/lib/bridge/adapter.ts` -> `window.pywebview.api` ->
+  `desktop/bridge.py`.
+- Do not create or modify Next.js routes, pages, layouts, API routes, or
+  components. The old `apps/web` Next.js app was removed from the active tree.
+- Do not infer architecture from archived, migration, release, or legacy docs.
+  Inspect `apps/desktop-web`, `desktop/`, `src/`, and `apps/api` before
+  changing UI/runtime/backend behavior.
+- If a file appears legacy or unused, report it instead of modifying it.
 
 ## 2. Principles
 
@@ -76,8 +88,6 @@ Prefer targeted plans, small diffs, and focused validation commands.
 
 - Desktop UI TypeScript: `npm --prefix apps/desktop-web run typecheck` after any
   desktop UI TS/TSX edit.
-- Source-only hosted web TypeScript: `npm --prefix apps/web run typecheck` after
-  any `apps/web/` TS/TSX edit.
 - Python: `pytest tests/` for desktop/core paths, `pytest apps/api/tests/` when
   intentionally editing the hosted API.
 - UI-observable changes: start the dev server and verify when feasible (browser preview, screenshot, snapshot).
@@ -135,11 +145,13 @@ Each task type has a minimal extra rule on top of the principles. Match the mode
 - `COMO_RODAR.md` — how to run locally (Portuguese, operational)
 - `docs/CONTEXT.md` — domain rules for `src/` and `apps/api/`
 - `docs/decisions/` — ADRs (durable architectural decisions)
-- `docs/reference/` — active reference docs (sitemap, interface map, API contract, perf baseline, GICS import, product page prompts)
+- `docs/active-project-map.md` — concise active path and command map
+- `docs/reference/` — active reference docs (repository map, GICS import, API contract)
 - `docs/governance/autonomous-mode.md` — opt-in heavy contract for autonomous PRs
 
 ## 7. What NOT to do
 
+- Don't create, restore, or modify Next.js source. The legacy `apps/web` app was removed.
 - Don't open PRs in draft because the change touches multiple files. Draft only when the work itself is incomplete.
 - Don't use the GitHub CLI (`gh`) or `scripts/pr_complete.ps1` for routine merges. Standard `git push` + manual or auto-merge is sufficient.
 - Don't insist on issue-first, worktrees, lanes, or risk labels for interactive sessions. These belong to autonomous mode only.
@@ -155,7 +167,7 @@ Each task type has a minimal extra rule on top of the principles. Match the mode
 - **Data root:** packaged users store runtime data under
   `%USERPROFILE%\Documents\CVMAnalytics`.
 - **`apps/desktop-web`** is the only UI source compiled into the desktop bundle.
-- **`apps/web`** is source-only hosted/legacy Next.js; it is not packaged.
-- **`apps/api`** is source-only hosted/development FastAPI; it is not packaged.
+- **`apps/api`** is an HTTP API/development backend adapter; it is not a
+  frontend and is not packaged as the desktop UI.
 - Validate product bugs against the packaged desktop app and the Documents data
   root, not remote URLs.

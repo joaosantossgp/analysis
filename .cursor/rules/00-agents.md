@@ -5,4 +5,4 @@ alwaysApply: true
 
 This project's rules live in [AGENTS.md](mdc:AGENTS.md) at the repo root. Read it before editing anything.
 
-For `apps/web/` work, the directory-scoped overlay [apps/web/AGENTS.md](mdc:apps/web/AGENTS.md) is also load-bearing (Next.js 16 has breaking changes vs. older training data).
+Active frontend work belongs in [apps/desktop-web](mdc:apps/desktop-web). The legacy Next.js `apps/web` app was removed; do not recreate or modify Next.js routes, pages, or components.

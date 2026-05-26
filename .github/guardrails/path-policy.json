@@ -2,7 +2,7 @@
   "_about": "Path-policy enforced by pr-issue-guardrails.yml when a PR carries the 'flow:autonomous' label. See docs/governance/autonomous-mode.md.",
   "laneAllowlists": {
     "frontend": [
-      "apps/web/**"
+      "apps/desktop-web/**"
     ],
     "backend": [
       "apps/api/**",
@@ -15,7 +15,7 @@
       "migrations/**"
     ],
     "master": [
-      "apps/web/**",
+      "apps/desktop-web/**",
       "docs/perf/**",
       "apps/api/**",
       "src/**",
@@ -137,7 +137,7 @@
     {
       "name": "frontend-with-backend-runtime",
       "left": [
-        "apps/web/**"
+        "apps/desktop-web/**"
       ],
       "right": [
         "src/**",

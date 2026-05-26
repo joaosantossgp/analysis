@@ -12,11 +12,10 @@ fluxo on-demand.
 
 ## Gates obrigatorios
 
-- `CI / test-web / Run web unit tests`:
-- `CI / test-web / Seed web smoke database`:
-- `CI / test-web / Run on-demand Playwright smoke`:
+- `CI / Python core tests`:
+- `CI / Vite desktop UI / Typecheck Vite desktop UI`:
+- `CI / Vite desktop UI / Build Vite desktop UI`:
 - `PR Issue Guardrails`:
-- `perf-guardrails`:
 
 ## Checklist funcional
 

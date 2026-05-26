@@ -1,7 +1,7 @@
 # ADR-0006 — Autenticação local para o app desktop CVM Analytics
 
 **Data:** 2026-05-03
-**Status:** Aceito (decisão) — **Não implementado (deferido) em v0.17.0**
+**Status:** Historico — **Não implementado (deferido) em v0.17.0**; revalidar contra `docs/active-project-map.md`
 **Autor:** Claude (ops-quality, issue #240)
 **Contexto completo:** ~~`docs/AUTH_DESKTOP_READINESS.md`~~ (removido em `8506bd9`)
 
@@ -13,12 +13,13 @@
 >   `_authenticated`.
 > - Não existe rota `/login` em `apps/desktop-web/`.
 > - Nenhum arquivo `auth.json` é gerado ou consumido.
-> - O contexto original menciona "pywebview + Next.js standalone"; o Next/Node
->   foi removido do pacote desktop na Fase 5B (`v0.15.0`).
+> - O contexto original menciona "pywebview + Next.js standalone"; o runtime
+>   legado foi removido do pacote desktop na Fase 5B (`v0.15.0`) e o app
+>   Next.js foi removido da arvore ativa depois disso.
 >
 > O ADR permanece preservado como registro histórico da decisão para o caso de
 > a autenticação ser priorizada no futuro. Para reativar, revalidar a Abordagem A
-> contra o stack atual (pywebview + Vite estático, sem Next/Node) antes de
+> contra o stack atual (pywebview + Vite estático) antes de
 > implementar.
 
 ---

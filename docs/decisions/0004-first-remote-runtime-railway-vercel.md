@@ -1,10 +1,14 @@
 # 0004 - Primeiro runtime remoto: Railway + Vercel
 
-- **Status:** accepted
+- **Status:** historical; superseded for active frontend/runtime by `docs/active-project-map.md`
 - **Data:** 2026-04-09
 - **Autor:** human+ai
 
 ## Contexto
+
+> Current note (2026-05-26): this ADR records the first remote-runtime
+> decision. The active product runtime is the Windows desktop app with Vite UI
+> and the Python bridge; the old web frontend was removed from the active tree.
 
 Depois do ADR 0002, o projeto ainda precisava fixar qual seria o primeiro
 ambiente remoto de aprendizado da V2.
