@@ -1,17 +1,19 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 
 import {
   COMPANY_UNIVERSE_PRESETS,
   completeOnboardingSetup,
-  skipOnboardingSetup,
   startOnboardingSetup,
 } from "@/lib/api/onboarding";
 import {
+  cancelRefresh,
   fetchRefreshJob,
   isActiveRefreshJob,
   refreshProgress,
 } from "@/lib/api/updateBase";
+import { useRefreshJobInvalidation } from "@/hooks/useRefreshJobInvalidation";
 import type {
   CompanyUniversePreset,
   OnboardingState,
@@ -32,15 +34,13 @@ export function FirstRunOnboarding({
   initialState,
   onDone,
   onCancel,
-  cancelLabel = "Configure later",
+  cancelLabel = "Voltar",
   surface = "first-run",
 }: Props) {
   const queryClient = useQueryClient();
-  const [selectedPreset, setSelectedPreset] =
-    useState<CompanyUniversePreset>("top_200");
-  const [jobId, setJobId] = useState<string | null>(
-    initialState.refresh_job_id ?? null,
-  );
+  const invalidateRefreshQueries = useRefreshJobInvalidation();
+  const [selectedPreset, setSelectedPreset] = useState<CompanyUniversePreset>("top_200");
+  const [jobId, setJobId] = useState<string | null>(initialState.refresh_job_id ?? null);
   const [startedSelection, setStartedSelection] = useState<{
     preset: CompanyUniversePreset | null;
     count: number;
@@ -63,24 +63,23 @@ export function FirstRunOnboarding({
     },
   });
 
-  const job = jobQuery.data?.mode === "desktop" ? jobQuery.data.job : initialState.refresh_job;
+  const fallbackJob =
+    jobId && jobId === initialState.refresh_job_id ? initialState.refresh_job : null;
+  const job = jobQuery.data?.mode === "desktop" ? jobQuery.data.job : fallbackJob;
   const jobState = String(job?.state ?? "");
   const progress = refreshProgress(job);
   const isRunning = isActiveRefreshJob(job);
   const isSuccess = jobState === "success";
-  const isFailure = ["error", "cancelled", "interrupted"].includes(jobState);
+  const isFailureRaw = ["error", "cancelled", "interrupted"].includes(jobState);
+
+  const hasEverSucceededRef = useRef(false);
+  if (isSuccess) hasEverSucceededRef.current = true;
 
   const completeMutation = useMutation({
     mutationFn: completeOnboardingSetup,
     onSuccess: () => {
+      invalidateRefreshQueries();
       void queryClient.invalidateQueries({ queryKey: ["onboarding-state"] });
-      void queryClient.invalidateQueries({ queryKey: ["companies"] });
-      // Onboarding seeds the local DB — refresh derived views so the
-      // first post-onboarding navigation already shows fresh data.
-      void queryClient.invalidateQueries({ queryKey: ["data-coverage"] });
-      void queryClient.invalidateQueries({ queryKey: ["base-health"] });
-      void queryClient.invalidateQueries({ queryKey: ["db-diagnostics"] });
-      void queryClient.invalidateQueries({ queryKey: ["sectors"] });
     },
   });
 
@@ -104,48 +103,49 @@ export function FirstRunOnboarding({
     },
   });
 
-  const skipMutation = useMutation({
-    mutationFn: skipOnboardingSetup,
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["onboarding-state"] });
-      onDone();
+  const cancelJobMutation = useMutation({
+    mutationFn: (id: string) => cancelRefresh(id),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ["onboarding-refresh-job", jobId] });
     },
   });
 
   useEffect(() => {
-    if (!isSuccess || completeMutation.isSuccess || completeMutation.isPending) {
-      return;
-    }
+    if (!isSuccess || completeMutation.isSuccess || completeMutation.isPending) return;
     void completeMutation.mutateAsync();
   }, [completeMutation, isSuccess]);
 
-  const topNSourceMissing =
-    !initialState.market_cap_source_available && selectedPreset !== "all";
-  const cardsDisabled = startMutation.isPending || isRunning || completeMutation.isPending;
+  const isFailure =
+    isFailureRaw &&
+    !hasEverSucceededRef.current &&
+    !completeMutation.isPending &&
+    !completeMutation.isSuccess;
+
+  const topNSourceMissing = !initialState.market_cap_source_available && selectedPreset !== "all";
+  const isStartingOrRunning = startMutation.isPending || isRunning;
+  const cardsDisabled = isStartingOrRunning || completeMutation.isPending;
+
   const selectedMeta = useMemo(
     () => COMPANY_UNIVERSE_PRESETS.find((item) => item.value === selectedPreset),
     [selectedPreset],
   );
 
-  function handleContinue() {
+  const resultSummary = useMemo(() => extractResultSummary(job), [job]);
+  const hasPartialFailures = isSuccess && (resultSummary?.error_count ?? 0) > 0;
+
+  function handleStart() {
+    startMutation.reset();
+    setStartedSelection((prev) => ({ ...prev, warning: null }));
     startMutation.mutate(selectedPreset);
-  }
-
-  function handleDone() {
-    onDone();
-  }
-
-  function handleSecondary() {
-    if (onCancel) {
-      onCancel();
-      return;
-    }
-    skipMutation.mutate();
   }
 
   return (
     <main
-      className={surface === "first-run" ? "min-h-full" : "min-h-full rounded-lg border border-border-subtle"}
+      className={
+        surface === "first-run"
+          ? "min-h-full"
+          : "min-h-full rounded-lg border border-border-subtle"
+      }
       style={{
         background: "var(--color-surface-1)",
         color: "var(--color-text-primary)",
@@ -155,116 +155,129 @@ export function FirstRunOnboarding({
       <section className="mx-auto flex w-full max-w-5xl flex-col gap-5">
         <header className="border-b border-border-subtle pb-5">
           <p className="font-mono text-xs uppercase tracking-wider text-action-primary">
-            {surface === "first-run" ? "Initial setup" : "Data setup"}
+            {surface === "first-run" ? "Configuração inicial" : "Configuração de dados"}
           </p>
           <h1 className="mt-2 text-2xl font-semibold text-text-primary">
-            Set up your company universe
+            Escolha seu universo de empresas
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-text-secondary">
-            Choose how much B3 company data you want to download now. You can
-            expand your coverage later.
+            Selecione quais empresas da B3 você quer baixar agora. Você pode expandir sua
+            cobertura depois.
           </p>
         </header>
 
-        {initialState.market_cap_source_available ? null : (
+        {!initialState.market_cap_source_available ? (
           <StateBanner
             variant="empty"
-            title="Market cap ranking source needed"
-            message="Top company presets need a ranking source. You can choose All B3 companies now, or configure the ranking source and retry."
+            title="Fonte de ranking necessária"
+            message="Os presets Top N precisam de uma fonte de market cap. Você pode escolher Todas as empresas agora ou configurar a fonte depois."
             size="dense"
           />
-        )}
+        ) : null}
 
         {isSuccess ? (
           <SuccessState
             count={startedSelection.count}
-            source={startedSelection.source}
-            onDone={handleDone}
+            hasPartialFailures={hasPartialFailures}
             completing={completeMutation.isPending}
+            onDone={onDone}
           />
         ) : (
           <>
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              {COMPANY_UNIVERSE_PRESETS.map((preset) => (
-                <PresetCard
-                  key={preset.value}
-                  preset={preset.value}
-                  title={preset.title}
-                  label={preset.label}
-                  description={preset.description}
-                  recommended={preset.recommended}
-                  selected={selectedPreset === preset.value}
-                  disabled={cardsDisabled}
-                  sourceMissing={!initialState.market_cap_source_available && preset.value !== "all"}
-                  onSelect={setSelectedPreset}
-                />
-              ))}
-            </div>
-
-            <p className="text-xs text-text-tertiary">
-              You can change or expand this later in Database &gt; Company universe.
-            </p>
+            {!isStartingOrRunning ? (
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                {COMPANY_UNIVERSE_PRESETS.map((preset) => (
+                  <PresetCard
+                    key={preset.value}
+                    preset={preset.value}
+                    title={preset.title}
+                    count={preset.count}
+                    eta={preset.eta}
+                    description={preset.description}
+                    recommended={preset.recommended}
+                    selected={selectedPreset === preset.value}
+                    disabled={cardsDisabled}
+                    sourceMissing={
+                      !initialState.market_cap_source_available && preset.value !== "all"
+                    }
+                    onSelect={setSelectedPreset}
+                  />
+                ))}
+              </div>
+            ) : null}
 
             {startedSelection.warning ? (
               <StateBanner
                 variant="empty"
-                title="Coverage note"
+                title="Aviso de cobertura"
                 message={startedSelection.warning}
                 size="dense"
               />
             ) : null}
 
-            {isRunning || startMutation.isPending ? (
+            {isStartingOrRunning ? (
               <ProgressState
                 job={job}
                 progress={progress}
-                presetTitle={selectedMeta?.title ?? "Selected universe"}
+                presetTitle={selectedMeta?.title ?? "Universo selecionado"}
                 selectedCount={startedSelection.count}
+                onCancel={jobId ? () => cancelJobMutation.mutate(jobId) : undefined}
+                cancelling={cancelJobMutation.isPending}
               />
             ) : null}
 
             {isFailure ? (
               <StateBanner
                 variant="error"
-                title="Setup did not finish"
-                message={job?.error || "The download stopped before it finished. You can retry with the same preset."}
-                onRetry={handleContinue}
+                title="Configuração não concluída"
+                message={
+                  job?.error ||
+                  "O download foi interrompido. Você pode tentar novamente com o mesmo preset."
+                }
               />
             ) : null}
 
             {startMutation.isError ? (
               <StateBanner
                 variant="error"
-                title={topNSourceMissing ? "Ranking source unavailable" : "Could not start setup"}
+                title={
+                  topNSourceMissing
+                    ? "Fonte de ranking indisponível"
+                    : "Não foi possível iniciar"
+                }
                 message={
                   startMutation.error instanceof Error
                     ? startMutation.error.message
                     : String(startMutation.error)
                 }
-                onRetry={handleContinue}
               />
             ) : null}
 
-            <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-border-subtle pt-4">
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={cardsDisabled || (!onCancel && skipMutation.isPending)}
-                loading={!onCancel && skipMutation.isPending}
-                onClick={handleSecondary}
-              >
-                {cancelLabel}
-              </Button>
-              <Button
-                type="button"
-                variant="primary"
-                disabled={cardsDisabled}
-                loading={startMutation.isPending}
-                onClick={handleContinue}
-              >
-                Continue
-              </Button>
-            </footer>
+            {!isStartingOrRunning ? (
+              <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-border-subtle pt-4">
+                {onCancel ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={cardsDisabled}
+                    onClick={onCancel}
+                  >
+                    {cancelLabel}
+                  </Button>
+                ) : (
+                  <div />
+                )}
+                <Button
+                  type="button"
+                  variant="primary"
+                  disabled={cardsDisabled || topNSourceMissing}
+                  loading={startMutation.isPending}
+                  onClick={handleStart}
+                >
+                  {isFailure ? "Tentar novamente" : "Criar base local"}
+                </Button>
+              </footer>
+            ) : null}
           </>
         )}
       </section>
@@ -272,10 +285,13 @@ export function FirstRunOnboarding({
   );
 }
 
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
 function PresetCard({
   preset,
   title,
-  label,
+  count,
+  eta,
   description,
   recommended,
   selected,
@@ -285,7 +301,8 @@ function PresetCard({
 }: {
   preset: CompanyUniversePreset;
   title: string;
-  label: string;
+  count: string;
+  eta: string;
   description: string;
   recommended?: boolean;
   selected: boolean;
@@ -296,10 +313,10 @@ function PresetCard({
   return (
     <button
       type="button"
-      disabled={disabled}
+      disabled={disabled || sourceMissing}
       aria-pressed={selected}
       onClick={() => onSelect(preset)}
-      className="min-h-[164px] text-left transition-colors"
+      className="min-h-[180px] text-left transition-colors"
       style={{
         background: selected ? "var(--color-surface-3)" : "var(--color-surface-2)",
         border: selected
@@ -307,17 +324,12 @@ function PresetCard({
           : "1px solid var(--color-border-subtle)",
         borderRadius: "var(--radius-md)",
         padding: "16px",
-        opacity: disabled ? 0.65 : 1,
-        cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled || sourceMissing ? 0.65 : 1,
+        cursor: disabled || sourceMissing ? "not-allowed" : "pointer",
       }}
     >
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold text-text-primary">{title}</h2>
-          <p className="mt-1 font-mono text-xs uppercase tracking-wider text-text-tertiary">
-            {label}
-          </p>
-        </div>
+        <h2 className="text-lg font-semibold text-text-primary">{title}</h2>
         {recommended ? (
           <span
             className="font-mono text-[10px] uppercase"
@@ -328,15 +340,16 @@ function PresetCard({
               padding: "2px 6px",
             }}
           >
-            Default
+            Padrão
           </span>
         ) : null}
       </div>
-      <p className="mt-4 text-sm leading-5 text-text-secondary">{description}</p>
+      <p className="mt-1 font-mono text-xs text-text-tertiary">
+        {count} · {eta}
+      </p>
+      <p className="mt-3 text-sm leading-5 text-text-secondary">{description}</p>
       {sourceMissing ? (
-        <p className="mt-3 text-xs text-state-warn">
-          Needs a ranking source.
-        </p>
+        <p className="mt-3 text-xs text-state-warn">Necessita de fonte de ranking.</p>
       ) : null}
     </button>
   );
@@ -347,14 +360,20 @@ function ProgressState({
   progress,
   presetTitle,
   selectedCount,
+  onCancel,
+  cancelling,
 }: {
   job: RefreshJobStatus | null | undefined;
   progress: number;
   presetTitle: string;
   selectedCount: number;
+  onCancel?: () => void;
+  cancelling: boolean;
 }) {
   const queued = job?.queued ?? selectedCount;
   const processed = job?.processed ?? 0;
+  const stageLabel = job?.stage ? formatStageLabel(job.stage) : null;
+
   return (
     <article
       role="status"
@@ -365,13 +384,27 @@ function ProgressState({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-md font-semibold text-text-primary">
-            Downloading {presetTitle}
+            Baixando {presetTitle}
           </h2>
           <p className="mt-1 text-xs text-text-tertiary">
-            {processed.toLocaleString("pt-BR")} of {queued.toLocaleString("pt-BR")} companies processed
+            {processed.toLocaleString("pt-BR")} de {queued.toLocaleString("pt-BR")} empresas
+            processadas
+            {stageLabel ? ` · ${stageLabel}` : ""}
           </p>
         </div>
-        <span className="font-mono text-sm text-text-secondary">{progress}%</span>
+        <div className="flex items-center gap-3">
+          <span className="font-mono text-sm text-text-secondary">{progress}%</span>
+          {onCancel ? (
+            <button
+              type="button"
+              disabled={cancelling}
+              onClick={onCancel}
+              className="rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 hover:border-rose-700 hover:text-rose-200 disabled:opacity-50"
+            >
+              {cancelling ? "Cancelando…" : "Cancelar"}
+            </button>
+          ) : null}
+        </div>
       </div>
       <div className="mt-4 h-2 overflow-hidden rounded-sm bg-surface-4">
         <div
@@ -390,42 +423,88 @@ function ProgressState({
 
 function SuccessState({
   count,
-  source,
+  hasPartialFailures,
   completing,
   onDone,
 }: {
   count: number;
-  source: string | null;
+  hasPartialFailures: boolean;
   completing: boolean;
   onDone: () => void;
 }) {
   return (
     <article
-      className="border border-state-ok bg-surface-2 p-5"
-      style={{ borderRadius: "var(--radius-md)" }}
+      className="border bg-surface-2 p-5"
+      style={{
+        borderColor: hasPartialFailures
+          ? "var(--color-state-warn, #f59e0b)"
+          : "var(--color-state-ok, #4ade80)",
+        borderRadius: "var(--radius-md)",
+      }}
     >
-      <p className="font-mono text-xs uppercase tracking-wider text-state-ok">
-        Setup complete
+      <p
+        className="font-mono text-xs uppercase tracking-wider"
+        style={{
+          color: hasPartialFailures
+            ? "var(--color-state-warn, #f59e0b)"
+            : "var(--color-state-ok, #4ade80)",
+        }}
+      >
+        {hasPartialFailures ? "Concluído com ressalvas" : "Configuração concluída"}
       </p>
-      <h2 className="mt-2 text-lg font-semibold text-text-primary">
-        Company universe is ready
-      </h2>
+      <h2 className="mt-2 text-lg font-semibold text-text-primary">Pronto</h2>
       <p className="mt-2 text-sm text-text-secondary">
         {count > 0
-          ? `${count.toLocaleString("pt-BR")} companies were queued for local CVM data.`
-          : "Your local setup is ready."}
-        {source ? ` Source: ${source}.` : ""}
+          ? `${count.toLocaleString("pt-BR")} empresas foram enfileiradas para download de dados da CVM.`
+          : "Sua configuração local está pronta."}
       </p>
+      {hasPartialFailures ? (
+        <p className="mt-3 text-sm" style={{ color: "var(--color-state-warn, #f59e0b)" }}>
+          Algumas empresas encontraram erros durante o download.{" "}
+          <Link
+            to="/data-coverage"
+            style={{ textDecoration: "underline" }}
+          >
+            Ver cobertura de dados →
+          </Link>
+        </p>
+      ) : null}
       <div className="mt-5">
-        <Button
-          type="button"
-          variant="primary"
-          loading={completing}
-          onClick={onDone}
-        >
-          Continue
+        <Button type="button" variant="primary" loading={completing} onClick={onDone}>
+          Abrir app
         </Button>
       </div>
     </article>
   );
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function extractResultSummary(job: RefreshJobStatus | null | undefined): {
+  success_count: number;
+  no_data_count: number;
+  error_count: number;
+} | null {
+  const result = job?.result as Record<string, unknown> | null | undefined;
+  if (!result || typeof result !== "object") return null;
+  const summary = (result as { summary?: unknown }).summary;
+  if (!summary || typeof summary !== "object") return null;
+  const s = summary as Record<string, unknown>;
+  return {
+    success_count: Number(s.success_count ?? 0),
+    no_data_count: Number(s.no_data_count ?? 0),
+    error_count: Number(s.error_count ?? 0),
+  };
+}
+
+function formatStageLabel(stage: string): string {
+  const map: Record<string, string> = {
+    queued: "Na fila",
+    planning: "Planejando",
+    download_extract: "Baixando arquivos da CVM",
+    process_data: "Processando dados",
+    persist_reports: "Gravando no banco local",
+    finalizing: "Finalizando",
+  };
+  return map[stage] ?? stage.replace(/_/g, " ");
 }

@@ -15,34 +15,39 @@ export type OnboardingStateResult =
 export const COMPANY_UNIVERSE_PRESETS: Array<{
   value: CompanyUniversePreset;
   title: string;
-  label: string;
+  count: string;
+  eta: string;
   description: string;
   recommended?: boolean;
 }> = [
   {
     value: "top_100",
     title: "Top 100",
-    label: "Fastest",
-    description: "Fastest setup. Best for large caps and quick exploration.",
+    count: "~100 empresas",
+    eta: "~10–20 min",
+    description: "As maiores empresas da B3 por capitalização. Ideal para análise de large caps.",
   },
   {
     value: "top_200",
     title: "Top 200",
-    label: "Recommended",
-    description: "Recommended. Balanced coverage for most analysis workflows.",
+    count: "~200 empresas",
+    eta: "~20–40 min",
+    description: "Cobertura equilibrada para a maioria dos fluxos de análise.",
     recommended: true,
   },
   {
     value: "top_500",
     title: "Top 500",
-    label: "Broad",
-    description: "Broad coverage. Takes longer and uses more local storage.",
+    count: "~500 empresas",
+    eta: "~50–90 min",
+    description: "Cobertura ampla. Inclui mid e small caps.",
   },
   {
     value: "all",
-    title: "All B3 companies",
-    label: "Complete",
-    description: "Complete dataset. Best for full-market research.",
+    title: "Todas as empresas",
+    count: "900+ empresas",
+    eta: "~2–3 horas",
+    description: "Dataset completo. Ideal para pesquisa de mercado amplo.",
   },
 ];
 
