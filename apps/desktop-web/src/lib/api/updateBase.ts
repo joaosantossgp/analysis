@@ -85,30 +85,55 @@ export function isTerminalRefreshJob(job: RefreshJobStatus | null | undefined): 
   );
 }
 
+/**
+ * Continuous, phase-aware progress for a refresh job.
+ *
+ * Each stage owns a contiguous sub-range of overall progress and the actual
+ * processed/queued fraction interpolates within that sub-range. Adjacent
+ * stages share boundary values (e.g. process_data ends at 80, persist_reports
+ * starts at 80) so transitioning between stages NEVER causes a discrete jump
+ * in the rendered percentage.
+ *
+ * If `queued` is unknown (still planning), progress holds at the floor of the
+ * current stage rather than faking precision.
+ */
 export function refreshProgress(job: RefreshJobStatus | null | undefined): number {
   if (!job) return 0;
   if (job.state === "success") return 100;
-  const queued = Math.max(1, Number(job.queued || 0));
-  const processedPct = Math.round((Number(job.processed || 0) / queued) * 100);
-  const stageFloor = stageProgressFloor(job.stage);
-  return Math.max(0, Math.min(99, Math.max(processedPct, stageFloor)));
+
+  const queued = Number(job.queued || 0);
+  const processed = Number(job.processed || 0);
+  const innerFrac = queued > 0 ? Math.min(1, Math.max(0, processed / queued)) : 0;
+
+  const [lo, hi] = stageRange(job.stage);
+  if (hi === 0) {
+    // Unknown / no stage yet — fall back to processed/queued ratio if known.
+    if (queued <= 0) return 0;
+    return clampProgress(Math.round((processed / queued) * 100));
+  }
+  return clampProgress(Math.round(lo + innerFrac * (hi - lo)));
 }
 
-function stageProgressFloor(stage: string | null | undefined): number {
+function stageRange(stage: string | null | undefined): [number, number] {
   switch (stage) {
     case "planning":
-      return 8;
+      return [0, 5];
     case "download_extract":
-      return 35;
+      return [5, 50];
     case "process_data":
-      return 58;
+      return [50, 80];
     case "persist_reports":
-      return 82;
+      return [80, 95];
     case "finalizing":
-      return 95;
+      return [95, 99];
     default:
-      return 0;
+      return [0, 0];
   }
+}
+
+function clampProgress(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(99, value));
 }
 
 export async function fetchBaseHealth(params: {

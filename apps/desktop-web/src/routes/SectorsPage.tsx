@@ -262,7 +262,7 @@ function SectorRow({
       </td>
       <td className="px-3 py-2 text-xs">
         <Link
-          to={`/?sector=${encodeURIComponent(item.sector_slug)}`}
+          to={`/empresas?sector=${encodeURIComponent(item.sector_slug)}`}
           className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-300 hover:border-cyan-700 hover:text-cyan-300"
         >
           View companies →

@@ -188,9 +188,8 @@ function RuntimeCard({ status }: { status: AppStatusPayload }) {
         {warningCount === 1 ? "" : "s"}.
       </p>
       <p className="mt-2 text-[11px] leading-relaxed text-zinc-500">
-        Packaged desktop uses only the Vite UI. The legacy Next/Node runtime is
-        no longer bundled, and no <span className="font-mono text-zinc-300">node.exe</span>{" "}
-        process is expected.
+        Packaged desktop uses only the Vite UI. The legacy web runtime is no
+        longer bundled, and no bundled Node process is expected.
       </p>
     </Card>
   );

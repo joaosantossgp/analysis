@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useState, type ReactNode } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 
 import { DeltaBadge } from "@/components/data/DeltaBadge";
@@ -102,7 +102,6 @@ function CompanyReferenceWorkspace({
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0 space-y-4">
-          <WorkspaceLinksPanel cdCvm={cdCvm} />
           <KpiHistoryPanel
             yearsQuery={yearsQuery}
             kpiQuery={kpiQuery}
@@ -123,66 +122,6 @@ function CompanyReferenceWorkspace({
         </aside>
       </div>
     </div>
-  );
-}
-
-function WorkspaceLinksPanel({ cdCvm }: { cdCvm: number }) {
-  return (
-    <Panel
-      dense
-      headingLevel={2}
-      title="Reference workspace"
-      subtitle="CVM company dossier"
-    >
-      <div className="grid gap-2 sm:grid-cols-2">
-        <ReferenceLink to={`/empresas/${cdCvm}/indicadores`} glyph="λ">
-          Indicadores
-        </ReferenceLink>
-        <ReferenceLink to={`/empresas/${cdCvm}/demonstrativos`} glyph="▤">
-          Demonstrativos
-        </ReferenceLink>
-      </div>
-    </Panel>
-  );
-}
-
-function ReferenceLink({
-  to,
-  glyph,
-  children,
-}: {
-  to: string;
-  glyph: string;
-  children: ReactNode;
-}) {
-  return (
-    <Link
-      to={to}
-      className="focus-visible:outline focus-visible:outline-1"
-      style={{
-        alignItems: "center",
-        background: "var(--color-surface-1)",
-        border: "1px solid var(--color-border-default)",
-        borderRadius: "var(--radius-sm)",
-        color: "var(--color-text-primary)",
-        display: "flex",
-        fontSize: "var(--text-sm)",
-        gap: 10,
-        minHeight: 36,
-        outlineColor: "var(--color-border-focus)",
-        padding: "8px 10px",
-        textDecoration: "none",
-      }}
-    >
-      <span
-        aria-hidden="true"
-        className="font-mono"
-        style={{ color: "var(--color-action-primary)", fontSize: "var(--text-md)" }}
-      >
-        {glyph}
-      </span>
-      <span>{children}</span>
-    </Link>
   );
 }
 

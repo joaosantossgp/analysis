@@ -190,7 +190,7 @@ function BodyHeader({
         </select>
         {sectorSlug && (
           <Link
-            to={`/?sector=${encodeURIComponent(sectorSlug)}`}
+            to={`/empresas?sector=${encodeURIComponent(sectorSlug)}`}
             className="ml-2 rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-300 hover:border-cyan-700 hover:text-cyan-300"
           >
             Open in directory →
