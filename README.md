@@ -43,7 +43,7 @@ The authoritative runtime is the packaged Windows desktop executable. The public
 - **Vite + React + TypeScript** under `apps/desktop-web/` builds to a static SPA served from a local loopback HTTP server. This is the only packaged desktop UI runtime.
 - **FastAPI (`apps/api/`)** remains in source as an HTTP API/development backend adapter and API test surface. It is not started or packaged by the desktop runtime.
 
-The Phase 3 sequence ported every P0 production screen into Vite (statements, KPIs, sectors, Excel export, refresh, status/updater). Phase 4 (`v0.14.0`) made Vite the default. Phase 5B (`v0.15.0`) removed the desktop-packaged Node runtime. The old source-only Next.js app was later removed from the active tree to avoid ambiguity. Phase 6 (`v0.17.0`) completed the final product hardening audit, standardized KPI/monospaced styling, and finalized the stable release pass. See `docs/migration/` for historical detail.
+The Phase 3 sequence ported every P0 production screen into Vite (statements, KPIs, sectors, Excel export, refresh, status/updater). Phase 4 (`v0.14.0`) made Vite the default. Phase 5B (`v0.15.0`) removed the desktop-packaged Node runtime. The old source-only Next.js app was later removed from the active tree to avoid ambiguity. Phase 6 (`v0.17.0`) completed the final product hardening audit, standardized KPI/monospaced styling, and finalized the stable release pass. See `docs/archive/migration/` for historical detail.
 
 ## Active Application Source of Truth
 
@@ -191,9 +191,9 @@ The desktop runtime migration is complete as of v0.17.0. All phases are released
 
 See:
 
-- [docs/migration/README.md](docs/migration/README.md) — phase tracker
-- [docs/migration/PHASE_0_USER_DATA_SAFETY.md](docs/migration/PHASE_0_USER_DATA_SAFETY.md) — Phase 0 spec and validation
-- [docs/migration/NEXT_AGENT_HANDOFF.md](docs/migration/NEXT_AGENT_HANDOFF.md) — detailed phase history (historical; migration complete as of v0.17.0)
+- [docs/archive/migration/README.md](docs/archive/migration/README.md) — phase tracker
+- [docs/archive/migration/PHASE_0_USER_DATA_SAFETY.md](docs/archive/migration/PHASE_0_USER_DATA_SAFETY.md) — Phase 0 spec and validation
+- [docs/archive/migration/NEXT_AGENT_HANDOFF.md](docs/archive/migration/NEXT_AGENT_HANDOFF.md) — detailed phase history (historical; migration complete as of v0.17.0)
 
 ## Repository Structure
 
@@ -225,7 +225,7 @@ Key docs: [docs/COMO_RODAR.md](docs/COMO_RODAR.md) (run guide) · [docs/DESIGN.m
 
 **"I want to change the HTTP API"** → `apps/api/` (FastAPI) and shared read logic in `src/`. The API is not the desktop UI and does not affect pywebview routing unless a bridge/API contract also changes. Read `docs/reference/v2-api-contract.md` before modifying any API contract.
 
-**"Which docs are current vs historical?"** → `docs/active-project-map.md` and `docs/reference/repository-map.md` for the active map. Short answer: `docs/reference/` and `docs/decisions/` are active only when they do not conflict with the active Vite desktop map. `docs/migration/` is completed history.
+**"Which docs are current vs historical?"** → `docs/active-project-map.md` and `docs/reference/repository-map.md` for the active map. Short answer: `docs/reference/` and `docs/decisions/` are active only when they do not conflict with the active Vite desktop map. `docs/archive/migration/` is completed history.
 
 **What not to touch casually:**
 - `desktop/app.spec` — PyInstaller spec; a wrong entry produces a broken EXE

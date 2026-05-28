@@ -53,14 +53,14 @@ Single-stop orientation for contributors and AI agents. Maps every top-level fol
 | Cluster | Files | Status | Notes |
 |---|---|---|---|
 | **CI data pipeline** | `atualizar_todos.py`, `atualizar_dados.ps1`, `batch_completo.py`, `restaurar_historico.py`, `setup_db.py`, `setup_companies_table.py`, `seed_catalog.py` | Active | Referenced from `.github/workflows/*.yml`. High-risk — breaking these breaks CI. |
-| **Desktop diagnostics / dev** | `runtime_doctor.py`, `bootstrap_windows.ps1`, `smoke_validate.py`, `update_base_smoke.py`, `phase1_pywebview_smoke.py`, `db_portability_smoke.py`, `canonicalize_data_layout.py` | Active | Referenced from `README.md`, `COMO_RODAR.md`, `docs/migration/`. |
+| **Desktop diagnostics / dev** | `runtime_doctor.py`, `bootstrap_windows.ps1`, `smoke_validate.py`, `update_base_smoke.py`, `phase1_pywebview_smoke.py`, `db_portability_smoke.py`, `canonicalize_data_layout.py` | Active | Referenced from `README.md`, `COMO_RODAR.md`, `docs/archive/migration/`. |
 | **Data utilities** | `import_company_gics.py`, `backfill_company_gics.py`, `build_canonical_dict.py`, `expand_tickers.py` | Active | Manual maintenance tools. `build_canonical_dict.py` is wired into `src/standardizer.py` error path. |
 | **Excel-export manual QA** | `quick_verify.py`, `verify_consolidation.py`, `verify_line_id_base.py`, `final_verification.py`, `workbook_paths.py` | Active manual QA | Documented in `COMO_RODAR.md` §8. Never CI. `final_verification.py` is a historical bug-fix regression check. |
 | **MOTW / release validation (reusable)** | `test_motw_explorer.ps1`, `test_motw_launch.ps1`, `test_motw_strip.py` | Active | Generic harness, parameterized by ZIP path. Use for any current release. |
 | **Performance benchmarks** | `benchmark_read_paths.py`, `benchmark_real_read_paths.py` | Active manual QA | Query/read-path benchmarks. No Next.js route guardrail remains active. |
 | **pytest-discovered tests in `scripts/`** | `test_motw_strip.py`, `test_seed_catalog.py`, `test_update_base_smoke.py` | Active | Discovered via `pytest.ini` `testpaths = tests scripts`. Moving these requires updating `pytest.ini`. |
 | **Dev tooling** | `pr_complete.ps1`, `fix-git-config.ps1`, `worktree_create.ps1`, `worktree_remove.ps1`, `worktree_status.ps1` | Active | Git / worktree helpers. Referenced from `AGENTS.md`, `docs/reference/autonomous-mode.md`. |
-| **Archived (moved out of `scripts/`)** | `docs/migration/legacy-release-validation/test_ci_v033_motw.ps1`, `.../test_ci_v034_full.ps1` | Historical | Version-pinned to v0.3.3 / v0.3.4. Cannot be re-run against current releases. Kept under `docs/migration/` for historical reference. |
+| **Archived (moved out of `scripts/`)** | `docs/archive/migration/legacy-release-validation/test_ci_v033_motw.ps1`, `.../test_ci_v034_full.ps1` | Historical | Version-pinned to v0.3.3 / v0.3.4. Cannot be re-run against current releases. Kept under `docs/archive/migration/` for historical reference. |
 | **Removed (obsolete)** | `calc_financial_kpis.py`, `patch_database_sectors_v2.py`, `gerar_base_analitica.py`, `perf_guardrail.py`, `seed_web_smoke_db.py` | Deleted | Superseded by active core logic or removed with the legacy Next.js app. |
 
 ---
@@ -110,18 +110,18 @@ These documents record the completed multi-phase migration from Next/Node to Vit
 
 | Path | What it covers |
 |---|---|
-| `docs/migration/README.md` | Phase tracker overview. All phases released. |
-| `docs/migration/NEXT_AGENT_HANDOFF.md` | Primary handoff doc for the migration. Migration is complete as of v0.17.0. |
-| `docs/migration/ARCHITECTURE.md` | Current architecture map + historical Phase 2 snapshot. The "Current" section is still accurate. |
-| `docs/migration/PHASE_0_*.md` | Phase 0 release checkpoint and user data safety spec. |
-| `docs/migration/PHASE_1_VITE_SHELL.md` | Phase 1 Vite SPA shell implementation. |
-| `docs/migration/PHASE_2_VITE_RUNTIME.md` | Phase 2 opt-in Vite runtime. |
-| `docs/migration/PHASE_3_*.md` | Phase 3 parity matrix and incremental slice plans. |
-| `docs/migration/PHASE_5_LEGACY_DELETION_AUDIT.md` | Phase 5A deletion audit. |
-| `docs/migration/PHASE_5C_SOURCE_LEGACY_CLEANUP.md` | Phase 5C source cleanup decision. |
-| `docs/migration/PHASE_6C_STABLE_RELEASE_PASS.md` | Phase 6C stable release pass. |
-| `docs/migration/PHASE_6_FINAL_HARDENING_AUDIT.md` | Phase 6 final hardening audit. |
-| `docs/migration/SMOKE_RECIPES.md` | Smoke test recipes used during migration. Still useful for ad-hoc validation. |
+| `docs/archive/migration/README.md` | Phase tracker overview. All phases released. |
+| `docs/archive/migration/NEXT_AGENT_HANDOFF.md` | Primary handoff doc for the migration. Migration is complete as of v0.17.0. |
+| `docs/archive/migration/ARCHITECTURE.md` | Current architecture map + historical Phase 2 snapshot. The "Current" section is still accurate. |
+| `docs/archive/migration/PHASE_0_*.md` | Phase 0 release checkpoint and user data safety spec. |
+| `docs/archive/migration/PHASE_1_VITE_SHELL.md` | Phase 1 Vite SPA shell implementation. |
+| `docs/archive/migration/PHASE_2_VITE_RUNTIME.md` | Phase 2 opt-in Vite runtime. |
+| `docs/archive/migration/PHASE_3_*.md` | Phase 3 parity matrix and incremental slice plans. |
+| `docs/archive/migration/PHASE_5_LEGACY_DELETION_AUDIT.md` | Phase 5A deletion audit. |
+| `docs/archive/migration/PHASE_5C_SOURCE_LEGACY_CLEANUP.md` | Phase 5C source cleanup decision. |
+| `docs/archive/migration/PHASE_6C_STABLE_RELEASE_PASS.md` | Phase 6C stable release pass. |
+| `docs/archive/migration/PHASE_6_FINAL_HARDENING_AUDIT.md` | Phase 6 final hardening audit. |
+| `docs/archive/migration/SMOKE_RECIPES.md` | Smoke test recipes used during migration. Still useful for ad-hoc validation. |
 
 ### API docs — describe `apps/api/`, not the desktop UI
 

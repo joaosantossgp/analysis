@@ -49,7 +49,7 @@ pytest apps/api/tests -q
 
 - Do not create or modify Next.js routes, pages, layouts, API routes, or
   components.
-- Do not infer architecture from `archive/`, `docs/migration/`, release notes,
+- Do not infer architecture from `archive/`, `docs/archive/migration/`, release notes,
   or old ADR context. Those paths can contain historical references.
 - Inspect `apps/desktop-web`, `desktop/`, `src/`, and `apps/api` before changing
   UI/runtime/backend behavior.
