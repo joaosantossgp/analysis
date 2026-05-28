@@ -213,6 +213,8 @@ config/           canonical_accounts.csv — CVM account mapping (referenced by 
 
 See [docs/reference/repository-map.md](docs/reference/repository-map.md) for a full folder, workflow, and documentation status map.
 
+Key docs: [docs/COMO_RODAR.md](docs/COMO_RODAR.md) (run guide) · [docs/DESIGN.md](docs/DESIGN.md) (design system) · [docs/PRODUCT.md](docs/PRODUCT.md) (product brief).
+
 ## Contributor Orientation
 
 **"I want to change the desktop UI"** → `apps/desktop-web/src/`. Read `docs/skills/CVMANALYTICS_VITE_UI_SKILL.md` first. Run `python -m desktop.app --dev` to see changes live. Components call Python exclusively through `lib/bridge/adapter.ts` — never call `window.pywebview.api` directly.

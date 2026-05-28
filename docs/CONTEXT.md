@@ -137,11 +137,13 @@ cvm_repots_capture/
 |   |-- decisions/              # ADRs
 |   |-- governance/             # Autonomous-mode contract
 |   |-- reference/              # Docs de referencia ativos
+|   |-- COMO_RODAR.md           # Tutorial passo a passo
+|   |-- DESIGN.md               # Design system / tokens
+|   |-- PRODUCT.md              # Product brief
 |   `-- vendor/                 # Manuais CVM (PDF/XLS) para leitura humana
 |-- main.py                     # Entrypoint CLI
 |-- AGENTS.md                   # Regras operacionais para agentes
-|-- README.md                   # Overview do projeto
-`-- COMO_RODAR.md               # Tutorial passo a passo
+`-- README.md                   # Overview do projeto
 ```
 
 ---

@@ -40,9 +40,6 @@ Single-stop orientation for contributors and AI agents. Maps every top-level fol
 |---|---|
 | `README.md` | Main project overview. Start here. |
 | `AGENTS.md` | AI agent operating contract. AI agents read this first. |
-| `COMO_RODAR.md` | Dev run guide (Portuguese). Practical startup steps. |
-| `DESIGN.md` | Design system tokens + visual principles. |
-| `PRODUCT.md` | Product brief: users, purpose, brand, design principles. |
 | `main.py` | Headless CLI refresh entry point. |
 | `conftest.py` | pytest shared fixtures. Must stay at root for test discovery. |
 | `pytest.ini` | pytest discovery config. Must stay at root. |
@@ -103,9 +100,9 @@ Single-stop orientation for contributors and AI agents. Maps every top-level fol
 | `docs/perf/polars-benchmark.md` | **Benchmark report.** Issue #110 — Polars vs Pandas comparison on the CVM ingestion pipeline. |
 | `docs/releases/` | Release notes per version. See `docs/releases/README.md` for the index and known coverage gaps. |
 | `AGENTS.md` | AI agent operating contract. |
-| `COMO_RODAR.md` | Practical dev/run guide. |
-| `DESIGN.md` | Design system tokens + brand principles. |
-| `PRODUCT.md` | Product brief. |
+| `docs/COMO_RODAR.md` | Practical dev/run guide. |
+| `docs/DESIGN.md` | Design system tokens + brand principles. |
+| `docs/PRODUCT.md` | Product brief. |
 
 ### Historical — completed migration phases
 

@@ -37,7 +37,7 @@ Merges two workflows: **co-authoring** (gather context → build section by sect
 ### Root — keep only these
 - `README.md` — first thing anyone reads after cloning
 - `CLAUDE.md` — Claude Code reads this from root (required)
-- `COMO_RODAR.md` — user tutorial, stays discoverable
+- `docs/COMO_RODAR.md` — user tutorial (moved under docs/)
 - `requirements.txt`, `pytest.ini`, `main.py`, entry-point `.py` files
 
 ### Move to `docs/`
@@ -141,7 +141,7 @@ Where data lives, what format, rough size.
 [Completed priorities] → [Next priorities]
 ```
 
-### COMO_RODAR.md (root — user-facing tutorial)
+### docs/COMO_RODAR.md (user-facing tutorial)
 ```markdown
 # Como Rodar
 
@@ -262,7 +262,7 @@ Is it required by a tool at a fixed path? (pytest.ini, CLAUDE.md)
   No ↓
 
 Is it a user-facing tutorial or quickstart?
-  Yes → root (COMO_RODAR.md)
+  Yes → docs/ (docs/COMO_RODAR.md)
   No ↓
 
 Is it a reference doc, architecture note, or audit record?

@@ -154,7 +154,7 @@ Each task type has a minimal extra rule on top of the principles. Match the mode
 ## 6. Source-of-truth pointers
 
 - `README.md` — project overview
-- `COMO_RODAR.md` — how to run locally (Portuguese, operational)
+- `docs/COMO_RODAR.md` — how to run locally (Portuguese, operational)
 - `docs/CONTEXT.md` — domain rules for `src/` and `apps/api/`
 - `docs/decisions/` — ADRs (durable architectural decisions)
 - `docs/active-project-map.md` — concise active path and command map

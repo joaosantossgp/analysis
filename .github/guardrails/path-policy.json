@@ -38,7 +38,7 @@
       "config/**",
       "AGENTS.md",
       "README.md",
-      "COMO_RODAR.md",
+      "docs/COMO_RODAR.md",
       "landing/**",
       "pytest.ini",
       "railway.toml",
@@ -54,7 +54,7 @@
       "patterns": [
         "AGENTS.md",
         "README.md",
-        "COMO_RODAR.md",
+        "docs/COMO_RODAR.md",
         "docs/governance/**",
         ".claude/launch.json",
         ".claude/settings.json",
