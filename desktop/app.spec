@@ -60,6 +60,8 @@ a = Analysis(
         "webview.platforms.edgechromium",
         # bridge e deps lazy-importadas
         "desktop.bridge",
+        # provenance gerado por build_desktop.ps1 (import condicional em bridge.py)
+        "desktop._build_info",
         "src.read_service",
         "src.db",
         # clr/pythonnet necessário para pywebview no Windows

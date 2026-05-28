@@ -53,6 +53,20 @@ jobs:
         run: |
           .\desktop\build_desktop.ps1 -Version "${{ steps.ver.outputs.VERSION }}"
 
+      - name: Verify bundled version matches tag
+        shell: pwsh
+        run: |
+          $expected = "${{ steps.ver.outputs.VERSION }}"
+          $line = (Get-Content desktop\__version__.py -Raw)
+          if ($line -notmatch '__version__\s*=\s*"([^"]+)"') {
+            throw "Could not parse __version__ from desktop\__version__.py"
+          }
+          $bundled = $Matches[1]
+          Write-Host "[release] expected=$expected bundled=$bundled"
+          if ($bundled -ne $expected) {
+            throw "Version drift: bundled __version__ '$bundled' != release tag '$expected'. Aborting release."
+          }
+
       - name: Package release artifact
         id: pkg
         shell: pwsh

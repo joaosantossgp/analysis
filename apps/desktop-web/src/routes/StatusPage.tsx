@@ -183,6 +183,12 @@ function RuntimeCard({ status }: { status: AppStatusPayload }) {
     >
       <dl className="grid gap-3 text-sm sm:grid-cols-2">
         <Field label="Version" value={runtime.version} mono />
+        {runtime.build_commit && (
+          <Field label="Build commit" value={runtime.build_commit} mono />
+        )}
+        {runtime.build_time && (
+          <Field label="Build time" value={formatDateTime(runtime.build_time)} />
+        )}
         <Field label="Mode" value={modeLabel} />
         <Field label="Bridge" value={runtime.bridge_status} tone={runtime.bridge_status === "ready" ? "good" : "warn"} />
         <Field label="Packaged" value={runtime.frozen ? "yes" : "no"} />

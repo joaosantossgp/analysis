@@ -502,6 +502,8 @@ export type LockStatusPayload = {
 
 export type AppRuntimeStatus = {
   version: string;
+  build_commit?: string | null;
+  build_time?: string | null;
   runtime_mode: "vite" | "vite-dev" | "vite-dev-release-data" | "mock" | "unknown" | string;
   bridge_status: "ready" | "error" | "unknown" | string;
   frozen: boolean;

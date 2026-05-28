@@ -1342,7 +1342,11 @@ class CVMBridge:
 
         def _run() -> None:
             try:
-                from desktop.updater import UpdateChecker  # noqa: PLC0415
+                from desktop.updater import UpdateChecker, _log as _update_log  # noqa: PLC0415
+                _update_log(
+                    f"apply_update invoked: version={info.get('version')} "
+                    f"tag={info.get('tag')} zip_url={info.get('zip_url')}"
+                )
                 checker = UpdateChecker()
 
                 def _progress(status: str, percent: int) -> None:
@@ -1361,6 +1365,11 @@ class CVMBridge:
                     w.destroy()
 
             except Exception as exc:
+                try:
+                    from desktop.updater import _log as _update_log  # noqa: PLC0415
+                    _update_log(f"ERROR apply_update failed: {exc}")
+                except Exception:
+                    pass
                 with self._update_lock:
                     self._update_progress = {"status": "error", "percent": 0, "error": str(exc)}
 
@@ -1403,9 +1412,13 @@ class CVMBridge:
             recent = self._collect_recent_diagnostics(paths, database)
             from desktop import lockfile as _lockfile  # noqa: PLC0415
 
+            build_commit, build_time = self._build_provenance()
+
             return self._sanitize_for_json({
                 "runtime": {
                     "version": __version__,
+                    "build_commit": build_commit,
+                    "build_time": build_time,
                     "runtime_mode": self._runtime_mode(),
                     "bridge_status": "ready",
                     "frozen": bool(getattr(sys, "frozen", False)),
@@ -1495,6 +1508,20 @@ class CVMBridge:
         if isinstance(value, str):
             return value.strip().lower() in {"1", "true", "yes", "sim", "on"}
         return bool(value)
+
+    @staticmethod
+    def _build_provenance() -> tuple[str | None, str | None]:
+        """Return (build_commit, build_time) written by build_desktop.ps1.
+
+        Generated builds ship desktop/_build_info.py. Dev runs have no such
+        file, so a missing module reports (None, None) rather than failing.
+        """
+        try:
+            from desktop._build_info import build_commit, build_time  # noqa: PLC0415
+
+            return (build_commit or None, build_time or None)
+        except Exception:
+            return (None, None)
 
     @staticmethod
     def _runtime_mode() -> str:

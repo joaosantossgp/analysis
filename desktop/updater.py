@@ -30,6 +30,21 @@ _APPDATA_DIR = Path(os.environ.get("LOCALAPPDATA", tempfile.gettempdir())) / "CV
 _SNOOZE_FILE = _APPDATA_DIR / "snooze.json"
 _VERSIONS_DIR = _APPDATA_DIR / "versions"
 _SNOOZE_DAYS = 7
+# Shared with update_helper.ps1 ($LogPath) and tailed by the Status page
+# (bridge._collect_recent_diagnostics). The whole install flow logs here so a
+# failure remains inspectable after the app process exits.
+_UPDATE_LOG = _APPDATA_DIR / "update_error.log"
+
+
+def _log(message: str) -> None:
+    """Best-effort append to the persistent update log. Never raises."""
+    try:
+        _APPDATA_DIR.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        with _UPDATE_LOG.open("a", encoding="utf-8") as fh:
+            fh.write(f"[{ts}] {message}\n")
+    except Exception:
+        pass
 
 
 def _parse_version(tag: str) -> tuple[int, ...]:
@@ -202,6 +217,8 @@ class UpdateChecker:
         zip_path = tmp_dir / zip_name
         sha256_path = tmp_dir / f"{zip_name}.sha256"
 
+        _log(f"download_and_stage start: version={version} asset={zip_name} url={zip_url}")
+        _log(f"download dest={zip_path}")
         progress_cb("downloading", 0)
         self._download_file(zip_url, zip_path, progress_cb)
 
@@ -217,6 +234,7 @@ class UpdateChecker:
 
         progress_cb("extracting", 92)
         dest = _VERSIONS_DIR / version
+        _log(f"extracting to staging dir={dest}")
         try:
             if dest.exists():
                 import shutil
@@ -224,14 +242,21 @@ class UpdateChecker:
             dest.mkdir(parents=True, exist_ok=True)
             with zipfile.ZipFile(zip_path) as zf:
                 zf.extractall(dest)
-        except Exception:
+        except Exception as exc:
             import shutil
             shutil.rmtree(dest, ignore_errors=True)
+            _log(f"ERROR extraction_failed: {exc}")
             raise RuntimeError("extraction_failed")
         finally:
             zip_path.unlink(missing_ok=True)
             sha256_path.unlink(missing_ok=True)
 
+        staged_exe = dest / "CVMAnalytics.exe"
+        staged_internal = dest / "_internal"
+        _log(
+            f"staged ready: dir={dest} exe_exists={staged_exe.exists()} "
+            f"internal_exists={staged_internal.exists()}"
+        )
         progress_cb("ready", 100)
         return dest
 
@@ -242,21 +267,36 @@ class UpdateChecker:
         """
         current_dir = self._current_exe_dir()
         helper = self._get_helper_path()
+        target_exe = current_dir / "CVMAnalytics.exe"
 
-        subprocess.Popen(
-            [
-                "powershell.exe",
-                "-NonInteractive",
-                "-ExecutionPolicy", "Bypass",
-                "-File", str(helper),
-                str(staged_path),
-                str(current_dir),
-            ],
-            creationflags=(
-                subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
-            ),
-            close_fds=True,
+        _log(
+            f"spawn_helper: helper={helper} helper_exists={helper.exists()} "
+            f"staged={staged_path} current_dir={current_dir} "
+            f"relaunch_target={target_exe}"
         )
+        if not helper.exists():
+            _log("ERROR helper script not found in bundle; app will close without relaunch")
+            raise RuntimeError("update_helper_missing")
+
+        try:
+            subprocess.Popen(
+                [
+                    "powershell.exe",
+                    "-NonInteractive",
+                    "-ExecutionPolicy", "Bypass",
+                    "-File", str(helper),
+                    str(staged_path),
+                    str(current_dir),
+                ],
+                creationflags=(
+                    subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+                ),
+                close_fds=True,
+            )
+        except Exception as exc:
+            _log(f"ERROR failed to spawn update helper: {exc}")
+            raise
+        _log("helper spawned (detached); app exiting shortly")
 
     # ------------------------------------------------------------------
     # Private helpers

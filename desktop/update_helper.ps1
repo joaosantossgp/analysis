@@ -38,6 +38,8 @@ function Write-UpdateLog {
     }
 }
 
+Write-UpdateLog "helper started: New=$New Current=$Current PID=$PID"
+
 # Give the parent process time to fully exit before touching its files.
 Start-Sleep -Seconds 3
 
@@ -83,7 +85,13 @@ try {
         }
     }
 
-    Start-Process -FilePath (Join-Path $Current "CVMAnalytics.exe")
+    $relaunchExe = Join-Path $Current "CVMAnalytics.exe"
+    if (-not (Test-Path $relaunchExe)) {
+        throw "relaunch target not found after swap: $relaunchExe"
+    }
+    Write-UpdateLog "swap complete; relaunching: $relaunchExe"
+    Start-Process -FilePath $relaunchExe -WorkingDirectory $Current
+    Write-UpdateLog "relaunch issued OK"
 } catch {
     Write-UpdateLog ("ERROR: " + $_.Exception.Message)
     # On failure: rollback dir is left in place for manual recovery; current install untouched
