@@ -117,11 +117,11 @@ pip install -r apps/api/requirements-dev.txt
 cd apps/desktop-web && npm install && cd ../..
 
 # Initialize the dev DB (repo-relative path used in dev mode)
-python scripts/setup_db.py
-python scripts/setup_companies_table.py
+python scripts/setup/setup_db.py
+python scripts/setup/setup_companies_table.py
 
 # Validate environment
-python scripts/runtime_doctor.py --require-canonical
+python scripts/diagnostics/runtime_doctor.py --require-canonical
 
 # Run the desktop app in dev mode against the Vite dev server
 python -m desktop.app --dev

@@ -44,20 +44,20 @@ Dry-run is the default. It validates the CSV, matches by `cd_cvm`, writes a
 report, and does not update the database:
 
 ```powershell
-python scripts/import_company_gics.py
+python scripts/data/import_company_gics.py
 ```
 
 Apply mode is explicit:
 
 ```powershell
-python scripts/import_company_gics.py --apply
+python scripts/data/import_company_gics.py --apply
 ```
 
 Sanity-check mode does not require the CSV. It checks the current schema,
 company table size, current GICS counts, and writes the same report file:
 
 ```powershell
-python scripts/import_company_gics.py --check
+python scripts/data/import_company_gics.py --check
 ```
 
 The report is written to:
@@ -107,9 +107,9 @@ larger than `companies`.
 If the universe is incomplete, seed or reconcile `companies` first, then rerun:
 
 ```powershell
-python scripts/seed_catalog.py --dry-run
-python scripts/seed_catalog.py
-python scripts/import_company_gics.py --check
+python scripts/data/seed_catalog.py --dry-run
+python scripts/data/seed_catalog.py
+python scripts/data/import_company_gics.py --check
 ```
 
 ## Safety Warning

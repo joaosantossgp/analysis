@@ -96,7 +96,7 @@ cd <repo root>
 python -m desktop.app
 ```
 
-This serves the built static assets from `apps/desktop-web/dist/` over a loopback HTTP server and opens them inside pywebview with the real `CVMBridge()` attached. For live Vite dev-server testing, use `python scripts/phase1_pywebview_smoke.py --manual`.
+This serves the built static assets from `apps/desktop-web/dist/` over a loopback HTTP server and opens them inside pywebview with the real `CVMBridge()` attached. For live Vite dev-server testing, use `python scripts/diagnostics/phase1_pywebview_smoke.py --manual`.
 
 ## Build
 
@@ -126,7 +126,7 @@ python -m desktop.app --dev
 python -m desktop.app
 
 # dev with live reload (Vite dev server + pywebview, interactive)
-python scripts/phase1_pywebview_smoke.py --manual
+python scripts/diagnostics/phase1_pywebview_smoke.py --manual
 ```
 
 In default / `--vite` mode:

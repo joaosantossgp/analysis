@@ -21,7 +21,7 @@ export type CompanyFiltersResult =
   | { mode: "browser"; sectors: []; reason: string };
 
 const BROWSER_REASON =
-  "Running in browser mode — pywebview bridge is unavailable. Launch via the pywebview smoke (scripts/phase1_pywebview_smoke.py) or the packaged exe to see real company data.";
+  "Running in browser mode — pywebview bridge is unavailable. Launch via the pywebview smoke (scripts/diagnostics/phase1_pywebview_smoke.py) or the packaged exe to see real company data.";
 
 /**
  * Fetch a paginated company directory page.

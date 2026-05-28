@@ -50,17 +50,20 @@ Single-stop orientation for contributors and AI agents. Maps every top-level fol
 
 ## `scripts/` Cluster Overview
 
-| Cluster | Files | Status | Notes |
+Scripts are grouped into six purpose subfolders. Every `.py` resolves the repo
+root via a `parent.parent.parent` offset (three levels up from `scripts/<sub>/`);
+QA scripts share `workbook_paths.py` via sibling import, so they stay co-located.
+
+| Subfolder | Files | Status | Notes |
 |---|---|---|---|
-| **CI data pipeline** | `atualizar_todos.py`, `atualizar_dados.ps1`, `batch_completo.py`, `restaurar_historico.py`, `setup_db.py`, `setup_companies_table.py`, `seed_catalog.py` | Active | Referenced from `.github/workflows/*.yml`. High-risk — breaking these breaks CI. |
-| **Desktop diagnostics / dev** | `runtime_doctor.py`, `bootstrap_windows.ps1`, `smoke_validate.py`, `update_base_smoke.py`, `phase1_pywebview_smoke.py`, `db_portability_smoke.py`, `canonicalize_data_layout.py` | Active | Referenced from `README.md`, `COMO_RODAR.md`, `docs/archive/migration/`. |
-| **Data utilities** | `import_company_gics.py`, `backfill_company_gics.py`, `build_canonical_dict.py`, `expand_tickers.py` | Active | Manual maintenance tools. `build_canonical_dict.py` is wired into `src/standardizer.py` error path. |
-| **Excel-export manual QA** | `quick_verify.py`, `verify_consolidation.py`, `verify_line_id_base.py`, `final_verification.py`, `workbook_paths.py` | Active manual QA | Documented in `COMO_RODAR.md` §8. Never CI. `final_verification.py` is a historical bug-fix regression check. |
-| **MOTW / release validation (reusable)** | `test_motw_explorer.ps1`, `test_motw_launch.ps1`, `test_motw_strip.py` | Active | Generic harness, parameterized by ZIP path. Use for any current release. |
-| **Performance benchmarks** | `benchmark_read_paths.py`, `benchmark_real_read_paths.py` | Active manual QA | Query/read-path benchmarks. No Next.js route guardrail remains active. |
-| **pytest-discovered tests in `scripts/`** | `test_motw_strip.py`, `test_seed_catalog.py`, `test_update_base_smoke.py` | Active | Discovered via `pytest.ini` `testpaths = tests scripts`. Moving these requires updating `pytest.ini`. |
-| **Dev tooling** | `pr_complete.ps1`, `fix-git-config.ps1`, `worktree_create.ps1`, `worktree_remove.ps1`, `worktree_status.ps1` | Active | Git / worktree helpers. Referenced from `AGENTS.md`, `docs/reference/autonomous-mode.md`. |
-| **Archived (moved out of `scripts/`)** | `docs/archive/migration/legacy-release-validation/test_ci_v033_motw.ps1`, `.../test_ci_v034_full.ps1` | Historical | Version-pinned to v0.3.3 / v0.3.4. Cannot be re-run against current releases. Kept under `docs/archive/migration/` for historical reference. |
+| `scripts/data/` | `atualizar_todos.py`, `atualizar_dados.ps1`, `batch_completo.py`, `restaurar_historico.py`, `seed_catalog.py`, `test_seed_catalog.py`, `expand_tickers.py`, `import_company_gics.py`, `backfill_company_gics.py`, `build_canonical_dict.py`, `canonicalize_data_layout.py` | Active | CVM ingestion/maintenance. `atualizar_todos.py`, `batch_completo.py`, `restaurar_historico.py`, `seed_catalog.py` are referenced from `.github/workflows/*.yml` — high-risk, breaking these breaks CI. `build_canonical_dict.py` is wired into `src/standardizer.py` error path. |
+| `scripts/setup/` | `setup_db.py`, `setup_companies_table.py`, `bootstrap_windows.ps1` | Active | DB/env bootstrap. `setup_db.py` is referenced from `refresh.yml`/`seed_catalog.yml`. Listed in path-policy `critical-bootstrap`. |
+| `scripts/diagnostics/` | `runtime_doctor.py`, `smoke_validate.py`, `db_portability_smoke.py`, `update_base_smoke.py`, `test_update_base_smoke.py`, `phase1_pywebview_smoke.py`, `benchmark_read_paths.py`, `benchmark_real_read_paths.py` | Active | Health checks, smokes, perf benchmarks. `runtime_doctor.py`, `smoke_validate.py`, `db_portability_smoke.py` listed in path-policy `critical-bootstrap`. |
+| `scripts/qa/` | `quick_verify.py`, `verify_consolidation.py`, `verify_line_id_base.py`, `final_verification.py`, `workbook_paths.py` | Active manual QA | Excel-export checks. Documented in `docs/COMO_RODAR.md`. All share the `workbook_paths.py` helper via sibling import (must stay co-located). Never CI. |
+| `scripts/release/` | `pr_complete.ps1`, `dev-desktop.ps1`, `dev-desktop-release-data.ps1`, `test_motw_explorer.ps1`, `test_motw_launch.ps1`, `test_motw_strip.py` | Active | Dev launchers, PR helper, MOTW release-validation harness (parameterized by ZIP path). |
+| `scripts/governance/` | `worktree_create.ps1`, `worktree_remove.ps1`, `worktree_status.ps1`, `fix-git-config.ps1` | Active | Git / worktree helpers. Referenced from `AGENTS.md`, `docs/governance/autonomous-mode.md`. |
+| **pytest-discovered tests** | `scripts/data/test_seed_catalog.py`, `scripts/diagnostics/test_update_base_smoke.py`, `scripts/release/test_motw_strip.py` | Active | Discovered via `pytest.ini` `testpaths = tests scripts` (recurses into subfolders). |
+| **Archived (out of `scripts/`)** | `docs/archive/migration/legacy-release-validation/test_ci_v033_motw.ps1`, `.../test_ci_v034_full.ps1` | Historical | Version-pinned to v0.3.3 / v0.3.4. Cannot be re-run against current releases. Kept under `docs/archive/migration/`. |
 | **Removed (obsolete)** | `calc_financial_kpis.py`, `patch_database_sectors_v2.py`, `gerar_base_analitica.py`, `perf_guardrail.py`, `seed_web_smoke_db.py` | Deleted | Superseded by active core logic or removed with the legacy Next.js app. |
 
 ---

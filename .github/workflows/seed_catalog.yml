@@ -35,10 +35,10 @@ jobs:
           python -m pip install -r requirements.txt
 
       - name: Ensure companies schema
-        run: python scripts/setup_db.py --step 2
+        run: python scripts/setup/setup_db.py --step 2
 
       - name: Seed CVM catalog
-        run: python scripts/seed_catalog.py
+        run: python scripts/data/seed_catalog.py
 
       - name: Smoke check - validate counts and ranking
         run: |

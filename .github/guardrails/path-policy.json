@@ -77,11 +77,11 @@
     {
       "name": "critical-bootstrap",
       "patterns": [
-        "scripts/setup_db.py",
-        "scripts/setup_companies_table.py",
-        "scripts/runtime_doctor.py",
-        "scripts/smoke_validate.py",
-        "scripts/db_portability_smoke.py"
+        "scripts/setup/setup_db.py",
+        "scripts/setup/setup_companies_table.py",
+        "scripts/diagnostics/runtime_doctor.py",
+        "scripts/diagnostics/smoke_validate.py",
+        "scripts/diagnostics/db_portability_smoke.py"
       ],
       "ownerLane": "ops-quality",
       "allowedLanes": [

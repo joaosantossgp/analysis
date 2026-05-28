@@ -21,7 +21,7 @@ import pandas as pd
 import requests
 from sqlalchemy import text
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
@@ -147,7 +147,7 @@ def upsert_companies(conn, df: pd.DataFrame, dry_run: bool) -> None:
     try:
         conn.execute(text("SELECT 1 FROM companies LIMIT 1"))
     except Exception:
-        log.error("  Tabela companies nao existe. Execute: python scripts/setup_db.py --step 2")
+        log.error("  Tabela companies nao existe. Execute: python scripts/setup/setup_db.py --step 2")
         return
 
     upsert_sql = text(

@@ -62,7 +62,7 @@ cd ..\..
 
 Sessoes interativas normais NAO usam worktrees, lanes nem `pr_complete.ps1`.
 Edite direto na branch e use `git push` + merge manual/auto. Worktrees,
-`scripts/worktree_create.ps1` e `scripts/pr_complete.ps1` pertencem somente ao
+`scripts/governance/worktree_create.ps1` e `scripts/release/pr_complete.ps1` pertencem somente ao
 modo autonomo (ver `docs/governance/autonomous-mode.md`).
 
 ---
@@ -72,22 +72,22 @@ modo autonomo (ver `docs/governance/autonomous-mode.md`).
 Bootstrap minimo:
 
 ```powershell
-python scripts/runtime_doctor.py --require-canonical
+python scripts/diagnostics/runtime_doctor.py --require-canonical
 ```
 
 Diagnostico completo:
 
 ```powershell
-python scripts/runtime_doctor.py --require-db --table financial_reports --table companies --require-canonical
-python scripts/canonicalize_data_layout.py
-python scripts/db_portability_smoke.py --write-check
+python scripts/diagnostics/runtime_doctor.py --require-db --table financial_reports --table companies --require-canonical
+python scripts/data/canonicalize_data_layout.py
+python scripts/diagnostics/db_portability_smoke.py --write-check
 ```
 
 Validacao de PostgreSQL sem exportar variavel:
 
 ```powershell
-python scripts/runtime_doctor.py --database-url postgresql://user:pass@host:5432/db --require-db --table financial_reports --table companies
-python scripts/db_portability_smoke.py --database-url postgresql://user:pass@host:5432/db --write-check
+python scripts/diagnostics/runtime_doctor.py --database-url postgresql://user:pass@host:5432/db --require-db --table financial_reports --table companies
+python scripts/diagnostics/db_portability_smoke.py --database-url postgresql://user:pass@host:5432/db --write-check
 ```
 
 ---
@@ -97,14 +97,14 @@ python scripts/db_portability_smoke.py --database-url postgresql://user:pass@hos
 Em maquina nova ou depois de migracao:
 
 ```powershell
-python scripts/setup_db.py
-python scripts/setup_companies_table.py
+python scripts/setup/setup_db.py
+python scripts/setup/setup_companies_table.py
 ```
 
 Opcional:
 
 ```powershell
-python scripts/expand_tickers.py --dry-run
+python scripts/data/expand_tickers.py --dry-run
 ```
 
 ---
@@ -133,15 +133,15 @@ python main.py --companies PETROBRAS --start_year 2021 --end_year 2025 --type co
 ### Opcao C - Lote headless
 
 ```powershell
-python scripts/batch_completo.py --dry-run
-python scripts/atualizar_todos.py --anos 2024 2025
+python scripts/data/batch_completo.py --dry-run
+python scripts/data/atualizar_todos.py --anos 2024 2025
 ```
 
 Smoke seguro do fluxo API + bridge da pagina **Atualizar base** (default
 `mode=missing`, `limit=1`; live so com `--confirm-live`):
 
 ```powershell
-python scripts/update_base_smoke.py --dry-run --mode missing --limit 1
+python scripts/diagnostics/update_base_smoke.py --dry-run --mode missing --limit 1
 ```
 
 Detalhes: `docs/governance/on-demand-release-evidence.md` (secao Smoke Atualizar Base).
@@ -247,9 +247,9 @@ QA estrutural reutilizavel (rode contra qualquer workbook gerado, ajuste
 `--xlsx` conforme necessario):
 
 ```powershell
-python scripts/quick_verify.py --xlsx output/reports/PETROBRAS_financials.xlsx
-python scripts/verify_consolidation.py --xlsx output/reports/PETROBRAS_financials.xlsx
-python scripts/verify_line_id_base.py --xlsx output/reports/PETROBRAS_financials.xlsx
+python scripts/qa/quick_verify.py --xlsx output/reports/PETROBRAS_financials.xlsx
+python scripts/qa/verify_consolidation.py --xlsx output/reports/PETROBRAS_financials.xlsx
+python scripts/qa/verify_line_id_base.py --xlsx output/reports/PETROBRAS_financials.xlsx
 ```
 
 Verificacao historica de bug-fixes (campanha antiga de 4 bugs: cobertura
@@ -258,10 +258,10 @@ regressao manual contra o export da Petrobras; nao e parte do fluxo
 normal:
 
 ```powershell
-python scripts/final_verification.py --xlsx output/reports/PETROBRAS_financials.xlsx
+python scripts/qa/final_verification.py --xlsx output/reports/PETROBRAS_financials.xlsx
 ```
 
-Todos compartilham o helper `scripts/workbook_paths.py` (resolucao de
+Todos compartilham o helper `scripts/qa/workbook_paths.py` (resolucao de
 caminho XLSX padrao/legado).
 
 ---

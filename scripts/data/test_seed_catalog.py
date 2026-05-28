@@ -5,7 +5,7 @@ import math
 
 import pandas as pd
 
-from scripts.seed_catalog import TOP_COVERAGE_CODES, build_upsert_records
+from scripts.data.seed_catalog import TOP_COVERAGE_CODES, build_upsert_records
 
 
 def test_build_upsert_records_normalizes_nullable_fields_to_none():

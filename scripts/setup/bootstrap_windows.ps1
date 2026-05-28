@@ -83,7 +83,7 @@ function Install-PythonWithWinget {
     $env:Path = "$machinePath;$userPath;$env:Path"
 }
 
-$repoRoot = Split-Path -Parent $PSScriptRoot
+$repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $venvDir = Join-Path $repoRoot ".venv"
 $venvPython = Join-Path $venvDir "Scripts\python.exe"
 $requirementsFile = Join-Path $repoRoot "requirements.txt"
@@ -128,8 +128,8 @@ if ($LASTEXITCODE -ne 0) {
     throw "Falha ao instalar dependencias do requirements.txt."
 }
 
-$smokeScript = Join-Path $repoRoot "scripts\smoke_validate.py"
-$doctorScript = Join-Path $repoRoot "scripts\runtime_doctor.py"
+$smokeScript = Join-Path $repoRoot "scripts\diagnostics\smoke_validate.py"
+$doctorScript = Join-Path $repoRoot "scripts\diagnostics\runtime_doctor.py"
 if ((Test-Path $smokeScript) -and (-not $SkipSmoke)) {
     Write-Step "Rodando smoke validate (modo rapido --skip-compile)"
     & $venvPython $smokeScript --skip-compile

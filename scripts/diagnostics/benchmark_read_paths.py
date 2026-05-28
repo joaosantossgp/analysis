@@ -26,7 +26,7 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 
 # --- project root on sys.path -----------------------------------------------
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 
 from src.database import init_db_tables  # noqa: E402

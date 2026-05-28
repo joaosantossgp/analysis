@@ -31,7 +31,7 @@ jobs:
         run: mkdir -p /tmp/cvm_data /tmp/cvm_logs
 
       - name: Criar tabelas (idempotente)
-        run: python scripts/setup_db.py
+        run: python scripts/setup/setup_db.py
 
       - name: Resolver anos de refresh
         id: anos
@@ -49,7 +49,7 @@ jobs:
           echo "prev=$PREV" >> "$GITHUB_OUTPUT"
 
       - name: Executar refresh incremental
-        run: python scripts/atualizar_todos.py --anos ${{ steps.anos.outputs.prev }} ${{ steps.anos.outputs.curr }}
+        run: python scripts/data/atualizar_todos.py --anos ${{ steps.anos.outputs.prev }} ${{ steps.anos.outputs.curr }}
 
       - name: Upload logs em caso de falha
         if: failure()

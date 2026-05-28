@@ -90,7 +90,7 @@ jobs:
 
       - name: Run batch ingestion
         run: |
-          python scripts/batch_completo.py \
+          python scripts/data/batch_completo.py \
             --max-companies "${{ github.event.inputs.max_companies || '150' }}" \
             --start-year "${{ steps.years.outputs.start_year }}" \
             --end-year "${{ steps.years.outputs.end_year }}" \

@@ -38,7 +38,7 @@ class AccountStandardizer:
         if not os.path.exists(canonical_csv_path):
             raise FileNotFoundError(
                 f"Dicionário canônico não encontrado: {canonical_csv_path}\n"
-                "Execute primeiro: python scripts/build_canonical_dict.py"
+                "Execute primeiro: python scripts/data/build_canonical_dict.py"
             )
 
         self._df = pd.read_csv(canonical_csv_path, encoding='utf-8-sig', dtype=str)

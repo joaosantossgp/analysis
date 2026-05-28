@@ -17,7 +17,7 @@ from pathlib import Path
 
 from sqlalchemy import inspect, text
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 
 from src.db import build_engine

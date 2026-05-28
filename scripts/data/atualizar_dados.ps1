@@ -2,17 +2,17 @@
 # atualizar_dados.ps1 — Sessão 14
 # Wrapper PowerShell para atualizar dados CVM automaticamente.
 # Ativar e executar via Task Scheduler ou manualmente:
-#   .\scripts\atualizar_dados.ps1
-#   .\scripts\atualizar_dados.ps1 -DryRun
+#   .\scripts\data\atualizar_dados.ps1
+#   .\scripts\data\atualizar_dados.ps1 -DryRun
 # ==============================================================================
 param(
     [switch]$DryRun,
     [int[]]$Anos = @()
 )
 
-$Root    = Split-Path -Parent $PSScriptRoot
+$Root    = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $Venv    = Join-Path $Root ".venv\Scripts\python.exe"
-$Script  = Join-Path $Root "scripts\atualizar_todos.py"
+$Script  = Join-Path $Root "scripts\data\atualizar_todos.py"
 $LogDir  = Join-Path $Root "logs"
 
 if (-not (Test-Path $Venv)) {

@@ -5,7 +5,7 @@
 **Environment:** Python 3.11 / Windows 11 / SQLAlchemy 2.x / SQLite 3.x (in-memory)
 **Dataset:** 449 companies, ~40,410 financial_reports rows (6 annual years x 14 accounts/company + 1 quarterly row/year)
 **Methodology:** 7 warm runs per query; report median, p95, min, max. EXPLAIN QUERY PLAN captured for each.
-**Benchmark script:** `scripts/benchmark_read_paths.py` (repeatable; `--runs N --phase before|after`)
+**Benchmark script:** `scripts/diagnostics/benchmark_read_paths.py` (repeatable; `--runs N --phase before|after`)
 
 > **SQLite vs PostgreSQL note:** The benchmark runs on in-memory SQLite to be self-contained. SQLite's query planner differs from PostgreSQL's in two relevant ways: (1) it will not use a column index when comparing two columns from the same table (self-referential joins), and (2) it does not support partial/functional indexes. The findings below distinguish SQLite-confirmed improvements from PostgreSQL-expected improvements.
 

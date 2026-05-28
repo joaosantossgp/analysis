@@ -14,7 +14,7 @@ import type {
 } from "../bridge/types";
 
 const BROWSER_REASON =
-  "Running in browser mode — pywebview bridge is unavailable. Launch via scripts/phase1_pywebview_smoke.py or the packaged exe.";
+  "Running in browser mode — pywebview bridge is unavailable. Launch via scripts/diagnostics/phase1_pywebview_smoke.py or the packaged exe.";
 
 export type CompanyInfoResult =
   | { mode: "desktop"; info: CompanyInfo }

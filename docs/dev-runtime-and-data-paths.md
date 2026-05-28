@@ -78,8 +78,8 @@ have already set `CVM_DATA_DIR`, it will be used as-is.
 python -m desktop.app --dev
 
 # Or use the convenience script
-.\scripts\dev-desktop.ps1
-.\scripts\dev-desktop.ps1 --debug    # opens DevTools
+.\scripts\release\dev-desktop.ps1
+.\scripts\release\dev-desktop.ps1 --debug    # opens DevTools
 ```
 
 Data lives in `{repo}/data/`. Safe for resets and experiments.
@@ -92,8 +92,8 @@ $env:CVMANALYTICS_USE_RELEASE_DATA = "1"
 python -m desktop.app --dev
 
 # Or use the convenience script
-.\scripts\dev-desktop-release-data.ps1
-.\scripts\dev-desktop-release-data.ps1 --debug
+.\scripts\release\dev-desktop-release-data.ps1
+.\scripts\release\dev-desktop-release-data.ps1 --debug
 ```
 
 Data lives in `%USERPROFILE%\Documents\CVMAnalytics\` — same as the release app.
@@ -210,7 +210,7 @@ To opt in to writes explicitly:
 
 ```powershell
 $env:CVMANALYTICS_ALLOW_RELEASE_DATA_WRITES = "1"
-.\scripts\dev-desktop-release-data.ps1
+.\scripts\release\dev-desktop-release-data.ps1
 ```
 
 The release app (packaged, `sys.frozen=True`) is never affected — it always has
@@ -235,7 +235,7 @@ under "Runtime diagnostics". When `CVMANALYTICS_USE_RELEASE_DATA=1` is active:
 ### Run dev against isolated data
 
 ```powershell
-.\scripts\dev-desktop.ps1
+.\scripts\release\dev-desktop.ps1
 ```
 
 Safe for resets. Data under `{repo}/data/` is not shared with the release app.
@@ -243,7 +243,7 @@ Safe for resets. Data under `{repo}/data/` is not shared with the release app.
 ### Run dev against release data
 
 ```powershell
-.\scripts\dev-desktop-release-data.ps1
+.\scripts\release\dev-desktop-release-data.ps1
 ```
 
 Same database as the installed app. Check the Status page to confirm the path.

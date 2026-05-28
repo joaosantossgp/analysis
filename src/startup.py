@@ -105,7 +105,7 @@ def collect_startup_report(
                         _issue(
                             "warning",
                             "legacy-data-root",
-                            "Diretorio legado contem arquivos ainda nao sincronizados com o layout canonico; use scripts/canonicalize_data_layout.py.",
+                            "Diretorio legado contem arquivos ainda nao sincronizados com o layout canonico; use scripts/data/canonicalize_data_layout.py.",
                             legacy_path,
                         )
                     )

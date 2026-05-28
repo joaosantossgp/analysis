@@ -29,7 +29,7 @@ PRs que alterem o fluxo de atualizacao em lote da pagina **Atualizar base**, a A
 (`request_refresh` / `get_refresh_status` / `cancel_refresh`) devem anexar
 evidencia do CLI dedicado **sem** disparar um batch amplo por engano.
 
-Script: `scripts/update_base_smoke.py`.
+Script: `scripts/diagnostics/update_base_smoke.py`.
 
 ### Comportamento seguro (default)
 
@@ -44,31 +44,31 @@ Script: `scripts/update_base_smoke.py`.
 Dry-run (somente evidencia do body; nenhuma chamada HTTP):
 
 ```powershell
-python scripts/update_base_smoke.py --dry-run --mode missing --limit 1
+python scripts/diagnostics/update_base_smoke.py --dry-run --mode missing --limit 1
 ```
 
 Live minimo contra API local (ajuste `--cd-cvm` para um codigo real da sua base):
 
 ```powershell
-python scripts/update_base_smoke.py --profile web --confirm-live --limit 1 --cd-cvm 9512
+python scripts/diagnostics/update_base_smoke.py --profile web --confirm-live --limit 1 --cd-cvm 9512
 ```
 
 Mesmo escopo via bridge desktop (Python, sem abrir pywebview):
 
 ```powershell
-python scripts/update_base_smoke.py --profile desktop --confirm-live --limit 1 --cd-cvm 9512
+python scripts/diagnostics/update_base_smoke.py --profile desktop --confirm-live --limit 1 --cd-cvm 9512
 ```
 
 Saida JSON para colar em PR/issue:
 
 ```powershell
-python scripts/update_base_smoke.py --dry-run --json
+python scripts/diagnostics/update_base_smoke.py --dry-run --json
 ```
 
 Validacao automatizada local dos guardrails e fluxos mockados:
 
 ```powershell
-python -m pytest scripts/test_update_base_smoke.py -q
+python -m pytest scripts/diagnostics/test_update_base_smoke.py -q
 ```
 
 ## Checklist de aceitacao

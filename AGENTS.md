@@ -169,7 +169,7 @@ Each task type has a minimal extra rule on top of the principles. Match the mode
 
 - Don't create, restore, or modify Next.js source. The legacy `apps/web` app was removed.
 - Don't open PRs in draft because the change touches multiple files. Draft only when the work itself is incomplete.
-- Don't use the GitHub CLI (`gh`) or `scripts/pr_complete.ps1` for routine merges. Standard `git push` + manual or auto-merge is sufficient.
+- Don't use the GitHub CLI (`gh`) or `scripts/release/pr_complete.ps1` for routine merges. Standard `git push` + manual or auto-merge is sufficient.
 - Don't insist on issue-first, worktrees, lanes, or risk labels for interactive sessions. These belong to autonomous mode only.
 - Don't load stale planning docs as context — they were deleted. If you find references to `STUDENT_PACK_PLAN`, `WEBAPP_TRANSFORMATION_PLAN`, `V2_PHASE1_BACKEND`, etc., they no longer exist.
 - Don't follow `CLAUDE.md`, `CONTRIBUTING.md`, or `docs/GOVERNANCE_QUICK_REFERENCE.md` — they were folded into this file and deleted.

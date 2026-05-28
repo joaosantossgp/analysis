@@ -28,7 +28,7 @@ Before changing any versioned file in autonomous mode:
 4. Create a worktree at `.claude/worktrees/<lane>/<issue-number>-<slug>/`.
 5. Work in branch `task/<issue-number>-<slug>` (repo root stays on `main`).
 6. Open a PR with `Closes #<issue-number>` in the body.
-7. Complete via `scripts/pr_complete.ps1 -Pr <number>` or equivalent: wait for checks, merge, verify issue closure.
+7. Complete via `scripts/release/pr_complete.ps1 -Pr <number>` or equivalent: wait for checks, merge, verify issue closure.
 8. Update issue + docs before marking task complete.
 
 ## 2. Lanes
@@ -80,7 +80,7 @@ While the child task is open or in review, the parent task is `status:blocked`. 
 - Commit at coherent, validated checkpoints.
 - Push when a checkpoint should be preserved remotely or reflected in the PR.
 - Open the PR (even as draft) as soon as the branch is reviewable.
-- When validations pass: update the issue, mark the PR ready if needed, and merge via `scripts/pr_complete.ps1` or equivalent.
+- When validations pass: update the issue, mark the PR ready if needed, and merge via `scripts/release/pr_complete.ps1` or equivalent.
 - Preferred merge: **squash**.
 - After merge: confirm task closure, remove the local worktree, confirm the remote branch was removed.
 

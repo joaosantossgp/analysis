@@ -60,7 +60,7 @@ jobs:
 
       - name: Run on-demand ingestion
         run: |
-          python scripts/batch_completo.py \
+          python scripts/data/batch_completo.py \
             --cd-cvms "${{ github.event.inputs.cd_cvm }}" \
             --start-year "${{ github.event.inputs.start_year || '2010' }}" \
             --end-year "${{ steps.years.outputs.end_year }}" \

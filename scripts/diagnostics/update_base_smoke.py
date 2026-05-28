@@ -11,9 +11,9 @@ Seguranca:
   - `limit` acima de 50 exige `--allow-large-batch`.
 
 Exemplos:
-  python scripts/update_base_smoke.py --dry-run
-  python scripts/update_base_smoke.py --profile web --confirm-live --limit 1 --cd-cvm 9512
-  python scripts/update_base_smoke.py --profile desktop --confirm-live --limit 1 --cd-cvm 9512 --cancel
+  python scripts/diagnostics/update_base_smoke.py --dry-run
+  python scripts/diagnostics/update_base_smoke.py --profile web --confirm-live --limit 1 --cd-cvm 9512
+  python scripts/diagnostics/update_base_smoke.py --profile desktop --confirm-live --limit 1 --cd-cvm 9512 --cancel
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ from urllib.parse import urljoin
 import requests
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-REPO_ROOT = os.path.dirname(SCRIPT_DIR)
+REPO_ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
@@ -106,8 +106,8 @@ def validate_live_guardrails(
     if not confirm_live:
         print(
             "[FAIL] Execucao real bloqueada: passe --confirm-live ou use --dry-run.\n"
-            "        Exemplo seguro: python scripts/update_base_smoke.py --dry-run\n"
-            "        Exemplo live:    python scripts/update_base_smoke.py --confirm-live --limit 1 --cd-cvm 9512",
+            "        Exemplo seguro: python scripts/diagnostics/update_base_smoke.py --dry-run\n"
+            "        Exemplo live:    python scripts/diagnostics/update_base_smoke.py --confirm-live --limit 1 --cd-cvm 9512",
             file=sys.stderr,
         )
         raise SystemExit(2)

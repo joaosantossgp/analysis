@@ -67,7 +67,7 @@ Abas **QA_LOG** e **QA_Errors** sao obrigatorias para rastreabilidade.
 **1. Trigger**
 - CLI: `python main.py --companies ... --start_year ... --end_year ...`
 - Desktop app (`desktop/app.py`): invoca o scraper via bridge para empresas/range selecionados na UI
-- Scripts em lote: `scripts/batch_completo.py`, `scripts/atualizar_todos.py`
+- Scripts em lote: `scripts/data/batch_completo.py`, `scripts/data/atualizar_todos.py`
 
 **2. Download e extracao**
 - `src/scraper.py` baixa ZIPs da CVM para `data/input/raw`
@@ -125,7 +125,7 @@ cvm_repots_capture/
 |-- apps/
 |   |-- api/                    # FastAPI read-only (adaptador HTTP hospedado/dev)
 |   `-- desktop-web/            # Vite SPA empacotada no desktop
-|-- scripts/                    # Setup, batches, dicionario canonico e validacoes
+|-- scripts/                    # Tooling em subpastas: data/ setup/ diagnostics/ qa/ release/ governance/
 |-- archive/                    # Scripts e governanca antigos
 |-- tests/                      # Suite pytest
 |-- data/
@@ -170,7 +170,7 @@ cvm_repots_capture/
 - App desktop oficial: `desktop/app.py` (pywebview + Vite estatico em `dist/CVMAnalytics/CVMAnalytics.exe`)
 - API FastAPI read-only em `apps/api` para dev/local HTTP (self-host opcional); nao e empacotada no desktop. Nao assuma hospedagem Vercel/Railway: o produto canonico e o `CVMAnalytics.exe`.
 - UI ativa em `apps/desktop-web`; a antiga UI Next.js em `apps/web` foi removida
-- Automacao e batches via `scripts/batch_completo.py` e `scripts/atualizar_todos.py`
+- Automacao e batches via `scripts/data/batch_completo.py` e `scripts/data/atualizar_todos.py`
 
 **Proximas prioridades:**
 - ampliacao de cobertura/contas para outros setores
@@ -182,7 +182,7 @@ cvm_repots_capture/
 ## 8. Bootstrap rapido (Windows)
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap_windows.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\setup\bootstrap_windows.ps1
 ```
 
 Flags: `-ForceRecreateVenv`, `-SkipSmoke`.
@@ -190,8 +190,8 @@ Flags: `-ForceRecreateVenv`, `-SkipSmoke`.
 Fluxo pos-bootstrap recomendado:
 ```powershell
 .\.venv\Scripts\Activate.ps1
-python scripts/setup_db.py
-python scripts/setup_companies_table.py
+python scripts/setup/setup_db.py
+python scripts/setup/setup_companies_table.py
 python -m desktop.app --dev
 ```
 

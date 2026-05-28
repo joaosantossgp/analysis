@@ -11,7 +11,7 @@ from typing import List, Set
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SCRIPT_DIR.parent
+REPO_ROOT = SCRIPT_DIR.parent.parent
 
 
 def check_main_help(errors: List[str]) -> None:

@@ -83,7 +83,7 @@ jobs:
 
       - name: Run full historical load
         run: |
-          python scripts/batch_completo.py \
+          python scripts/data/batch_completo.py \
             --max-companies "${{ github.event.inputs.max_companies || '500' }}" \
             --start-year "${{ github.event.inputs.start_year || '2010' }}" \
             --end-year "${{ steps.years.outputs.end_year }}" \
@@ -145,7 +145,7 @@ jobs:
 
       - name: Run gap-fill
         run: |
-          python scripts/restaurar_historico.py \
+          python scripts/data/restaurar_historico.py \
             --run \
             --start-year 2010 \
             --end-year "${{ steps.years.outputs.end_year }}" \

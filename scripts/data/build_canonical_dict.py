@@ -23,10 +23,10 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
 # USER CONFIGURATION
 # ==============================================================================
 # Pasta com os XLSXs do plano de contas fixas da CVM
-ENTENDER_CD_DIR = os.path.join(os.path.dirname(__file__), '..', 'entender_CD', 'plano-contas-fixas-DFP')
+ENTENDER_CD_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'entender_CD', 'plano-contas-fixas-DFP')
 
 # Arquivo de saída
-OUTPUT_CSV = os.path.join(os.path.dirname(__file__), '..', 'data', 'canonical_accounts.csv')
+OUTPUT_CSV = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'canonical_accounts.csv')
 # ==============================================================================
 
 # Mapeamento: trecho do nome da aba -> STATEMENT_TYPE

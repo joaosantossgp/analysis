@@ -8,10 +8,9 @@ from types import SimpleNamespace
 
 import pytest
 
-_ROOT = Path(__file__).resolve().parents[1]
 _SPEC = importlib.util.spec_from_file_location(
     "update_base_smoke",
-    _ROOT / "scripts" / "update_base_smoke.py",
+    Path(__file__).resolve().parent / "update_base_smoke.py",
 )
 assert _SPEC and _SPEC.loader
 ubs = importlib.util.module_from_spec(_SPEC)

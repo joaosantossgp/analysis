@@ -21,7 +21,7 @@ from pathlib import Path
 import pandas as pd
 from sqlalchemy import inspect, text
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
@@ -154,7 +154,7 @@ def step2_create_companies_table(conn, dry_run: bool) -> None:
         log.info("  Coluna coverage_rank ja existente")
 
     log.info("  OK tabela companies criada")
-    log.info("  Execute scripts/setup_companies_table.py para popular os metadados")
+    log.info("  Execute scripts/setup/setup_companies_table.py para popular os metadados")
 
 
 def step3_create_company_refresh_status(conn, dry_run: bool) -> None:
@@ -367,10 +367,10 @@ def parse_args() -> argparse.Namespace:
         description="Setup e otimizacao do banco de dados CVM",
         epilog=(
             "Exemplos:\n"
-            "  python scripts/setup_db.py\n"
-            "  python scripts/setup_db.py --dry-run\n"
-            "  python scripts/setup_db.py --step 1\n"
-            "  python scripts/setup_db.py --step 3 --step 4 --step 5"
+            "  python scripts/setup/setup_db.py\n"
+            "  python scripts/setup/setup_db.py --dry-run\n"
+            "  python scripts/setup/setup_db.py --step 1\n"
+            "  python scripts/setup/setup_db.py --step 3 --step 4 --step 5"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -416,7 +416,7 @@ def main() -> None:
     if not args.dry_run:
         log.info("")
         log.info("Proximos passos:")
-        log.info("  python scripts/setup_companies_table.py")
+        log.info("  python scripts/setup/setup_companies_table.py")
         log.info("  python scripts/expand_tickers.py")
 
 

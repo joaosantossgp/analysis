@@ -20,7 +20,7 @@ Normal UI and data-workflow validation needs no release. Use dev modes:
 
 - UI/layout/styling → `npm run dev` or `npm run dev:mock` (browser, fixtures)
 - realistic bridge + data → `python -m desktop.app --dev` (isolated `{repo}/data`)
-- against real user data → `.\scripts\dev-desktop-release-data.ps1`
+- against real user data → `.\scripts\release\dev-desktop-release-data.ps1`
 
 See [dev-runtime-and-data-paths.md](dev-runtime-and-data-paths.md). Do not build
 or publish a release just to test a UI change or a data refresh.

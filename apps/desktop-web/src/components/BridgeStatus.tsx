@@ -56,7 +56,7 @@ function Detail({ probe }: { probe: BridgeProbe }) {
         <span>
           Open via{" "}
           <code className="font-mono">
-            python scripts/phase1_pywebview_smoke.py --manual
+            python scripts/diagnostics/phase1_pywebview_smoke.py --manual
           </code>{" "}
           or run{" "}
           <code className="font-mono">npm run dev:mock</code>{" "}
