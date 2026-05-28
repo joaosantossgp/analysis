@@ -19,6 +19,10 @@ data/*.xlsx
 data/legacy_archives/
 data/metadata/b3_companies_cache.json
 
+# Desktop runtime state (written at runtime, not source)
+data/onboarding_state.json
+data/refresh_jobs.json
+
 # SQLite sidecars anywhere in the tree (WAL/SHM from runtime opens)
 *.db-wal
 *.db-shm
