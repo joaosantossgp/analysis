@@ -21,32 +21,32 @@ type ModuleDef = {
 const MODULES: ModuleDef[] = [
   {
     id: "companies",
-    label: "Início",
+    label: "Home",
     to: "/",
     matches: (p) => p === "/",
   },
   {
     id: "empresas",
-    label: "Empresas",
+    label: "Companies",
     to: "/empresas",
     matches: (p) => p.startsWith("/empresas"),
   },
   {
     id: "sectors",
-    label: "Setores",
+    label: "Sectors",
     to: "/setores",
     matches: (p) => p.startsWith("/setores"),
   },
   {
     id: "database",
-    label: "Base",
+    label: "Updates",
     to: "/atualizar-base",
     matches: (p) =>
       p.startsWith("/atualizar-base") || p.startsWith("/data-coverage"),
   },
   {
     id: "diagnostics",
-    label: "Sistema",
+    label: "System",
     to: "/status",
     matches: (p) => p.startsWith("/status"),
   },
@@ -58,7 +58,7 @@ export function ModuleNav() {
 
   return (
     <nav
-      aria-label="Módulos"
+      aria-label="Modules"
       className="flex h-full items-stretch"
       role="navigation"
     >

@@ -44,7 +44,7 @@ function Detail({ probe }: { probe: BridgeProbe }) {
         <span>
           last ping ok
           {probe.pingTs
-            ? ` at ${new Date(probe.pingTs * 1000).toLocaleTimeString("pt-BR")}`
+            ? ` at ${new Date(probe.pingTs * 1000).toLocaleTimeString("en-US")}`
             : null}
         </span>
       );

@@ -28,7 +28,7 @@ function bridgeLabel(probe: BridgeProbe): { label: string; color: string } {
 
 function lastRefreshLabel(probe: BridgeProbe): string {
   if (probe.kind === "ready" && probe.pingTs) {
-    return `LAST PING ${new Date(probe.pingTs * 1000).toLocaleTimeString("pt-BR", {
+    return `LAST PING ${new Date(probe.pingTs * 1000).toLocaleTimeString("en-US", {
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit",

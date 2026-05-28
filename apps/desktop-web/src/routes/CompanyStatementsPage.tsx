@@ -99,7 +99,7 @@ function StatementSelector({
   onChange: (statementType: StatementType) => void;
 }) {
   return (
-    <Panel dense title="Demonstrativo" subtitle="Statement family">
+    <Panel dense title="Statement" subtitle="Statement family">
       <div className="grid gap-2 sm:grid-cols-4">
         {STATEMENT_OPTIONS.map((option) => {
           const selected = option.value === active;
@@ -168,7 +168,7 @@ function StatementPanel({
   });
 
   if (!bridgeReady || yearsQuery.isLoading) {
-    return <StateBanner variant="loading" title="Carregando períodos…" />;
+    return <StateBanner variant="loading" title="Loading periods…" />;
   }
   if (yearsQuery.isError) {
     return (
@@ -193,7 +193,7 @@ function StatementPanel({
     );
   }
   if (statementQuery.isLoading) {
-    return <StateBanner variant="loading" title={`Carregando ${statementType}…`} />;
+    return <StateBanner variant="loading" title={`Loading ${statementType}…`} />;
   }
   if (statementQuery.isError) {
     return (
@@ -213,7 +213,7 @@ function StatementPanel({
     return <StateBanner variant="browser-only" message={statementQuery.data.reason} />;
   }
   if (!statementQuery.data?.matrix) {
-    return <StateBanner variant="empty" title="Sem dados" message="Bridge retornou payload vazio." />;
+    return <StateBanner variant="empty" title="No data" message="Bridge returned an empty payload." />;
   }
 
   return (
@@ -261,8 +261,8 @@ function StatementGrid({
     return (
       <StateBanner
         variant="empty"
-        title={`${statementType} sem linhas para ${selectedYears.join(", ")}`}
-        message="Tente outra demonstração ou refresh esta empresa em Atualizar Base."
+        title={`${statementType} — no rows for ${selectedYears.join(", ")}`}
+        message="Try another statement type or refresh this company in Database Updates."
       />
     );
   }

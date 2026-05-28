@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useState, type ReactNode } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 
@@ -45,7 +45,7 @@ export function CompanyDetailPage() {
 
   if (!Number.isFinite(cdCvm) || cdCvm <= 0) {
     return (
-      <StateBanner variant="error" message={`CVM inválido: "${params.cdCvm}"`} />
+      <StateBanner variant="error" message={`Invalid CVM: "${params.cdCvm}"`} />
     );
   }
 
@@ -64,6 +64,7 @@ function CompanyReferenceWorkspace({
   cdCvm: number;
   bridgeReady: boolean;
 }) {
+  const refreshPanelRef = useRef<HTMLDivElement>(null);
   const companyQuery = useQuery<CompanyInfoResult>({
     queryKey: ["company-info", cdCvm],
     queryFn: () => fetchCompanyInfo(cdCvm),
@@ -107,11 +108,16 @@ function CompanyReferenceWorkspace({
             kpiQuery={kpiQuery}
             selectedYears={selectedYears}
             bridgeReady={bridgeReady}
+            onScrollToUpdate={() =>
+              refreshPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" })
+            }
           />
         </div>
 
         <aside className="space-y-4 self-start xl:sticky xl:top-0">
-          <CompanyRefreshPanel cdCvm={cdCvm} bridgeReady={bridgeReady} />
+          <div ref={refreshPanelRef}>
+            <CompanyRefreshPanel cdCvm={cdCvm} bridgeReady={bridgeReady} />
+          </div>
           <ExportPanel cdCvm={cdCvm} />
           <DataStatusPanel
             companyQuery={companyQuery}
@@ -130,11 +136,13 @@ function KpiHistoryPanel({
   kpiQuery,
   selectedYears,
   bridgeReady,
+  onScrollToUpdate,
 }: {
   yearsQuery: UseQueryResult<CompanyYearsResultUI>;
   kpiQuery: UseQueryResult<CompanyKpisResult>;
   selectedYears: number[];
   bridgeReady: boolean;
+  onScrollToUpdate?: () => void;
 }) {
   return (
     <Panel
@@ -160,6 +168,7 @@ function KpiHistoryPanel({
         kpiQuery={kpiQuery}
         selectedYears={selectedYears}
         bridgeReady={bridgeReady}
+        onScrollToUpdate={onScrollToUpdate}
       />
     </Panel>
   );
@@ -170,14 +179,16 @@ function KpiBody({
   kpiQuery,
   selectedYears,
   bridgeReady,
+  onScrollToUpdate,
 }: {
   yearsQuery: UseQueryResult<CompanyYearsResultUI>;
   kpiQuery: UseQueryResult<CompanyKpisResult>;
   selectedYears: number[];
   bridgeReady: boolean;
+  onScrollToUpdate?: () => void;
 }) {
   if (!bridgeReady || yearsQuery.isLoading) {
-    return <StateBanner variant="loading" title="Carregando anos…" />;
+    return <StateBanner variant="loading" title="Loading years…" />;
   }
   if (yearsQuery.isError) {
     return (
@@ -199,13 +210,25 @@ function KpiBody({
     return (
       <StateBanner
         variant="empty"
-        title="Sem dados anuais"
-        message="Sem linhas anuais para esta empresa no banco local."
-      />
+        title="No financial history yet"
+        message="Download or update this company's data to compute indicators."
+      >
+        {onScrollToUpdate ? (
+          <div className="flex flex-wrap justify-center gap-2">
+            <button
+              type="button"
+              onClick={onScrollToUpdate}
+              className="rounded border border-cyan-700 bg-cyan-950/60 px-3 py-1.5 text-xs font-medium text-cyan-300 hover:border-cyan-500 hover:text-cyan-200 focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-cyan-600"
+            >
+              Update this company →
+            </button>
+          </div>
+        ) : null}
+      </StateBanner>
     );
   }
   if (kpiQuery.isLoading) {
-    return <StateBanner variant="loading" title="Carregando KPIs…" />;
+    return <StateBanner variant="loading" title="Loading KPIs…" />;
   }
   if (kpiQuery.isError) {
     return (
@@ -224,8 +247,8 @@ function KpiBody({
     return (
       <StateBanner
         variant="empty"
-        title="Sem KPIs"
-        message="Bridge retornou payload vazio para os anos selecionados."
+        title="No KPIs"
+        message="Bridge returned an empty payload for the selected years."
       />
     );
   }
@@ -234,8 +257,8 @@ function KpiBody({
     return (
       <StateBanner
         variant="empty"
-        title="Sem KPIs anuais"
-        message="Sem linhas anuais para os anos selecionados."
+        title="No annual KPIs"
+        message="No annual rows for the selected years."
       />
     );
   }
@@ -276,8 +299,8 @@ function KpiTable({
             <th scope="col" className="sticky left-0 px-2 py-2 font-medium" style={{ background: "var(--color-surface-2)" }}>
               KPI
             </th>
-            <th scope="col" className="px-2 py-2 font-medium">Categoria</th>
-            <th scope="col" className="px-2 py-2 font-medium">Unidade</th>
+            <th scope="col" className="px-2 py-2 font-medium">Category</th>
+            <th scope="col" className="px-2 py-2 font-medium">Unit</th>
             <th scope="col" className="px-2 py-2 font-medium">Trend</th>
             {yearColumns.map((c) => (
               <th scope="col" key={c} className="px-2 py-2 text-right font-medium">
@@ -370,8 +393,8 @@ function ExportPanel({ cdCvm }: { cdCvm: number }) {
     <ExportActionPanel
       cdCvm={cdCvm}
       title="Report export"
-      description="Workbook local para análise externa em Excel, auditoria e relatórios."
-      scopeNote="Inclui DRE, BPA, BPP, DFC, além de DVA/DMPL quando disponíveis, KPIs e metadados."
+      description="Local workbook for external analysis in Excel, auditing, and reporting."
+      scopeNote="Includes DRE, BPA, BPP, DFC, plus DVA/DMPL when available, KPIs, and metadata."
     />
   );
 }
@@ -395,7 +418,7 @@ function DataStatusPanel({
   return (
     <Panel dense headingLevel={3} title="Data status" subtitle="Local read model">
       {companyQuery.isLoading ? (
-        <StateBanner variant="loading" size="dense" title="Carregando metadados…" />
+        <StateBanner variant="loading" size="dense" title="Loading metadata…" />
       ) : companyQuery.isError ? (
         <StateBanner
           variant="error"
@@ -413,26 +436,26 @@ function DataStatusPanel({
         <StateBanner
           variant="error"
           size="dense"
-          title="Empresa não encontrada"
-          message={`Sem registro para CVM ${companyQuery.data.cd_cvm}.`}
+          title="Company not found"
+          message={`No record for CVM ${companyQuery.data.cd_cvm}.`}
         />
       ) : (
         <dl className="grid gap-2">
           <StatusRow label="CVM">
             <IdentifierBadge>{info?.cd_cvm ?? "—"}</IdentifierBadge>
           </StatusRow>
-          <StatusRow label="Ano mais recente" value={info?.latest_readable_year?.toString() ?? "—"} mono />
-          <StatusRow label="Anos no banco" value={allYears.length ? allYears.join(", ") : "—"} mono />
-          <StatusRow label="Janela do painel" value={selectedYears.length ? selectedYears.join(", ") : "—"} mono />
-          <StatusRow label="KPIs anuais" value={annualRows == null ? "—" : String(annualRows)} mono />
+          <StatusRow label="Latest year" value={info?.latest_readable_year?.toString() ?? "—"} mono />
+          <StatusRow label="Years in database" value={allYears.length ? allYears.join(", ") : "—"} mono />
+          <StatusRow label="Panel window" value={selectedYears.length ? selectedYears.join(", ") : "—"} mono />
+          <StatusRow label="Annual KPIs" value={annualRows == null ? "—" : String(annualRows)} mono />
           <StatusRow
-            label="Dados locais"
-            value={info?.has_local_financial_reports ? "● sim" : "▲ não"}
+            label="Local data"
+            value={info?.has_local_financial_reports ? "● yes" : "▲ no"}
             tone={info?.has_local_financial_reports ? "ok" : "warn"}
             mono
           />
           <StatusRow
-            label="Modelo atualizado"
+            label="Model updated"
             value={formatBRDateTime(info?.read_model_updated_at)}
             mono
           />
@@ -504,22 +527,22 @@ function buildMetricTapeItems(
   const items: MetricTapeItem[] = [
     {
       id: "latest-year",
-      label: "Ano",
+      label: "Year",
       value: info?.latest_readable_year?.toString() ?? null,
-      sublabel: "mais recente",
+      sublabel: "latest",
     },
     {
       id: "readable-years",
-      label: "Cobertura",
+      label: "Coverage",
       value: info?.readable_years_count ?? null,
-      sublabel: "anos legíveis",
+      sublabel: "readable years",
     },
     {
       id: "local-data",
-      label: "Base local",
+      label: "Local database",
       valueNode: info ? (
         <MetricStatusValue ok={Boolean(info?.has_local_financial_reports)}>
-          {info?.has_local_financial_reports ? "sim" : "não"}
+          {info?.has_local_financial_reports ? "yes" : "no"}
         </MetricStatusValue>
       ) : (
         <NumberCell value={null} size="lg" align="left" />
@@ -537,7 +560,7 @@ function buildMetricTapeItems(
       value: latestYear && row ? row[String(latestYear)] : null,
       formatType: row?.FORMAT_TYPE,
       tone: id === "DIV_EBITDA" ? "neutral" : "auto",
-      sublabel: latestYear ? String(latestYear) : "sem ano",
+      sublabel: latestYear ? String(latestYear) : "no year",
       delta: row?.DELTA_YOY_PCT ?? null,
       sparkline: selectedYears.map((year) => numericOrNull(row?.[String(year)])),
     });

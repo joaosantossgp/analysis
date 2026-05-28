@@ -32,7 +32,7 @@ export function EntityHeader({
   });
 
   if (query.isLoading) {
-    return <StateBanner variant="loading" title="Carregando dados da empresa…" />;
+    return <StateBanner variant="loading" title="Loading company data…" />;
   }
 
   if (query.isError) {
@@ -46,7 +46,7 @@ export function EntityHeader({
   }
 
   if (!query.data) {
-    return <StateBanner variant="loading" title="Carregando dados da empresa…" />;
+    return <StateBanner variant="loading" title="Loading company data…" />;
   }
 
   if (query.data.mode === "browser") {
@@ -57,11 +57,11 @@ export function EntityHeader({
     return (
       <StateBanner
         variant="error"
-        title="Empresa não encontrada"
+        title="Company not found"
         message={
           query.data.catalog_lookup_pending
-            ? "Catálogo CVM ainda carregando. Tente novamente em instantes."
-            : `Sem registro para CVM ${query.data.cd_cvm}.`
+            ? "CVM catalog is still loading. Try again in a moment."
+            : `No record for CVM ${query.data.cd_cvm}.`
         }
       />
     );
@@ -152,7 +152,7 @@ export function EntityHeader({
               </p>
             ) : null}
             <div className="mt-3 flex flex-wrap gap-2">
-              <IdentifierBadge muted>{info.sector_name ?? info.setor_cvm ?? "setor n/d"}</IdentifierBadge>
+              <IdentifierBadge muted>{info.sector_name ?? info.setor_cvm ?? "sector n/a"}</IdentifierBadge>
               {info.gics_sub_industry ?? info.gics_industry ? (
                 <IdentifierBadge muted>
                   {info.gics_sub_industry ?? info.gics_industry}
@@ -214,7 +214,7 @@ export function EntityHeader({
               Financial statements
             </TabLink>
             <TabLink to={`/empresas/${cdCvm}/indicadores`} active={activeTab === "kpis"}>
-              Indicadores
+              Indicators
             </TabLink>
           </nav>
           {showExports ? (

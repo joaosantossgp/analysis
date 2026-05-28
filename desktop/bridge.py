@@ -12,6 +12,8 @@ import base64
 import json
 import math
 import os
+import shutil
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -22,6 +24,18 @@ from typing import Any
 
 
 class CVMBridge:
+    DATA_UPDATE_PRESETS = {"top_100", "top_200", "top_500", "all"}
+    DATA_UPDATE_BATCH_SIZES = {50, 100, 200, 500}
+    DATA_UPDATE_SETTING_KEYS = {
+        "data_update_universe_preset",
+        "data_update_batch_size",
+        "data_update_retry_failed",
+        "data_update_recompute_coverage",
+        "data_update_start_year",
+        "data_update_end_year",
+    }
+    CVM_MIN_YEAR = 2010
+
     def __init__(self) -> None:
         self._service = None
         self._refresh_manager = None
@@ -306,7 +320,7 @@ class CVMBridge:
                 if statement_type not in ("DRE", "BPA", "BPP", "DFC", "DVA", "DMPL"):
                     return self._sanitize_for_json({
                         "ok": False,
-                        "error": f"Tipo de demonstracao invalido: {statement_type}",
+                        "error": f"Invalid statement type: {statement_type}",
                     })
             svc = self._svc()
             filename, payload = svc.build_company_excel_export(cd_cvm, statement_type=statement_type)
@@ -590,6 +604,446 @@ class CVMBridge:
             return self._sanitize_for_json(self._onboarding().skip_setup())
         except Exception as exc:
             return self._sanitize_for_json({"ok": False, "error": str(exc)})
+
+    # ------------------------------------------------------------------
+    # Central data update settings / operations
+    # ------------------------------------------------------------------
+
+    def get_data_update_settings(self, params=None) -> dict:
+        try:
+            return self._sanitize_for_json(self._resolve_data_update_settings())
+        except Exception as exc:
+            return self._sanitize_for_json({
+                **self._default_data_update_settings(),
+                "error": str(exc),
+            })
+
+    def save_data_update_settings(self, params=None) -> dict:
+        p = params or {}
+        try:
+            settings = self._normalize_data_update_settings(p)
+            self._write_app_settings(settings)
+            return self._sanitize_for_json(settings)
+        except Exception as exc:
+            return self._sanitize_for_json({
+                **self._default_data_update_settings(),
+                "error": str(exc),
+            })
+
+    def get_company_universe_selection(self, params=None) -> dict:
+        p = params or {}
+        try:
+            settings = self._resolve_data_update_settings()
+            preset = str(p.get("preset") or settings["universe_preset"]).strip().lower()
+            if preset not in self.DATA_UPDATE_PRESETS:
+                raise ValueError(f"Universo de empresas invalido: {preset}")
+            selection = self._onboarding().get_company_universe_by_preset(preset)
+            return self._sanitize_for_json(selection.to_dict())
+        except Exception as exc:
+            return self._sanitize_for_json({
+                "preset": str((params or {}).get("preset") or ""),
+                "selected_count": 0,
+                "company_ids": [],
+                "source": None,
+                "source_date": None,
+                "warning": None,
+                "companies": [],
+                "error": str(exc),
+            })
+
+    def start_data_update(self, params=None) -> dict:
+        p = params or {}
+        try:
+            current_settings = self._resolve_data_update_settings()
+            settings = self._normalize_data_update_settings({
+                **current_settings,
+                **p,
+            })
+            mode = str(p.get("mode") or "missing").strip().lower()
+            if mode not in {"missing", "full", "outdated", "failed"}:
+                raise ValueError(f"Invalid update mode: {mode}")
+
+            selection = self._onboarding().get_company_universe_by_preset(
+                str(settings["universe_preset"])
+            )
+            refresh_params: dict[str, Any] = {
+                "mode": mode,
+                "company_ids": list(selection.company_ids),
+                # The current backend processes one queue per request. This is
+                # the safe per-run cap exposed as "empresas por lote" in the UI.
+                "limit": int(settings["batch_size"]),
+                "start_year": int(settings["start_year"]),
+                "end_year": int(settings["end_year"]),
+            }
+
+            dispatch = self._refresh().request_refresh(refresh_params)
+            if str(dispatch.get("status") or "").lower() not in {
+                "error",
+                "already_running",
+            }:
+                self._write_app_settings(settings)
+            self._svc().invalidate_read_caches()
+            return self._sanitize_for_json({
+                **dispatch,
+                "selection": selection.to_dict(),
+                "settings": settings,
+            })
+        except Exception as exc:
+            return self._sanitize_for_json({
+                "status": "error",
+                "job_id": None,
+                "message": str(exc),
+                "status_reason_code": "data_update_error",
+                "status_reason_message": str(exc),
+                "is_retry_allowed": True,
+            })
+
+    def reset_local_database(self, params=None) -> dict:
+        p = params or {}
+        action = str(p.get("action") or "").strip().lower()
+        expected = "RESET" if action == "restart_current" else "REBUILD"
+        if action not in {"restart_current", "recreate_local"}:
+            return self._sanitize_for_json({
+                "ok": False,
+                "action": action,
+                "error": "Invalid reset action.",
+            })
+        if str(p.get("confirm") or "") != expected:
+            return self._sanitize_for_json({
+                "ok": False,
+                "action": action,
+                "error": f"Type {expected} to confirm.",
+            })
+
+        try:
+            active_job = self._active_refresh_job()
+            if active_job is not None:
+                return self._sanitize_for_json({
+                    "ok": False,
+                    "action": action,
+                    "error": "An update is in progress. Cancel or wait for it to finish before resetting the database.",
+                    "active_job_id": active_job.get("job_id"),
+                })
+
+            if action == "restart_current":
+                result = self._restart_current_database_state()
+            else:
+                result = self._recreate_local_database()
+            self._reset_bridge_runtime()
+            return self._sanitize_for_json({
+                "ok": True,
+                "action": action,
+                **result,
+            })
+        except Exception as exc:
+            return self._sanitize_for_json({
+                "ok": False,
+                "action": action,
+                "error": str(exc),
+            })
+
+    def _default_data_update_settings(self) -> dict[str, Any]:
+        preset = "top_200"
+        try:
+            state = self._onboarding().get_onboarding_state()
+            selected = str(state.get("selected_company_universe") or "").strip().lower()
+            if selected in self.DATA_UPDATE_PRESETS:
+                preset = selected
+        except Exception:
+            pass
+        current_year = datetime.now(timezone.utc).year
+        return {
+            "universe_preset": preset,
+            "batch_size": 100,
+            "retry_failed": True,
+            "recompute_coverage": True,
+            "start_year": current_year - 4,
+            "end_year": current_year,
+        }
+
+    def _resolve_data_update_settings(self) -> dict[str, Any]:
+        defaults = self._default_data_update_settings()
+        stored = self._read_app_settings(self.DATA_UPDATE_SETTING_KEYS)
+        raw = {
+            "universe_preset": stored.get("data_update_universe_preset", defaults["universe_preset"]),
+            "batch_size": stored.get("data_update_batch_size", defaults["batch_size"]),
+            "retry_failed": stored.get("data_update_retry_failed", defaults["retry_failed"]),
+            "recompute_coverage": stored.get("data_update_recompute_coverage", defaults["recompute_coverage"]),
+            "start_year": stored.get("data_update_start_year", defaults["start_year"]),
+            "end_year": stored.get("data_update_end_year", defaults["end_year"]),
+        }
+        return self._normalize_data_update_settings(raw)
+
+    def _normalize_data_update_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
+        preset = str(
+            payload.get("universe_preset")
+            or payload.get("preset")
+            or payload.get("selected_company_universe")
+            or "top_200"
+        ).strip().lower()
+        if preset not in self.DATA_UPDATE_PRESETS:
+            raise ValueError(f"Universo de empresas invalido: {preset}")
+
+        try:
+            batch_size = int(payload.get("batch_size") or 100)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Empresas por lote deve ser 50, 100, 200 ou 500.") from exc
+        if batch_size not in self.DATA_UPDATE_BATCH_SIZES:
+            raise ValueError("Empresas por lote deve ser 50, 100, 200 ou 500.")
+
+        current_year = datetime.now(timezone.utc).year
+        default_start = current_year - 4
+        default_end = current_year
+        try:
+            start_year = int(payload.get("start_year") or default_start)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Ano inicial deve ser um numero inteiro.") from exc
+        try:
+            end_year = int(payload.get("end_year") or default_end)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Ano final deve ser um numero inteiro.") from exc
+        if start_year < self.CVM_MIN_YEAR:
+            raise ValueError(f"Ano inicial minimo permitido: {self.CVM_MIN_YEAR}.")
+        if end_year > current_year:
+            raise ValueError(f"Ano final maximo permitido: {current_year}.")
+        if start_year > end_year:
+            raise ValueError(f"Ano inicial ({start_year}) nao pode ser maior que o ano final ({end_year}).")
+
+        return {
+            "universe_preset": preset,
+            "batch_size": batch_size,
+            "retry_failed": self._coerce_bool(payload.get("retry_failed"), default=True),
+            "recompute_coverage": self._coerce_bool(
+                payload.get("recompute_coverage"),
+                default=True,
+            ),
+            "start_year": start_year,
+            "end_year": end_year,
+        }
+
+    @staticmethod
+    def _coerce_bool(value: Any, *, default: bool) -> bool:
+        if value is None:
+            return bool(default)
+        if isinstance(value, str):
+            return value.strip().lower() in {"1", "true", "yes", "sim", "on"}
+        return bool(value)
+
+    def _read_app_settings(self, keys: set[str]) -> dict[str, Any]:
+        from sqlalchemy import bindparam, text  # noqa: PLC0415
+        from src.company_universe import ensure_company_universe_tables_for_connection  # noqa: PLC0415
+
+        with self._svc().engine.begin() as conn:
+            ensure_company_universe_tables_for_connection(conn)
+            rows = conn.execute(
+                text("SELECT key, value FROM app_settings WHERE key IN :keys")
+                .bindparams(bindparam("keys", expanding=True)),
+                {"keys": sorted(keys)},
+            ).mappings().all()
+
+        parsed: dict[str, Any] = {}
+        for row in rows:
+            key = str(row["key"])
+            raw = row.get("value")
+            try:
+                parsed[key] = json.loads(raw) if raw is not None else None
+            except Exception:
+                parsed[key] = raw
+        return parsed
+
+    def _write_app_settings(self, settings: dict[str, Any]) -> None:
+        from sqlalchemy import text  # noqa: PLC0415
+        from src.company_universe import ensure_company_universe_tables_for_connection  # noqa: PLC0415
+
+        values = {
+            "data_update_universe_preset": settings["universe_preset"],
+            "data_update_batch_size": int(settings["batch_size"]),
+            "data_update_retry_failed": bool(settings["retry_failed"]),
+            "data_update_recompute_coverage": bool(settings["recompute_coverage"]),
+            "data_update_start_year": int(settings["start_year"]),
+            "data_update_end_year": int(settings["end_year"]),
+        }
+        now = datetime.now(timezone.utc).isoformat()
+        with self._svc().engine.begin() as conn:
+            ensure_company_universe_tables_for_connection(conn)
+            for key, value in values.items():
+                conn.execute(text("DELETE FROM app_settings WHERE key = :key"), {"key": key})
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO app_settings (key, value, updated_at)
+                        VALUES (:key, :value, :updated_at)
+                        """
+                    ),
+                    {
+                        "key": key,
+                        "value": json.dumps(value, ensure_ascii=True),
+                        "updated_at": now,
+                    },
+                )
+
+    def _active_refresh_job(self) -> dict[str, Any] | None:
+        try:
+            response = self._refresh().get_refresh_status({})
+            for item in response.get("items", []):
+                if str(item.get("state") or "").lower() in {"queued", "running"}:
+                    return dict(item)
+        except Exception:
+            return None
+        return None
+
+    def _restart_current_database_state(self) -> dict[str, Any]:
+        from sqlalchemy import text  # noqa: PLC0415
+        from src.company_universe import ensure_company_universe_tables_for_connection  # noqa: PLC0415
+        from src.refresh_jobs import ensure_refresh_runtime_tables_for_connection  # noqa: PLC0415
+
+        svc = self._svc()
+        removed: list[str] = []
+        settings_snapshot = self._resolve_data_update_settings()
+
+        blank: dict[str, Any] = {
+            "first_run_completed": False,
+            "should_show": True,
+            "selected_company_universe": None,
+            "company_universe_source": None,
+            "company_universe_source_date": None,
+            "setup_status": None,
+            "selected_company_count": 0,
+            "refresh_job_id": None,
+            "warning": None,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        onboarding = self._onboarding()
+        onboarding._write_state(blank)  # type: ignore[attr-defined]
+
+        with svc.engine.begin() as conn:
+            ensure_company_universe_tables_for_connection(conn)
+            ensure_refresh_runtime_tables_for_connection(conn)
+            conn.execute(text("DELETE FROM company_universe"))
+            conn.execute(text("DELETE FROM refresh_jobs"))
+            conn.execute(text("DELETE FROM company_refresh_status"))
+            conn.execute(
+                text(
+                    """
+                    DELETE FROM app_settings
+                    WHERE key IN (
+                        'first_run_completed',
+                        'selected_company_universe',
+                        'company_universe_source',
+                        'company_universe_source_date',
+                        'download_status',
+                        'refresh_job_id'
+                    )
+                    """
+                )
+            )
+        removed.extend(["company_universe", "refresh_jobs", "company_refresh_status", "onboarding_state"])
+        self._remove_runtime_state_files(removed)
+        self._write_app_settings(settings_snapshot)
+        svc.invalidate_read_caches()
+        return {
+            "backup_path": None,
+            "removed": removed,
+            "message": "Setup state and update history cleared. Local financial data was preserved.",
+        }
+
+    def _recreate_local_database(self) -> dict[str, Any]:
+        from src.database import init_db_tables  # noqa: PLC0415
+        from src.db import build_engine  # noqa: PLC0415
+
+        svc = self._svc()
+        if svc.settings.database_url:
+            raise RuntimeError("Automatic rebuild is only supported for local SQLite databases.")
+
+        settings_snapshot = self._resolve_data_update_settings()
+        db_path = Path(svc.settings.paths.db_path)
+        data_dir = Path(svc.settings.paths.data_dir)
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        backup_dir = data_dir / "backup" / f"db-reset-{timestamp}"
+        backup_dir.mkdir(parents=True, exist_ok=True)
+
+        backup_items = self._backup_database_artifacts(db_path, backup_dir)
+
+        try:
+            svc.engine.dispose()
+        except Exception:
+            pass
+
+        removed: list[str] = []
+        for candidate in (db_path, db_path.with_name(db_path.name + "-wal"), db_path.with_name(db_path.name + "-shm")):
+            if candidate.exists():
+                candidate.unlink()
+                removed.append(str(candidate))
+        self._remove_runtime_state_files(removed)
+
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        engine = build_engine(svc.settings)
+        try:
+            init_db_tables(engine)
+        finally:
+            engine.dispose()
+
+        self._reset_bridge_runtime()
+        self._write_app_settings(settings_snapshot)
+        return {
+            "backup_path": str(backup_dir),
+            "backup_items": backup_items,
+            "removed": removed,
+            "message": "Local SQLite database rebuilt. Start an update to populate the database.",
+        }
+
+    def _backup_database_artifacts(self, db_path: Path, backup_dir: Path) -> list[str]:
+        copied: list[str] = []
+        if db_path.exists():
+            target = backup_dir / db_path.name
+            src_uri = f"file:{db_path.as_posix()}?mode=ro"
+            src = sqlite3.connect(src_uri, uri=True)
+            try:
+                dst = sqlite3.connect(str(target))
+                try:
+                    src.backup(dst)
+                finally:
+                    dst.close()
+            finally:
+                src.close()
+            copied.append(str(target))
+
+        for source in (
+            db_path.with_name(db_path.name + "-wal"),
+            db_path.with_name(db_path.name + "-shm"),
+            Path(self._svc().settings.paths.data_dir) / "refresh_jobs.json",
+            Path(self._svc().settings.paths.onboarding_state_path),
+            Path(self._svc().settings.paths.base_health_snapshot_path),
+        ):
+            if source.exists():
+                target = backup_dir / source.name
+                shutil.copy2(source, target)
+                copied.append(str(target))
+        return copied
+
+    def _remove_runtime_state_files(self, removed: list[str]) -> None:
+        svc = self._svc()
+        for path in (
+            Path(svc.settings.paths.data_dir) / "refresh_jobs.json",
+            Path(svc.settings.paths.onboarding_state_path),
+            Path(svc.settings.paths.base_health_snapshot_path),
+        ):
+            if path.exists():
+                path.unlink()
+                removed.append(str(path))
+
+    def _reset_bridge_runtime(self) -> None:
+        for service in (self._service,):
+            try:
+                if service is not None:
+                    service.engine.dispose()
+            except Exception:
+                pass
+        self._service = None
+        self._refresh_manager = None
+        self._onboarding_service = None
+        self._company_info_cache.clear()
+        self._company_info_pending.clear()
 
     # ------------------------------------------------------------------
     # Dev tools — only callable from /dev/data-ops (DEV build + flag)

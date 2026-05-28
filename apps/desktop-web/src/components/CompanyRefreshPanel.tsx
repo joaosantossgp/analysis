@@ -1,4 +1,4 @@
-import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
+import { useState, useEffect, useRef, type CSSProperties, type ReactNode } from "react";
 import {
   useMutation,
   useQuery,
@@ -19,6 +19,11 @@ import type { CompanyRefreshStatus, RefreshDispatchResponse } from "@/lib/bridge
 import { Panel } from "@/components/surface/Panel";
 
 const ACTIVE_POLL_MS = 2_000;
+const CVM_MIN_YEAR = 2010;
+
+type RefreshAction =
+  | { type: "incremental" }
+  | { type: "history"; startYear: number; endYear: number };
 
 type Props = {
   cdCvm: number;
@@ -29,6 +34,12 @@ type Props = {
 export function CompanyRefreshPanel({ cdCvm, bridgeReady, className }: Props) {
   const queryClient = useQueryClient();
   const wasActiveRef = useRef(false);
+  const currentYear = new Date().getFullYear();
+
+  const [showHistory, setShowHistory] = useState(false);
+  const [startYear, setStartYear] = useState(currentYear - 4);
+  const [endYear, setEndYear] = useState(currentYear);
+  const [yearError, setYearError] = useState<string | null>(null);
 
   const statusQuery = useQuery<CompanyRefreshStatusResult>({
     queryKey: ["company-refresh-status", cdCvm],
@@ -53,8 +64,19 @@ export function CompanyRefreshPanel({ cdCvm, bridgeReady, className }: Props) {
     invalidateCompanyData(queryClient, cdCvm);
   }, [bridgeReady, cdCvm, isActive, queryClient, statusQuery.isFetching]);
 
-  const refreshMutation = useMutation({
-    mutationFn: () => requestCompanyRefresh(cdCvm),
+  const refreshMutation = useMutation<RefreshDispatchResponse, Error, RefreshAction>({
+    mutationFn: (action: RefreshAction) => {
+      if (action.type === "incremental") {
+        return requestCompanyRefresh(cdCvm, {
+          startYear: currentYear - 1,
+          endYear: currentYear,
+        });
+      }
+      return requestCompanyRefresh(cdCvm, {
+        startYear: action.startYear,
+        endYear: action.endYear,
+      });
+    },
     onSuccess: (result) => {
       void queryClient.invalidateQueries({
         queryKey: ["company-refresh-status", cdCvm],
@@ -67,47 +89,195 @@ export function CompanyRefreshPanel({ cdCvm, bridgeReady, className }: Props) {
 
   const browserReason =
     statusQuery.data?.mode === "browser" ? statusQuery.data.reason : null;
-  const disabled =
+  const baseDisabled =
     !bridgeReady || Boolean(browserReason) || isActive || refreshMutation.isPending;
+
+  function validateYears(): boolean {
+    if (!Number.isFinite(startYear) || startYear < CVM_MIN_YEAR) {
+      setYearError(`Minimum start year: ${CVM_MIN_YEAR}.`);
+      return false;
+    }
+    if (!Number.isFinite(endYear) || endYear > currentYear) {
+      setYearError(`Maximum end year: ${currentYear}.`);
+      return false;
+    }
+    if (startYear > endYear) {
+      setYearError("Start year must be less than or equal to end year.");
+      return false;
+    }
+    setYearError(null);
+    return true;
+  }
+
+  function applyPreset(preset: "3y" | "5y" | "10y" | "full") {
+    const end = currentYear;
+    let start: number;
+    switch (preset) {
+      case "3y":
+        start = end - 2;
+        break;
+      case "5y":
+        start = end - 4;
+        break;
+      case "10y":
+        start = end - 9;
+        break;
+      default:
+        start = CVM_MIN_YEAR;
+    }
+    setStartYear(start);
+    setEndYear(end);
+    setYearError(null);
+  }
+
+  const pendingIncremental =
+    refreshMutation.isPending && refreshMutation.variables?.type === "incremental";
+  const pendingHistory =
+    refreshMutation.isPending && refreshMutation.variables?.type === "history";
 
   return (
     <Panel
       className={className}
       dense
       headingLevel={3}
-      title="Company refresh"
-      subtitle="On-demand CVM ingest for this company only."
+      title="Company Update"
+      subtitle="Download or update this company's data without updating the full database."
       actions={
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <StatusPill status={status} loading={!bridgeReady || statusQuery.isLoading} />
-          <Button
-            variant="primary"
-            size="xs"
-            disabled={disabled}
-            loading={refreshMutation.isPending}
-            onClick={() => refreshMutation.mutate()}
-          >
-            {buttonLabel({
-              active: isActive,
-              pending: refreshMutation.isPending,
-              ready: bridgeReady,
-            })}
-          </Button>
-        </div>
+        <StatusPill status={status} loading={!bridgeReady || statusQuery.isLoading} />
       }
     >
-      <div className="space-y-3">
-        {browserReason ? <BrowserNotice reason={browserReason} /> : null}
+      <div className="space-y-4">
+        {browserReason ? <Notice tone="warning">{browserReason}</Notice> : null}
         {statusQuery.isError ? <ErrorNotice error={statusQuery.error} /> : null}
         {refreshMutation.isError ? <ErrorNotice error={refreshMutation.error} /> : null}
         {refreshMutation.data ? (
           <DispatchNotice result={refreshMutation.data} />
         ) : null}
+
         <StatusBody
           status={status}
           loading={!bridgeReady || statusQuery.isLoading}
           isFetching={statusQuery.isFetching}
         />
+
+        {/* Incremental ITR */}
+        <ActionCard>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <ActionTitle>Update New ITRs</ActionTitle>
+              <ActionDesc>
+                Fetches new quarterly reports and missing recent periods.
+              </ActionDesc>
+            </div>
+            <Button
+              variant="primary"
+              size="xs"
+              disabled={baseDisabled}
+              loading={pendingIncremental}
+              onClick={() => refreshMutation.mutate({ type: "incremental" })}
+            >
+              {isActive
+                ? "Updating…"
+                : pendingIncremental
+                  ? "Requesting…"
+                  : "Update New ITRs"}
+            </Button>
+          </div>
+        </ActionCard>
+
+        {/* Historical download */}
+        <ActionCard>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <ActionTitle>Download History</ActionTitle>
+              <ActionDesc>
+                Downloads or rebuilds the financial history for the selected range.
+              </ActionDesc>
+            </div>
+            <ToggleButton
+              expanded={showHistory}
+              onToggle={() => setShowHistory((v) => !v)}
+            />
+          </div>
+
+          {showHistory ? (
+            <div className="mt-3 space-y-3">
+              <div className="flex flex-wrap gap-1">
+                {(["3y", "5y", "10y", "full"] as const).map((preset) => (
+                  <PresetButton key={preset} onSelect={() => applyPreset(preset)}>
+                    {preset === "full"
+                      ? "Full History"
+                      : `Last ${preset === "3y" ? 3 : preset === "5y" ? 5 : 10} years`}
+                  </PresetButton>
+                ))}
+              </div>
+
+              <div className="flex items-end gap-2">
+                <YearInput
+                  id={`start-year-${cdCvm}`}
+                  label="Start year"
+                  value={startYear}
+                  min={CVM_MIN_YEAR}
+                  max={currentYear}
+                  hasError={Boolean(yearError)}
+                  onChange={(v) => {
+                    setStartYear(v);
+                    setYearError(null);
+                  }}
+                />
+                <span
+                  style={{
+                    color: "var(--color-text-tertiary)",
+                    fontSize: "var(--text-sm)",
+                    paddingBottom: 6,
+                  }}
+                >
+                  –
+                </span>
+                <YearInput
+                  id={`end-year-${cdCvm}`}
+                  label="End year"
+                  value={endYear}
+                  min={CVM_MIN_YEAR}
+                  max={currentYear}
+                  hasError={Boolean(yearError)}
+                  onChange={(v) => {
+                    setEndYear(v);
+                    setYearError(null);
+                  }}
+                />
+              </div>
+
+              {yearError ? (
+                <p
+                  role="alert"
+                  style={{
+                    color: "var(--color-state-err)",
+                    fontSize: "var(--text-xs)",
+                    margin: 0,
+                  }}
+                >
+                  {yearError}
+                </p>
+              ) : null}
+
+              <Button
+                variant="secondary"
+                size="xs"
+                disabled={baseDisabled}
+                loading={pendingHistory}
+                onClick={() => {
+                  if (!validateYears()) return;
+                  refreshMutation.mutate({ type: "history", startYear, endYear });
+                }}
+              >
+                {pendingHistory
+                  ? `Downloading ${startYear}–${endYear}…`
+                  : "Download selected history"}
+              </Button>
+            </div>
+          ) : null}
+        </ActionCard>
       </div>
     </Panel>
   );
@@ -119,13 +289,165 @@ function invalidateCompanyData(queryClient: QueryClient, cdCvm: number) {
   void queryClient.invalidateQueries({ queryKey: ["company-kpis"] });
   void queryClient.invalidateQueries({ queryKey: ["company-statement"] });
   void queryClient.invalidateQueries({ queryKey: ["companies"] });
-  // Single-company refresh changes coverage rows too — keep the
-  // Data Coverage page fresh without forcing the user to revisit it.
   void queryClient.invalidateQueries({ queryKey: ["data-coverage"] });
   void queryClient.invalidateQueries({ queryKey: ["db-diagnostics"] });
   void queryClient.invalidateQueries({ queryKey: ["base-health"] });
   void queryClient.invalidateQueries({ queryKey: ["refresh-jobs"] });
+  void queryClient.invalidateQueries({ queryKey: ["company-refresh-status"] });
 }
+
+// ---- Layout helpers ----
+
+function ActionCard({ children }: { children: ReactNode }) {
+  return (
+    <div
+      style={{
+        background: "var(--color-surface-1)",
+        border: "1px solid var(--color-border-subtle)",
+        borderRadius: "var(--radius-sm)",
+        padding: 12,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function ActionTitle({ children }: { children: ReactNode }) {
+  return (
+    <p
+      style={{
+        color: "var(--color-text-primary)",
+        fontSize: "var(--text-sm)",
+        fontWeight: 500,
+        margin: 0,
+      }}
+    >
+      {children}
+    </p>
+  );
+}
+
+function ActionDesc({ children }: { children: ReactNode }) {
+  return (
+    <p
+      style={{
+        color: "var(--color-text-tertiary)",
+        fontSize: "var(--text-xs)",
+        margin: "4px 0 0",
+      }}
+    >
+      {children}
+    </p>
+  );
+}
+
+function ToggleButton({
+  expanded,
+  onToggle,
+}: {
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      style={{
+        background: "transparent",
+        border: "1px solid var(--color-border-default)",
+        borderRadius: "var(--radius-sm)",
+        color: "var(--color-text-secondary)",
+        cursor: "pointer",
+        fontSize: "var(--text-xs)",
+        flexShrink: 0,
+        padding: "4px 10px",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {expanded ? "▲ Close" : "▼ Select years"}
+    </button>
+  );
+}
+
+function PresetButton({
+  children,
+  onSelect,
+}: {
+  children: ReactNode;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      style={{
+        background: "var(--color-surface-2)",
+        border: "1px solid var(--color-border-subtle)",
+        borderRadius: "var(--radius-sm)",
+        color: "var(--color-text-secondary)",
+        cursor: "pointer",
+        fontSize: "var(--text-xs)",
+        padding: "3px 8px",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function YearInput({
+  id,
+  label,
+  value,
+  min,
+  max,
+  hasError,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  hasError: boolean;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <div className="flex-1">
+      <label
+        htmlFor={id}
+        style={{
+          color: "var(--color-text-tertiary)",
+          display: "block",
+          fontSize: "var(--text-xs)",
+          marginBottom: 3,
+        }}
+      >
+        {label}
+      </label>
+      <input
+        id={id}
+        type="number"
+        min={min}
+        max={max}
+        value={value}
+        onChange={(e) => onChange(Number.parseInt(e.target.value, 10))}
+        style={{
+          background: "var(--color-surface-2)",
+          border: `1px solid ${hasError ? "var(--color-state-err)" : "var(--color-border-default)"}`,
+          borderRadius: "var(--radius-sm)",
+          color: "var(--color-text-primary)",
+          fontSize: "var(--text-sm)",
+          padding: "5px 8px",
+          width: "100%",
+        }}
+      />
+    </div>
+  );
+}
+
+// ---- Status helpers (kept from original) ----
 
 function StatusPill({
   status,
@@ -171,8 +493,14 @@ function StatusBody({
 }) {
   if (loading) {
     return (
-      <p style={{ color: "var(--color-text-secondary)", fontSize: "var(--text-sm)", margin: 0 }}>
-        Loading refresh status...
+      <p
+        style={{
+          color: "var(--color-text-secondary)",
+          fontSize: "var(--text-sm)",
+          margin: 0,
+        }}
+      >
+        Loading status…
       </p>
     );
   }
@@ -189,8 +517,7 @@ function StatusBody({
           padding: 10,
         }}
       >
-        No refresh status recorded yet. Starting a refresh will enqueue the
-        standard 2010-current company ingest.
+        No updates recorded yet. Start an update to fetch data for this company.
       </p>
     );
   }
@@ -201,7 +528,7 @@ function StatusBody({
     status.status_reason_message ||
     status.latest_attempt_reason_message ||
     status.read_availability_message ||
-    "Refresh status available.";
+    "Update status available.";
 
   return (
     <div className="space-y-4">
@@ -209,7 +536,7 @@ function StatusBody({
         {summary}
         {isFetching && isActiveCompanyRefresh(status) ? (
           <span className="ml-2" style={{ color: "var(--color-state-warn)" }}>
-            Polling...
+            Polling…
           </span>
         ) : null}
       </p>
@@ -218,7 +545,10 @@ function StatusBody({
         <div>
           <div
             className="mb-2 flex justify-between"
-            style={{ color: "var(--color-text-tertiary)", fontSize: "var(--text-xs)" }}
+            style={{
+              color: "var(--color-text-tertiary)",
+              fontSize: "var(--text-xs)",
+            }}
           >
             <span>{status.progress_message || formatStage(status.stage)}</span>
             <span>{progress}%</span>
@@ -243,20 +573,45 @@ function StatusBody({
       ) : null}
 
       <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
-        <Field label="Latest readable year" value={formatNullable(status.latest_readable_year)} />
-        <Field label="Readable years" value={formatNullable(status.readable_years_count)} />
-        <Field label="Last success" value={formatDateTime(status.last_success_at ?? null)} />
-        <Field label="Last attempt" value={formatDateTime(status.last_attempt_at ?? null)} />
-        <Field label="Rows inserted" value={formatNullable(status.last_rows_inserted)} />
+        <Field
+          label="Latest year"
+          value={formatNullable(status.latest_readable_year)}
+        />
+        <Field
+          label="Readable years"
+          value={formatNullable(status.readable_years_count)}
+        />
+        <Field
+          label="Last success"
+          value={formatDateTime(status.last_success_at ?? null)}
+        />
+        <Field
+          label="Last attempt"
+          value={formatDateTime(status.last_attempt_at ?? null)}
+        />
+        <Field
+          label="Rows inserted"
+          value={formatNullable(status.last_rows_inserted)}
+        />
         <Field label="Range" value={formatRange(status)} />
-        <Field label="Source" value={status.source_label || status.source_scope || "n/d"} />
+        <Field
+          label="Source"
+          value={status.source_label || status.source_scope || "n/a"}
+        />
         <Field label="Job" value={shortJobId(status.job_id)} mono />
       </dl>
 
       {status.estimated_eta_seconds != null && isActiveCompanyRefresh(status) ? (
-        <p style={{ color: "var(--color-text-tertiary)", fontSize: "var(--text-xs)" }}>
+        <p
+          style={{
+            color: "var(--color-text-tertiary)",
+            fontSize: "var(--text-xs)",
+          }}
+        >
           ETA: {formatDuration(status.estimated_eta_seconds)}
-          {status.estimate_confidence ? ` (${status.estimate_confidence})` : ""}
+          {status.estimate_confidence
+            ? ` (${status.estimate_confidence})`
+            : ""}
         </p>
       ) : null}
 
@@ -299,10 +654,6 @@ function Field({
       </dd>
     </div>
   );
-}
-
-function BrowserNotice({ reason }: { reason: string }) {
-  return <Notice tone="warning">{reason}</Notice>;
 }
 
 function ErrorNotice({ error }: { error: unknown }) {
@@ -365,21 +716,6 @@ function DispatchNotice({ result }: { result: RefreshDispatchResponse }) {
   );
 }
 
-function buttonLabel({
-  active,
-  pending,
-  ready,
-}: {
-  active: boolean;
-  pending: boolean;
-  ready: boolean;
-}): string {
-  if (!ready) return "Waiting for bridge";
-  if (pending) return "Requesting...";
-  if (active) return "Refresh active";
-  return "Refresh company";
-}
-
 function summaryStyle(severity: string | null | undefined): CSSProperties {
   if (severity === "success") return noticeStyle("success");
   if (severity === "warning") return noticeStyle("warning");
@@ -391,6 +727,13 @@ function formatStateLabel(value: string | null | undefined): string {
   const normalized = String(value || "idle");
   if (normalized === "no_data") return "No data";
   if (normalized === "already_current") return "Already current";
+  if (normalized === "idle") return "Idle";
+  if (normalized === "queued") return "Queued";
+  if (normalized === "running") return "Running";
+  if (normalized === "success") return "Completed";
+  if (normalized === "error") return "Error";
+  if (normalized === "stalled") return "Stalled";
+  if (normalized === "loading") return "Loading";
   return normalized.replace(/_/g, " ");
 }
 
@@ -399,21 +742,21 @@ function formatStage(value: string | null | undefined): string {
 }
 
 function formatNullable(value: number | string | null | undefined): string {
-  if (value === null || value === undefined || value === "") return "n/d";
-  if (typeof value === "number") return new Intl.NumberFormat("pt-BR").format(value);
+  if (value === null || value === undefined || value === "") return "n/a";
+  if (typeof value === "number") return new Intl.NumberFormat("en-US").format(value);
   return value;
 }
 
 function formatRange(status: CompanyRefreshStatus): string {
-  if (status.last_start_year == null && status.last_end_year == null) return "n/d";
-  return `${status.last_start_year ?? "?"}-${status.last_end_year ?? "?"}`;
+  if (status.last_start_year == null && status.last_end_year == null) return "n/a";
+  return `${status.last_start_year ?? "?"}–${status.last_end_year ?? "?"}`;
 }
 
 function formatDateTime(value: string | null): string {
-  if (!value) return "n/d";
+  if (!value) return "n/a";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("pt-BR", {
+  return date.toLocaleString("en-US", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -430,6 +773,6 @@ function formatDuration(seconds: number): string {
 }
 
 function shortJobId(value: string | null | undefined): string {
-  if (!value) return "n/d";
-  return value.length > 12 ? `${value.slice(0, 8)}...` : value;
+  if (!value) return "n/a";
+  return value.length > 12 ? `${value.slice(0, 8)}…` : value;
 }

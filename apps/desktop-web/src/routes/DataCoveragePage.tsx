@@ -33,26 +33,26 @@ type FilterDef = {
 
 const FILTERS: FilterDef[] = [
   // All non-ignored filters hide rows marked as ignored — the operator
-  // explicitly removed them from the actionable view. Switch to "Ignorados"
+  // explicitly removed them from the actionable view. Switch to "Ignored"
   // to inspect or restore them.
-  { id: "all", label: "Todos os problemas", predicate: (r) => !r.ignored && r.status !== "complete" },
-  { id: "no_financial", label: "Sem dados financeiros", predicate: (r) => !r.ignored && !r.has_dfp && !r.has_itr },
-  { id: "no_dfp", label: "Sem DFP", predicate: (r) => !r.ignored && !r.has_dfp },
-  { id: "no_itr", label: "Sem ITR", predicate: (r) => !r.ignored && !r.has_itr },
-  { id: "stale", label: "Dados desatualizados", predicate: (r) => !r.ignored && r.is_stale },
-  { id: "failed", label: "Última atualização falhou", predicate: (r) => !r.ignored && r.update_failed },
-  { id: "ticker_unmapped", label: "Ticker não mapeado", predicate: (r) => !r.ignored && !r.ticker_mapped },
-  { id: "no_registry", label: "Cadastro ausente", predicate: (r) => !r.ignored && !r.has_registry },
-  { id: "ignored", label: "Ignorados", predicate: (r) => r.ignored },
+  { id: "all", label: "All Issues", predicate: (r) => !r.ignored && r.status !== "complete" },
+  { id: "no_financial", label: "No Financial Data", predicate: (r) => !r.ignored && !r.has_dfp && !r.has_itr },
+  { id: "no_dfp", label: "No DFP", predicate: (r) => !r.ignored && !r.has_dfp },
+  { id: "no_itr", label: "No ITR", predicate: (r) => !r.ignored && !r.has_itr },
+  { id: "stale", label: "Stale Data", predicate: (r) => !r.ignored && r.is_stale },
+  { id: "failed", label: "Last Update Failed", predicate: (r) => !r.ignored && r.update_failed },
+  { id: "ticker_unmapped", label: "Ticker Unmapped", predicate: (r) => !r.ignored && !r.ticker_mapped },
+  { id: "no_registry", label: "Missing Registry", predicate: (r) => !r.ignored && !r.has_registry },
+  { id: "ignored", label: "Ignored", predicate: (r) => r.ignored },
 ];
 
 const STATUS_LABEL: Record<DataCoverageStatus, string> = {
-  complete: "Completo",
-  partial: "Parcial",
-  no_financial: "Sem dados",
-  failed: "Falha",
-  unmapped: "Mapeamento",
-  ignored: "Ignorado",
+  complete: "Complete",
+  partial: "Partial",
+  no_financial: "No Data",
+  failed: "Failed",
+  unmapped: "Unmapped",
+  ignored: "Ignored",
 };
 
 const STATUS_TONE: Record<DataCoverageStatus, { bg: string; fg: string; border: string }> = {
@@ -228,7 +228,7 @@ export function DataCoveragePage() {
       targetIgnored
       && targets.length >= BULK_CONFIRM_THRESHOLD
       && !window.confirm(
-        `Ignorar ${targets.length} empresas selecionadas? Elas sairão dos filtros acionáveis, mas podem ser restauradas no filtro Ignorados.`,
+        `Ignore ${targets.length} selected companies? They will be removed from actionable filters but can be restored under the Ignored filter.`,
       )
     ) {
       return;
@@ -257,8 +257,8 @@ export function DataCoveragePage() {
   return (
     <section className="space-y-6">
       <PageHeader
-        title="Cobertura de Dados"
-        subtitle="Empresas com dados ausentes, incompletos, desatualizados ou com falha."
+        title="Data Coverage"
+        subtitle="Companies with missing, incomplete, stale, or failed data."
         actions={
           <Link
             to="/atualizar-base"
@@ -268,7 +268,7 @@ export function DataCoveragePage() {
               textDecoration: "underline",
             }}
           >
-            ← Atualizar base
+            ← Database Updates
           </Link>
         }
       />
@@ -276,13 +276,13 @@ export function DataCoveragePage() {
       {browserReason ? <StateBanner variant="browser-only" message={browserReason} /> : null}
 
       {coverageQuery.isLoading || !bridgeReady ? (
-        <StateBanner variant="loading" title="Carregando cobertura…" />
+        <StateBanner variant="loading" title="Loading coverage…" />
       ) : null}
 
       {coverageQuery.isError ? (
         <StateBanner
           variant="error"
-          title="Falha ao carregar cobertura"
+          title="Failed to load coverage"
           message={
             coverageQuery.error instanceof Error
               ? coverageQuery.error.message
@@ -296,7 +296,7 @@ export function DataCoveragePage() {
 
       {data ? (
         <Panel
-          title="Filtros"
+          title="Filters"
           dense
         >
           <FilterChips
@@ -309,7 +309,7 @@ export function DataCoveragePage() {
               type="search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar por nome, CVM ou ticker…"
+              placeholder="Search by name, CVM, or ticker…"
               style={{
                 width: "100%",
                 background: "var(--color-surface-1)",
@@ -328,8 +328,8 @@ export function DataCoveragePage() {
         filteredRows.length === 0 ? (
           <StateBanner
             variant="empty"
-            title="Sem ocorrências para esse filtro"
-            message="Todas as empresas do universo selecionado têm dados utilizáveis para esse critério."
+            title="No issues for this filter"
+            message="All companies in the selected universe have usable data for this criterion."
           />
         ) : (
           <>
@@ -372,7 +372,7 @@ export function DataCoveragePage() {
               }
             />
             <p style={{ color: "var(--color-text-tertiary)", fontSize: "var(--text-xs)", textAlign: "right" }}>
-              {filteredRows.length.toLocaleString("pt-BR")} empresa{filteredRows.length === 1 ? "" : "s"}
+              {filteredRows.length.toLocaleString("en-US")} compan{filteredRows.length === 1 ? "y" : "ies"}
             </p>
           </>
         )
@@ -381,7 +381,7 @@ export function DataCoveragePage() {
       {retryMutation.isError ? (
         <StateBanner
           variant="error"
-          title="Não foi possível iniciar a atualização"
+          title="Could not start update"
           message={
             retryMutation.error instanceof Error
               ? retryMutation.error.message
@@ -393,7 +393,7 @@ export function DataCoveragePage() {
       {ignoreMutation.isError ? (
         <StateBanner
           variant="error"
-          title="Não foi possível atualizar status de ignorado"
+          title="Could not update ignore status"
           message={
             ignoreMutation.error instanceof Error
               ? ignoreMutation.error.message
@@ -405,7 +405,7 @@ export function DataCoveragePage() {
       {bulkError ? (
         <StateBanner
           variant="error"
-          title="Falha na ação em lote"
+          title="Bulk action failed"
           message={bulkError}
         />
       ) : null}
@@ -442,7 +442,7 @@ function BulkActionsBar({
       }}
     >
       <span style={{ color: "var(--color-text-primary)", fontSize: "var(--text-sm)" }}>
-        {selectedCount} selecionada{selectedCount === 1 ? "" : "s"}
+        {selectedCount} selected
       </span>
       <div style={{ display: "flex", gap: 8 }}>
         <button
@@ -459,7 +459,7 @@ function BulkActionsBar({
             padding: "4px 10px",
           }}
         >
-          {bulkRunning === "ignore" ? "Aplicando…" : "Ignorar selecionadas"}
+          {bulkRunning === "ignore" ? "Applying…" : "Ignore selected"}
         </button>
         <button
           type="button"
@@ -475,7 +475,7 @@ function BulkActionsBar({
             padding: "4px 10px",
           }}
         >
-          {bulkRunning === "restore" ? "Aplicando…" : "Restaurar selecionadas"}
+          {bulkRunning === "restore" ? "Applying…" : "Restore selected"}
         </button>
         <button
           type="button"
@@ -491,7 +491,7 @@ function BulkActionsBar({
             padding: "4px 10px",
           }}
         >
-          Limpar
+          Clear
         </button>
       </div>
     </div>
@@ -501,14 +501,14 @@ function BulkActionsBar({
 function SummaryCards({ data }: { data: DataCoverageResponse }) {
   const { summary } = data;
   const cards: Array<{ label: string; value: number; tone?: DataCoverageStatus }> = [
-    { label: "Total no universo", value: summary.total },
-    { label: "Completo", value: summary.complete, tone: "complete" },
-    { label: "Parcial", value: summary.partial, tone: "partial" },
-    { label: "Sem dados", value: summary.no_financial, tone: "no_financial" },
-    { label: "Falha na última", value: summary.failed, tone: "failed" },
-    { label: "Desatualizado", value: summary.stale, tone: "partial" },
-    { label: "Mapeamento", value: summary.unmapped, tone: "unmapped" },
-    { label: "Ignorados", value: summary.ignored, tone: "ignored" },
+    { label: "Total in Universe", value: summary.total },
+    { label: "Complete", value: summary.complete, tone: "complete" },
+    { label: "Partial", value: summary.partial, tone: "partial" },
+    { label: "No Data", value: summary.no_financial, tone: "no_financial" },
+    { label: "Last Failed", value: summary.failed, tone: "failed" },
+    { label: "Stale", value: summary.stale, tone: "partial" },
+    { label: "Unmapped", value: summary.unmapped, tone: "unmapped" },
+    { label: "Ignored", value: summary.ignored, tone: "ignored" },
   ];
   return (
     <div
@@ -549,7 +549,7 @@ function SummaryCards({ data }: { data: DataCoverageResponse }) {
                 marginTop: 4,
               }}
             >
-              {card.value.toLocaleString("pt-BR")}
+              {card.value.toLocaleString("en-US")}
             </div>
           </div>
         );
@@ -708,7 +708,7 @@ function CoverageTable({
             <Th>
               <input
                 type="checkbox"
-                aria-label="Selecionar todas"
+                aria-label="Select all"
                 checked={allSelected}
                 ref={(el) => {
                   if (el) el.indeterminate = !allSelected && someSelected;
@@ -716,15 +716,15 @@ function CoverageTable({
                 onChange={() => onToggleSelectAll(allSelected)}
               />
             </Th>
-            <Th>Empresa</Th>
+            <Th>Company</Th>
             <Th>Ticker</Th>
             <Th>CVM</Th>
             <Th>Status</Th>
             <Th>DFP</Th>
             <Th>ITR</Th>
-            <Th>Última atualização</Th>
-            <Th>Erro</Th>
-            <Th>Ações</Th>
+            <Th>Last Update</Th>
+            <Th>Error</Th>
+            <Th>Actions</Th>
           </tr>
         </thead>
         <tbody>
@@ -746,7 +746,7 @@ function CoverageTable({
                 <Td>
                   <input
                     type="checkbox"
-                    aria-label={`Selecionar ${row.company_name}`}
+                    aria-label={`Select ${row.company_name}`}
                     checked={selected.has(row.cd_cvm)}
                     onChange={() => onToggleSelected(row.cd_cvm)}
                   />
@@ -781,7 +781,7 @@ function CoverageTable({
                     }}
                   >
                     {STATUS_LABEL[row.status]}
-                    {row.is_stale ? " · antigo" : ""}
+                    {row.is_stale ? " · stale" : ""}
                   </span>
                 </Td>
                 <Td>{row.latest_dfp_year ?? <Muted>—</Muted>}</Td>
@@ -796,10 +796,10 @@ function CoverageTable({
                       title={row.last_attempt_at}
                       style={{ color: "var(--color-text-tertiary)" }}
                     >
-                      {row.last_attempt_at.slice(0, 10)} (tentativa)
+                      {row.last_attempt_at.slice(0, 10)} (attempt)
                     </span>
                   ) : (
-                    <Muted>nunca</Muted>
+                    <Muted>never</Muted>
                   )}
                 </Td>
                 <Td>
@@ -839,7 +839,7 @@ function CoverageTable({
                           opacity: disabled && retryingCvm !== row.cd_cvm ? 0.5 : 1,
                         }}
                       >
-                        {retryingCvm === row.cd_cvm ? "Enviando…" : "Tentar novamente"}
+                        {retryingCvm === row.cd_cvm ? "Sending…" : "Retry"}
                       </button>
                     ) : null}
                     <Link
@@ -854,7 +854,7 @@ function CoverageTable({
                         textDecoration: "none",
                       }}
                     >
-                      Abrir
+                      Open
                     </Link>
                     <button
                       type="button"
@@ -875,8 +875,8 @@ function CoverageTable({
                       {ignoringCvm === row.cd_cvm
                         ? "…"
                         : row.ignored
-                          ? "Restaurar"
-                          : "Ignorar"}
+                          ? "Restore"
+                          : "Ignore"}
                     </button>
                   </div>
                 </Td>

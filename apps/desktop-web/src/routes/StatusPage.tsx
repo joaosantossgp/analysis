@@ -137,7 +137,7 @@ function PageHeader({
     <header className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-5 shadow-lg">
       <UnifiedPageHeader
         title="Status"
-        subtitle="Runtime, local data, database, software updater, and diagnostics for the default Vite desktop mode. Software update is separate from Atualizar Base."
+        subtitle="Runtime, local data, database, software updater, and diagnostics for the default Vite desktop mode. Software update is separate from Database Updates."
         actions={
           <div className="flex flex-col items-end gap-2 text-right">
             <StatusPill tone={runtime?.bridge_status === "ready" ? "good" : "warn"}>
@@ -216,7 +216,7 @@ function LocalPathsCard({
 }) {
   const rows = PATH_ORDER.map((kind) => paths[kind]).filter(Boolean) as LocalPathInfo[];
   return (
-    <Card title="Dados locais" eyebrow="Persistent paths">
+    <Card title="Local Data" eyebrow="Persistent paths">
       <div className="space-y-3">
         {rows.map((item) => (
           <div key={item.kind} className="rounded border border-zinc-800 bg-zinc-950/50 p-3">
@@ -338,7 +338,7 @@ function UpdateCard({
           const prog = await fetchUpdateProgress();
           setProgress(prog);
           if (prog.status === "error") {
-            setLocalError(prog.error || "Erro durante a atualização");
+            setLocalError(prog.error || "Error during update");
             setIsApplying(false);
             clearInterval(intervalId);
           } else if (prog.status === "idle" || prog.status === "success") {
@@ -368,7 +368,7 @@ function UpdateCard({
     try {
       const result = await triggerApplyUpdate();
       if (!result.started) {
-        setLocalError(result.error || "Não foi possível iniciar a atualização.");
+        setLocalError(result.error || "Could not start the update.");
         setIsApplying(false);
         setProgress(null);
       }
@@ -421,7 +421,7 @@ function UpdateCard({
                 onClick={() => setShowConfirm(true)}
                 className="w-full sm:w-auto rounded bg-cyan-600 hover:bg-cyan-500 px-4 py-2 text-xs font-semibold text-white transition-colors"
               >
-                Instalar atualização
+                Install Update
               </button>
             </div>
           )}
@@ -429,14 +429,14 @@ function UpdateCard({
           {showConfirm && (
             <div className="mt-4 rounded border border-amber-500/20 bg-amber-500/5 p-4 space-y-3">
               <h4 className="text-xs uppercase tracking-wider font-semibold text-amber-200">
-                Confirmar Atualização de Software
+                Confirm Software Update
               </h4>
               <p className="text-xs text-zinc-300 leading-relaxed">
-                O aplicativo será fechado e reiniciado para aplicar a versão{" "}
+                The app will close and restart to apply version{" "}
                 <span className="font-mono text-zinc-100 font-semibold">
                   {update.latest_version}
                 </span>
-                . Seus dados locais (banco de dados, relatórios e planilhas exportadas) serão preservados.
+                . Your local data (database, reports, and exported spreadsheets) will be preserved.
               </p>
               <div className="flex gap-2">
                 <button
@@ -444,14 +444,14 @@ function UpdateCard({
                   onClick={handleApplyUpdate}
                   className="rounded bg-amber-600 hover:bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white transition-colors"
                 >
-                  Confirmar e Fechar App
+                  Confirm and Close App
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowConfirm(false)}
                   className="rounded border border-zinc-750 hover:border-zinc-500 px-3 py-1.5 text-xs font-semibold text-zinc-300 transition-colors"
                 >
-                  Cancelar
+                  Cancel
                 </button>
               </div>
             </div>
@@ -462,10 +462,10 @@ function UpdateCard({
               <div className="flex justify-between items-center text-xs">
                 <span className="font-semibold text-cyan-200 capitalize">
                   {progress?.status === "downloading"
-                    ? "Baixando atualização..."
+                    ? "Downloading update..."
                     : progress?.status === "swapping"
-                      ? "Substituindo arquivos..."
-                      : "Preparando..."}
+                      ? "Replacing files..."
+                      : "Preparing..."}
                 </span>
                 <span className="font-mono text-cyan-100 font-bold">{progress?.percent ?? 0}%</span>
               </div>
@@ -476,7 +476,7 @@ function UpdateCard({
                 />
               </div>
               <p className="text-[11px] text-zinc-400">
-                Por favor, não feche o aplicativo. O processo será concluído automaticamente.
+                Please do not close the app. The process will complete automatically.
               </p>
             </div>
           )}
@@ -503,9 +503,15 @@ function UpdateCard({
 
           <div className="mt-4 border-t border-zinc-800 pt-3 text-[11px] leading-relaxed text-zinc-500 space-y-2">
             <p>
-              <span className="font-semibold text-zinc-400">Nota:</span> Esta atualização altera a versão do software via GitHub Releases.
-              Para atualizar os dados das empresas (demonstrativos CVM), utilize a tela{" "}
-              <span className="font-semibold text-zinc-400">Atualizar Base</span>.
+              <span className="font-semibold text-zinc-400">Note:</span> This update changes the software version via GitHub Releases.
+              To update company data (CVM financial statements), use the{" "}
+              <a
+                href="#/atualizar-base"
+                className="font-semibold text-zinc-300 underline decoration-zinc-600 underline-offset-2 hover:text-cyan-100"
+              >
+                Database Updates
+              </a>{" "}
+              page.
             </p>
           </div>
         </>
@@ -788,15 +794,15 @@ function formatBytes(bytes: number | null | undefined): string {
 }
 
 function formatInt(value: number | null | undefined): string {
-  if (value == null) return "n/d";
-  return new Intl.NumberFormat("pt-BR").format(value);
+  if (value == null) return "n/a";
+  return new Intl.NumberFormat("en-US").format(value);
 }
 
 function formatDateTime(value: string | null): string {
-  if (!value) return "n/d";
+  if (!value) return "n/a";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("pt-BR", {
+  return date.toLocaleString("en-US", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -806,7 +812,7 @@ function formatDateTime(value: string | null): string {
 }
 
 function formatReportPeriod(database: DatabaseDiagnostics): string {
-  if (database.latest_report_year == null) return "n/d";
+  if (database.latest_report_year == null) return "n/a";
   return database.latest_period_label
     ? `${database.latest_report_year} · ${database.latest_period_label}`
     : String(database.latest_report_year);

@@ -16,6 +16,8 @@ const REFRESH_JOB_QUERY_KEYS: Array<readonly unknown[]> = [
   ["onboarding-state"],
   ["app-status"],
   ["data-coverage"],
+  ["data-update-settings"],
+  ["company-universe-selection"],
 ];
 
 export function useRefreshJobInvalidation() {

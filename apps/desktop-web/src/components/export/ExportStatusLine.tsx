@@ -93,7 +93,7 @@ export function ExportStatusLine({
             className="ml-auto shrink-0 font-mono"
             style={{ color: "var(--color-text-tertiary)", fontSize: "var(--text-2xs)" }}
           >
-            {timestamp.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+            {timestamp.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}
           </span>
         ) : null}
       </div>

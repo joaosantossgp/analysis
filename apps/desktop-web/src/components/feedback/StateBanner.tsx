@@ -46,7 +46,7 @@ const VARIANTS: Record<
   },
   empty: {
     glyph: "—",
-    defaultTitle: "Sem dados",
+    defaultTitle: "No data",
     color: "var(--color-text-secondary)",
     border: "var(--color-border-subtle)",
     bg: "var(--color-surface-2)",
@@ -54,7 +54,7 @@ const VARIANTS: Record<
   },
   error: {
     glyph: "!",
-    defaultTitle: "Erro",
+    defaultTitle: "Error",
     color: "var(--color-state-err)",
     border: "var(--color-state-err)",
     bg: "var(--color-surface-2)",
@@ -62,7 +62,7 @@ const VARIANTS: Record<
   },
   "browser-only": {
     glyph: "▲",
-    defaultTitle: "Modo navegador",
+    defaultTitle: "Browser mode",
     color: "var(--color-state-warn)",
     border: "var(--color-state-warn)",
     bg: "var(--color-surface-2)",
@@ -135,7 +135,7 @@ export function StateBanner({
               cursor: "pointer",
             }}
           >
-            tentar novamente
+            retry
           </button>
         ) : null}
       </div>

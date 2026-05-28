@@ -228,6 +228,8 @@ class CompanySearchResult:
     gics_industry_group: str | None = None
     gics_industry: str | None = None
     gics_sub_industry: str | None = None
+    # Derived coverage status: "no_history" | "partial" | "complete" | "failed"
+    data_status: str = "no_history"
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)

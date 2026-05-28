@@ -33,7 +33,7 @@ export function ExportActionPanel({
   className,
 }: Props) {
   const action = useExportAction({ cdCvm, statementType });
-  const finalScopeLabel = scopeLabel ?? (statementType ? `Demonstrativo ${statementType}` : "Workbook completo");
+  const finalScopeLabel = scopeLabel ?? (statementType ? `Statement ${statementType}` : "Full Workbook");
   const defaultDescription =
     description ??
     (statementType

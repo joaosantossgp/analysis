@@ -157,7 +157,7 @@ function TrendChartCard({ title, data, formatType, colorVar }: TrendChartProps) 
   const formatVal = (val: number): string => {
     if (formatType === "pct") return `${(val * 100).toFixed(1)}%`;
     if (formatType === "ratio") return `${val.toFixed(1)}x`;
-    return val.toLocaleString("pt-BR", { maximumFractionDigits: 1 });
+    return val.toLocaleString("en-US", { maximumFractionDigits: 1 });
   };
 
   const { hasData, pathD, gridLines, xLabels, dataDots, viewWidth, viewHeight, padLeft, padRight } =

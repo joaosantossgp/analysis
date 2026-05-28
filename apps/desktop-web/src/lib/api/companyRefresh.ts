@@ -29,11 +29,16 @@ export async function fetchCompanyRefreshStatus(
 
 export async function requestCompanyRefresh(
   cdCvm: number,
+  options?: { startYear?: number; endYear?: number },
 ): Promise<RefreshDispatchResponse> {
   if (getBridgeMode() === "browser") {
     throw new Error(BROWSER_REASON);
   }
-  const response = await callBridge("request_refresh", { cd_cvm: cdCvm });
+  const response = await callBridge("request_refresh", {
+    cd_cvm: cdCvm,
+    ...(options?.startYear != null ? { start_year: options.startYear } : {}),
+    ...(options?.endYear != null ? { end_year: options.endYear } : {}),
+  });
   if (response.error) {
     throw new Error(response.error);
   }

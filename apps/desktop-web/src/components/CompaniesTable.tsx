@@ -218,7 +218,7 @@ function Status({
   }
   return (
     <span className="font-mono text-xs text-zinc-400">
-      {totalItems.toLocaleString("pt-BR")}{" "}
+      {totalItems.toLocaleString("en-US")}{" "}
       {hasFilters ? "matched" : "companies"}
     </span>
   );
@@ -284,7 +284,7 @@ function FilterBar({
           </option>
           {sectors.map((sector) => (
             <option key={sector.sector_slug} value={sector.sector_slug}>
-              {sector.sector_name} ({sector.company_count.toLocaleString("pt-BR")})
+              {sector.sector_name} ({sector.company_count.toLocaleString("en-US")})
             </option>
           ))}
         </select>
@@ -374,15 +374,15 @@ function Body({
     return <StateBanner variant="browser-only" message={query.data.reason} />;
   }
   if (query.isLoading || !isDesktop) {
-    return <StateBanner variant="loading" title="Carregando diretório…" />;
+    return <StateBanner variant="loading" title="Loading directory…" />;
   }
   if (items.length === 0) {
     if (hasFilters) {
       return (
         <StateBanner
           variant="empty"
-          title="Sem resultados"
-          message="Nenhuma empresa corresponde aos filtros ativos."
+          title="No results"
+          message="No companies match the active filters."
         >
           <button
             type="button"
@@ -397,8 +397,8 @@ function Body({
     return (
       <StateBanner
         variant="empty"
-        title="Sem empresas"
-        message="Nenhuma empresa no banco local. Execute Atualizar Base para popular os dados."
+        title="No companies"
+        message="No companies in the local database. Run Database Updates to populate data."
       />
     );
   }
@@ -472,18 +472,10 @@ function CompanyRow({
       </td>
       <td className="px-3 py-2 font-mono text-xs text-zinc-400">{yearsSummary}</td>
       <td className="px-3 py-2 text-right font-mono text-xs text-zinc-400">
-        {company.total_rows.toLocaleString("pt-BR")}
+        {company.total_rows.toLocaleString("en-US")}
       </td>
       <td className="px-3 py-2 text-center text-xs">
-        {company.has_financial_data ? (
-          <span title="Has local financial data" className="text-emerald-400">
-            ●
-          </span>
-        ) : (
-          <span title="No local data" className="text-zinc-700">
-            ○
-          </span>
-        )}
+        <DataStatusBadge status={company.data_status} hasFinancialData={company.has_financial_data} />
       </td>
     </tr>
   );
@@ -525,6 +517,63 @@ function Pagination({
       </button>
     </nav>
   );
+}
+
+function DataStatusBadge({
+  status,
+  hasFinancialData,
+}: {
+  status: string | undefined;
+  hasFinancialData: boolean;
+}) {
+  const resolved = status ?? (hasFinancialData ? "partial" : "no_history");
+  switch (resolved) {
+    case "complete":
+      return (
+        <span
+          title="Complete financial history"
+          className="inline-flex items-center gap-1 rounded border border-emerald-900/60 bg-emerald-950/40 px-1.5 py-0.5 font-mono text-emerald-400"
+        >
+          ● Complete
+        </span>
+      );
+    case "partial":
+      return (
+        <span
+          title="Partial financial history"
+          className="inline-flex items-center gap-1 rounded border border-amber-900/60 bg-amber-950/40 px-1.5 py-0.5 font-mono text-amber-400"
+        >
+          ◑ Partial
+        </span>
+      );
+    case "failed":
+      return (
+        <span
+          title="Last update failed"
+          className="inline-flex items-center gap-1 rounded border border-rose-900/60 bg-rose-950/40 px-1.5 py-0.5 font-mono text-rose-400"
+        >
+          ✕ Update Failed
+        </span>
+      );
+    case "unmapped":
+      return (
+        <span
+          title="Company without complete mapping"
+          className="inline-flex items-center gap-1 rounded border border-orange-900/60 bg-orange-950/40 px-1.5 py-0.5 font-mono text-orange-400"
+        >
+          ? Unmapped
+        </span>
+      );
+    default:
+      return (
+        <span
+          title="No financial history"
+          className="inline-flex items-center gap-1 rounded border border-zinc-700/60 bg-zinc-900/40 px-1.5 py-0.5 font-mono text-zinc-500"
+        >
+          ○ No History
+        </span>
+      );
+  }
 }
 
 function formatYears(years: number[]): string {

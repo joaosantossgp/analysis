@@ -157,7 +157,7 @@ function BodyHeader({
     <div className="flex flex-wrap items-center justify-between gap-3 rounded border border-zinc-800 bg-zinc-950/40 px-3 py-2">
       <div className="flex flex-wrap items-center gap-3 text-xs">
         <span className="font-mono text-zinc-300">
-          {detail.company_count.toLocaleString("pt-BR")} companies
+          {detail.company_count.toLocaleString("en-US")} companies
         </span>
         <span className="text-zinc-600">·</span>
         <span className="font-mono text-zinc-400">
@@ -286,8 +286,8 @@ function Body({
     return (
       <StateBanner
         variant="empty"
-        title="Sem empresas"
-        message="Nenhuma empresa registrada neste sub-setor. Execute Atualizar Base para popular os dados."
+        title="No companies"
+        message="No companies registered in this sub-sector. Run Database Updates to populate data."
       />
     );
   }

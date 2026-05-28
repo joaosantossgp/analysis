@@ -85,30 +85,30 @@ export function HomePage() {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <QuickNavCard
           to="/empresas"
-          title="Empresas"
+          title="Companies"
           value={health ? fmtInt(health.total_companies) : "—"}
           detail={
             health
-              ? `${fmtInt(health.companies_with_historical_data)} com histórico`
-              : "Carregando…"
+              ? `${fmtInt(health.companies_with_historical_data)} with history`
+              : "Loading…"
           }
           accent="cyan"
         />
         <QuickNavCard
           to="/setores"
-          title="Setores"
+          title="Sectors"
           value="11"
-          detail="setores GICS disponíveis"
+          detail="GICS sectors available"
           accent="neutral"
         />
         <QuickNavCard
           to="/data-coverage"
-          title="Cobertura"
+          title="Coverage"
           value={health ? fmtPct(health.pct) : "—"}
           detail={
             health
-              ? `${fmtInt(health.missing_cells)} pendências`
-              : "Carregando…"
+              ? `${fmtInt(health.missing_cells)} pending`
+              : "Loading…"
           }
           accent={
             health && health.pct > 80
@@ -151,18 +151,18 @@ function StatusSummaryCard({
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <p className="text-xs uppercase tracking-wider text-zinc-500">
-            Status da base
+            Database Status
           </p>
           <p className={`mt-2 text-sm font-medium ${toneClass}`}>{message}</p>
           {lastUpdate ? (
             <p className="mt-1 text-xs text-zinc-500">
-              Última atualização:{" "}
+              Last update:{" "}
               <span className="text-zinc-300">{fmtDateTime(lastUpdate)}</span>
             </p>
           ) : null}
           {pendingCount != null ? (
             <p className="mt-1 text-xs text-zinc-500">
-              Pendências: <span className="text-zinc-300">{fmtInt(pendingCount)}</span>
+              Pending issues: <span className="text-zinc-300">{fmtInt(pendingCount)}</span>
             </p>
           ) : null}
         </div>
@@ -171,7 +171,7 @@ function StatusSummaryCard({
             to="/atualizar-base"
             className="inline-flex items-center rounded-md border border-cyan-600/50 bg-cyan-500/10 px-4 py-2 text-sm font-medium text-cyan-100 hover:bg-cyan-500/15"
           >
-            {isRunning ? "Ver atualização em andamento →" : "Gerenciar atualização →"}
+            {isRunning ? "Update in progress →" : "Manage database →"}
           </Link>
         </div>
       </div>
@@ -229,32 +229,31 @@ function deriveStatus(
   isRunning: boolean,
   bridgeReady: boolean,
 ): { message: string; tone: "good" | "warn" | "neutral" } {
-  if (!bridgeReady) return { message: "Conectando ao bridge…", tone: "neutral" };
-  if (isRunning) return { message: "Atualizando sua base local…", tone: "warn" };
-  if (!health) return { message: "Verificando status da base…", tone: "neutral" };
-  if (health.pct > 80) return { message: "Sua base está atualizada.", tone: "good" };
+  if (!bridgeReady) return { message: "Connecting to bridge…", tone: "neutral" };
+  if (isRunning) return { message: "Updating local database…", tone: "warn" };
+  if (!health) return { message: "Checking database status…", tone: "neutral" };
+  if (health.pct > 80) return { message: "Database is up to date.", tone: "good" };
   if (health.pct > 0)
     return {
-      message:
-        "Sua base está parcialmente atualizada. Algumas empresas têm pendências.",
+      message: "Database partially updated. Some companies have pending issues.",
       tone: "warn",
     };
-  return { message: "Sua base pode estar desatualizada.", tone: "warn" };
+  return { message: "Database may be out of date.", tone: "warn" };
 }
 
 function fmtInt(value: number | null | undefined): string {
-  return new Intl.NumberFormat("pt-BR").format(Number(value ?? 0));
+  return new Intl.NumberFormat("en-US").format(Number(value ?? 0));
 }
 
 function fmtPct(value: number | null | undefined): string {
-  return `${Number(value ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
+  return `${Number(value ?? 0).toLocaleString("en-US", { maximumFractionDigits: 1 })}%`;
 }
 
 function fmtDateTime(value: string | null): string {
   if (!value) return "—";
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleString("pt-BR", {
+  return d.toLocaleString("en-US", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -262,4 +261,3 @@ function fmtDateTime(value: string | null): string {
     minute: "2-digit",
   });
 }
-

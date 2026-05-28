@@ -2,8 +2,7 @@
  * Number formatting helpers — CVMAnalytics Terminal UI.
  *
  * All helpers are null-safe and return an em-dash ("—") on null / undefined /
- * non-finite input. Locale is fixed to pt-BR (Brazilian convention: comma
- * decimal, dot thousand separator).
+ * non-finite input. Locale is en-US (comma thousand, dot decimal separator).
  *
  * Existing `lib/formatters.ts` keeps `formatKpiCell` / `formatUnit` for
  * KPI-row table cells driven by a format-type field. These helpers below are
@@ -13,10 +12,11 @@
 
 const EM_DASH = "—";
 
-const BRL_FORMATTER = new Intl.NumberFormat("pt-BR", {
+const BRL_FORMATTER = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "BRL",
   maximumFractionDigits: 0,
+  currencyDisplay: "narrowSymbol",
 });
 
 const isMissing = (n: number | null | undefined): boolean =>
@@ -24,7 +24,7 @@ const isMissing = (n: number | null | undefined): boolean =>
 
 /**
  * Format an absolute monetary value in BRL with no decimal places.
- * Example: 12_345_678 → "R$ 12.345.678".
+ * Example: 12_345_678 → "R$12,345,678".
  */
 export function formatBRL(n: number | null | undefined): string {
   if (isMissing(n)) return EM_DASH;
@@ -32,17 +32,14 @@ export function formatBRL(n: number | null | undefined): string {
 }
 
 /**
- * Format a percentage. Input is the raw ratio (0.123 → "12,3%") OR a
- * pre-scaled percentage value (12.3 → "12,3%") — caller controls.
- *
- * Default digits = 1.
+ * Format a percentage. Default digits = 1.
  */
 export function formatPct(
   n: number | null | undefined,
   digits = 1,
 ): string {
   if (isMissing(n)) return EM_DASH;
-  return `${(n as number).toLocaleString("pt-BR", {
+  return `${(n as number).toLocaleString("en-US", {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
   })}%`;
@@ -50,23 +47,23 @@ export function formatPct(
 
 /**
  * Format a multiple / ratio with the × suffix.
- * Example: 2.3 → "2,30×". Default digits = 2.
+ * Example: 2.3 → "2.30×". Default digits = 2.
  */
 export function formatMultiple(
   n: number | null | undefined,
   digits = 2,
 ): string {
   if (isMissing(n)) return EM_DASH;
-  return `${(n as number).toLocaleString("pt-BR", {
+  return `${(n as number).toLocaleString("en-US", {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
   })}×`;
 }
 
 /**
- * Format a compact monetary value with Brazilian magnitude suffix:
- *   k (mil), mi (milhões), bi (bilhões), tri (trilhões).
- * Example: 1_234_567_890 → "R$ 1,23 bi".
+ * Format a compact monetary value with magnitude suffix:
+ *   K (thousands), M (millions), B (billions), T (trillions).
+ * Example: 1_234_567_890 → "R$ 1.23B".
  */
 export function formatCompact(n: number | null | undefined): string {
   if (isMissing(n)) return EM_DASH;
@@ -76,29 +73,27 @@ export function formatCompact(n: number | null | undefined): string {
   let suffix: string;
   if (abs >= 1e12) {
     value = abs / 1e12;
-    suffix = " tri";
+    suffix = "T";
   } else if (abs >= 1e9) {
     value = abs / 1e9;
-    suffix = " bi";
+    suffix = "B";
   } else if (abs >= 1e6) {
     value = abs / 1e6;
-    suffix = " mi";
+    suffix = "M";
   } else if (abs >= 1e3) {
     value = abs / 1e3;
-    suffix = " k";
+    suffix = "K";
   } else {
-    return `${sign}R$ ${abs.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}`;
+    return `${sign}R$ ${abs.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
   }
-  return `${sign}R$ ${value.toLocaleString("pt-BR", {
+  return `${sign}R$ ${value.toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}${suffix}`;
 }
 
 /**
- * Format a signed delta for display in a DeltaBadge. Returns the raw
- * formatted string without the glyph — DeltaBadge supplies the ▲/▼/—
- * separately so the caller controls the icon column width.
+ * Format a signed delta for display in a DeltaBadge.
  */
 export function formatSignedPct(
   n: number | null | undefined,

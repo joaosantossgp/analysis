@@ -68,7 +68,7 @@ export function CompanyUniversePage() {
       <FirstRunOnboarding
         initialState={result.state}
         surface="page"
-        cancelLabel="Back to database"
+        cancelLabel="Back to Database Updates"
         onCancel={() => navigate("/atualizar-base")}
         onDone={() => navigate("/atualizar-base")}
       />

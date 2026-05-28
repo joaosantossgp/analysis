@@ -18,9 +18,9 @@ function subNavFor(pathname: string, params: Record<string, string | undefined>)
   if (cdMatch) {
     const cdCvm = params.cdCvm ?? cdMatch[1];
     return [
-      { to: `/empresas/${cdCvm}`, label: "Visão geral", end: true },
-      { to: `/empresas/${cdCvm}/indicadores`, label: "Indicadores" },
-      { to: `/empresas/${cdCvm}/demonstrativos`, label: "Demonstrativos" },
+      { to: `/empresas/${cdCvm}`, label: "Overview", end: true },
+      { to: `/empresas/${cdCvm}/indicadores`, label: "Indicators" },
+      { to: `/empresas/${cdCvm}/demonstrativos`, label: "Financial Statements" },
     ];
   }
 

@@ -34,7 +34,7 @@ export function FirstRunOnboarding({
   initialState,
   onDone,
   onCancel,
-  cancelLabel = "Voltar",
+  cancelLabel = "Back",
   surface = "first-run",
 }: Props) {
   const queryClient = useQueryClient();
@@ -155,22 +155,22 @@ export function FirstRunOnboarding({
       <section className="mx-auto flex w-full max-w-5xl flex-col gap-5">
         <header className="border-b border-border-subtle pb-5">
           <p className="font-mono text-xs uppercase tracking-wider text-action-primary">
-            {surface === "first-run" ? "Configuração inicial" : "Configuração de dados"}
+            {surface === "first-run" ? "Initial Setup" : "Data Setup"}
           </p>
           <h1 className="mt-2 text-2xl font-semibold text-text-primary">
-            Escolha seu universo de empresas
+            Choose your company universe
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-text-secondary">
-            Selecione quais empresas da B3 você quer baixar agora. Você pode expandir sua
-            cobertura depois.
+            Select which B3 companies you want to download now. You can expand your
+            coverage later.
           </p>
         </header>
 
         {!initialState.market_cap_source_available ? (
           <StateBanner
             variant="empty"
-            title="Fonte de ranking necessária"
-            message="Os presets Top N precisam de uma fonte de market cap. Você pode escolher Todas as empresas agora ou configurar a fonte depois."
+            title="Ranking source required"
+            message="Top N presets require a market cap source. You can choose All Companies now or configure the source later."
             size="dense"
           />
         ) : null}
@@ -209,7 +209,7 @@ export function FirstRunOnboarding({
             {startedSelection.warning ? (
               <StateBanner
                 variant="empty"
-                title="Aviso de cobertura"
+                title="Coverage warning"
                 message={startedSelection.warning}
                 size="dense"
               />
@@ -219,7 +219,7 @@ export function FirstRunOnboarding({
               <ProgressState
                 job={job}
                 progress={progress}
-                presetTitle={selectedMeta?.title ?? "Universo selecionado"}
+                presetTitle={selectedMeta?.title ?? "Selected Universe"}
                 selectedCount={startedSelection.count}
                 onCancel={jobId ? () => cancelJobMutation.mutate(jobId) : undefined}
                 cancelling={cancelJobMutation.isPending}
@@ -229,10 +229,10 @@ export function FirstRunOnboarding({
             {isFailure ? (
               <StateBanner
                 variant="error"
-                title="Configuração não concluída"
+                title="Setup not completed"
                 message={
                   job?.error ||
-                  "O download foi interrompido. Você pode tentar novamente com o mesmo preset."
+                  "The download was interrupted. You can retry with the same preset."
                 }
               />
             ) : null}
@@ -242,8 +242,8 @@ export function FirstRunOnboarding({
                 variant="error"
                 title={
                   topNSourceMissing
-                    ? "Fonte de ranking indisponível"
-                    : "Não foi possível iniciar"
+                    ? "Ranking source unavailable"
+                    : "Could not start"
                 }
                 message={
                   startMutation.error instanceof Error
@@ -274,7 +274,7 @@ export function FirstRunOnboarding({
                   loading={startMutation.isPending}
                   onClick={handleStart}
                 >
-                  {isFailure ? "Tentar novamente" : "Criar base local"}
+                  {isFailure ? "Retry" : "Create local database"}
                 </Button>
               </footer>
             ) : null}
@@ -340,7 +340,7 @@ function PresetCard({
               padding: "2px 6px",
             }}
           >
-            Padrão
+            Default
           </span>
         ) : null}
       </div>
@@ -349,7 +349,7 @@ function PresetCard({
       </p>
       <p className="mt-3 text-sm leading-5 text-text-secondary">{description}</p>
       {sourceMissing ? (
-        <p className="mt-3 text-xs text-state-warn">Necessita de fonte de ranking.</p>
+        <p className="mt-3 text-xs text-state-warn">Requires a ranking source.</p>
       ) : null}
     </button>
   );
@@ -384,11 +384,11 @@ function ProgressState({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-md font-semibold text-text-primary">
-            Baixando {presetTitle}
+            Downloading {presetTitle}
           </h2>
           <p className="mt-1 text-xs text-text-tertiary">
-            {processed.toLocaleString("pt-BR")} de {queued.toLocaleString("pt-BR")} empresas
-            processadas
+            {processed.toLocaleString("en-US")} of {queued.toLocaleString("en-US")} companies
+            processed
             {stageLabel ? ` · ${stageLabel}` : ""}
           </p>
         </div>
@@ -401,7 +401,7 @@ function ProgressState({
               onClick={onCancel}
               className="rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 hover:border-rose-700 hover:text-rose-200 disabled:opacity-50"
             >
-              {cancelling ? "Cancelando…" : "Cancelar"}
+              {cancelling ? "Cancelling…" : "Cancel"}
             </button>
           ) : null}
         </div>
@@ -450,28 +450,28 @@ function SuccessState({
             : "var(--color-state-ok, #4ade80)",
         }}
       >
-        {hasPartialFailures ? "Concluído com ressalvas" : "Configuração concluída"}
+        {hasPartialFailures ? "Completed with warnings" : "Setup complete"}
       </p>
-      <h2 className="mt-2 text-lg font-semibold text-text-primary">Pronto</h2>
+      <h2 className="mt-2 text-lg font-semibold text-text-primary">Done</h2>
       <p className="mt-2 text-sm text-text-secondary">
         {count > 0
-          ? `${count.toLocaleString("pt-BR")} empresas foram enfileiradas para download de dados da CVM.`
-          : "Sua configuração local está pronta."}
+          ? `${count.toLocaleString("en-US")} companies were queued for CVM data download.`
+          : "Your local setup is ready."}
       </p>
       {hasPartialFailures ? (
         <p className="mt-3 text-sm" style={{ color: "var(--color-state-warn, #f59e0b)" }}>
-          Algumas empresas encontraram erros durante o download.{" "}
+          Some companies encountered errors during download.{" "}
           <Link
             to="/data-coverage"
             style={{ textDecoration: "underline" }}
           >
-            Ver cobertura de dados →
+            View Data Coverage →
           </Link>
         </p>
       ) : null}
       <div className="mt-5">
         <Button type="button" variant="primary" loading={completing} onClick={onDone}>
-          Abrir app
+          Open app
         </Button>
       </div>
     </article>
@@ -499,12 +499,12 @@ function extractResultSummary(job: RefreshJobStatus | null | undefined): {
 
 function formatStageLabel(stage: string): string {
   const map: Record<string, string> = {
-    queued: "Na fila",
-    planning: "Planejando",
-    download_extract: "Baixando arquivos da CVM",
-    process_data: "Processando dados",
-    persist_reports: "Gravando no banco local",
-    finalizing: "Finalizando",
+    queued: "Queued",
+    planning: "Planning",
+    download_extract: "Downloading CVM files",
+    process_data: "Processing data",
+    persist_reports: "Saving to local database",
+    finalizing: "Finalizing",
   };
   return map[stage] ?? stage.replace(/_/g, " ");
 }

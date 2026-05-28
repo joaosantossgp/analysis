@@ -13,6 +13,8 @@ export type HealthPayload = {
   errors: Array<{ severity: string; code: string; message: string; path: string | null }>;
 };
 
+export type CompanyDataStatus = "no_history" | "partial" | "complete" | "failed" | "unmapped" | string;
+
 export type CompanyDirectoryItem = {
   cd_cvm: number;
   company_name: string;
@@ -25,6 +27,8 @@ export type CompanyDirectoryItem = {
   total_rows: number;
   has_financial_data: boolean;
   coverage_rank: number | null;
+  /** Derived coverage status from Python layer. Falls back to "no_history" when unset. */
+  data_status?: CompanyDataStatus;
   gics_sector?: string | null;
   gics_sector_slug?: string | null;
   gics_industry_group?: string | null;
@@ -180,6 +184,32 @@ export type RefreshDispatchResponse = {
   status_reason_code?: string | null;
   status_reason_message?: string | null;
   is_retry_allowed?: boolean;
+  error?: string;
+};
+
+export type DataUpdateSettings = {
+  universe_preset: CompanyUniversePreset;
+  batch_size: 50 | 100 | 200 | 500;
+  retry_failed: boolean;
+  recompute_coverage: boolean;
+  start_year: number;
+  end_year: number;
+  error?: string;
+};
+
+export type DataUpdateStartResponse = RefreshDispatchResponse & {
+  selection?: CompanyUniverseSelection;
+  settings?: DataUpdateSettings;
+};
+
+export type ResetLocalDatabaseResponse = {
+  ok: boolean;
+  action: "restart_current" | "recreate_local" | string;
+  message?: string;
+  backup_path?: string | null;
+  backup_items?: string[];
+  removed?: string[];
+  active_job_id?: string | null;
   error?: string;
 };
 
@@ -634,6 +664,11 @@ export interface BridgeApi {
   get_company_statement(params: Record<string, unknown>): Promise<StatementMatrix>;
   get_base_health(params: Record<string, unknown>): Promise<BaseHealthSnapshot>;
   request_refresh(params: Record<string, unknown>): Promise<RefreshDispatchResponse>;
+  get_data_update_settings(params?: Record<string, unknown>): Promise<DataUpdateSettings>;
+  save_data_update_settings(params: Record<string, unknown>): Promise<DataUpdateSettings>;
+  get_company_universe_selection(params?: Record<string, unknown>): Promise<CompanyUniverseSelection & { error?: string }>;
+  start_data_update(params: Record<string, unknown>): Promise<DataUpdateStartResponse>;
+  reset_local_database(params: Record<string, unknown>): Promise<ResetLocalDatabaseResponse>;
   get_refresh_status(
     params?: Record<string, unknown>,
   ): Promise<RefreshJobStatus | RefreshJobListResponse | CompanyRefreshStatusListResponse>;

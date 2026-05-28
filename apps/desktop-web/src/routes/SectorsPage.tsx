@@ -90,7 +90,7 @@ function Status({
     return <span className="text-xs text-amber-300">▲ Browser mode</span>;
   return (
     <span className="font-mono text-xs text-zinc-400">
-      {groups.toLocaleString("pt-BR")} groups · {totalCompanies.toLocaleString("pt-BR")} companies
+      {groups.toLocaleString("en-US")} groups · {totalCompanies.toLocaleString("en-US")} companies
     </span>
   );
 }
@@ -250,12 +250,12 @@ function SectorRow({
       ) : (
         <td className="px-3 py-2 text-xs text-zinc-500">
           {subIndustryCount > 0
-            ? `${subIndustryCount.toLocaleString("pt-BR")} sub-industries`
+            ? `${subIndustryCount.toLocaleString("en-US")} sub-industries`
             : "—"}
         </td>
       )}
       <td className="px-3 py-2 text-right font-mono text-xs text-zinc-300">
-        {item.company_count.toLocaleString("pt-BR")}
+        {item.company_count.toLocaleString("en-US")}
       </td>
       <td className="px-3 py-2 text-right font-mono text-xs text-zinc-400">
         {item.latest_year ?? "—"}

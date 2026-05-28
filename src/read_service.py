@@ -945,6 +945,21 @@ class CVMReadService:
         if not rows_df.empty:
             rows_df = rows_df.copy()
             rows_df["anos_disponiveis"] = rows_df["cd_cvm"].map(lambda cd_cvm: years_map.get(int(cd_cvm), ()))
+            try:
+                from sqlalchemy import text as _sa_text  # noqa: PLC0415
+                import pandas as _pd  # noqa: PLC0415
+                failed_df = _pd.read_sql(
+                    _sa_text(
+                        "SELECT cd_cvm FROM company_refresh_status "
+                        "WHERE last_status IN ('error', 'failed', 'dispatch_failed')"
+                    ),
+                    self.query_layer.engine,
+                )
+                if not failed_df.empty:
+                    failed_set = frozenset(int(x) for x in failed_df["cd_cvm"].dropna())
+                    rows_df.loc[rows_df["cd_cvm"].isin(failed_set), "data_status"] = "failed"
+            except Exception:
+                pass
 
         total_pages = max(1, ((int(total_items) - 1) // int(page_size)) + 1) if total_items else 1
         pagination = CompanyDirectoryPagination(
@@ -3967,6 +3982,24 @@ class CVMReadService:
                 gics_sub_industry=row.get("persisted_gics_sub_industry"),
             )
             raw_coverage_rank = row.get("coverage_rank")
+            anos = _parse_years(row.get("anos_disponiveis"))
+            has_data = bool(int(row.get("has_financial_data") or 0))
+            raw_status = str(row.get("data_status") or "").strip()
+            # Precedence: failed > unmapped > explicit status > heuristic
+            # "complete" only when coverage_rank confirms the company is tracked with data.
+            # Heuristic year count is intentionally NOT used to claim "complete".
+            if raw_status == "failed":
+                data_status = "failed"
+            elif raw_status == "unmapped":
+                data_status = "unmapped"
+            elif raw_status in ("no_history", "partial", "complete"):
+                data_status = raw_status
+            elif not has_data:
+                data_status = "no_history"
+            elif raw_coverage_rank is not None and str(raw_coverage_rank) not in ("", "nan"):
+                data_status = "complete"
+            else:
+                data_status = "partial"
             results.append(
                 CompanySearchResult(
                     cd_cvm=int(row["cd_cvm"]),
@@ -3976,15 +4009,16 @@ class CVMReadService:
                     setor_cvm=setor_cvm,
                     sector_name=sector_name,
                     sector_slug=sector_slugify(sector_name),
-                    anos_disponiveis=_parse_years(row.get("anos_disponiveis")),
+                    anos_disponiveis=anos,
                     total_rows=int(row.get("total_rows") or 0),
-                    has_financial_data=bool(int(row.get("has_financial_data") or 0)),
+                    has_financial_data=has_data,
                     coverage_rank=int(raw_coverage_rank) if raw_coverage_rank is not None and str(raw_coverage_rank) != "nan" else None,
                     gics_sector=gics.gics_sector if gics else None,
                     gics_sector_slug=gics.gics_sector_slug if gics else None,
                     gics_industry_group=gics.gics_industry_group if gics else None,
                     gics_industry=gics.gics_industry if gics else None,
                     gics_sub_industry=gics.gics_sub_industry if gics else None,
+                    data_status=data_status,
                 )
             )
         return results

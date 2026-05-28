@@ -267,16 +267,16 @@ function formatCurrencyThousands(value: unknown): string {
   const absolute = Math.abs(reais);
   const sign = reais < 0 ? "-" : "";
   if (absolute >= 1_000_000_000) {
-    return `${sign}R$ ${(absolute / 1_000_000_000).toLocaleString("pt-BR", {
+    return `${sign}R$ ${(absolute / 1_000_000_000).toLocaleString("en-US", {
       maximumFractionDigits: 1,
-    })} bi`;
+    })}B`;
   }
   if (absolute >= 1_000_000) {
-    return `${sign}R$ ${(absolute / 1_000_000).toLocaleString("pt-BR", {
+    return `${sign}R$ ${(absolute / 1_000_000).toLocaleString("en-US", {
       maximumFractionDigits: 1,
-    })} mi`;
+    })}M`;
   }
-  return `${sign}R$ ${absolute.toLocaleString("pt-BR", {
+  return `${sign}R$ ${absolute.toLocaleString("en-US", {
     maximumFractionDigits: 0,
   })}`;
 }

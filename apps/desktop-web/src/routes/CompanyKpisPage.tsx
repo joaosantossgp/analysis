@@ -91,7 +91,7 @@ function KpiBody({ cdCvm, bridgeReady }: { cdCvm: number; bridgeReady: boolean }
   );
 
   if (!bridgeReady || yearsQuery.isLoading) {
-    return <StateBanner variant="loading" title="Carregando anos disponíveis…" />;
+    return <StateBanner variant="loading" title="Loading available years…" />;
   }
   if (yearsQuery.isError) {
     return (
@@ -113,8 +113,8 @@ function KpiBody({ cdCvm, bridgeReady }: { cdCvm: number; bridgeReady: boolean }
     return (
       <StateBanner
         variant="empty"
-        title="Sem dados anuais"
-        message="Sem linhas anuais no banco local. Rode Atualizar Base para popular e tente de novo."
+        title="No annual data"
+        message="No annual rows in the local database. Run Database Updates to populate and try again."
       />
     );
   }
@@ -286,7 +286,7 @@ function KpiGridBody({
     [table, selectedYears, isQuarterly],
   );
 
-  if (loading) return <StateBanner variant="loading" title="Carregando KPIs…" />;
+  if (loading) return <StateBanner variant="loading" title="Loading KPIs…" />;
   if (error) {
     return (
       <StateBanner
