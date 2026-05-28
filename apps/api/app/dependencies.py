@@ -1,11 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Iterable
 
-from fastapi import HTTPException, Query, Request, status
+from fastapi import HTTPException, Query, Request
 from fastapi.responses import Response
 
+from src.api_errors import (
+    ApiError,
+    InvalidRequestError,
+    NotFoundError,
+    ServiceUnavailableError,
+)
 from src.company_catalog import CompanyCatalogUnavailableError
 from src.read_service import CVMReadService
 from src.settings import AppSettings
@@ -16,39 +21,12 @@ REQUIRED_TABLES = ("financial_reports", "companies")
 SUPPORTED_STATEMENTS = frozenset({"BPA", "BPP", "DRE", "DFC", "DVA", "DMPL"})
 _API_READY_CACHE: dict[tuple[str, str, str], StartupReport] = {}
 
-
-@dataclass(frozen=True)
-class ApiError(Exception):
-    status_code: int
-    code: str
-    message: str
-
-
-class NotFoundError(ApiError):
-    def __init__(self, message: str) -> None:
-        super().__init__(
-            status_code=status.HTTP_404_NOT_FOUND,
-            code="not_found",
-            message=message,
-        )
-
-
-class ServiceUnavailableError(ApiError):
-    def __init__(self, message: str) -> None:
-        super().__init__(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            code="service_unavailable",
-            message=message,
-        )
-
-
-class InvalidRequestError(ApiError):
-    def __init__(self, message: str) -> None:
-        super().__init__(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            code="invalid_request",
-            message=message,
-        )
+__all__ = [
+    "ApiError",
+    "InvalidRequestError",
+    "NotFoundError",
+    "ServiceUnavailableError",
+]
 
 
 def get_settings(request: Request) -> AppSettings:

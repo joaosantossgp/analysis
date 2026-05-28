@@ -9,6 +9,7 @@ import { fetchDataCoverage } from "@/lib/api/dataCoverage";
 import {
   BATCH_SIZE_OPTIONS,
   CVM_MIN_YEAR,
+  DataUpdateBlockedError,
   defaultRefreshWindow,
   fetchBaseHealth,
   fetchCompanyUniverseSelection,
@@ -556,7 +557,10 @@ function UpdatePanel({
         </div>
       ) : null}
 
-      {!activeJob && latestJob ? <ResultSummary job={latestJob} /> : null}
+      {/* Suppress the previous run's summary when the latest attempt did not
+          start — otherwise a stale "Completed" sits next to the error/blocked
+          notice and reads as a contradiction. */}
+      {!activeJob && latestJob && !error ? <ResultSummary job={latestJob} /> : null}
 
       {retrying ? (
         <InlineNotice tone="warning">
@@ -565,9 +569,16 @@ function UpdatePanel({
       ) : null}
 
       {error ? (
-        <InlineNotice tone="error">
-          {error instanceof Error ? error.message : String(error)}
-        </InlineNotice>
+        error instanceof DataUpdateBlockedError ? (
+          <InlineNotice tone="warning">
+            <span className="font-semibold">Configuration needed — no job was started.</span>{" "}
+            {error.message}
+          </InlineNotice>
+        ) : (
+          <InlineNotice tone="error">
+            {error instanceof Error ? error.message : String(error)}
+          </InlineNotice>
+        )
       ) : null}
     </Card>
   );

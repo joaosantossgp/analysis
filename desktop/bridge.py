@@ -10,6 +10,7 @@ from __future__ import annotations
 import dataclasses
 import base64
 import json
+import logging
 import math
 import os
 import shutil
@@ -21,6 +22,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger("desktop.bridge")
 
 
 class CVMBridge:
@@ -668,6 +671,8 @@ class CVMBridge:
     def start_data_update(self, params=None) -> dict:
         if not self._is_write_allowed():
             return self._sanitize_for_json(self._write_blocked_response("start_data_update"))
+        from src.company_universe import CompanyUniverseUnavailableError  # noqa: PLC0415
+
         p = params or {}
         try:
             current_settings = self._resolve_data_update_settings()
@@ -704,7 +709,21 @@ class CVMBridge:
                 "selection": selection.to_dict(),
                 "settings": settings,
             })
+        except CompanyUniverseUnavailableError as exc:
+            # Blocked, not failed: the Top N universe cannot be built because no
+            # market-cap ranking source is configured. Fail fast before any job
+            # is dispatched so the UI never reports a clean "Completed".
+            logger.warning("start_data_update blocked: company universe unavailable: %s", exc)
+            return self._sanitize_for_json({
+                "status": "blocked",
+                "job_id": None,
+                "message": str(exc),
+                "status_reason_code": "company_universe_unavailable",
+                "status_reason_message": str(exc),
+                "is_retry_allowed": True,
+            })
         except Exception as exc:
+            logger.exception("start_data_update failed")
             return self._sanitize_for_json({
                 "status": "error",
                 "job_id": None,

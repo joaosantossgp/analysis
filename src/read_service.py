@@ -2233,7 +2233,7 @@ class CVMReadService:
         still flows through ``refresh_job_repository`` so that
         ``company_refresh_status`` reflects the running job for polling.
         """
-        from apps.api.app.dependencies import NotFoundError
+        from src.api_errors import NotFoundError
 
         bootstrapped = self._ensure_company_catalog_metadata(cd_cvm)
         requested_start = int(start_year) if start_year is not None else 2010
@@ -2754,7 +2754,7 @@ class CVMReadService:
         source_scope: str,
         already_queued_window: timedelta,
     ) -> str:
-        from apps.api.app.dependencies import NotFoundError
+        from src.api_errors import NotFoundError
         from src.github_dispatch import dispatch_on_demand_ingest
 
         now = datetime.now(timezone.utc)

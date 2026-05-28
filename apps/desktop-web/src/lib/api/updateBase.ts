@@ -65,6 +65,21 @@ export type ResetLocalDatabaseParams = {
   confirm: "RESET" | "REBUILD" | string;
 };
 
+/**
+ * Raised when an update cannot start because of a configuration gap (e.g. the
+ * Top N market-cap universe has no ranking source). This is a "blocked" state,
+ * not a runtime failure — the UI presents it as a configuration notice and no
+ * job is ever dispatched.
+ */
+export class DataUpdateBlockedError extends Error {
+  readonly reasonCode: string;
+  constructor(message: string, reasonCode: string) {
+    super(message);
+    this.name = "DataUpdateBlockedError";
+    this.reasonCode = reasonCode;
+  }
+}
+
 export const BATCH_SIZE_OPTIONS: DataUpdateSettings["batch_size"][] = [
   50,
   100,
@@ -303,6 +318,12 @@ export async function startDataUpdate(
   })) as DataUpdateStartResponse;
   if (response.error) {
     throw new Error(response.error);
+  }
+  if (response.status === "blocked") {
+    throw new DataUpdateBlockedError(
+      response.message || response.status_reason_message || "Update is blocked by a configuration gap.",
+      response.status_reason_code || "blocked",
+    );
   }
   if (response.status === "error") {
     throw new Error(response.message || response.status_reason_message || "Failed to start update.");
