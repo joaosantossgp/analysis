@@ -90,3 +90,6 @@ release_validation_*/
 /CVMAnalytics-windows*.zip
 /CVMAnalytics-windows*.zip.sha256
 
+# Mangled absolute-path folders from bad shell commands (Windows)
+/C:Users*
+

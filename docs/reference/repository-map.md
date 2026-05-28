@@ -1,6 +1,6 @@
 # Repository Map
 
-CVMAnalytics · active Vite desktop baseline · updated 2026-05-26
+CVMAnalytics · active Vite desktop baseline · updated 2026-05-28
 
 Single-stop orientation for contributors and AI agents. Maps every top-level folder, classifies all GitHub Actions workflows, and distinguishes current docs from historical archive.
 
@@ -25,9 +25,6 @@ Single-stop orientation for contributors and AI agents. Maps every top-level fol
 | `build/` | **Generated artifact** | PyInstaller build intermediates. Gitignored. Do not commit. |
 | `dist/` | **Generated artifact** | PyInstaller final output (`CVMAnalytics.exe`). Gitignored. |
 | `output/` | **Generated artifact** | Dev-mode Excel exports and test output. Content is gitignored. |
-| `release/` | **Historical artifact** | Old release ZIPs (v0.3.x–v0.13.x). GitHub Releases is the authoritative download source. |
-| `release_validation_v0.12.0/` | **Historical artifact** | Old validation artifacts from pre-v0.17.0 releases. |
-| `release_validation_v0.13.0/` | **Historical artifact** | Old validation artifacts from pre-v0.17.0 releases. |
 | `skills/` | **AI agent tooling** | Agent skill definitions (`doc-architect`, `review-code`, `ui-review`). Not source code. |
 | `.github/` | **CI/CD** | 9 workflow files. See workflow table below. |
 | `.claude/` | **AI tooling** | Claude Code session memory. |
