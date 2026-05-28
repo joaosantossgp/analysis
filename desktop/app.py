@@ -9,6 +9,13 @@ Uso:
   python -m desktop.app --debug     # opens DevTools in whichever mode is active
   python -m desktop.app --diagnose-runtime  # write diagnostics log and exit
 
+Dev data path:
+  By default, --dev mode stores data under {repo}/data/ (isolated from release).
+  Set CVMANALYTICS_USE_RELEASE_DATA=1 to use the same Documents path as the
+  packaged release app (%USERPROFILE%\\Documents\\CVMAnalytics) for realistic
+  local testing without building a release.
+  Set CVM_DATA_DIR=<path> to use an arbitrary data directory in any mode.
+
 Phase 5B (v0.15.0): the packaged desktop runtime is Vite only. The legacy
 web runtime is no longer bundled. The updater, bundle layout, and user-data
 contract remain unchanged.
@@ -28,6 +35,8 @@ import sys
 import tempfile
 import threading
 import time
+
+from desktop import lockfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -115,6 +124,20 @@ def _legacy_install_data_root() -> Path | None:
 
 def _configure_bundled_data_paths() -> None:
     if not _bundled():
+        # In dev mode, CVMANALYTICS_USE_RELEASE_DATA=1 points at the same
+        # Documents path the release app uses — useful for testing against real
+        # data without a packaging step. CVM_DATA_DIR takes precedence if set.
+        use_release = os.environ.get("CVMANALYTICS_USE_RELEASE_DATA", "").strip().lower() in {
+            "1", "true", "yes",
+        }
+        if use_release and not os.environ.get("CVM_DATA_DIR"):
+            user_root = _user_data_root()
+            os.environ["CVM_DATA_DIR"] = str(user_root)
+            os.environ.setdefault("CVM_DB_DIR", str(user_root / "db"))
+            os.environ.setdefault("SQLITE_PATH", str(user_root / "db" / "cvm_financials.db"))
+            os.environ.setdefault("CVM_OUTPUT_DIR", str(user_root / "output"))
+            os.environ.setdefault("CVM_LOG_DIR", str(user_root / "logs"))
+            os.environ.setdefault("CVM_CACHE_DIR", str(user_root / "cache"))
         return
 
     user_root = _user_data_root()
@@ -961,6 +984,35 @@ def main() -> None:
     legacy_requested = "--legacy" in args
 
     _configure_bundled_data_paths()
+
+    # Acquire the runtime lock. Detects concurrent access to the same data
+    # directory (e.g. release app and dev using release data simultaneously).
+    try:
+        from desktop.__version__ import __version__ as _lock_ver  # noqa: PLC0415
+    except Exception:
+        _lock_ver = None
+    _lock_data_dir = (
+        Path(os.environ["CVM_DATA_DIR"])
+        if "CVM_DATA_DIR" in os.environ
+        else (_user_data_root() if _bundled() else _repo_root() / "data")
+    )
+    _lock_result = lockfile.acquire(_lock_data_dir, app_version=_lock_ver)
+    if not _lock_result.get("owned"):
+        _conflict = _lock_result.get("conflict") or {}
+        _log_recovery(
+            _lock_data_dir,
+            f"concurrent access detected: PID {_conflict.get('pid')}, "
+            f"mode={_conflict.get('runtime_mode')} — starting in restricted mode",
+        )
+        os.environ["CVMANALYTICS_CONCURRENT_LOCK_DETECTED"] = "1"
+    elif _lock_result.get("stale"):
+        _stale = _lock_result.get("conflict") or {}
+        _log_recovery(
+            _lock_data_dir,
+            f"stale lock recovered from dead PID {_stale.get('pid')} "
+            f"(mode={_stale.get('runtime_mode')})",
+        )
+
     # Strip Mark-of-the-Web from bundle DLLs BEFORE any .NET load attempt.
     # Without this, Python.Runtime.dll fails to execute on machines where
     # Windows Explorer's "Extract All" preserved MOTW on extracted files.
@@ -1027,6 +1079,7 @@ def main() -> None:
     try:
         webview.start(debug=debug_mode)
     finally:
+        lockfile.release()
         if server_proc is not None:
             server_proc.terminate()
         if static_server is not None:

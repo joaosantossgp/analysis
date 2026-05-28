@@ -87,6 +87,8 @@ npm run dev
 
 Open `http://127.0.0.1:5173/`. The `HealthCard` will show a yellow "Browser-mode preview" banner because `window.pywebview.api` is not injected by a real browser. This is the expected dev-without-Python flow.
 
+For fixture-backed UI work without a real bridge, run `npm run dev:mock` (in-process mock bridge). For the full dev workflows — isolated vs release data, mock bridge, env vars, lockfile/read-only policy, F5 reload — see [docs/dev-runtime-and-data-paths.md](../../docs/dev-runtime-and-data-paths.md).
+
 ## Dev — inside pywebview
 
 ```bash

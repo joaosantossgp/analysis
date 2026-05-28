@@ -4,7 +4,7 @@
 
 CVMAnalytics is a local-first Windows desktop application for collecting, organizing, and analyzing Brazilian public company financial data. The app combines a Python data pipeline, a local SQLite database, and a packaged desktop UI through pywebview.
 
-The authoritative runtime is the packaged Windows desktop executable. The Vercel landing page exists as a marketing surface only — it is not the product.
+The authoritative runtime is the packaged Windows desktop executable. The public landing page (`landing/`, published via GitHub Pages) is a marketing surface only — it is not the product. The old Vercel deploy is retired.
 
 ## Who This Is For
 
@@ -174,7 +174,7 @@ The packaged folder contains only `CVMAnalytics.exe` and `_internal/`. No user d
 
 ## Migration Status
 
-The desktop runtime migration is complete as of v0.17.0. All phases are released. The table below is kept as historical reference.
+The desktop runtime migration is complete as of v0.17.0. All phases are released. The table below is **historical reference only** — it stops at the migration milestones and does not track the current version (see `desktop/__version__.py`).
 
 | Phase | Goal | Status |
 |---|---|---|

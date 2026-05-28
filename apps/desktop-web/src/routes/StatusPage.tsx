@@ -16,6 +16,7 @@ import type {
   DiagnosticLogEntry,
   DiagnosticsSummary,
   LocalPathInfo,
+  LockStatusPayload,
   UpdateStatus,
   UpdateProgressStatus,
 } from "@/lib/bridge/types";
@@ -164,11 +165,16 @@ function RuntimeCard({ status }: { status: AppStatusPayload }) {
   const errorCount = status.diagnostics.errors.length;
   const mode = runtime.runtime_mode;
   const modeLabel =
-    mode === "vite-dev"
-      ? "vite dev"
-      : mode === "vite"
-        ? "vite (default)"
-        : mode;
+    mode === "vite-dev-release-data"
+      ? "vite dev (release data)"
+      : mode === "vite-dev"
+        ? "vite dev"
+        : mode === "vite"
+          ? "vite (default)"
+          : mode === "mock"
+            ? "mock (fixture)"
+            : mode;
+  const showReleaseDataWarning = runtime.using_release_data_dir === true && !runtime.frozen;
   return (
     <Card
       title="Runtime"
@@ -182,7 +188,26 @@ function RuntimeCard({ status }: { status: AppStatusPayload }) {
         <Field label="Packaged" value={runtime.frozen ? "yes" : "no"} />
         <Field label="Shell" value={runtime.desktop_shell ?? "unknown"} />
         <Field label="Local-first" value={runtime.local_first ? "yes" : "unknown"} tone="good" />
+        {runtime.write_mode && (
+          <Field
+            label="Write mode"
+            value={runtime.write_mode}
+            tone={runtime.write_mode === "read-only" ? "warn" : "neutral"}
+          />
+        )}
+        {runtime.lock_status && (
+          <Field
+            label="Lock"
+            value={lockStatusLabel(runtime.lock_status)}
+            tone={lockStatusTone(runtime.lock_status)}
+          />
+        )}
       </dl>
+      {showReleaseDataWarning && (
+        <p className="mt-4 rounded border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-300">
+          Dev mode is using the release data directory. Destructive actions affect real user data.
+        </p>
+      )}
       <p className="mt-4 border-t border-zinc-800 pt-3 text-xs text-zinc-500">
         Diagnostics: {errorCount} error{errorCount === 1 ? "" : "s"} · {warningCount} warning
         {warningCount === 1 ? "" : "s"}.
@@ -530,6 +555,12 @@ function DiagnosticsCard({ diagnostics }: { diagnostics: DiagnosticsSummary }) {
         <Field label="pythonnet" value={diagnostics.pythonnet_status ?? "unknown"} tone={fieldTone(diagnostics.pythonnet_status)} />
         <Field label="SQLite" value={diagnostics.sqlite_status ?? "unknown"} tone={fieldTone(diagnostics.sqlite_status)} />
       </dl>
+      {(diagnostics.data_root || diagnostics.db_path) && (
+        <dl className="mt-3 grid gap-2 border-t border-zinc-800 pt-3 text-sm">
+          {diagnostics.data_root && <Field label="Data directory" value={diagnostics.data_root} mono />}
+          {diagnostics.db_path && <Field label="Database" value={diagnostics.db_path} mono />}
+        </dl>
+      )}
       <DiagnosticsList title="Errors" items={diagnostics.errors} tone="bad" />
       <DiagnosticsList title="Warnings" items={diagnostics.warnings} tone="warn" />
       {diagnostics.errors.length === 0 && diagnostics.warnings.length === 0 ? (
@@ -728,6 +759,27 @@ function DiagnosticsList({
       </ul>
     </div>
   );
+}
+
+function lockStatusLabel(lock: LockStatusPayload): string {
+  if (lock.status === "locked_by_self") return "locked by this process";
+  if (lock.status === "locked_by_other") {
+    const pid = lock.pid ? ` (PID ${lock.pid})` : "";
+    const mode = lock.runtime_mode ? ` · ${lock.runtime_mode}` : "";
+    return `locked by another process${pid}${mode}`;
+  }
+  if (lock.status === "stale_recovered") {
+    return lock.stale_pid ? `stale lock recovered (was PID ${lock.stale_pid})` : "stale lock recovered";
+  }
+  if (lock.status === "no_lock") return "no lock";
+  return lock.status;
+}
+
+function lockStatusTone(lock: LockStatusPayload): Tone {
+  if (lock.status === "locked_by_self") return "good";
+  if (lock.status === "locked_by_other") return "bad";
+  if (lock.status === "stale_recovered") return "warn";
+  return "neutral";
 }
 
 type Tone = "neutral" | "good" | "warn" | "bad";

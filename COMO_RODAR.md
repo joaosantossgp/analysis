@@ -60,19 +60,10 @@ npm install
 cd ..\..
 ```
 
-Se for trabalhar em uma task versionada, prefira criar uma worktree antes de
-editar arquivos:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/worktree_create.ps1 -Issue 27 -Slug exemplo-task -Lane ops-quality
-```
-
-Ao concluir a task, prefira finalizar a PR com o helper abaixo para esperar
-checks, mergear e confirmar o fechamento:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/pr_complete.ps1 -Pr 28
-```
+Sessoes interativas normais NAO usam worktrees, lanes nem `pr_complete.ps1`.
+Edite direto na branch e use `git push` + merge manual/auto. Worktrees,
+`scripts/worktree_create.ps1` e `scripts/pr_complete.ps1` pertencem somente ao
+modo autonomo (ver `docs/governance/autonomous-mode.md`).
 
 ---
 
@@ -166,10 +157,12 @@ uvicorn apps.api.app.main:app --reload
 ```
 
 Abrir:
+
 - Swagger: `http://127.0.0.1:8000/docs`
 - OpenAPI: `http://127.0.0.1:8000/openapi.json`
 
 Endpoints principais:
+
 - `GET /health`
 - `GET /companies`
 - `GET /companies/filters`
@@ -203,17 +196,27 @@ npm run dev
 ```
 
 Abrir:
+
 - preview Vite: `http://127.0.0.1:5173`
 
-Rotas principais:
+Rotas (HashRouter, ver `apps/desktop-web/src/App.tsx`):
+
 - `/`
 - `/empresas`
-- `/empresas/[cd_cvm]`
+- `/empresas/:cdCvm`
+- `/empresas/:cdCvm/demonstrativos`
+- `/empresas/:cdCvm/indicadores`
 - `/setores`
+- `/setores/:slug`
+- `/setores/:sectorSlug/:subSectorSlug`
 - `/atualizar-base`
+- `/data-coverage`
+- `/company-universe`
 - `/status`
+- `/dev/data-ops` (somente build DEV)
 
 Observacoes:
+
 - no app real, os dados passam pelo bridge `window.pywebview.api`
 - componentes React devem chamar as facades em `apps/desktop-web/src/lib/api/`
 - para testar com bridge real, prefira `python -m desktop.app --dev`
@@ -292,10 +295,10 @@ Gere o executavel; o app empacotado serve a build Vite estatica por HTTP local:
 
 ### Flags
 
-| Flag | Efeito |
-|---|---|
-| `--dev` | Inicia ou reutiliza `http://127.0.0.1:5173` (Vite dev server) |
-| `--debug` | Abre DevTools no modo ativo |
+| Flag      | Efeito                                                                   |
+| --------- | ------------------------------------------------------------------------ |
+| `--dev`   | Inicia ou reutiliza `http://127.0.0.1:5173` (Vite dev server)            |
+| `--debug` | Abre DevTools no modo ativo                                              |
 | (nenhuma) | Serve `apps/desktop-web/dist` ou `_internal/desktop-web` e carrega o app |
 
 ### Teste de sanidade (com `--debug`)
@@ -314,12 +317,12 @@ await window.pywebview.api.get_companies({page: 1, page_size: 5})
 
 ## Problemas comuns
 
-| O que aconteceu | O que fazer |
-|---|---|
-| `ModuleNotFoundError` ao abrir o desktop | Use `python -m desktop.app --dev` para rodar o app. |
-| `python` nao reconhecido | Instale o Python e coloque no `PATH`. |
-| `runtime_doctor.py` falha com `venv-broken` | Recrie a `.venv` com `python -m venv .venv`. |
-| App desktop abre sem empresas | Rode `setup_db.py`, `setup_companies_table.py` e atualize dados. |
-| API responde `503` | Valide o banco, tabelas obrigatorias e o `runtime_doctor.py`. |
-| Erro de permissao no PowerShell | Rode `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`. |
-| UI Vite nao abriu no desktop | Rode `npm --prefix apps/desktop-web run build` ou use `python -m desktop.app --dev`. |
+| O que aconteceu                             | O que fazer                                                                          |
+| ------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `ModuleNotFoundError` ao abrir o desktop    | Use `python -m desktop.app --dev` para rodar o app.                                  |
+| `python` nao reconhecido                    | Instale o Python e coloque no `PATH`.                                                |
+| `runtime_doctor.py` falha com `venv-broken` | Recrie a `.venv` com `python -m venv .venv`.                                         |
+| App desktop abre sem empresas               | Rode `setup_db.py`, `setup_companies_table.py` e atualize dados.                     |
+| API responde `503`                          | Valide o banco, tabelas obrigatorias e o `runtime_doctor.py`.                        |
+| Erro de permissao no PowerShell             | Rode `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.                          |
+| UI Vite nao abriu no desktop                | Rode `npm --prefix apps/desktop-web run build` ou use `python -m desktop.app --dev`. |

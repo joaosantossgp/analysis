@@ -166,7 +166,7 @@ cvm_repots_capture/
 
 - Banco local SQLite com suporte opcional a PostgreSQL via `DATABASE_URL`
 - App desktop oficial: `desktop/app.py` (pywebview + Vite estatico em `dist/CVMAnalytics/CVMAnalytics.exe`)
-- API FastAPI read-only em `apps/api` para Railway/dev/local HTTP; nao e empacotada no desktop
+- API FastAPI read-only em `apps/api` para dev/local HTTP (self-host opcional); nao e empacotada no desktop. Nao assuma hospedagem Vercel/Railway: o produto canonico e o `CVMAnalytics.exe`.
 - UI ativa em `apps/desktop-web`; a antiga UI Next.js em `apps/web` foi removida
 - Automacao e batches via `scripts/batch_completo.py` e `scripts/atualizar_todos.py`
 

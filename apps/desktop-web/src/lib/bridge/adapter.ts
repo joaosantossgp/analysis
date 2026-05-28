@@ -4,19 +4,15 @@
  * Components never touch window.pywebview directly. They go through the
  * typed API facades in ../api/*, which all funnel through callBridge below.
  *
- * Phase 1 scope:
- *  - Detect bridge availability (true inside pywebview, false in browser dev).
- *  - Wait for the pywebviewready event so React boots before the API arrives.
- *  - Forward method calls and standardise error shape.
- *
- * Phase 2 will extend this with:
- *  - Optional HTTP fallback for browser-mode dev iteration.
- *  - Retry / timeout policy aligned with TanStack Query.
+ * Bridge modes:
+ *  - "desktop"  real pywebview bridge (normal packaged / desktop dev)
+ *  - "browser"  no bridge (plain Vite browser preview)
+ *  - "mock"     dev-only fixture bridge (VITE_MOCK_BRIDGE=1 + import.meta.env.DEV)
  */
 
 import type { BridgeApi } from "./types";
 
-export type BridgeMode = "desktop" | "browser";
+export type BridgeMode = "desktop" | "browser" | "mock";
 
 export class BridgeError extends Error {
   public readonly method: string;
@@ -30,6 +26,31 @@ export class BridgeError extends Error {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Mock bridge — dev-only, gated by VITE_MOCK_BRIDGE=1
+// import.meta.env.DEV is a Vite compile-time constant (false in prod builds)
+// so the dynamic import below is dead code in production and tree-shaken out.
+// ---------------------------------------------------------------------------
+
+let _mockBridgeCache: Partial<BridgeApi> | null | undefined = undefined;
+
+/** True only when running in a Vite dev build with VITE_MOCK_BRIDGE=1. */
+export function isMockBridgeEnabled(): boolean {
+  return import.meta.env.DEV === true && import.meta.env.VITE_MOCK_BRIDGE === "1";
+}
+
+async function getMockBridge(): Promise<Partial<BridgeApi> | null> {
+  if (!isMockBridgeEnabled()) return null;
+  if (_mockBridgeCache === undefined) {
+    // Dynamic import excluded from production bundle by Vite dead-code elimination.
+    const { createMockBridge } = await import("./mock");
+    _mockBridgeCache = createMockBridge();
+  }
+  return _mockBridgeCache;
+}
+
+// ---------------------------------------------------------------------------
+
 export function isBridgeAvailable(): boolean {
   return (
     typeof window !== "undefined" && typeof window.pywebview?.api !== "undefined"
@@ -37,6 +58,7 @@ export function isBridgeAvailable(): boolean {
 }
 
 export function getBridgeMode(): BridgeMode {
+  if (isMockBridgeEnabled()) return "mock";
   return isBridgeAvailable() ? "desktop" : "browser";
 }
 
@@ -46,12 +68,15 @@ export function getBridgeMode(): BridgeMode {
  * however, when React 19 hydrates the root before pywebview finishes its
  * injection, we need to wait. This helper covers both orderings.
  *
- * Resolves immediately in browser mode (no bridge will ever arrive) — the
- * caller should branch on getBridgeMode().
+ * Resolves immediately in browser mode (no bridge will ever arrive) and
+ * in mock mode (fixture bridge is always ready).
  */
 export function whenBridgeReady(timeoutMs = 5000): Promise<BridgeMode> {
   if (typeof window === "undefined") {
     return Promise.resolve("browser");
+  }
+  if (isMockBridgeEnabled()) {
+    return Promise.resolve("mock");
   }
   if (isBridgeAvailable()) {
     return Promise.resolve("desktop");
@@ -76,11 +101,30 @@ export function whenBridgeReady(timeoutMs = 5000): Promise<BridgeMode> {
 /**
  * Strongly-typed forward to a Python bridge method. Components and API
  * facades should call this instead of touching window.pywebview directly.
+ *
+ * When mock bridge is enabled (VITE_MOCK_BRIDGE=1 in dev), calls are routed
+ * to the in-process fixture implementation instead of the Python backend.
  */
 export async function callBridge<K extends keyof BridgeApi>(
   method: K,
   params: Parameters<BridgeApi[K]>[0],
 ): Promise<Awaited<ReturnType<BridgeApi[K]>>> {
+  // Mock bridge path — dev only
+  if (isMockBridgeEnabled()) {
+    const mock = await getMockBridge();
+    if (mock && method in mock) {
+      const fn = mock[method] as (
+        p: Parameters<BridgeApi[K]>[0],
+      ) => Promise<Awaited<ReturnType<BridgeApi[K]>>>;
+      return fn(params);
+    }
+    throw new BridgeError(
+      String(method),
+      `Method "${String(method)}" not implemented in mock bridge`,
+      "mock",
+    );
+  }
+
   if (!isBridgeAvailable()) {
     throw new BridgeError(
       String(method),

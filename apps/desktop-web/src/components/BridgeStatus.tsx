@@ -38,8 +38,11 @@ function Detail({ probe }: { probe: BridgeProbe }) {
     case "init":
       return <span>Detecting bridge…</span>;
     case "checking":
-      return <span>Pinging Python…</span>;
+      return <span>{probe.mode === "mock" ? "Loading mock fixture…" : "Pinging Python…"}</span>;
     case "ready":
+      if (probe.mode === "mock") {
+        return <span>mock fixture active — no real data</span>;
+      }
       return (
         <span>
           last ping ok
@@ -55,7 +58,9 @@ function Detail({ probe }: { probe: BridgeProbe }) {
           <code className="font-mono">
             python scripts/phase1_pywebview_smoke.py --manual
           </code>{" "}
-          for real data.
+          or run{" "}
+          <code className="font-mono">npm run dev:mock</code>{" "}
+          for mock data.
         </span>
       );
     case "error":
@@ -73,14 +78,18 @@ function badgeFor(probe: BridgeProbe): { label: string; classes: string } {
       return { label: "init", classes: "border-zinc-700 bg-zinc-900 text-zinc-300" };
     case "checking":
       return {
-        label: probe.mode === "desktop" ? "desktop · checking" : "browser",
+        label:
+          probe.mode === "desktop"
+            ? "desktop · checking"
+            : probe.mode === "mock"
+              ? "mock · checking"
+              : "browser",
         classes: "border-zinc-700 bg-zinc-900 text-zinc-300",
       };
     case "ready":
-      return {
-        label: "desktop · bridge ready",
-        classes: "border-emerald-800 bg-emerald-950/60 text-emerald-300",
-      };
+      return probe.mode === "mock"
+        ? { label: "mock · fixture", classes: "border-violet-800 bg-violet-950/60 text-violet-300" }
+        : { label: "desktop · bridge ready", classes: "border-emerald-800 bg-emerald-950/60 text-emerald-300" };
     case "browser":
       return {
         label: "browser · no bridge",

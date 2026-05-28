@@ -67,7 +67,7 @@ function ensurePollerStarted(): void {
   pollerStarted = true;
   void check();
   pollIntervalId = window.setInterval(() => {
-    if (getBridgeMode() === "desktop") {
+    if (getBridgeMode() !== "browser") {
       void check();
     }
   }, 30_000);

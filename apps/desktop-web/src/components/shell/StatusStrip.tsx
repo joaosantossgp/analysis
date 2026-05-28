@@ -14,11 +14,18 @@ function bridgeLabel(probe: BridgeProbe): { label: string; color: string } {
       return { label: "BRIDGE · INIT", color: "var(--color-text-tertiary)" };
     case "checking":
       return {
-        label: probe.mode === "desktop" ? "BRIDGE · CHECKING" : "BRIDGE · BROWSER",
+        label:
+          probe.mode === "desktop"
+            ? "BRIDGE · CHECKING"
+            : probe.mode === "mock"
+              ? "BRIDGE · MOCK · CHECKING"
+              : "BRIDGE · BROWSER",
         color: "var(--color-text-tertiary)",
       };
     case "ready":
-      return { label: "BRIDGE · READY", color: "var(--color-state-ok)" };
+      return probe.mode === "mock"
+        ? { label: "BRIDGE · MOCK", color: "#c4b5fd" }
+        : { label: "BRIDGE · READY", color: "var(--color-state-ok)" };
     case "browser":
       return { label: "BRIDGE · BROWSER", color: "var(--color-state-warn)" };
     case "error":

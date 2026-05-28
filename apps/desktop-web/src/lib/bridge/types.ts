@@ -484,13 +484,32 @@ export type DatabaseDiagnostics = {
   error?: string;
 };
 
+export type LockStatus =
+  | "locked_by_self"
+  | "locked_by_other"
+  | "stale_recovered"
+  | "no_lock"
+  | string;
+
+export type LockStatusPayload = {
+  status: LockStatus;
+  pid?: number | null;
+  runtime_mode?: string | null;
+  started_at?: string | null;
+  stale_recovered?: boolean;
+  stale_pid?: number | null;
+};
+
 export type AppRuntimeStatus = {
   version: string;
-  runtime_mode: "vite" | "vite-dev" | "unknown" | string;
+  runtime_mode: "vite" | "vite-dev" | "vite-dev-release-data" | "mock" | "unknown" | string;
   bridge_status: "ready" | "error" | "unknown" | string;
   frozen: boolean;
   desktop_shell: string | null;
   local_first: boolean;
+  using_release_data_dir?: boolean;
+  write_mode?: "read-write" | "read-only" | string;
+  lock_status?: LockStatusPayload | null;
 };
 
 export type LocalPathInfo = {

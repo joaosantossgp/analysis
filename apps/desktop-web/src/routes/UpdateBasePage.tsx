@@ -85,7 +85,7 @@ export function UpdateBasePage() {
   const invalidateRefreshQueries = useRefreshJobInvalidation();
   const defaults = useMemo(() => defaultRefreshWindow(), []);
   const [bridgeReady, setBridgeReady] = useState(false);
-  const [bridgeMode, setBridgeMode] = useState<"desktop" | "browser" | null>(null);
+  const [bridgeMode, setBridgeMode] = useState<"desktop" | "browser" | "mock" | null>(null);
   const [draftSettings, setDraftSettings] =
     useState<DataUpdateSettings>(FALLBACK_SETTINGS);
   const [settingsTouched, setSettingsTouched] = useState(false);

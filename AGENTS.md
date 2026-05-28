@@ -25,6 +25,18 @@ Canonical operating rules for AI agents in this project. English-only. ~120 line
   changing UI/runtime/backend behavior.
 - If a file appears legacy or unused, report it instead of modifying it.
 
+## UI Language Policy
+
+- **Target UI language: English-only.** New user-facing strings in
+  `apps/desktop-web` must be English.
+- The current app still contains **mixed Portuguese/English** labels and routes.
+  Do not claim the UI is already fully English — it is not.
+- Treat existing Portuguese UI strings as **cleanup debt**, not the desired
+  convention. Migrate them to English when you touch that surface; do not add
+  new Portuguese user-facing strings.
+- Do **not** blindly translate source data: company names, tickers, CVM/B3
+  terms, raw filings, and financial statement line items stay as-is.
+
 ## 2. Principles
 
 1. **Inspect before editing.** Read the file you're changing and at least one of its callers. Never fabricate project state.
@@ -146,6 +158,10 @@ Each task type has a minimal extra rule on top of the principles. Match the mode
 - `docs/CONTEXT.md` — domain rules for `src/` and `apps/api/`
 - `docs/decisions/` — ADRs (durable architectural decisions)
 - `docs/active-project-map.md` — concise active path and command map
+- `docs/dev-runtime-and-data-paths.md` — dev modes, data paths, read/write policy, lockfile
+- `docs/database-updates.md` — Update Base flow, settings, reset, Data Coverage relationship
+- `docs/company-on-demand-updates.md` — per-company refresh, no-history companies, status badges
+- `docs/release-process.md` — versioning, build, what does NOT require a release
 - `docs/reference/` — active reference docs (repository map, GICS import, API contract)
 - `docs/governance/autonomous-mode.md` — opt-in heavy contract for autonomous PRs
 

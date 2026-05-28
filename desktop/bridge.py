@@ -172,6 +172,8 @@ class CVMBridge:
         try:
             cd_cvm = int(p.get("cd_cvm", 0))
             if cd_cvm:
+                if not self._is_write_allowed():
+                    return {"ok": True, "skipped": True, "reason": "read_only"}
                 self._svc().record_company_view(cd_cvm)
             return {"ok": True}
         except Exception:
@@ -306,6 +308,8 @@ class CVMBridge:
         Collisions are resolved by suffixing `` (1)``, `` (2)``, ... so an
         existing export is never overwritten.
         """
+        if not self._is_write_allowed():
+            return self._sanitize_for_json(self._write_blocked_response("export_company_excel"))
         p = params or {}
         try:
             cd_cvm = int(p.get("cd_cvm", 0))
@@ -458,6 +462,8 @@ class CVMBridge:
             })
 
     def request_refresh(self, params=None) -> dict:
+        if not self._is_write_allowed():
+            return self._sanitize_for_json(self._write_blocked_response("request_refresh"))
         p = params or {}
         # Single-company refresh (from no-data company page) routes through the
         # same code path as the HTTP API (`service.request_company_refresh`),
@@ -540,6 +546,8 @@ class CVMBridge:
             })
 
     def start_onboarding_setup(self, params=None) -> dict:
+        if not self._is_write_allowed():
+            return self._sanitize_for_json(self._write_blocked_response("start_onboarding_setup"))
         p = params or {}
         preset = str(p.get("preset") or "").strip().lower()
         try:
@@ -593,6 +601,8 @@ class CVMBridge:
         })
 
     def complete_onboarding_setup(self, params=None) -> dict:
+        if not self._is_write_allowed():
+            return self._sanitize_for_json(self._write_blocked_response("complete_onboarding_setup"))
         try:
             status = str((params or {}).get("status") or "success")
             return self._sanitize_for_json(self._onboarding().mark_setup_completed(status=status))
@@ -600,6 +610,8 @@ class CVMBridge:
             return self._sanitize_for_json({"ok": False, "error": str(exc)})
 
     def skip_onboarding_setup(self, params=None) -> dict:
+        if not self._is_write_allowed():
+            return self._sanitize_for_json(self._write_blocked_response("skip_onboarding_setup"))
         try:
             return self._sanitize_for_json(self._onboarding().skip_setup())
         except Exception as exc:
@@ -619,6 +631,8 @@ class CVMBridge:
             })
 
     def save_data_update_settings(self, params=None) -> dict:
+        if not self._is_write_allowed():
+            return self._sanitize_for_json(self._write_blocked_response("save_data_update_settings"))
         p = params or {}
         try:
             settings = self._normalize_data_update_settings(p)
@@ -652,6 +666,8 @@ class CVMBridge:
             })
 
     def start_data_update(self, params=None) -> dict:
+        if not self._is_write_allowed():
+            return self._sanitize_for_json(self._write_blocked_response("start_data_update"))
         p = params or {}
         try:
             current_settings = self._resolve_data_update_settings()
@@ -699,6 +715,8 @@ class CVMBridge:
             })
 
     def reset_local_database(self, params=None) -> dict:
+        if not self._is_write_allowed():
+            return self._sanitize_for_json(self._write_blocked_response("reset_local_database"))
         p = params or {}
         action = str(p.get("action") or "").strip().lower()
         expected = "RESET" if action == "restart_current" else "REBUILD"
@@ -1051,6 +1069,8 @@ class CVMBridge:
     # ------------------------------------------------------------------
 
     def dev_reset_onboarding(self, params=None) -> dict:
+        if not self._is_write_allowed():
+            return self._sanitize_for_json(self._write_blocked_response("dev_reset_onboarding"))
         try:
             svc = self._onboarding()
             blank: dict = {
@@ -1071,6 +1091,8 @@ class CVMBridge:
             return self._sanitize_for_json({"ok": False, "error": str(exc)})
 
     def dev_reset_universe(self, params=None) -> dict:
+        if not self._is_write_allowed():
+            return self._sanitize_for_json(self._write_blocked_response("dev_reset_universe"))
         try:
             from sqlalchemy import text  # noqa: PLC0415
             with self._svc().engine.begin() as conn:
@@ -1080,6 +1102,8 @@ class CVMBridge:
             return self._sanitize_for_json({"ok": False, "error": str(exc)})
 
     def dev_reset_jobs(self, params=None) -> dict:
+        if not self._is_write_allowed():
+            return self._sanitize_for_json(self._write_blocked_response("dev_reset_jobs"))
         try:
             from sqlalchemy import text  # noqa: PLC0415
             with self._svc().engine.begin() as conn:
@@ -1089,15 +1113,10 @@ class CVMBridge:
         except Exception as exc:
             return self._sanitize_for_json({"ok": False, "error": str(exc)})
 
-    def dev_simulate_refresh(self, params=None) -> dict:
-        """Insert synthetic job rows so UI can exercise all terminal states.
-
-        mode=success  — one job in state=success (instant)
-        mode=fail     — one job in state=error  (instant)
-        mode=partial  — two jobs: one success, one error (instant)
-        mode=slow     — one RUNNING job that advances through stages over ~12s
-                        (background thread; the worker ignores RUNNING rows)
-        """
+    def dev_simulate_refresh(self, params=None) -> dict:  # noqa: C901
+        """Insert synthetic job rows so UI can exercise all terminal states."""
+        if not self._is_write_allowed():
+            return self._sanitize_for_json(self._write_blocked_response("dev_simulate_refresh"))
         import threading  # noqa: PLC0415
         import uuid  # noqa: PLC0415
         from datetime import datetime  # noqa: PLC0415
@@ -1184,10 +1203,9 @@ class CVMBridge:
         return self._sanitize_for_json({"ok": True, "mode": "slow", "job_id": jid})
 
     def dev_start_small_setup(self, params=None) -> dict:
-        """Run request_refresh against the first N companies already in the local DB.
-
-        No external API calls — uses companies already stored.
-        """
+        """Run request_refresh against the first N companies already in the local DB."""
+        if not self._is_write_allowed():
+            return self._sanitize_for_json(self._write_blocked_response("dev_start_small_setup"))
         count = min(int((params or {}).get("count") or 5), 10)
         try:
             page = self._svc().list_companies(page=1, page_size=count, search="")
@@ -1312,6 +1330,8 @@ class CVMBridge:
         })
 
     def apply_update(self, params=None) -> dict:
+        if not self._is_write_allowed():
+            return self._sanitize_for_json(self._write_blocked_response("apply_update"))
         with self._update_lock:
             info = self._update_info
             if not info:
@@ -1381,6 +1401,8 @@ class CVMBridge:
             update = self._get_software_update_status(force=force_update_check)
             diagnostics = self._runtime_diagnostics_summary(paths)
             recent = self._collect_recent_diagnostics(paths, database)
+            from desktop import lockfile as _lockfile  # noqa: PLC0415
+
             return self._sanitize_for_json({
                 "runtime": {
                     "version": __version__,
@@ -1389,6 +1411,9 @@ class CVMBridge:
                     "frozen": bool(getattr(sys, "frozen", False)),
                     "desktop_shell": "pywebview/WebView2",
                     "local_first": True,
+                    "using_release_data_dir": self._using_release_data_dir(),
+                    "write_mode": "read-write" if self._is_write_allowed() else "read-only",
+                    "lock_status": _lockfile.get_status(),
                 },
                 "paths": {
                     key: self._path_payload(key, value)
@@ -1408,6 +1433,7 @@ class CVMBridge:
                     "frozen": bool(getattr(sys, "frozen", False)),
                     "desktop_shell": "pywebview/WebView2",
                     "local_first": True,
+                    "using_release_data_dir": self._using_release_data_dir(),
                 },
                 "paths": {},
                 "database": None,
@@ -1474,8 +1500,60 @@ class CVMBridge:
     def _runtime_mode() -> str:
         argv = {str(arg).lower() for arg in sys.argv}
         if "--dev" in argv and not getattr(sys, "frozen", False):
-            return "vite-dev"
+            use_release = os.environ.get("CVMANALYTICS_USE_RELEASE_DATA", "").strip().lower() in {
+                "1", "true", "yes",
+            }
+            return "vite-dev-release-data" if use_release else "vite-dev"
         return "vite"
+
+    @staticmethod
+    def _using_release_data_dir() -> bool:
+        if getattr(sys, "frozen", False):
+            return True
+        return os.environ.get("CVMANALYTICS_USE_RELEASE_DATA", "").strip().lower() in {"1", "true", "yes"}
+
+    @staticmethod
+    def _is_write_allowed() -> bool:
+        """Returns True if destructive/write operations are safe in this mode."""
+        if getattr(sys, "frozen", False):
+            return True
+        use_release = os.environ.get("CVMANALYTICS_USE_RELEASE_DATA", "").strip().lower() in {
+            "1", "true", "yes",
+        }
+        if not use_release:
+            return True
+        # Concurrent lock detected — block writes unconditionally.
+        if os.environ.get("CVMANALYTICS_CONCURRENT_LOCK_DETECTED", "").strip() == "1":
+            return False
+        # Allow writes only when explicitly opted in.
+        return os.environ.get("CVMANALYTICS_ALLOW_RELEASE_DATA_WRITES", "").strip().lower() in {
+            "1", "true", "yes",
+        }
+
+    @staticmethod
+    def _write_blocked_response(op_name: str = "operation") -> dict:
+        concurrent = os.environ.get("CVMANALYTICS_CONCURRENT_LOCK_DETECTED", "").strip() == "1"
+        if concurrent:
+            msg = (
+                f"Write blocked: release data directory is in use by another CVMAnalytics process. "
+                "Close the packaged app before running write operations from dev mode."
+            )
+            code = "concurrent_lock_conflict"
+        else:
+            msg = (
+                f"Write blocked: dev mode is using the release data directory. "
+                "Set CVMANALYTICS_ALLOW_RELEASE_DATA_WRITES=1 to enable writes, "
+                "or use isolated dev data (omit CVMANALYTICS_USE_RELEASE_DATA)."
+            )
+            code = "release_data_write_blocked"
+        return {
+            "ok": False,
+            "status": "blocked",
+            "error": msg,
+            "status_reason_code": code,
+            "status_reason_message": msg,
+            "is_retry_allowed": False,
+        }
 
     def _status_path_map(self) -> dict[str, Path]:
         paths = self._svc().settings.paths
@@ -1571,6 +1649,16 @@ class CVMBridge:
     def _runtime_diagnostics_summary(paths: Any) -> dict:
         warnings: list[str] = []
         errors: list[str] = []
+        # Warn when dev mode is running against the real release data directory.
+        if not getattr(sys, "frozen", False):
+            use_release = os.environ.get("CVMANALYTICS_USE_RELEASE_DATA", "").strip().lower() in {
+                "1", "true", "yes",
+            }
+            if use_release:
+                warnings.append(
+                    "Dev mode is using the release data directory "
+                    f"({paths.data_dir}). Destructive actions affect real user data."
+                )
         try:
             from desktop.__version__ import __version__ as app_version  # noqa: PLC0415
         except Exception:
@@ -1726,12 +1814,9 @@ class CVMBridge:
         }
 
     def set_company_ignored(self, params=None) -> dict:
-        """Toggle the per-company `ignored` flag in company_refresh_status.
-
-        Lets operators hide companies that intentionally have no data
-        (delisted, no public filings, etc.) so the Data Coverage view
-        focuses on actionable issues.
-        """
+        """Toggle the per-company `ignored` flag in company_refresh_status."""
+        if not self._is_write_allowed():
+            return self._sanitize_for_json(self._write_blocked_response("set_company_ignored"))
         import sqlite3  # noqa: PLC0415
         from datetime import datetime as _dt  # noqa: PLC0415
 
