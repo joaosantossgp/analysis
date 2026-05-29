@@ -160,8 +160,11 @@ _COMPANY_DEFAULTS = dict(
 )
 
 
-def _company(cd_cvm: int, name: str, ticker: str) -> dict:
-    return {**_COMPANY_DEFAULTS, "cd_cvm": cd_cvm, "company_name": name, "ticker_b3": ticker}
+def _company(cd_cvm: int, name: str, ticker: str | None = None, *, has_data: bool = False) -> dict:
+    row = {**_COMPANY_DEFAULTS, "cd_cvm": cd_cvm, "company_name": name, "ticker_b3": ticker}
+    if has_data:
+        row["coverage_rank"] = cd_cvm  # non-null → triggers has_financial_data path
+    return row
 
 
 # ---------------------------------------------------------------------------
@@ -361,3 +364,49 @@ def test_pagination_preserves_market_cap_order(tmp_path):
     assert all(c is not None for c in caps_p2), "All page-2 companies should be mapped"
     assert caps_p1 == sorted(caps_p1, reverse=True), "Page 1 sorted desc"
     assert min(caps_p1) > max(caps_p2), "Page 1 caps all higher than page 2"
+
+
+# ---------------------------------------------------------------------------
+# Test: unmapped fallback order preserves has_financial_data tier
+# ---------------------------------------------------------------------------
+
+def test_unmapped_companies_with_data_appear_before_catalog_stubs(tmp_path):
+    """Unmapped companies that have financial data appear before catalog stubs (no data)."""
+    svc = _seed_db(tmp_path, [
+        _company(1001, "Stub Corp no data", "STUB3"),          # no data, no market cap
+        _company(1002, "Data Corp no market cap", "DATA3", has_data=False),  # no data, no cap
+        _company(1003, "Mapped Corp", "MAPC3"),                 # has market cap
+    ])
+    # Seed financial_reports for Data Corp to give it has_financial_data=True
+    import sqlite3
+    with sqlite3.connect(str(svc.settings.paths.db_path)) as conn:
+        conn.execute(
+            "INSERT INTO financial_reports (COMPANY_NAME, CD_CVM, STATEMENT_TYPE, REPORT_YEAR, "
+            "PERIOD_LABEL, LINE_ID_BASE, CD_CONTA, DS_CONTA, STANDARD_NAME, QA_CONFLICT, VL_CONTA) "
+            "VALUES ('Data Corp', 1002, 'DRE', 2024, '2024', 'd1', '3.01', 'Receita', 'Receita', 0, 100.0)"
+        )
+        conn.commit()
+    svc.invalidate_read_caches()
+
+    snapshot_path = Path(svc.settings.paths.company_universe_snapshot_path)
+    _write_snapshot(snapshot_path, [_snap_row("MAPC3.SA", 200_000_000_000.0, 1)])
+
+    page = svc.list_companies(page=1, page_size=10)
+    names = [item.company_name for item in page.items]
+    assert names[0] == "Mapped Corp", "Market-cap mapped first"
+    assert names[1] == "Data Corp no market cap", "Has-data company before stub"
+    assert names[2] == "Stub Corp no data", "Pure stub last"
+
+
+def test_ticker_sa_suffix_normalised_for_lookup(tmp_path):
+    """DB tickers with .SA suffix (e.g. PETR4.SA) match snapshot keys stripped of .SA."""
+    # Seed DB with .SA-suffixed ticker (as some installs store it)
+    svc = _seed_db(tmp_path, [
+        _company(9512, "Petrobras", "PETR4.SA"),  # .SA in DB
+    ])
+    snapshot_path = Path(svc.settings.paths.company_universe_snapshot_path)
+    _write_snapshot(snapshot_path, [_snap_row("PETR4.SA", 500_000_000_000.0, 1)])
+
+    page = svc.list_companies(page=1, page_size=10)
+    assert page.items[0].market_cap_brl == 500_000_000_000.0, \
+        "Ticker .SA suffix must be normalised for lookup"

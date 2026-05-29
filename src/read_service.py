@@ -1006,7 +1006,9 @@ class CVMReadService:
         for item in filtered:
             entry = by_cd_cvm.get(item.cd_cvm)
             if entry is None and item.ticker_b3:
-                entry = by_ticker.get(item.ticker_b3.upper())
+                # DB may store ticker with or without .SA suffix — normalise
+                ticker_key = item.ticker_b3.upper().replace(".SA", "")
+                entry = by_ticker.get(ticker_key)
             if entry is not None:
                 mapped_count += 1
                 item = replace(
@@ -1019,11 +1021,17 @@ class CVMReadService:
                 )
             enriched.append(item)
 
-        # Sort: mapped by market_cap_brl DESC first, unmapped by company_name ASC
+        # Sort:
+        #  1. Mapped companies → market_cap_brl DESC
+        #  2. Unmapped but has financial data → matches old "data-first" UX
+        #  3. Unmapped / no data → company_name ASC
+        # Tier 2 preserves the pre-existing sort for companies not in the snapshot
+        # (they have tickers/sectors; pure catalog stubs usually don't).
         enriched.sort(
             key=lambda c: (
                 0 if c.market_cap_brl is not None else 1,
                 -(c.market_cap_brl or 0.0),
+                0 if c.has_financial_data else 1,
                 c.company_name.lower(),
             )
         )
