@@ -694,6 +694,41 @@ def test_checks_include_cash_flow_tie_and_net_income_tie():
     assert "Formula Error Scan" in body
 
 
+def test_check_status_formulas_use_iferror_guard():
+    """Regression: BS/CF/NI check status cells must use IFERROR(...,0) inside
+    SUMPRODUCT so that '-' strings in delta/ta cells don't produce #VALUE!."""
+    exporter = ExcelExporter(
+        company_info=_sample_company(),
+        statements=_wide_statements(),
+        kpis_df=_minimal_kpis(),
+    )
+    payload = exporter.export()
+    wb = openpyxl.load_workbook(io.BytesIO(payload), data_only=False)
+    ws = wb["Model"]
+
+    # Collect all formula strings from col C (status column, 1-indexed col 3)
+    status_formulas = [
+        str(ws.cell(row=r, column=3).value or "")
+        for r in range(1, ws.max_row + 1)
+        if str(ws.cell(row=r, column=3).value or "").startswith("=")
+    ]
+
+    # Every SUMPRODUCT-based status formula must use IFERROR guard
+    for f in status_formulas:
+        if "SUMPRODUCT" in f:
+            assert "IFERROR" in f, (
+                f"SUMPRODUCT check formula missing IFERROR guard "
+                f"(will #VALUE! on '-' strings): {f[:120]}"
+            )
+
+    # BS tie tolerance must use MAX+IFERROR, not bare IF
+    bs_formulas = [f for f in status_formulas if "SUMPRODUCT" in f and "MAX(" in f]
+    assert bs_formulas, "BS tie tolerance formula (MAX) not found in status column"
+    assert all("IFERROR" in f for f in bs_formulas), (
+        "BS tie tolerance formula missing IFERROR"
+    )
+
+
 # ─── scoped statement export still works ─────────────────────────────────────
 def test_scoped_statement_export_is_minimal():
     exporter = ExcelExporter(

@@ -1683,12 +1683,15 @@ class ExcelExporter:
             # The 0.5 floor keeps small companies sane; the relative term
             # avoids false ERRORs on very large balance sheets where ÷1000
             # scaling leaves sub-materiality noise.
+            # IFERROR guards handle "-" strings in delta/ta cells (IFERROR
+            # fallback from unmapped lines); without them ABS("-") = #VALUE!
+            # propagates through SUMPRODUCT.
             d = row + 1  # Excel row holding the per-period delta cells
             ta_rng = f"{first_col_letter}{ta}:{last_col_letter}{ta}"
-            tol = f"IF(0.0005*ABS({ta_rng})>0.5,0.0005*ABS({ta_rng}),0.5)"
+            tol = f"MAX(0.5,IFERROR(0.0005*ABS({ta_rng}),0.5))"
             ws.write_formula(
                 row, 2,
-                f'=IF(SUMPRODUCT(--(ABS({first_col_letter}{d}:{last_col_letter}{d})>{tol}))=0,"OK","ERROR")',
+                f'=IF(SUMPRODUCT(IFERROR(--(ABS({first_col_letter}{d}:{last_col_letter}{d})>{tol}),0))=0,"OK","ERROR")',
                 f["check_ok"],
             )
         else:
@@ -1710,7 +1713,7 @@ class ExcelExporter:
         if cf_end_cash is not None and bs_cash is not None:
             ws.write_formula(
                 row, 2,
-                f'=IF(SUMPRODUCT(--(ABS({first_col_letter}{row + 1}:{last_col_letter}{row + 1})>0.5))=0,"OK","WARNING")',
+                f'=IF(SUMPRODUCT(IFERROR(--(ABS({first_col_letter}{row + 1}:{last_col_letter}{row + 1})>0.5),0))=0,"OK","WARNING")',
                 f["check_ok"],
             )
             for c_idx, _ in enumerate(periods, start=3):
@@ -1736,7 +1739,7 @@ class ExcelExporter:
         if ni_dre is not None and ni_dfc is not None:
             ws.write_formula(
                 row, 2,
-                f'=IF(SUMPRODUCT(--(ABS({first_col_letter}{row + 1}:{last_col_letter}{row + 1})>0.5))=0,"OK","WARNING")',
+                f'=IF(SUMPRODUCT(IFERROR(--(ABS({first_col_letter}{row + 1}:{last_col_letter}{row + 1})>0.5),0))=0,"OK","WARNING")',
                 f["check_ok"],
             )
             for c_idx, _ in enumerate(periods, start=3):
