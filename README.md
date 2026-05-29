@@ -6,6 +6,51 @@ CVMAnalytics is a local-first Windows desktop application for collecting, organi
 
 The authoritative runtime is the packaged Windows desktop executable. The public landing page (`landing/`, published via GitHub Pages) is a marketing surface only — it is not the product. The old Vercel deploy is retired.
 
+## Download
+
+**[⬇ Download the latest Windows build (CVMAnalytics-windows.zip)](https://github.com/joaosantossgp/analisys/releases/latest/download/CVMAnalytics-windows.zip)**
+
+- Checksum: [CVMAnalytics-windows.zip.sha256](https://github.com/joaosantossgp/analisys/releases/latest/download/CVMAnalytics-windows.zip.sha256)
+- All releases: [github.com/joaosantossgp/analisys/releases](https://github.com/joaosantossgp/analisys/releases)
+
+The download link always points to the current stable release. The link is version-stable — it does not change between releases.
+
+**Requirements**
+
+- Windows only (Windows 11, or recent Windows 10). macOS and Linux are not supported.
+- Microsoft Edge **WebView2** runtime. It is preinstalled on Windows 11 and usually present on recent Windows 10; if missing, install it from Microsoft (search "WebView2 Runtime").
+- The app is not code-signed yet, so Windows SmartScreen may warn on first launch. Choose **More info → Run anyway**.
+
+Your data is never written inside the install folder. The local database, Excel exports, and logs live under:
+
+```
+%USERPROFILE%\Documents\CVMAnalytics\
+```
+
+Updates and uninstalls never touch that directory.
+
+## Screenshots
+
+| Company directory | Company overview |
+|---|---|
+| ![Company directory — searchable list of B3-listed companies with sector, coverage years, and data status](docs/assets/screenshots/company-directory.png) | ![Company overview — header with CVM/B3 codes, coverage summary, and annual KPI history](docs/assets/screenshots/company-overview.png) |
+
+| Financial statements | Indicators / KPIs |
+|---|---|
+| ![Financial statements — DRE/BPA/BPP/DFC matrix with multi-year columns and Excel export](docs/assets/screenshots/financial-statements.png) | ![Indicators — KPI tape and multi-year trend charts for margins, ROE, and leverage](docs/assets/screenshots/indicators.png) |
+
+## Quick Start
+
+For non-developers who just want to run the app:
+
+1. **Download** [CVMAnalytics-windows.zip](https://github.com/joaosantossgp/analisys/releases/latest/download/CVMAnalytics-windows.zip) (see [Download](#download) above).
+2. **Unzip** it to any folder you control, e.g. `Documents\Apps\CVMAnalytics`. Keep `CVMAnalytics.exe` and the `_internal\` folder together.
+3. **Run** `CVMAnalytics.exe`. If SmartScreen warns, choose **More info → Run anyway**.
+4. **First launch** sets up a local database under `%USERPROFILE%\Documents\CVMAnalytics\`. Use the in-app **Updates** screen to download CVM/B3 data for the companies you follow.
+5. **Explore**: browse the company directory, open a company for its overview, financial statements (DRE / BPA / BPP / DFC), and KPI trends, then export any company's history to Excel.
+
+The app is local-first — your data and queries stay on your machine. New versions are picked up automatically: the app checks GitHub Releases on startup and updates in place without overwriting your data.
+
 ## Who This Is For
 
 - Equity researchers and analysts who follow Brazilian publicly traded companies (CVM-regulated).
