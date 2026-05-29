@@ -434,7 +434,9 @@ class HeadlessRefreshService:
             )
 
         from src.market_cap import MarketCapService
-        mkt_cap_svc = MarketCapService(settings=self.settings)
+        from src.read_service import CVMReadService
+        _read_svc = CVMReadService(settings=self.settings)
+        mkt_cap_svc = MarketCapService(settings=self.settings, read_service=_read_svc)
 
         provider = self.settings.market_cap_provider
         auto_refresh = self.settings.market_cap_auto_refresh
