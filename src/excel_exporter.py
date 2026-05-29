@@ -508,6 +508,18 @@ class ExcelExporter:
         # surfaced as a Checks row (EBITDA depends on it).
         self._da_resolved: bool = False
         self._da_cd_conta: Optional[str] = None
+        # Financial-firm detection — True when GICS sector is Financials or
+        # company_type indicates a bank/insurer. The generic industrial spine
+        # is not designed for financial institutions; a banner + check row
+        # surface this so the workbook is never silently misleading.
+        _gics = str(company_info.get("gics_sector") or "").lower()
+        _ctype = str(company_info.get("company_type") or "").lower()
+        self._is_financial_firm: bool = (
+            "financ" in _gics
+            or "insur" in _gics
+            or "banco" in _ctype
+            or "bank" in _ctype
+        )
 
     # ── public API ────────────────────────────────────────────────────────
     def export(self, statement_type: Optional[str] = None) -> bytes:
@@ -1011,6 +1023,23 @@ class ExcelExporter:
             ws.write_blank(10, c_idx, None, f["title"])
         ws.write(11, 1, "R$ mm except per share and where indicated",
                  f["subtitle"])
+
+        # Financial-institution warning banner — row 12 (0-indexed), Excel 13.
+        # Banks/insurers have a different CVM account tree; the generic
+        # industrial spine will produce many unmapped lines and silent "-"
+        # values for headline metrics (Net Income, Cash, Debt). This banner
+        # makes the limitation explicit before the analyst reads any numbers.
+        if self._is_financial_firm:
+            ws.set_row(12, 18)
+            ws.write(
+                12, 1,
+                "⚠ Financial institution — generic industrial spine active. "
+                "Key lines (Net Income, Cash, Debt) may be unmapped. "
+                "See Checks → Generic Spine and Source blocks.",
+                f["conv_warning"],
+            )
+            for c_idx in range(2, max(3, 3 + len(periods))):
+                ws.write_blank(12, c_idx, None, f["conv_warning"])
 
         # Company info block (rows 14:22 1-indexed, 13-21 0-indexed)
         # Derive latest_year from the actual period window if the
@@ -1613,6 +1642,21 @@ class ExcelExporter:
             ws.write(row, 3, "Missing: " + ", ".join(missing),
                      f["source_warning"])
         row += 1
+
+        # Generic Spine — warns financial institutions that the model spine
+        # is designed for industrial companies, not banks/insurers.
+        if self._is_financial_firm:
+            ws.set_row(row, 14)
+            ws.write(row, 1, "Generic Spine — Financial Institution",
+                     f["check_label"])
+            ws.write(row, 2, "WARNING", f["check_warning"])
+            ws.write(
+                row, 3,
+                "Industrial spine active. Net Income, Cash, and Debt lines "
+                "may be absent. Verify against raw_* sheets before use.",
+                f["source_warning"],
+            )
+            row += 1
 
         # DVA Availability
         ws.set_row(row, 14)

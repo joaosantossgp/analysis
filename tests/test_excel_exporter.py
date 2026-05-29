@@ -411,6 +411,49 @@ def test_da_resolved_check_warns_when_no_da_line():
     raise AssertionError("D&A Resolved check missing")
 
 
+def _financial_company() -> dict[str, object]:
+    return {**_sample_company(), "gics_sector": "Financials",
+            "company_name": "Banco Exemplo S.A.", "ticker_b3": "BEXM4"}
+
+
+def test_financial_firm_shows_banner_and_check_row():
+    """Phase 3a — financial-institution banner + Generic Spine check row
+    visible when gics_sector is Financials."""
+    exporter = ExcelExporter(
+        company_info=_financial_company(),
+        statements=_wide_statements(),
+        kpis_df=_minimal_kpis(),
+    )
+    payload = exporter.export()
+    wb = openpyxl.load_workbook(io.BytesIO(payload))
+    ws = wb["Model"]
+    all_text = " | ".join(
+        str(ws.cell(row=r, column=c).value or "")
+        for r in range(1, ws.max_row + 1)
+        for c in (2, 3, 4)
+    )
+    assert "Financial institution" in all_text, "banner text missing"
+    assert "Generic Spine" in all_text, "Generic Spine check row missing"
+    assert "WARNING" in all_text
+
+
+def test_non_financial_firm_has_no_spine_banner():
+    """Phase 3a — no banner or Generic Spine check row for industrial firms."""
+    exporter = ExcelExporter(
+        company_info=_sample_company(),  # gics_sector = "Teste" (not Financials)
+        statements=_wide_statements(),
+        kpis_df=_minimal_kpis(),
+    )
+    payload = exporter.export()
+    wb = openpyxl.load_workbook(io.BytesIO(payload))
+    ws = wb["Model"]
+    for r in range(1, ws.max_row + 1):
+        for c in (2, 3):
+            v = str(ws.cell(row=r, column=c).value or "")
+            assert "Generic Spine" not in v, f"unexpected Generic Spine row at R{r}C{c}"
+            assert "Financial institution" not in v
+
+
 # ─── filenames (unchanged) ───────────────────────────────────────────────────
 def test_build_excel_filename_uses_ticker_and_export_date():
     filename = build_excel_filename(
