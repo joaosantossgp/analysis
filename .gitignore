@@ -23,6 +23,9 @@ data/metadata/b3_companies_cache.json
 data/onboarding_state.json
 data/refresh_jobs.json
 
+# Generated market-cap snapshots (runtime-produced, not source)
+data/metadata/b3_market_cap_universe_snapshot.csv
+
 # SQLite sidecars anywhere in the tree (WAL/SHM from runtime opens)
 *.db-wal
 *.db-shm
