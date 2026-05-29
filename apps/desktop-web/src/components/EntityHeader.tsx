@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
@@ -202,43 +202,30 @@ export function EntityHeader({
           </p>
         ) : null}
 
-        <div
-          className="flex flex-wrap items-start justify-between gap-4"
-          style={{ padding: "10px 16px" }}
-        >
-          <nav aria-label="Company detail sections" className="flex flex-wrap gap-2">
-            <TabLink to={`/empresas/${cdCvm}`} active={activeTab === "overview"}>
-              Overview
-            </TabLink>
-            <TabLink to={`/empresas/${cdCvm}/demonstrativos`} active={activeTab === "statements"}>
-              Financial statements
-            </TabLink>
-            <TabLink to={`/empresas/${cdCvm}/indicadores`} active={activeTab === "kpis"}>
-              Indicators
-            </TabLink>
-          </nav>
-          {showExports ? (
-            <div className="flex flex-col items-start gap-4 md:flex-row">
-              {activeTab === "statements" && (
-                <ExportCompanyButton
-                  cdCvm={info.cd_cvm}
-                  statementType={activeStatement}
-                  scopeLabel={`${activeStatement} selecionado`}
-                  scopeNote={`Exporta capa, metadados e a aba ${activeStatement}.`}
-                />
-              )}
+        {showExports ? (
+          <div
+            className="flex flex-col items-start gap-4 md:flex-row md:items-center md:justify-end"
+            style={{ padding: "10px 16px" }}
+          >
+            {activeTab === "statements" && (
               <ExportCompanyButton
                 cdCvm={info.cd_cvm}
-                scopeLabel={activeTab === "kpis" ? "Workbook com KPIs" : "Workbook completo"}
-                scopeNote={
-                  activeTab === "kpis"
-                    ? "O bridge atual exporta o workbook completo da empresa, incluindo KPIs e demonstrativos disponíveis."
-                    : "Inclui demonstrativos disponíveis, KPIs e metadados locais."
-                }
+                statementType={activeStatement}
+                scopeLabel={`${activeStatement} selecionado`}
+                scopeNote={`Exporta capa, metadados e a aba ${activeStatement}.`}
               />
-            </div>
-          ) : null}
-        </div>
+            )}
+            <ExportCompanyButton
+              cdCvm={info.cd_cvm}
+              scopeLabel={activeTab === "kpis" ? "Workbook com KPIs" : "Workbook completo"}
+              scopeNote={
+                activeTab === "kpis"
+                  ? "O bridge atual exporta o workbook completo da empresa, incluindo KPIs e demonstrativos disponíveis."
+                  : "Inclui demonstrativos disponíveis, KPIs e metadados locais."
+              }
+            />
+          </div>
+        ) : null}
       </article>
     </div>
   );
@@ -306,50 +293,5 @@ function StatusChip({
       <span aria-hidden="true">{tone === "ok" ? "●" : "▲"}</span>
       {children}
     </span>
-  );
-}
-
-function TabLink({
-  to,
-  active,
-  children,
-}: {
-  to: string;
-  active: boolean;
-  children: ReactNode;
-}) {
-  const baseStyle: CSSProperties = {
-    border: "1px solid var(--color-border-default)",
-    borderRadius: "var(--radius-sm)",
-    display: "inline-flex",
-    fontSize: "var(--text-xs)",
-    fontWeight: 500,
-    minHeight: 24,
-    padding: "3px 9px",
-    textDecoration: "none",
-  };
-  return active ? (
-    <span
-      style={{
-        ...baseStyle,
-        background: "var(--color-surface-3)",
-        borderColor: "var(--color-action-primary)",
-        color: "var(--color-action-primary)",
-      }}
-    >
-      {children}
-    </span>
-  ) : (
-    <Link
-      to={to}
-      className="focus-visible:outline focus-visible:outline-1"
-      style={{
-        ...baseStyle,
-        color: "var(--color-text-secondary)",
-        outlineColor: "var(--color-border-focus)",
-      }}
-    >
-      {children}
-    </Link>
   );
 }
