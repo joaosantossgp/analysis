@@ -18,6 +18,19 @@ def now_iso_seconds() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
+def current_reporting_year_cap(now: datetime | None = None) -> int:
+    """Largest reporting year eligible for refresh planning.
+
+    The current calendar year is eligible because quarterly ITR data
+    (e.g. 1T26) is published throughout the year — capping at the last
+    closed year would silently drop it. Strictly future years stay
+    blocked, so planners cap at this value. Annual (DFP) completeness
+    still lags by a year and is handled separately by callers.
+    """
+    moment = now or datetime.now(timezone.utc)
+    return moment.year
+
+
 def normalize_account_name(text: Union[str, float, None]) -> str:
     """
     Normalizes account description for stable matching.
