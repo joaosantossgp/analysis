@@ -985,7 +985,15 @@ class CVMReadService:
         normalized_search = str(search or "").strip().lower()
         normalized_sector_slug = str(sector_slug or "").strip().lower() or None
 
-        # Filter
+        # Build a fast lookup of cd_cvms and tickers already covered by the local DB
+        db_cd_cvms: set[int] = {item.cd_cvm for item in all_items}
+        db_ticker_keys: set[str] = {
+            item.ticker_b3.upper().replace(".SA", "")
+            for item in all_items
+            if item.ticker_b3
+        }
+
+        # Filter DB companies
         filtered: list[CompanySearchResult] = []
         for item in all_items:
             if normalized_sector_slug and item.sector_slug != normalized_sector_slug:
@@ -1000,7 +1008,8 @@ class CVMReadService:
                     continue
             filtered.append(item)
 
-        # Enrich with market cap (priority: cd_cvm > ticker_b3)
+        # Enrich DB companies with market cap; also fill ticker from snapshot when DB
+        # has none (DFP import does not carry B3 ticker data).
         enriched: list[CompanySearchResult] = []
         mapped_count = 0
         for item in filtered:
@@ -1011,8 +1020,15 @@ class CVMReadService:
                 entry = by_ticker.get(ticker_key)
             if entry is not None:
                 mapped_count += 1
+                snap_ticker = (
+                    entry.ticker.replace(".SA", "").upper()
+                    if entry.ticker
+                    else None
+                )
                 item = replace(
                     item,
+                    # Use snapshot ticker as fallback when DB ticker is null
+                    ticker_b3=item.ticker_b3 or snap_ticker,
                     market_cap_brl=entry.market_cap_brl,
                     market_cap_rank=entry.rank,
                     market_cap_as_of_date=entry.as_of_date,
@@ -1020,6 +1036,49 @@ class CVMReadService:
                     market_cap_provider_status=entry.provider_status,
                 )
             enriched.append(item)
+
+        # Include snapshot companies that are NOT in the local DB as lightweight stubs.
+        # This ensures the full market-cap ranking is visible even on a fresh install
+        # where only a small number of companies have been downloaded so far.
+        if not normalized_sector_slug:  # stubs have no sector — skip under sector filter
+            for entry in all_entries:
+                # Skip if already covered by a DB item
+                if entry.cd_cvm is not None and entry.cd_cvm in db_cd_cvms:
+                    continue
+                entry_ticker_key = (entry.ticker or "").replace(".SA", "").upper()
+                if entry_ticker_key and entry_ticker_key in db_ticker_keys:
+                    continue
+                # Build a stub — name + ticker from snapshot, no financial data
+                snap_ticker = entry_ticker_key or None
+                stub_name = entry.company_name
+                if normalized_search:
+                    tokens = [stub_name.lower(), (snap_ticker or "").lower()]
+                    if entry.cd_cvm is not None:
+                        tokens.append(str(entry.cd_cvm))
+                    if not any(normalized_search in t for t in tokens if t):
+                        continue
+                mapped_count += 1
+                enriched.append(
+                    CompanySearchResult(
+                        cd_cvm=entry.cd_cvm or 0,
+                        company_name=stub_name,
+                        ticker_b3=snap_ticker,
+                        setor_analitico=None,
+                        setor_cvm=None,
+                        sector_name="",
+                        sector_slug="",
+                        anos_disponiveis=(),
+                        total_rows=0,
+                        has_financial_data=False,
+                        coverage_rank=None,
+                        data_status="no_history",
+                        market_cap_brl=entry.market_cap_brl,
+                        market_cap_rank=entry.rank,
+                        market_cap_as_of_date=entry.as_of_date,
+                        market_cap_source=entry.source,
+                        market_cap_provider_status=entry.provider_status,
+                    )
+                )
 
         # Sort:
         #  1. Mapped companies → market_cap_brl DESC
@@ -1038,7 +1097,7 @@ class CVMReadService:
 
         # Snapshot-level metadata (from first entry — all share same date/source)
         meta = None
-        if all_entries and mapped_count > 0:
+        if all_entries and len(all_entries) > 0:
             e0 = all_entries[0]
             from src.contracts import MarketCapSortMeta  # noqa: PLC0415
 
@@ -1046,7 +1105,7 @@ class CVMReadService:
                 as_of_date=e0.as_of_date,
                 source=e0.source,
                 provider_status=e0.provider_status,
-                mapped_count=mapped_count,
+                mapped_count=len(all_entries),
                 total_in_snapshot=len(all_entries),
             )
 
