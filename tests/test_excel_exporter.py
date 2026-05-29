@@ -326,6 +326,134 @@ def test_model_sheet_kpi_formulas_use_iferror():
     assert found_iferror, "EBITDA Margin row has no IFERROR formula"
 
 
+def test_model_company_info_block_hidden_by_default():
+    """Phase 1 P1 — company info block (Excel rows 13–22) ships grouped +
+    hidden by default."""
+    exporter = ExcelExporter(
+        company_info=_sample_company(),
+        statements=_wide_statements(),
+        kpis_df=_minimal_kpis(),
+    )
+    payload = exporter.export()
+    wb = openpyxl.load_workbook(io.BytesIO(payload))
+    ws = wb["Model"]
+    for excel_row in range(13, 23):  # Excel rows 13..22 inclusive
+        dim = ws.row_dimensions[excel_row]
+        assert dim.hidden, f"row {excel_row} should be hidden by default"
+        assert dim.outlineLevel == 1, f"row {excel_row} should be outline level 1"
+    # The period header below the block stays visible.
+    assert not ws.row_dimensions[24].hidden
+
+
+def test_balance_sheet_tie_uses_relative_tolerance():
+    """Phase 1 P3 — BS tie status uses a size-relative tolerance
+    (max(0.5, 0.05% of Total Assets)), not a flat 0.5."""
+    exporter = ExcelExporter(
+        company_info=_sample_company(),
+        statements=_wide_statements(),
+        kpis_df=_minimal_kpis(),
+    )
+    payload = exporter.export()
+    wb = openpyxl.load_workbook(io.BytesIO(payload), data_only=False)
+    ws = wb["Model"]
+    status = None
+    for r in range(1, ws.max_row + 1):
+        if "Balance Sheet:" in str(ws.cell(row=r, column=2).value or ""):
+            status = ws.cell(row=r, column=3).value
+            break
+    assert status is not None, "Balance Sheet tie row not found"
+    assert "0.0005" in status and "ABS(" in status, status
+    assert status.startswith("=IF(SUMPRODUCT(")
+
+
+def test_da_resolved_check_present_and_ok_when_matched():
+    """Phase 1 P4 — a visible 'D&A Resolved' check reports the matched DFC
+    line; OK when a 6.01.01.* 'depreci' line exists in the source."""
+    exporter = ExcelExporter(
+        company_info=_sample_company(),
+        statements=_wide_statements(),  # DFC has 6.01.01.03 "Depreciacao"
+        kpis_df=_minimal_kpis(),
+    )
+    payload = exporter.export()
+    wb = openpyxl.load_workbook(io.BytesIO(payload))
+    ws = wb["Model"]
+    row = None
+    for r in range(1, ws.max_row + 1):
+        if "D&A Resolved" in str(ws.cell(row=r, column=2).value or ""):
+            row = r
+            break
+    assert row is not None, "D&A Resolved check missing"
+    assert ws.cell(row=row, column=3).value == "OK"
+    assert "6.01.01.03" in str(ws.cell(row=row, column=4).value or "")
+
+
+def test_da_resolved_check_warns_when_no_da_line():
+    """Phase 1 P4 — WARNING when no D&A line resolves in the DFC source."""
+    stmts = _wide_statements()
+    stmts["DFC"] = _statement([
+        {"CD_CONTA": "6.01", "DS_CONTA": "CFO", "STANDARD_NAME": "",
+         "LINE_ID_BASE": "6.01", **{p: 1.0 for p in stmts["DRE"].columns
+                                    if p not in ("CD_CONTA", "DS_CONTA",
+                                                 "STANDARD_NAME", "LINE_ID_BASE")}},
+    ])
+    exporter = ExcelExporter(
+        company_info=_sample_company(),
+        statements=stmts,
+        kpis_df=_minimal_kpis(),
+    )
+    payload = exporter.export()
+    wb = openpyxl.load_workbook(io.BytesIO(payload))
+    ws = wb["Model"]
+    for r in range(1, ws.max_row + 1):
+        if "D&A Resolved" in str(ws.cell(row=r, column=2).value or ""):
+            assert ws.cell(row=r, column=3).value == "WARNING"
+            return
+    raise AssertionError("D&A Resolved check missing")
+
+
+def _financial_company() -> dict[str, object]:
+    return {**_sample_company(), "gics_sector": "Financials",
+            "company_name": "Banco Exemplo S.A.", "ticker_b3": "BEXM4"}
+
+
+def test_financial_firm_shows_banner_and_check_row():
+    """Phase 3a — financial-institution banner + Generic Spine check row
+    visible when gics_sector is Financials."""
+    exporter = ExcelExporter(
+        company_info=_financial_company(),
+        statements=_wide_statements(),
+        kpis_df=_minimal_kpis(),
+    )
+    payload = exporter.export()
+    wb = openpyxl.load_workbook(io.BytesIO(payload))
+    ws = wb["Model"]
+    all_text = " | ".join(
+        str(ws.cell(row=r, column=c).value or "")
+        for r in range(1, ws.max_row + 1)
+        for c in (2, 3, 4)
+    )
+    assert "Financial institution" in all_text, "banner text missing"
+    assert "Generic Spine" in all_text, "Generic Spine check row missing"
+    assert "WARNING" in all_text
+
+
+def test_non_financial_firm_has_no_spine_banner():
+    """Phase 3a — no banner or Generic Spine check row for industrial firms."""
+    exporter = ExcelExporter(
+        company_info=_sample_company(),  # gics_sector = "Teste" (not Financials)
+        statements=_wide_statements(),
+        kpis_df=_minimal_kpis(),
+    )
+    payload = exporter.export()
+    wb = openpyxl.load_workbook(io.BytesIO(payload))
+    ws = wb["Model"]
+    for r in range(1, ws.max_row + 1):
+        for c in (2, 3):
+            v = str(ws.cell(row=r, column=c).value or "")
+            assert "Generic Spine" not in v, f"unexpected Generic Spine row at R{r}C{c}"
+            assert "Financial institution" not in v
+
+
 # ─── filenames (unchanged) ───────────────────────────────────────────────────
 def test_build_excel_filename_uses_ticker_and_export_date():
     filename = build_excel_filename(
