@@ -34,6 +34,21 @@ export type CompanyDirectoryItem = {
   gics_industry_group?: string | null;
   gics_industry?: string | null;
   gics_sub_industry?: string | null;
+  /** Market-cap enrichment from local snapshot. Null when company is not in the snapshot. */
+  market_cap_brl?: number | null;
+  market_cap_rank?: number | null;
+  market_cap_as_of_date?: string | null;
+  market_cap_source?: string | null;
+  market_cap_provider_status?: string | null;
+};
+
+/** Present on CompanyDirectoryPage when the list was sorted by local market-cap snapshot. */
+export type MarketCapSortMeta = {
+  as_of_date: string;
+  source: string;
+  provider_status: string;
+  mapped_count: number;
+  total_in_snapshot: number;
 };
 
 export type CompanyDirectoryPagination = {
@@ -54,6 +69,8 @@ export type CompanyDirectoryPage = {
   items: CompanyDirectoryItem[];
   pagination: CompanyDirectoryPagination;
   applied_filters: CompanyDirectoryFilters;
+  /** Present when the list is sorted by local market-cap snapshot. */
+  market_cap_sort_meta?: MarketCapSortMeta | null;
   /** Bridge instrumentation. Optional, present when CVMBridge times the call. */
   _bridge_ms?: number;
   /** Present only on error (bridge swallows exceptions). */

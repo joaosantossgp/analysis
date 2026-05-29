@@ -599,6 +599,8 @@ class CVMReadService:
         self._company_page_cache: dict[tuple[str, str | None, int, int], CompanyDirectoryPage] = {}
         self._local_company_catalog_is_sufficient_cache: bool | None = None
         self._company_filters_cache: CompanyFiltersDTO | None = None
+        self._market_cap_index_cache: tuple[dict[int, Any], dict[str, Any], list[Any]] | None = None
+        self._market_cap_index_mtime: float | None = None
         self._sector_directory_cache: dict[str, SectorDirectoryDTO] = {}
         self._health_snapshot_cache: dict[tuple[int, int], HealthSnapshot] = {}
 
@@ -607,6 +609,8 @@ class CVMReadService:
         self._company_page_cache.clear()
         self._local_company_catalog_is_sufficient_cache = None
         self._company_filters_cache = None
+        self._market_cap_index_cache = None
+        self._market_cap_index_mtime = None
         self._sector_directory_cache.clear()
         self._health_snapshot_cache.clear()
         self._read_cache_data_version = None
@@ -900,6 +904,166 @@ class CVMReadService:
             )
         return True
 
+    # ------------------------------------------------------------------
+    # Market-cap enrichment helpers
+    # ------------------------------------------------------------------
+
+    def _load_market_cap_index(
+        self,
+    ) -> tuple[dict[int, Any], dict[str, Any], list[Any]] | None:
+        """Load snapshot into (by_cd_cvm, by_ticker_stripped, all_entries).
+
+        Returns None when no snapshot exists, the file is malformed, or any
+        error occurs — callers must gracefully fall back to existing sort.
+        File mtime gates re-parsing so parsing is skipped on repeated calls
+        with an unchanged CSV.
+        """
+        from pathlib import Path as _Path  # noqa: PLC0415
+
+        snapshot_path = _Path(self.settings.paths.company_universe_snapshot_path)
+        if not snapshot_path.exists():
+            return None
+        try:
+            mtime = snapshot_path.stat().st_mtime
+        except OSError:
+            return None
+
+        if (
+            self._market_cap_index_cache is not None
+            and self._market_cap_index_mtime == mtime
+        ):
+            return self._market_cap_index_cache
+
+        try:
+            from src.market_cap import MarketCapService  # noqa: PLC0415
+
+            entries = MarketCapService(settings=self.settings).read_snapshot()
+        except Exception as exc:
+            import logging as _logging  # noqa: PLC0415
+            _logging.getLogger(__name__).warning(
+                "market-cap index load failed, skipping sort: %s", exc
+            )
+            return None
+
+        if not entries:
+            return None
+
+        by_cd_cvm: dict[int, Any] = {}
+        by_ticker: dict[str, Any] = {}
+        for entry in entries:
+            if entry.cd_cvm is not None:
+                by_cd_cvm[entry.cd_cvm] = entry
+            if entry.ticker:
+                # Strip .SA suffix so "PETR4.SA" → "PETR4" matches ticker_b3 "PETR4"
+                by_ticker[entry.ticker.replace(".SA", "").upper()] = entry
+
+        self._market_cap_index_cache = (by_cd_cvm, by_ticker, entries)
+        self._market_cap_index_mtime = mtime
+        return self._market_cap_index_cache
+
+    def _list_companies_with_market_cap_sort(
+        self,
+        *,
+        search: str,
+        sector_slug: str | None,
+        page: int,
+        page_size: int,
+    ) -> CompanyDirectoryPage | None:
+        """Return a Companies page sorted by market-cap descending.
+
+        Uses the local snapshot — no network calls.  Falls back (returns None)
+        when the snapshot is unavailable or unreadable so the caller can
+        transparently use the existing sort path.
+        """
+        idx = self._load_market_cap_index()
+        if idx is None:
+            return None
+
+        by_cd_cvm, by_ticker, all_entries = idx
+        all_items = self._list_company_universe_results()
+
+        normalized_search = str(search or "").strip().lower()
+        normalized_sector_slug = str(sector_slug or "").strip().lower() or None
+
+        # Filter
+        filtered: list[CompanySearchResult] = []
+        for item in all_items:
+            if normalized_sector_slug and item.sector_slug != normalized_sector_slug:
+                continue
+            if normalized_search:
+                tokens = [
+                    item.company_name.lower(),
+                    (item.ticker_b3 or "").lower(),
+                    str(item.cd_cvm),
+                ]
+                if not any(normalized_search in t for t in tokens if t):
+                    continue
+            filtered.append(item)
+
+        # Enrich with market cap (priority: cd_cvm > ticker_b3)
+        enriched: list[CompanySearchResult] = []
+        mapped_count = 0
+        for item in filtered:
+            entry = by_cd_cvm.get(item.cd_cvm)
+            if entry is None and item.ticker_b3:
+                entry = by_ticker.get(item.ticker_b3.upper())
+            if entry is not None:
+                mapped_count += 1
+                item = replace(
+                    item,
+                    market_cap_brl=entry.market_cap_brl,
+                    market_cap_rank=entry.rank,
+                    market_cap_as_of_date=entry.as_of_date,
+                    market_cap_source=entry.source,
+                    market_cap_provider_status=entry.provider_status,
+                )
+            enriched.append(item)
+
+        # Sort: mapped by market_cap_brl DESC first, unmapped by company_name ASC
+        enriched.sort(
+            key=lambda c: (
+                0 if c.market_cap_brl is not None else 1,
+                -(c.market_cap_brl or 0.0),
+                c.company_name.lower(),
+            )
+        )
+
+        # Snapshot-level metadata (from first entry — all share same date/source)
+        meta = None
+        if all_entries and mapped_count > 0:
+            e0 = all_entries[0]
+            from src.contracts import MarketCapSortMeta  # noqa: PLC0415
+
+            meta = MarketCapSortMeta(
+                as_of_date=e0.as_of_date,
+                source=e0.source,
+                provider_status=e0.provider_status,
+                mapped_count=mapped_count,
+                total_in_snapshot=len(all_entries),
+            )
+
+        # Paginate
+        total_items = len(enriched)
+        start = max(0, (int(page) - 1) * int(page_size))
+        end = start + int(page_size)
+        total_pages = max(1, ((total_items - 1) // int(page_size)) + 1) if total_items else 1
+        return CompanyDirectoryPage(
+            items=tuple(enriched[start:end]),
+            pagination=CompanyDirectoryPagination(
+                page=int(page),
+                page_size=int(page_size),
+                total_items=total_items,
+                total_pages=total_pages,
+                has_next=int(page) < total_pages,
+                has_previous=int(page) > 1,
+            ),
+            applied_filters=CompanyDirectoryAppliedFilters(
+                search=str(search or ""),
+                sector=sector_slug,
+            ),
+            market_cap_sort_meta=meta,
+        )
+
     def list_companies(
         self,
         *,
@@ -925,6 +1089,17 @@ class CVMReadService:
                 page=page,
                 page_size=page_size,
             )
+
+        # Try market-cap-sorted path when local snapshot is available.
+        # Falls back transparently when snapshot is missing, malformed, or empty.
+        mkt_page = self._list_companies_with_market_cap_sort(
+            search=search,
+            sector_slug=sector_slug,
+            page=page,
+            page_size=page_size,
+        )
+        if mkt_page is not None:
+            return mkt_page
 
         catalog_page = self._list_companies_from_catalog(
             search=search,

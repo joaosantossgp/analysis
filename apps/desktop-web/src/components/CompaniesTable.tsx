@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
+import type { MarketCapSortMeta } from "@/lib/bridge/types";
 
 import {
   fetchCompanies,
@@ -83,6 +84,7 @@ export function CompaniesTable() {
   const totalPages = pagination?.total_pages ?? 1;
   const hasNext = pagination?.has_next ?? false;
   const hasPrev = pagination?.has_previous ?? false;
+  const mktMeta = page$?.market_cap_sort_meta ?? null;
 
   const sectors =
     filtersQuery.data?.mode === "desktop" ? filtersQuery.data.sectors : [];
@@ -162,6 +164,8 @@ export function CompaniesTable() {
         }
         onResetAll={onResetAll}
       />
+
+      {mktMeta ? <MarketCapBanner meta={mktMeta} /> : null}
 
       <Body
         query={query}
@@ -417,6 +421,7 @@ function CompaniesGrid({
           <tr className="bg-zinc-900/80 text-left text-[10px] uppercase tracking-wider text-zinc-500">
             <th scope="col" className="px-3 py-2 font-medium">Company</th>
             <th scope="col" className="px-3 py-2 font-medium">Ticker</th>
+            <th scope="col" className="px-3 py-2 text-right font-medium">Mkt Cap</th>
             <th scope="col" className="px-3 py-2 font-medium">CVM</th>
             <th scope="col" className="px-3 py-2 font-medium">Sector</th>
             <th scope="col" className="px-3 py-2 font-medium">Sub-industry</th>
@@ -460,6 +465,9 @@ function CompanyRow({
       </td>
       <td className="px-3 py-2 font-mono text-xs text-zinc-300">
         {company.ticker_b3 ?? "—"}
+      </td>
+      <td className="px-3 py-2 text-right font-mono text-xs text-zinc-300">
+        {company.market_cap_brl != null ? formatMarketCap(company.market_cap_brl) : <span className="text-zinc-600">—</span>}
       </td>
       <td className="px-3 py-2 font-mono text-xs text-zinc-400">
         {company.cd_cvm}
@@ -583,4 +591,30 @@ function formatYears(years: number[]): string {
   const last = sorted[sorted.length - 1];
   if (first === last) return String(first);
   return `${first}–${last} (${sorted.length})`;
+}
+
+function formatMarketCap(brl: number): string {
+  if (brl >= 1e12) return `R$ ${(brl / 1e12).toFixed(1)}T`;
+  if (brl >= 1e9) return `R$ ${(brl / 1e9).toFixed(1)}B`;
+  if (brl >= 1e6) return `R$ ${(brl / 1e6).toFixed(0)}M`;
+  return `R$ ${brl.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+}
+
+function MarketCapBanner({ meta }: { meta: MarketCapSortMeta }) {
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded border border-zinc-800 bg-zinc-900/40 px-3 py-1.5 text-[11px] text-zinc-400">
+      <span className="font-medium text-zinc-300">↓ Sorted by market cap</span>
+      <span>·</span>
+      <span>
+        {meta.mapped_count.toLocaleString("en-US")} of{" "}
+        {meta.total_in_snapshot.toLocaleString("en-US")} B3 companies ranked
+      </span>
+      <span>·</span>
+      <span title="Yahoo Finance is an unofficial free source, not official B3/CVM data.">
+        Source: Yahoo Finance (unofficial/free)
+      </span>
+      <span>·</span>
+      <span>Snapshot: {meta.as_of_date}</span>
+    </div>
+  );
 }

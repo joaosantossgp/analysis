@@ -232,6 +232,13 @@ class CompanySearchResult:
     gics_sub_industry: str | None = None
     # Derived coverage status: "no_history" | "partial" | "complete" | "failed"
     data_status: str = "no_history"
+    # Market-cap enrichment — populated when a local snapshot is available.
+    # Source is always local (Yahoo Finance snapshot), never a live network call.
+    market_cap_brl: float | None = None
+    market_cap_rank: int | None = None
+    market_cap_as_of_date: str | None = None
+    market_cap_source: str | None = None
+    market_cap_provider_status: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -291,16 +298,31 @@ class CompanyDirectoryAppliedFilters:
 
 
 @dataclass(frozen=True)
+class MarketCapSortMeta:
+    """Metadata included when the Companies list is sorted by local market-cap snapshot."""
+    as_of_date: str
+    source: str
+    provider_status: str
+    mapped_count: int
+    total_in_snapshot: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
 class CompanyDirectoryPage:
     items: tuple[CompanySearchResult, ...]
     pagination: CompanyDirectoryPagination
     applied_filters: CompanyDirectoryAppliedFilters
+    market_cap_sort_meta: MarketCapSortMeta | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "items": [item.to_dict() for item in self.items],
             "pagination": self.pagination.to_dict(),
             "applied_filters": self.applied_filters.to_dict(),
+            "market_cap_sort_meta": self.market_cap_sort_meta.to_dict() if self.market_cap_sort_meta else None,
         }
 
 
