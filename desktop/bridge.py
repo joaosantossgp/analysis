@@ -107,6 +107,22 @@ class CVMBridge:
             return [CVMBridge._sanitize_for_json(item) for item in value]
         return value
 
+    def _append_runtime_log(self, message: str) -> None:
+        """Append bridge diagnostics to the packaged runtime log surface."""
+        try:
+            raw_data_dir = os.environ.get("CVM_DATA_DIR")
+            data_dir = (
+                Path(raw_data_dir)
+                if raw_data_dir
+                else Path(self._svc().settings.paths.data_dir)
+            )
+            data_dir.mkdir(parents=True, exist_ok=True)
+            stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            with (data_dir / "recovery.log").open("a", encoding="utf-8") as fh:
+                fh.write(f"[{stamp}] {message}\n")
+        except Exception:
+            logger.debug("failed to append runtime log", exc_info=True)
+
     def ping(self, params=None) -> dict:
         return self._sanitize_for_json({"pong": True, "ts": time.time()})
 
@@ -714,6 +730,9 @@ class CVMBridge:
             # market-cap ranking source is configured. Fail fast before any job
             # is dispatched so the UI never reports a clean "Completed".
             logger.warning("start_data_update blocked: company universe unavailable: %s", exc)
+            self._append_runtime_log(
+                f"start_data_update blocked: company_universe_unavailable: {exc}"
+            )
             return self._sanitize_for_json({
                 "status": "blocked",
                 "job_id": None,
@@ -724,6 +743,7 @@ class CVMBridge:
             })
         except Exception as exc:
             logger.exception("start_data_update failed")
+            self._append_runtime_log(f"start_data_update failed: {exc}")
             return self._sanitize_for_json({
                 "status": "error",
                 "job_id": None,

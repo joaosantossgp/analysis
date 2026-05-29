@@ -367,6 +367,9 @@ export function UpdateBasePage() {
           saveError={saveSettingsMutation.error}
           saved={!settingsTouched && saveSettingsMutation.isSuccess}
           onChange={(next) => {
+            startMutation.reset();
+            retryMutation.reset();
+            setAutoRetryParentJobId(null);
             setSettingsTouched(true);
             setDraftSettings(next);
           }}

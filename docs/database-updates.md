@@ -40,6 +40,24 @@ The Update Base page calls `start_data_update` through the
 Progress is polled via `get_refresh_status` (job-level) and surfaced on the
 Status page and the Update Base page.
 
+## Top N universe configuration
+
+`top_100`, `top_200`, and `top_500` require a market-cap ranking source before
+the backend starts a refresh job. Provider order is:
+
+1. brapi quote-list (`BRAPI_TOKEN` or `CVM_BRAPI_TOKEN`)
+2. local CSV snapshot (`CVM_COMPANY_UNIVERSE_SNAPSHOT_PATH`, default
+   `data/metadata/b3_market_cap_universe_snapshot.csv`)
+3. yfinance experimental fallback (`CVM_ENABLE_YFINANCE_UNIVERSE_PROVIDER=1`,
+   personal/dev use only)
+
+If no ranking source is available, `start_data_update` returns
+`status: "blocked"` with `status_reason_code:
+"company_universe_unavailable"`. No refresh job is dispatched. The Update Base
+page shows a configuration notice instead of a completed summary from a
+previous run. Choosing `all` uses the local CVM company catalog and does not
+need market-cap ranking.
+
 ## Reset / rebuild
 
 `reset_local_database` (bridge) backs up and recreates the local DB. Response

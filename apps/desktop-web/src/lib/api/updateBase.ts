@@ -316,14 +316,17 @@ export async function startDataUpdate(
     start_year: params.startYear,
     end_year: params.endYear,
   })) as DataUpdateStartResponse;
-  if (response.error) {
-    throw new Error(response.error);
-  }
   if (response.status === "blocked") {
     throw new DataUpdateBlockedError(
-      response.message || response.status_reason_message || "Update is blocked by a configuration gap.",
+      response.message ||
+        response.status_reason_message ||
+        response.error ||
+        "Update is blocked by a configuration gap.",
       response.status_reason_code || "blocked",
     );
+  }
+  if (response.error) {
+    throw new Error(response.error);
   }
   if (response.status === "error") {
     throw new Error(response.message || response.status_reason_message || "Failed to start update.");

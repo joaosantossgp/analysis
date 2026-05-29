@@ -8,7 +8,11 @@ from types import SimpleNamespace
 from apps.api.app.services.refresh_jobs import ApiRefreshJobManager
 from desktop.bridge import CVMBridge
 from desktop.services import DesktopRefreshJobManager
-from src.company_universe import CompanyUniverseEntry, CompanyUniverseSelection
+from src.company_universe import (
+    CompanyUniverseEntry,
+    CompanyUniverseSelection,
+    CompanyUniverseUnavailableError,
+)
 from src.contracts import CompanyRefreshResult, RefreshResult
 from src.settings import build_settings
 
@@ -380,3 +384,80 @@ def test_bridge_onboarding_starts_refresh_with_resolved_company_ids():
     }
     assert fake_onboarding.started == (selection, "job-1")
     assert fake_service.invalidated is True
+
+
+def test_start_data_update_returns_blocked_without_dispatching_when_universe_unavailable():
+    class FakeOnboarding:
+        def get_company_universe_by_preset(self, preset):
+            raise CompanyUniverseUnavailableError("missing market-cap source")
+
+    class FakeManager:
+        def __init__(self):
+            self.called = False
+
+        def request_refresh(self, params):
+            self.called = True
+            raise AssertionError("request_refresh must not be called for blocked universe")
+
+    bridge = CVMBridge()
+    fake_manager = FakeManager()
+    bridge._onboarding_service = FakeOnboarding()
+    bridge._refresh_manager = fake_manager
+    bridge._resolve_data_update_settings = lambda: {
+        "universe_preset": "top_200",
+        "batch_size": 100,
+        "retry_failed": True,
+        "recompute_coverage": True,
+        "start_year": 2022,
+        "end_year": 2026,
+    }
+    bridge._normalize_data_update_settings = lambda raw: {
+        "universe_preset": raw["universe_preset"],
+        "batch_size": int(raw["batch_size"]),
+        "retry_failed": bool(raw["retry_failed"]),
+        "recompute_coverage": bool(raw["recompute_coverage"]),
+        "start_year": int(raw["start_year"]),
+        "end_year": int(raw["end_year"]),
+    }
+
+    response = bridge.start_data_update({"universe_preset": "top_200"})
+
+    assert response["status"] == "blocked"
+    assert response["status_reason_code"] == "company_universe_unavailable"
+    assert response["job_id"] is None
+    assert "missing market-cap source" in response["message"]
+    assert fake_manager.called is False
+
+
+def test_start_data_update_blocked_writes_packaged_runtime_log(tmp_path, monkeypatch):
+    monkeypatch.setenv("CVM_DATA_DIR", str(tmp_path))
+
+    class FakeOnboarding:
+        def get_company_universe_by_preset(self, preset):
+            raise CompanyUniverseUnavailableError("missing market-cap source")
+
+    bridge = CVMBridge()
+    bridge._onboarding_service = FakeOnboarding()
+    bridge._resolve_data_update_settings = lambda: {
+        "universe_preset": "top_200",
+        "batch_size": 100,
+        "retry_failed": True,
+        "recompute_coverage": True,
+        "start_year": 2022,
+        "end_year": 2026,
+    }
+    bridge._normalize_data_update_settings = lambda raw: {
+        "universe_preset": raw["universe_preset"],
+        "batch_size": int(raw["batch_size"]),
+        "retry_failed": bool(raw["retry_failed"]),
+        "recompute_coverage": bool(raw["recompute_coverage"]),
+        "start_year": int(raw["start_year"]),
+        "end_year": int(raw["end_year"]),
+    }
+
+    bridge.start_data_update({"universe_preset": "top_200"})
+
+    log_text = (tmp_path / "recovery.log").read_text(encoding="utf-8")
+    assert "start_data_update blocked" in log_text
+    assert "company_universe_unavailable" in log_text
+    assert "missing market-cap source" in log_text
