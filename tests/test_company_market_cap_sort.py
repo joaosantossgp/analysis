@@ -34,6 +34,32 @@ class _EmptyCompanyCatalog:
         return ()
 
 
+class _FakeCatalogEntry:
+    """Minimal catalog entry for tests."""
+    def __init__(self, cd_cvm: int, company_name: str, ticker_b3: str | None = None):
+        self.cd_cvm = cd_cvm
+        self.company_name = company_name
+        self.ticker_b3 = ticker_b3
+        self.setor_cvm = None
+        self.nome_comercial = None
+        self.is_active = True
+
+
+class _FakeCatalog:
+    """Catalog with specific test entries."""
+    def __init__(self, entries: list):
+        self._entries = entries
+
+    def lookup_company(self, cd_cvm: int):
+        return None
+
+    def list_entries(self):
+        return self._entries
+
+    def search_companies(self, *, q: str, limit: int, exclude_codes=None):
+        return ()
+
+
 # ---------------------------------------------------------------------------
 # CSV helpers
 # ---------------------------------------------------------------------------
@@ -398,38 +424,47 @@ def test_unmapped_companies_with_data_appear_before_catalog_stubs(tmp_path):
     assert names[2] == "Stub Corp no data", "Pure stub last"
 
 
-def test_snapshot_companies_not_in_db_appear_as_stubs(tmp_path):
-    """Snapshot companies not in the local DB are shown as stubs with market cap."""
-    # DB has only one company; snapshot has two
+def test_catalog_companies_not_in_db_appear_as_stubs(tmp_path):
+    """Catalog companies not in the local DB are shown as stubs; market cap enriched when in snapshot."""
     svc = _seed_db(tmp_path, [_company(1001, "Alpha Corp", "ALPH3")])
+    # Provide catalog with BOTH companies — Beta Corp is catalog-only (not in DB)
+    svc._company_catalog = _FakeCatalog([  # type: ignore[assignment]
+        _FakeCatalogEntry(1001, "Alpha Corp", "ALPH3"),
+        _FakeCatalogEntry(1002, "Beta Corp", "BETA3"),
+    ])
     snapshot_path = Path(svc.settings.paths.company_universe_snapshot_path)
     _write_snapshot(snapshot_path, [
         _snap_row("ALPH3.SA", 300_000_000_000.0, 1),
-        _snap_row("BETA3.SA", 100_000_000_000.0, 2),  # not in DB
+        _snap_row("BETA3.SA", 100_000_000_000.0, 2),  # catalog-only, not in DB
     ])
 
     page = svc.list_companies(page=1, page_size=10)
     names = [item.company_name for item in page.items]
     tickers = [item.ticker_b3 for item in page.items]
 
-    assert len(page.items) == 2, "Stub company included in results"
-    assert "ALPH3" in names[0] or names[0] == "Alpha Corp"
-    assert "BETA3" in tickers or any("BETA3" in (t or "") for t in tickers)
+    assert len(page.items) == 2, "Catalog stub included in results"
+    assert names[0] == "Alpha Corp"   # higher market cap
+    assert names[1] == "Beta Corp"
+    assert "BETA3" in tickers
 
 
 def test_snapshot_ticker_fills_null_db_ticker(tmp_path):
-    """When DB ticker_b3 is null, snapshot ticker is used as fallback."""
-    svc = _seed_db(tmp_path, [_company(1001, "Alpha Corp", None)])  # no ticker in DB
+    """When DB ticker_b3 is null, snapshot ticker fills in when matched by cd_cvm."""
+    # Company 1001 in DB has no ticker; snapshot matches it by cd_cvm=1001
+    svc = _seed_db(tmp_path, [_company(1001, "Alpha Corp", None)])
+    # Catalog also has no ticker for this company
+    svc._company_catalog = _FakeCatalog([  # type: ignore[assignment]
+        _FakeCatalogEntry(1001, "Alpha Corp", None),
+    ])
     snapshot_path = Path(svc.settings.paths.company_universe_snapshot_path)
-    _write_snapshot(snapshot_path, [_snap_row("ALPH3.SA", 100_000_000.0, 1)])
+    # Entry has cd_cvm=1001 so it matches the DB company directly
+    _write_snapshot(snapshot_path, [
+        _snap_row("ALPH3.SA", 100_000_000.0, 1, cd_cvm="1001", mapping_status="mapped"),
+    ])
 
     page = svc.list_companies(page=1, page_size=10)
-    # cd_cvm=1001 won't match by_cd_cvm (snapshot uses different cd_cvm)
-    # Match by name will also fail since we're not doing fuzzy
-    # The stub path will add ALPH3 as a stub company
-    # Check at least one ALPH3 company appears
     tickers = [item.ticker_b3 for item in page.items]
-    assert any(t == "ALPH3" for t in tickers), "ALPH3 should appear (from stub or ticker fill)"
+    assert any(t == "ALPH3" for t in tickers), "Snapshot ticker fills null DB ticker"
 
 
 def test_ticker_sa_suffix_normalised_for_lookup(tmp_path):

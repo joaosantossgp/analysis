@@ -980,18 +980,12 @@ class CVMReadService:
             return None
 
         by_cd_cvm, by_ticker, all_entries = idx
-        all_items = self._list_company_universe_results()
+        # Always use the full catalog merge so every known company is visible,
+        # regardless of how many have been downloaded (DB threshold bypassed).
+        all_items = self._merge_catalog_with_db()
 
         normalized_search = str(search or "").strip().lower()
         normalized_sector_slug = str(sector_slug or "").strip().lower() or None
-
-        # Build a fast lookup of cd_cvms and tickers already covered by the local DB
-        db_cd_cvms: set[int] = {item.cd_cvm for item in all_items}
-        db_ticker_keys: set[str] = {
-            item.ticker_b3.upper().replace(".SA", "")
-            for item in all_items
-            if item.ticker_b3
-        }
 
         # Filter DB companies
         filtered: list[CompanySearchResult] = []
@@ -1036,49 +1030,6 @@ class CVMReadService:
                     market_cap_provider_status=entry.provider_status,
                 )
             enriched.append(item)
-
-        # Include snapshot companies that are NOT in the local DB as lightweight stubs.
-        # This ensures the full market-cap ranking is visible even on a fresh install
-        # where only a small number of companies have been downloaded so far.
-        if not normalized_sector_slug:  # stubs have no sector — skip under sector filter
-            for entry in all_entries:
-                # Skip if already covered by a DB item
-                if entry.cd_cvm is not None and entry.cd_cvm in db_cd_cvms:
-                    continue
-                entry_ticker_key = (entry.ticker or "").replace(".SA", "").upper()
-                if entry_ticker_key and entry_ticker_key in db_ticker_keys:
-                    continue
-                # Build a stub — name + ticker from snapshot, no financial data
-                snap_ticker = entry_ticker_key or None
-                stub_name = entry.company_name
-                if normalized_search:
-                    tokens = [stub_name.lower(), (snap_ticker or "").lower()]
-                    if entry.cd_cvm is not None:
-                        tokens.append(str(entry.cd_cvm))
-                    if not any(normalized_search in t for t in tokens if t):
-                        continue
-                mapped_count += 1
-                enriched.append(
-                    CompanySearchResult(
-                        cd_cvm=entry.cd_cvm or 0,
-                        company_name=stub_name,
-                        ticker_b3=snap_ticker,
-                        setor_analitico=None,
-                        setor_cvm=None,
-                        sector_name="",
-                        sector_slug="",
-                        anos_disponiveis=(),
-                        total_rows=0,
-                        has_financial_data=False,
-                        coverage_rank=None,
-                        data_status="no_history",
-                        market_cap_brl=entry.market_cap_brl,
-                        market_cap_rank=entry.rank,
-                        market_cap_as_of_date=entry.as_of_date,
-                        market_cap_source=entry.source,
-                        market_cap_provider_status=entry.provider_status,
-                    )
-                )
 
         # Sort:
         #  1. Mapped companies → market_cap_brl DESC
@@ -4265,25 +4216,24 @@ class CVMReadService:
             )
         return results
 
-    def _list_company_universe_results(self) -> list[CompanySearchResult]:
-        self._ensure_read_cache_fresh()
-        if self._company_universe_cache is not None:
-            return list(self._company_universe_cache)
+    def _merge_catalog_with_db(self) -> list[CompanySearchResult]:
+        """Full catalog × DB merge — always returns all active catalog companies.
 
-        def _cache_and_return(items: list[CompanySearchResult]) -> list[CompanySearchResult]:
-            self._company_universe_cache = tuple(items)
-            return list(self._company_universe_cache)
+        For each catalog entry the local DB row is used when present (has
+        financial-data counts, GICS, coverage_rank).  Catalog-only entries get
+        a lightweight stub (name, ticker, legacy sector).
 
+        Unlike _list_company_universe_results this method is never gated by the
+        CATALOG_FALLBACK_MIN_LOCAL_COMPANIES threshold, so it always exposes the
+        full known universe regardless of how many companies have been downloaded.
+        """
         local_items = self._load_local_company_universe_results()
-        if len(local_items) >= self.CATALOG_FALLBACK_MIN_LOCAL_COMPANIES:
-            return _cache_and_return(local_items)
-
         try:
             catalog_entries = [entry for entry in self.company_catalog.list_entries() if entry.is_active]
         except CompanyCatalogUnavailableError:
-            return _cache_and_return(local_items)
+            return local_items
         if not catalog_entries:
-            return _cache_and_return(local_items)
+            return local_items
 
         page_codes = [int(entry.cd_cvm) for entry in catalog_entries]
         local_results_by_code: dict[int, CompanySearchResult] = {}
@@ -4299,17 +4249,22 @@ class CVMReadService:
                     int(item.cd_cvm): item for item in self._build_company_results(local_rows)
                 }
 
+        # Also include DB-only companies not present in the catalog
+        catalog_codes = {int(entry.cd_cvm) for entry in catalog_entries}
         items: list[CompanySearchResult] = []
+        seen: set[int] = set()
+
         for entry in catalog_entries:
-            local_result = local_results_by_code.get(int(entry.cd_cvm))
+            cd = int(entry.cd_cvm)
+            seen.add(cd)
+            local_result = local_results_by_code.get(cd)
             if local_result is not None:
                 items.append(local_result)
                 continue
-
             legacy_sector = canonical_sector_name(None, entry.setor_cvm)
             items.append(
                 CompanySearchResult(
-                    cd_cvm=int(entry.cd_cvm),
+                    cd_cvm=cd,
                     company_name=entry.company_name,
                     ticker_b3=entry.ticker_b3,
                     setor_analitico=None,
@@ -4327,7 +4282,29 @@ class CVMReadService:
                     gics_sub_industry=None,
                 )
             )
-        return _cache_and_return(items)
+
+        # Append any local DB companies not in catalog (custom/imported entities)
+        for item in local_items:
+            if item.cd_cvm not in seen:
+                items.append(item)
+
+        return items
+
+    def _list_company_universe_results(self) -> list[CompanySearchResult]:
+        self._ensure_read_cache_fresh()
+        if self._company_universe_cache is not None:
+            return list(self._company_universe_cache)
+
+        def _cache_and_return(items: list[CompanySearchResult]) -> list[CompanySearchResult]:
+            self._company_universe_cache = tuple(items)
+            return list(self._company_universe_cache)
+
+        local_items = self._load_local_company_universe_results()
+        if len(local_items) >= self.CATALOG_FALLBACK_MIN_LOCAL_COMPANIES:
+            return _cache_and_return(local_items)
+
+        merged = self._merge_catalog_with_db()
+        return _cache_and_return(merged)
 
     def _sector_company_preview(
         self,
