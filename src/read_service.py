@@ -66,7 +66,7 @@ from src.kpi_engine import compute_all_kpis, compute_quarterly_kpis
 from src.query_layer import CVMQueryLayer
 from src.sector_taxonomy import canonical_sector_name, sector_slugify
 from src.settings import AppSettings, get_settings
-from src.utils import now_iso_seconds
+from src.utils import current_reporting_year_cap, now_iso_seconds
 
 EXPORT_STATEMENT_TYPES = ("DRE", "BPA", "BPP", "DFC", "DVA", "DMPL")
 
@@ -206,7 +206,10 @@ def resolve_refresh_year_range(
     the raised exception matches its transport layer (e.g. API converts
     its custom exception to HTTP 400).
     """
-    end_default = datetime.now(timezone.utc).year - 1
+    # Default through the current year so on-demand/batch refreshes pick up
+    # current-year quarterly ITR (e.g. 1T26) rather than stopping at the last
+    # closed year. Explicit end_year still overrides this.
+    end_default = current_reporting_year_cap()
     try:
         start_year = int(params.get("start_year") or default_start_year)
         end_year = int(params.get("end_year") or end_default)
@@ -3057,7 +3060,7 @@ class CVMReadService:
         resolved_end_year = (
             int(end_year)
             if end_year is not None
-            else max(2010, datetime.now(timezone.utc).year - 1)
+            else max(2010, current_reporting_year_cap())
         )
         if resolved_start_year > resolved_end_year:
             raise ValueError("start_year must be <= end_year")

@@ -4,8 +4,30 @@ from __future__ import annotations
 import sqlite3
 
 from src.gics_manual_mapping import GICS_11_SECTORS
-from src.read_service import CVMReadService
+from src.read_service import CVMReadService, resolve_refresh_year_range
 from src.settings import build_settings
+from src.utils import current_reporting_year_cap
+
+
+def test_resolve_refresh_year_range_defaults_through_current_year():
+    start_year, end_year = resolve_refresh_year_range({}, default_start_year=2010)
+    assert start_year == 2010
+    assert end_year == current_reporting_year_cap()
+
+
+def test_resolve_refresh_year_range_respects_explicit_end_year():
+    start_year, end_year = resolve_refresh_year_range(
+        {"end_year": current_reporting_year_cap()},
+        default_start_year=2010,
+    )
+    assert end_year == current_reporting_year_cap()
+
+
+def test_resolve_refresh_range_defaults_end_to_current_year(tmp_path):
+    service = CVMReadService(settings=build_settings(project_root=tmp_path))
+    start_year, end_year = service._resolve_refresh_range(start_year=2010, end_year=None)
+    assert start_year == 2010
+    assert end_year == current_reporting_year_cap()
 
 
 class _EmptyCompanyCatalog:

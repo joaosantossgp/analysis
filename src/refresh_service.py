@@ -18,7 +18,7 @@ from src.observability import append_jsonl, log_event
 from src.refresh_jobs import ensure_refresh_runtime_tables_for_connection
 from src.scraper import CVMScraper
 from src.settings import AppSettings, get_settings
-from src.utils import now_iso_seconds
+from src.utils import current_reporting_year_cap, now_iso_seconds
 
 
 class HeadlessRefreshService:
@@ -75,7 +75,14 @@ class HeadlessRefreshService:
 
         financial_report_columns = self._table_columns(engine, "financial_reports")
         has_period_label = "PERIOD_LABEL" in financial_report_columns
-        closed_reporting_year = datetime.now().year - self.MAX_AUTO_REPORTING_YEAR_LAG
+        # Annual (DFP) data lags by ~1 year, so only years up to the last
+        # closed reporting year can ever be considered "complete". The current
+        # year is intentionally never marked complete here: its quarterly ITR
+        # keeps arriving, so it must stay eligible for refresh instead of being
+        # short-circuited to ``already_current``.
+        closed_reporting_year = (
+            current_reporting_year_cap() - self.MAX_AUTO_REPORTING_YEAR_LAG
+        )
 
         if has_period_label:
             query = text("""
@@ -92,18 +99,16 @@ class HeadlessRefreshService:
                 FROM financial_reports
                 WHERE "CD_CVM" IN :company_codes
                   AND "REPORT_YEAR" BETWEEN :start_year AND :end_year
+                  AND "REPORT_YEAR" <= :closed_reporting_year
                   AND "STATEMENT_TYPE" IN :statement_types
                 GROUP BY "CD_CVM", "REPORT_YEAR"
                 HAVING COUNT(DISTINCT "STATEMENT_TYPE") >= :required_count
-                   AND (
-                        "REPORT_YEAR" > :closed_reporting_year
-                        OR COUNT(
+                   AND COUNT(
                             DISTINCT CASE
                                 WHEN "PERIOD_LABEL" = CAST("REPORT_YEAR" AS TEXT)
                                 THEN "STATEMENT_TYPE"
                             END
                         ) >= :required_count
-                   )
                 """).bindparams(
                 bindparam("company_codes", expanding=True),
                 bindparam("statement_types", expanding=True),
@@ -117,6 +122,7 @@ class HeadlessRefreshService:
                 FROM financial_reports
                 WHERE "CD_CVM" IN :company_codes
                   AND "REPORT_YEAR" BETWEEN :start_year AND :end_year
+                  AND "REPORT_YEAR" <= :closed_reporting_year
                   AND "STATEMENT_TYPE" IN :statement_types
                 GROUP BY "CD_CVM", "REPORT_YEAR"
                 HAVING COUNT(DISTINCT "STATEMENT_TYPE") >= :required_count
@@ -150,7 +156,9 @@ class HeadlessRefreshService:
         raw_years_scope = list(
             range(int(request.start_year), int(request.end_year) + 1)
         )
-        max_auto_year = datetime.now().year - self.MAX_AUTO_REPORTING_YEAR_LAG
+        # Current year stays eligible (quarterly ITR is published all year);
+        # only strictly-future years are dropped as "future".
+        max_auto_year = current_reporting_year_cap()
         years_scope = [
             int(year) for year in raw_years_scope if int(year) <= int(max_auto_year)
         ]
