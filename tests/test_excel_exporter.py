@@ -416,9 +416,9 @@ def _financial_company() -> dict[str, object]:
             "company_name": "Banco Exemplo S.A.", "ticker_b3": "BEXM4"}
 
 
-def test_financial_firm_shows_banner_and_check_row():
-    """Phase 3a — financial-institution banner + Generic Spine check row
-    visible when gics_sector is Financials."""
+def test_financial_firm_shows_banner_and_financial_spine():
+    """Phase 3b — financial-sector spine active; banner visible; NII label used;
+    industrial KPIs absent; financial critical lines present."""
     exporter = ExcelExporter(
         company_info=_financial_company(),
         statements=_wide_statements(),
@@ -433,12 +433,22 @@ def test_financial_firm_shows_banner_and_check_row():
         for c in (2, 3, 4)
     )
     assert "Financial institution" in all_text, "banner text missing"
-    assert "Generic Spine" in all_text, "Generic Spine check row missing"
-    assert "WARNING" in all_text
+    assert "financial-sector spine active" in all_text, "spine-active text missing"
+    # Financial spine label overrides
+    assert "Net Interest Income" in all_text, "NII label missing from IS"
+    assert "Financial Intermediation Revenue" in all_text, "fin revenue label missing"
+    # Industrial KPI rows (indented with 4 spaces by write_kpi) must be absent
+    assert "    EBITDA Margin" not in all_text, "EBITDA Margin should not appear for banks"
+    assert "    Current Ratio" not in all_text, "Current Ratio should not appear for banks"
+    assert "    Net Debt / EBITDA" not in all_text, "Net Debt/EBITDA should not appear for banks"
+    # Financial critical-line list
+    assert "Net Interest Income (NII)" in all_text, "NII critical line missing"
+    # Generic Spine WARNING check row was removed
+    assert "Generic Spine" not in all_text, "stale Generic Spine row must not appear"
 
 
 def test_non_financial_firm_has_no_spine_banner():
-    """Phase 3a — no banner or Generic Spine check row for industrial firms."""
+    """Phase 3b — no financial banner for industrial firms; standard KPIs present."""
     exporter = ExcelExporter(
         company_info=_sample_company(),  # gics_sector = "Teste" (not Financials)
         statements=_wide_statements(),
@@ -447,11 +457,78 @@ def test_non_financial_firm_has_no_spine_banner():
     payload = exporter.export()
     wb = openpyxl.load_workbook(io.BytesIO(payload))
     ws = wb["Model"]
-    for r in range(1, ws.max_row + 1):
-        for c in (2, 3):
-            v = str(ws.cell(row=r, column=c).value or "")
-            assert "Generic Spine" not in v, f"unexpected Generic Spine row at R{r}C{c}"
-            assert "Financial institution" not in v
+    all_text = " | ".join(
+        str(ws.cell(row=r, column=c).value or "")
+        for r in range(1, ws.max_row + 1)
+        for c in (2, 3, 4)
+    )
+    assert "Financial institution" not in all_text
+    assert "Generic Spine" not in all_text
+    assert "    EBITDA Margin" in all_text, "EBITDA Margin should appear for industrial"
+    assert "    Current Ratio" in all_text, "Current Ratio should appear for industrial"
+
+
+def test_financial_firm_balance_sheet_uses_financial_spine_labels():
+    """Phase 3b — BPA and BPP use financial-institution label overrides."""
+    exporter = ExcelExporter(
+        company_info=_financial_company(),
+        statements=_wide_statements(),
+        kpis_df=_minimal_kpis(),
+    )
+    payload = exporter.export()
+    wb = openpyxl.load_workbook(io.BytesIO(payload))
+    ws = wb["Model"]
+    labels = [
+        str(ws.cell(row=r, column=2).value or "")
+        for r in range(1, ws.max_row + 1)
+    ]
+    joined = " | ".join(labels)
+    # Financial BPA overrides
+    assert "Financial Assets" in joined, "BPA:1.02 label should be 'Financial Assets'"
+    assert "FA at FV through P&L" in joined, "BPA:1.02.01 label missing"
+    # Financial BPP overrides — 2.03 is now amortized cost liabilities
+    assert "Financial Liabilities at Amortized Cost" in joined, "BPP:2.03 label wrong"
+    assert "    Equity" in joined, "BPP:2.08 Equity label missing"
+    # Industrial label for 2.03 must not appear
+    assert "    Equity\n" not in "".join(labels[:1])  # no collision
+
+
+def test_financial_firm_company_type_detection():
+    """Phase 3b — company_type 'financeira' also triggers financial spine."""
+    company = {**_sample_company(), "company_type": "financeira"}
+    exporter = ExcelExporter(
+        company_info=company,
+        statements=_wide_statements(),
+        kpis_df=_minimal_kpis(),
+    )
+    payload = exporter.export()
+    wb = openpyxl.load_workbook(io.BytesIO(payload))
+    ws = wb["Model"]
+    all_text = " | ".join(
+        str(ws.cell(row=r, column=c).value or "")
+        for r in range(1, ws.max_row + 1)
+        for c in (2, 3, 4)
+    )
+    assert "Financial institution" in all_text, "company_type detection failed"
+    assert "    EBITDA Margin" not in all_text, "industrial KPIs must be absent"
+
+
+def test_financial_firm_nii_kpi_present():
+    """Phase 3b — NII Margin KPI row appears for financial institutions."""
+    exporter = ExcelExporter(
+        company_info=_financial_company(),
+        statements=_wide_statements(),
+        kpis_df=_minimal_kpis(),
+    )
+    payload = exporter.export()
+    wb = openpyxl.load_workbook(io.BytesIO(payload))
+    ws = wb["Model"]
+    all_text = " | ".join(
+        str(ws.cell(row=r, column=c).value or "")
+        for r in range(1, ws.max_row + 1)
+        for c in (2, 3, 4)
+    )
+    assert "NII Margin" in all_text, "NII Margin KPI missing for financial firm"
 
 
 # ─── filenames (unchanged) ───────────────────────────────────────────────────

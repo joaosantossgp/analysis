@@ -292,6 +292,142 @@ _DVA_SPINE: list[tuple[str, int]] = [
     ("7.08.03", 1), ("7.08.04", 1),
 ]
 
+# ── Financial institution spines ──────────────────────────────────────────────
+# Banks and insurers file under COSIF/IFRS7 rules; their CVM CD_CONTA tree
+# differs from the generic industrial spine above.  These spines cover the
+# common codes observed across Itaú, Bradesco, and Santander (Brazil's three
+# largest publicly-traded banks).  Codes that don't exist for a given company
+# render as "-" through the normal _resolve_raw_row fallback.
+_FIN_DRE_SPINE: list[tuple[str, int]] = [
+    ("3.01", 0),
+    ("3.01.01", 1), ("3.01.02", 1), ("3.01.03", 1), ("3.01.04", 1),
+    ("3.01.05", 1), ("3.01.06", 1), ("3.01.07", 1),
+    ("3.02", 0),
+    ("3.02.01", 1), ("3.02.02", 1), ("3.02.03", 1),
+    ("3.03", 0),
+    ("3.04", 0),
+    ("3.04.01", 1), ("3.04.02", 1), ("3.04.03", 1), ("3.04.04", 1),
+    ("3.04.05", 1), ("3.04.06", 1), ("3.04.07", 1), ("3.04.08", 1),
+    ("3.05", 0),
+    ("3.06", 0), ("3.06.01", 1), ("3.06.02", 1),
+    ("3.07", 0),
+    ("3.08", 0),
+    ("3.09", 0), ("3.09.01", 1), ("3.09.02", 1),
+    ("3.10", 0),
+    ("3.11", 0), ("3.11.01", 1), ("3.11.02", 1),
+]
+_FIN_DRE_SUBTOTALS: set[str] = {"3.01", "3.03", "3.05", "3.07", "3.09", "3.11"}
+_FIN_DRE_SIGN_HINTS: dict[str, str] = {
+    "3.01.01": "+", "3.01.02": "+/-", "3.01.03": "+/-", "3.01.04": "+/-",
+    "3.01.05": "+", "3.01.06": "+", "3.01.07": "+",
+    "3.02": "-", "3.02.01": "-", "3.02.02": "-", "3.02.03": "-",
+    "3.04": "+/-",
+    "3.04.01": "+/-", "3.04.02": "+", "3.04.03": "-", "3.04.04": "-",
+    "3.04.05": "+", "3.04.06": "-", "3.04.07": "+/-", "3.04.08": "+/-",
+    "3.06": "-", "3.06.01": "-", "3.06.02": "+/-",
+    "3.09.01": "+", "3.09.02": "+/-",
+    "3.11.01": "+", "3.11.02": "+/-",
+}
+
+_FIN_BPA_SPINE: list[tuple[str, int]] = [
+    ("1", 0),
+    ("1.01", 1), ("1.01.01", 2), ("1.01.02", 2),
+    ("1.02", 1),
+    ("1.02.01", 2), ("1.02.02", 2), ("1.02.03", 2), ("1.02.04", 2),
+    ("1.03", 1), ("1.03.01", 2), ("1.03.02", 2), ("1.03.03", 2),
+    ("1.04", 1),
+    ("1.05", 1),
+    ("1.06", 1),
+    ("1.07", 1),
+]
+_FIN_BPA_SUBTOTALS: set[str] = {"1"}
+
+_FIN_BPP_SPINE: list[tuple[str, int]] = [
+    ("2", 0),
+    ("2.01", 1),
+    ("2.02", 1), ("2.02.01", 2), ("2.02.02", 2), ("2.02.03", 2), ("2.02.04", 2),
+    ("2.03", 1), ("2.03.01", 2), ("2.03.02", 2), ("2.03.03", 2),
+    ("2.03.04", 2), ("2.03.05", 2),
+    ("2.04", 1),
+    ("2.05", 1),
+    ("2.06", 1),
+    ("2.07", 1),
+    ("2.08", 1), ("2.08.01", 2), ("2.08.04", 2), ("2.08.09", 2),
+]
+_FIN_BPP_SUBTOTALS: set[str] = {"2", "2.08"}
+
+# Label overrides for financial institution codes.  Inherits all industrial
+# labels and replaces only the codes whose semantics differ.
+_FIN_MODEL_LINE_LABELS: dict[str, str] = {
+    **_MODEL_LINE_LABELS,
+    # DRE
+    "3.01":    "Financial Intermediation Revenue",
+    "3.01.01": "Interest Income",
+    "3.01.02": "Interest Expense (within Revenue)",
+    "3.01.03": "FX Gains / (Losses)",
+    "3.01.04": "FV Adjustments — Assets & Liabilities",
+    "3.01.05": "Service and Fee Revenue",
+    "3.01.06": "Other Service Revenue",
+    "3.01.07": "Other Revenue",
+    "3.02":    "Financial Intermediation Expenses",
+    "3.02.01": "Interest Expense",
+    "3.02.02": "Expected Credit Loss — Loans",
+    "3.02.03": "Expected Credit Loss — Other / Insurance",
+    "3.03":    "Net Interest Income (NII)",
+    "3.04":    "Other Operating Expenses / Revenue",
+    "3.04.01": "Credit Loss / Service Revenue",
+    "3.04.02": "Service Revenue",
+    "3.04.03": "Administrative & Personnel Expenses",
+    "3.04.04": "Tax Expenses",
+    "3.04.05": "Other Operating Revenue",
+    "3.04.06": "Other Operating Expenses",
+    "3.04.07": "D&A",
+    "3.04.08": "Equity Income",
+    "3.05":    "Pre-tax Income",
+    "3.06":    "Income Tax & Social Contribution",
+    "3.09":    "Net Income (Consolidated)",
+    "3.09.01": "Attributable to Controlling Shareholders",
+    "3.09.02": "Attributable to Non-controlling Interests",
+    # BPA
+    "1.01":    "Cash and Equivalents",
+    "1.01.01": "Cash",
+    "1.01.02": "Liquid Applications",
+    "1.02":    "Financial Assets",
+    "1.02.01": "FA at FV through P&L",
+    "1.02.02": "FA at FV through OCI",
+    "1.02.03": "FA at Amortized Cost",
+    "1.02.04": "FA at Amortized Cost (loans)",
+    "1.03":    "Tax and Other Receivables",
+    "1.03.01": "Recoverable Income Tax",
+    "1.03.02": "Deferred Tax Asset",
+    "1.03.03": "Other Receivables",
+    "1.04":    "Other Assets",
+    "1.05":    "Investments",
+    "1.06":    "Property, Plant & Equipment",
+    "1.07":    "Intangible Assets",
+    # BPP
+    "2.01":    "Financial Liabilities at FV through P&L",
+    "2.02":    "Financial Liabilities at FV — Other",
+    "2.02.01": "Deposits",
+    "2.02.02": "Open Market Funding",
+    "2.02.03": "Interbank Market Funding",
+    "2.02.04": "Other Funding",
+    "2.03":    "Financial Liabilities at Amortized Cost",
+    "2.03.01": "Deposits",
+    "2.03.02": "Open Market Funding",
+    "2.03.03": "Interbank Market Funding",
+    "2.03.04": "Institutional Funding",
+    "2.03.05": "Other Financial Liabilities",
+    "2.04":    "Provisions",
+    "2.05":    "Tax Liabilities",
+    "2.06":    "Other Liabilities",
+    "2.07":    "Liabilities — Non-current Assets & Discontinued",
+    "2.08":    "Equity",
+    "2.08.01": "Share Capital",
+    "2.08.04": "Earnings Reserves",
+    "2.08.09": "Non-controlling Interests",
+}
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Period helpers
@@ -519,6 +655,10 @@ class ExcelExporter:
             or "insur" in _gics
             or "banco" in _ctype
             or "bank" in _ctype
+            or "financ" in _ctype  # catches "financeira" (CVM company_type)
+        )
+        self._model_labels: dict[str, str] = (
+            _FIN_MODEL_LINE_LABELS if self._is_financial_firm else _MODEL_LINE_LABELS
         )
 
     # ── public API ────────────────────────────────────────────────────────
@@ -1024,23 +1164,6 @@ class ExcelExporter:
         ws.write(11, 1, "R$ mm except per share and where indicated",
                  f["subtitle"])
 
-        # Financial-institution warning banner — row 12 (0-indexed), Excel 13.
-        # Banks/insurers have a different CVM account tree; the generic
-        # industrial spine will produce many unmapped lines and silent "-"
-        # values for headline metrics (Net Income, Cash, Debt). This banner
-        # makes the limitation explicit before the analyst reads any numbers.
-        if self._is_financial_firm:
-            ws.set_row(12, 18)
-            ws.write(
-                12, 1,
-                "⚠ Financial institution — generic industrial spine active. "
-                "Key lines (Net Income, Cash, Debt) may be unmapped. "
-                "See Checks → Generic Spine and Source blocks.",
-                f["conv_warning"],
-            )
-            for c_idx in range(2, max(3, 3 + len(periods))):
-                ws.write_blank(12, c_idx, None, f["conv_warning"])
-
         # Company info block (rows 14:22 1-indexed, 13-21 0-indexed)
         # Derive latest_year from the actual period window if the
         # company_info dict did not carry it. Same fallback for the
@@ -1066,10 +1189,24 @@ class ExcelExporter:
             ("Period window",
              f"{self.period_window[0]} annuals × up to {self.period_window[1]} quarters/year (interleaved)"),
         ]
+        # Row 12 (0-indexed, Excel 13): spacer in the hidden info block for
+        # industrial firms; visible financial-institution info banner for banks.
+        if self._is_financial_firm:
+            ws.set_row(12, 18)
+            ws.write(
+                12, 1,
+                "ℹ Financial institution — financial-sector spine active. "
+                "Net Income: 3.11 → 3.09 fallback. Cash = BPA 1.01. "
+                "Industrial KPIs (EBITDA, Current Ratio, Net Debt/EBITDA) not shown.",
+                f["check_label"],
+            )
+            for c_idx in range(2, max(3, 3 + len(periods))):
+                ws.write_blank(12, c_idx, None, f["check_label"])
+        else:
+            ws.set_row(12, 14, None, {"level": 1, "hidden": True})  # spacer
         # Company info block ships grouped + hidden by default (product
         # decision): the analyst surface starts at the period header. The
-        # outline "+" in the left margin expands it (Excel rows 13–22).
-        ws.set_row(12, 14, None, {"level": 1, "hidden": True})  # spacer (Excel 13)
+        # outline "+" in the left margin expands it (Excel rows 14–22).
         for i, (label, value) in enumerate(rows_info):
             r = 13 + i
             ws.set_row(r, 14, None, {"level": 1, "hidden": True})
@@ -1107,13 +1244,14 @@ class ExcelExporter:
         cur = header_row + 4
 
         # Section: Income Statement
+        _is_fin = self._is_financial_firm
         cur = self._write_model_section(
             ws, cur, periods,
             heading="Income Statement",
             stmt_type="DRE",
-            spine=_DRE_SPINE,
-            subtotal_codes=_DRE_SUBTOTALS,
-            sign_hints=_DRE_SIGN_HINTS,
+            spine=_FIN_DRE_SPINE if _is_fin else _DRE_SPINE,
+            subtotal_codes=_FIN_DRE_SUBTOTALS if _is_fin else _DRE_SUBTOTALS,
+            sign_hints=_FIN_DRE_SIGN_HINTS if _is_fin else _DRE_SIGN_HINTS,
         )
 
         # Computed: EBITDA and D&A
@@ -1229,7 +1367,7 @@ class ExcelExporter:
         unmapped = self._unmapped_codes.setdefault(stmt_type, [])
 
         for code, indent in spine:
-            label = _MODEL_LINE_LABELS.get(code, code)
+            label = self._model_labels.get(code, code)
             is_sub = code in subtotal_codes
             if is_sub:
                 suffix = " (=)"
@@ -1292,7 +1430,7 @@ class ExcelExporter:
             period_to_col = idx["period_to_col"]
             unmapped = self._unmapped_codes.setdefault(stype, [])
             for code, indent in spine:
-                label = _MODEL_LINE_LABELS.get(code, code)
+                label = self._model_labels.get(code, code)
                 is_sub = code in subs
                 display = ("    " * indent) + label + (" (=)" if is_sub else "")
                 ws.set_row(row, 14)
@@ -1323,8 +1461,12 @@ class ExcelExporter:
                 row += 1
             row += 1
 
-        block("BPA", _BPA_SPINE, _BPA_SUBTOTALS, "Assets")
-        block("BPP", _BPP_SPINE, _BPP_SUBTOTALS, "Liabilities & Equity")
+        if self._is_financial_firm:
+            block("BPA", _FIN_BPA_SPINE, _FIN_BPA_SUBTOTALS, "Assets")
+            block("BPP", _FIN_BPP_SPINE, _FIN_BPP_SUBTOTALS, "Liabilities & Equity")
+        else:
+            block("BPA", _BPA_SPINE, _BPA_SUBTOTALS, "Assets")
+            block("BPP", _BPP_SPINE, _BPP_SUBTOTALS, "Liabilities & Equity")
 
         return row
 
@@ -1415,21 +1557,36 @@ class ExcelExporter:
         f = self._fmt
         row = self._write_section_heading(ws, start_row, "KPIs / Ratios")
 
+        is_fin = self._is_financial_firm
         rev = self._model_rows.get("DRE:3.01")
         gp = self._model_rows.get("DRE:3.03")
         ebit = self._model_rows.get("DRE:3.05")
         ebitda = self._model_rows.get("COMP:EBITDA")
-        ni = self._model_rows.get("DRE:3.11")
         ta = self._model_rows.get("BPA:1")
-        ca = self._model_rows.get("BPA:1.01")
-        cash = self._model_rows.get("BPA:1.01.01")
-        cl = self._model_rows.get("BPP:2.01")
-        st_debt = self._model_rows.get("BPP:2.01.04")
-        lt_debt = self._model_rows.get("BPP:2.02.01")
-        eq = self._model_rows.get("BPP:2.03")
         cfo = self._model_rows.get("DFC:6.01")
         capex = self._model_rows.get("DFC:6.02.01")
         fcf = self._model_rows.get("COMP:FCF")
+
+        if is_fin:
+            # Financial firm: NI resolves 3.11 first, fall back to 3.09
+            ni = (self._model_rows.get("DRE:3.11")
+                  or self._model_rows.get("DRE:3.09"))
+            # Cash is BPA:1.01 for financial firms (not a sub-item of current assets)
+            cash = self._model_rows.get("BPA:1.01")
+            # Equity is BPP:2.08 for financial firms
+            eq = self._model_rows.get("BPP:2.08")
+            ca = None
+            cl = None
+            st_debt = None
+            lt_debt = None
+        else:
+            ni = self._model_rows.get("DRE:3.11")
+            cash = self._model_rows.get("BPA:1.01.01")
+            ca = self._model_rows.get("BPA:1.01")
+            cl = self._model_rows.get("BPP:2.01")
+            st_debt = self._model_rows.get("BPP:2.01.04")
+            lt_debt = self._model_rows.get("BPP:2.02.01")
+            eq = self._model_rows.get("BPP:2.03")
 
         def cell(letter, mrow):
             return f"{letter}{mrow}" if mrow else '"-"'
@@ -1462,22 +1619,32 @@ class ExcelExporter:
             return f'=IFERROR({cur_ref}/{prev_ref}-1,"-")'
 
         write_kpi("Revenue Growth (period-on-period)", rev_growth, True)
-        write_kpi("Gross Margin",
-                  lambda L, _: f'=IFERROR({cell(L,gp)}/{cell(L,rev)},"-")', True)
-        write_kpi("EBITDA Margin",
-                  lambda L, _: f'=IFERROR({cell(L,ebitda)}/{cell(L,rev)},"-")', True)
-        write_kpi("EBIT Margin",
-                  lambda L, _: f'=IFERROR({cell(L,ebit)}/{cell(L,rev)},"-")', True)
+
+        if is_fin:
+            # NII = 3.03 for financial firms; replaces Gross Margin / EBIT
+            write_kpi("NII Margin (NII / Revenue)",
+                      lambda L, _: f'=IFERROR({cell(L,gp)}/{cell(L,rev)},"-")', True)
+        else:
+            write_kpi("Gross Margin",
+                      lambda L, _: f'=IFERROR({cell(L,gp)}/{cell(L,rev)},"-")', True)
+            write_kpi("EBITDA Margin",
+                      lambda L, _: f'=IFERROR({cell(L,ebitda)}/{cell(L,rev)},"-")', True)
+            write_kpi("EBIT Margin",
+                      lambda L, _: f'=IFERROR({cell(L,ebit)}/{cell(L,rev)},"-")', True)
+
         write_kpi("Net Margin",
                   lambda L, _: f'=IFERROR({cell(L,ni)}/{cell(L,rev)},"-")', True)
         write_kpi("Return on Equity (ROE)",
                   lambda L, _: f'=IFERROR({cell(L,ni)}/{cell(L,eq)},"-")', True)
         write_kpi("Return on Assets (ROA)",
                   lambda L, _: f'=IFERROR({cell(L,ni)}/{cell(L,ta)},"-")', True)
-        write_kpi("Net Debt / EBITDA",
-                  lambda L, _: f'=IFERROR(({cell(L,st_debt)}+{cell(L,lt_debt)}-{cell(L,cash)})/{cell(L,ebitda)},"-")', False)
-        write_kpi("Current Ratio",
-                  lambda L, _: f'=IFERROR({cell(L,ca)}/{cell(L,cl)},"-")', False)
+
+        if not is_fin:
+            write_kpi("Net Debt / EBITDA",
+                      lambda L, _: f'=IFERROR(({cell(L,st_debt)}+{cell(L,lt_debt)}-{cell(L,cash)})/{cell(L,ebitda)},"-")', False)
+            write_kpi("Current Ratio",
+                      lambda L, _: f'=IFERROR({cell(L,ca)}/{cell(L,cl)},"-")', False)
+
         write_kpi("CFO / Revenue",
                   lambda L, _: f'=IFERROR({cell(L,cfo)}/{cell(L,rev)},"-")', True)
         write_kpi("FCF / Revenue",
@@ -1491,11 +1658,17 @@ class ExcelExporter:
         f = self._fmt
         row = self._write_section_heading(ws, start_row, "Checks")
 
+        is_fin = self._is_financial_firm
         ta = self._model_rows.get("BPA:1")
         tle = self._model_rows.get("BPP:2")
-        bs_cash = self._model_rows.get("BPA:1.01.01")
+        # Financial firms have cash at BPA:1.01; industrial firms at BPA:1.01.01
+        bs_cash = (self._model_rows.get("BPA:1.01")
+                   if is_fin else self._model_rows.get("BPA:1.01.01"))
         cf_end_cash = self._model_rows.get("DFC:6.05.02")
-        ni_dre = self._model_rows.get("DRE:3.11")
+        # NI tie: financial firms try 3.11 first, fall back to 3.09
+        ni_dre = ((self._model_rows.get("DRE:3.11")
+                   or self._model_rows.get("DRE:3.09"))
+                  if is_fin else self._model_rows.get("DRE:3.11"))
         ni_dfc = self._model_rows.get("DFC:6.01.01.01")
 
         # Balance Sheet tie
@@ -1599,21 +1772,35 @@ class ExcelExporter:
         row += 1
 
         # Critical Line Availability — verify the model rows resolved
-        critical_lines = [
-            ("Revenue",      "DRE:3.01"),
-            ("EBITDA",       "COMP:EBITDA"),
-            ("EBIT",         "DRE:3.05"),
-            ("Net Income",   "DRE:3.11"),
-            ("Total Assets", "BPA:1"),
-            ("Total Liab. & Equity", "BPP:2"),
-            ("Cash",         "BPA:1.01.01"),
-            ("ST Debt",      "BPP:2.01.04"),
-            ("LT Debt",      "BPP:2.02.01"),
-            ("Equity",       "BPP:2.03"),
-            ("CFO",          "DFC:6.01"),
-            ("Capex",        "DFC:6.02.01"),
-            ("FCF",          "COMP:FCF"),
-        ]
+        if is_fin:
+            critical_lines = [
+                ("Financial Intermediation Revenue", "DRE:3.01"),
+                ("Net Interest Income (NII)",        "DRE:3.03"),
+                ("Pre-tax Income",                   "DRE:3.05"),
+                ("Net Income",                       "DRE:3.11"),
+                ("Total Assets",                     "BPA:1"),
+                ("Total Liab. & Equity",             "BPP:2"),
+                ("Cash",                             "BPA:1.01"),
+                ("Equity",                           "BPP:2.08"),
+                ("CFO",                              "DFC:6.01"),
+                ("FCF",                              "COMP:FCF"),
+            ]
+        else:
+            critical_lines = [
+                ("Revenue",      "DRE:3.01"),
+                ("EBITDA",       "COMP:EBITDA"),
+                ("EBIT",         "DRE:3.05"),
+                ("Net Income",   "DRE:3.11"),
+                ("Total Assets", "BPA:1"),
+                ("Total Liab. & Equity", "BPP:2"),
+                ("Cash",         "BPA:1.01.01"),
+                ("ST Debt",      "BPP:2.01.04"),
+                ("LT Debt",      "BPP:2.02.01"),
+                ("Equity",       "BPP:2.03"),
+                ("CFO",          "DFC:6.01"),
+                ("Capex",        "DFC:6.02.01"),
+                ("FCF",          "COMP:FCF"),
+            ]
 
         def _row_has_value(model_row: int | None, stmt_type: str, code: str) -> bool:
             if model_row is None:
@@ -1642,21 +1829,6 @@ class ExcelExporter:
             ws.write(row, 3, "Missing: " + ", ".join(missing),
                      f["source_warning"])
         row += 1
-
-        # Generic Spine — warns financial institutions that the model spine
-        # is designed for industrial companies, not banks/insurers.
-        if self._is_financial_firm:
-            ws.set_row(row, 14)
-            ws.write(row, 1, "Generic Spine — Financial Institution",
-                     f["check_label"])
-            ws.write(row, 2, "WARNING", f["check_warning"])
-            ws.write(
-                row, 3,
-                "Industrial spine active. Net Income, Cash, and Debt lines "
-                "may be absent. Verify against raw_* sheets before use.",
-                f["source_warning"],
-            )
-            row += 1
 
         # DVA Availability
         ws.set_row(row, 14)
