@@ -169,12 +169,14 @@ export function refreshProgress(job: RefreshJobStatus | null | undefined): numbe
 
 function stageRange(stage: string | null | undefined): [number, number] {
   switch (stage) {
-    case "planning":
+    case "market_cap":
       return [0, 5];
+    case "planning":
+      return [5, 10];
     case "download_extract":
-      return [5, 50];
+      return [10, 55];
     case "process_data":
-      return [50, 80];
+      return [55, 80];
     case "persist_reports":
       return [80, 95];
     case "finalizing":

@@ -116,3 +116,171 @@ def test_build_company_year_plan_treats_closed_year_as_complete_after_annual_ins
     assert year_overrides == {}
     assert stats["planned_company_years"] == 0
     assert stats["skipped_complete_company_years"] == 1
+
+
+def test_execute_includes_market_cap_step(tmp_path, monkeypatch):
+    from src.contracts import RefreshRequest, RefreshPolicy
+    from types import SimpleNamespace
+    import requests
+
+    db_path = tmp_path / "data" / "db" / "cvm_financials.db"
+    _create_financial_reports_table(db_path)
+
+    service = _make_service(tmp_path)
+    # Enable the flag
+    object.__setattr__(service.settings, "enable_experimental_yfinance", True)
+
+    mock_response_json = {
+        "quoteResponse": {
+            "result": [
+                {
+                    "symbol": "PETR4.SA",
+                    "marketCap": 500000000000.0,
+                    "longName": "PETROBRAS PN"
+                }
+            ],
+            "error": None
+        }
+    }
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+        def json(self):
+            return mock_response_json
+
+    monkeypatch.setattr(requests.Session, "get", lambda self, url, **kwargs: FakeResponse())
+
+    # We also mock the catalog lookup inside _map_entries
+    class FakeCatalog:
+        def list_entries(self):
+            return [
+                SimpleNamespace(cd_cvm=9512, company_name="PETROBRAS", nome_comercial="PETRO", cnpj="", ticker_b3="PETR4", is_active=True)
+            ]
+
+    # Mock list_companies and company_catalog on read_service/catalog
+    class FakeReadService:
+        def __init__(self):
+            self.company_catalog = FakeCatalog()
+        def list_companies(self, **kwargs):
+            return SimpleNamespace(items=[])
+
+    service.read_service = FakeReadService()
+
+    # Stub CVMScraper.run so it doesn't try to query actual CVM servers or read raw files
+    from src.scraper import CVMScraper
+    monkeypatch.setattr(CVMScraper, "run", lambda *args, **kwargs: {})
+
+    request = RefreshRequest(
+        companies=("9512",),
+        start_year=2025,
+        end_year=2025,
+        policy=RefreshPolicy(
+            skip_complete_company_years=True,
+            enable_fast_lane=False,
+            force_refresh=False,
+        ),
+    )
+
+    stages_seen = []
+    def stage_callback(update):
+        stages_seen.append(update.stage)
+
+    result = service.execute(
+        request,
+        stage_callback=stage_callback,
+        persist_refresh_status=False
+    )
+
+    assert "market_cap" in stages_seen
+    assert result.market_cap_result is not None
+    assert result.market_cap_result["status"] == "success"
+    assert result.market_cap_result["source"] == "yahoo_finance"
+    assert result.market_cap_result["provider_status"] == "unofficial_free"
+    assert result.market_cap_result["row_count"] == 1
+    assert service.settings.paths.company_universe_snapshot_path.exists()
+
+
+def test_execute_market_cap_fallback_to_cache(tmp_path, monkeypatch):
+    from src.contracts import RefreshRequest, RefreshPolicy
+    import requests
+
+    db_path = tmp_path / "data" / "db" / "cvm_financials.db"
+    _create_financial_reports_table(db_path)
+
+    service = _make_service(tmp_path)
+    # Set to yahoo_finance provider but fetch will fail (raising exception)
+    object.__setattr__(service.settings, "market_cap_provider", "yahoo_finance")
+
+    # Create a valid local snapshot file beforehand
+    snapshot_path = service.settings.paths.company_universe_snapshot_path
+    snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+    headers = "as_of_date,rank,cd_cvm,cnpj,company_name,ticker,market_cap_brl,source,method,source_url_or_id,downloaded_at,mapping_status,mapping_confidence,notes,provider_status"
+    row1 = "2026-05-24,1,9512,,PETROBRAS,PETR4,500000000000.0,yahoo_finance,yfinance_bulk_quote,http://b3.com.br,2026-05-29T00:00:00Z,mapped,1.0,,unofficial_free"
+    snapshot_path.write_text("\n".join([headers, row1]), encoding="utf-8")
+
+    # Mock network fetch to raise exception
+    def mock_session_get(self, url, **kwargs):
+        raise RuntimeError("Network Error")
+    monkeypatch.setattr(requests.Session, "get", mock_session_get)
+
+    # Stub CVMScraper.run
+    from src.scraper import CVMScraper
+    monkeypatch.setattr(CVMScraper, "run", lambda *args, **kwargs: {})
+
+    request = RefreshRequest(
+        companies=("9512",),
+        start_year=2025,
+        end_year=2025,
+        policy=RefreshPolicy(
+            skip_complete_company_years=True,
+            enable_fast_lane=False,
+            force_refresh=False,
+        ),
+    )
+
+    result = service.execute(request, persist_refresh_status=False)
+    assert result.market_cap_result is not None
+    assert result.market_cap_result["status"] == "warning"
+    assert "Could not refresh Yahoo Finance market-cap data. Using latest local snapshot from 2026-05-24." in result.market_cap_result["warnings"][0]
+
+
+def test_execute_market_cap_blocked_when_no_snapshot(tmp_path, monkeypatch):
+    from src.contracts import RefreshRequest, RefreshPolicy
+    import requests
+
+    db_path = tmp_path / "data" / "db" / "cvm_financials.db"
+    _create_financial_reports_table(db_path)
+
+    service = _make_service(tmp_path)
+    object.__setattr__(service.settings, "market_cap_provider", "yahoo_finance")
+
+    # Ensure no snapshot file exists
+    snapshot_path = service.settings.paths.company_universe_snapshot_path
+    if snapshot_path.exists():
+        snapshot_path.unlink()
+
+    # Mock network fetch to raise exception
+    def mock_session_get(self, url, **kwargs):
+        raise RuntimeError("Network Error")
+    monkeypatch.setattr(requests.Session, "get", mock_session_get)
+
+    # Stub CVMScraper.run
+    from src.scraper import CVMScraper
+    monkeypatch.setattr(CVMScraper, "run", lambda *args, **kwargs: {})
+
+    request = RefreshRequest(
+        companies=("9512",),
+        start_year=2025,
+        end_year=2025,
+        policy=RefreshPolicy(
+            skip_complete_company_years=True,
+            enable_fast_lane=False,
+            force_refresh=False,
+        ),
+    )
+
+    result = service.execute(request, persist_refresh_status=False)
+    assert result.market_cap_result is not None
+    assert result.market_cap_result["status"] == "blocked"
+    assert "Could not build the market-cap list from Yahoo Finance and no local snapshot is available." in result.market_cap_result["warnings"][0]

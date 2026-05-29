@@ -244,6 +244,44 @@ export type RefreshJobListResponse = {
 
 export type CompanyUniversePreset = "top_100" | "top_200" | "top_500" | "all";
 
+export type MarketCapEntry = {
+  as_of_date: string;
+  rank: number;
+  cd_cvm: number | null;
+  cnpj: string | null;
+  company_name: string;
+  ticker: string | null;
+  market_cap_brl: number;
+  source: string;
+  method: string;
+  source_url_or_id: string;
+  downloaded_at: string;
+  mapping_status: string;
+  mapping_confidence: number;
+  notes?: string | null;
+};
+
+export type MarketCapStatus = {
+  available: boolean;
+  row_count: number;
+  as_of_date?: string | null;
+  downloaded_at?: string | null;
+  source?: string | null;
+  method?: string | null;
+  source_url_or_id?: string | null;
+  mapped_count?: number;
+  unmapped_count?: number;
+  unmapped_identifiers?: string[];
+  warnings: string[];
+  error?: string;
+};
+
+export type MarketCapImportResponse = {
+  ok: boolean;
+  error?: string;
+  status?: MarketCapStatus;
+};
+
 export type CompanyUniverseEntry = {
   cd_cvm: number;
   ticker: string | null;
@@ -293,7 +331,6 @@ export type OnboardingState = {
   market_cap_ranked_companies?: number | null;
   company_universe_provider_order?: string[];
   company_universe_provider_status?: CompanyUniverseProviderStatus[];
-  brapi_configured?: boolean;
   yfinance_universe_provider_enabled?: boolean;
   error?: string;
 };
@@ -698,6 +735,10 @@ export interface BridgeApi {
   start_onboarding_setup(params: Record<string, unknown>): Promise<OnboardingStartResponse>;
   complete_onboarding_setup(params?: Record<string, unknown>): Promise<OnboardingState>;
   skip_onboarding_setup(params?: Record<string, unknown>): Promise<OnboardingState>;
+  get_market_cap_list(params?: Record<string, unknown>): Promise<{ ok: boolean; error?: string; items: MarketCapEntry[] }>;
+  import_market_cap_snapshot(params: { csv_content?: string; file_path?: string }): Promise<MarketCapImportResponse>;
+  get_market_cap_status(params?: Record<string, unknown>): Promise<MarketCapStatus>;
+  fetch_latest_market_cap(params?: Record<string, unknown>): Promise<MarketCapImportResponse>;
   get_database_diagnostics(params?: Record<string, unknown>): Promise<DatabaseDiagnostics>;
   get_data_coverage(params?: Record<string, unknown>): Promise<DataCoverageResponse>;
   set_company_ignored(params: Record<string, unknown>): Promise<SetCompanyIgnoredResponse>;

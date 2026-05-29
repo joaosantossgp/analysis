@@ -12,14 +12,8 @@ from sqlalchemy import inspect, text
 from src.settings import AppSettings
 from src.ticker_map import REVERSE_TICKER_MAP, TICKER_MAP
 from src.utils import now_iso_seconds
+from src.market_cap import MarketCapService
 
-try:
-    import yfinance as yf
-
-    _YF_AVAILABLE = True
-except ImportError:
-    yf = None
-    _YF_AVAILABLE = False
 
 CompanyUniversePreset = Literal["top_100", "top_200", "top_500", "all"]
 
@@ -38,9 +32,8 @@ PRESET_LIMITS: dict[CompanyUniversePreset, int | None] = {
 }
 
 MARKET_CAP_PROVIDER_ORDER: tuple[str, ...] = (
-    "brapi",
+    "yahoo_finance",
     "local_snapshot",
-    "yfinance_experimental",
     "all_companies",
 )
 
@@ -149,27 +142,16 @@ class SnapshotCompanyUniverseProvider:
         self.settings = settings
         self.read_service = read_service
         self.snapshot_path = Path(settings.paths.company_universe_snapshot_path)
+        self.market_cap_service = MarketCapService(settings=settings, read_service=read_service)
 
     def source_status(self) -> dict[str, Any]:
-        if not self.snapshot_path.exists():
-            return {
-                "market_cap_source_available": False,
-                "market_cap_source": None,
-                "market_cap_source_date": None,
-                "market_cap_snapshot_path": str(self.snapshot_path),
-            }
-        try:
-            rows = self._read_snapshot_rows()
-        except CompanyUniverseUnavailableError:
-            rows = []
-        source = rows[0].source if rows else "local_snapshot"
-        source_date = rows[0].source_date if rows else None
+        status = self.market_cap_service.get_status()
         return {
-            "market_cap_source_available": bool(rows),
-            "market_cap_source": source,
-            "market_cap_source_date": source_date,
+            "market_cap_source_available": status.get("available", False),
+            "market_cap_source": status.get("source"),
+            "market_cap_source_date": status.get("as_of_date"),
             "market_cap_snapshot_path": str(self.snapshot_path),
-            "market_cap_ranked_companies": len(rows),
+            "market_cap_ranked_companies": status.get("mapped_count", 0),
         }
 
     def get_company_universe_by_preset(
@@ -308,403 +290,58 @@ class SnapshotCompanyUniverseProvider:
         return resolved
 
     def _read_snapshot_rows(self) -> list[CompanyUniverseEntry]:
-        if not self.snapshot_path.exists():
-            raise CompanyUniverseUnavailableError(self.REQUIRED_MARKET_CAP_MESSAGE)
-
-        rows: list[CompanyUniverseEntry] = []
-        with self.snapshot_path.open("r", encoding="utf-8-sig", newline="") as fh:
-            reader = csv.DictReader(fh)
-            for raw in reader:
-                normalized = {
-                    str(key or "").strip().lower(): value
-                    for key, value in dict(raw).items()
-                }
-                ticker = _clean_ticker(
-                    _first(normalized, "ticker", "ticker_b3", "symbol", "codigo")
-                )
-                cd_cvm = _coerce_int(_first(normalized, "cd_cvm", "cvm_code", "codigo_cvm"))
-                if cd_cvm is None and ticker:
-                    cd_cvm = REVERSE_TICKER_MAP.get(ticker.replace(".SA", "").upper())
-                if cd_cvm is None:
-                    continue
-
-                market_cap = _coerce_float(
-                    _first(normalized, "market_cap", "mktcap", "valor_mercado")
-                )
-                rank = _coerce_int(
-                    _first(normalized, "market_cap_rank", "rank", "ranking")
-                )
-                source = str(
-                    _first(normalized, "source", "provider") or "local_market_cap_snapshot"
-                ).strip()
-                source_date = _clean_optional(
-                    _first(normalized, "source_date", "snapshot_date", "as_of")
-                )
-                rows.append(
-                    CompanyUniverseEntry(
-                        cd_cvm=int(cd_cvm),
-                        ticker=ticker or _clean_ticker(TICKER_MAP.get(int(cd_cvm))),
-                        company_name=str(
-                            _first(normalized, "company_name", "name", "nome") or f"CVM {cd_cvm}"
-                        ),
-                        market_cap=market_cap,
-                        market_cap_rank=rank,
-                        source=source,
-                        source_date=source_date,
-                    )
-                )
-
-        rows = _dedupe_ranked_rows(rows)
-        if not rows:
-            raise CompanyUniverseUnavailableError(self.REQUIRED_MARKET_CAP_MESSAGE)
-        return rows
-
-
-class BrapiCompanyUniverseProvider(SnapshotCompanyUniverseProvider):
-    """Resolves B3 market-cap ranking through the documented brapi quote list API."""
-
-    SOURCE_NAME = "brapi_quote_list"
-    REQUIRED_MARKET_CAP_MESSAGE = (
-        "brapi market cap ranking is unavailable. Set BRAPI_TOKEN or CVM_BRAPI_TOKEN, "
-        "or provide a local market-cap snapshot fallback."
-    )
-
-    def source_status(self) -> dict[str, Any]:
-        configured = bool(self.settings.brapi_token)
-        return {
-            "provider": "brapi",
-            "configured": configured,
-            "available": configured,
-            "source": self.SOURCE_NAME if configured else None,
-            "source_date": None,
-            "message": None if configured else "Set BRAPI_TOKEN to enable brapi market-cap ranking.",
-        }
-
-    def get_company_universe_by_preset(
-        self,
-        preset: CompanyUniversePreset,
-    ) -> CompanyUniverseSelection:
-        if preset == "all":
-            return super().get_company_universe_by_preset(preset)
-        if not self.settings.brapi_token:
-            raise CompanyUniverseUnavailableError(self.REQUIRED_MARKET_CAP_MESSAGE)
-
-        ranked_rows = self._read_brapi_rows()
-        resolved_rows = self.resolve_company_identifiers(ranked_rows)
-        if not resolved_rows:
-            raise CompanyUniverseUnavailableError(
-                "brapi did not return ranked companies that match the local CVM catalog."
-            )
-        return _selection_from_ranked_rows(
-            preset=preset,
-            resolved_rows=resolved_rows,
-            source_fallback=self.SOURCE_NAME,
-        )
-
-    def _read_brapi_rows(self) -> list[CompanyUniverseEntry]:
-        if not self.settings.brapi_token:
-            raise CompanyUniverseUnavailableError(self.REQUIRED_MARKET_CAP_MESSAGE)
-
-        base_url = str(self.settings.brapi_base_url or "https://brapi.dev/api").rstrip("/")
-        url = f"{base_url}/quote/list"
-        headers = {
-            "Accept": "application/json",
-            "Authorization": f"Bearer {self.settings.brapi_token}",
-        }
-        params = {
-            "sortBy": "market_cap_basic",
-            "sortOrder": "desc",
-            "type": "stock",
-        }
         try:
-            response = requests.get(
-                url,
-                headers=headers,
-                params=params,
-                timeout=int(self.settings.brapi_timeout),
-            )
-            response.raise_for_status()
-            payload = response.json()
+            snapshot_entries = self.market_cap_service.read_snapshot()
+        except FileNotFoundError as exc:
+            raise CompanyUniverseUnavailableError(self.REQUIRED_MARKET_CAP_MESSAGE) from exc
         except Exception as exc:
-            raise CompanyUniverseUnavailableError(
-                f"brapi market cap ranking is unavailable: {exc}"
-            ) from exc
+            raise CompanyUniverseUnavailableError(f"Error reading snapshot: {exc}") from exc
 
-        if isinstance(payload, dict):
-            stocks = payload.get("stocks")
-        elif isinstance(payload, list):
-            stocks = payload
-        else:
-            stocks = None
-        if not isinstance(stocks, list):
-            raise CompanyUniverseUnavailableError(
-                "brapi market cap ranking response did not include a stocks list."
-            )
-
-        source_date = now_iso_seconds()[:10]
         rows: list[CompanyUniverseEntry] = []
-        for raw in stocks:
-            if not isinstance(raw, dict):
-                continue
-            normalized = {
-                str(key or "").strip().lower(): value
-                for key, value in raw.items()
-            }
-            ticker = _clean_ticker(
-                _first(normalized, "stock", "ticker", "symbol", "code")
-            )
-            if not ticker:
-                continue
-            cd_cvm = REVERSE_TICKER_MAP.get(_ticker_lookup_key(ticker))
-            if cd_cvm is None:
-                continue
-            market_cap = _coerce_float(
-                _first(
-                    normalized,
-                    "market_cap_basic",
-                    "marketcapbasic",
-                    "market_cap",
-                    "marketcap",
-                    "market_capitalization",
-                    "marketcapitalization",
-                )
-            )
-            if market_cap is None or market_cap <= 0:
+        for entry in snapshot_entries:
+            if entry.cd_cvm is None:
                 continue
             rows.append(
                 CompanyUniverseEntry(
-                    cd_cvm=int(cd_cvm),
-                    ticker=ticker,
-                    company_name=str(
-                        _first(
-                            normalized,
-                            "company_name",
-                            "companyname",
-                            "name",
-                            "longname",
-                            "shortname",
-                        )
-                        or f"CVM {cd_cvm}"
-                    ),
-                    market_cap=market_cap,
-                    market_cap_rank=_coerce_int(
-                        _first(normalized, "market_cap_rank", "rank", "ranking")
-                    ),
-                    source=self.SOURCE_NAME,
-                    source_date=source_date,
+                    cd_cvm=entry.cd_cvm,
+                    ticker=entry.ticker,
+                    company_name=entry.company_name,
+                    market_cap=entry.market_cap_brl,
+                    market_cap_rank=entry.rank,
+                    source=entry.source,
+                    source_date=entry.as_of_date,
                 )
             )
-
         rows = _dedupe_ranked_rows(rows)
         if not rows:
-            raise CompanyUniverseUnavailableError(
-                "brapi market cap ranking did not include usable B3 companies."
-            )
-        return rows
-
-
-class YFinanceCompanyUniverseProvider(SnapshotCompanyUniverseProvider):
-    """Experimental market-cap fallback for personal/dev use."""
-
-    SOURCE_NAME = "yfinance_experimental"
-    REQUIRED_MARKET_CAP_MESSAGE = (
-        "yfinance market cap fallback is disabled. Set "
-        "CVM_ENABLE_YFINANCE_UNIVERSE_PROVIDER=true for personal/dev use."
-    )
-
-    def source_status(self) -> dict[str, Any]:
-        cache_rows = self._cached_market_cap_count()
-        enabled = bool(self.settings.enable_yfinance_universe_provider)
-        return {
-            "provider": self.SOURCE_NAME,
-            "configured": enabled,
-            "available": enabled and (_YF_AVAILABLE or cache_rows > 0),
-            "source": self.SOURCE_NAME if enabled else None,
-            "source_date": None,
-            "ranked_companies": cache_rows,
-            "message": None
-            if enabled
-            else "Enable only for personal/dev use with CVM_ENABLE_YFINANCE_UNIVERSE_PROVIDER.",
-        }
-
-    def get_company_universe_by_preset(
-        self,
-        preset: CompanyUniversePreset,
-    ) -> CompanyUniverseSelection:
-        if preset == "all":
-            return super().get_company_universe_by_preset(preset)
-        if not self.settings.enable_yfinance_universe_provider:
             raise CompanyUniverseUnavailableError(self.REQUIRED_MARKET_CAP_MESSAGE)
-
-        ranked_rows = self._read_yfinance_rows()
-        resolved_rows = self.resolve_company_identifiers(ranked_rows)
-        if not resolved_rows:
-            raise CompanyUniverseUnavailableError(
-                "yfinance fallback did not return market caps that match the local CVM catalog."
-            )
-        return _selection_from_ranked_rows(
-            preset=preset,
-            resolved_rows=resolved_rows,
-            source_fallback=self.SOURCE_NAME,
-        )
-
-    def _read_yfinance_rows(self) -> list[CompanyUniverseEntry]:
-        cache = self._load_market_cache()
-        rows: list[CompanyUniverseEntry] = []
-        fetch_budget = max(0, int(self.settings.yfinance_universe_fetch_limit))
-        cache_updated = False
-
-        for available in self.get_available_companies():
-            ticker = _clean_ticker(available.ticker or TICKER_MAP.get(int(available.cd_cvm)))
-            if not ticker:
-                continue
-            yahoo_ticker = _to_yfinance_ticker(ticker)
-            snapshot = self._snapshot_from_cache(cache, yahoo_ticker)
-            if snapshot is None:
-                snapshot = self._snapshot_from_cache(cache, _ticker_lookup_key(ticker))
-
-            if snapshot is None and fetch_budget > 0:
-                snapshot = self._fetch_online_market_cap(yahoo_ticker)
-                if snapshot is not None:
-                    fetch_budget -= 1
-                    cache_updated = True
-                    previous = cache.get(yahoo_ticker)
-                    if isinstance(previous, dict):
-                        previous.update(snapshot)
-                        cache[yahoo_ticker] = previous
-                    else:
-                        cache[yahoo_ticker] = snapshot
-
-            market_cap = _coerce_float(_get(snapshot, "mktcap") if snapshot else None)
-            if market_cap is None:
-                market_cap = _coerce_float(_get(snapshot, "market_cap") if snapshot else None)
-            if market_cap is None or market_cap <= 0:
-                continue
-
-            fetched_at = _clean_optional(_get(snapshot, "fetched_at") if snapshot else None)
-            rows.append(
-                CompanyUniverseEntry(
-                    cd_cvm=int(available.cd_cvm),
-                    ticker=ticker,
-                    company_name=available.company_name,
-                    market_cap=market_cap,
-                    market_cap_rank=None,
-                    source=self.SOURCE_NAME,
-                    source_date=fetched_at[:10] if fetched_at else None,
-                )
-            )
-
-        if cache_updated:
-            self._save_market_cache(cache)
-
-        rows = _dedupe_ranked_rows(rows)
-        if not rows:
-            raise CompanyUniverseUnavailableError(
-                "yfinance fallback has no usable market cap data. Add cache data, allow a dev fetch, "
-                "or use brapi/local snapshot instead."
-            )
         return rows
 
-    def _load_market_cache(self) -> dict[str, Any]:
-        path = Path(self.settings.paths.yfinance_cache_path)
-        if not path.exists():
-            return {}
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
-            return {}
-        return payload if isinstance(payload, dict) else {}
 
-    def _save_market_cache(self, cache: dict[str, Any]) -> None:
-        path = Path(self.settings.paths.yfinance_cache_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            json.dumps(cache, ensure_ascii=True, indent=2),
-            encoding="utf-8",
-        )
-
-    def _snapshot_from_cache(
-        self,
-        cache: dict[str, Any],
-        ticker: str,
-    ) -> dict[str, Any] | None:
-        entry = cache.get(ticker)
-        if not isinstance(entry, dict):
-            return None
-        market_cap = _coerce_float(
-            entry.get("mktcap")
-            or entry.get("market_cap")
-            or entry.get("marketCap")
-        )
-        if market_cap is None or market_cap <= 0:
-            return None
-        return {
-            **entry,
-            "mktcap": market_cap,
-        }
-
-    def _cached_market_cap_count(self) -> int:
-        cache = self._load_market_cache()
-        count = 0
-        for value in cache.values():
-            if not isinstance(value, dict):
-                continue
-            market_cap = _coerce_float(
-                value.get("mktcap")
-                or value.get("market_cap")
-                or value.get("marketCap")
-            )
-            if market_cap is not None and market_cap > 0:
-                count += 1
-        return count
-
-    def _fetch_online_market_cap(self, ticker: str) -> dict[str, Any] | None:
-        if not _YF_AVAILABLE or yf is None:
-            return None
-        try:
-            ticker_obj = yf.Ticker(ticker)
-            fast_info = getattr(ticker_obj, "fast_info", None) or {}
-            market_cap = _coerce_float(_get(fast_info, "market_cap"))
-            if market_cap is None or market_cap <= 0:
-                info = getattr(ticker_obj, "info", None) or {}
-                market_cap = _coerce_float(
-                    _get(info, "marketCap") or _get(info, "market_cap")
-                )
-            if market_cap is None or market_cap <= 0:
-                return None
-            return {
-                "mktcap": market_cap,
-                "fetched_at": now_iso_seconds(),
-                "source": self.SOURCE_NAME,
-            }
-        except Exception:
-            return None
+# Third-party market-cap provider via live network calls was removed.
+# The provider chain now uses only the local snapshot (SnapshotCompanyUniverseProvider).
 
 
 class CompanyUniverseProviderChain:
     def __init__(self, *, settings: AppSettings, read_service: Any) -> None:
-        self.brapi_provider = BrapiCompanyUniverseProvider(
-            settings=settings,
-            read_service=read_service,
-        )
         self.snapshot_provider = SnapshotCompanyUniverseProvider(
             settings=settings,
             read_service=read_service,
         )
-        self.yfinance_provider = YFinanceCompanyUniverseProvider(
-            settings=settings,
-            read_service=read_service,
-        )
         self.market_cap_providers = (
-            self.brapi_provider,
             self.snapshot_provider,
-            self.yfinance_provider,
         )
 
     def source_status(self) -> dict[str, Any]:
-        brapi_status = self.brapi_provider.source_status()
         snapshot_raw = self.snapshot_provider.source_status()
-        yfinance_status = self.yfinance_provider.source_status()
+        
+        provider_name = self.snapshot_provider.settings.market_cap_provider
+        # Normalize alias: 'yfinance' -> 'yahoo_finance'
+        is_yahoo = provider_name in ("yahoo_finance", "yfinance")
+        
+        provider_status = []
+        
+        # Local snapshot entry
         snapshot_status = {
             "provider": "local_snapshot",
             "configured": self.snapshot_provider.snapshot_path.exists(),
@@ -716,6 +353,23 @@ class CompanyUniverseProviderChain:
             if snapshot_raw.get("market_cap_source_available")
             else "Add a local market-cap snapshot to enable offline Top N presets.",
         }
+        provider_status.append(snapshot_status)
+        
+        # Yahoo Finance provider status entry
+        yahoo_finance_status = {
+            "provider": "yahoo_finance",
+            "configured": is_yahoo,
+            "available": is_yahoo,
+            "source": "yahoo_finance" if is_yahoo else None,
+            "source_date": snapshot_raw.get("market_cap_source_date") if is_yahoo else None,
+            "ranked_companies": snapshot_raw.get("market_cap_ranked_companies", 0) if is_yahoo else 0,
+            "message": "Yahoo Finance is configured as the main automatic free provider (unofficial)."
+            if is_yahoo
+            else "Configure CVM_MARKET_CAP_PROVIDER=yahoo_finance to enable automatic refresh.",
+        }
+        provider_status.append(yahoo_finance_status)
+        
+        # Fallback/All Companies
         all_status = {
             "provider": "all_companies",
             "configured": True,
@@ -725,32 +379,24 @@ class CompanyUniverseProviderChain:
             "ranked_companies": None,
             "message": "Manual fallback uses all companies from the CVM company catalog.",
         }
-        provider_status = [
-            brapi_status,
-            snapshot_status,
-            yfinance_status,
-            all_status,
-        ]
-        first_available = next(
-            (
-                status
-                for status in (brapi_status, snapshot_status, yfinance_status)
-                if bool(status.get("available"))
-            ),
-            None,
-        )
+        provider_status.append(all_status)
+        
+        first_available = None
+        if is_yahoo and snapshot_raw.get("market_cap_source_available"):
+            first_available = yahoo_finance_status
+        elif snapshot_raw.get("market_cap_source_available"):
+            first_available = snapshot_status
+            
         return {
-            "market_cap_source_available": first_available is not None,
-            "market_cap_source": first_available.get("source") if first_available else None,
-            "market_cap_source_date": first_available.get("source_date") if first_available else None,
+            "market_cap_source_available": snapshot_raw.get("market_cap_source_available"),
+            "market_cap_source": snapshot_raw.get("market_cap_source"),
+            "market_cap_source_date": snapshot_raw.get("market_cap_source_date"),
             "market_cap_snapshot_path": snapshot_raw.get("market_cap_snapshot_path"),
-            "market_cap_ranked_companies": first_available.get("ranked_companies")
-            if first_available
-            else 0,
-            "company_universe_provider_order": list(MARKET_CAP_PROVIDER_ORDER),
+            "market_cap_ranked_companies": snapshot_raw.get("market_cap_ranked_companies", 0),
+            "company_universe_provider_order": ["yahoo_finance", "local_snapshot", "all_companies"] if is_yahoo else ["local_snapshot", "all_companies"],
             "company_universe_provider_status": provider_status,
-            "brapi_configured": bool(brapi_status.get("configured")),
-            "yfinance_universe_provider_enabled": bool(yfinance_status.get("configured")),
+            # Kept for backward compat: frontend types.ts still has this field
+            "yfinance_universe_provider_enabled": is_yahoo,
         }
 
     def get_company_universe_by_preset(
@@ -1067,9 +713,10 @@ def _market_cap_unavailable_message(
     details = "; ".join(provider_errors[:3])
     suffix = f" Details: {details}" if details else ""
     return (
-        "Market cap ranking source is unavailable. Configure BRAPI_TOKEN, add a "
-        f"versioned local snapshot at {snapshot_path}, enable the yfinance fallback "
-        "only for personal/dev use, or choose All B3 companies."
+        "Market cap ranking source is unavailable. "
+        "Run database updates to refresh from Yahoo Finance, "
+        f"place a versioned local snapshot at {snapshot_path}, "
+        "or choose All B3 companies."
         f"{suffix}"
     )
 

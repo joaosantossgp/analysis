@@ -43,15 +43,15 @@ Status page and the Update Base page.
 ## Top N universe configuration
 
 `top_100`, `top_200`, and `top_500` require a market-cap ranking source before
-the backend starts a refresh job. Provider order is:
+the backend starts a refresh job. Provider order/settings:
 
-1. brapi quote-list (`BRAPI_TOKEN` or `CVM_BRAPI_TOKEN`)
-2. local CSV snapshot (`CVM_COMPANY_UNIVERSE_SNAPSHOT_PATH`, default
-   `data/metadata/b3_market_cap_universe_snapshot.csv`)
-3. yfinance experimental fallback (`CVM_ENABLE_YFINANCE_UNIVERSE_PROVIDER=1`,
-   personal/dev use only)
+1. Yahoo Finance bulk updater (`CVM_MARKET_CAP_PROVIDER=yahoo_finance`, default, unofficial free source)
+2. Local CSV snapshot (`CVM_COMPANY_UNIVERSE_SNAPSHOT_PATH`, default
+   `data/metadata/b3_market_cap_universe_snapshot.csv`, used if provider is `local_snapshot` or yahoo_finance fails)
 
-If no ranking source is available, `start_data_update` returns
+Note: `CVM_MARKET_CAP_PROVIDER=yfinance` is accepted as a deprecated alias for `yahoo_finance`.
+
+If no ranking source is available (e.g. yahoo_finance fails and no local snapshot exists), `start_data_update` returns
 `status: "blocked"` with `status_reason_code:
 "company_universe_unavailable"`. No refresh job is dispatched. The Update Base
 page shows a configuration notice instead of a completed summary from a

@@ -522,6 +522,10 @@ function UpdatePanel({
         exposed because there is no safe control in the UI yet.
       </p>
 
+      <p className="mt-3 text-xs text-zinc-400 border-t border-zinc-800/50 pt-2 leading-relaxed">
+        Market-cap data is fetched from Yahoo Finance, an unofficial free data source. CVMAnalytics stores a local snapshot for auditability. Values may differ from official B3 data.
+      </p>
+
       {selection?.warning ? (
         <InlineNotice tone="warning">{selection.warning}</InlineNotice>
       ) : null}
@@ -596,6 +600,7 @@ function ResultSummary({ job }: { job: RefreshJobStatus }) {
   const failed = Number(summary?.error_count ?? job.failures ?? 0);
   const noData = Number(summary?.no_data_count ?? 0);
   const tone = job.state === "success" && failed === 0 ? "good" : failed > 0 ? "warn" : "neutral";
+  const marketCap = result?.market_cap_result as Record<string, any> | undefined;
 
   return (
     <div className={`mt-5 rounded border p-4 ${resultClass(tone)}`}>
@@ -614,6 +619,28 @@ function ResultSummary({ job }: { job: RefreshJobStatus }) {
         <Field label="Failed" value={fmtInt(failed)} tone={failed ? "bad" : "neutral"} />
         <Field label="Job" value={shortJobId(job.job_id)} mono />
       </dl>
+      {marketCap ? (
+        <div className="mt-4 border-t border-zinc-800/50 pt-4">
+          <p className="text-xs uppercase tracking-wider text-zinc-500 mb-2">Market Cap Snapshot Step</p>
+          <div className="grid gap-3 sm:grid-cols-5">
+            <Field label="Status" value={marketCap.status || "n/a"} tone={marketCap.status === "success" ? "good" : marketCap.status === "warning" ? "warn" : "bad"} />
+            <Field label="Source" value={marketCap.source || "n/a"} />
+            <Field label="Provider Status" value={marketCap.provider_status || "n/a"} tone={marketCap.provider_status === "unofficial_free" ? "warn" : "neutral"} />
+            <Field label="Rows Count" value={marketCap.row_count != null ? fmtInt(marketCap.row_count) : "n/a"} />
+            <Field label="As of Date" value={marketCap.as_of_date || "n/a"} />
+          </div>
+          {marketCap.warnings && marketCap.warnings.length > 0 ? (
+            <div className="mt-2 text-xs text-amber-200 opacity-90">
+              <span className="font-semibold">Warnings:</span> {marketCap.warnings.join("; ")}
+            </div>
+          ) : null}
+          {marketCap.error ? (
+            <div className="mt-2 text-xs text-rose-300">
+              <span className="font-semibold">Error:</span> {marketCap.error}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1175,6 +1202,7 @@ function jobBadgeClass(state: string | null | undefined): string {
 function formatStageHuman(stage: string): string {
   const map: Record<string, string> = {
     queued: "Queued",
+    market_cap: "Refreshing market-cap snapshot",
     planning: "Planning",
     download_extract: "Downloading CVM files",
     process_data: "Processing data",

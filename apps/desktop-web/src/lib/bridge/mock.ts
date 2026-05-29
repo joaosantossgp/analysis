@@ -428,7 +428,6 @@ const MOCK_ONBOARDING: OnboardingState = {
   market_cap_source_available: true,
   market_cap_source: "mock-fixture",
   market_cap_ranked_companies: 200,
-  brapi_configured: false,
   yfinance_universe_provider_enabled: true,
 };
 
@@ -830,5 +829,59 @@ export function createMockBridge(): Partial<BridgeApi> {
     dev_simulate_refresh: async () => ({ ok: true, mode: "mock" }),
     dev_start_small_setup: async () => ({ status: "accepted", message: "[mock] Small setup started" }),
     dev_get_raw_state: async () => ({ app_settings: [], refresh_jobs: [] }),
+
+    get_market_cap_list: async () => ({
+      ok: true,
+      items: [
+        {
+          as_of_date: `${YEAR}-01-01`,
+          rank: 1,
+          cd_cvm: 9512,
+          cnpj: "33.000.167/0001-01",
+          company_name: "PETROBRAS PN",
+          ticker: "PETR4",
+          market_cap_brl: 500000000000,
+          source: "mock-fixture",
+          method: "mock-method",
+          source_url_or_id: "http://mock-url.com",
+          downloaded_at: NOW,
+          mapping_status: "mapped",
+          mapping_confidence: 1.0,
+        },
+      ],
+    }),
+
+    import_market_cap_snapshot: async () => ({
+      ok: true,
+      status: {
+        available: true,
+        row_count: 1,
+        as_of_date: `${YEAR}-01-01`,
+        downloaded_at: NOW,
+        source: "mock-fixture",
+        warnings: [],
+      },
+    }),
+
+    get_market_cap_status: async () => ({
+      available: true,
+      row_count: 1,
+      as_of_date: `${YEAR}-01-01`,
+      downloaded_at: NOW,
+      source: "mock-fixture",
+      warnings: [],
+    }),
+
+    fetch_latest_market_cap: async () => ({
+      ok: true,
+      status: {
+        available: true,
+        row_count: 1,
+        as_of_date: `${YEAR}-01-01`,
+        downloaded_at: NOW,
+        source: "mock-fixture",
+        warnings: [],
+      },
+    }),
   };
 }

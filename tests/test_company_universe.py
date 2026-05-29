@@ -28,16 +28,10 @@ def _settings_with_snapshot(
     monkeypatch,
     rows: str | None,
     *,
-    brapi_token: str | None = None,
     yfinance_enabled: bool = False,
     yfinance_fetch_limit: int = 0,
 ):
     snapshot_path = tmp_path / "data" / "metadata" / "b3_market_cap_universe_snapshot.csv"
-    if brapi_token:
-        monkeypatch.setenv("BRAPI_TOKEN", brapi_token)
-    else:
-        monkeypatch.delenv("BRAPI_TOKEN", raising=False)
-        monkeypatch.delenv("CVM_BRAPI_TOKEN", raising=False)
     monkeypatch.setenv(
         "CVM_ENABLE_YFINANCE_UNIVERSE_PROVIDER",
         "true" if yfinance_enabled else "false",
@@ -45,34 +39,22 @@ def _settings_with_snapshot(
     monkeypatch.setenv("CVM_YFINANCE_UNIVERSE_FETCH_LIMIT", str(yfinance_fetch_limit))
     monkeypatch.setenv("CVM_COMPANY_UNIVERSE_SNAPSHOT_PATH", str(snapshot_path))
     settings = build_settings(project_root=tmp_path)
+    # Ensure build_settings paths are correctly adjusted
+    object.__setattr__(settings.paths, "company_universe_snapshot_path", snapshot_path)
     if rows is not None:
         snapshot_path.parent.mkdir(parents=True, exist_ok=True)
         snapshot_path.write_text(rows, encoding="utf-8")
     return settings
 
 
-class FakeBrapiResponse:
-    def __init__(self, payload):
-        self.payload = payload
-
-    def raise_for_status(self):
-        return None
-
-    def json(self):
-        return self.payload
-
-
 def test_top_preset_uses_snapshot_and_warns_when_less_than_requested(tmp_path, monkeypatch):
+    headers = "as_of_date,rank,cd_cvm,cnpj,company_name,ticker,market_cap_brl,source,method,source_url_or_id,downloaded_at,mapping_status,mapping_confidence,notes"
+    row1 = "2026-05-24,1,9512,,PETROBRAS,PETR4,500000000000.0,test_snapshot,csv_import,http://b3.com.br,2026-05-29T00:00:00Z,mapped,1.0,"
+    row2 = "2026-05-24,2,4170,,VALE,VALE3,400000000000.0,test_snapshot,csv_import,http://b3.com.br,2026-05-29T00:00:00Z,mapped,1.0,"
     settings = _settings_with_snapshot(
         tmp_path,
         monkeypatch,
-        "\n".join(
-            [
-                "cd_cvm,ticker,company_name,market_cap,market_cap_rank,source,source_date",
-                "9512,PETR4,PETROBRAS,500000000000,1,test_snapshot,2026-05-24",
-                "4170,VALE3,VALE,400000000000,2,test_snapshot,2026-05-24",
-            ]
-        ),
+        "\n".join([headers, row1, row2]),
     )
     read_service = FakeReadService(
         settings,
@@ -81,6 +63,15 @@ def test_top_preset_uses_snapshot_and_warns_when_less_than_requested(tmp_path, m
             SimpleNamespace(cd_cvm=4170, company_name="VALE", ticker_b3="VALE3"),
         ],
     )
+
+    # Setup database catalog mock
+    class FakeCatalog:
+        def list_entries(self):
+            return [
+                SimpleNamespace(cd_cvm=9512, company_name="PETROBRAS", nome_comercial="PETRO", cnpj="", ticker_b3="PETR4", is_active=True),
+                SimpleNamespace(cd_cvm=4170, company_name="VALE", nome_comercial="VALE", cnpj="", ticker_b3="VALE3", is_active=True),
+            ]
+    read_service.company_catalog = FakeCatalog()
 
     selection = CompanyUniverseService(
         settings=settings,
@@ -94,32 +85,12 @@ def test_top_preset_uses_snapshot_and_warns_when_less_than_requested(tmp_path, m
     assert "Only 2 valid ranked companies" in selection.warning
 
 
-def test_brapi_provider_is_primary_when_configured(tmp_path, monkeypatch):
-    settings = _settings_with_snapshot(
-        tmp_path,
-        monkeypatch,
-        "\n".join(
-            [
-                "cd_cvm,ticker,company_name,market_cap,market_cap_rank,source,source_date",
-                "9512,PETR4,PETROBRAS,1,1,test_snapshot,2026-05-24",
-            ]
-        ),
-        brapi_token="test-token",
-    )
-    calls = []
+def test_yahoo_finance_is_default_provider_and_reads_are_local_only(tmp_path, monkeypatch):
+    settings = build_settings(project_root=tmp_path)
+    assert settings.market_cap_provider == "yahoo_finance"
+    assert settings.market_cap_auto_refresh is True
+    assert settings.market_cap_cache_max_age_days == 7
 
-    def fake_get(url, headers, params, timeout):
-        calls.append((url, headers, params, timeout))
-        return FakeBrapiResponse(
-            {
-                "stocks": [
-                    {"stock": "VALE3", "name": "VALE", "market_cap_basic": 700.0},
-                    {"stock": "PETR4", "name": "PETROBRAS", "market_cap_basic": 600.0},
-                ]
-            }
-        )
-
-    monkeypatch.setattr("src.company_universe.requests.get", fake_get)
     read_service = FakeReadService(
         settings,
         [
@@ -127,86 +98,28 @@ def test_brapi_provider_is_primary_when_configured(tmp_path, monkeypatch):
             SimpleNamespace(cd_cvm=4170, company_name="VALE", ticker_b3="VALE3"),
         ],
     )
-
-    selection = CompanyUniverseService(
-        settings=settings,
-        read_service=read_service,
-    ).get_company_universe_by_preset("top_100")
-
-    assert selection.company_ids == (4170, 9512)
-    assert selection.source == "brapi_quote_list"
-    assert calls[0][0].endswith("/quote/list")
-    assert calls[0][1]["Authorization"] == "Bearer test-token"
-    assert calls[0][2]["sortBy"] == "market_cap_basic"
+    service = CompanyUniverseService(settings=settings, read_service=read_service)
+    
+    # Resolving Top presets must raise CompanyUniverseUnavailableError if no snapshot exists
+    with pytest.raises(CompanyUniverseUnavailableError):
+        service.get_company_universe_by_preset("top_100")
 
 
-def test_snapshot_fallback_is_used_when_brapi_fails(tmp_path, monkeypatch):
-    settings = _settings_with_snapshot(
-        tmp_path,
-        monkeypatch,
-        "\n".join(
-            [
-                "cd_cvm,ticker,company_name,market_cap,market_cap_rank,source,source_date",
-                "9512,PETR4,PETROBRAS,500000000000,1,test_snapshot,2026-05-24",
-                "4170,VALE3,VALE,400000000000,2,test_snapshot,2026-05-24",
-            ]
-        ),
-        brapi_token="test-token",
+def test_yfinance_alias_normalizes_to_yahoo_finance(tmp_path, monkeypatch):
+    """CVM_MARKET_CAP_PROVIDER=yfinance must be accepted as a deprecated alias for yahoo_finance."""
+    import warnings
+    monkeypatch.setenv("CVM_MARKET_CAP_PROVIDER", "yfinance")
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        settings = build_settings(project_root=tmp_path)
+    # The alias must be normalized to the canonical name
+    assert settings.market_cap_provider == "yahoo_finance"
+    # A deprecation warning must be emitted
+    deprecation_msgs = [str(w.message) for w in caught if issubclass(w.category, DeprecationWarning)]
+    assert any("yfinance" in m and "yahoo_finance" in m for m in deprecation_msgs), (
+        f"Expected DeprecationWarning about yfinance alias, got: {deprecation_msgs}"
     )
 
-    def fake_get(*args, **kwargs):
-        raise RuntimeError("offline")
-
-    monkeypatch.setattr("src.company_universe.requests.get", fake_get)
-    read_service = FakeReadService(
-        settings,
-        [
-            SimpleNamespace(cd_cvm=9512, company_name="PETROBRAS", ticker_b3="PETR4"),
-            SimpleNamespace(cd_cvm=4170, company_name="VALE", ticker_b3="VALE3"),
-        ],
-    )
-
-    selection = CompanyUniverseService(
-        settings=settings,
-        read_service=read_service,
-    ).get_company_universe_by_preset("top_100")
-
-    assert selection.company_ids == (9512, 4170)
-    assert selection.source == "test_snapshot"
-
-
-def test_yfinance_provider_is_opt_in_cached_dev_fallback(tmp_path, monkeypatch):
-    settings = _settings_with_snapshot(
-        tmp_path,
-        monkeypatch,
-        None,
-        yfinance_enabled=True,
-    )
-    settings.paths.yfinance_cache_path.parent.mkdir(parents=True, exist_ok=True)
-    settings.paths.yfinance_cache_path.write_text(
-        json.dumps(
-            {
-                "PETR4.SA": {"mktcap": 500000000000, "fetched_at": "2026-05-24T10:00:00"},
-                "VALE3.SA": {"mktcap": 400000000000, "fetched_at": "2026-05-24T10:00:00"},
-            }
-        ),
-        encoding="utf-8",
-    )
-    read_service = FakeReadService(
-        settings,
-        [
-            SimpleNamespace(cd_cvm=9512, company_name="PETROBRAS", ticker_b3="PETR4"),
-            SimpleNamespace(cd_cvm=4170, company_name="VALE", ticker_b3="VALE3"),
-        ],
-    )
-
-    selection = CompanyUniverseService(
-        settings=settings,
-        read_service=read_service,
-    ).get_company_universe_by_preset("top_100")
-
-    assert selection.company_ids == (9512, 4170)
-    assert selection.source == "yfinance_experimental"
 
 
 def test_top_preset_requires_market_cap_provider(tmp_path, monkeypatch):
@@ -220,7 +133,7 @@ def test_top_preset_requires_market_cap_provider(tmp_path, monkeypatch):
         ).get_company_universe_by_preset("top_200")
 
     assert "Market cap ranking source is unavailable" in str(exc.value)
-    assert "BRAPI_TOKEN" in str(exc.value)
+    assert "BRAPI_TOKEN" not in str(exc.value)
     assert "All B3 companies" in str(exc.value)
 
 
@@ -272,22 +185,28 @@ def test_onboarding_state_skips_existing_financial_data(tmp_path, monkeypatch):
 
 
 def test_mark_setup_started_persists_state_and_company_universe(tmp_path, monkeypatch):
+    headers = "as_of_date,rank,cd_cvm,cnpj,company_name,ticker,market_cap_brl,source,method,source_url_or_id,downloaded_at,mapping_status,mapping_confidence,notes"
+    row1 = "2026-05-24,1,9512,,PETROBRAS,PETR4,500000000000.0,test_snapshot,csv_import,http://b3.com.br,2026-05-29T00:00:00Z,mapped,1.0,"
     settings = _settings_with_snapshot(
         tmp_path,
         monkeypatch,
-        "\n".join(
-            [
-                "cd_cvm,ticker,company_name,market_cap,market_cap_rank,source,source_date",
-                "9512,PETR4,PETROBRAS,500000000000,1,test_snapshot,2026-05-24",
-            ]
-        ),
+        "\n".join([headers, row1]),
     )
+    read_service = FakeReadService(
+        settings,
+        [SimpleNamespace(cd_cvm=9512, company_name="PETROBRAS", ticker_b3="PETR4")],
+    )
+
+    class FakeCatalog:
+        def list_entries(self):
+            return [
+                SimpleNamespace(cd_cvm=9512, company_name="PETROBRAS", nome_comercial="PETRO", cnpj="", ticker_b3="PETR4", is_active=True),
+            ]
+    read_service.company_catalog = FakeCatalog()
+
     service = CompanyUniverseService(
         settings=settings,
-        read_service=FakeReadService(
-            settings,
-            [SimpleNamespace(cd_cvm=9512, company_name="PETROBRAS", ticker_b3="PETR4")],
-        ),
+        read_service=read_service,
     )
     selection = service.get_company_universe_by_preset("top_100")
 
@@ -305,3 +224,34 @@ def test_mark_setup_started_persists_state_and_company_universe(tmp_path, monkey
         ).fetchone()[0]
     assert count == 1
     assert preset == "top_100"
+
+
+def test_snapshot_provider_raises_error_if_missing(tmp_path, monkeypatch):
+    settings = _settings_with_snapshot(tmp_path, monkeypatch, None)
+    
+    read_service = FakeReadService(
+        settings,
+        [
+            SimpleNamespace(cd_cvm=9512, company_name="PETROBRAS", ticker_b3="PETR4"),
+            SimpleNamespace(cd_cvm=4170, company_name="VALE", ticker_b3="VALE3"),
+        ],
+    )
+
+    class FakeCatalog:
+        def list_entries(self):
+            return [
+                SimpleNamespace(cd_cvm=9512, company_name="PETROBRAS", nome_comercial="PETRO", cnpj="", ticker_b3="PETR4", is_active=True),
+                SimpleNamespace(cd_cvm=4170, company_name="VALE", nome_comercial="VALE", cnpj="", ticker_b3="VALE3", is_active=True),
+            ]
+    read_service.company_catalog = FakeCatalog()
+
+    service = CompanyUniverseService(
+        settings=settings,
+        read_service=read_service,
+    )
+
+    with pytest.raises(CompanyUniverseUnavailableError) as exc:
+        service.get_company_universe_by_preset("top_100")
+
+    assert "Market cap ranking source is unavailable" in str(exc.value)
+    assert not settings.paths.company_universe_snapshot_path.exists()

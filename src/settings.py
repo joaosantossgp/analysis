@@ -99,13 +99,11 @@ class AppSettings:
     paths: AppPaths
     database_url: str | None
     cvm_base_url: str
-    brapi_token: str | None
-    brapi_base_url: str
-    brapi_timeout: int
     default_report_type: str
     company_list_timeout: int
     download_timeout: int
     enable_yfinance_universe_provider: bool
+    enable_experimental_yfinance: bool
     yfinance_universe_fetch_limit: int
     max_excel_lock_retries: int
     company_db_max_retries: int
@@ -113,6 +111,9 @@ class AppSettings:
     updater_skip_complete: bool
     updater_fast_lane: bool
     updater_force_refresh: bool
+    market_cap_provider: str
+    market_cap_auto_refresh: bool
+    market_cap_cache_max_age_days: int
 
 
 def build_settings(project_root: Path | None = None) -> AppSettings:
@@ -231,6 +232,30 @@ def build_settings(project_root: Path | None = None) -> AppSettings:
 
     database_url = os.getenv("DATABASE_URL") or None
 
+    market_cap_provider = os.getenv("CVM_MARKET_CAP_PROVIDER", "yahoo_finance").strip().lower()
+    # Backward-compatible alias: 'yfinance' -> 'yahoo_finance'
+    if market_cap_provider == "yfinance":
+        import warnings
+        warnings.warn(
+            "CVM_MARKET_CAP_PROVIDER=yfinance is deprecated. Use CVM_MARKET_CAP_PROVIDER=yahoo_finance instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        market_cap_provider = "yahoo_finance"
+    enable_experimental_yfinance_env = os.getenv("CVM_ENABLE_EXPERIMENTAL_YFINANCE")
+    if enable_experimental_yfinance_env is not None:
+        import warnings
+        warnings.warn(
+            "CVM_ENABLE_EXPERIMENTAL_YFINANCE is deprecated. Use CVM_MARKET_CAP_PROVIDER=yahoo_finance instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        if enable_experimental_yfinance_env.strip().lower() in {"1", "true", "yes", "on"}:
+            market_cap_provider = "yahoo_finance"
+
+    market_cap_auto_refresh = _env_bool("CVM_MARKET_CAP_AUTO_REFRESH", True)
+    market_cap_cache_max_age_days = _env_int("CVM_MARKET_CAP_CACHE_MAX_AGE_DAYS", 7)
+
     return AppSettings(
         paths=paths,
         database_url=database_url,
@@ -238,9 +263,6 @@ def build_settings(project_root: Path | None = None) -> AppSettings:
             "CVM_BASE_URL",
             "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC",
         ),
-        brapi_token=os.getenv("BRAPI_TOKEN") or os.getenv("CVM_BRAPI_TOKEN") or None,
-        brapi_base_url=os.getenv("BRAPI_BASE_URL", "https://brapi.dev/api"),
-        brapi_timeout=_env_int("BRAPI_TIMEOUT", 15),
         default_report_type=os.getenv("CVM_DEFAULT_REPORT_TYPE", "consolidated"),
         company_list_timeout=_env_int("CVM_COMPANY_LIST_TIMEOUT", 30),
         download_timeout=_env_int("CVM_DOWNLOAD_TIMEOUT", 60),
@@ -248,6 +270,7 @@ def build_settings(project_root: Path | None = None) -> AppSettings:
             "CVM_ENABLE_YFINANCE_UNIVERSE_PROVIDER",
             False,
         ),
+        enable_experimental_yfinance=(market_cap_provider == "yahoo_finance"),
         yfinance_universe_fetch_limit=_env_int("CVM_YFINANCE_UNIVERSE_FETCH_LIMIT", 60),
         max_excel_lock_retries=_env_int("CVM_MAX_EXCEL_LOCK_RETRIES", 10),
         company_db_max_retries=_env_int("CVM_COMPANY_DB_MAX_RETRIES", 3),
@@ -255,6 +278,9 @@ def build_settings(project_root: Path | None = None) -> AppSettings:
         updater_skip_complete=_env_bool("UPDATER_SKIP_COMPLETE", True),
         updater_fast_lane=_env_bool("UPDATER_FAST_LANE", True),
         updater_force_refresh=_env_bool("UPDATER_FORCE_REFRESH", False),
+        market_cap_provider=market_cap_provider,
+        market_cap_auto_refresh=market_cap_auto_refresh,
+        market_cap_cache_max_age_days=market_cap_cache_max_age_days,
     )
 
 

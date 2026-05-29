@@ -21,12 +21,6 @@ from uuid import uuid4
 import pandas as pd
 import requests
 
-try:
-    import yfinance as yf
-    _YF_AVAILABLE = True
-except ImportError:
-    _YF_AVAILABLE = False
-
 from src.ticker_map import TICKER_MAP
 from src.contracts import RefreshPolicy, RefreshProgressUpdate, RefreshRequest
 from src.read_service import resolve_refresh_year_range

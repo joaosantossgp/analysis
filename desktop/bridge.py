@@ -637,6 +637,75 @@ class CVMBridge:
             return self._sanitize_for_json({"ok": False, "error": str(exc)})
 
     # ------------------------------------------------------------------
+    # Market Cap List
+    # ------------------------------------------------------------------
+
+    def get_market_cap_list(self, params=None) -> dict:
+        try:
+            from src.market_cap import MarketCapService  # noqa: PLC0415
+            svc = self._svc()
+            market_cap_service = MarketCapService(settings=svc.settings, read_service=svc)
+            entries = market_cap_service.read_snapshot()
+            return self._sanitize_for_json({
+                "ok": True,
+                "items": [e.to_dict() for e in entries]
+            })
+        except Exception as exc:
+            return self._sanitize_for_json({"ok": False, "error": str(exc), "items": []})
+
+    def import_market_cap_snapshot(self, params=None) -> dict:
+        if not self._is_write_allowed():
+            return self._sanitize_for_json(self._write_blocked_response("import_market_cap_snapshot"))
+        p = params or {}
+        csv_content = p.get("csv_content")
+        file_path = p.get("file_path")
+        try:
+            from src.market_cap import MarketCapService  # noqa: PLC0415
+            svc = self._svc()
+            market_cap_service = MarketCapService(settings=svc.settings, read_service=svc)
+            if csv_content:
+                import io  # noqa: PLC0415
+                res = market_cap_service.import_snapshot(io.StringIO(str(csv_content)))
+            elif file_path:
+                res = market_cap_service.import_snapshot(Path(str(file_path)))
+            else:
+                return self._sanitize_for_json({
+                    "ok": False,
+                    "error": "Either csv_content or file_path must be provided."
+                })
+            self._svc().invalidate_read_caches()
+            return self._sanitize_for_json({"ok": True, "status": res})
+        except Exception as exc:
+            return self._sanitize_for_json({"ok": False, "error": str(exc)})
+
+    def get_market_cap_status(self, params=None) -> dict:
+        try:
+            from src.market_cap import MarketCapService  # noqa: PLC0415
+            svc = self._svc()
+            market_cap_service = MarketCapService(settings=svc.settings, read_service=svc)
+            status = market_cap_service.get_status()
+            return self._sanitize_for_json(status)
+        except Exception as exc:
+            return self._sanitize_for_json({
+                "available": False,
+                "row_count": 0,
+                "error": str(exc)
+            })
+
+    def fetch_latest_market_cap(self, params=None) -> dict:
+        if not self._is_write_allowed():
+            return self._sanitize_for_json(self._write_blocked_response("fetch_latest_market_cap"))
+        try:
+            from src.market_cap import MarketCapService  # noqa: PLC0415
+            svc = self._svc()
+            market_cap_service = MarketCapService(settings=svc.settings, read_service=svc)
+            status = market_cap_service.fetch_from_yahoo_finance()
+            self._svc().invalidate_read_caches()
+            return self._sanitize_for_json({"ok": True, "status": status})
+        except Exception as exc:
+            return self._sanitize_for_json({"ok": False, "error": str(exc)})
+
+    # ------------------------------------------------------------------
     # Central data update settings / operations
     # ------------------------------------------------------------------
 

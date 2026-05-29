@@ -156,6 +156,7 @@ class RefreshResult:
     planning_stats: dict[str, int]
     synced_companies: int = 0
     cancelled: bool = False
+    market_cap_result: dict[str, Any] | None = None
 
     @property
     def success_count(self) -> int:
@@ -181,6 +182,7 @@ class RefreshResult:
                 "error_count": self.error_count,
             },
             "companies": [row.to_dict() for row in self.companies],
+            "market_cap_result": self.market_cap_result,
         }
 
 
