@@ -748,6 +748,71 @@ class CVMQueryLayer:
         df = _pd().read_sql(sql, self.engine, params={"cd_cvm": int(cd_cvm)})
         return [int(year) for year in df["REPORT_YEAR"].tolist()]
 
+    def get_available_export_periods(self, cd_cvm: int) -> dict:
+        """Returns exportable periods split into annual DFP years and ITR-only years.
+
+        Annual years: REPORT_YEAR where a closing DFP exists
+        (PERIOD_LABEL = REPORT_YEAR, e.g. '2025').
+
+        ITR-only years: REPORT_YEAR where only quarterly ITR periods exist and
+        the year is strictly newer than the latest annual year (e.g. 2026 when
+        only 1Q26 / 2Q26 exist but the 2026 DFP has not been filed yet).  Older
+        years that have only ITR data are excluded — they are typically data-
+        quality gaps, not genuine current-year ITR windows.
+
+        When no annual years exist at all, every year with data is returned as
+        an ITR-only year so companies without any DFP can still be exported.
+
+        Returns
+        -------
+        dict with keys:
+          annual_years      — sorted list[int]
+          itr_only_years    — sorted list[int]
+          all_export_years  — annual_years + itr_only_years, sorted
+        """
+        sql = text(
+            """
+            SELECT
+                "REPORT_YEAR",
+                MAX(
+                    CASE WHEN "PERIOD_LABEL" = CAST("REPORT_YEAR" AS TEXT)
+                         THEN 1 ELSE 0 END
+                ) AS has_annual
+            FROM financial_reports
+            WHERE "CD_CVM" = :cd_cvm
+            GROUP BY "REPORT_YEAR"
+            ORDER BY "REPORT_YEAR"
+            """
+        )
+        df = _pd().read_sql(sql, self.engine, params={"cd_cvm": int(cd_cvm)})
+        if df.empty:
+            return {"annual_years": [], "itr_only_years": [], "all_export_years": []}
+
+        annual_years: list[int] = sorted(
+            int(row["REPORT_YEAR"])
+            for _, row in df.iterrows()
+            if int(row["has_annual"]) == 1
+        )
+
+        max_annual: int | None = max(annual_years, default=None)
+        if max_annual is None:
+            # No annual DFP exists — include every year with any data.
+            itr_only_years: list[int] = sorted(
+                int(row["REPORT_YEAR"]) for _, row in df.iterrows()
+            )
+        else:
+            itr_only_years = sorted(
+                int(row["REPORT_YEAR"])
+                for _, row in df.iterrows()
+                if int(row["has_annual"]) == 0 and int(row["REPORT_YEAR"]) > max_annual
+            )
+
+        return {
+            "annual_years": annual_years,
+            "itr_only_years": itr_only_years,
+            "all_export_years": sorted(set(annual_years) | set(itr_only_years)),
+        }
+
     def get_available_statements(self, cd_cvm: int) -> list[str]:
         sql = text(
             """
