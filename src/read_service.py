@@ -619,6 +619,7 @@ class CVMReadService:
         self._read_cache_data_version = None
         self._read_cache_checked_at = 0.0
         self.get_available_years.cache_clear()
+        self.get_available_export_periods.cache_clear()
         self.suggest_companies.cache_clear()
         self.query_layer.get_sector_years_map.cache_clear()
 
@@ -728,6 +729,91 @@ class CVMReadService:
     @functools.lru_cache(maxsize=10)
     def get_available_years(self, cd_cvm: int) -> list[int]:
         return self.query_layer.get_available_years(cd_cvm)
+
+    @functools.lru_cache(maxsize=10)
+    def get_available_export_periods(self, cd_cvm: int) -> dict:
+        """Returns annual DFP years and ITR-only years for export.
+
+        Delegates to ``QueryLayer.get_available_export_periods``.  Result is
+        cached per company for the lifetime of the service instance (same
+        cache-clear policy as ``get_available_years``).
+        """
+        return self.query_layer.get_available_export_periods(cd_cvm)
+
+    # Valid period scope identifiers accepted by build_company_excel_export.
+    VALID_PERIOD_SCOPES: frozenset[str] = frozenset(
+        {"last_3_years", "last_5_years", "last_10_years", "full_history"}
+    )
+
+    def resolve_excel_export_scope(self, cd_cvm: int, period_scope: str) -> dict:
+        """Map a period_scope string to the concrete years and window needed.
+
+        Parameters
+        ----------
+        cd_cvm : int
+        period_scope : str
+            One of ``last_3_years``, ``last_5_years``, ``last_10_years``,
+            ``full_history``.
+
+        Returns
+        -------
+        dict with keys:
+          all_export_years  — list[int] to pass as ``years`` when loading data
+          period_window     — (annuals, quarters_per_year) for ExcelExporter
+          scope_label       — human-readable string for workbook metadata
+          itr_only_years    — list[int] of ITR-only years included
+        """
+        _SCOPE_LABELS = {
+            "last_3_years":  "Last 3 years",
+            "last_5_years":  "Last 5 years",
+            "last_10_years": "Last 10 years",
+            "full_history":  "Full history",
+        }
+        _SCOPE_N = {
+            "last_3_years":  3,
+            "last_5_years":  5,
+            "last_10_years": 10,
+        }
+
+        if period_scope not in self.VALID_PERIOD_SCOPES:
+            raise ValueError(
+                f"Invalid period_scope: {period_scope!r}. "
+                f"Must be one of: {', '.join(sorted(self.VALID_PERIOD_SCOPES))}"
+            )
+
+        periods = self.get_available_export_periods(cd_cvm)
+        annual_years: list[int] = periods["annual_years"]
+        itr_only_years: list[int] = periods["itr_only_years"]
+
+        scope_label = _SCOPE_LABELS.get(period_scope, period_scope)
+
+        if period_scope == "full_history":
+            n_annuals = len(annual_years)
+        else:
+            n_annuals = _SCOPE_N.get(period_scope, 5)
+
+        # Slice the last N annual years according to scope.
+        selected_annual_years = annual_years[-n_annuals:] if n_annuals > 0 else annual_years
+
+        # Always include ITR-only years that are newer than the latest selected
+        # annual year — this is the core "current-year ITR inclusion" guarantee.
+        max_selected_annual = max(selected_annual_years, default=0)
+        included_itr_only = [y for y in itr_only_years if y > max_selected_annual]
+
+        all_export_years = sorted(set(selected_annual_years) | set(included_itr_only))
+
+        # period_window controls how _pick_model_periods slices the data.
+        # annuals = number of annual periods to show; quarters_per_year = 4.
+        # When there are no annual years (ITR-only company), use 0 so
+        # _pick_model_periods falls through to the ITR-only branch.
+        annuals_for_window = n_annuals if annual_years else 0
+
+        return {
+            "all_export_years": all_export_years,
+            "period_window": (annuals_for_window, 4),
+            "scope_label": scope_label,
+            "itr_only_years": included_itr_only,
+        }
 
     def get_available_statements(self, cd_cvm: int) -> list[str]:
         return self.query_layer.get_available_statements(cd_cvm)
@@ -2051,31 +2137,57 @@ class CVMReadService:
         self,
         cd_cvm: int,
         statement_type: Optional[str] = None,
+        period_scope: str = "last_5_years",
     ) -> tuple[str, bytes]:
+        """Build the Excel workbook for a company.
+
+        Parameters
+        ----------
+        cd_cvm : int
+        statement_type : str, optional
+            If set, builds a single-statement scoped workbook.
+        period_scope : str
+            One of ``last_3_years``, ``last_5_years``, ``last_10_years``,
+            ``full_history``.  Defaults to ``last_5_years``.  Current-year
+            ITR-only periods (e.g. 1Q26 when 2026 DFP is not yet filed) are
+            always appended regardless of scope.
+        """
+        if period_scope not in self.VALID_PERIOD_SCOPES:
+            raise ValueError(
+                f"Invalid period_scope: {period_scope!r}. "
+                f"Must be one of: {', '.join(sorted(self.VALID_PERIOD_SCOPES))}"
+            )
+
         company_info = self.get_company_info_dict(cd_cvm)
         if not company_info:
             raise ValueError(f"Empresa {cd_cvm} nao encontrada.")
 
-        years = self.get_available_years(cd_cvm)
+        scope = self.resolve_excel_export_scope(cd_cvm, period_scope)
+        years: list[int] = scope["all_export_years"]
+        period_window: tuple[int, int] = scope["period_window"]
+        scope_label: str = scope["scope_label"]
+        itr_only_years: list[int] = scope["itr_only_years"]
+
         if not years:
-            raise ValueError(f"Empresa {cd_cvm} nao possui anos disponiveis para exportacao.")
+            raise ValueError(
+                f"Empresa {cd_cvm} nao possui periodos disponiveis para exportacao."
+            )
 
         if statement_type:
             df = self.get_statement_dataframe(cd_cvm, years, statement_type)
-            statements = {statement_type: df}
             exportable_statements = {
                 statement_type: df
             } if df is not None and not df.empty else {}
             extra_sheets = [statement_type] if statement_type in ("DVA", "DMPL") else []
             kpis_df = pd.DataFrame()
         else:
-            statements = {
+            all_stmts = {
                 stmt_type: self.get_statement_dataframe(cd_cvm, years, stmt_type)
                 for stmt_type in EXPORT_STATEMENT_TYPES
             }
             exportable_statements = {
                 stmt_type: df
-                for stmt_type, df in statements.items()
+                for stmt_type, df in all_stmts.items()
                 if df is not None and not df.empty
             }
             extra_sheets = [
@@ -2091,6 +2203,9 @@ class CVMReadService:
             kpis_df=kpis_df,
             extra_sheets=extra_sheets,
             statement_type=statement_type,
+            period_window=period_window,
+            period_scope_label=scope_label,
+            itr_only_years=itr_only_years,
         )
         return (
             build_excel_filename(company_info, statement_type=statement_type),

@@ -15,9 +15,10 @@ import type { ExportStatus } from "./ExportStatusLine";
 type Options = {
   cdCvm: number;
   statementType?: string;
+  periodScope?: string;
 };
 
-export function useExportAction({ cdCvm, statementType }: Options) {
+export function useExportAction({ cdCvm, statementType, periodScope }: Options) {
   const bridgeMode = getBridgeMode();
   const isDesktop = bridgeMode === "desktop";
   const [lastOutcome, setLastOutcome] = useState<ExportCompanyOutcome | null>(null);
@@ -32,7 +33,7 @@ export function useExportAction({ cdCvm, statementType }: Options) {
   });
 
   const mutation = useMutation({
-    mutationFn: () => exportCompanyWorkbook(cdCvm, { reveal: false, statementType }),
+    mutationFn: () => exportCompanyWorkbook(cdCvm, { reveal: false, statementType, periodScope }),
     onSuccess: (outcome) => {
       setLastOutcome(outcome);
       setLastRunAt(new Date());

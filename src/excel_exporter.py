@@ -498,9 +498,13 @@ def _pick_model_periods(
     """Select the analyst window: last N annuals + their quarters.
 
     Quarters whose year matches one of the selected annuals are kept (up
-    to ``quarters_per_year`` per annual year). The combined set is
-    sorted chronologically so the result is the interleaved layout
-    ``1Q21, 2Q21, 3Q21, 4Q21, 2021, 1Q22, ..., 4Q25, 2025``.
+    to ``quarters_per_year`` per annual year).  Quarters from years that are
+    *strictly newer* than the latest selected annual year are also included
+    (up to ``quarters_per_year`` each) so that current-year ITR-only periods
+    (e.g. ``1Q26`` when 2026 DFP has not been filed) appear in the workbook.
+
+    The combined set is sorted chronologically:
+    ``1Q21, 2Q21, 3Q21, 4Q21, 2021, 1Q22, ..., 4Q25, 2025, 1Q26, 2Q26``.
     """
     annual_periods = sorted(
         [p for p in all_periods if _is_annual_period(p)],
@@ -508,6 +512,9 @@ def _pick_model_periods(
     )
     selected_annuals = annual_periods[-annuals:] if annuals > 0 else []
     selected_years = {int(a) for a in selected_annuals}
+    # Quarters from years strictly newer than the last selected annual are
+    # always included so that ITR-only current-year data surfaces automatically.
+    latest_selected_annual = max(selected_years, default=0)
 
     quarter_buckets: dict[int, list[str]] = {}
     for p in all_periods:
@@ -515,13 +522,13 @@ def _pick_model_periods(
         if parsed is None:
             continue
         year, _ = parsed
-        if year in selected_years:
+        if year in selected_years or year > latest_selected_annual:
             quarter_buckets.setdefault(year, []).append(p)
 
     selected_quarters: list[str] = []
     for year, qs in quarter_buckets.items():
         qs_sorted = sorted(qs, key=_period_sort_key)
-        selected_quarters.extend(qs_sorted[-quarters_per_year:] if quarters_per_year > 0 else [])
+        selected_quarters.extend(qs_sorted[-quarters_per_year:] if quarters_per_year > 0 else qs_sorted)
 
     combined = list(set(selected_annuals) | set(selected_quarters))
     combined.sort(key=_period_sort_key)
@@ -618,6 +625,8 @@ class ExcelExporter:
         extra_sheets: Optional[list[str]] = None,
         statement_type: Optional[str] = None,
         period_window: tuple[int, int] = DEFAULT_PERIOD_WINDOW,
+        period_scope_label: Optional[str] = None,
+        itr_only_years: Optional[list[int]] = None,
     ):
         self.info = company_info or {}
         self.stmts = statements or {}
@@ -625,6 +634,8 @@ class ExcelExporter:
         self.extra = extra_sheets or []
         self.statement_type = statement_type
         self.period_window = period_window
+        self.period_scope_label: Optional[str] = period_scope_label
+        self.itr_only_years: list[int] = list(itr_only_years or [])
         self._wb: Optional[xlsxwriter.Workbook] = None
         self._fmt: dict = {}
         # raw sheet layouts captured during write so the model sheet can
@@ -1012,6 +1023,10 @@ class ExcelExporter:
                                    "EBITDA = EBIT + D&A"),
             ("Window — annual",    str(self.period_window[0]), ""),
             ("Window — quarters/year", str(self.period_window[1]), ""),
+            ("Export scope",       self.period_scope_label or "—", "Selected at export time"),
+            ("ITR-only years",
+             ", ".join(str(y) for y in self.itr_only_years) if self.itr_only_years else "none",
+             "Years with quarterly ITR data but no closed annual DFP"),
         ]
         for r_idx, (k, v, n) in enumerate(rows, start=1):
             ws.set_row(r_idx, 16)
@@ -1061,10 +1076,16 @@ class ExcelExporter:
              "(or explicit unavailability note), KPIs, Checks, and Source / "
              "Data Quality blocks."),
             ("Period window",
-             f"Annual: last {self.period_window[0]} fiscal years. "
+             f"Annual: last {self.period_window[0]} fiscal years "
+             f"({self.period_scope_label or 'default'} scope). "
              f"Quarterly: up to {self.period_window[1]} quarters per included "
              "annual year, interleaved chronologically "
-             "(e.g. 1Q21, 2Q21, 3Q21, 4Q21, 2021, 1Q22, ...)."),
+             "(e.g. 1Q21, 2Q21, 3Q21, 4Q21, 2021, 1Q22, ...). "
+             + (
+                 f"ITR-only year(s) included: {', '.join(str(y) for y in self.itr_only_years)}. "
+                 "These years have quarterly ITR data but no closed annual DFP yet."
+                 if self.itr_only_years else ""
+             )),
             ("Units",
              "Model sheet: R$ mm (millions). CVM source: R$ mil (thousands); "
              "divided by 1,000 in the Model view. Raw sheets keep R$ mil."),

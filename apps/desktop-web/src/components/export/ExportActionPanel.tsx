@@ -1,6 +1,7 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/Button";
+import { Select } from "@/components/ui/Select";
 import { Panel } from "@/components/surface/Panel";
 
 import { ExportScopeBadge } from "./ExportScopeBadge";
@@ -20,6 +21,13 @@ type Props = {
   className?: string;
 };
 
+const PERIOD_SCOPE_OPTIONS = [
+  { value: "last_3_years",  label: "3 anos" },
+  { value: "last_5_years",  label: "5 anos" },
+  { value: "last_10_years", label: "10 anos" },
+  { value: "full_history",  label: "Todo histórico" },
+] as const;
+
 export function ExportActionPanel({
   cdCvm,
   title = "Export workflow",
@@ -32,7 +40,8 @@ export function ExportActionPanel({
   framed = true,
   className,
 }: Props) {
-  const action = useExportAction({ cdCvm, statementType });
+  const [periodScope, setPeriodScope] = useState("last_5_years");
+  const action = useExportAction({ cdCvm, statementType, periodScope });
   const finalScopeLabel = scopeLabel ?? (statementType ? `Statement ${statementType}` : "Full Workbook");
   const defaultDescription =
     description ??
@@ -79,11 +88,36 @@ export function ExportActionPanel({
         >
           {action.isRunning ? "Exportando" : "Exportar Excel"}
         </Button>
+        {!statementType && (
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "4px",
+              color: "var(--color-text-secondary)",
+              fontSize: "var(--text-xs)",
+            }}
+          >
+            <span>Histórico</span>
+            <Select
+              block={false}
+              value={periodScope}
+              onChange={(e) => setPeriodScope(e.target.value)}
+              style={{ fontSize: "var(--text-xs)", padding: "2px 6px" }}
+            >
+              {PERIOD_SCOPE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </Select>
+          </label>
+        )}
         <span
           className="font-mono"
           style={{ color: "var(--color-text-tertiary)", fontSize: "var(--text-2xs)" }}
         >
-          {statementType ? `scope=${statementType}` : "scope=company"}
+          {statementType ? `scope=${statementType}` : `scope=company period=${periodScope}`}
         </span>
       </div>
 

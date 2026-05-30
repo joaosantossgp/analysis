@@ -744,3 +744,207 @@ def test_scoped_statement_export_is_minimal():
     assert "metadata" in wb.sheetnames
     # Should NOT include the Model sheet for scoped exports
     assert "Model" not in wb.sheetnames
+
+
+# ─── period scope: _pick_model_periods ITR-only year inclusion ────────────────
+
+def test_pick_model_periods_itr_only_year_included():
+    """Quarters from a year newer than the latest selected annual must appear."""
+    all_periods = [
+        "1Q21", "2Q21", "3Q21", "4Q21", "2021",
+        "1Q22", "2Q22", "3Q22", "4Q22", "2022",
+        "1Q23", "2Q23", "3Q23", "4Q23", "2023",
+        "1Q24", "2Q24", "3Q24", "4Q24", "2024",
+        "1Q25", "2Q25", "3Q25", "4Q25", "2025",
+        # 2026 has only ITR — no annual "2026"
+        "1Q26", "2Q26",
+    ]
+    result = _pick_model_periods(all_periods, annuals=5, quarters_per_year=4)
+    # All five annual periods must be present
+    for annual in ("2021", "2022", "2023", "2024", "2025"):
+        assert annual in result, f"Missing annual period {annual}"
+    # ITR-only year quarters must be present
+    assert "1Q26" in result, "1Q26 should be included (ITR-only year)"
+    assert "2Q26" in result, "2Q26 should be included (ITR-only year)"
+    # Result is sorted chronologically
+    from src.excel_exporter import _period_sort_key
+    assert result == sorted(result, key=_period_sort_key)
+
+
+def test_pick_model_periods_last_3_years():
+    """annuals=3 selects only the last 3 annual periods + their quarters."""
+    all_periods = [
+        "1Q21", "2Q21", "3Q21", "4Q21", "2021",
+        "1Q22", "2Q22", "3Q22", "4Q22", "2022",
+        "1Q23", "2Q23", "3Q23", "4Q23", "2023",
+        "1Q24", "2Q24", "3Q24", "4Q24", "2024",
+        "1Q25", "2Q25", "3Q25", "4Q25", "2025",
+    ]
+    result = _pick_model_periods(all_periods, annuals=3, quarters_per_year=4)
+    assert "2021" not in result
+    assert "2022" not in result
+    for annual in ("2023", "2024", "2025"):
+        assert annual in result
+
+
+def test_pick_model_periods_full_history():
+    """annuals >= total annual count keeps all annual periods."""
+    all_periods = [
+        "1Q20", "2Q20", "2020",
+        "1Q21", "2Q21", "2021",
+        "1Q22", "2Q22", "2022",
+    ]
+    result = _pick_model_periods(all_periods, annuals=10, quarters_per_year=4)
+    for annual in ("2020", "2021", "2022"):
+        assert annual in result
+
+
+def test_pick_model_periods_no_annual_years():
+    """When no annual periods exist, all quarters are included."""
+    all_periods = ["1Q26", "2Q26", "3Q26"]
+    result = _pick_model_periods(all_periods, annuals=5, quarters_per_year=4)
+    assert "1Q26" in result
+    assert "2Q26" in result
+    assert "3Q26" in result
+
+
+# ─── period scope: ExcelExporter accepts scope params ────────────────────────
+
+def _wide_statements_with_itr_only_year() -> dict:
+    """Statements covering 2021–2025 annual + 1Q26/2Q26 ITR-only."""
+    period_cols = []
+    for year in (2021, 2022, 2023, 2024, 2025):
+        for q in (1, 2, 3, 4):
+            period_cols.append(f"{q}Q{year - 2000}")
+        period_cols.append(str(year))
+    # ITR-only year
+    period_cols += ["1Q26", "2Q26"]
+
+    def make_row(cd, ds, base):
+        d = {"CD_CONTA": cd, "DS_CONTA": ds, "STANDARD_NAME": "", "LINE_ID_BASE": cd}
+        for i, p in enumerate(period_cols):
+            d[p] = float(base) * (1 + i * 0.01)
+        return d
+
+    return {
+        "DRE": pd.DataFrame([
+            make_row("3.01", "Receita",       1_000_000),
+            make_row("3.11", "Lucro Liquido",   160_000),
+        ]),
+        "BPA": pd.DataFrame([
+            make_row("1",    "Ativo Total",   2_100_000),
+            make_row("1.01", "Ativo Circ.",     800_000),
+        ]),
+        "BPP": pd.DataFrame([
+            make_row("2",    "Passivo Total", 2_100_000),
+            make_row("2.03", "PL",              600_000),
+        ]),
+        "DFC": pd.DataFrame([
+            make_row("6.01",       "CFO",    250_000),
+            make_row("6.01.01.03", "D&A",     20_000),
+        ]),
+    }
+
+
+def test_exporter_itr_only_year_columns_present():
+    """When statements include 1Q26/2Q26, these columns appear in the Model."""
+    exporter = ExcelExporter(
+        company_info=_sample_company(),
+        statements=_wide_statements_with_itr_only_year(),
+        kpis_df=pd.DataFrame(),
+        period_window=(5, 4),
+        period_scope_label="Last 5 years",
+        itr_only_years=[2026],
+    )
+    payload = exporter.export()
+    wb = openpyxl.load_workbook(io.BytesIO(payload), data_only=False)
+    ws = wb["Model"]
+
+    # Collect all header cell values from row 10 onward (period headers)
+    header_vals = {
+        str(ws.cell(row=r, column=c).value or "")
+        for r in range(1, ws.max_row + 1)
+        for c in range(1, ws.max_column + 1)
+    }
+    assert "1Q26" in header_vals, "1Q26 column missing from Model sheet"
+    assert "2Q26" in header_vals, "2Q26 column missing from Model sheet"
+
+
+def test_exporter_metadata_shows_scope_label():
+    """Metadata sheet must contain the period_scope_label row."""
+    exporter = ExcelExporter(
+        company_info=_sample_company(),
+        statements=_wide_statements(),
+        kpis_df=_minimal_kpis(),
+        period_scope_label="Last 5 years",
+        itr_only_years=[],
+    )
+    payload = exporter.export()
+    wb = openpyxl.load_workbook(io.BytesIO(payload))
+    ws = wb["metadata"]
+
+    field_vals = {
+        str(ws.cell(row=r, column=1).value or "").strip()
+        for r in range(1, ws.max_row + 1)
+    }
+    assert "Export scope" in field_vals, "Export scope row missing from metadata sheet"
+
+
+def test_exporter_readme_mentions_scope():
+    """README sheet Period window description includes scope label."""
+    exporter = ExcelExporter(
+        company_info=_sample_company(),
+        statements=_wide_statements(),
+        kpis_df=_minimal_kpis(),
+        period_scope_label="Full history",
+        itr_only_years=[],
+    )
+    payload = exporter.export()
+    wb = openpyxl.load_workbook(io.BytesIO(payload))
+    ws = wb["README"]
+
+    all_text = " ".join(
+        str(ws.cell(row=r, column=c).value or "")
+        for r in range(1, ws.max_row + 1)
+        for c in range(1, ws.max_column + 1)
+    )
+    assert "Full history" in all_text, "README does not mention scope label"
+
+
+def test_exporter_readme_mentions_itr_only_years():
+    """README sheet mentions the ITR-only year when one is included."""
+    exporter = ExcelExporter(
+        company_info=_sample_company(),
+        statements=_wide_statements_with_itr_only_year(),
+        kpis_df=pd.DataFrame(),
+        period_window=(5, 4),
+        period_scope_label="Last 5 years",
+        itr_only_years=[2026],
+    )
+    payload = exporter.export()
+    wb = openpyxl.load_workbook(io.BytesIO(payload))
+    ws = wb["README"]
+
+    all_text = " ".join(
+        str(ws.cell(row=r, column=c).value or "")
+        for r in range(1, ws.max_row + 1)
+        for c in range(1, ws.max_column + 1)
+    )
+    assert "2026" in all_text, "README does not mention ITR-only year 2026"
+
+
+def test_scoped_statement_export_unchanged():
+    """Single-statement scoped export is unaffected by period_scope params."""
+    exporter = ExcelExporter(
+        company_info=_sample_company(),
+        statements=_wide_statements(),
+        kpis_df=_minimal_kpis(),
+        statement_type="DRE",
+        period_scope_label="Last 5 years",
+        itr_only_years=[],
+    )
+    payload = exporter.export()
+    wb = openpyxl.load_workbook(io.BytesIO(payload))
+    assert "raw_DRE" in wb.sheetnames
+    assert "metadata" in wb.sheetnames
+    assert "Model" not in wb.sheetnames

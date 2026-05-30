@@ -345,8 +345,20 @@ class CVMBridge:
                         "ok": False,
                         "error": f"Invalid statement type: {statement_type}",
                     })
+            period_scope = str(p.get("period_scope") or "last_5_years")
+            _VALID_PERIOD_SCOPES = {"last_3_years", "last_5_years", "last_10_years", "full_history"}
+            if period_scope not in _VALID_PERIOD_SCOPES:
+                return self._sanitize_for_json({
+                    "ok": False,
+                    "error": (
+                        f"Invalid period_scope: {period_scope!r}. "
+                        f"Must be one of: {', '.join(sorted(_VALID_PERIOD_SCOPES))}"
+                    ),
+                })
             svc = self._svc()
-            filename, payload = svc.build_company_excel_export(cd_cvm, statement_type=statement_type)
+            filename, payload = svc.build_company_excel_export(
+                cd_cvm, statement_type=statement_type, period_scope=period_scope
+            )
             output_dir = Path(svc.settings.paths.output_dir)
             output_dir.mkdir(parents=True, exist_ok=True)
             target = self._unique_output_path(output_dir, filename)
