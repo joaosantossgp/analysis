@@ -3,6 +3,7 @@ import { ExportActionPanel } from "@/components/export/ExportActionPanel";
 type Props = {
   cdCvm: number;
   statementType?: string;
+  mappingPresetId?: string;
   scopeLabel?: string;
   scopeNote?: string;
   className?: string;
@@ -12,6 +13,7 @@ type Props = {
 export function ExportCompanyButton({
   cdCvm,
   statementType,
+  mappingPresetId,
   scopeLabel,
   scopeNote,
   className,
@@ -21,6 +23,7 @@ export function ExportCompanyButton({
     <ExportActionPanel
       cdCvm={cdCvm}
       statementType={statementType}
+      mappingPresetId={mappingPresetId}
       scopeLabel={scopeLabel}
       scopeNote={scopeNote}
       className={className}

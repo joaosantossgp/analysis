@@ -516,6 +516,121 @@ export type OutputDirInfo = {
   error?: string;
 };
 
+export type ExcelMappingSource = {
+  statement_type: string;
+  line_id_base: string;
+  cd_conta: string | null;
+  label_snapshot: string | null;
+  sign: number;
+  position: number;
+};
+
+export type ExcelMappingEntry = {
+  target_id: string;
+  target_label: string;
+  group: string;
+  statement_type: string;
+  display_order: number;
+  indent_level: number;
+  required: boolean;
+  operation: "direct" | "sum" | "sum_with_sign" | string;
+  is_subtotal: boolean;
+  sources: ExcelMappingSource[];
+};
+
+export type ExcelMappingDefinition = {
+  preset_id: string;
+  name: string;
+  description: string | null;
+  origin: "system" | "user" | string;
+  default_mapping_version: string;
+  sector_tags: string[];
+  notes: string | null;
+  validation_status: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  entries: ExcelMappingEntry[];
+};
+
+export type ExcelMappingPresetSummary = {
+  preset_id: string;
+  name: string;
+  description: string | null;
+  origin: "system" | "user" | string;
+  default_mapping_version: string;
+  sector_tags: string[];
+  notes: string | null;
+  validation_status: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  company_default: boolean;
+};
+
+export type ExcelMappingRawLine = {
+  statement_type: string;
+  line_id_base: string;
+  cd_conta: string | null;
+  ds_conta: string | null;
+  standard_name: string | null;
+  label: string;
+  normalized_label: string;
+  periods_present: string[];
+  sample_values_by_period?: Record<string, number | null>;
+  mapped_targets?: Array<{ target_id: string; target_label: string; group: string }>;
+};
+
+export type ExcelMappingPreviewRow = {
+  target_id: string;
+  target_label: string;
+  group: string;
+  statement_type: string;
+  display_order: number;
+  indent_level: number;
+  required: boolean;
+  operation: "direct" | "sum" | "sum_with_sign" | string;
+  is_subtotal: boolean;
+  source_count: number;
+  warning_count: number;
+  error_count: number;
+  values_by_period: Record<string, number | null>;
+};
+
+export type ExcelMappingValidationIssue = {
+  severity: "error" | "warning" | string;
+  code: string;
+  message: string;
+  target_id: string | null;
+  source_id: string | null;
+};
+
+export type ExcelMappingWorkspace = {
+  ok: boolean;
+  company: CompanyInfo;
+  presets: ExcelMappingPresetSummary[];
+  active_preset_id: string;
+  company_default_preset_id: string;
+  mapping: ExcelMappingDefinition;
+  preview_periods: string[];
+  model_preview_rows: ExcelMappingPreviewRow[];
+  raw_lines: ExcelMappingRawLine[];
+  validation: ExcelMappingValidationIssue[];
+  error?: string;
+};
+
+export type SaveExcelMappingPresetResult = {
+  ok: boolean;
+  preset?: ExcelMappingDefinition;
+  presets?: ExcelMappingPresetSummary[];
+  error?: string;
+};
+
+export type SetCompanyExcelMappingDefaultResult = {
+  ok: boolean;
+  cd_cvm?: number;
+  preset_id?: string;
+  error?: string;
+};
+
 export type DatabaseDiagnostics = {
   db_path: string | null;
   data_root: string | null;
@@ -764,6 +879,11 @@ export interface BridgeApi {
   get_sector_detail(params: Record<string, unknown>): Promise<SectorDetailResponse>;
   export_company_excel(params: Record<string, unknown>): Promise<ExportCompanyResult>;
   get_output_dir(params?: Record<string, unknown>): Promise<OutputDirInfo>;
+  get_excel_mapping_workspace(params: Record<string, unknown>): Promise<ExcelMappingWorkspace>;
+  save_excel_mapping_preset(params: Record<string, unknown>): Promise<SaveExcelMappingPresetResult>;
+  set_company_excel_mapping_default(
+    params: Record<string, unknown>,
+  ): Promise<SetCompanyExcelMappingDefaultResult>;
   get_sub_sector_detail(params: Record<string, unknown>): Promise<SectorDetailResponse>;
   check_update(params?: Record<string, unknown>): Promise<{ available: boolean; version?: string; zip_url?: string; error?: string }>;
   apply_update(params?: Record<string, unknown>): Promise<{ started: boolean; error?: string }>;

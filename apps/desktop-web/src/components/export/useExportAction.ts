@@ -16,9 +16,10 @@ type Options = {
   cdCvm: number;
   statementType?: string;
   periodScope?: string;
+  mappingPresetId?: string;
 };
 
-export function useExportAction({ cdCvm, statementType, periodScope }: Options) {
+export function useExportAction({ cdCvm, statementType, periodScope, mappingPresetId }: Options) {
   const bridgeMode = getBridgeMode();
   const isDesktop = bridgeMode === "desktop";
   const [lastOutcome, setLastOutcome] = useState<ExportCompanyOutcome | null>(null);
@@ -33,7 +34,10 @@ export function useExportAction({ cdCvm, statementType, periodScope }: Options) 
   });
 
   const mutation = useMutation({
-    mutationFn: () => exportCompanyWorkbook(cdCvm, { reveal: false, statementType, periodScope }),
+    mutationFn: () => exportCompanyWorkbook(
+      cdCvm,
+      { reveal: false, statementType, periodScope, mappingPresetId },
+    ),
     onSuccess: (outcome) => {
       setLastOutcome(outcome);
       setLastRunAt(new Date());
@@ -83,6 +87,7 @@ export function useExportAction({ cdCvm, statementType, periodScope }: Options) 
     lastError,
     lastOutcome,
     lastRunAt,
+    mappingPresetId,
     mutation.isPending,
     mutation.mutate,
     outputDirQuery.data,

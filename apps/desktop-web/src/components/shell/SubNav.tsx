@@ -21,6 +21,7 @@ function subNavFor(pathname: string, params: Record<string, string | undefined>)
       { to: `/empresas/${cdCvm}`, label: "Overview", end: true },
       { to: `/empresas/${cdCvm}/demonstrativos`, label: "Financial Statements" },
       { to: `/empresas/${cdCvm}/indicadores`, label: "Indicators" },
+      { to: `/empresas/${cdCvm}/model-mapping`, label: "Model Mapping" },
     ];
   }
 

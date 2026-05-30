@@ -13,6 +13,7 @@ type Props = {
   title?: string;
   description?: ReactNode;
   statementType?: string;
+  mappingPresetId?: string;
   scopeLabel?: string;
   scopeNote?: ReactNode;
   companyLabel?: ReactNode;
@@ -33,6 +34,7 @@ export function ExportActionPanel({
   title = "Export workflow",
   description,
   statementType,
+  mappingPresetId,
   scopeLabel,
   scopeNote,
   companyLabel,
@@ -41,7 +43,7 @@ export function ExportActionPanel({
   className,
 }: Props) {
   const [periodScope, setPeriodScope] = useState("last_5_years");
-  const action = useExportAction({ cdCvm, statementType, periodScope });
+  const action = useExportAction({ cdCvm, statementType, periodScope, mappingPresetId });
   const finalScopeLabel = scopeLabel ?? (statementType ? `Statement ${statementType}` : "Full Workbook");
   const defaultDescription =
     description ??
@@ -66,6 +68,9 @@ export function ExportActionPanel({
             {finalScopeLabel}
           </ExportScopeBadge>
           <ExportScopeBadge tone="format">Excel</ExportScopeBadge>
+          {mappingPresetId ? (
+            <ExportScopeBadge tone="scope">custom mapping</ExportScopeBadge>
+          ) : null}
           <ExportScopeBadge tone="path">local output</ExportScopeBadge>
         </div>
         <p style={{ color: "var(--color-text-secondary)", fontSize: "var(--text-xs)", margin: 0 }}>

@@ -222,12 +222,18 @@ def get_company(
 def export_company_excel(
     cd_cvm: int,
     request: Request,
+    period_scope: str = Query("last_5_years"),
+    mapping_preset_id: str | None = Query(None),
     service: CVMReadService = Depends(get_read_service),
 ) -> Response:
     ensure_api_ready(get_settings(request))
     coerce_company(cd_cvm, service)
     try:
-        filename, payload = service.build_company_excel_export(cd_cvm)
+        filename, payload = service.build_company_excel_export(
+            cd_cvm,
+            period_scope=period_scope,
+            mapping_preset_id=mapping_preset_id,
+        )
     except ValueError as exc:
         raise InvalidRequestError(str(exc)) from exc
 

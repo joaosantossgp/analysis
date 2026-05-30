@@ -28,6 +28,9 @@ const CompanyUniversePage = lazy(() =>
 const CompanyKpisPage = lazy(() =>
   import("./routes/CompanyKpisPage").then((m) => ({ default: m.CompanyKpisPage })),
 );
+const CompanyModelMappingPage = lazy(() =>
+  import("./routes/CompanyModelMappingPage").then((m) => ({ default: m.CompanyModelMappingPage })),
+);
 const CompanyStatementsPage = lazy(() =>
   import("./routes/CompanyStatementsPage").then((m) => ({ default: m.CompanyStatementsPage })),
 );
@@ -155,6 +158,10 @@ function AppShellWithPalette() {
             <Route
               path="/empresas/:cdCvm/indicadores"
               element={<CompanyKpisPage />}
+            />
+            <Route
+              path="/empresas/:cdCvm/model-mapping"
+              element={<CompanyModelMappingPage />}
             />
             <Route path="/dev/data-ops" element={<DevDataOpsPage />} />
           </Routes>

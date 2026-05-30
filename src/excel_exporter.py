@@ -39,6 +39,15 @@ import openpyxl
 import pandas as pd
 import xlsxwriter
 
+from src.excel_mapping import (
+    DEFAULT_MAPPING_VERSION,
+    SYSTEM_DEFAULT_PRESET_ID,
+    VALID_MAPPING_OPERATIONS,
+    MappingValidationIssue,
+    ModelMappingDefinition,
+    ModelMappingEntry,
+    ModelMappingSource,
+)
 from src.statement_summary import build_general_summary_blocks
 
 try:
@@ -69,6 +78,7 @@ PALETTE = {
 MODEL_SHEET = "Model"
 README_SHEET = "README"
 METADATA_SHEET = "metadata"
+MAPPING_AUDIT_SHEET = "mapping_audit"
 RAW_KPI_SHEET = "raw_KPIs"
 
 _RAW_PREFIX = "raw_"
@@ -428,6 +438,118 @@ _FIN_MODEL_LINE_LABELS: dict[str, str] = {
     "2.08.09": "Non-controlling Interests",
 }
 
+_REQUIRED_MODEL_CODES: dict[str, set[str]] = {
+    "DRE": {"3.01", "3.05", "3.11"},
+    "BPA": {"1"},
+    "BPP": {"2"},
+    "DFC": {"6.01"},
+}
+
+
+def is_financial_company_info(company_info: dict | None) -> bool:
+    info = company_info or {}
+    gics = str(info.get("gics_sector") or "").lower()
+    company_type = str(info.get("company_type") or "").lower()
+    return (
+        "financ" in gics
+        or "insur" in gics
+        or "banco" in company_type
+        or "bank" in company_type
+        or "financ" in company_type
+    )
+
+
+def build_default_model_mapping(
+    company_info: dict | None = None,
+    *,
+    is_financial_firm: bool | None = None,
+) -> ModelMappingDefinition:
+    """Build the system default mapping from the current analyst spine.
+
+    The target ids intentionally match ``self._model_rows`` keys
+    (``DRE:3.01``, ``BPA:1`` etc.) so downstream KPI/check formulas keep
+    their existing references when a user changes only the raw sources.
+    """
+    is_fin = is_financial_company_info(company_info) if is_financial_firm is None else is_financial_firm
+    labels = _FIN_MODEL_LINE_LABELS if is_fin else _MODEL_LINE_LABELS
+    entries: list[ModelMappingEntry] = []
+    order = 0
+
+    def add_spine(
+        *,
+        group: str,
+        stmt_type: str,
+        spine: list[tuple[str, int]],
+        subtotal_codes: set[str],
+    ) -> None:
+        nonlocal order
+        for code, indent in spine:
+            label = labels.get(code, code)
+            entries.append(
+                ModelMappingEntry(
+                    target_id=f"{stmt_type}:{code}",
+                    target_label=label,
+                    group=group,
+                    statement_type=stmt_type,
+                    display_order=order,
+                    indent_level=int(indent),
+                    required=code in _REQUIRED_MODEL_CODES.get(stmt_type, set()),
+                    operation="direct",
+                    is_subtotal=code in subtotal_codes,
+                    sources=(
+                        ModelMappingSource(
+                            statement_type=stmt_type,
+                            line_id_base=code,
+                            cd_conta=code,
+                            label_snapshot=label,
+                            sign=1,
+                            position=0,
+                        ),
+                    ),
+                )
+            )
+            order += 1
+
+    add_spine(
+        group="Income Statement",
+        stmt_type="DRE",
+        spine=_FIN_DRE_SPINE if is_fin else _DRE_SPINE,
+        subtotal_codes=_FIN_DRE_SUBTOTALS if is_fin else _DRE_SUBTOTALS,
+    )
+    add_spine(
+        group="Assets",
+        stmt_type="BPA",
+        spine=_FIN_BPA_SPINE if is_fin else _BPA_SPINE,
+        subtotal_codes=_FIN_BPA_SUBTOTALS if is_fin else _BPA_SUBTOTALS,
+    )
+    add_spine(
+        group="Liabilities & Equity",
+        stmt_type="BPP",
+        spine=_FIN_BPP_SPINE if is_fin else _BPP_SPINE,
+        subtotal_codes=_FIN_BPP_SUBTOTALS if is_fin else _BPP_SUBTOTALS,
+    )
+    add_spine(
+        group="Cash Flow Statement",
+        stmt_type="DFC",
+        spine=_DFC_SPINE,
+        subtotal_codes=_DFC_SUBTOTALS,
+    )
+    add_spine(
+        group="Value Added Statement",
+        stmt_type="DVA",
+        spine=_DVA_SPINE,
+        subtotal_codes=_DVA_SUBTOTALS,
+    )
+
+    return ModelMappingDefinition(
+        preset_id=SYSTEM_DEFAULT_PRESET_ID,
+        name="Default",
+        description="System default model mapping shipped with CVMAnalytics.",
+        origin="system",
+        default_mapping_version=DEFAULT_MAPPING_VERSION,
+        entries=tuple(entries),
+    )
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Period helpers
@@ -627,6 +749,8 @@ class ExcelExporter:
         period_window: tuple[int, int] = DEFAULT_PERIOD_WINDOW,
         period_scope_label: Optional[str] = None,
         itr_only_years: Optional[list[int]] = None,
+        model_mapping: Optional[ModelMappingDefinition | dict] = None,
+        mapping_validation_issues: Optional[list[MappingValidationIssue | dict]] = None,
     ):
         self.info = company_info or {}
         self.stmts = statements or {}
@@ -655,22 +779,39 @@ class ExcelExporter:
         # surfaced as a Checks row (EBITDA depends on it).
         self._da_resolved: bool = False
         self._da_cd_conta: Optional[str] = None
+        self._mapping_audit_rows: list[dict[str, object]] = []
+        self._mapping_validation_issues: list[MappingValidationIssue] = []
+        for issue in mapping_validation_issues or []:
+            if isinstance(issue, MappingValidationIssue):
+                self._mapping_validation_issues.append(issue)
+            elif isinstance(issue, dict):
+                self._mapping_validation_issues.append(
+                    MappingValidationIssue(
+                        severity=str(issue.get("severity") or "warning"),
+                        code=str(issue.get("code") or "validation_issue"),
+                        message=str(issue.get("message") or ""),
+                        target_id=(str(issue.get("target_id")) if issue.get("target_id") else None),
+                        source_id=(str(issue.get("source_id")) if issue.get("source_id") else None),
+                    )
+                )
+
         # Financial-firm detection — True when GICS sector is Financials or
         # company_type indicates a bank/insurer. The generic industrial spine
         # is not designed for financial institutions; a banner + check row
         # surface this so the workbook is never silently misleading.
-        _gics = str(company_info.get("gics_sector") or "").lower()
-        _ctype = str(company_info.get("company_type") or "").lower()
-        self._is_financial_firm: bool = (
-            "financ" in _gics
-            or "insur" in _gics
-            or "banco" in _ctype
-            or "bank" in _ctype
-            or "financ" in _ctype  # catches "financeira" (CVM company_type)
-        )
+        self._is_financial_firm: bool = is_financial_company_info(company_info)
         self._model_labels: dict[str, str] = (
             _FIN_MODEL_LINE_LABELS if self._is_financial_firm else _MODEL_LINE_LABELS
         )
+        if isinstance(model_mapping, ModelMappingDefinition):
+            self.model_mapping = model_mapping
+        elif isinstance(model_mapping, dict):
+            self.model_mapping = ModelMappingDefinition.from_payload(model_mapping)
+        else:
+            self.model_mapping = build_default_model_mapping(
+                company_info,
+                is_financial_firm=self._is_financial_firm,
+            )
 
     # ── public API ────────────────────────────────────────────────────────
     def export(self, statement_type: Optional[str] = None) -> bytes:
@@ -702,6 +843,7 @@ class ExcelExporter:
             # the top of the workbook (xlsxwriter ordering).
             self._write_readme_sheet()
             self._write_model_sheet()
+            self._write_mapping_audit_sheet()
             self._reorder_visible_sheets()
 
         self._wb.close()
@@ -894,10 +1036,11 @@ class ExcelExporter:
                      self._fmt["raw_header"] if col in id_cols
                      else self._fmt["raw_header_num"])
 
-        # Index: CD_CONTA -> 1-indexed row number in the raw sheet so the
+        # Index: CD_CONTA / LINE_ID_BASE -> 1-indexed row number in the raw sheet so the
         # Model sheet can build cross-sheet formula references.
         # Also build a STANDARD_NAME -> row index for fallback mapping.
         cd_to_row: dict[str, int] = {}
+        line_id_to_row: dict[str, int] = {}
         std_name_to_row: dict[str, int] = {}
         period_to_col: dict[str, int] = {}
         for c_idx, p in enumerate(period_cols, start=len(id_cols)):
@@ -905,9 +1048,13 @@ class ExcelExporter:
 
         for r_idx, (_, row) in enumerate(df.iterrows(), start=1):
             cd = str(row.get("CD_CONTA", "")).strip()
+            line_id = str(row.get("LINE_ID_BASE", "") or "").strip()
             std = str(row.get("STANDARD_NAME", "") or "").strip()
             is_sub = cd in subtotals
-            cd_to_row[cd] = r_idx + 1  # 1-indexed Excel row
+            if cd:
+                cd_to_row[cd] = r_idx + 1  # 1-indexed Excel row
+            if line_id:
+                line_id_to_row[line_id] = r_idx + 1
             if std and std not in std_name_to_row:
                 std_name_to_row[std] = r_idx + 1
 
@@ -940,6 +1087,7 @@ class ExcelExporter:
         self._raw_index[stmt_type] = {
             "sheet_name": sheet_name,
             "cd_to_row": cd_to_row,
+            "line_id_to_row": line_id_to_row,
             "std_name_to_row": std_name_to_row,
             "period_to_col": period_to_col,
             "id_cols_count": len(id_cols),
@@ -1024,6 +1172,8 @@ class ExcelExporter:
             ("Window — annual",    str(self.period_window[0]), ""),
             ("Window — quarters/year", str(self.period_window[1]), ""),
             ("Export scope",       self.period_scope_label or "—", "Selected at export time"),
+            ("Mapping preset",      self.model_mapping.name, self.model_mapping.preset_id),
+            ("Mapping version",     self.model_mapping.default_mapping_version, self.model_mapping.origin),
             ("ITR-only years",
              ", ".join(str(y) for y in self.itr_only_years) if self.itr_only_years else "none",
              "Years with quarterly ITR data but no closed annual DFP"),
@@ -1360,6 +1510,129 @@ class ExcelExporter:
             return idx["std_name_to_row"].get(std_name)
         return None
 
+    def _mapping_entries(self, group: str, stmt_type: str) -> list[ModelMappingEntry]:
+        return [
+            entry
+            for entry in self.model_mapping.entries
+            if entry.group == group and entry.statement_type == stmt_type
+        ]
+
+    def _resolve_mapping_source(
+        self,
+        source: ModelMappingSource,
+    ) -> tuple[int | None, str]:
+        idx = self._raw_index.get(source.statement_type)
+        if idx is None:
+            return None, "statement_missing"
+        row = idx.get("line_id_to_row", {}).get(source.line_id_base)
+        if row is not None:
+            return row, "line_id_base"
+        cd = source.cd_conta or source.line_id_base
+        if cd:
+            row = idx.get("cd_to_row", {}).get(cd)
+            if row is not None:
+                return row, "cd_conta"
+        if source.label_snapshot:
+            row = idx.get("std_name_to_row", {}).get(source.label_snapshot)
+            if row is not None:
+                return row, "label_snapshot"
+        return None, "missing"
+
+    def _write_mapping_entry_values(
+        self,
+        ws,
+        *,
+        row: int,
+        periods: list[str],
+        entry: ModelMappingEntry,
+        is_sub: bool,
+    ) -> tuple[bool, list[str]]:
+        f = self._fmt
+        source_resolutions = [
+            (source, *self._resolve_mapping_source(source))
+            for source in entry.sources
+        ]
+        effective_resolutions = (
+            source_resolutions[:1] if entry.operation == "direct" else source_resolutions
+        )
+        row_resolved = bool(effective_resolutions) and all(
+            raw_row is not None for _, raw_row, _ in effective_resolutions
+        )
+        warnings: list[str] = []
+        if entry.operation not in VALID_MAPPING_OPERATIONS:
+            warnings.append(f"invalid operation: {entry.operation}")
+        if not source_resolutions:
+            warnings.append("no source lines mapped")
+        if entry.operation == "direct" and len(source_resolutions) > 1:
+            warnings.append("direct operation uses first source only")
+        for source, raw_row, method in source_resolutions:
+            if raw_row is None:
+                warnings.append(
+                    f"missing source {source.statement_type}:{source.line_id_base}"
+                )
+            elif method != "line_id_base":
+                warnings.append(
+                    f"{source.statement_type}:{source.line_id_base} resolved by {method}"
+                )
+
+        resolved_formula = ""
+        for c_idx, p in enumerate(periods, start=3):
+            is_y = _is_annual_period(p)
+            cell_fmt = (f["num_subtotal_y"] if is_sub and is_y
+                        else f["num_subtotal"] if is_sub
+                        else f["num_linked_y"] if is_y
+                        else f["num_linked"])
+            if not row_resolved or entry.operation not in VALID_MAPPING_OPERATIONS:
+                ws.write_blank(row, c_idx, None, cell_fmt)
+                continue
+
+            terms: list[str] = []
+            period_missing = False
+            for source, raw_row, _method in effective_resolutions:
+                idx = self._raw_index.get(source.statement_type)
+                raw_col = idx["period_to_col"].get(p) if idx else None
+                if raw_col is None or raw_row is None:
+                    period_missing = True
+                    break
+                cell_ref = xlsxwriter.utility.xl_rowcol_to_cell(raw_row - 1, raw_col)
+                safe_sheet = str(idx["sheet_name"]).replace("'", "''")
+                term = f"'{safe_sheet}'!{cell_ref}/{_MODEL_SCALE_DIVISOR:.0f}"
+                if entry.operation == "sum_with_sign" and source.sign < 0:
+                    term = f"-{term}"
+                elif terms:
+                    term = f"+{term}"
+                terms.append(term)
+
+            if period_missing or not terms:
+                ws.write_blank(row, c_idx, None, cell_fmt)
+                continue
+
+            expression = "".join(terms)
+            formula = f'=IFERROR({expression},"-")'
+            if not resolved_formula:
+                resolved_formula = formula
+            ws.write_formula(row, c_idx, formula, cell_fmt)
+
+        self._mapping_audit_rows.append(
+            {
+                "target_id": entry.target_id,
+                "target_label": entry.target_label,
+                "group": entry.group,
+                "statement_type": entry.statement_type,
+                "operation": entry.operation,
+                "sources": "; ".join(
+                    f"{source.statement_type}:{source.line_id_base}"
+                    + (f" ({source.label_snapshot})" if source.label_snapshot else "")
+                    + (", sign=-1" if source.sign < 0 else "")
+                    for source in entry.sources
+                ),
+                "resolved": "yes" if row_resolved else "no",
+                "resolved_formula": resolved_formula,
+                "warnings": "; ".join(warnings),
+            }
+        )
+        return row_resolved, warnings
+
     def _write_model_section(
         self,
         ws,
@@ -1386,6 +1659,36 @@ class ExcelExporter:
         period_to_col = idx["period_to_col"]
         f = self._fmt
         unmapped = self._unmapped_codes.setdefault(stmt_type, [])
+        mapped_entries = self._mapping_entries(heading, stmt_type)
+        if mapped_entries:
+            for entry in mapped_entries:
+                code = entry.target_id.split(":", 1)[1] if ":" in entry.target_id else entry.target_id
+                label = entry.target_label or self._model_labels.get(code, code)
+                is_sub = bool(entry.is_subtotal)
+                if is_sub:
+                    suffix = " (=)"
+                else:
+                    hint = sign_hints.get(code) if sign_hints else None
+                    suffix = f" ({hint})" if hint else ""
+                display = ("    " * entry.indent_level) + label + suffix
+
+                ws.set_row(row, 14)
+                ws.write(row, 1, display,
+                         f["label_subtotal"] if is_sub else f["label_body"])
+
+                row_resolved, _warnings = self._write_mapping_entry_values(
+                    ws,
+                    row=row,
+                    periods=periods,
+                    entry=entry,
+                    is_sub=is_sub,
+                )
+                if not row_resolved:
+                    unmapped.append(code)
+                self._model_rows[entry.target_id] = row + 1
+                row += 1
+
+            return row + 1
 
         for code, indent in spine:
             label = self._model_labels.get(code, code)
@@ -1450,6 +1753,29 @@ class ExcelExporter:
             sheet = idx["sheet_name"]
             period_to_col = idx["period_to_col"]
             unmapped = self._unmapped_codes.setdefault(stype, [])
+            mapped_entries = self._mapping_entries(sub_label, stype)
+            if mapped_entries:
+                for entry in mapped_entries:
+                    code = entry.target_id.split(":", 1)[1] if ":" in entry.target_id else entry.target_id
+                    label = entry.target_label or self._model_labels.get(code, code)
+                    is_sub = bool(entry.is_subtotal)
+                    display = ("    " * entry.indent_level) + label + (" (=)" if is_sub else "")
+                    ws.set_row(row, 14)
+                    ws.write(row, 1, display,
+                             f["label_subtotal"] if is_sub else f["label_body"])
+                    row_resolved, _warnings = self._write_mapping_entry_values(
+                        ws,
+                        row=row,
+                        periods=periods,
+                        entry=entry,
+                        is_sub=is_sub,
+                    )
+                    if not row_resolved:
+                        unmapped.append(code)
+                    self._model_rows[entry.target_id] = row + 1
+                    row += 1
+                row += 1
+                return
             for code, indent in spine:
                 label = self._model_labels.get(code, code)
                 is_sub = code in subs
@@ -1944,6 +2270,75 @@ class ExcelExporter:
             ws.write(row, 3, value, f["source_value"])
             row += 1
         return row + 1
+
+    def _write_mapping_audit_sheet(self) -> None:
+        ws = self._wb.add_worksheet(MAPPING_AUDIT_SHEET)
+        ws.hide_gridlines(2)
+        headers = [
+            "Section",
+            "Target ID",
+            "Target label",
+            "Statement",
+            "Operation",
+            "Sources",
+            "Resolved",
+            "Resolved formula",
+            "Warnings",
+        ]
+        for c_idx, header in enumerate(headers):
+            ws.write(0, c_idx, header, self._fmt["raw_header"])
+            ws.set_column(c_idx, c_idx, 18 if c_idx != 5 else 60)
+
+        row = 1
+        for audit in self._mapping_audit_rows:
+            values = [
+                audit.get("group", ""),
+                audit.get("target_id", ""),
+                audit.get("target_label", ""),
+                audit.get("statement_type", ""),
+                audit.get("operation", ""),
+                audit.get("sources", ""),
+                audit.get("resolved", ""),
+                audit.get("resolved_formula", ""),
+                audit.get("warnings", ""),
+            ]
+            for c_idx, value in enumerate(values):
+                ws.write(row, c_idx, str(value or ""), self._fmt["raw_text"])
+            row += 1
+
+        if self._mapping_validation_issues:
+            row += 1
+            issue_headers = ["Severity", "Code", "Target ID", "Source ID", "Message"]
+            for c_idx, header in enumerate(issue_headers):
+                ws.write(row, c_idx, header, self._fmt["raw_header"])
+            row += 1
+            for issue in self._mapping_validation_issues:
+                values = [
+                    issue.severity,
+                    issue.code,
+                    issue.target_id or "",
+                    issue.source_id or "",
+                    issue.message,
+                ]
+                for c_idx, value in enumerate(values):
+                    ws.write(row, c_idx, str(value or ""), self._fmt["raw_text"])
+                row += 1
+
+        metadata = [
+            ("Preset", self.model_mapping.name),
+            ("Preset ID", self.model_mapping.preset_id),
+            ("Origin", self.model_mapping.origin),
+            ("Default mapping version", self.model_mapping.default_mapping_version),
+        ]
+        row += 1
+        for label, value in metadata:
+            ws.write(row, 0, label, self._fmt["raw_header"])
+            ws.write(row, 1, str(value or ""), self._fmt["raw_text"])
+            row += 1
+
+        ws.freeze_panes(1, 0)
+        ws.autofilter(0, 0, max(0, len(self._mapping_audit_rows)), len(headers) - 1)
+        ws.hide()
 
     # ── sheet ordering and validation ─────────────────────────────────────
     def _reorder_visible_sheets(self):

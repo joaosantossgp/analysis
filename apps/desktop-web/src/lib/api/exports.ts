@@ -22,7 +22,12 @@ export type OutputDirOutcome =
 
 export async function exportCompanyWorkbook(
   cdCvm: number,
-  options: { reveal?: boolean; statementType?: string; periodScope?: string } = {},
+  options: {
+    reveal?: boolean;
+    statementType?: string;
+    periodScope?: string;
+    mappingPresetId?: string;
+  } = {},
 ): Promise<ExportCompanyOutcome> {
   const mode: BridgeMode = getBridgeMode();
   if (mode === "browser") {
@@ -33,6 +38,7 @@ export async function exportCompanyWorkbook(
     reveal: options.reveal ?? false,
     statement_type: options.statementType,
     period_scope: options.periodScope ?? "last_5_years",
+    mapping_preset_id: options.mappingPresetId,
   });
   return { mode: "desktop", result };
 }

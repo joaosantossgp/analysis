@@ -11,7 +11,7 @@ import { StateBanner } from "./feedback/StateBanner";
 
 export interface EntityHeaderProps {
   cdCvm: number;
-  activeTab: "overview" | "statements" | "kpis";
+  activeTab: "overview" | "statements" | "kpis" | "mapping";
   showExports?: boolean;
 }
 

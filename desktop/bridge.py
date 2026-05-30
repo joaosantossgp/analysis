@@ -355,9 +355,13 @@ class CVMBridge:
                         f"Must be one of: {', '.join(sorted(_VALID_PERIOD_SCOPES))}"
                     ),
                 })
+            mapping_preset_id = str(p.get("mapping_preset_id") or "").strip() or None
             svc = self._svc()
             filename, payload = svc.build_company_excel_export(
-                cd_cvm, statement_type=statement_type, period_scope=period_scope
+                cd_cvm,
+                statement_type=statement_type,
+                period_scope=period_scope,
+                mapping_preset_id=mapping_preset_id,
             )
             output_dir = Path(svc.settings.paths.output_dir)
             output_dir.mkdir(parents=True, exist_ok=True)
@@ -373,6 +377,42 @@ class CVMBridge:
                 "size_bytes": int(target.stat().st_size),
                 "revealed": revealed,
             })
+        except Exception as exc:
+            return self._sanitize_for_json({"ok": False, "error": str(exc)})
+
+    def get_excel_mapping_workspace(self, params=None) -> dict:
+        p = params or {}
+        try:
+            cd_cvm = int(p.get("cd_cvm", 0))
+            preset_id = str(p.get("preset_id") or "").strip() or None
+            period_scope = str(p.get("period_scope") or "last_5_years")
+            result = self._svc().get_excel_mapping_workspace(
+                cd_cvm,
+                preset_id=preset_id,
+                period_scope=period_scope,
+            )
+            return self._sanitize_for_json(result)
+        except Exception as exc:
+            return self._sanitize_for_json({"ok": False, "error": str(exc)})
+
+    def save_excel_mapping_preset(self, params=None) -> dict:
+        if not self._is_write_allowed():
+            return self._sanitize_for_json(self._write_blocked_response("save_excel_mapping_preset"))
+        try:
+            result = self._svc().save_excel_mapping_preset(params or {})
+            return self._sanitize_for_json(result)
+        except Exception as exc:
+            return self._sanitize_for_json({"ok": False, "error": str(exc)})
+
+    def set_company_excel_mapping_default(self, params=None) -> dict:
+        if not self._is_write_allowed():
+            return self._sanitize_for_json(self._write_blocked_response("set_company_excel_mapping_default"))
+        p = params or {}
+        try:
+            cd_cvm = int(p.get("cd_cvm", 0))
+            preset_id = str(p.get("preset_id") or "system:default").strip()
+            result = self._svc().set_company_excel_mapping_default(cd_cvm, preset_id)
+            return self._sanitize_for_json(result)
         except Exception as exc:
             return self._sanitize_for_json({"ok": False, "error": str(exc)})
 
