@@ -2,15 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
-import {
-  FinancialDataGrid,
-  type FinancialGridColumn,
-  type FinancialGridRow,
-} from "@/components/data/FinancialDataGrid";
 import { MetricTape, type MetricTapeItem } from "@/components/data/MetricTape";
 import { EntityHeader } from "@/components/EntityHeader";
 import { StateBanner } from "@/components/feedback/StateBanner";
-import { KpiTrendCharts } from "@/components/KpiTrendCharts";
+import { IndicatorWorkspace } from "@/components/indicators/IndicatorWorkspace";
 import { Panel } from "@/components/surface/Panel";
 import { Button } from "@/components/ui/Button";
 import {
@@ -20,8 +15,7 @@ import {
   type CompanyYearsResultUI,
 } from "@/lib/api/companyDetail";
 import { whenBridgeReady } from "@/lib/bridge/adapter";
-import type { KPIBundle, TabularData, TabularRow } from "@/lib/bridge/types";
-import { formatUnit } from "@/lib/formatters";
+import type { KPIBundle, TabularRow } from "@/lib/bridge/types";
 
 const DEFAULT_RECENT_YEARS = 5;
 const SUMMARY_KPI_IDS = ["MG_EBITDA", "MG_LIQ", "ROE", "DIV_EBITDA"] as const;
@@ -83,8 +77,7 @@ function KpiBody({ cdCvm, bridgeReady }: { cdCvm: number; bridgeReady: boolean }
     enabled: bridgeReady && selectedYears.length > 0,
   });
 
-  const bundle =
-    kpiQuery.data?.mode === "desktop" ? kpiQuery.data.bundle : null;
+  const bundle = kpiQuery.data?.mode === "desktop" ? kpiQuery.data.bundle : null;
   const metricItems = useMemo(
     () => buildMetricTapeItems(bundle, selectedYears),
     [bundle, selectedYears],
@@ -127,30 +120,29 @@ function KpiBody({ cdCvm, bridgeReady }: { cdCvm: number; bridgeReady: boolean }
         onChange={setSelectedYears}
       />
 
-      <MetricTape items={metricItems} ariaLabel="Resumo de indicadores" />
+      <MetricTape items={metricItems} ariaLabel="Indicator summary" />
 
-      {bundle ? <KpiTrendCharts bundle={bundle} /> : null}
-
-      <KpiGridPanel
-        title="Annual indicators"
-        subtitle={`Annual KPI matrix · ${selectedYears.join(", ")}`}
-        loading={kpiQuery.isLoading}
-        fetching={kpiQuery.isFetching}
-        error={kpiQuery.error}
-        table={bundle?.annual ?? null}
-        selectedYears={selectedYears}
-      />
-
-      <KpiGridPanel
-        title="Quarterly indicators"
-        subtitle="Quarterly cuts when local period rows exist."
-        loading={kpiQuery.isLoading}
-        fetching={kpiQuery.isFetching}
-        error={kpiQuery.error}
-        table={bundle?.quarterly ?? null}
-        selectedYears={selectedYears}
-        isQuarterly
-      />
+      {kpiQuery.isLoading ? (
+        <StateBanner variant="loading" title="Loading indicators…" />
+      ) : kpiQuery.isError ? (
+        <StateBanner
+          variant="error"
+          onRetry={() => kpiQuery.refetch()}
+          message={
+            kpiQuery.error instanceof Error ? kpiQuery.error.message : String(kpiQuery.error)
+          }
+        />
+      ) : kpiQuery.data?.mode === "browser" ? (
+        <StateBanner variant="browser-only" message={kpiQuery.data.reason} />
+      ) : bundle ? (
+        <IndicatorWorkspace bundle={bundle} selectedYears={selectedYears} />
+      ) : (
+        <StateBanner
+          variant="empty"
+          title="No indicators"
+          message="Bridge returned an empty payload for the selected years."
+        />
+      )}
     </div>
   );
 }
@@ -183,7 +175,7 @@ function YearSelector({
     <Panel
       dense
       title="Years"
-      subtitle="Pick which periods feed the KPI matrix."
+      subtitle="Pick which periods feed the indicator engine."
       actions={
         <div className="flex gap-2">
           <Button size="xs" onClick={selectRecent}>
@@ -226,139 +218,6 @@ function YearSelector({
   );
 }
 
-function KpiGridPanel({
-  title,
-  subtitle,
-  loading,
-  fetching,
-  error,
-  table,
-  selectedYears,
-  isQuarterly = false,
-}: {
-  title: string;
-  subtitle: string;
-  loading: boolean;
-  fetching: boolean;
-  error: unknown;
-  table: TabularData | null;
-  selectedYears: number[];
-  isQuarterly?: boolean;
-}) {
-  return (
-    <Panel
-      title={title}
-      subtitle={subtitle}
-      actions={
-        fetching && !loading ? (
-          <span className="font-mono" style={{ color: "var(--color-state-warn)", fontSize: "var(--text-xs)" }}>
-            refreshing
-          </span>
-        ) : null
-      }
-    >
-      <KpiGridBody
-        loading={loading}
-        error={error}
-        table={table}
-        selectedYears={selectedYears}
-        isQuarterly={isQuarterly}
-      />
-    </Panel>
-  );
-}
-
-function KpiGridBody({
-  loading,
-  error,
-  table,
-  selectedYears,
-  isQuarterly,
-}: {
-  loading: boolean;
-  error: unknown;
-  table: TabularData | null;
-  selectedYears: number[];
-  isQuarterly: boolean;
-}) {
-  const { columns, rows } = useMemo(
-    () => (table ? buildKpiGrid(table, selectedYears, isQuarterly) : { columns: [], rows: [] }),
-    [table, selectedYears, isQuarterly],
-  );
-
-  if (loading) return <StateBanner variant="loading" title="Loading KPIs…" />;
-  if (error) {
-    return (
-      <StateBanner
-        variant="error"
-        message={error instanceof Error ? error.message : String(error)}
-      />
-    );
-  }
-  if (!table || table.rows.length === 0 || table.columns.length === 0) {
-    return (
-      <StateBanner
-        variant="empty"
-        title={isQuarterly ? "Sem KPIs trimestrais" : "Sem KPIs anuais"}
-        message={
-          isQuarterly
-            ? "Sem linhas trimestrais para os anos selecionados."
-            : "Sem linhas anuais para os anos selecionados."
-        }
-      />
-    );
-  }
-
-  return (
-    <FinancialDataGrid
-      labelHeader="KPI"
-      columns={columns}
-      rows={rows}
-      emptyMessage="Sem indicadores para exibir."
-    />
-  );
-}
-
-function buildKpiGrid(
-  table: TabularData,
-  selectedYears: number[],
-  isQuarterly: boolean,
-): { columns: FinancialGridColumn[]; rows: FinancialGridRow[] } {
-  const yearColumns = selectedYears.map(String);
-  const quarterColumnRegex = /^(?:[1-4]Q|Q[1-4])-?\d{4}$/i;
-  const valueColumns = table.columns.filter((column) => {
-    if (isQuarterly) return quarterColumnRegex.test(column) || yearColumns.includes(column);
-    return yearColumns.includes(column) || column === "DELTA_YOY_PCT";
-  });
-  const latestColumn = valueColumns.filter((c) => c !== "DELTA_YOY_PCT").at(-1);
-  const columns: FinancialGridColumn[] = valueColumns.map((column) => ({
-    id: column,
-    label: column === "DELTA_YOY_PCT" ? "ΔYoY" : column,
-    valueType: column === "DELTA_YOY_PCT" ? "delta" : "number",
-    latest: column === latestColumn,
-  }));
-
-  const rows: FinancialGridRow[] = table.rows.map((row, index) => {
-    const formatType = row.FORMAT_TYPE;
-    const cells: FinancialGridRow["cells"] = {};
-    for (const column of valueColumns) {
-      cells[column] = {
-        value: row[column],
-        valueType: column === "DELTA_YOY_PCT" ? "delta" : kpiValueType(formatType),
-        formatType,
-        tone: column === "DELTA_YOY_PCT" ? "auto" : "neutral",
-      };
-    }
-    return {
-      id: String(row.KPI_ID ?? index),
-      label: String(row.KPI_NOME ?? row.KPI_ID ?? "—"),
-      meta: `${String(row.CATEGORIA ?? "—")} · ${formatUnit(formatType)}`,
-      cells,
-    };
-  });
-  return { columns, rows };
-}
-
 function buildMetricTapeItems(
   bundle: KPIBundle | null,
   selectedYears: number[],
@@ -377,20 +236,11 @@ function buildMetricTapeItems(
       label: row ? String(row.KPI_NOME ?? humanizeKpiId(id)) : humanizeKpiId(id),
       value: latestYear && row ? row[String(latestYear)] : null,
       formatType: row?.FORMAT_TYPE,
-      sublabel: latestYear ? `latest ${latestYear}` : "sem ano",
+      sublabel: latestYear ? `latest ${latestYear}` : "no year",
       delta: row?.DELTA_YOY_PCT ?? null,
       sparkline: selectedYears.map((year) => numericOrNull(row?.[String(year)])),
     };
   });
-}
-
-function kpiValueType(formatType: unknown): FinancialGridColumn["valueType"] {
-  const f = typeof formatType === "string" ? formatType.toLowerCase() : "";
-  if (f === "pct") return "percentage";
-  if (f === "ratio") return "multiple";
-  if (f === "money") return "currency";
-  if (f === "bps") return "integer";
-  return "number";
 }
 
 function numericOrNull(value: unknown): number | null {

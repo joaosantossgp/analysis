@@ -40,6 +40,7 @@ import type {
   SectorDetailResponse,
   StatementMatrix,
   TabularData,
+  TabularRow,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -190,30 +191,101 @@ function makeTabularData(cols: string[], rows: (string | number | null)[][]): Ta
   };
 }
 
-const KPI_COLS = ["Indicador", String(YEAR - 4), String(YEAR - 3), String(YEAR - 2), String(YEAR - 1)];
+/**
+ * KPI fixtures mirror the real engine output shape (src/kpi_engine.py):
+ * rows carry KPI_ID / KPI_NOME / CATEGORIA / FORMAT_TYPE / IS_PLACEHOLDER and
+ * one column per period (annual "2023" or quarterly "1Q24"), plus DELTA_YOY_PCT.
+ * Percentages are stored as fractions (0.31 → 31%), ratios as multiples (1.8x),
+ * matching the engine and the app formatters. Valuation rows are placeholders
+ * (null everywhere) exactly as the engine emits them without market data.
+ */
+interface MockKpiSpec {
+  id: string;
+  nome: string;
+  categoria: string;
+  fmt: "pct" | "ratio";
+  base: number;
+  drift: number;
+  placeholder?: boolean;
+}
 
-function mockKpis(cdCvm: number): KPIBundle {
-  const seed = cdCvm % 10;
-  const rows: (string | number | null)[][] = [
-    ["ROE (%)", 12 + seed, 14 + seed, 11 + seed, 15 + seed],
-    ["Margem EBIT (%)", 18 + seed, 20 + seed, 17 + seed, 22 + seed],
-    ["Margem Líquida (%)", 8 + seed, 10 + seed, 7 + seed, 11 + seed],
-    ["Dívida Líquida / EBITDA", 2.1, 1.8, 2.4, 1.5],
-    ["Receita Líquida (R$ mi)", 40_000 + seed * 1000, 44_000, 38_000, 52_000],
-    ["EBITDA (R$ mi)", 12_000 + seed * 500, 14_000, 11_000, 16_000],
-  ];
+const MOCK_KPI_SPECS: MockKpiSpec[] = [
+  { id: "MG_BRUTA", nome: "Margem Bruta", categoria: "Rentabilidade", fmt: "pct", base: 0.42, drift: 0.03 },
+  { id: "MG_EBITDA", nome: "Margem EBITDA", categoria: "Rentabilidade", fmt: "pct", base: 0.31, drift: 0.04 },
+  { id: "MG_EBIT", nome: "Margem EBIT", categoria: "Rentabilidade", fmt: "pct", base: 0.24, drift: 0.03 },
+  { id: "MG_LIQ", nome: "Margem Líquida", categoria: "Rentabilidade", fmt: "pct", base: 0.16, drift: 0.03 },
+  { id: "ROE", nome: "ROE", categoria: "Rentabilidade", fmt: "pct", base: 0.18, drift: 0.05 },
+  { id: "ROA", nome: "ROA", categoria: "Rentabilidade", fmt: "pct", base: 0.09, drift: 0.02 },
+  { id: "ROIC", nome: "ROIC *", categoria: "Rentabilidade", fmt: "pct", base: NaN, drift: 0, placeholder: true },
+  { id: "LIQ_CORR", nome: "Liquidez Corrente", categoria: "Liquidez", fmt: "ratio", base: 1.4, drift: 0.2 },
+  { id: "LIQ_SECA", nome: "Liquidez Seca", categoria: "Liquidez", fmt: "ratio", base: 1.1, drift: 0.15 },
+  { id: "LIQ_IMED", nome: "Liquidez Imediata", categoria: "Liquidez", fmt: "ratio", base: 0.6, drift: 0.1 },
+  { id: "DIV_EBITDA", nome: "Dívida Líq./EBITDA", categoria: "Endividamento", fmt: "ratio", base: 1.8, drift: 0.4 },
+  { id: "PL_PASS", nome: "PL / Passivo Total", categoria: "Endividamento", fmt: "pct", base: 0.45, drift: 0.04 },
+  { id: "PC_PASS", nome: "Passivo Circ./Total", categoria: "Endividamento", fmt: "pct", base: 0.38, drift: 0.03 },
+  { id: "FCO_REC", nome: "FCO / Receita", categoria: "Fluxo de Caixa", fmt: "pct", base: 0.22, drift: 0.04 },
+  { id: "FCL_REC", nome: "FCL / Receita", categoria: "Fluxo de Caixa", fmt: "pct", base: 0.12, drift: 0.05 },
+  { id: "CAPEX_REC", nome: "CAPEX / Receita *", categoria: "Fluxo de Caixa", fmt: "pct", base: 0.1, drift: 0.02 },
+  { id: "CRESC_REC", nome: "Crescimento Receita", categoria: "Crescimento", fmt: "pct", base: 0.08, drift: 0.06 },
+  { id: "CRESC_LUC", nome: "Crescimento Lucro", categoria: "Crescimento", fmt: "pct", base: 0.11, drift: 0.09 },
+  { id: "CAGR_REC", nome: "CAGR Receita (5a) *", categoria: "Crescimento", fmt: "pct", base: NaN, drift: 0, placeholder: true },
+  { id: "EV_EBITDA", nome: "EV/EBITDA *", categoria: "Valuation", fmt: "ratio", base: NaN, drift: 0, placeholder: true },
+  { id: "PL_PRECO", nome: "P/L *", categoria: "Valuation", fmt: "ratio", base: NaN, drift: 0, placeholder: true },
+  { id: "DY", nome: "Dividend Yield *", categoria: "Valuation", fmt: "pct", base: NaN, drift: 0, placeholder: true },
+];
+
+function buildMockKpiTable(periods: string[], seed: number): TabularData {
+  const meta = ["KPI_ID", "KPI_NOME", "CATEGORIA", "FORMAT_TYPE", "IS_PLACEHOLDER", "HIGHER_IS_BETTER", "UNIDADE"];
+  const columns = [...meta, ...periods, "DELTA_YOY_PCT"];
+  const rows: TabularRow[] = MOCK_KPI_SPECS.map((spec, specIdx) => {
+    const row: TabularRow = {
+      KPI_ID: spec.id,
+      KPI_NOME: spec.nome,
+      CATEGORIA: spec.categoria,
+      FORMAT_TYPE: spec.fmt,
+      IS_PLACEHOLDER: spec.placeholder ?? false,
+      HIGHER_IS_BETTER: false,
+      UNIDADE: spec.fmt === "pct" ? "%" : "x",
+    };
+    periods.forEach((p, i) => {
+      if (spec.placeholder) {
+        row[p] = null;
+        return;
+      }
+      // Deterministic, smooth wobble so charts show realistic trends.
+      const wobble = Math.sin((i + seed + specIdx) * 0.6) * spec.drift;
+      const v = spec.base + wobble + i * spec.drift * 0.15;
+      row[p] = Number(v.toFixed(spec.fmt === "pct" ? 4 : 2));
+    });
+    const last = row[periods[periods.length - 1]];
+    const prev = row[periods[periods.length - 2]];
+    row.DELTA_YOY_PCT =
+      typeof last === "number" && typeof prev === "number" && prev !== 0
+        ? Number(((last - prev) / Math.abs(prev)).toFixed(4))
+        : null;
+    return row;
+  });
+  return { columns, rows };
+}
+
+/** Interleaved quarterly periods matching the engine: 1Q,2Q,3Q,annual per year (Q4 omitted). */
+function mockQuarterlyPeriods(years: number[]): string[] {
+  const out: string[] = [];
+  for (const y of years) {
+    const yy = String(y).slice(2);
+    out.push(`1Q${yy}`, `2Q${yy}`, `3Q${yy}`, String(y));
+  }
+  return out;
+}
+
+function mockKpis(cdCvm: number, years: number[]): KPIBundle {
+  const seed = cdCvm % 7;
+  const annualYears = years.length > 0 ? years : [YEAR - 4, YEAR - 3, YEAR - 2, YEAR - 1];
   return {
     cd_cvm: cdCvm,
-    years: [YEAR - 4, YEAR - 3, YEAR - 2, YEAR - 1],
-    annual: makeTabularData(KPI_COLS, rows),
-    quarterly: makeTabularData(
-      ["Indicador", "4T" + String(YEAR - 2).slice(2), "1T" + String(YEAR - 1).slice(2), "2T" + String(YEAR - 1).slice(2), "3T" + String(YEAR - 1).slice(2)],
-      [
-        ["Receita Líquida (R$ mi)", 9_500, 10_200, 11_000, 12_100],
-        ["EBITDA (R$ mi)", 2_800, 3_100, 3_400, 3_900],
-        ["Lucro Líquido (R$ mi)", 1_200, 1_500, 1_700, 2_100],
-      ],
-    ),
+    years: annualYears,
+    annual: buildMockKpiTable(annualYears.map(String), seed),
+    quarterly: buildMockKpiTable(mockQuarterlyPeriods(annualYears), seed + 1),
   };
 }
 
@@ -614,7 +686,7 @@ export function createMockBridge(): Partial<BridgeApi> {
       if (!c?.has_financial_data) {
         return { cd_cvm: cdCvm, years: [], annual: { columns: [], rows: [] }, quarterly: { columns: [], rows: [] }, error: "No financial data available" };
       }
-      return mockKpis(cdCvm);
+      return mockKpis(cdCvm, c.anos_disponiveis);
     },
 
     get_company_statement: async (params) => {
