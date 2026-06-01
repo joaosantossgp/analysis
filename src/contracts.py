@@ -818,3 +818,67 @@ class HealthSnapshot:
             "companies_with_refresh_status_recorded": self.companies_with_refresh_status_recorded,
             "companies_with_last_refresh_error": self.companies_with_last_refresh_error,
         }
+
+
+# ── Energy KPI DTOs ───────────────────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class CountryKPIValueDTO:
+    kpi_id: str
+    iso_code: str
+    country_name: str
+    period: int
+    value: float | None
+    unit: str
+    source: str
+    source_priority: int
+    source_field: str
+    data_quality_status: str
+    source_conflict: bool
+    fallback_used: bool
+    snapshot_id: str
+    value_owid: float | None = None
+    value_ember: float | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class KPICatalogEntryDTO:
+    kpi_id: str
+    display_name: str
+    description: str
+    kpi_type: str
+    macro_category: str
+    subsector: str
+    unit: str
+    primary_source: str
+    calculation_method: str
+    v1_status: str
+    dashboard_priority: str
+    excel_export_priority: str
+    source_verification_status: str
+    higher_is_better: bool | None
+    source_caveats: str
+    audit_notes: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class EnergyKPIHealthDTO:
+    last_refresh_at: str | None
+    last_refresh_status: str | None
+    rows_ingested: int
+    rows_conflict: int
+    is_stale: bool
+    owid_snapshot_id: str | None
+    owid_fetched_at: str | None
+    dq_errors: int
+    dq_warnings: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)

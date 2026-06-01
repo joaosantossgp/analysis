@@ -6,6 +6,9 @@ import { fetchSectorDetail, type SectorDetailResult } from "@/lib/api/sectors";
 import { whenBridgeReady } from "@/lib/bridge/adapter";
 import { PageHeader } from "@/components/PageHeader";
 import { StateBanner } from "@/components/feedback/StateBanner";
+import { CountryKpiGrid } from "@/components/indicators/CountryKpiGrid";
+
+const ENERGY_UTILITIES_SLUG = "energy-utilities";
 
 function parseYear(raw: string | null): number | null {
   if (!raw) return null;
@@ -20,6 +23,14 @@ export function SectorDetailPage() {
   const requestedYear = parseYear(searchParams.get("ano"));
   const companyFilter = (searchParams.get("q") ?? "").trim().toLowerCase();
   const [bridgeReady, setBridgeReady] = useState(false);
+  const activeTab = (searchParams.get("tab") ?? "companies") as "companies" | "country";
+  const isEnergyUtilities = slug === ENERGY_UTILITIES_SLUG;
+
+  const setTab = (tab: "companies" | "country") => {
+    const next = new URLSearchParams(searchParams);
+    next.set("tab", tab);
+    setSearchParams(next, { replace: true });
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -90,26 +101,68 @@ export function SectorDetailPage() {
         actions={<Status query={query} notFound={notFound} />}
       />
 
-      <BodyHeader detail={detail} onYearChange={setYear} />
+      {isEnergyUtilities && (
+        <div className="flex gap-1 border-b border-zinc-800 pb-0">
+          <TabButton
+            label="Companies"
+            active={activeTab === "companies"}
+            onClick={() => setTab("companies")}
+          />
+          <TabButton
+            label="Macro / Country"
+            active={activeTab === "country"}
+            onClick={() => setTab("country")}
+          />
+        </div>
+      )}
 
-      <CompanyFilterBar
-        value={searchParams.get("q") ?? ""}
-        onChange={setCompanyFilter}
-        disabled={!detail || detail.companies.length === 0}
-      />
+      {(!isEnergyUtilities || activeTab === "companies") && (
+        <>
+          <BodyHeader detail={detail} onYearChange={setYear} />
+          <CompanyFilterBar
+            value={searchParams.get("q") ?? ""}
+            onChange={setCompanyFilter}
+            disabled={!detail || detail.companies.length === 0}
+          />
+          <Body
+            query={query}
+            notFound={notFound}
+            detail={detail}
+            filteredCompanies={filteredCompanies}
+            onClearCompanyFilter={() => setCompanyFilter("")}
+          />
+        </>
+      )}
 
-      <Body
-        query={query}
-        notFound={notFound}
-        detail={detail}
-        filteredCompanies={filteredCompanies}
-        onClearCompanyFilter={() => setCompanyFilter("")}
-      />
+      {isEnergyUtilities && activeTab === "country" && (
+        <CountryKpiGrid />
+      )}
     </section>
   );
 }
 
-// Breadcrumbs component removed as it is now unified in @/components/PageHeader
+function TabButton({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
+        active
+          ? "border-zinc-200 text-zinc-100"
+          : "border-transparent text-zinc-400 hover:text-zinc-300 hover:border-zinc-600"
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
 
 function Status({
   query,

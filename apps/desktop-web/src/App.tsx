@@ -55,6 +55,9 @@ const DataCoveragePage = lazy(() =>
 const DevDataOpsPage = lazy(() =>
   import("./routes/DevDataOpsPage").then((m) => ({ default: m.DevDataOpsPage })),
 );
+const CountryKpisPage = lazy(() =>
+  import("./routes/CountryKpisPage").then((m) => ({ default: m.CountryKpisPage })),
+);
 
 function RouteFallback() {
   return (
@@ -163,6 +166,7 @@ function AppShellWithPalette() {
               path="/empresas/:cdCvm/model-mapping"
               element={<CompanyModelMappingPage />}
             />
+            <Route path="/country-kpis" element={<CountryKpisPage />} />
             <Route path="/dev/data-ops" element={<DevDataOpsPage />} />
           </Routes>
         </Suspense>

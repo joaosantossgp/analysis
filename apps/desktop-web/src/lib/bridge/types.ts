@@ -896,6 +896,114 @@ export interface BridgeApi {
   dev_simulate_refresh(params: { mode: "success" | "partial" | "fail" | "slow" }): Promise<{ ok: boolean; mode: string; job_id?: string; error?: string }>;
   dev_start_small_setup(params?: { count?: number }): Promise<{ status: string; job_id?: string; message?: string }>;
   dev_get_raw_state(params?: Record<string, unknown>): Promise<{ app_settings?: Array<{ key: string; value: string | null; updated_at: string | null }>; refresh_jobs?: Array<Record<string, unknown>>; error?: string }>;
+  // Energy KPI — country-level macro layer
+  get_kpi_catalog(params?: EnergyKPICatalogParams): Promise<EnergyKPICatalogResponse>;
+  get_country_kpi_series(params: CountryKPISeriesParams): Promise<CountryKPISeriesResponse>;
+  get_country_kpi_compare(params: CountryKPICompareParams): Promise<CountryKPICompareResponse>;
+  get_energy_kpi_health(params?: Record<string, unknown>): Promise<EnergyKPIHealthResponse>;
+  refresh_energy_kpis(params?: { triggered_by?: string }): Promise<EnergyKPIRefreshResult>;
+  export_country_kpis_excel(params?: { iso_codes?: string[]; kpi_ids?: string[] }): Promise<{ path: string | null; error?: string }>;
+}
+
+// ── Energy KPI types ──────────────────────────────────────────────────────────
+
+export interface KPICatalogEntry {
+  kpi_id: string;
+  display_name: string;
+  description: string;
+  kpi_type: string;
+  macro_category: string;
+  subsector: string;
+  unit: string;
+  primary_source: string;
+  calculation_method: string;
+  v1_status: "v1_required" | "v1_optional" | "blocked_by_source_verification";
+  dashboard_priority: "lead" | "secondary" | "detail_only" | "not_in_v1_dashboard";
+  excel_export_priority: "required" | "optional" | "none";
+  source_verification_status: "verified" | "pending" | "blocked";
+  higher_is_better: boolean | null;
+  source_caveats: string;
+  audit_notes: string;
+}
+
+export interface CountryKPIValue {
+  kpi_id: string;
+  iso_code: string;
+  country_name: string;
+  period: number;
+  value: number | null;
+  unit: string;
+  source: string;
+  source_priority: number;
+  source_field: string;
+  data_quality_status: "ok" | "conflict" | "fallback_used" | "stale" | "missing";
+  source_conflict: boolean;
+  fallback_used: boolean;
+  snapshot_id: string;
+  value_owid: number | null;
+  value_ember: number | null;
+}
+
+export interface EnergyKPIHealthResponse {
+  last_refresh_at: string | null;
+  last_refresh_status: string | null;
+  rows_ingested: number;
+  rows_conflict: number;
+  is_stale: boolean;
+  owid_snapshot_id: string | null;
+  owid_fetched_at: string | null;
+  dq_errors: number;
+  dq_warnings: number;
+  error?: string;
+}
+
+export interface EnergyKPICatalogParams {
+  sector?: string;
+  v1_status?: string;
+  dashboard_priority?: string;
+  excel_export_priority?: string;
+  macro_category?: string;
+  source_verification_status?: string;
+}
+
+export interface EnergyKPICatalogResponse {
+  entries: KPICatalogEntry[];
+  count: number;
+  error?: string;
+}
+
+export interface CountryKPISeriesParams {
+  kpi_ids?: string[];
+  iso_codes?: string[];
+  years?: number[];
+}
+
+export interface CountryKPISeriesResponse {
+  values: CountryKPIValue[];
+  count: number;
+  error?: string;
+}
+
+export interface CountryKPICompareParams {
+  kpi_id: string;
+  year: number;
+}
+
+export interface CountryKPICompareResponse {
+  kpi_id: string;
+  year: number;
+  values: CountryKPIValue[];
+  error?: string;
+}
+
+export interface EnergyKPIRefreshResult {
+  run_id: string;
+  status: "success" | "error";
+  rows_ingested: number;
+  rows_conflict: number;
+  error: string | null;
+  started_at: string;
+  finished_at: string;
 }
 
 declare global {

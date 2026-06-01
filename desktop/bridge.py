@@ -2589,6 +2589,97 @@ class CVMBridge:
                 "error": str(exc),
             })
 
+    # ── Energy KPI methods ────────────────────────────────────────────────────
+
+    def _energy_svc(self):
+        if not hasattr(self, "_energy_read_service") or self._energy_read_service is None:
+            from src.energy_kpi.read import EnergyKPIReadService  # noqa: PLC0415
+            from src.settings import get_settings  # noqa: PLC0415
+            self._energy_read_service = EnergyKPIReadService(get_settings())
+        return self._energy_read_service
+
+    def get_kpi_catalog(self, params=None) -> dict:
+        params = params or {}
+        try:
+            entries = self._energy_svc().get_kpi_catalog(
+                sector=params.get("sector"),
+                v1_status=params.get("v1_status"),
+                dashboard_priority=params.get("dashboard_priority"),
+                excel_export_priority=params.get("excel_export_priority"),
+                macro_category=params.get("macro_category"),
+                source_verification_status=params.get("source_verification_status"),
+            )
+            return self._sanitize_for_json({
+                "entries": [e.to_dict() for e in entries],
+                "count": len(entries),
+            })
+        except Exception as exc:
+            return {"error": str(exc), "entries": [], "count": 0}
+
+    def get_country_kpi_series(self, params=None) -> dict:
+        params = params or {}
+        try:
+            values = self._energy_svc().get_country_kpi_series(
+                kpi_ids=params.get("kpi_ids"),
+                iso_codes=params.get("iso_codes"),
+                years=params.get("years"),
+            )
+            return self._sanitize_for_json({
+                "values": [v.to_dict() for v in values],
+                "count": len(values),
+            })
+        except Exception as exc:
+            return {"error": str(exc), "values": [], "count": 0}
+
+    def get_country_kpi_compare(self, params=None) -> dict:
+        params = params or {}
+        try:
+            kpi_id = params.get("kpi_id", "")
+            year = int(params.get("year", 0))
+            values = self._energy_svc().get_country_kpi_compare(kpi_id=kpi_id, year=year)
+            return self._sanitize_for_json({
+                "kpi_id": kpi_id,
+                "year": year,
+                "values": [v.to_dict() for v in values],
+            })
+        except Exception as exc:
+            return {"error": str(exc), "values": []}
+
+    def get_energy_kpi_health(self, params=None) -> dict:
+        try:
+            health = self._energy_svc().get_energy_kpi_health()
+            return self._sanitize_for_json(health.to_dict())
+        except Exception as exc:
+            return {"error": str(exc)}
+
+    def refresh_energy_kpis(self, params=None) -> dict:
+        params = params or {}
+        try:
+            from src.energy_kpi.refresh import EnergyKPIRefreshJob  # noqa: PLC0415
+            from src.settings import get_settings  # noqa: PLC0415
+            job = EnergyKPIRefreshJob(get_settings())
+            result = job.run(triggered_by=params.get("triggered_by", "user"))
+            # Invalidate cached read service so next read sees fresh data
+            self._energy_read_service = None
+            return self._sanitize_for_json(result)
+        except Exception as exc:
+            return {"error": str(exc), "status": "error"}
+
+    def export_country_kpis_excel(self, params=None) -> dict:
+        params = params or {}
+        try:
+            from src.energy_kpi.excel import export_country_kpis  # noqa: PLC0415
+            from src.settings import get_settings  # noqa: PLC0415
+            settings = get_settings()
+            output_path = export_country_kpis(
+                settings=settings,
+                iso_codes=params.get("iso_codes"),
+                kpi_ids=params.get("kpi_ids"),
+            )
+            return {"path": str(output_path), "error": None}
+        except Exception as exc:
+            return {"error": str(exc), "path": None}
+
 
 def _serialize(obj: Any) -> Any:
     """Converte dataclasses e tuples para tipos serializáveis por pywebview."""

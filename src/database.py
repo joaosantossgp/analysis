@@ -11,6 +11,7 @@ from src.gics_manual_mapping import resolve_gics_classification
 from src.company_universe import ensure_company_universe_tables_for_connection
 from src.excel_mapping import ensure_excel_mapping_tables_for_connection
 from src.refresh_jobs import ensure_refresh_runtime_tables_for_connection
+from src.energy_kpi.schema import get_energy_kpi_engine
 
 logger = logging.getLogger(__name__)
 
@@ -458,3 +459,13 @@ class CVMDatabase:
                 return len(final_df)
 
             return 0
+
+
+def init_energy_kpi_db(settings) -> None:
+    """Ensure the energy KPI database and all its tables exist.
+
+    Uses a separate SQLite file (energy_kpis.db) independent of
+    cvm_financials.db so macro KPI data can be refreshed and shipped
+    independently with zero migration risk.
+    """
+    get_energy_kpi_engine(settings)
