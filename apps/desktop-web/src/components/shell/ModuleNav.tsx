@@ -7,7 +7,7 @@ import { NavLink, useLocation } from "react-router-dom";
  * the parent "Empresas" pill.
  */
 
-type ModuleId = "companies" | "empresas" | "sectors" | "database" | "diagnostics";
+type ModuleId = "companies" | "empresas" | "sectors" | "macro" | "database" | "diagnostics";
 
 type ModuleDef = {
   id: ModuleId;
@@ -36,6 +36,12 @@ const MODULES: ModuleDef[] = [
     label: "Sectors",
     to: "/setores",
     matches: (p) => p.startsWith("/setores"),
+  },
+  {
+    id: "macro",
+    label: "Country KPIs",
+    to: "/country-kpis",
+    matches: (p) => p.startsWith("/country-kpis"),
   },
   {
     id: "database",

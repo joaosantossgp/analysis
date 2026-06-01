@@ -954,6 +954,8 @@ export interface EnergyKPIHealthResponse {
   owid_fetched_at: string | null;
   dq_errors: number;
   dq_warnings: number;
+  refresh_running: boolean;
+  refresh_error: string | null;
   error?: string;
 }
 
@@ -997,13 +999,10 @@ export interface CountryKPICompareResponse {
 }
 
 export interface EnergyKPIRefreshResult {
-  run_id: string;
-  status: "success" | "error";
-  rows_ingested: number;
-  rows_conflict: number;
+  status: "started" | "already_running" | "success" | "error";
   error: string | null;
-  started_at: string;
-  finished_at: string;
+  run_id?: string;
+  rows_ingested?: number;
 }
 
 declare global {

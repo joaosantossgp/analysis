@@ -8,7 +8,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { StateBanner } from "@/components/feedback/StateBanner";
 import { CountryKpiGrid } from "@/components/indicators/CountryKpiGrid";
 
-const ENERGY_UTILITIES_SLUG = "energy-utilities";
+const ENERGY_UTILITIES_SLUG = "utilities";
 
 function parseYear(raw: string | null): number | null {
   if (!raw) return null;

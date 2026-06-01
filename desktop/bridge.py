@@ -2598,6 +2598,9 @@ class CVMBridge:
             self._energy_read_service = EnergyKPIReadService(get_settings())
         return self._energy_read_service
 
+    def _energy_refresh_status(self) -> dict:
+        return getattr(self, "_energy_refresh_state", {"status": "idle", "error": None})
+
     def get_kpi_catalog(self, params=None) -> dict:
         params = params or {}
         try:
@@ -2648,22 +2651,40 @@ class CVMBridge:
     def get_energy_kpi_health(self, params=None) -> dict:
         try:
             health = self._energy_svc().get_energy_kpi_health()
-            return self._sanitize_for_json(health.to_dict())
+            result = self._sanitize_for_json(health.to_dict())
+            result["refresh_running"] = self._energy_refresh_status().get("status") == "running"
+            result["refresh_error"] = self._energy_refresh_status().get("error")
+            return result
         except Exception as exc:
-            return {"error": str(exc)}
+            return {"error": str(exc), "refresh_running": False, "refresh_error": None}
 
     def refresh_energy_kpis(self, params=None) -> dict:
         params = params or {}
-        try:
-            from src.energy_kpi.refresh import EnergyKPIRefreshJob  # noqa: PLC0415
-            from src.settings import get_settings  # noqa: PLC0415
-            job = EnergyKPIRefreshJob(get_settings())
-            result = job.run(triggered_by=params.get("triggered_by", "user"))
-            # Invalidate cached read service so next read sees fresh data
-            self._energy_read_service = None
-            return self._sanitize_for_json(result)
-        except Exception as exc:
-            return {"error": str(exc), "status": "error"}
+        state = self._energy_refresh_status()
+        if state.get("status") == "running":
+            return {"status": "already_running", "error": None}
+
+        self._energy_refresh_state = {"status": "running", "error": None}
+
+        def _run():
+            try:
+                from src.energy_kpi.refresh import EnergyKPIRefreshJob  # noqa: PLC0415
+                from src.settings import get_settings  # noqa: PLC0415
+                job = EnergyKPIRefreshJob(get_settings())
+                result = job.run(triggered_by=params.get("triggered_by", "user"))
+                self._energy_refresh_state = {
+                    "status": result.get("status", "success"),
+                    "error": result.get("error"),
+                    "rows_ingested": result.get("rows_ingested", 0),
+                }
+            except Exception as exc:
+                self._energy_refresh_state = {"status": "error", "error": str(exc)}
+            finally:
+                # Invalidate read service so next read sees fresh data
+                self._energy_read_service = None
+
+        threading.Thread(target=_run, name="energy-kpi-refresh", daemon=True).start()
+        return {"status": "started", "error": None}
 
     def export_country_kpis_excel(self, params=None) -> dict:
         params = params or {}
