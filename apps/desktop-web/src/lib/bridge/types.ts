@@ -934,6 +934,10 @@ export interface BridgeApi {
   get_sin_kpi_series(params?: SINKPISeriesParams): Promise<SINKPISeriesResponse>;
   get_sin_kpi_health(params?: Record<string, unknown>): Promise<SINKPIHealthResponse>;
   refresh_sin_kpis(params?: SINKPIRefreshParams): Promise<SINKPIRefreshResult>;
+  get_plant_parcel_source_statuses(params?: Record<string, unknown>): Promise<PlantParcelSourceStatusResponse>;
+  get_plant_parcel_catalog(params?: PlantParcelCatalogParams): Promise<PlantParcelCatalogResponse>;
+  get_plant_parcel_detail(params: PlantParcelDetailParams): Promise<PlantParcelDetailResponse>;
+  refresh_plant_parcel_source(params: PlantParcelRefreshParams): Promise<PlantParcelRefreshResult>;
 }
 
 // ── Energy KPI types ──────────────────────────────────────────────────────────
@@ -1112,6 +1116,130 @@ export interface SINKPIRefreshResult {
   rows_inserted?: number;
   rows_read?: number;
   snapshots?: number;
+}
+
+export interface PlantParcelSourceStatus {
+  source_id: "ccee_plant_parcel_monthly" | "ccee_plant_generation_hourly" | "aneel_siga_plants" | string;
+  source_name: string;
+  dataset_name: string;
+  provider: string;
+  official_url: string | null;
+  refresh_frequency: string | null;
+  granularity: string | null;
+  description: string | null;
+  known_caveats: string | null;
+  local_records_count: number;
+  latest_reference: string | null;
+  last_refresh_at: string | null;
+  last_status: "running" | "success" | "partial" | "error" | string | null;
+  last_error: string | null;
+  refresh_id: string | null;
+  cache_status: "missing" | "fresh" | "stale" | "failed" | "cached" | string;
+}
+
+export interface PlantParcelSourceStatusResponse {
+  source_statuses: PlantParcelSourceStatus[];
+  count: number;
+  refresh_running: boolean;
+  refresh_error: string | null;
+  refresh_source_id: string | null;
+  error?: string;
+}
+
+export interface PlantParcelCatalogRecord {
+  entity_type: "ccee_plant_parcel" | "aneel_plant" | string;
+  entity_id: string;
+  plant_parcel_code: string | null;
+  plant_parcel_acronym: string | null;
+  ceg: string | null;
+  plant_name: string | null;
+  agent_name: string | null;
+  generation_source: string | null;
+  submarket: string | null;
+  uf: string | null;
+  phase: string | null;
+  capacity_mw: number | null;
+  authorized_capacity_mw: number | null;
+  inspected_capacity_mw: number | null;
+  physical_guarantee_mwmed: number | null;
+  physical_guarantee_mw: number | null;
+  latest_reference_month: string | null;
+  latest_generation_mwmed: number | null;
+  data_status: "cached" | "missing" | "registry_only" | string;
+}
+
+export interface PlantParcelCatalogParams {
+  search?: string;
+  entity_type?: string;
+  generation_source?: string;
+  submarket?: string;
+  uf?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface PlantParcelCatalogResponse {
+  records: PlantParcelCatalogRecord[];
+  count: number;
+  total: number;
+  limit: number;
+  offset: number;
+  facets?: Record<string, string[]>;
+  error?: string;
+}
+
+export interface PlantMetric {
+  metric_id: string;
+  label: string;
+  value: number;
+  unit: string;
+  source_id: string;
+  source: string;
+  dataset: string;
+  reference_period: string | null;
+  local_refresh_timestamp: string | null;
+  raw_or_derived: "raw" | "derived" | string;
+  methodology: string;
+}
+
+export interface PlantParcelDetailParams {
+  entity_id: string;
+  entity_type?: string;
+}
+
+export interface PlantParcelDetailResponse {
+  entity_type: "ccee_plant_parcel" | "aneel_plant" | string;
+  entity_id: string;
+  parcel: Record<string, unknown> | null;
+  aneel_plant: Record<string, unknown> | null;
+  related_parcels: Array<Record<string, unknown>>;
+  metrics: PlantMetric[];
+  monthly_series: Array<Record<string, unknown>>;
+  hourly_preview: Array<Record<string, unknown>>;
+  metadata: {
+    caveats: string[];
+    latest_refresh_by_source: Record<string, Record<string, unknown>>;
+  };
+  error?: string;
+}
+
+export interface PlantParcelRefreshParams {
+  source_id: string;
+  triggered_by?: string;
+  year?: number;
+  year_month?: string;
+  use_daily_aneel?: boolean;
+}
+
+export interface PlantParcelRefreshResult {
+  status: "started" | "already_running" | "success" | "partial" | "error";
+  error: string | null;
+  source_id?: string;
+  refresh_id?: string;
+  rows_inserted?: number;
+  rows_read?: number;
+  period_start?: string | null;
+  period_end?: string | null;
 }
 
 declare global {

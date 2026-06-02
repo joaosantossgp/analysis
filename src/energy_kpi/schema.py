@@ -6,6 +6,10 @@
 SIN subsystem support is additive and uses the same local DB, with
 subsystem_dimension and subsystem_kpi_values.
 
+Plant/plant-parcel support is also additive and keeps source metadata,
+refresh logs, ANEEL SIGA plant registry rows, CCEE plant parcel monthly rows,
+and CCEE hourly generation rows in this same local energy database.
+
 Usage:
     engine = get_energy_kpi_engine(settings)   # creates DB + tables
     with engine.connect() as conn: ...
@@ -193,6 +197,225 @@ def ensure_energy_kpi_tables_for_connection(conn) -> None:
     ))
     conn.execute(text(
         "CREATE INDEX IF NOT EXISTS idx_skv_snapshot ON subsystem_kpi_values(snapshot_id)"
+    ))
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS energy_sources (
+            source_id         TEXT PRIMARY KEY,
+            source_name       TEXT NOT NULL,
+            dataset_name      TEXT NOT NULL,
+            provider          TEXT NOT NULL,
+            official_url      TEXT,
+            refresh_frequency TEXT,
+            granularity       TEXT,
+            description       TEXT,
+            known_caveats     TEXT,
+            created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """))
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS energy_source_refresh_log (
+            refresh_id           TEXT PRIMARY KEY,
+            source_id            TEXT NOT NULL,
+            requested_by         TEXT,
+            started_at           TEXT NOT NULL,
+            finished_at          TEXT,
+            status               TEXT NOT NULL DEFAULT 'running',
+            period_start         TEXT,
+            period_end           TEXT,
+            rows_downloaded      INTEGER,
+            rows_inserted        INTEGER,
+            rows_updated         INTEGER,
+            error_message        TEXT,
+            local_file_path      TEXT,
+            checksum             TEXT,
+            source_snapshot_date TEXT
+        )
+    """))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_esrl_source_started ON "
+        "energy_source_refresh_log(source_id, started_at)"
+    ))
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS aneel_siga_plants (
+            ceg                       TEXT PRIMARY KEY,
+            plant_name                TEXT,
+            ceg_core                  TEXT,
+            generation_type           TEXT,
+            generation_source         TEXT,
+            uf                        TEXT,
+            phase                     TEXT,
+            operation_start_date      TEXT,
+            grant_type                TEXT,
+            authorized_capacity_kw    REAL,
+            inspected_capacity_kw     REAL,
+            physical_guarantee_kw     REAL,
+            agent_name                TEXT,
+            ownership_description     TEXT,
+            source_updated_at         TEXT,
+            raw_payload_hash          TEXT NOT NULL,
+            snapshot_id               TEXT,
+            updated_at                TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_aneel_siga_uf ON aneel_siga_plants(uf)"
+    ))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_aneel_siga_source ON aneel_siga_plants(generation_source)"
+    ))
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS ccee_plant_parcels (
+            plant_parcel_code        TEXT PRIMARY KEY,
+            plant_parcel_acronym     TEXT,
+            asset_code               TEXT,
+            asset_acronym            TEXT,
+            ceg                      TEXT,
+            plant_name               TEXT,
+            agent_name               TEXT,
+            agent_profile            TEXT,
+            submarket                TEXT,
+            generation_source        TEXT,
+            fuel                     TEXT,
+            uf                       TEXT,
+            dispatch_type            TEXT,
+            parcel_feature           TEXT,
+            capacity_mw              REAL,
+            physical_guarantee_mwmed REAL,
+            mre_flag                 TEXT,
+            quota_regime_flag        TEXT,
+            source_reference_month   TEXT,
+            source_updated_at        TEXT,
+            raw_payload_hash         TEXT NOT NULL,
+            snapshot_id              TEXT,
+            updated_at               TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_cpp_ceg ON ccee_plant_parcels(ceg)"
+    ))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_cpp_submarket ON ccee_plant_parcels(submarket)"
+    ))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_cpp_source ON ccee_plant_parcels(generation_source)"
+    ))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_cpp_ref_month ON ccee_plant_parcels(source_reference_month)"
+    ))
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS ccee_plant_parcel_monthly (
+            reference_month                      TEXT NOT NULL,
+            plant_parcel_code                    TEXT NOT NULL,
+            plant_parcel_acronym                 TEXT,
+            asset_code                           TEXT,
+            asset_acronym                        TEXT,
+            ceg                                  TEXT,
+            plant_name                           TEXT,
+            agent_code                           TEXT,
+            agent_profile                        TEXT,
+            agent_name                           TEXT,
+            dispatch_type                        TEXT,
+            loss_pooling_flag                    TEXT,
+            generation_source                    TEXT,
+            fuel                                 TEXT,
+            submarket                            TEXT,
+            uf                                   TEXT,
+            parcel_feature                       TEXT,
+            mre_flag                             TEXT,
+            quota_regime_flag                    TEXT,
+            commercial_operation_start_date      TEXT,
+            discount_percent                     REAL,
+            capacity_mw                          REAL,
+            physical_guarantee_mwmed             REAL,
+            commercial_operation_factor          REAL,
+            internal_loss_abatement_factor       REAL,
+            generation_center_of_gravity_mwmed   REAL,
+            test_generation_mwmed                REAL,
+            gf_center_of_gravity_mwmed           REAL,
+            energy_security_generation_mwmed     REAL,
+            constrained_on_generation_mwmed      REAL,
+            reserve_operation_generation_mwmed   REAL,
+            unit_commitment_generation_mwmed     REAL,
+            source_dataset                       TEXT NOT NULL,
+            raw_payload_hash                     TEXT NOT NULL,
+            snapshot_id                          TEXT,
+            updated_at                           TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (reference_month, plant_parcel_code)
+        )
+    """))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_cppm_ceg ON ccee_plant_parcel_monthly(ceg)"
+    ))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_cppm_parcel_ref ON "
+        "ccee_plant_parcel_monthly(plant_parcel_code, reference_month)"
+    ))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_cppm_ref ON ccee_plant_parcel_monthly(reference_month)"
+    ))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_cppm_submarket ON ccee_plant_parcel_monthly(submarket)"
+    ))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_cppm_source ON ccee_plant_parcel_monthly(generation_source)"
+    ))
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS ccee_plant_parcel_hourly (
+            reference_datetime                         TEXT NOT NULL,
+            reference_month                            TEXT NOT NULL,
+            commercialization_period                   INTEGER NOT NULL,
+            plant_parcel_code                          TEXT NOT NULL,
+            plant_acronym                              TEXT,
+            generation_source                          TEXT,
+            submarket                                  TEXT,
+            plant_type                                 TEXT,
+            generation_center_of_gravity_mwmed         REAL,
+            generation_center_of_gravity_mwh           REAL,
+            internal_loss_factor_pct                   REAL,
+            loss_generation_apportionment_factor_mwh   REAL,
+            energy_security_generation_mwh             REAL,
+            constrained_on_generation_mwh              REAL,
+            adjusted_restriction_charge_energy_mwmed   REAL,
+            unavailability_mwh                         REAL,
+            declared_cost_mwh                          REAL,
+            hydraulic_displacement_factor_mwh          REAL,
+            verified_generation_ons_mwh                REAL,
+            verified_availability_mwh                  REAL,
+            inflexible_generation_mwmed                REAL,
+            substitute_unavailability_generation_mwh   REAL,
+            reserve_power_generation_mwh               REAL,
+            unit_commitment_generation_mwmed           REAL,
+            final_merit_order_generation_mwh           REAL,
+            adjusted_physical_guarantee_mwh            REAL,
+            source_dataset                             TEXT NOT NULL,
+            raw_payload_hash                           TEXT NOT NULL,
+            snapshot_id                                TEXT,
+            updated_at                                 TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (reference_datetime, commercialization_period, plant_parcel_code)
+        )
+    """))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_cppe_parcel_ref ON "
+        "ccee_plant_parcel_hourly(plant_parcel_code, reference_datetime)"
+    ))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_cppe_ref ON ccee_plant_parcel_hourly(reference_datetime)"
+    ))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_cppe_ref_month ON ccee_plant_parcel_hourly(reference_month)"
+    ))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_cppe_submarket ON ccee_plant_parcel_hourly(submarket)"
+    ))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_cppe_source ON ccee_plant_parcel_hourly(generation_source)"
     ))
 
 

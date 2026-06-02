@@ -19,6 +19,18 @@ from src.contracts import (
     SINKPIObservationDTO,
     SINKPISourceStatusDTO,
 )
+from src.energy_kpi.metrics import (
+    capacity_factor,
+    hours_in_reference_month,
+    mwh_to_gwh,
+    mwmed_to_mwh,
+)
+from src.energy_kpi.plant_parcel_ingest import (
+    SOURCE_ANEEL_SIGA,
+    SOURCE_CCEE_HOURLY,
+    SOURCE_CCEE_MONTHLY,
+    seed_plant_sources,
+)
 from src.energy_kpi.schema import get_energy_kpi_engine
 from src.energy_kpi.sin_catalog import SIN_KPI_CATALOG
 from src.settings import AppSettings
@@ -366,6 +378,273 @@ class EnergyKPIReadService:
             dq_warnings=int(dq_row[1] or 0) if dq_row else 0,
         )
 
+    # ── Plant / plant-parcel KPIs ───────────────────────────────────────────
+
+    def get_plant_parcel_source_statuses(self) -> dict[str, Any]:
+        """Return local cache status for ANEEL SIGA and CCEE plant datasets."""
+        with self._engine().begin() as conn:
+            seed_plant_sources(conn)
+            source_rows = conn.execute(text("""
+                SELECT source_id, source_name, dataset_name, provider, official_url,
+                       refresh_frequency, granularity, description, known_caveats
+                FROM energy_sources
+                WHERE source_id IN (
+                    'ccee_plant_parcel_monthly',
+                    'ccee_plant_generation_hourly',
+                    'aneel_siga_plants'
+                )
+                ORDER BY
+                    CASE source_id
+                        WHEN 'aneel_siga_plants' THEN 1
+                        WHEN 'ccee_plant_parcel_monthly' THEN 2
+                        WHEN 'ccee_plant_generation_hourly' THEN 3
+                        ELSE 9
+                    END
+            """)).mappings().all()
+            latest_logs = {
+                row["source_id"]: dict(row)
+                for row in conn.execute(text("""
+                    SELECT l.*
+                    FROM energy_source_refresh_log l
+                    JOIN (
+                        SELECT source_id, MAX(started_at) AS started_at
+                        FROM energy_source_refresh_log
+                        GROUP BY source_id
+                    ) x
+                      ON x.source_id = l.source_id
+                     AND x.started_at = l.started_at
+                """)).mappings().all()
+            }
+            counts = {
+                SOURCE_ANEEL_SIGA: {
+                    "records": int(conn.execute(text("SELECT COUNT(*) FROM aneel_siga_plants")).scalar() or 0),
+                    "latest_reference": conn.execute(text("SELECT MAX(source_updated_at) FROM aneel_siga_plants")).scalar(),
+                },
+                SOURCE_CCEE_MONTHLY: {
+                    "records": int(conn.execute(text("SELECT COUNT(*) FROM ccee_plant_parcel_monthly")).scalar() or 0),
+                    "latest_reference": conn.execute(text("SELECT MAX(reference_month) FROM ccee_plant_parcel_monthly")).scalar(),
+                },
+                SOURCE_CCEE_HOURLY: {
+                    "records": int(conn.execute(text("SELECT COUNT(*) FROM ccee_plant_parcel_hourly")).scalar() or 0),
+                    "latest_reference": conn.execute(text("SELECT MAX(reference_datetime) FROM ccee_plant_parcel_hourly")).scalar(),
+                },
+            }
+
+        statuses: list[dict[str, Any]] = []
+        for row in source_rows:
+            source_id = str(row["source_id"])
+            log_row = latest_logs.get(source_id, {})
+            count_info = counts.get(source_id, {"records": 0, "latest_reference": None})
+            status = self._plant_source_cache_status(
+                latest_status=log_row.get("status"),
+                local_records=int(count_info["records"] or 0),
+                latest_reference=count_info.get("latest_reference"),
+                source_id=source_id,
+            )
+            statuses.append({
+                **dict(row),
+                "local_records_count": int(count_info["records"] or 0),
+                "latest_reference": count_info.get("latest_reference"),
+                "last_refresh_at": log_row.get("finished_at") or log_row.get("started_at"),
+                "last_status": log_row.get("status"),
+                "last_error": log_row.get("error_message"),
+                "refresh_id": log_row.get("refresh_id"),
+                "cache_status": status,
+            })
+        return {"source_statuses": statuses, "count": len(statuses)}
+
+    def get_plant_parcel_catalog(
+        self,
+        *,
+        search: str | None = None,
+        entity_type: str | None = None,
+        generation_source: str | None = None,
+        submarket: str | None = None,
+        uf: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """Return compact searchable plant/parcel catalog rows."""
+        params: dict[str, Any] = {}
+        conditions = []
+        if search:
+            params["search"] = f"%{search.strip().lower()}%"
+            conditions.append(
+                "(LOWER(COALESCE(plant_name, '')) LIKE :search "
+                "OR LOWER(COALESCE(plant_parcel_code, '')) LIKE :search "
+                "OR LOWER(COALESCE(plant_parcel_acronym, '')) LIKE :search "
+                "OR LOWER(COALESCE(ceg, '')) LIKE :search "
+                "OR LOWER(COALESCE(agent_name, '')) LIKE :search)"
+            )
+        if entity_type:
+            params["entity_type"] = entity_type
+            conditions.append("entity_type = :entity_type")
+        if generation_source:
+            params["generation_source"] = generation_source
+            conditions.append("generation_source = :generation_source")
+        if submarket:
+            params["submarket"] = submarket
+            conditions.append("submarket = :submarket")
+        if uf:
+            params["uf"] = uf
+            conditions.append("uf = :uf")
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+        bounded_limit = max(1, min(int(limit), 250))
+        bounded_offset = max(0, int(offset))
+        params.update({"limit": bounded_limit, "offset": bounded_offset})
+
+        sql = f"""
+            {self._plant_entities_cte()}
+            SELECT *
+            FROM entities
+            {where}
+            ORDER BY COALESCE(plant_name, entity_id), entity_type, entity_id
+            LIMIT :limit OFFSET :offset
+        """
+        count_sql = f"""
+            {self._plant_entities_cte()}
+            SELECT COUNT(*) FROM entities {where}
+        """
+        with self._engine().begin() as conn:
+            seed_plant_sources(conn)
+            rows = [dict(row) for row in conn.execute(text(sql), params).mappings().all()]
+            total = int(conn.execute(text(count_sql), params).scalar() or 0)
+
+        facets = self._plant_facets(rows)
+        return {
+            "records": rows,
+            "count": len(rows),
+            "total": total,
+            "limit": bounded_limit,
+            "offset": bounded_offset,
+            "facets": facets,
+        }
+
+    def get_plant_parcel_detail(
+        self,
+        *,
+        entity_id: str,
+        entity_type: str | None = None,
+    ) -> dict[str, Any]:
+        """Return selected plant/parcel detail with metrics and provenance."""
+        entity_id = str(entity_id or "").strip()
+        if not entity_id:
+            return {"error": "entity_id is required"}
+
+        with self._engine().begin() as conn:
+            seed_plant_sources(conn)
+            resolved_type = entity_type or self._resolve_plant_entity_type(conn, entity_id)
+            parcel = None
+            aneel = None
+            parcels: list[dict[str, Any]] = []
+            monthly: list[dict[str, Any]] = []
+            hourly: list[dict[str, Any]] = []
+
+            if resolved_type == "ccee_plant_parcel":
+                parcel = conn.execute(text("""
+                    SELECT p.*, a.plant_name AS aneel_plant_name, a.phase AS aneel_phase,
+                           a.authorized_capacity_kw, a.inspected_capacity_kw,
+                           a.physical_guarantee_kw, a.operation_start_date AS aneel_operation_start_date,
+                           a.grant_type AS aneel_grant_type, a.ownership_description
+                    FROM ccee_plant_parcels p
+                    LEFT JOIN aneel_siga_plants a ON a.ceg = p.ceg
+                    WHERE p.plant_parcel_code = :entity_id
+                """), {"entity_id": entity_id}).mappings().first()
+                if not parcel:
+                    return {"error": f"Plant parcel not found: {entity_id}"}
+                parcel = dict(parcel)
+                ceg = parcel.get("ceg")
+                if ceg:
+                    aneel_row = conn.execute(text("""
+                        SELECT * FROM aneel_siga_plants WHERE ceg = :ceg
+                    """), {"ceg": ceg}).mappings().first()
+                    aneel = dict(aneel_row) if aneel_row else None
+                    parcels = [dict(row) for row in conn.execute(text("""
+                        SELECT plant_parcel_code, plant_parcel_acronym, plant_name,
+                               agent_name, submarket, generation_source, capacity_mw,
+                               physical_guarantee_mwmed, source_reference_month
+                        FROM ccee_plant_parcels
+                        WHERE ceg = :ceg
+                        ORDER BY plant_parcel_code
+                    """), {"ceg": ceg}).mappings().all()]
+                monthly = [dict(row) for row in conn.execute(text("""
+                    SELECT *
+                    FROM ccee_plant_parcel_monthly
+                    WHERE plant_parcel_code = :entity_id
+                    ORDER BY reference_month DESC
+                    LIMIT 36
+                """), {"entity_id": entity_id}).mappings().all()]
+                hourly = [dict(row) for row in conn.execute(text("""
+                    SELECT reference_datetime, commercialization_period,
+                           generation_center_of_gravity_mwh, verified_generation_ons_mwh,
+                           verified_availability_mwh, unavailability_mwh, source_dataset, snapshot_id
+                    FROM ccee_plant_parcel_hourly
+                    WHERE plant_parcel_code = :entity_id
+                    ORDER BY reference_datetime DESC, commercialization_period DESC
+                    LIMIT 48
+                """), {"entity_id": entity_id}).mappings().all()]
+            else:
+                aneel_row = conn.execute(text("""
+                    SELECT * FROM aneel_siga_plants WHERE ceg = :entity_id
+                """), {"entity_id": entity_id}).mappings().first()
+                if not aneel_row:
+                    return {"error": f"ANEEL plant not found: {entity_id}"}
+                resolved_type = "aneel_plant"
+                aneel = dict(aneel_row)
+                parcels = [dict(row) for row in conn.execute(text("""
+                    SELECT plant_parcel_code, plant_parcel_acronym, plant_name,
+                           agent_name, submarket, generation_source, capacity_mw,
+                           physical_guarantee_mwmed, source_reference_month
+                    FROM ccee_plant_parcels
+                    WHERE ceg = :entity_id
+                    ORDER BY plant_parcel_code
+                """), {"entity_id": entity_id}).mappings().all()]
+                if parcels:
+                    parcel = parcels[0]
+
+            latest_logs = {
+                row["source_id"]: dict(row)
+                for row in conn.execute(text("""
+                    SELECT l.*
+                    FROM energy_source_refresh_log l
+                    JOIN (
+                        SELECT source_id, MAX(started_at) AS started_at
+                        FROM energy_source_refresh_log
+                        GROUP BY source_id
+                    ) x
+                      ON x.source_id = l.source_id
+                     AND x.started_at = l.started_at
+                """)).mappings().all()
+            }
+
+        metrics = self._build_plant_metrics(
+            entity_type=resolved_type,
+            parcel=parcel,
+            aneel=aneel,
+            monthly=monthly,
+            latest_logs=latest_logs,
+        )
+        return {
+            "entity_type": resolved_type,
+            "entity_id": entity_id,
+            "parcel": parcel,
+            "aneel_plant": aneel,
+            "related_parcels": parcels,
+            "metrics": metrics,
+            "monthly_series": list(reversed(monthly)),
+            "hourly_preview": list(reversed(hourly)),
+            "metadata": {
+                "caveats": [
+                    "CCEE plant parcel is not always equivalent to an ANEEL CEG plant or an ONS plant/group.",
+                    "A CEG can map to multiple CCEE plant parcels.",
+                    "Source reference date and local refresh timestamp are different and both are shown where available.",
+                    "Load and demand remain system/subsystem context metrics, not plant-parcel metrics.",
+                    "Energia firme, energia assegurada, and gross/net generation are not inferred without an explicit source methodology.",
+                ],
+                "latest_refresh_by_source": latest_logs,
+            },
+        }
+
     # ── Internal ──────────────────────────────────────────────────────────────
 
     @staticmethod
@@ -475,3 +754,274 @@ class EnergyKPIReadService:
             return (datetime.now(timezone.utc) - ref).days > threshold_days
         except Exception:
             return False
+
+    @staticmethod
+    def _plant_entities_cte() -> str:
+        return """
+            WITH latest_monthly AS (
+                SELECT m.*
+                FROM ccee_plant_parcel_monthly m
+                JOIN (
+                    SELECT plant_parcel_code, MAX(reference_month) AS reference_month
+                    FROM ccee_plant_parcel_monthly
+                    GROUP BY plant_parcel_code
+                ) latest
+                  ON latest.plant_parcel_code = m.plant_parcel_code
+                 AND latest.reference_month = m.reference_month
+            ),
+            entities AS (
+                SELECT
+                    'ccee_plant_parcel' AS entity_type,
+                    p.plant_parcel_code AS entity_id,
+                    p.plant_parcel_code,
+                    p.plant_parcel_acronym,
+                    p.ceg,
+                    COALESCE(p.plant_name, a.plant_name, p.plant_parcel_acronym) AS plant_name,
+                    COALESCE(p.agent_name, a.agent_name) AS agent_name,
+                    COALESCE(p.generation_source, a.generation_source) AS generation_source,
+                    p.submarket,
+                    COALESCE(p.uf, a.uf) AS uf,
+                    a.phase,
+                    p.capacity_mw,
+                    a.authorized_capacity_kw / 1000.0 AS authorized_capacity_mw,
+                    a.inspected_capacity_kw / 1000.0 AS inspected_capacity_mw,
+                    p.physical_guarantee_mwmed,
+                    a.physical_guarantee_kw / 1000.0 AS physical_guarantee_mw,
+                    p.source_reference_month AS latest_reference_month,
+                    lm.generation_center_of_gravity_mwmed AS latest_generation_mwmed,
+                    CASE
+                        WHEN p.source_reference_month IS NULL THEN 'missing'
+                        ELSE 'cached'
+                    END AS data_status
+                FROM ccee_plant_parcels p
+                LEFT JOIN aneel_siga_plants a ON a.ceg = p.ceg
+                LEFT JOIN latest_monthly lm ON lm.plant_parcel_code = p.plant_parcel_code
+                UNION ALL
+                SELECT
+                    'aneel_plant' AS entity_type,
+                    a.ceg AS entity_id,
+                    NULL AS plant_parcel_code,
+                    NULL AS plant_parcel_acronym,
+                    a.ceg,
+                    a.plant_name,
+                    a.agent_name,
+                    a.generation_source,
+                    NULL AS submarket,
+                    a.uf,
+                    a.phase,
+                    NULL AS capacity_mw,
+                    a.authorized_capacity_kw / 1000.0 AS authorized_capacity_mw,
+                    a.inspected_capacity_kw / 1000.0 AS inspected_capacity_mw,
+                    NULL AS physical_guarantee_mwmed,
+                    a.physical_guarantee_kw / 1000.0 AS physical_guarantee_mw,
+                    a.source_updated_at AS latest_reference_month,
+                    NULL AS latest_generation_mwmed,
+                    'registry_only' AS data_status
+                FROM aneel_siga_plants a
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM ccee_plant_parcels p WHERE p.ceg = a.ceg
+                )
+            )
+        """
+
+    @staticmethod
+    def _plant_facets(rows: list[dict[str, Any]]) -> dict[str, list[str]]:
+        facets: dict[str, set[str]] = {
+            "entity_type": set(),
+            "generation_source": set(),
+            "submarket": set(),
+            "uf": set(),
+            "data_status": set(),
+        }
+        for row in rows:
+            for key in facets:
+                value = row.get(key)
+                if value:
+                    facets[key].add(str(value))
+        return {key: sorted(values) for key, values in facets.items()}
+
+    @staticmethod
+    def _resolve_plant_entity_type(conn, entity_id: str) -> str:
+        exists = conn.execute(text("""
+            SELECT 1 FROM ccee_plant_parcels WHERE plant_parcel_code = :entity_id
+        """), {"entity_id": entity_id}).scalar()
+        if exists:
+            return "ccee_plant_parcel"
+        return "aneel_plant"
+
+    @staticmethod
+    def _plant_source_cache_status(
+        *,
+        latest_status: str | None,
+        local_records: int,
+        latest_reference: str | None,
+        source_id: str,
+    ) -> str:
+        if latest_status == "error":
+            return "failed"
+        if local_records <= 0:
+            return "missing"
+        if not latest_reference:
+            return "cached"
+        threshold = 45 if source_id in {SOURCE_CCEE_HOURLY, SOURCE_ANEEL_SIGA} else 75
+        try:
+            parsed = datetime.fromisoformat(str(latest_reference).replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return "stale" if (datetime.now(timezone.utc) - parsed).days > threshold else "fresh"
+        except Exception:
+            return "cached"
+
+    @staticmethod
+    def _build_plant_metrics(
+        *,
+        entity_type: str,
+        parcel: dict[str, Any] | None,
+        aneel: dict[str, Any] | None,
+        monthly: list[dict[str, Any]],
+        latest_logs: dict[str, dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        latest_monthly = monthly[0] if monthly else None
+        metrics: list[dict[str, Any]] = []
+
+        def add(
+            metric_id: str,
+            label: str,
+            value: float | int | None,
+            unit: str,
+            source_id: str,
+            dataset: str,
+            period: str | None,
+            raw_or_derived: str,
+            methodology: str,
+        ) -> None:
+            if value is None:
+                return
+            log = latest_logs.get(source_id, {})
+            metrics.append({
+                "metric_id": metric_id,
+                "label": label,
+                "value": float(value),
+                "unit": unit,
+                "source_id": source_id,
+                "source": dataset.split(":", 1)[0],
+                "dataset": dataset,
+                "reference_period": period,
+                "local_refresh_timestamp": log.get("finished_at") or log.get("started_at"),
+                "raw_or_derived": raw_or_derived,
+                "methodology": methodology,
+            })
+
+        if parcel:
+            add(
+                "capacity_mw",
+                "Capacity",
+                parcel.get("capacity_mw"),
+                "MW",
+                SOURCE_CCEE_MONTHLY,
+                "CCEE:PARCELA_USINA_MONTANTE_MENSAL",
+                parcel.get("source_reference_month"),
+                "raw",
+                "Direct CCEE CAP_T field.",
+            )
+            add(
+                "physical_guarantee_mwmed",
+                "Physical Guarantee",
+                parcel.get("physical_guarantee_mwmed"),
+                "MWmed",
+                SOURCE_CCEE_MONTHLY,
+                "CCEE:PARCELA_USINA_MONTANTE_MENSAL",
+                parcel.get("source_reference_month"),
+                "raw",
+                "Direct CCEE GARANTIA_FISICA field.",
+            )
+
+        if aneel:
+            add(
+                "authorized_capacity_mw",
+                "Authorized Capacity",
+                _kw_to_mw(aneel.get("authorized_capacity_kw")),
+                "MW",
+                SOURCE_ANEEL_SIGA,
+                "ANEEL:siga-empreendimentos-geracao.csv",
+                aneel.get("source_updated_at"),
+                "derived",
+                "ANEEL MdaPotenciaOutorgadaKw / 1000.",
+            )
+            add(
+                "inspected_capacity_mw",
+                "Inspected Capacity",
+                _kw_to_mw(aneel.get("inspected_capacity_kw")),
+                "MW",
+                SOURCE_ANEEL_SIGA,
+                "ANEEL:siga-empreendimentos-geracao.csv",
+                aneel.get("source_updated_at"),
+                "derived",
+                "ANEEL MdaPotenciaFiscalizadaKw / 1000.",
+            )
+            add(
+                "aneel_physical_guarantee_mw",
+                "ANEEL Physical Guarantee",
+                _kw_to_mw(aneel.get("physical_guarantee_kw")),
+                "MW",
+                SOURCE_ANEEL_SIGA,
+                "ANEEL:siga-empreendimentos-geracao.csv",
+                aneel.get("source_updated_at"),
+                "derived",
+                "ANEEL MdaGarantiaFisicaKw / 1000. Unit is preserved as regulatory kW converted to MW.",
+            )
+
+        if latest_monthly:
+            ref = latest_monthly.get("reference_month")
+            generation_mwmed = latest_monthly.get("generation_center_of_gravity_mwmed")
+            add(
+                "generation_center_of_gravity_mwmed",
+                "Generation at Center of Gravity",
+                generation_mwmed,
+                "MWmed",
+                SOURCE_CCEE_MONTHLY,
+                "CCEE:PARCELA_USINA_MONTANTE_MENSAL",
+                ref,
+                "raw",
+                "Direct CCEE GERACAO_CENTRO_GRAVIDADE field.",
+            )
+            try:
+                hours = hours_in_reference_month(ref)
+            except Exception:
+                hours = 0
+            generation_mwh = mwmed_to_mwh(generation_mwmed, hours) if hours else None
+            add(
+                "generation_center_of_gravity_gwh",
+                "Generation at Center of Gravity",
+                mwh_to_gwh(generation_mwh),
+                "GWh",
+                SOURCE_CCEE_MONTHLY,
+                "CCEE:PARCELA_USINA_MONTANTE_MENSAL",
+                ref,
+                "derived",
+                "GWh = MWmed * hours_in_month / 1000.",
+            )
+            capacity_mw = (parcel or {}).get("capacity_mw") or latest_monthly.get("capacity_mw")
+            cf = capacity_factor(generation_mwh, capacity_mw, hours) if hours else None
+            add(
+                "capacity_factor_pct",
+                "Capacity Factor",
+                None if cf is None else cf * 100.0,
+                "%",
+                SOURCE_CCEE_MONTHLY,
+                "CCEE:PARCELA_USINA_MONTANTE_MENSAL",
+                ref,
+                "derived",
+                "Capacity factor = generated MWh / (capacity MW * hours_in_month).",
+            )
+
+        return metrics
+
+
+def _kw_to_mw(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value) / 1000.0
+    except (TypeError, ValueError):
+        return None

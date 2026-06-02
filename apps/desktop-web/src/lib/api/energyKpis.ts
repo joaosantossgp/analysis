@@ -13,6 +13,15 @@ import type {
   EnergyKPIHealthResponse,
   EnergyKPIRefreshResult,
   KPICatalogEntry,
+  PlantParcelCatalogParams,
+  PlantParcelCatalogRecord,
+  PlantParcelCatalogResponse,
+  PlantParcelDetailParams,
+  PlantParcelDetailResponse,
+  PlantParcelRefreshParams,
+  PlantParcelRefreshResult,
+  PlantParcelSourceStatus,
+  PlantParcelSourceStatusResponse,
   SINKPIDashboardResponse,
   SINKPIHealthResponse,
   SINKPIObservation,
@@ -61,6 +70,22 @@ export type SINKPIHealthResult =
 
 export type SINKPIRefreshResult_ =
   | { mode: "desktop"; result: SINKPIRefreshResult }
+  | { mode: "browser"; result: null; reason: string };
+
+export type PlantParcelSourceStatusResult =
+  | { mode: "desktop"; statuses: PlantParcelSourceStatus[]; response: PlantParcelSourceStatusResponse }
+  | { mode: "browser"; statuses: []; response: null; reason: string };
+
+export type PlantParcelCatalogResult =
+  | { mode: "desktop"; records: PlantParcelCatalogRecord[]; response: PlantParcelCatalogResponse }
+  | { mode: "browser"; records: []; response: null; reason: string };
+
+export type PlantParcelDetailResult =
+  | { mode: "desktop"; detail: PlantParcelDetailResponse }
+  | { mode: "browser"; detail: null; reason: string };
+
+export type PlantParcelRefreshResult_ =
+  | { mode: "desktop"; result: PlantParcelRefreshResult }
   | { mode: "browser"; result: null; reason: string };
 
 // ── Fetch functions ───────────────────────────────────────────────────────────
@@ -205,6 +230,67 @@ export async function triggerSINKPIRefresh(
   const payload: SINKPIRefreshResult = await callBridge(
     "refresh_sin_kpis",
     { triggered_by: "user", include_ccee: true, ...(params ?? {}) },
+  );
+  return { mode: "desktop", result: payload };
+}
+
+export async function fetchPlantParcelSourceStatuses(): Promise<PlantParcelSourceStatusResult> {
+  const mode: BridgeMode = getBridgeMode();
+  if (mode === "browser") {
+    return { mode: "browser", statuses: [], response: null, reason: BROWSER_REASON };
+  }
+  const payload: PlantParcelSourceStatusResponse = await callBridge(
+    "get_plant_parcel_source_statuses",
+    {},
+  );
+  if (payload.error) throw new Error(payload.error);
+  return {
+    mode: "desktop",
+    statuses: payload.source_statuses ?? [],
+    response: payload,
+  };
+}
+
+export async function fetchPlantParcelCatalog(
+  params?: PlantParcelCatalogParams,
+): Promise<PlantParcelCatalogResult> {
+  const mode: BridgeMode = getBridgeMode();
+  if (mode === "browser") {
+    return { mode: "browser", records: [], response: null, reason: BROWSER_REASON };
+  }
+  const payload: PlantParcelCatalogResponse = await callBridge(
+    "get_plant_parcel_catalog",
+    params ?? {},
+  );
+  if (payload.error) throw new Error(payload.error);
+  return { mode: "desktop", records: payload.records ?? [], response: payload };
+}
+
+export async function fetchPlantParcelDetail(
+  params: PlantParcelDetailParams,
+): Promise<PlantParcelDetailResult> {
+  const mode: BridgeMode = getBridgeMode();
+  if (mode === "browser") {
+    return { mode: "browser", detail: null, reason: BROWSER_REASON };
+  }
+  const payload: PlantParcelDetailResponse = await callBridge(
+    "get_plant_parcel_detail",
+    params,
+  );
+  if (payload.error) throw new Error(payload.error);
+  return { mode: "desktop", detail: payload };
+}
+
+export async function triggerPlantParcelRefresh(
+  params: PlantParcelRefreshParams,
+): Promise<PlantParcelRefreshResult_> {
+  const mode: BridgeMode = getBridgeMode();
+  if (mode === "browser") {
+    return { mode: "browser", result: null, reason: BROWSER_REASON };
+  }
+  const payload: PlantParcelRefreshResult = await callBridge(
+    "refresh_plant_parcel_source",
+    { triggered_by: "user", ...params },
   );
   return { mode: "desktop", result: payload };
 }

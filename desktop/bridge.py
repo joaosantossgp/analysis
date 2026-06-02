@@ -2604,6 +2604,9 @@ class CVMBridge:
     def _sin_refresh_status(self) -> dict:
         return getattr(self, "_sin_refresh_state", {"status": "idle", "error": None})
 
+    def _plant_parcel_refresh_status(self) -> dict:
+        return getattr(self, "_plant_parcel_refresh_state", {"status": "idle", "error": None})
+
     def get_kpi_catalog(self, params=None) -> dict:
         params = params or {}
         try:
@@ -2781,6 +2784,103 @@ class CVMBridge:
 
         threading.Thread(target=_run, name="sin-kpi-refresh", daemon=True).start()
         return {"status": "started", "error": None}
+
+    def get_plant_parcel_source_statuses(self, params=None) -> dict:
+        try:
+            result = self._energy_svc().get_plant_parcel_source_statuses()
+            result = self._sanitize_for_json(result)
+            result["refresh_running"] = self._plant_parcel_refresh_status().get("status") == "running"
+            result["refresh_error"] = self._plant_parcel_refresh_status().get("error")
+            result["refresh_source_id"] = self._plant_parcel_refresh_status().get("source_id")
+            return result
+        except Exception as exc:
+            return {
+                "error": str(exc),
+                "source_statuses": [],
+                "count": 0,
+                "refresh_running": False,
+                "refresh_error": None,
+                "refresh_source_id": None,
+            }
+
+    def get_plant_parcel_catalog(self, params=None) -> dict:
+        params = params or {}
+        try:
+            return self._sanitize_for_json(
+                self._energy_svc().get_plant_parcel_catalog(
+                    search=params.get("search"),
+                    entity_type=params.get("entity_type"),
+                    generation_source=params.get("generation_source"),
+                    submarket=params.get("submarket"),
+                    uf=params.get("uf"),
+                    limit=int(params.get("limit", 100) or 100),
+                    offset=int(params.get("offset", 0) or 0),
+                )
+            )
+        except Exception as exc:
+            return {"error": str(exc), "records": [], "count": 0, "total": 0}
+
+    def get_plant_parcel_detail(self, params=None) -> dict:
+        params = params or {}
+        try:
+            return self._sanitize_for_json(
+                self._energy_svc().get_plant_parcel_detail(
+                    entity_id=str(params.get("entity_id") or ""),
+                    entity_type=params.get("entity_type"),
+                )
+            )
+        except Exception as exc:
+            return {"error": str(exc), "metrics": [], "monthly_series": [], "hourly_preview": []}
+
+    def refresh_plant_parcel_source(self, params=None) -> dict:
+        params = params or {}
+        source_id = str(params.get("source_id") or "")
+        if not source_id:
+            return {"status": "error", "error": "source_id is required"}
+        state = self._plant_parcel_refresh_status()
+        if state.get("status") == "running":
+            return {
+                "status": "already_running",
+                "error": None,
+                "source_id": state.get("source_id"),
+            }
+
+        self._plant_parcel_refresh_state = {
+            "status": "running",
+            "error": None,
+            "source_id": source_id,
+        }
+
+        def _run():
+            try:
+                from src.energy_kpi.plant_parcel_refresh import PlantParcelRefreshJob  # noqa: PLC0415
+                from src.settings import get_settings  # noqa: PLC0415
+                job = PlantParcelRefreshJob(get_settings())
+                result = job.run(
+                    source_id=source_id,
+                    triggered_by=params.get("triggered_by", "user"),
+                    year=int(params["year"]) if params.get("year") else None,
+                    year_month=params.get("year_month"),
+                    use_daily_aneel=bool(params.get("use_daily_aneel", False)),
+                )
+                self._plant_parcel_refresh_state = {
+                    "status": result.get("status", "success"),
+                    "error": result.get("error"),
+                    "source_id": source_id,
+                    "rows_inserted": result.get("rows_inserted", 0),
+                    "refresh_id": result.get("refresh_id"),
+                }
+            except Exception as exc:
+                self._plant_parcel_refresh_state = {
+                    "status": "error",
+                    "error": str(exc),
+                    "source_id": source_id,
+                }
+            finally:
+                self._energy_read_service = None
+
+        threading.Thread(target=_run, name="plant-parcel-refresh", daemon=True).start()
+        return {"status": "started", "error": None, "source_id": source_id}
 
 
 def _serialize(obj: Any) -> Any:

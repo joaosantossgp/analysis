@@ -16,10 +16,11 @@ import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Segmented } from "@/components/indicators/Segmented";
 import { IndicatorExplorer } from "@/components/indicators/explorer/IndicatorExplorer";
+import { PlantParcelExplorer } from "@/components/indicators/PlantParcelExplorer";
 import { SectorCompanyPanel } from "@/components/indicators/SectorCompanyPanel";
 import { whenBridgeReady } from "@/lib/bridge/adapter";
 
-type View = "explorer" | "sector";
+type View = "explorer" | "plants" | "sector";
 
 export function CountryKpisPage() {
   const [bridgeReady, setBridgeReady] = useState(false);
@@ -42,6 +43,8 @@ export function CountryKpisPage() {
         subtitle={
           view === "explorer"
             ? "Local-first indicator explorer — macro and energy KPIs with full source, methodology, and cache provenance."
+            : view === "plants"
+              ? "Energy Utilities plant and CCEE plant-parcel explorer with source refresh, cache status, and audit metadata."
             : "Microeconomic context: sector snapshots and company-level KPI coverage from the local CVM database."
         }
         breadcrumbs={[{ label: "Indicators" }]}
@@ -51,6 +54,7 @@ export function CountryKpisPage() {
             value={view}
             options={[
               { value: "explorer", label: "Explorer" },
+              { value: "plants", label: "Plant Parcels" },
               { value: "sector", label: "Sector & Company" },
             ]}
             onChange={setView}
@@ -60,6 +64,8 @@ export function CountryKpisPage() {
 
       {view === "explorer" ? (
         <IndicatorExplorer bridgeReady={bridgeReady} />
+      ) : view === "plants" ? (
+        <PlantParcelExplorer bridgeReady={bridgeReady} />
       ) : (
         <SectorCompanyPanel bridgeReady={bridgeReady} />
       )}

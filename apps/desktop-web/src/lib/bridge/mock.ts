@@ -41,6 +41,10 @@ import type {
   KPIBundle,
   KPICatalogEntry,
   OnboardingState,
+  PlantParcelCatalogResponse,
+  PlantParcelDetailResponse,
+  PlantParcelRefreshResult,
+  PlantParcelSourceStatusResponse,
   RefreshJobListResponse,
   RefreshJobStatus,
   SectorDirectoryResponse,
@@ -727,6 +731,196 @@ const MOCK_SIN_DASHBOARD: SINKPIDashboardResponse = {
   refresh_error: null,
 };
 
+const MOCK_PLANT_SOURCES: PlantParcelSourceStatusResponse = {
+  source_statuses: [
+    {
+      source_id: "aneel_siga_plants",
+      source_name: "ANEEL SIGA Plants",
+      dataset_name: "siga-empreendimentos-geracao.csv",
+      provider: "ANEEL",
+      official_url: "https://dadosabertos.aneel.gov.br/dataset/siga-sistema-de-informacoes-de-geracao-da-aneel",
+      refresh_frequency: "monthly/daily",
+      granularity: "CEG plant",
+      description: "ANEEL SIGA plant registry and regulatory capacity data.",
+      known_caveats: "CEG may map to multiple CCEE plant parcels.",
+      local_records_count: 2,
+      latest_reference: "2026-06-01",
+      last_refresh_at: NOW,
+      last_status: "success",
+      last_error: null,
+      refresh_id: "mock-aneel-refresh",
+      cache_status: "fresh",
+    },
+    {
+      source_id: "ccee_plant_parcel_monthly",
+      source_name: "CCEE Plant Parcel Monthly",
+      dataset_name: "PARCELA_USINA_MONTANTE_MENSAL",
+      provider: "CCEE",
+      official_url: "https://dadosabertos.ccee.org.br/dataset/parcela_usina_montante_mensal",
+      refresh_frequency: "monthly",
+      granularity: "plant parcel / month",
+      description: "CCEE plant parcel attributes and monthly accounting amounts.",
+      known_caveats: "Plant parcels are CCEE accounting entities and are not guaranteed to map 1:1 to ANEEL or ONS plants.",
+      local_records_count: 2,
+      latest_reference: "2026-05",
+      last_refresh_at: NOW,
+      last_status: "success",
+      last_error: null,
+      refresh_id: "mock-ccee-monthly-refresh",
+      cache_status: "fresh",
+    },
+    {
+      source_id: "ccee_plant_generation_hourly",
+      source_name: "CCEE Plant Hourly Generation",
+      dataset_name: "GERACAO_HORARIA_USINA",
+      provider: "CCEE",
+      official_url: "https://dadosabertos.ccee.org.br/dataset/geracao_horaria_usina",
+      refresh_frequency: "monthly",
+      granularity: "plant parcel / commercialization period",
+      description: "CCEE hourly generation by plant parcel and commercialization period.",
+      known_caveats: "Hourly files can be large and must be refreshed by selected month.",
+      local_records_count: 96,
+      latest_reference: "2026-05-02T23:00:00",
+      last_refresh_at: NOW,
+      last_status: "success",
+      last_error: null,
+      refresh_id: "mock-ccee-hourly-refresh",
+      cache_status: "fresh",
+    },
+  ],
+  count: 3,
+  refresh_running: false,
+  refresh_error: null,
+  refresh_source_id: null,
+};
+
+const MOCK_PLANT_RECORDS = [
+  {
+    entity_type: "ccee_plant_parcel",
+    entity_id: "1001",
+    plant_parcel_code: "1001",
+    plant_parcel_acronym: "UHE-TST-1",
+    ceg: "CEG123",
+    plant_name: "Test Hydro Plant",
+    agent_name: "Utility SA",
+    generation_source: "Hydraulic",
+    submarket: "SE/CO",
+    uf: "SP",
+    phase: "Operation",
+    capacity_mw: 100,
+    authorized_capacity_mw: 120,
+    inspected_capacity_mw: 110,
+    physical_guarantee_mwmed: 55,
+    physical_guarantee_mw: 50,
+    latest_reference_month: "2026-05",
+    latest_generation_mwmed: 48,
+    data_status: "cached",
+  },
+  {
+    entity_type: "ccee_plant_parcel",
+    entity_id: "2002",
+    plant_parcel_code: "2002",
+    plant_parcel_acronym: "EOL-TST-2",
+    ceg: "CEG456",
+    plant_name: "Test Wind Plant",
+    agent_name: "WindCo SA",
+    generation_source: "Wind",
+    submarket: "NE",
+    uf: "BA",
+    phase: "Operation",
+    capacity_mw: 80,
+    authorized_capacity_mw: 90,
+    inspected_capacity_mw: 82,
+    physical_guarantee_mwmed: 30,
+    physical_guarantee_mw: 28,
+    latest_reference_month: "2026-05",
+    latest_generation_mwmed: 32,
+    data_status: "cached",
+  },
+] satisfies PlantParcelCatalogResponse["records"];
+
+const MOCK_PLANT_DETAIL: PlantParcelDetailResponse = {
+  entity_type: "ccee_plant_parcel",
+  entity_id: "1001",
+  parcel: {
+    plant_parcel_code: "1001",
+    plant_parcel_acronym: "UHE-TST-1",
+    ceg: "CEG123",
+    plant_name: "Test Hydro Plant",
+    agent_name: "Utility SA",
+    submarket: "SE/CO",
+    generation_source: "Hydraulic",
+    capacity_mw: 100,
+    physical_guarantee_mwmed: 55,
+    source_reference_month: "2026-05",
+  },
+  aneel_plant: {
+    ceg: "CEG123",
+    plant_name: "Test Hydro Plant",
+    uf: "SP",
+    phase: "Operation",
+    authorized_capacity_kw: 120000,
+    inspected_capacity_kw: 110000,
+  },
+  related_parcels: [MOCK_PLANT_RECORDS[0]],
+  metrics: [
+    {
+      metric_id: "capacity_mw",
+      label: "Capacity",
+      value: 100,
+      unit: "MW",
+      source_id: "ccee_plant_parcel_monthly",
+      source: "CCEE",
+      dataset: "CCEE:PARCELA_USINA_MONTANTE_MENSAL",
+      reference_period: "2026-05",
+      local_refresh_timestamp: NOW,
+      raw_or_derived: "raw",
+      methodology: "Direct CCEE CAP_T field.",
+    },
+    {
+      metric_id: "generation_center_of_gravity_gwh",
+      label: "Generation at Center of Gravity",
+      value: 35.7,
+      unit: "GWh",
+      source_id: "ccee_plant_parcel_monthly",
+      source: "CCEE",
+      dataset: "CCEE:PARCELA_USINA_MONTANTE_MENSAL",
+      reference_period: "2026-05",
+      local_refresh_timestamp: NOW,
+      raw_or_derived: "derived",
+      methodology: "GWh = MWmed * hours_in_month / 1000.",
+    },
+    {
+      metric_id: "capacity_factor_pct",
+      label: "Capacity Factor",
+      value: 48,
+      unit: "%",
+      source_id: "ccee_plant_parcel_monthly",
+      source: "CCEE",
+      dataset: "CCEE:PARCELA_USINA_MONTANTE_MENSAL",
+      reference_period: "2026-05",
+      local_refresh_timestamp: NOW,
+      raw_or_derived: "derived",
+      methodology: "Capacity factor = generated MWh / (capacity MW * hours_in_month).",
+    },
+  ],
+  monthly_series: [
+    { reference_month: "2026-04", generation_center_of_gravity_mwmed: 45, capacity_mw: 100 },
+    { reference_month: "2026-05", generation_center_of_gravity_mwmed: 48, capacity_mw: 100 },
+  ],
+  hourly_preview: [
+    { reference_datetime: "2026-05-02T22:00:00", commercialization_period: 23, generation_center_of_gravity_mwh: 49, verified_generation_ons_mwh: 48 },
+    { reference_datetime: "2026-05-02T23:00:00", commercialization_period: 24, generation_center_of_gravity_mwh: 47, verified_generation_ons_mwh: 46 },
+  ],
+  metadata: {
+    caveats: [
+      "CCEE plant parcel is not always equivalent to an ANEEL CEG plant or an ONS plant/group.",
+      "A CEG can map to multiple CCEE plant parcels.",
+    ],
+    latest_refresh_by_source: {},
+  },
+};
+
 // ---------------------------------------------------------------------------
 // KPI catalog fixture (dev-only)
 //
@@ -1056,6 +1250,67 @@ export function createMockBridge(): Partial<BridgeApi> {
       rows_read: MOCK_SIN_VALUES.length,
       snapshots: 5,
     }),
+
+    get_plant_parcel_source_statuses: async () => MOCK_PLANT_SOURCES,
+
+    get_plant_parcel_catalog: async (params) => {
+      const p = params as Record<string, unknown> | undefined;
+      const search = String(p?.search ?? "").toLowerCase();
+      const entityType = String(p?.entity_type ?? "");
+      const generationSource = String(p?.generation_source ?? "");
+      const submarket = String(p?.submarket ?? "");
+      const uf = String(p?.uf ?? "");
+      const limit = Number(p?.limit ?? 100);
+      const offset = Number(p?.offset ?? 0);
+      const records = MOCK_PLANT_RECORDS.filter((row) => {
+        if (search) {
+          const haystack = [
+            row.entity_id,
+            row.plant_parcel_code,
+            row.plant_parcel_acronym,
+            row.ceg,
+            row.plant_name,
+            row.agent_name,
+          ].join(" ").toLowerCase();
+          if (!haystack.includes(search)) return false;
+        }
+        if (entityType && row.entity_type !== entityType) return false;
+        if (generationSource && row.generation_source !== generationSource) return false;
+        if (submarket && row.submarket !== submarket) return false;
+        if (uf && row.uf !== uf) return false;
+        return true;
+      });
+      return {
+        records: records.slice(offset, offset + limit),
+        count: records.slice(offset, offset + limit).length,
+        total: records.length,
+        limit,
+        offset,
+        facets: {
+          entity_type: [...new Set(MOCK_PLANT_RECORDS.map((r) => r.entity_type))],
+          generation_source: [...new Set(MOCK_PLANT_RECORDS.map((r) => r.generation_source).filter(Boolean))],
+          submarket: [...new Set(MOCK_PLANT_RECORDS.map((r) => r.submarket).filter(Boolean))],
+          uf: [...new Set(MOCK_PLANT_RECORDS.map((r) => r.uf).filter(Boolean))],
+          data_status: [...new Set(MOCK_PLANT_RECORDS.map((r) => r.data_status))],
+        },
+      } satisfies PlantParcelCatalogResponse;
+    },
+
+    get_plant_parcel_detail: async (params) => ({
+      ...MOCK_PLANT_DETAIL,
+      entity_id: params?.entity_id ?? MOCK_PLANT_DETAIL.entity_id,
+    }),
+
+    refresh_plant_parcel_source: async (params) => ({
+      status: "success",
+      error: null,
+      source_id: params?.source_id,
+      refresh_id: "mock-plant-refresh",
+      rows_inserted: params?.source_id === "ccee_plant_generation_hourly" ? 96 : 2,
+      rows_read: params?.source_id === "ccee_plant_generation_hourly" ? 96 : 2,
+      period_start: params?.year_month ?? (params?.year ? `${params.year}-01` : null),
+      period_end: params?.year_month ?? (params?.year ? `${params.year}-12` : null),
+    } satisfies PlantParcelRefreshResult),
 
     get_companies: async (params) => {
       const p = params as Record<string, unknown>;
