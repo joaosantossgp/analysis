@@ -16,12 +16,15 @@ data/input/processed/
 data/db/
 data/*.csv
 data/*.xlsx
+data/*.db
+data/raw/
 data/legacy_archives/
 data/metadata/b3_companies_cache.json
 
 # Desktop runtime state (written at runtime, not source)
 data/onboarding_state.json
 data/refresh_jobs.json
+data/runtime.lock
 
 # Generated market-cap snapshots (runtime-produced, not source)
 data/metadata/b3_market_cap_universe_snapshot.csv

@@ -267,6 +267,29 @@ def ensure_energy_kpi_tables_for_connection(conn) -> None:
     ))
 
     conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS ccee_discovered_resources (
+            dataset_id                   TEXT NOT NULL,
+            resource_name                TEXT NOT NULL,
+            period_type                  TEXT NOT NULL,
+            year                         INTEGER NOT NULL,
+            month                        INTEGER,
+            format                       TEXT NOT NULL,
+            resource_url                 TEXT NOT NULL,
+            discovered_at                TEXT NOT NULL,
+            last_successful_download_at  TEXT,
+            checksum                     TEXT,
+            source_page_url              TEXT,
+            status                       TEXT NOT NULL DEFAULT 'discovered',
+            PRIMARY KEY (dataset_id, resource_name)
+        )
+    """))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_cdr_dataset_period ON "
+        "ccee_discovered_resources(dataset_id, year, month)"
+    ))
+
+
+    conn.execute(text("""
         CREATE TABLE IF NOT EXISTS aneel_siga_plants (
             ceg                       TEXT PRIMARY KEY,
             plant_name                TEXT,

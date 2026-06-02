@@ -358,3 +358,87 @@ def test_refresh_job_marks_zero_insert_as_warning(tmp_path: Path, monkeypatch):
     assert result["status"] == "warning"
     assert result["rows_inserted"] == 0
     assert "contained no rows" in result["warning"]
+
+
+def test_get_plant_parcel_chart_data(tmp_path: Path, db_engine, monkeypatch):
+    monthly_path = _write_csv(
+        tmp_path / "monthly.csv",
+        [
+            "MES_REFERENCIA",
+            "COD_PARCELA_USINA",
+            "SIGLA_PARCELA_USINA",
+            "CEG",
+            "NOME_EMPRESARIAL",
+            "SUBMERCADO",
+            "FONTE_ENERGIA_PRIMARIA",
+            "ESTADO_UF",
+            "CAP_T",
+            "GARANTIA_FISICA",
+            "GERACAO_CENTRO_GRAVIDADE",
+        ],
+        [
+            ["2026-01", "1001", "PLT1", "CEG123", "Utility SA", "SE/CO", "Hidraulica", "SP", "100", "50", "40"],
+            ["2026-02", "1001", "PLT1", "CEG123", "Utility SA", "SE/CO", "Hidraulica", "SP", "100", "50", "45"],
+        ],
+    )
+    hourly_path = _write_csv(
+        tmp_path / "hourly.csv",
+        [
+            "MES_REFERENCIA",
+            "DATA",
+            "PERIODO_COMERCIALIZACAO",
+            "CODIGO_PARCELA_USINA",
+            "SIGLA_USINA",
+            "FONTE_PRIMARIA",
+            "SUBMERCADO",
+            "GERACAO_CENTRO_GRAVIDADE",
+            "GERACAO_VERIFICADA_ONS",
+            "DISPONIBILIDADE_VERIFICADA_UG",
+        ],
+        [
+            ["202602", "01/02/2026", 1, "1001", "PLT1", "Hidraulica", "SE/CO", "10", "9", "8"],
+            ["202602", "01/02/2026", 2, "1001", "PLT1", "Hidraulica", "SE/CO", "12", "10", "9"],
+        ],
+    )
+
+    with db_engine.begin() as conn:
+        seed_plant_sources(conn)
+        upsert_ccee_monthly(
+            conn,
+            parse_ccee_monthly(_snapshot(monthly_path, SOURCE_CCEE_MONTHLY, "CCEE", "PARCELA_USINA_MONTANTE_MENSAL")),
+        )
+        upsert_ccee_hourly(
+            conn,
+            parse_ccee_hourly(_snapshot(hourly_path, SOURCE_CCEE_HOURLY, "CCEE", "GERACAO_HORARIA_USINA")),
+        )
+
+    settings = build_settings(project_root=tmp_path)
+    svc = EnergyKPIReadService(settings)
+    monkeypatch.setattr(svc, "_engine", lambda: db_engine)
+
+    # 1. Test monthly chart
+    monthly_chart = svc.get_plant_parcel_chart_data(entity_id="1001", entity_type="ccee_plant_parcel", frequency="monthly")
+    assert monthly_chart["frequency"] == "monthly"
+    assert "2026-01" in monthly_chart["periods"]
+    assert "2026-02" in monthly_chart["periods"]
+    assert len(monthly_chart["series"]) == 5
+    
+    # 2. Test daily chart
+    daily_chart = svc.get_plant_parcel_chart_data(
+        entity_id="1001",
+        entity_type="ccee_plant_parcel",
+        frequency="daily",
+        year_month="2026-02"
+    )
+    assert daily_chart["frequency"] == "daily"
+    assert "2026-02-01" in daily_chart["periods"]
+    
+    # 3. Test hourly chart
+    hourly_chart = svc.get_plant_parcel_chart_data(
+        entity_id="1001",
+        entity_type="ccee_plant_parcel",
+        frequency="hourly",
+        year_month="2026-02"
+    )
+    assert hourly_chart["frequency"] == "hourly"
+    assert len(hourly_chart["periods"]) == 2

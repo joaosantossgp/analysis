@@ -454,7 +454,7 @@ const MOCK_DB_DIAGNOSTICS: DatabaseDiagnostics = {
 
 const MOCK_APP_STATUS: AppStatusPayload = {
   runtime: {
-    version: "0.25.1-mock",
+    version: "0.26.2-mock",
     runtime_mode: "mock",
     bridge_status: "ready",
     frozen: false,
@@ -473,15 +473,15 @@ const MOCK_APP_STATUS: AppStatusPayload = {
   },
   database: MOCK_DB_DIAGNOSTICS,
   update: {
-    current_version: "0.25.1",
-    latest_version: "0.25.1",
+    current_version: "0.26.2",
+    latest_version: "0.26.2",
     update_available: false,
     status: "up_to_date",
     apply_supported: false,
   },
   diagnostics: {
     ok: true,
-    version: "0.25.1-mock",
+    version: "0.26.2-mock",
     dotnet_status: "mock",
     webview2_version: "mock",
     pythonnet_status: "mock",
@@ -1151,7 +1151,7 @@ export function createMockBridge(): Partial<BridgeApi> {
 
     get_health: async () => ({
       status: "ok",
-      version: "0.25.1-mock",
+      version: "0.26.2-mock",
       database_dialect: "sqlite",
       required_tables: ["financial_reports", "companies", "refresh_jobs"],
       warnings: [],
@@ -1300,6 +1300,58 @@ export function createMockBridge(): Partial<BridgeApi> {
       ...MOCK_PLANT_DETAIL,
       entity_id: params?.entity_id ?? MOCK_PLANT_DETAIL.entity_id,
     }),
+
+    get_plant_parcel_chart_data: async (params) => {
+      const freq = params.frequency || "monthly";
+      if (freq === "monthly") {
+        const periods = ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05"];
+        return {
+          series: [
+            { id: "generation_mwmed", label: "Generation (MWmed)", unit: "number", axis: "left", type: "line", points: [42, 45, 40, 45, 48], latest: 48 },
+            { id: "generation_gwh", label: "Generation (GWh)", unit: "number", axis: "left", type: "line", points: [31.2, 30.2, 29.8, 32.4, 35.7], latest: 35.7 },
+            { id: "capacity_mw", label: "Capacity (MW)", unit: "number", axis: "right", type: "line", points: [100, 100, 100, 100, 100], latest: 100 },
+            { id: "physical_guarantee_mwmed", label: "Physical Guarantee (MWmed)", unit: "number", axis: "right", type: "line", points: [50, 50, 50, 50, 50], latest: 50 },
+            { id: "capacity_factor_pct", label: "Capacity Factor (%)", unit: "pct", axis: "left", type: "line", points: [42, 45, 40, 45, 48], latest: 48 }
+          ],
+          periods,
+          frequency: freq,
+          entity_type: params.entity_type || "ccee_plant_parcel",
+          entity_id: params.entity_id,
+        };
+      } else if (freq === "daily") {
+        const periods = Array.from({ length: 30 }, (_, i) => `2026-05-${String(i + 1).padStart(2, "0")}`);
+        const pointsGen = Array.from({ length: 30 }, () => Math.round(40 + Math.random() * 20));
+        return {
+          series: [
+            { id: "generation_mwh", label: "Generation (MWh)", unit: "number", axis: "left", type: "line", points: pointsGen, latest: pointsGen[29] },
+            { id: "verified_generation_mwh", label: "Verified Generation ONS (MWh)", unit: "number", axis: "left", type: "line", points: pointsGen.map(p => p - 1), latest: pointsGen[29] - 1 },
+            { id: "verified_availability_mwh", label: "Verified Availability (MWh)", unit: "number", axis: "right", type: "line", points: pointsGen.map(() => 98), latest: 98 },
+            { id: "unavailability_mwh", label: "Unavailability (MWh)", unit: "number", axis: "right", type: "line", points: pointsGen.map(() => 2), latest: 2 },
+            { id: "capacity_factor_pct", label: "Capacity Factor (%)", unit: "pct", axis: "left", type: "line", points: pointsGen.map(p => Math.round((p / 2400) * 100)), latest: Math.round((pointsGen[29] / 2400) * 100) }
+          ],
+          periods,
+          frequency: freq,
+          entity_type: params.entity_type || "ccee_plant_parcel",
+          entity_id: params.entity_id,
+        };
+      } else { // hourly
+        const periods = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, "0")}h`);
+        const pointsGen = Array.from({ length: 24 }, () => Math.round(30 + Math.random() * 40));
+        return {
+          series: [
+            { id: "generation_mwh", label: "Generation (MWh)", unit: "number", axis: "left", type: "line", points: pointsGen, latest: pointsGen[23] },
+            { id: "verified_generation_mwh", label: "Verified Generation ONS (MWh)", unit: "number", axis: "left", type: "line", points: pointsGen.map(p => p - 1), latest: pointsGen[23] - 1 },
+            { id: "verified_availability_mwh", label: "Verified Availability (MWh)", unit: "number", axis: "right", type: "line", points: pointsGen.map(() => 98), latest: 98 },
+            { id: "unavailability_mwh", label: "Unavailability (MWh)", unit: "number", axis: "right", type: "line", points: pointsGen.map(() => 2), latest: 2 },
+            { id: "capacity_factor_pct", label: "Capacity Factor (%)", unit: "pct", axis: "left", type: "line", points: pointsGen.map(p => Math.round((p / 100) * 100)), latest: Math.round((pointsGen[23] / 100) * 100) }
+          ],
+          periods,
+          frequency: freq,
+          entity_type: params.entity_type || "ccee_plant_parcel",
+          entity_id: params.entity_id,
+        };
+      }
+    },
 
     refresh_plant_parcel_source: async (params) => ({
       status: "success",
@@ -1577,7 +1629,7 @@ export function createMockBridge(): Partial<BridgeApi> {
       is_retry_allowed: false,
     }),
 
-    check_update: async () => ({ available: false, version: "0.25.1" }),
+    check_update: async () => ({ available: false, version: "0.26.2" }),
 
     apply_update: async () => ({ started: false, error: "[mock] Software update not available in mock mode" }),
 

@@ -937,6 +937,7 @@ export interface BridgeApi {
   get_plant_parcel_source_statuses(params?: Record<string, unknown>): Promise<PlantParcelSourceStatusResponse>;
   get_plant_parcel_catalog(params?: PlantParcelCatalogParams): Promise<PlantParcelCatalogResponse>;
   get_plant_parcel_detail(params: PlantParcelDetailParams): Promise<PlantParcelDetailResponse>;
+  get_plant_parcel_chart_data(params: PlantParcelChartDataParams): Promise<PlantParcelChartDataResponse>;
   refresh_plant_parcel_source(params: PlantParcelRefreshParams): Promise<PlantParcelRefreshResult>;
 }
 
@@ -1270,7 +1271,33 @@ export interface PlantParcelRefreshResult {
   rows_updated?: number;
   period_start?: string | null;
   period_end?: string | null;
-  local_file_path?: string | null;
+}
+
+export interface PlantParcelChartDataParams {
+  entity_id: string;
+  entity_type?: string;
+  frequency: "monthly" | "daily" | "hourly";
+  year_month?: string;
+}
+
+export interface PlantParcelChartSeries {
+  id: string;
+  label: string;
+  unit: string;
+  axis: "left" | "right";
+  type: "line" | "bar";
+  color?: string;
+  points: Array<number | null>;
+  latest: number | null;
+}
+
+export interface PlantParcelChartDataResponse {
+  series: PlantParcelChartSeries[];
+  periods: string[];
+  frequency: string;
+  entity_type: string;
+  entity_id: string;
+  error?: string;
 }
 
 declare global {

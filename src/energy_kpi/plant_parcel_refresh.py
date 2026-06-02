@@ -13,6 +13,7 @@ from src.energy_kpi.plant_parcel_ingest import (
     SOURCE_ANEEL_SIGA,
     SOURCE_CCEE_HOURLY,
     SOURCE_CCEE_MONTHLY,
+    CCEEBlockedException,
     fetch_aneel_siga_snapshot,
     fetch_ccee_hourly_snapshot,
     fetch_ccee_monthly_snapshot,
@@ -117,7 +118,7 @@ class PlantParcelRefreshJob:
         try:
             if source_id == SOURCE_CCEE_MONTHLY:
                 self._stage("fetch", f"CCEE monthly plant parcels {selected_year}")
-                snapshot = fetch_ccee_monthly_snapshot(self.settings.paths, selected_year)
+                snapshot = fetch_ccee_monthly_snapshot(self.settings, selected_year)
                 frame = parse_ccee_monthly(snapshot)
                 with engine.begin() as conn:
                     persist_plant_snapshot_record(conn, snapshot)
@@ -129,7 +130,7 @@ class PlantParcelRefreshJob:
                 if not year_month:
                     raise ValueError("year_month is required for CCEE hourly refresh")
                 self._stage("fetch", f"CCEE hourly plant generation {year_month}")
-                snapshot = fetch_ccee_hourly_snapshot(self.settings.paths, year_month)
+                snapshot = fetch_ccee_hourly_snapshot(self.settings, year_month)
                 frame = parse_ccee_hourly(snapshot)
                 with engine.begin() as conn:
                     persist_plant_snapshot_record(conn, snapshot)
@@ -159,7 +160,13 @@ class PlantParcelRefreshJob:
             rows_read = parsed_rows
             rows_skipped = max(source_rows - normalized_rows, 0)
             detected_encoding = frame.attrs.get("detected_encoding")
-            if rows_inserted <= 0:
+            if snapshot.status == "warning":
+                status = "warning"
+                warning = "Package discovery failed, direct resource fallback succeeded."
+            elif snapshot.status == "warning_fallback":
+                status = "warning"
+                warning = "Package download failed (CCEE maintenance), but ingested from local fallback file."
+            elif rows_inserted <= 0:
                 status = "warning"
                 warning = _zero_row_warning(
                     source_id=source_id,
@@ -168,10 +175,18 @@ class PlantParcelRefreshJob:
                     parsed_rows=parsed_rows,
                     normalized_rows=normalized_rows,
                 )
+        except CCEEBlockedException as exc:
+            status = "failed"
+            error = (
+                "CCEE source is temporarily unavailable or blocked by maintenance. "
+                "Try again later or use a previously discovered resource link if available."
+            )
+            logger.warning("CCEE blocked refresh for %s: %s", source_id, exc)
         except Exception as exc:
             status = "failed"
             error = str(exc)
             logger.warning("Plant parcel refresh failed for %s: %s", source_id, exc)
+
 
         finished_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
         with engine.begin() as conn:

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -10,6 +10,7 @@ import {
   fetchPlantParcelDetail,
   fetchPlantParcelSourceStatuses,
   triggerPlantParcelRefresh,
+  fetchPlantParcelChartData,
 } from "@/lib/api/energyKpis";
 import type {
   PlantMetric,
@@ -17,6 +18,8 @@ import type {
   PlantParcelDetailResponse,
   PlantParcelSourceStatus,
 } from "@/lib/bridge/types";
+import { IndicatorChart } from "./IndicatorChart";
+import type { ChartAesthetics } from "@/lib/indicators/types";
 
 const PAGE_SIZE = 100;
 
@@ -473,6 +476,16 @@ function PlantCatalogTable({
   );
 }
 
+const CHART_CONFIG: ChartAesthetics = {
+  type: "line",
+  smooth: true,
+  markers: true,
+  legend: false,
+  grid: true,
+  dataLabels: false,
+  indexMode: false,
+};
+
 function PlantDetailPanel({
   selected,
   detail,
@@ -482,6 +495,40 @@ function PlantDetailPanel({
   detail: PlantParcelDetailResponse | null;
   loading: boolean;
 }) {
+  const [chartFreq, setChartFreq] = useState<"monthly" | "daily" | "hourly">("monthly");
+  const [chartMonth, setChartMonth] = useState<string>("");
+  const [selectedMetricId, setSelectedMetricId] = useState<string>("all");
+
+  const months = useMemo(() => {
+    if (!detail?.monthly_series) return [];
+    return detail.monthly_series
+      .map((row: any) => row.reference_month)
+      .filter((v: string | null | undefined): v is string => typeof v === "string" && !!v)
+      .sort()
+      .reverse();
+  }, [detail]);
+
+  useEffect(() => {
+    if (months.length > 0) {
+      setChartMonth(months[0]);
+    } else {
+      setChartMonth("");
+    }
+  }, [detail?.entity_id, months]);
+
+  const chartQuery = useQuery({
+    queryKey: ["plant-parcel-chart-data", detail?.entity_type, detail?.entity_id, chartFreq, chartMonth],
+    queryFn: () =>
+      fetchPlantParcelChartData({
+        entity_type: detail?.entity_type,
+        entity_id: detail?.entity_id ?? "",
+        frequency: chartFreq,
+        year_month: chartFreq !== "monthly" ? chartMonth : undefined,
+      }),
+    enabled: !!detail?.entity_id && (chartFreq === "monthly" || !!chartMonth),
+    staleTime: 30_000,
+  });
+
   if (!selected) {
     return (
       <StateBanner
@@ -499,6 +546,41 @@ function PlantDetailPanel({
   const aneel = detail.aneel_plant ?? {};
   const monthly = detail.monthly_series ?? [];
   const hourly = detail.hourly_preview ?? [];
+
+  const displayedSeries = (() => {
+    const rawSeries = chartQuery.data?.mode === "desktop" ? chartQuery.data.data.series : [];
+    const colored = rawSeries.map((s, idx) => {
+      let color = s.color || "#3B82F6";
+      if (!s.color) {
+        const colors = ["#22D3EE", "#34D399", "#818CF8", "#FBBF24", "#F87171", "#A78BFA"];
+        color = colors[idx % colors.length];
+      }
+      
+      let points = s.points;
+      let latest = s.latest;
+      const isPct = s.id.endsWith("pct") || s.unit === "pct";
+      if (isPct) {
+        points = s.points.map(v => v !== null ? v / 100 : null);
+        latest = s.latest !== null ? s.latest / 100 : null;
+      }
+      
+      return {
+        id: s.id,
+        label: s.label,
+        unit: s.unit as "pct" | "ratio" | "number",
+        color,
+        type: (s.type || "line") as "line" | "bar" | "area",
+        axis: (s.axis || "left") as "left" | "right",
+        points,
+        latest,
+      };
+    });
+
+    if (selectedMetricId === "all") return colored;
+    return colored.filter(s => s.id === selectedMetricId);
+  })();
+
+  const chartPeriods = chartQuery.data?.mode === "desktop" ? chartQuery.data.data.periods : [];
 
   return (
     <div className="rounded-md border border-zinc-800 bg-zinc-950/50 p-4 space-y-4">
@@ -518,6 +600,109 @@ function PlantDetailPanel({
         {(detail.metrics ?? []).slice(0, 6).map((metric: PlantMetric) => (
           <MetricTile key={metric.metric_id} metric={metric} />
         ))}
+      </div>
+
+      {/* Historical Charts */}
+      <div className="border-t border-zinc-800 pt-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <h4 className="text-xs uppercase tracking-wide text-zinc-500 font-semibold">Historical charts</h4>
+          
+          <div className="flex gap-2">
+            <button
+              onClick={() => { setChartFreq("monthly"); setSelectedMetricId("all"); }}
+              className={`rounded px-2 py-0.5 text-xs font-medium border ${chartFreq === "monthly" ? "bg-zinc-850 text-zinc-100 border-zinc-700" : "bg-transparent text-zinc-500 border-transparent hover:text-zinc-300"}`}
+            >
+              Monthly
+            </button>
+            <button
+              onClick={() => { setChartFreq("daily"); setSelectedMetricId("all"); }}
+              className={`rounded px-2 py-0.5 text-xs font-medium border ${chartFreq === "daily" ? "bg-zinc-850 text-zinc-100 border-zinc-700" : "bg-transparent text-zinc-500 border-transparent hover:text-zinc-300"}`}
+              disabled={months.length === 0}
+            >
+              Daily
+            </button>
+            <button
+              onClick={() => { setChartFreq("hourly"); setSelectedMetricId("all"); }}
+              className={`rounded px-2 py-0.5 text-xs font-medium border ${chartFreq === "hourly" ? "bg-zinc-850 text-zinc-100 border-zinc-700" : "bg-transparent text-zinc-500 border-transparent hover:text-zinc-300"}`}
+              disabled={months.length === 0}
+            >
+              Hourly
+            </button>
+          </div>
+        </div>
+
+        {/* Chart Controls */}
+        <div className="grid gap-2 grid-cols-2">
+          {/* Metric Selector */}
+          <label className="text-[11px] text-zinc-500">
+            Metric
+            <select
+              value={selectedMetricId}
+              onChange={(e) => setSelectedMetricId(e.target.value)}
+              className="mt-1 h-8 w-full rounded border border-zinc-800 bg-zinc-950 px-2 text-xs text-zinc-100 outline-none"
+            >
+              <option value="all">All Series</option>
+              {(chartQuery.data?.mode === "desktop" ? chartQuery.data.data.series : []).map((s: any) => (
+                <option key={s.id} value={s.id}>{s.label}</option>
+              ))}
+            </select>
+          </label>
+
+          {/* Period Selector (Only for daily/hourly) */}
+          {chartFreq !== "monthly" ? (
+            <label className="text-[11px] text-zinc-500">
+              Period
+              <select
+                value={chartMonth}
+                onChange={(e) => setChartMonth(e.target.value)}
+                className="mt-1 h-8 w-full rounded border border-zinc-800 bg-zinc-950 px-2 text-xs text-zinc-100 outline-none font-mono"
+              >
+                {months.map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <div className="text-[11px] text-zinc-500 self-end pb-2">
+              Showing full monthly history
+            </div>
+          )}
+        </div>
+
+        {/* Chart rendering */}
+        <div className="relative border border-zinc-850 rounded-md bg-zinc-950/20 p-2 min-h-[240px] flex flex-col justify-center">
+          {chartQuery.isLoading ? (
+            <div className="text-center text-xs text-zinc-500 py-12">Loading chart data...</div>
+          ) : chartQuery.isError ? (
+            <div className="text-center text-xs text-red-400 py-12">
+              Error: {chartQuery.error instanceof Error ? chartQuery.error.message : String(chartQuery.error)}
+            </div>
+          ) : displayedSeries.length === 0 ? (
+            <div className="text-center text-xs text-zinc-500 py-12">No data to display. Please refresh the source.</div>
+          ) : (
+            <div className="space-y-2">
+              <IndicatorChart
+                series={displayedSeries}
+                periods={chartPeriods}
+                config={CHART_CONFIG}
+                height={220}
+              />
+              
+              {/* Legend */}
+              <div className="flex flex-wrap gap-x-3 gap-y-1 justify-center text-[10px] text-zinc-400 font-mono">
+                {displayedSeries.map((s) => (
+                  <div key={s.id} className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: s.color }} />
+                    <span>{s.label}:</span>
+                    <span className="text-zinc-200">
+                      {s.latest !== null ? (s.unit === "pct" ? `${(s.latest * 100).toFixed(1)}%` : s.latest.toLocaleString("en-US", { maximumFractionDigits: 1 })) : "—"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-2 text-xs">

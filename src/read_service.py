@@ -1133,6 +1133,10 @@ class CVMReadService:
                     market_cap_as_of_date=entry.as_of_date,
                     market_cap_source=entry.source,
                     market_cap_provider_status=entry.provider_status,
+                    dividend_yield=entry.dividend_yield,
+                    pe_ratio=entry.pe_ratio,
+                    pb_ratio=entry.pb_ratio,
+                    beta=entry.beta,
                 )
             enriched.append(item)
 

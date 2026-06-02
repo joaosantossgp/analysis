@@ -239,6 +239,10 @@ class CompanySearchResult:
     market_cap_as_of_date: str | None = None
     market_cap_source: str | None = None
     market_cap_provider_status: str | None = None
+    dividend_yield: float | None = None
+    pe_ratio: float | None = None
+    pb_ratio: float | None = None
+    beta: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)

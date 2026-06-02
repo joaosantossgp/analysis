@@ -272,6 +272,110 @@ class CVMBridge:
         except Exception as exc:
             return {"error": str(exc)}
 
+    def get_company_historical_indicators(self, params=None) -> dict:
+        p = params or {}
+        try:
+            cd_cvm = int(p.get("cd_cvm", 0))
+            if not cd_cvm:
+                return {"error": "cd_cvm is required", "yearly_data": []}
+                
+            svc = self._svc()
+            
+            # Fetch from SQLite via engine
+            import pandas as pd  # noqa: PLC0415
+            from sqlalchemy import text  # noqa: PLC0415
+            
+            where_parts = [
+                'fr."CD_CVM" = :cd_cvm',
+                'fr."PERIOD_LABEL" = CAST(fr."REPORT_YEAR" AS TEXT)',
+                'fr."QA_CONFLICT" = false',
+                "fr.\"CD_CONTA\" IN ('3.01', '3.05', '3.11', '2.03')",
+            ]
+            
+            df = pd.read_sql(
+                text(f"""
+                SELECT
+                    fr."REPORT_YEAR" AS report_year,
+                    fr."CD_CONTA" AS cd_conta,
+                    SUM(fr."VL_CONTA") AS account_value
+                FROM financial_reports fr
+                WHERE {" AND ".join(where_parts)}
+                GROUP BY fr."REPORT_YEAR", fr."CD_CONTA"
+                """),
+                svc.engine,
+                params={"cd_cvm": cd_cvm}
+            )
+            
+            metrics_by_year = {}
+            if not df.empty:
+                pivot = df.pivot(
+                    index="report_year",
+                    columns="cd_conta",
+                    values="account_value"
+                ).reset_index()
+                
+                for col in ("3.01", "3.05", "3.11", "2.03"):
+                    if col not in pivot.columns:
+                        pivot[col] = pd.NA
+                        
+                for _, row in pivot.iterrows():
+                    yr = int(row["report_year"])
+                    receita = float(row["3.01"]) if pd.notna(row["3.01"]) and row["3.01"] != 0 else None
+                    ebit = float(row["3.05"]) if pd.notna(row["3.05"]) else None
+                    lucro_liq = float(row["3.11"]) if pd.notna(row["3.11"]) else None
+                    pl = float(row["2.03"]) if pd.notna(row["2.03"]) and row["2.03"] != 0 else None
+                    
+                    mg_ebit = ebit / receita if receita and ebit is not None else None
+                    mg_liq = lucro_liq / receita if receita and lucro_liq is not None else None
+                    roe = lucro_liq / pl if pl and lucro_liq is not None else None
+                    
+                    metrics_by_year[yr] = {
+                        "roe": roe,
+                        "mg_ebit": mg_ebit,
+                        "mg_liq": mg_liq,
+                    }
+                    
+            # 2. Fetch stock price history from Yahoo Finance
+            from src.market_cap import MarketCapService  # noqa: PLC0415
+            mkt_cap_svc = MarketCapService(settings=svc.settings, read_service=svc)
+            
+            # Resolve ticker
+            ticker = None
+            info = svc.query_layer.get_company_info(cd_cvm)
+            if info:
+                ticker = info.get("ticker_b3")
+            if not ticker:
+                from src.ticker_map import TICKER_MAP  # noqa: PLC0415
+                ticker = TICKER_MAP.get(cd_cvm)
+                
+            prices_by_year = {}
+            if ticker:
+                prices_by_year = mkt_cap_svc.fetch_yahoo_price_history(ticker)
+                
+            # 3. Merge
+            all_years = sorted(list(set(metrics_by_year.keys()) | set(prices_by_year.keys())))
+            yearly_data = []
+            for yr in all_years:
+                m = metrics_by_year.get(yr, {})
+                p = prices_by_year.get(yr)
+                yearly_data.append({
+                    "year": yr,
+                    "roe": m.get("roe"),
+                    "mg_ebit": m.get("mg_ebit"),
+                    "mg_liq": m.get("mg_liq"),
+                    "stock_price": p,
+                })
+                
+            return self._sanitize_for_json({
+                "ok": True,
+                "cd_cvm": cd_cvm,
+                "ticker_b3": ticker,
+                "yearly_data": yearly_data
+            })
+            
+        except Exception as exc:
+            return {"error": str(exc), "yearly_data": []}
+
     def get_company_statement(self, params=None) -> dict:
         p = params or {}
         try:
@@ -2834,6 +2938,21 @@ class CVMBridge:
             )
         except Exception as exc:
             return {"error": str(exc), "metrics": [], "monthly_series": [], "hourly_preview": []}
+
+    def get_plant_parcel_chart_data(self, params=None) -> dict:
+        params = params or {}
+        try:
+            return self._sanitize_for_json(
+                self._energy_svc().get_plant_parcel_chart_data(
+                    entity_id=str(params.get("entity_id") or ""),
+                    entity_type=params.get("entity_type"),
+                    frequency=str(params.get("frequency") or "monthly"),
+                    year_month=params.get("year_month"),
+                )
+            )
+        except Exception as exc:
+            return {"error": str(exc), "series": [], "periods": []}
+
 
     def refresh_plant_parcel_source(self, params=None) -> dict:
         params = params or {}

@@ -22,6 +22,8 @@ import type {
   PlantParcelRefreshResult,
   PlantParcelSourceStatus,
   PlantParcelSourceStatusResponse,
+  PlantParcelChartDataParams,
+  PlantParcelChartDataResponse,
   SINKPIDashboardResponse,
   SINKPIHealthResponse,
   SINKPIObservation,
@@ -83,6 +85,10 @@ export type PlantParcelCatalogResult =
 export type PlantParcelDetailResult =
   | { mode: "desktop"; detail: PlantParcelDetailResponse }
   | { mode: "browser"; detail: null; reason: string };
+
+export type PlantParcelChartDataResult =
+  | { mode: "desktop"; data: PlantParcelChartDataResponse }
+  | { mode: "browser"; data: null; reason: string };
 
 export type PlantParcelRefreshResult_ =
   | { mode: "desktop"; result: PlantParcelRefreshResult }
@@ -293,4 +299,19 @@ export async function triggerPlantParcelRefresh(
     { triggered_by: "user", ...params },
   );
   return { mode: "desktop", result: payload };
+}
+
+export async function fetchPlantParcelChartData(
+  params: PlantParcelChartDataParams,
+): Promise<PlantParcelChartDataResult> {
+  const mode: BridgeMode = getBridgeMode();
+  if (mode === "browser") {
+    return { mode: "browser", data: null, reason: BROWSER_REASON };
+  }
+  const payload: PlantParcelChartDataResponse = await callBridge(
+    "get_plant_parcel_chart_data",
+    params,
+  );
+  if (payload.error) throw new Error(payload.error);
+  return { mode: "desktop", data: payload };
 }

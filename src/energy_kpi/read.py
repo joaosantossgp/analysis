@@ -1058,6 +1058,222 @@ class EnergyKPIReadService:
 
         return metrics
 
+    def get_plant_parcel_chart_data(
+        self,
+        *,
+        entity_id: str,
+        entity_type: str | None = None,
+        frequency: str,
+        year_month: str | None = None,
+    ) -> dict[str, Any]:
+        """Query and return chart-ready historical data for selected plant/parcel."""
+        entity_id = str(entity_id or "").strip()
+        if not entity_id:
+            return {"error": "entity_id is required", "series": [], "periods": []}
+
+        with self._engine().begin() as conn:
+            seed_plant_sources(conn)
+            resolved_type = entity_type or self._resolve_plant_entity_type(conn, entity_id)
+
+            periods: list[str] = []
+            series_data: dict[str, dict[str, Any]] = {}
+
+            def init_series(name: str, label: str, unit: str, axis: str, chart_type: str = "line", color: str = "") -> None:
+                series_data[name] = {
+                    "id": name,
+                    "label": label,
+                    "unit": unit,
+                    "axis": axis,
+                    "type": chart_type,
+                    "color": color,
+                    "points": [],
+                    "latest": None,
+                }
+
+            if frequency == "monthly":
+                init_series("generation_mwmed", "Generation (MWmed)", "number", "left", "line")
+                init_series("generation_gwh", "Generation (GWh)", "number", "left", "line")
+                init_series("capacity_mw", "Capacity (MW)", "number", "right", "line")
+                init_series("physical_guarantee_mwmed", "Physical Guarantee (MWmed)", "number", "right", "line")
+                init_series("capacity_factor_pct", "Capacity Factor (%)", "pct", "left", "line")
+
+                if resolved_type == "aneel_plant":
+                    sql = """
+                        SELECT 
+                            reference_month,
+                            SUM(capacity_mw) AS capacity_mw,
+                            SUM(physical_guarantee_mwmed) AS physical_guarantee_mwmed,
+                            SUM(generation_center_of_gravity_mwmed) AS generation_center_of_gravity_mwmed
+                        FROM ccee_plant_parcel_monthly
+                        WHERE ceg = :entity_id
+                        GROUP BY reference_month
+                        ORDER BY reference_month ASC
+                    """
+                else:
+                    sql = """
+                        SELECT 
+                            reference_month,
+                            capacity_mw,
+                            physical_guarantee_mwmed,
+                            generation_center_of_gravity_mwmed
+                        FROM ccee_plant_parcel_monthly
+                        WHERE plant_parcel_code = :entity_id
+                        ORDER BY reference_month ASC
+                    """
+
+                rows = conn.execute(text(sql), {"entity_id": entity_id}).mappings().all()
+                for row in rows:
+                    ref = row["reference_month"]
+                    periods.append(ref)
+                    cap = row["capacity_mw"]
+                    gf = row["physical_guarantee_mwmed"]
+                    gen = row["generation_center_of_gravity_mwmed"]
+                    
+                    try:
+                        hours = hours_in_reference_month(ref)
+                    except Exception:
+                        hours = 0
+                    gen_mwh = mwmed_to_mwh(gen, hours) if hours else None
+                    gen_gwh = mwh_to_gwh(gen_mwh) if gen_mwh is not None else None
+                    cf = capacity_factor(gen_mwh, cap, hours) if hours else None
+                    cf_pct = cf * 100.0 if cf is not None else None
+
+                    series_data["generation_mwmed"]["points"].append(gen)
+                    series_data["generation_gwh"]["points"].append(gen_gwh)
+                    series_data["capacity_mw"]["points"].append(cap)
+                    series_data["physical_guarantee_mwmed"]["points"].append(gf)
+                    series_data["capacity_factor_pct"]["points"].append(cf_pct)
+
+            elif frequency in ("daily", "hourly"):
+                if not year_month:
+                    return {"error": "year_month is required for daily/hourly charts", "series": [], "periods": []}
+                
+                year_month_val = year_month.replace("/", "-")
+                if len(year_month_val) == 6 and "-" not in year_month_val:
+                    year_month_val = f"{year_month_val[:4]}-{year_month_val[4:]}"
+                
+                init_series("generation_mwh", "Generation (MWh)", "number", "left", "line")
+                init_series("verified_generation_mwh", "Verified Generation ONS (MWh)", "number", "left", "line")
+                init_series("verified_availability_mwh", "Verified Availability (MWh)", "number", "right", "line")
+                init_series("unavailability_mwh", "Unavailability (MWh)", "number", "right", "line")
+                init_series("capacity_factor_pct", "Capacity Factor (%)", "pct", "left", "line")
+
+                if resolved_type == "aneel_plant":
+                    cap_sql = "SELECT SUM(capacity_mw) FROM ccee_plant_parcels WHERE ceg = :entity_id"
+                else:
+                    cap_sql = "SELECT capacity_mw FROM ccee_plant_parcels WHERE plant_parcel_code = :entity_id"
+                cap_mw = conn.execute(text(cap_sql), {"entity_id": entity_id}).scalar() or 0.0
+
+                if frequency == "daily":
+                    if resolved_type == "aneel_plant":
+                        sql = """
+                            SELECT 
+                                date(h.reference_datetime) AS reference_date,
+                                SUM(h.generation_center_of_gravity_mwh) AS generation_mwh,
+                                SUM(h.verified_generation_ons_mwh) AS verified_generation_mwh,
+                                SUM(h.verified_availability_mwh) AS verified_availability_mwh,
+                                SUM(h.unavailability_mwh) AS unavailability_mwh
+                            FROM ccee_plant_parcel_hourly h
+                            JOIN ccee_plant_parcels p ON p.plant_parcel_code = h.plant_parcel_code
+                            WHERE p.ceg = :entity_id
+                              AND h.reference_month = :year_month
+                            GROUP BY date(h.reference_datetime)
+                            ORDER BY reference_date ASC
+                        """
+                    else:
+                        sql = """
+                            SELECT 
+                                date(reference_datetime) AS reference_date,
+                                SUM(generation_center_of_gravity_mwh) AS generation_mwh,
+                                SUM(verified_generation_ons_mwh) AS verified_generation_mwh,
+                                SUM(verified_availability_mwh) AS verified_availability_mwh,
+                                SUM(unavailability_mwh) AS unavailability_mwh
+                            FROM ccee_plant_parcel_hourly
+                            WHERE plant_parcel_code = :entity_id
+                              AND reference_month = :year_month
+                            GROUP BY date(reference_datetime)
+                            ORDER BY reference_date ASC
+                        """
+                    rows = conn.execute(text(sql), {"entity_id": entity_id, "year_month": year_month_val}).mappings().all()
+                    for row in rows:
+                        ref = row["reference_date"]
+                        periods.append(ref)
+                        gen = row["generation_mwh"]
+                        vgen = row["verified_generation_mwh"]
+                        vavail = row["verified_availability_mwh"]
+                        unavail = row["unavailability_mwh"]
+
+                        cf = capacity_factor(gen, cap_mw, 24)
+                        cf_pct = cf * 100.0 if cf is not None else None
+
+                        series_data["generation_mwh"]["points"].append(gen)
+                        series_data["verified_generation_mwh"]["points"].append(vgen)
+                        series_data["verified_availability_mwh"]["points"].append(vavail)
+                        series_data["unavailability_mwh"]["points"].append(unavail)
+                        series_data["capacity_factor_pct"]["points"].append(cf_pct)
+                else: # hourly
+                    if resolved_type == "aneel_plant":
+                        sql = """
+                            SELECT 
+                                h.reference_datetime,
+                                h.commercialization_period,
+                                SUM(h.generation_center_of_gravity_mwh) AS generation_mwh,
+                                SUM(h.verified_generation_ons_mwh) AS verified_generation_mwh,
+                                SUM(h.verified_availability_mwh) AS verified_availability_mwh,
+                                SUM(h.unavailability_mwh) AS unavailability_mwh
+                            FROM ccee_plant_parcel_hourly h
+                            JOIN ccee_plant_parcels p ON p.plant_parcel_code = h.plant_parcel_code
+                            WHERE p.ceg = :entity_id
+                              AND h.reference_month = :year_month
+                            GROUP BY h.reference_datetime, h.commercialization_period
+                            ORDER BY h.reference_datetime ASC, h.commercialization_period ASC
+                        """
+                    else:
+                        sql = """
+                            SELECT 
+                                reference_datetime,
+                                commercialization_period,
+                                generation_center_of_gravity_mwh AS generation_mwh,
+                                verified_generation_ons_mwh AS verified_generation_mwh,
+                                verified_availability_mwh AS verified_availability_mwh,
+                                unavailability_mwh AS unavailability_mwh
+                            FROM ccee_plant_parcel_hourly
+                            WHERE plant_parcel_code = :entity_id
+                              AND reference_month = :year_month
+                            ORDER BY reference_datetime ASC, commercialization_period ASC
+                        """
+                    rows = conn.execute(text(sql), {"entity_id": entity_id, "year_month": year_month_val}).mappings().all()
+                    for row in rows:
+                        dt = row["reference_datetime"]
+                        p = row["commercialization_period"]
+                        periods.append(f"{dt[11:13]}h" if len(dt) >= 16 else f"p{p}")
+                        gen = row["generation_mwh"]
+                        vgen = row["verified_generation_mwh"]
+                        vavail = row["verified_availability_mwh"]
+                        unavail = row["unavailability_mwh"]
+
+                        cf = capacity_factor(gen, cap_mw, 1)
+                        cf_pct = cf * 100.0 if cf is not None else None
+
+                        series_data["generation_mwh"]["points"].append(gen)
+                        series_data["verified_generation_mwh"]["points"].append(vgen)
+                        series_data["verified_availability_mwh"]["points"].append(vavail)
+                        series_data["unavailability_mwh"]["points"].append(unavail)
+                        series_data["capacity_factor_pct"]["points"].append(cf_pct)
+
+            for s in series_data.values():
+                valid = [v for v in s["points"] if v is not None]
+                s["latest"] = valid[-1] if valid else None
+
+            return {
+                "series": list(series_data.values()),
+                "periods": periods,
+                "frequency": frequency,
+                "entity_type": resolved_type,
+                "entity_id": entity_id,
+            }
+
+
 
 def _kw_to_mw(value: Any) -> float | None:
     if value is None:

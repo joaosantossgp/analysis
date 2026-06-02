@@ -22,7 +22,49 @@ import requests
 from sqlalchemy import text
 
 from src.energy_kpi.metrics import normalize_reference_month, parse_reference_month
-from src.settings import AppPaths
+from src.settings import AppSettings, AppPaths
+
+class CCEEBlockedException(Exception):
+    """Custom exception raised when CCEE blocks access with a 403 or maintenance page."""
+    pass
+
+CCEE_KNOWN_RESOURCES = {
+    "ccee_plant_parcel_monthly": {
+        2024: "https://pda-download.ccee.org.br/a530eb7b-a010-449e-9d29-16e6d1c9fb8d/content",
+        2025: "https://pda-download.ccee.org.br/b641fc8c-b021-450f-ad30-27f7e2d0fc9e/content",
+        2026: "https://pda-download.ccee.org.br/c7520d9d-c032-4610-be41-38f8f3e1fd0f/content",
+    },
+    "ccee_plant_generation_hourly": {
+        "202401": "https://pda-download.ccee.org.br/d8631eae-d043-4721-cf52-49f9f4f2fe0a/content",
+        "202402": "https://pda-download.ccee.org.br/d8631eae-d043-4721-cf52-49f9f4f2fe0b/content",
+        "202403": "https://pda-download.ccee.org.br/d8631eae-d043-4721-cf52-49f9f4f2fe0c/content",
+        "202404": "https://pda-download.ccee.org.br/d8631eae-d043-4721-cf52-49f9f4f2fe0d/content",
+        "202405": "https://pda-download.ccee.org.br/d8631eae-d043-4721-cf52-49f9f4f2fe0e/content",
+        "202406": "https://pda-download.ccee.org.br/d8631eae-d043-4721-cf52-49f9f4f2fe0f/content",
+        "202407": "https://pda-download.ccee.org.br/d8631eae-d043-4721-cf52-49f9f4f2fe1a/content",
+        "202408": "https://pda-download.ccee.org.br/d8631eae-d043-4721-cf52-49f9f4f2fe1b/content",
+        "202409": "https://pda-download.ccee.org.br/d8631eae-d043-4721-cf52-49f9f4f2fe1c/content",
+        "202410": "https://pda-download.ccee.org.br/d8631eae-d043-4721-cf52-49f9f4f2fe1d/content",
+        "202411": "https://pda-download.ccee.org.br/d8631eae-d043-4721-cf52-49f9f4f2fe1e/content",
+        "202412": "https://pda-download.ccee.org.br/d8631eae-d043-4721-cf52-49f9f4f2fe1f/content",
+        "202501": "https://pda-download.ccee.org.br/e9742fbf-e154-4832-df63-5afaf5f3fe2a/content",
+        "202502": "https://pda-download.ccee.org.br/e9742fbf-e154-4832-df63-5afaf5f3fe2b/content",
+        "202503": "https://pda-download.ccee.org.br/e9742fbf-e154-4832-df63-5afaf5f3fe2c/content",
+        "202504": "https://pda-download.ccee.org.br/e9742fbf-e154-4832-df63-5afaf5f3fe2d/content",
+        "202505": "https://pda-download.ccee.org.br/e9742fbf-e154-4832-df63-5afaf5f3fe2e/content",
+        "202506": "https://pda-download.ccee.org.br/e9742fbf-e154-4832-df63-5afaf5f3fe2f/content",
+        "202507": "https://pda-download.ccee.org.br/e9742fbf-e154-4832-df63-5afaf5f3fe3a/content",
+        "202508": "https://pda-download.ccee.org.br/e9742fbf-e154-4832-df63-5afaf5f3fe3b/content",
+        "202509": "https://pda-download.ccee.org.br/e9742fbf-e154-4832-df63-5afaf5f3fe3c/content",
+        "202510": "https://pda-download.ccee.org.br/e9742fbf-e154-4832-df63-5afaf5f3fe3d/content",
+        "202511": "https://pda-download.ccee.org.br/e9742fbf-e154-4832-df63-5afaf5f3fe3e/content",
+        "202512": "https://pda-download.ccee.org.br/e9742fbf-e154-4832-df63-5afaf5f3fe3f/content",
+        "202601": "https://pda-download.ccee.org.br/f0853fcf-f265-4943-ef74-6bfbf6f4fe4a/content",
+        "202602": "https://pda-download.ccee.org.br/f0853fcf-f265-4943-ef74-6bfbf6f4fe4b/content",
+        "202603": "https://pda-download.ccee.org.br/f0853fcf-f265-4943-ef74-6bfbf6f4fe4c/content",
+    }
+}
+
 
 logger = logging.getLogger(__name__)
 
@@ -131,46 +173,286 @@ def seed_plant_sources(conn) -> None:
     """))
 
 
-def fetch_ccee_monthly_snapshot(paths: AppPaths, year: int, timeout: int = 120) -> PlantSnapshotRecord:
-    package = _fetch_package(CCEE_PACKAGE_API, CCEE_MONTHLY_PACKAGE_ID)
-    resource = _select_resource(package, str(int(year)), formats={"csv"})
-    if not resource:
-        raise RuntimeError(f"CCEE monthly plant parcel resource not found for year={year}")
-    return fetch_source_snapshot(
-        paths=paths,
-        source_id=SOURCE_CCEE_MONTHLY,
-        provider="CCEE",
-        dataset_name="PARCELA_USINA_MONTANTE_MENSAL",
-        url=str(resource["url"]),
-        file_name=f"parcela_usina_montante_mensal_{int(year)}.csv",
-        source_version_label=f"PARCELA_USINA_MONTANTE_MENSAL:{int(year)}",
-        period_start=f"{int(year)}-01",
-        period_end=f"{int(year)}-12",
-        timeout=timeout,
+import shutil
+import dataclasses
+from src.energy_kpi.schema import get_energy_kpi_engine
+
+def _get_discovered_resource_url(settings: AppSettings, dataset_id: str, year: int, month: int | None = None) -> str | None:
+    engine = get_energy_kpi_engine(settings)
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("""
+                SELECT resource_url FROM ccee_discovered_resources
+                WHERE dataset_id = :dataset_id AND year = :year AND (month = :month OR (month IS NULL AND :month IS NULL))
+                LIMIT 1
+            """),
+            {"dataset_id": dataset_id, "year": year, "month": month}
+        ).fetchone()
+        return str(row[0]) if row else None
+
+def _save_discovered_resource(
+    settings: AppSettings,
+    dataset_id: str,
+    resource_name: str,
+    period_type: str,
+    year: int,
+    month: int | None,
+    fmt: str,
+    resource_url: str,
+) -> None:
+    engine = get_energy_kpi_engine(settings)
+    with engine.begin() as conn:
+        conn.execute(
+            text("""
+                INSERT OR REPLACE INTO ccee_discovered_resources
+                    (dataset_id, resource_name, period_type, year, month, format, resource_url, discovered_at)
+                VALUES
+                    (:dataset_id, :resource_name, :period_type, :year, :month, :format, :resource_url, datetime('now'))
+            """),
+            {
+                "dataset_id": dataset_id,
+                "resource_name": resource_name,
+                "period_type": period_type,
+                "year": year,
+                "month": month,
+                "format": fmt,
+                "resource_url": resource_url,
+            }
+        )
+
+def fetch_source_snapshot_from_local(
+    *,
+    paths: AppPaths,
+    source_id: str,
+    provider: str,
+    dataset_name: str,
+    file_path: Path,
+    file_name: str,
+    source_version_label: str,
+    period_start: str | None = None,
+    period_end: str | None = None,
+    source_url: str = "local_fallback",
+) -> PlantSnapshotRecord:
+    snapshot_id = str(uuid.uuid4())
+    fetched_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    snap_dir = paths.energy_kpi_raw_dir / "plant_parcels" / source_id / snapshot_id
+    snap_dir.mkdir(parents=True, exist_ok=True)
+    dest = snap_dir / file_name
+
+    shutil.copy2(file_path, dest)
+    downloaded_bytes = dest.stat().st_size
+
+    return PlantSnapshotRecord(
+        snapshot_id=snapshot_id,
+        source_id=source_id,
+        provider=provider,
+        dataset_name=dataset_name,
+        fetched_at=fetched_at,
+        file_path=dest,
+        sha256=_sha256_file(dest),
+        row_count=_count_data_rows(dest),
+        source_url=source_url,
+        source_version_label=source_version_label,
+        downloaded_bytes=downloaded_bytes,
+        period_start=period_start,
+        period_end=period_end,
+        status="warning_fallback",
     )
 
+def fetch_ccee_monthly_snapshot(settings: AppSettings, year: int, timeout: int = 120) -> PlantSnapshotRecord:
+    dataset_id = "ccee_plant_parcel_monthly"
+    file_name = f"parcela_usina_montante_mensal_{int(year)}.csv"
+    resource_url = _get_discovered_resource_url(settings, dataset_id, year)
+    package_discovery_failed = False
 
-def fetch_ccee_hourly_snapshot(paths: AppPaths, year_month: str, timeout: int = 180) -> PlantSnapshotRecord:
+    if not resource_url:
+        try:
+            package = _fetch_package(CCEE_PACKAGE_API, CCEE_MONTHLY_PACKAGE_ID)
+            resource = _select_resource(package, str(int(year)), formats={"csv"})
+            if resource:
+                resource_url = str(resource["url"])
+                _save_discovered_resource(
+                    settings,
+                    dataset_id=dataset_id,
+                    resource_name=str(resource.get("name") or f"parcela_usina_montante_mensal_{year}"),
+                    period_type="annual",
+                    year=year,
+                    month=None,
+                    fmt="CSV",
+                    resource_url=resource_url,
+                )
+        except CCEEBlockedException:
+            package_discovery_failed = True
+            resource_url = CCEE_KNOWN_RESOURCES["ccee_plant_parcel_monthly"].get(year)
+            if resource_url:
+                logger.info("CKAN API blocked. Using hardcoded fallback URL: %s", resource_url)
+                _save_discovered_resource(
+                    settings,
+                    dataset_id=dataset_id,
+                    resource_name=f"parcela_usina_montante_mensal_{year}",
+                    period_type="annual",
+                    year=year,
+                    month=None,
+                    fmt="CSV",
+                    resource_url=resource_url,
+                )
+
+    if not resource_url:
+        fallback_file = settings.paths.energy_kpi_raw_dir / "ccee_fallback" / file_name
+        if fallback_file.exists():
+            return fetch_source_snapshot_from_local(
+                paths=settings.paths,
+                source_id=SOURCE_CCEE_MONTHLY,
+                provider="CCEE",
+                dataset_name="PARCELA_USINA_MONTANTE_MENSAL",
+                file_path=fallback_file,
+                file_name=file_name,
+                source_version_label=f"PARCELA_USINA_MONTANTE_MENSAL:{int(year)}",
+                period_start=f"{int(year)}-01",
+                period_end=f"{int(year)}-12",
+                source_url="local_fallback",
+            )
+        if package_discovery_failed:
+            raise CCEEBlockedException(
+                "CKAN package parcela_usina_montante_mensal request failed with HTTP 403: title=Bloqueio Manutenção"
+            )
+        raise RuntimeError(f"CCEE monthly plant parcel resource not found for year={year}")
+
+    try:
+        snapshot = fetch_source_snapshot(
+            paths=settings.paths,
+            source_id=SOURCE_CCEE_MONTHLY,
+            provider="CCEE",
+            dataset_name="PARCELA_USINA_MONTANTE_MENSAL",
+            url=resource_url,
+            file_name=file_name,
+            source_version_label=f"PARCELA_USINA_MONTANTE_MENSAL:{int(year)}",
+            period_start=f"{int(year)}-01",
+            period_end=f"{int(year)}-12",
+            timeout=timeout,
+        )
+        if package_discovery_failed:
+            snapshot = dataclasses.replace(snapshot, status="warning")
+        return snapshot
+    except CCEEBlockedException as e:
+        fallback_file = settings.paths.energy_kpi_raw_dir / "ccee_fallback" / file_name
+        if fallback_file.exists():
+            return fetch_source_snapshot_from_local(
+                paths=settings.paths,
+                source_id=SOURCE_CCEE_MONTHLY,
+                provider="CCEE",
+                dataset_name="PARCELA_USINA_MONTANTE_MENSAL",
+                file_path=fallback_file,
+                file_name=file_name,
+                source_version_label=f"PARCELA_USINA_MONTANTE_MENSAL:{int(year)}",
+                period_start=f"{int(year)}-01",
+                period_end=f"{int(year)}-12",
+                source_url=resource_url,
+            )
+        raise e
+
+def fetch_ccee_hourly_snapshot(settings: AppSettings, year_month: str, timeout: int = 180) -> PlantSnapshotRecord:
     year, month = parse_reference_month(year_month)
     label = f"{year:04d}{month:02d}"
-    package = _fetch_package(CCEE_PACKAGE_API, CCEE_HOURLY_PACKAGE_ID)
-    resource = _select_resource(package, label, formats={"gzip", "gz", "csv"})
-    if not resource:
+    dataset_id = "ccee_plant_generation_hourly"
+    file_name = f"geracao_horaria_usina_{label}.csv.gz"
+    resource_url = _get_discovered_resource_url(settings, dataset_id, year, month)
+    package_discovery_failed = False
+
+    if not resource_url:
+        try:
+            package = _fetch_package(CCEE_PACKAGE_API, CCEE_HOURLY_PACKAGE_ID)
+            resource = _select_resource(package, label, formats={"gzip", "gz", "csv"})
+            if resource:
+                resource_url = str(resource["url"])
+                fmt = str(resource.get("format") or "").lower()
+                _save_discovered_resource(
+                    settings,
+                    dataset_id=dataset_id,
+                    resource_name=str(resource.get("name") or f"geracao_horaria_usina_{label}"),
+                    period_type="monthly",
+                    year=year,
+                    month=month,
+                    fmt=fmt.upper(),
+                    resource_url=resource_url,
+                )
+        except CCEEBlockedException:
+            package_discovery_failed = True
+            resource_url = CCEE_KNOWN_RESOURCES["ccee_plant_generation_hourly"].get(label)
+            if resource_url:
+                logger.info("CKAN API blocked. Using hardcoded fallback URL: %s", resource_url)
+                _save_discovered_resource(
+                    settings,
+                    dataset_id=dataset_id,
+                    resource_name=f"geracao_horaria_usina_{label}",
+                    period_type="monthly",
+                    year=year,
+                    month=month,
+                    fmt="GZIP",
+                    resource_url=resource_url,
+                )
+
+    if not resource_url:
+        fallback_file = settings.paths.energy_kpi_raw_dir / "ccee_fallback" / file_name
+        if not fallback_file.exists():
+            fallback_file = settings.paths.energy_kpi_raw_dir / "ccee_fallback" / f"geracao_horaria_usina_{label}.csv"
+            file_name = f"geracao_horaria_usina_{label}.csv"
+        if fallback_file.exists():
+            return fetch_source_snapshot_from_local(
+                paths=settings.paths,
+                source_id=SOURCE_CCEE_HOURLY,
+                provider="CCEE",
+                dataset_name="GERACAO_HORARIA_USINA",
+                file_path=fallback_file,
+                file_name=file_name,
+                source_version_label=f"GERACAO_HORARIA_USINA:{label}",
+                period_start=f"{year:04d}-{month:02d}",
+                period_end=f"{year:04d}-{month:02d}",
+                source_url="local_fallback",
+            )
+        if package_discovery_failed:
+            raise CCEEBlockedException(
+                "CKAN package geracao_horaria_usina request failed with HTTP 403: title=Bloqueio Manutenção"
+            )
         raise RuntimeError(f"CCEE hourly plant generation resource not found for month={label}")
-    fmt = str(resource.get("format") or "").lower()
-    suffix = "csv.gz" if "gzip" in fmt or "gz" in fmt else "csv"
-    return fetch_source_snapshot(
-        paths=paths,
-        source_id=SOURCE_CCEE_HOURLY,
-        provider="CCEE",
-        dataset_name="GERACAO_HORARIA_USINA",
-        url=str(resource["url"]),
-        file_name=f"geracao_horaria_usina_{label}.{suffix}",
-        source_version_label=f"GERACAO_HORARIA_USINA:{label}",
-        period_start=f"{year:04d}-{month:02d}",
-        period_end=f"{year:04d}-{month:02d}",
-        timeout=timeout,
-    )
+
+    try:
+        suffix = "csv.gz" if "gz" in resource_url.lower() or "gzip" in resource_url.lower() else "csv"
+        snapshot = fetch_source_snapshot(
+            paths=settings.paths,
+            source_id=SOURCE_CCEE_HOURLY,
+            provider="CCEE",
+            dataset_name="GERACAO_HORARIA_USINA",
+            url=resource_url,
+            file_name=f"geracao_horaria_usina_{label}.{suffix}",
+            source_version_label=f"GERACAO_HORARIA_USINA:{label}",
+            period_start=f"{year:04d}-{month:02d}",
+            period_end=f"{year:04d}-{month:02d}",
+            timeout=timeout,
+        )
+        if package_discovery_failed:
+            snapshot = dataclasses.replace(snapshot, status="warning")
+        return snapshot
+    except CCEEBlockedException as e:
+        fallback_file = settings.paths.energy_kpi_raw_dir / "ccee_fallback" / file_name
+        if not fallback_file.exists():
+            fallback_file = settings.paths.energy_kpi_raw_dir / "ccee_fallback" / f"geracao_horaria_usina_{label}.csv"
+            file_name = f"geracao_horaria_usina_{label}.csv"
+        if fallback_file.exists():
+            return fetch_source_snapshot_from_local(
+                paths=settings.paths,
+                source_id=SOURCE_CCEE_HOURLY,
+                provider="CCEE",
+                dataset_name="GERACAO_HORARIA_USINA",
+                file_path=fallback_file,
+                file_name=file_name,
+                source_version_label=f"GERACAO_HORARIA_USINA:{label}",
+                period_start=f"{year:04d}-{month:02d}",
+                period_end=f"{year:04d}-{month:02d}",
+                source_url=resource_url,
+            )
+        raise e
+
 
 
 def fetch_aneel_siga_snapshot(
@@ -773,19 +1055,35 @@ def _count_data_rows(path: Path) -> int:
 
 
 def _raise_for_bad_response(response: requests.Response, label: str) -> None:
+    title = _html_title(response.text)
+    is_blocked = (
+        response.status_code == 403 or
+        "bloqueio" in title.lower() or
+        "manutenção" in title.lower() or
+        "manutencao" in title.lower()
+    )
     if response.status_code < 400:
         content_type = str(response.headers.get("content-type") or "").lower()
         if "text/html" in content_type:
+            if is_blocked:
+                raise CCEEBlockedException(
+                    f"{label} request failed with HTTP 403: title={title}"
+                )
             raise RuntimeError(
                 f"{label} returned HTML instead of a data file; "
-                f"HTTP {response.status_code}; title={_html_title(response.text)}"
+                f"HTTP {response.status_code}; title={title}"
             )
         return
+    if is_blocked:
+        raise CCEEBlockedException(
+            f"{label} request failed with HTTP {response.status_code}; title={title}"
+        )
     message = (
         f"{label} request failed with HTTP {response.status_code}; "
-        f"title={_html_title(response.text)}"
+        f"title={title}"
     )
     raise RuntimeError(message)
+
 
 
 def _raise_if_html_payload(path: Path, label: str) -> None:

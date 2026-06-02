@@ -33,6 +33,10 @@ class MarketCapEntry:
     mapping_confidence: float
     notes: str | None = None
     provider_status: str = "unofficial_free"
+    dividend_yield: float | None = None
+    pe_ratio: float | None = None
+    pb_ratio: float | None = None
+    beta: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -97,6 +101,17 @@ class MarketCapService:
                     except ValueError:
                         pass
 
+                def _parse_float_or_none(v: Any) -> float | None:
+                    if v is None:
+                        return None
+                    v_str = str(v).strip()
+                    if v_str in ("", "None", "null"):
+                        return None
+                    try:
+                        return float(v_str)
+                    except ValueError:
+                        return None
+
                 entries.append(
                     MarketCapEntry(
                         as_of_date=str(row.get("as_of_date", "")).strip(),
@@ -114,6 +129,10 @@ class MarketCapService:
                         mapping_confidence=confidence_val,
                         notes=str(row.get("notes", "")).strip() or None,
                         provider_status=str(row.get("provider_status", "unofficial_free")).strip(),
+                        dividend_yield=_parse_float_or_none(row.get("dividend_yield")),
+                        pe_ratio=_parse_float_or_none(row.get("pe_ratio")),
+                        pb_ratio=_parse_float_or_none(row.get("pb_ratio")),
+                        beta=_parse_float_or_none(row.get("beta")),
                     )
                 )
 
@@ -211,6 +230,10 @@ class MarketCapService:
                         "mapping_confidence",
                         "notes",
                         "provider_status",
+                        "dividend_yield",
+                        "pe_ratio",
+                        "pb_ratio",
+                        "beta",
                     ],
                 )
                 writer.writeheader()
@@ -298,6 +321,21 @@ class MarketCapService:
                     continue
 
                 company_name = item.get("longName") or item.get("shortName") or ticker
+
+                # Fetch new metrics
+                div_yield = item.get("trailingAnnualDividendYield") or item.get("dividendYield")
+                pe_ratio = item.get("trailingPE") or item.get("forwardPE")
+                pb_ratio = item.get("priceToBook")
+                beta_val = item.get("beta")
+
+                def _to_float(v: Any) -> float | None:
+                    if v is None:
+                        return None
+                    try:
+                        return float(v)
+                    except (ValueError, TypeError):
+                        return None
+
                 parsed_rows.append(
                     {
                         "as_of_date": as_of_val,
@@ -312,6 +350,10 @@ class MarketCapService:
                         "method": "yahoo_finance_bulk_quote",
                         "source_url_or_id": "https://query1.finance.yahoo.com/v7/finance/quote",
                         "notes": None,
+                        "dividend_yield": _to_float(div_yield),
+                        "pe_ratio": _to_float(pe_ratio),
+                        "pb_ratio": _to_float(pb_ratio),
+                        "beta": _to_float(beta_val),
                     }
                 )
 
@@ -330,6 +372,56 @@ class MarketCapService:
         self._write_snapshot(mapped_entries)
 
         return self.get_status()
+
+    def fetch_yahoo_price_history(self, ticker: str) -> dict[int, float]:
+        """Fetch monthly price history from Yahoo Finance and return year -> end_of_year_price."""
+        import math  # noqa: PLC0415
+        from datetime import datetime, timezone  # noqa: PLC0415
+        
+        # Ensure ticker has .SA if it is a pure Brazilian ticker (numeric ending) and no suffix
+        ticker = ticker.strip()
+        if ticker and "." not in ticker:
+            ticker = f"{ticker}.SA"
+        
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=10y&interval=1mo"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        try:
+            response = requests.get(url, headers=headers, timeout=15)
+            response.raise_for_status()
+            data = response.json()
+            result = data.get("chart", {}).get("result")
+            if not result:
+                return {}
+            
+            timestamps = result[0].get("timestamp", [])
+            indicators = result[0].get("indicators", {})
+            
+            # Prefer adjusted close (adjclose) over close if available
+            adjclose_list = indicators.get("adjclose", [{}])[0].get("adjclose", [])
+            close_list = indicators.get("quote", [{}])[0].get("close", [])
+            
+            prices = adjclose_list if adjclose_list else close_list
+            if not prices or len(prices) != len(timestamps):
+                prices = close_list
+                
+            if not prices or len(prices) != len(timestamps):
+                return {}
+                
+            # Group by year and take the last valid price
+            year_prices: dict[int, float] = {}
+            for ts, price in zip(timestamps, prices):
+                if price is None or not math.isfinite(price):
+                    continue
+                dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+                # We want the last available price for each year (e.g. December)
+                year_prices[dt.year] = float(price)
+                
+            return year_prices
+        except Exception as exc:
+            logger.warning("Failed to fetch price history for %s: %s", ticker, exc)
+            return {}
 
     def _parse_and_validate_raw_csv(
         self, csv_filepath_or_content: str | Path | io.StringIO
@@ -396,6 +488,10 @@ class MarketCapService:
         col_source_url = find_header("source_url_or_id", "source_url", "source_id")
         col_provider_status = find_header("provider_status", "status_provider", "providerstatus")
         col_notes = find_header("notes", "warnings", "note", "observacoes")
+        col_div_yield = find_header("dividend_yield", "dividend_yield_pct", "dividend_yield_percent", "dy", "dividend_yield_ratio")
+        col_pe = find_header("pe_ratio", "pe", "p_e", "price_earnings", "price_to_earnings", "p_l", "pl")
+        col_pb = find_header("pb_ratio", "pb", "p_b", "price_book", "price_to_book", "p_vp", "pvp")
+        col_beta = find_header("beta", "beta_coef", "beta_coefficient")
 
         parsed_rows: list[dict[str, Any]] = []
         for idx, raw in enumerate(reader, start=1):
@@ -439,6 +535,17 @@ class MarketCapService:
                 else now_iso_seconds()[:10]
             )
 
+            def _parse_float_or_none(v: Any) -> float | None:
+                if v is None:
+                    return None
+                v_str = str(v).strip()
+                if v_str in ("", "None", "null"):
+                    return None
+                try:
+                    return float(v_str)
+                except ValueError:
+                    return None
+
             parsed_rows.append(
                 {
                     "as_of_date": as_of_val,
@@ -470,6 +577,10 @@ class MarketCapService:
                     ).strip(),
                     "notes": str((col_notes and raw.get(col_notes)) or "").strip()
                     or None,
+                    "dividend_yield": _parse_float_or_none(raw.get(col_div_yield)) if col_div_yield else None,
+                    "pe_ratio": _parse_float_or_none(raw.get(col_pe)) if col_pe else None,
+                    "pb_ratio": _parse_float_or_none(raw.get(col_pb)) if col_pb else None,
+                    "beta": _parse_float_or_none(raw.get(col_beta)) if col_beta else None,
                 }
             )
 
@@ -609,6 +720,10 @@ class MarketCapService:
                     mapping_confidence=mapping_confidence,
                     notes=notes,
                     provider_status=row.get("provider_status", "unofficial_free"),
+                    dividend_yield=row.get("dividend_yield"),
+                    pe_ratio=row.get("pe_ratio"),
+                    pb_ratio=row.get("pb_ratio"),
+                    beta=row.get("beta"),
                 )
             )
 
