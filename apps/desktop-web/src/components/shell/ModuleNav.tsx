@@ -39,7 +39,7 @@ const MODULES: ModuleDef[] = [
   },
   {
     id: "macro",
-    label: "Country KPIs",
+    label: "Indicators",
     to: "/country-kpis",
     matches: (p) => p.startsWith("/country-kpis"),
   },

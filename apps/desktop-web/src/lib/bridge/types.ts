@@ -903,6 +903,10 @@ export interface BridgeApi {
   get_energy_kpi_health(params?: Record<string, unknown>): Promise<EnergyKPIHealthResponse>;
   refresh_energy_kpis(params?: { triggered_by?: string }): Promise<EnergyKPIRefreshResult>;
   export_country_kpis_excel(params?: { iso_codes?: string[]; kpi_ids?: string[] }): Promise<{ path: string | null; error?: string }>;
+  get_sin_kpi_dashboard(params?: Record<string, unknown>): Promise<SINKPIDashboardResponse>;
+  get_sin_kpi_series(params?: SINKPISeriesParams): Promise<SINKPISeriesResponse>;
+  get_sin_kpi_health(params?: Record<string, unknown>): Promise<SINKPIHealthResponse>;
+  refresh_sin_kpis(params?: SINKPIRefreshParams): Promise<SINKPIRefreshResult>;
 }
 
 // ── Energy KPI types ──────────────────────────────────────────────────────────
@@ -1003,6 +1007,84 @@ export interface EnergyKPIRefreshResult {
   error: string | null;
   run_id?: string;
   rows_ingested?: number;
+}
+
+export interface SINKPIObservation {
+  kpi_id: string;
+  subsystem_code: "S" | "SE_CO" | "NE" | "N" | string;
+  subsystem_name: string;
+  reference_datetime: string;
+  value: number | null;
+  unit: string;
+  source: string;
+  source_dataset: string;
+  source_field: string;
+  data_quality_status: "ok" | "missing" | "stale" | "conflict" | "fallback_used" | string;
+  snapshot_id: string;
+}
+
+export interface SINKPISourceStatus {
+  source: string;
+  dataset: string;
+  frequency: string;
+  last_snapshot_at: string | null;
+  local_records_count: number;
+  last_status: string | null;
+  last_error: string | null;
+}
+
+export interface SINKPIDashboardResponse {
+  last_successful_update: string | null;
+  latest_reference_datetime: string | null;
+  is_empty: boolean;
+  is_stale: boolean;
+  observations: SINKPIObservation[];
+  source_statuses: SINKPISourceStatus[];
+  refresh_running: boolean;
+  refresh_error: string | null;
+  error?: string;
+}
+
+export interface SINKPISeriesParams {
+  kpi_ids?: string[];
+  subsystem_codes?: string[];
+  start_datetime?: string;
+  end_datetime?: string;
+  limit?: number;
+}
+
+export interface SINKPISeriesResponse {
+  values: SINKPIObservation[];
+  count: number;
+  error?: string;
+}
+
+export interface SINKPIHealthResponse {
+  last_refresh_at: string | null;
+  last_refresh_status: string | null;
+  rows_ingested: number;
+  latest_reference_datetime: string | null;
+  is_stale: boolean;
+  dq_errors: number;
+  dq_warnings: number;
+  refresh_running: boolean;
+  refresh_error: string | null;
+  error?: string;
+}
+
+export interface SINKPIRefreshParams {
+  triggered_by?: string;
+  years?: number[];
+  include_ccee?: boolean;
+}
+
+export interface SINKPIRefreshResult {
+  status: "started" | "already_running" | "success" | "partial" | "error";
+  error: string | null;
+  run_id?: string;
+  rows_inserted?: number;
+  rows_read?: number;
+  snapshots?: number;
 }
 
 declare global {

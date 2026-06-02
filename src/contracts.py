@@ -882,3 +882,69 @@ class EnergyKPIHealthDTO:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+@dataclass(frozen=True)
+class SINKPIObservationDTO:
+    kpi_id: str
+    subsystem_code: str
+    subsystem_name: str
+    reference_datetime: str
+    value: float | None
+    unit: str
+    source: str
+    source_dataset: str
+    source_field: str
+    data_quality_status: str
+    snapshot_id: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class SINKPISourceStatusDTO:
+    source: str
+    dataset: str
+    frequency: str
+    last_snapshot_at: str | None
+    local_records_count: int
+    last_status: str | None
+    last_error: str | None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class SINKPIDashboardDTO:
+    last_successful_update: str | None
+    latest_reference_datetime: str | None
+    is_empty: bool
+    is_stale: bool
+    observations: tuple[SINKPIObservationDTO, ...]
+    source_statuses: tuple[SINKPISourceStatusDTO, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "last_successful_update": self.last_successful_update,
+            "latest_reference_datetime": self.latest_reference_datetime,
+            "is_empty": self.is_empty,
+            "is_stale": self.is_stale,
+            "observations": [row.to_dict() for row in self.observations],
+            "source_statuses": [row.to_dict() for row in self.source_statuses],
+        }
+
+
+@dataclass(frozen=True)
+class SINKPIHealthDTO:
+    last_refresh_at: str | None
+    last_refresh_status: str | None
+    rows_ingested: int
+    latest_reference_datetime: str | None
+    is_stale: bool
+    dq_errors: int
+    dq_warnings: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)

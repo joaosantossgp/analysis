@@ -20,6 +20,7 @@ export function TerminalShell({ children, onOpenPalette }: Props) {
     <div
       className="grid h-full w-full"
       style={{
+        gridTemplateColumns: "minmax(0, 1fr)",
         gridTemplateRows: "36px 32px 1fr 24px",
         gridTemplateAreas: '"top" "subnav" "main" "status"',
         background: "var(--color-surface-1)",
@@ -35,6 +36,8 @@ export function TerminalShell({ children, onOpenPalette }: Props) {
       <main
         style={{
           gridArea: "main",
+          minWidth: 0,
+          minHeight: 0,
           overflow: "auto",
           padding: "var(--spacing-4)",
         }}

@@ -95,6 +95,8 @@ QA scripts share `workbook_paths.py` via sibling import, so they stay co-located
 | `docs/reference/repository-map.md` | This file. Repo orientation and folder/workflow/doc classification. |
 | `docs/REPOSITORY_PROFILE.md` | Canonical GitHub "About" panel values (description, homepage, topics). Apply via `gh` or manually. |
 | `docs/reference/gics-import.md` | GICS import reference. |
+| `docs/reference/indicators-module.md` | Active desktop Indicators module: macro/micro tab model, bridge contracts, validation. |
+| `docs/reference/energy-utilities-sin-kpis.md` | Local-first SIN subsystem KPI module: ONS/CCEE sources, tables, refresh behavior, limitations, validation. |
 | `docs/skills/CVMANALYTICS_VITE_UI_SKILL.md` | Rules for implementing Vite UI screens in `apps/desktop-web/`. Read before any desktop UI change. |
 | `docs/perf/benchmark_read_paths.md` | **Benchmark report.** Issue #134 — read-path benchmark on the CVM query layer (synthetic SQLite). |
 | `docs/perf/polars-benchmark.md` | **Benchmark report.** Issue #110 — Polars vs Pandas comparison on the CVM ingestion pipeline. |

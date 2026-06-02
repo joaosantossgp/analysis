@@ -2601,6 +2601,9 @@ class CVMBridge:
     def _energy_refresh_status(self) -> dict:
         return getattr(self, "_energy_refresh_state", {"status": "idle", "error": None})
 
+    def _sin_refresh_status(self) -> dict:
+        return getattr(self, "_sin_refresh_state", {"status": "idle", "error": None})
+
     def get_kpi_catalog(self, params=None) -> dict:
         params = params or {}
         try:
@@ -2700,6 +2703,84 @@ class CVMBridge:
             return {"path": str(output_path), "error": None}
         except Exception as exc:
             return {"error": str(exc), "path": None}
+
+    def get_sin_kpi_dashboard(self, params=None) -> dict:
+        try:
+            dashboard = self._energy_svc().get_sin_kpi_dashboard()
+            result = self._sanitize_for_json(dashboard.to_dict())
+            result["refresh_running"] = self._sin_refresh_status().get("status") == "running"
+            result["refresh_error"] = self._sin_refresh_status().get("error")
+            return result
+        except Exception as exc:
+            return {
+                "error": str(exc),
+                "observations": [],
+                "source_statuses": [],
+                "refresh_running": False,
+                "refresh_error": None,
+            }
+
+    def get_sin_kpi_series(self, params=None) -> dict:
+        params = params or {}
+        try:
+            values = self._energy_svc().get_sin_kpi_series(
+                kpi_ids=params.get("kpi_ids"),
+                subsystem_codes=params.get("subsystem_codes"),
+                start_datetime=params.get("start_datetime"),
+                end_datetime=params.get("end_datetime"),
+                limit=params.get("limit"),
+            )
+            return self._sanitize_for_json({
+                "values": [v.to_dict() for v in values],
+                "count": len(values),
+            })
+        except Exception as exc:
+            return {"error": str(exc), "values": [], "count": 0}
+
+    def get_sin_kpi_health(self, params=None) -> dict:
+        try:
+            health = self._energy_svc().get_sin_kpi_health()
+            result = self._sanitize_for_json(health.to_dict())
+            result["refresh_running"] = self._sin_refresh_status().get("status") == "running"
+            result["refresh_error"] = self._sin_refresh_status().get("error")
+            return result
+        except Exception as exc:
+            return {"error": str(exc), "refresh_running": False, "refresh_error": None}
+
+    def refresh_sin_kpis(self, params=None) -> dict:
+        params = params or {}
+        state = self._sin_refresh_status()
+        if state.get("status") == "running":
+            return {"status": "already_running", "error": None}
+
+        self._sin_refresh_state = {"status": "running", "error": None}
+
+        def _run():
+            try:
+                from src.energy_kpi.sin_refresh import SINKPIRefreshJob  # noqa: PLC0415
+                from src.settings import get_settings  # noqa: PLC0415
+                years = params.get("years")
+                if years is not None:
+                    years = [int(y) for y in years]
+                include_ccee = bool(params.get("include_ccee", True))
+                job = SINKPIRefreshJob(get_settings())
+                result = job.run(
+                    triggered_by=params.get("triggered_by", "user"),
+                    years=years,
+                    include_ccee=include_ccee,
+                )
+                self._sin_refresh_state = {
+                    "status": result.get("status", "success"),
+                    "error": result.get("error"),
+                    "rows_inserted": result.get("rows_inserted", 0),
+                }
+            except Exception as exc:
+                self._sin_refresh_state = {"status": "error", "error": str(exc)}
+            finally:
+                self._energy_read_service = None
+
+        threading.Thread(target=_run, name="sin-kpi-refresh", daemon=True).start()
+        return {"status": "started", "error": None}
 
 
 def _serialize(obj: Any) -> Any:

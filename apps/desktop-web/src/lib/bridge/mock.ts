@@ -28,16 +28,25 @@ import type {
   CompanyFiltersResponse,
   CompanyInfo,
   CompanyYearsResult,
+  CountryKPICompareResponse,
+  CountryKPISeriesResponse,
+  CountryKPIValue,
   DataCoverageResponse,
   DataCoverageRow,
   DatabaseDiagnostics,
   DataUpdateSettings,
+  EnergyKPIHealthResponse,
+  EnergyKPIRefreshResult,
   KPIBundle,
   OnboardingState,
   RefreshJobListResponse,
   RefreshJobStatus,
   SectorDirectoryResponse,
   SectorDetailResponse,
+  SINKPIDashboardResponse,
+  SINKPIHealthResponse,
+  SINKPIObservation,
+  SINKPISeriesResponse,
   StatementMatrix,
   TabularData,
   TabularRow,
@@ -482,6 +491,209 @@ const MOCK_APP_STATUS: AppStatusPayload = {
 };
 
 // ---------------------------------------------------------------------------
+// Country Energy KPI fixtures
+// ---------------------------------------------------------------------------
+
+const COUNTRY_NS = "energy_utilities.country";
+const COUNTRY_FIXTURES = [
+  { iso: "BRA", name: "Brazil", hydro: 58, solar: 6, wind: 13, nuclear: 2, gas: 9, coal: 3, demand: 620, carbon: 96 },
+  { iso: "USA", name: "United States", hydro: 6, solar: 5, wind: 11, nuclear: 18, gas: 39, coal: 19, demand: 4300, carbon: 360 },
+  { iso: "CHN", name: "China", hydro: 15, solar: 6, wind: 9, nuclear: 5, gas: 3, coal: 58, demand: 8900, carbon: 560 },
+  { iso: "OWEU", name: "EU 27", hydro: 12, solar: 9, wind: 17, nuclear: 22, gas: 18, coal: 13, demand: 2800, carbon: 250 },
+  { iso: "CHL", name: "Chile", hydro: 21, solar: 19, wind: 12, nuclear: 0, gas: 18, coal: 24, demand: 86, carbon: 310 },
+  { iso: "ARG", name: "Argentina", hydro: 25, solar: 2, wind: 9, nuclear: 7, gas: 50, coal: 2, demand: 145, carbon: 330 },
+] as const;
+
+const COUNTRY_KPIS = [
+  "elec_hydro_share",
+  "elec_solar_share",
+  "elec_wind_share",
+  "elec_nuclear_share",
+  "elec_gas_share",
+  "elec_coal_share",
+  "elec_renewables_share",
+  "elec_fossil_share",
+  "elec_low_carbon_share",
+  "elec_carbon_intensity",
+  "elec_demand_total",
+  "elec_generation_total",
+  "elec_demand_growth_yoy",
+  "elec_net_imports_share",
+] as const;
+
+function buildMockCountryKpiValues(): CountryKPIValue[] {
+  const rows: CountryKPIValue[] = [];
+  for (let year = YEAR - 11; year <= YEAR - 1; year += 1) {
+    const yearOffset = year - (YEAR - 11);
+    for (const [countryIdx, country] of COUNTRY_FIXTURES.entries()) {
+      const shift = Math.sin((yearOffset + countryIdx) * 0.7);
+      const hydro = clampShare(country.hydro + shift * 2.2 - yearOffset * 0.15);
+      const solar = clampShare(country.solar + yearOffset * 0.75 + Math.max(0, shift));
+      const wind = clampShare(country.wind + yearOffset * 0.45 + shift * 0.7);
+      const nuclear = clampShare(country.nuclear);
+      const gas = clampShare(country.gas - yearOffset * 0.18 + shift);
+      const coal = clampShare(country.coal - yearOffset * 0.7 - shift);
+      const renewables = hydro + solar + wind;
+      const fossil = gas + coal;
+      const lowCarbon = renewables + nuclear;
+      const demand = country.demand * (1 + yearOffset * 0.018 + shift * 0.008);
+      const generation = demand * (1 + ([0.01, -0.02, 0.03, -0.01, 0.02, -0.015][countryIdx] ?? 0));
+      const growth = 1.2 + shift * 2.4 + countryIdx * 0.2;
+      const imports = ((demand - generation) / demand) * 100;
+      const carbon = Math.max(35, country.carbon - yearOffset * 8 + shift * 8);
+      const valueMap: Record<(typeof COUNTRY_KPIS)[number], number> = {
+        elec_hydro_share: hydro,
+        elec_solar_share: solar,
+        elec_wind_share: wind,
+        elec_nuclear_share: nuclear,
+        elec_gas_share: gas,
+        elec_coal_share: coal,
+        elec_renewables_share: renewables,
+        elec_fossil_share: fossil,
+        elec_low_carbon_share: lowCarbon,
+        elec_carbon_intensity: carbon,
+        elec_demand_total: demand,
+        elec_generation_total: generation,
+        elec_demand_growth_yoy: growth,
+        elec_net_imports_share: imports,
+      };
+      for (const kpi of COUNTRY_KPIS) {
+        const value = Number(valueMap[kpi].toFixed(2));
+        const kpiId = `${COUNTRY_NS}.${kpi}`;
+        rows.push({
+          kpi_id: kpiId,
+          iso_code: country.iso,
+          country_name: country.name,
+          period: year,
+          value,
+          unit: kpi.includes("share") || kpi.endsWith("growth_yoy") ? "%" : kpi.endsWith("intensity") ? "gCO2/kWh" : "TWh",
+          source: "mock",
+          source_priority: 1,
+          source_field: kpi,
+          data_quality_status: "ok",
+          source_conflict: false,
+          fallback_used: false,
+          snapshot_id: "mock-country-energy-snapshot",
+          value_owid: value,
+          value_ember: null,
+        });
+      }
+    }
+  }
+  return rows;
+}
+
+function clampShare(value: number): number {
+  return Math.max(0, Math.min(100, value));
+}
+
+const MOCK_COUNTRY_KPI_VALUES = buildMockCountryKpiValues();
+
+// ---------------------------------------------------------------------------
+// SIN subsystem KPI fixtures
+// ---------------------------------------------------------------------------
+
+const SIN_NS = "energy_utilities.sin";
+const SIN_SUBSYSTEMS = [
+  { code: "S", name: "South / Sul", color: "#60A5FA" },
+  { code: "SE_CO", name: "Southeast-Center West / Sudeste-Centro-Oeste", color: "#22D3EE" },
+  { code: "NE", name: "Northeast / Nordeste", color: "#FBBF24" },
+  { code: "N", name: "North / Norte", color: "#4ADE80" },
+] as const;
+
+const SIN_KPI_META: Record<string, { unit: string; source: string; dataset: string; field: string }> = {
+  [`${SIN_NS}.load_mwmed`]: { unit: "MWmed", source: "ONS", dataset: "balanco_energia_subsistema", field: "val_carga" },
+  [`${SIN_NS}.generation_hydro_mwmed`]: { unit: "MWmed", source: "ONS", dataset: "balanco_energia_subsistema", field: "val_gerhidraulica" },
+  [`${SIN_NS}.generation_thermal_mwmed`]: { unit: "MWmed", source: "ONS", dataset: "balanco_energia_subsistema", field: "val_gertermica" },
+  [`${SIN_NS}.generation_wind_mwmed`]: { unit: "MWmed", source: "ONS", dataset: "balanco_energia_subsistema", field: "val_gereolica" },
+  [`${SIN_NS}.generation_solar_mwmed`]: { unit: "MWmed", source: "ONS", dataset: "balanco_energia_subsistema", field: "val_gersolar" },
+  [`${SIN_NS}.generation_total_mwmed`]: { unit: "MWmed", source: "ONS", dataset: "balanco_energia_subsistema", field: "derived_total_generation" },
+  [`${SIN_NS}.mix_hydro_pct`]: { unit: "%", source: "ONS", dataset: "balanco_energia_subsistema", field: "val_gerhidraulica/total" },
+  [`${SIN_NS}.mix_thermal_pct`]: { unit: "%", source: "ONS", dataset: "balanco_energia_subsistema", field: "val_gertermica/total" },
+  [`${SIN_NS}.mix_wind_pct`]: { unit: "%", source: "ONS", dataset: "balanco_energia_subsistema", field: "val_gereolica/total" },
+  [`${SIN_NS}.mix_solar_pct`]: { unit: "%", source: "ONS", dataset: "balanco_energia_subsistema", field: "val_gersolar/total" },
+  [`${SIN_NS}.ear_stored_pct`]: { unit: "%", source: "ONS", dataset: "ear_diario_subsistema", field: "ear_verif_subsistema_percentual" },
+  [`${SIN_NS}.ear_stored_mwmes`]: { unit: "MWmes", source: "ONS", dataset: "ear_diario_subsistema", field: "ear_verif_subsistema_mwmes" },
+  [`${SIN_NS}.ena_gross_mwmed`]: { unit: "MWmed", source: "ONS", dataset: "ena_diario_subsistema", field: "ena_bruta_regiao_mwmed" },
+  [`${SIN_NS}.ena_gross_pct_mlt`]: { unit: "% MLT", source: "ONS", dataset: "ena_diario_subsistema", field: "ena_bruta_regiao_percentualmlt" },
+  [`${SIN_NS}.cmo_brl_mwh`]: { unit: "R$/MWh", source: "ONS", dataset: "cmo_semihorario", field: "val_cmo" },
+  [`${SIN_NS}.pld_brl_mwh`]: { unit: "R$/MWh", source: "CCEE", dataset: "pld_horario", field: "PLD_HORA" },
+  [`${SIN_NS}.net_interchange_mwmed`]: { unit: "MWmed", source: "ONS", dataset: "balanco_energia_subsistema", field: "val_intercambio" },
+};
+
+function buildMockSINValues(): SINKPIObservation[] {
+  const rows: SINKPIObservation[] = [];
+  const baseBySubsystem: Record<string, number> = { S: 13500, SE_CO: 51500, NE: 13200, N: 7900 };
+  for (let day = 13; day >= 0; day -= 1) {
+    const date = new Date(Date.now() - day * 86_400_000).toISOString().slice(0, 10) + "T00:00:00";
+    for (const [idx, sub] of SIN_SUBSYSTEMS.entries()) {
+      const wave = Math.sin((13 - day + idx) * 0.55);
+      const load = baseBySubsystem[sub.code] + wave * 900;
+      const hydro = load * ([0.46, 0.48, 0.19, 0.68][idx] ?? 0.4);
+      const thermal = load * ([0.18, 0.16, 0.07, 0.18][idx] ?? 0.12);
+      const wind = load * ([0.10, 0.03, 0.63, 0.04][idx] ?? 0.1);
+      const solar = load * ([0.04, 0.05, 0.08, 0.03][idx] ?? 0.04);
+      const total = hydro + thermal + wind + solar;
+      const valueMap: Record<string, number> = {
+        [`${SIN_NS}.load_mwmed`]: load,
+        [`${SIN_NS}.generation_hydro_mwmed`]: hydro,
+        [`${SIN_NS}.generation_thermal_mwmed`]: thermal,
+        [`${SIN_NS}.generation_wind_mwmed`]: wind,
+        [`${SIN_NS}.generation_solar_mwmed`]: solar,
+        [`${SIN_NS}.generation_total_mwmed`]: total,
+        [`${SIN_NS}.mix_hydro_pct`]: hydro / total * 100,
+        [`${SIN_NS}.mix_thermal_pct`]: thermal / total * 100,
+        [`${SIN_NS}.mix_wind_pct`]: wind / total * 100,
+        [`${SIN_NS}.mix_solar_pct`]: solar / total * 100,
+        [`${SIN_NS}.ear_stored_pct`]: [72, 64, 48, 77][idx] + wave * 2.5,
+        [`${SIN_NS}.ear_stored_mwmes`]: [14500, 128000, 24800, 11800][idx] + wave * 600,
+        [`${SIN_NS}.ena_gross_mwmed`]: [8200, 41000, 6400, 9000][idx] + wave * 700,
+        [`${SIN_NS}.ena_gross_pct_mlt`]: [92, 84, 57, 103][idx] + wave * 5,
+        [`${SIN_NS}.cmo_brl_mwh`]: [148, 152, 144, 155][idx] + wave * 9,
+        [`${SIN_NS}.pld_brl_mwh`]: [142, 151, 139, 152][idx] + wave * 7,
+        [`${SIN_NS}.net_interchange_mwmed`]: [-850, -4200, 780, 5400][idx] + wave * 350,
+      };
+      for (const [kpiId, value] of Object.entries(valueMap)) {
+        const meta = SIN_KPI_META[kpiId];
+        rows.push({
+          kpi_id: kpiId,
+          subsystem_code: sub.code,
+          subsystem_name: sub.name,
+          reference_datetime: date,
+          value: Number(value.toFixed(2)),
+          unit: meta.unit,
+          source: meta.source,
+          source_dataset: meta.dataset,
+          source_field: meta.field,
+          data_quality_status: "ok",
+          snapshot_id: "mock-sin-snapshot",
+        });
+      }
+    }
+  }
+  return rows;
+}
+
+const MOCK_SIN_VALUES = buildMockSINValues();
+
+const MOCK_SIN_DASHBOARD: SINKPIDashboardResponse = {
+  last_successful_update: new Date(Date.now() - 3_600_000).toISOString(),
+  latest_reference_datetime: MOCK_SIN_VALUES.at(-1)?.reference_datetime ?? null,
+  is_empty: false,
+  is_stale: false,
+  observations: MOCK_SIN_VALUES.filter((row) => row.reference_datetime === MOCK_SIN_VALUES.at(-1)?.reference_datetime),
+  source_statuses: [
+    { source: "ONS", dataset: "balanco_energia_subsistema", frequency: "hourly", last_snapshot_at: NOW, local_records_count: 6160, last_status: "partial", last_error: null },
+    { source: "ONS", dataset: "ear_diario_subsistema", frequency: "daily", last_snapshot_at: NOW, local_records_count: 112, last_status: "partial", last_error: null },
+    { source: "ONS", dataset: "ena_diario_subsistema", frequency: "daily", last_snapshot_at: NOW, local_records_count: 224, last_status: "partial", last_error: null },
+    { source: "ONS", dataset: "cmo_semihorario", frequency: "semi-hourly", last_snapshot_at: NOW, local_records_count: 1344, last_status: "partial", last_error: null },
+    { source: "CCEE", dataset: "pld_horario", frequency: "hourly", last_snapshot_at: NOW, local_records_count: 1344, last_status: "partial", last_error: "Mock partial source note: CCEE can return 403 in some environments." },
+  ],
+  refresh_running: false,
+  refresh_error: null,
+};
+
+// ---------------------------------------------------------------------------
 // Onboarding state
 // ---------------------------------------------------------------------------
 
@@ -593,6 +805,93 @@ export function createMockBridge(): Partial<BridgeApi> {
     get_database_diagnostics: async () => MOCK_DB_DIAGNOSTICS,
 
     get_base_health: async () => MOCK_BASE_HEALTH,
+
+    get_kpi_catalog: async () => ({
+      entries: [],
+      count: 0,
+    }),
+
+    get_country_kpi_series: async (params) => {
+      const kpiIds = Array.isArray(params?.kpi_ids) ? new Set(params.kpi_ids) : null;
+      const isoCodes = Array.isArray(params?.iso_codes) ? new Set(params.iso_codes) : null;
+      const years = Array.isArray(params?.years) ? new Set(params.years.map(Number)) : null;
+      const values = MOCK_COUNTRY_KPI_VALUES.filter((row) => {
+        if (kpiIds && !kpiIds.has(row.kpi_id)) return false;
+        if (isoCodes && !isoCodes.has(row.iso_code)) return false;
+        if (years && !years.has(row.period)) return false;
+        return true;
+      });
+      return { values, count: values.length } satisfies CountryKPISeriesResponse;
+    },
+
+    get_country_kpi_compare: async (params) => {
+      const kpiId = params?.kpi_id ?? `${COUNTRY_NS}.elec_renewables_share`;
+      const year = Number(params?.year ?? YEAR - 1);
+      const values = MOCK_COUNTRY_KPI_VALUES.filter((row) => row.kpi_id === kpiId && row.period === year);
+      return { kpi_id: kpiId, year, values } satisfies CountryKPICompareResponse;
+    },
+
+    get_energy_kpi_health: async () => ({
+      last_refresh_at: new Date(Date.now() - 3_600_000).toISOString(),
+      last_refresh_status: "success",
+      rows_ingested: MOCK_COUNTRY_KPI_VALUES.length,
+      rows_conflict: 0,
+      is_stale: false,
+      owid_snapshot_id: "mock-country-energy-snapshot",
+      owid_fetched_at: NOW,
+      dq_errors: 0,
+      dq_warnings: 0,
+      refresh_running: false,
+      refresh_error: null,
+    } satisfies EnergyKPIHealthResponse),
+
+    refresh_energy_kpis: async () => ({
+      status: "success",
+      error: null,
+      run_id: "mock-country-energy-refresh",
+      rows_ingested: MOCK_COUNTRY_KPI_VALUES.length,
+    } satisfies EnergyKPIRefreshResult),
+
+    export_country_kpis_excel: async () => ({
+      path: null,
+      error: "Mock bridge does not write Excel exports.",
+    }),
+
+    get_sin_kpi_dashboard: async () => MOCK_SIN_DASHBOARD,
+
+    get_sin_kpi_series: async (params) => {
+      const p = params as Record<string, unknown> | undefined;
+      const kpiIds = Array.isArray(p?.kpi_ids) ? new Set(p?.kpi_ids as string[]) : null;
+      const subsystemCodes = Array.isArray(p?.subsystem_codes) ? new Set(p?.subsystem_codes as string[]) : null;
+      const values = MOCK_SIN_VALUES.filter((row) => {
+        if (kpiIds && !kpiIds.has(row.kpi_id)) return false;
+        if (subsystemCodes && !subsystemCodes.has(row.subsystem_code)) return false;
+        if (typeof p?.start_datetime === "string" && row.reference_datetime < p.start_datetime) return false;
+        if (typeof p?.end_datetime === "string" && row.reference_datetime > p.end_datetime) return false;
+        return true;
+      });
+      return { values, count: values.length } satisfies SINKPISeriesResponse;
+    },
+
+    get_sin_kpi_health: async () => ({
+      last_refresh_at: new Date(Date.now() - 3_600_000).toISOString(),
+      last_refresh_status: "partial",
+      rows_ingested: MOCK_SIN_VALUES.length,
+      latest_reference_datetime: MOCK_SIN_DASHBOARD.latest_reference_datetime,
+      is_stale: false,
+      dq_errors: 0,
+      dq_warnings: 1,
+      refresh_running: false,
+      refresh_error: null,
+    } satisfies SINKPIHealthResponse),
+
+    refresh_sin_kpis: async () => ({
+      status: "partial",
+      error: null,
+      rows_inserted: MOCK_SIN_VALUES.length,
+      rows_read: MOCK_SIN_VALUES.length,
+      snapshots: 5,
+    }),
 
     get_companies: async (params) => {
       const p = params as Record<string, unknown>;

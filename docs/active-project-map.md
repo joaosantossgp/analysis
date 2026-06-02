@@ -15,6 +15,18 @@ anything.
 - HTTP API adapter: `apps/api` (FastAPI for API tests/dev-hosted HTTP access,
   not the desktop frontend).
 
+## Active Indicator Surfaces
+
+- `apps/desktop-web/src/routes/CountryKpisPage.tsx` is the active desktop
+  Indicators module. The URL remains `/country-kpis` for compatibility, but the
+  UI is organized as `Macroeconomic` and `Sector & Company`.
+- Macroeconomic indicators include country-level Energy Utilities KPIs and
+  Brazilian SIN subsystem KPIs.
+- Sector & Company indicators reuse existing sector/company bridge reads; they
+  are not a separate data layer.
+- SIN module reference: `docs/reference/energy-utilities-sin-kpis.md`.
+- Indicators module reference: `docs/reference/indicators-module.md`.
+
 ## Active Commands
 
 ```powershell

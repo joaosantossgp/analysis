@@ -3,6 +3,9 @@
 7 tables: kpi_catalog, country_dimension, country_kpi_values,
           kpi_sources, source_snapshots, kpi_refresh_log, data_quality_checks.
 
+SIN subsystem support is additive and uses the same local DB, with
+subsystem_dimension and subsystem_kpi_values.
+
 Usage:
     engine = get_energy_kpi_engine(settings)   # creates DB + tables
     with engine.connect() as conn: ...
@@ -149,6 +152,47 @@ def ensure_energy_kpi_tables_for_connection(conn) -> None:
     ))
     conn.execute(text(
         "CREATE INDEX IF NOT EXISTS idx_dqc_run ON data_quality_checks(run_id)"
+    ))
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS subsystem_dimension (
+            subsystem_code TEXT PRIMARY KEY,
+            display_name   TEXT NOT NULL,
+            source_aliases  TEXT,
+            sort_order      INTEGER NOT NULL
+        )
+    """))
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS subsystem_kpi_values (
+            kpi_id              TEXT NOT NULL,
+            subsystem_code      TEXT NOT NULL,
+            reference_datetime  TEXT NOT NULL,
+            source_value        REAL,
+            normalized_value    REAL,
+            unit                TEXT,
+            source              TEXT NOT NULL,
+            source_dataset      TEXT NOT NULL,
+            source_field        TEXT,
+            source_hash         TEXT NOT NULL,
+            snapshot_id         TEXT,
+            ingestion_batch_id  TEXT,
+            data_quality_status TEXT NOT NULL DEFAULT 'ok',
+            created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at          TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (kpi_id, reference_datetime, subsystem_code)
+        )
+    """))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_skv_subsystem_ref ON "
+        "subsystem_kpi_values(subsystem_code, reference_datetime)"
+    ))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_skv_dataset_ref ON "
+        "subsystem_kpi_values(source_dataset, reference_datetime)"
+    ))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_skv_snapshot ON subsystem_kpi_values(snapshot_id)"
     ))
 
 

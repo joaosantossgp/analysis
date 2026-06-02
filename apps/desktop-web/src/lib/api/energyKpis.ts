@@ -13,6 +13,13 @@ import type {
   EnergyKPIHealthResponse,
   EnergyKPIRefreshResult,
   KPICatalogEntry,
+  SINKPIDashboardResponse,
+  SINKPIHealthResponse,
+  SINKPIObservation,
+  SINKPIRefreshParams,
+  SINKPIRefreshResult,
+  SINKPISeriesParams,
+  SINKPISeriesResponse,
 } from "../bridge/types";
 
 const BROWSER_REASON =
@@ -38,6 +45,22 @@ export type EnergyKPIHealthResult =
 
 export type EnergyKPIRefreshResult_ =
   | { mode: "desktop"; result: EnergyKPIRefreshResult }
+  | { mode: "browser"; result: null; reason: string };
+
+export type SINKPIDashboardResult =
+  | { mode: "desktop"; dashboard: SINKPIDashboardResponse }
+  | { mode: "browser"; dashboard: null; reason: string };
+
+export type SINKPISeriesResult =
+  | { mode: "desktop"; values: SINKPIObservation[] }
+  | { mode: "browser"; values: []; reason: string };
+
+export type SINKPIHealthResult =
+  | { mode: "desktop"; health: SINKPIHealthResponse }
+  | { mode: "browser"; health: null; reason: string };
+
+export type SINKPIRefreshResult_ =
+  | { mode: "desktop"; result: SINKPIRefreshResult }
   | { mode: "browser"; result: null; reason: string };
 
 // ── Fetch functions ───────────────────────────────────────────────────────────
@@ -132,4 +155,56 @@ export async function exportCountryKPIsExcel(params?: {
     return { path: null, error: BROWSER_REASON };
   }
   return callBridge("export_country_kpis_excel", params ?? {});
+}
+
+export async function fetchSINKPIDashboard(): Promise<SINKPIDashboardResult> {
+  const mode: BridgeMode = getBridgeMode();
+  if (mode === "browser") {
+    return { mode: "browser", dashboard: null, reason: BROWSER_REASON };
+  }
+  const payload: SINKPIDashboardResponse = await callBridge(
+    "get_sin_kpi_dashboard",
+    {},
+  );
+  if (payload.error) throw new Error(payload.error);
+  return { mode: "desktop", dashboard: payload };
+}
+
+export async function fetchSINKPISeries(
+  params?: SINKPISeriesParams,
+): Promise<SINKPISeriesResult> {
+  const mode: BridgeMode = getBridgeMode();
+  if (mode === "browser") {
+    return { mode: "browser", values: [], reason: BROWSER_REASON };
+  }
+  const payload: SINKPISeriesResponse = await callBridge(
+    "get_sin_kpi_series",
+    params ?? {},
+  );
+  if (payload.error) throw new Error(payload.error);
+  return { mode: "desktop", values: payload.values ?? [] };
+}
+
+export async function fetchSINKPIHealth(): Promise<SINKPIHealthResult> {
+  const mode: BridgeMode = getBridgeMode();
+  if (mode === "browser") {
+    return { mode: "browser", health: null, reason: BROWSER_REASON };
+  }
+  const payload: SINKPIHealthResponse = await callBridge("get_sin_kpi_health", {});
+  if (payload.error) throw new Error(payload.error);
+  return { mode: "desktop", health: payload };
+}
+
+export async function triggerSINKPIRefresh(
+  params?: SINKPIRefreshParams,
+): Promise<SINKPIRefreshResult_> {
+  const mode: BridgeMode = getBridgeMode();
+  if (mode === "browser") {
+    return { mode: "browser", result: null, reason: BROWSER_REASON };
+  }
+  const payload: SINKPIRefreshResult = await callBridge(
+    "refresh_sin_kpis",
+    { triggered_by: "user", include_ccee: true, ...(params ?? {}) },
+  );
+  return { mode: "desktop", result: payload };
 }

@@ -14,8 +14,13 @@ from src.contracts import (
     CountryKPIValueDTO,
     EnergyKPIHealthDTO,
     KPICatalogEntryDTO,
+    SINKPIDashboardDTO,
+    SINKPIHealthDTO,
+    SINKPIObservationDTO,
+    SINKPISourceStatusDTO,
 )
 from src.energy_kpi.schema import get_energy_kpi_engine
+from src.energy_kpi.sin_catalog import SIN_KPI_CATALOG
 from src.settings import AppSettings
 
 logger = logging.getLogger(__name__)
@@ -231,6 +236,136 @@ class EnergyKPIReadService:
             dq_warnings=dq_warnings,
         )
 
+    # ── SIN subsystem KPIs ───────────────────────────────────────────────────
+
+    def get_sin_kpi_series(
+        self,
+        *,
+        kpi_ids: list[str] | None = None,
+        subsystem_codes: list[str] | None = None,
+        start_datetime: str | None = None,
+        end_datetime: str | None = None,
+        limit: int | None = None,
+    ) -> list[SINKPIObservationDTO]:
+        """Return local SIN KPI observations. No network calls."""
+        conditions = []
+        params: dict[str, Any] = {}
+        if kpi_ids:
+            placeholders = ",".join(f":kpi_{i}" for i in range(len(kpi_ids)))
+            conditions.append(f"v.kpi_id IN ({placeholders})")
+            for i, value in enumerate(kpi_ids):
+                params[f"kpi_{i}"] = value
+        if subsystem_codes:
+            placeholders = ",".join(f":sub_{i}" for i in range(len(subsystem_codes)))
+            conditions.append(f"v.subsystem_code IN ({placeholders})")
+            for i, value in enumerate(subsystem_codes):
+                params[f"sub_{i}"] = value
+        if start_datetime:
+            conditions.append("v.reference_datetime >= :start_datetime")
+            params["start_datetime"] = start_datetime
+        if end_datetime:
+            conditions.append("v.reference_datetime <= :end_datetime")
+            params["end_datetime"] = end_datetime
+
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+        limit_sql = ""
+        if limit is not None and int(limit) > 0:
+            limit_sql = "LIMIT :limit"
+            params["limit"] = int(limit)
+
+        sql = f"""
+            SELECT v.kpi_id, v.subsystem_code,
+                   COALESCE(d.display_name, v.subsystem_code) AS subsystem_name,
+                   v.reference_datetime, v.normalized_value, v.unit, v.source,
+                   v.source_dataset, v.source_field, v.data_quality_status,
+                   v.snapshot_id
+            FROM subsystem_kpi_values v
+            LEFT JOIN subsystem_dimension d ON d.subsystem_code = v.subsystem_code
+            {where}
+            ORDER BY v.reference_datetime, v.subsystem_code, v.kpi_id
+            {limit_sql}
+        """
+        with self._engine().connect() as conn:
+            rows = conn.execute(text(sql), params).fetchall()
+        return [self._sin_row_to_dto(row) for row in rows]
+
+    def get_sin_kpi_dashboard(self) -> SINKPIDashboardDTO:
+        """Return latest SIN KPI snapshot plus provenance source panel."""
+        latest_sql = """
+            WITH latest AS (
+                SELECT kpi_id, subsystem_code, MAX(reference_datetime) AS reference_datetime
+                FROM subsystem_kpi_values
+                GROUP BY kpi_id, subsystem_code
+            )
+            SELECT v.kpi_id, v.subsystem_code,
+                   COALESCE(d.display_name, v.subsystem_code) AS subsystem_name,
+                   v.reference_datetime, v.normalized_value, v.unit, v.source,
+                   v.source_dataset, v.source_field, v.data_quality_status,
+                   v.snapshot_id
+            FROM subsystem_kpi_values v
+            JOIN latest l
+              ON l.kpi_id = v.kpi_id
+             AND l.subsystem_code = v.subsystem_code
+             AND l.reference_datetime = v.reference_datetime
+            LEFT JOIN subsystem_dimension d ON d.subsystem_code = v.subsystem_code
+            ORDER BY d.sort_order, v.kpi_id
+        """
+        with self._engine().connect() as conn:
+            rows = conn.execute(text(latest_sql)).fetchall()
+            source_statuses = self._get_sin_source_statuses(conn)
+            last_successful_update = conn.execute(text("""
+                SELECT finished_at
+                FROM kpi_refresh_log
+                WHERE source = 'SIN' AND status IN ('success', 'partial')
+                ORDER BY started_at DESC
+                LIMIT 1
+            """)).scalar()
+            latest_reference = conn.execute(text("""
+                SELECT MAX(reference_datetime) FROM subsystem_kpi_values
+            """)).scalar()
+        observations = tuple(self._sin_row_to_dto(row) for row in rows)
+        return SINKPIDashboardDTO(
+            last_successful_update=last_successful_update,
+            latest_reference_datetime=latest_reference,
+            is_empty=len(observations) == 0,
+            is_stale=self._is_sin_stale(latest_reference),
+            observations=observations,
+            source_statuses=tuple(source_statuses),
+        )
+
+    def get_sin_kpi_health(self) -> SINKPIHealthDTO:
+        sql_last = """
+            SELECT started_at, finished_at, status, rows_ingested, error
+            FROM kpi_refresh_log
+            WHERE source = 'SIN'
+            ORDER BY started_at DESC
+            LIMIT 1
+        """
+        sql_dq = """
+            SELECT
+                SUM(CASE WHEN severity='error' AND passed=0 THEN 1 ELSE 0 END) AS errors,
+                SUM(CASE WHEN severity='warn' AND passed=0 THEN 1 ELSE 0 END) AS warnings
+            FROM data_quality_checks
+            WHERE run_id = (
+                SELECT run_id FROM kpi_refresh_log WHERE source = 'SIN' ORDER BY started_at DESC LIMIT 1
+            )
+        """
+        with self._engine().connect() as conn:
+            log_row = conn.execute(text(sql_last)).fetchone()
+            latest_reference = conn.execute(text("""
+                SELECT MAX(reference_datetime) FROM subsystem_kpi_values
+            """)).scalar()
+            dq_row = conn.execute(text(sql_dq)).fetchone()
+        return SINKPIHealthDTO(
+            last_refresh_at=log_row[0] if log_row else None,
+            last_refresh_status=log_row[2] if log_row else None,
+            rows_ingested=int(log_row[3] or 0) if log_row else 0,
+            latest_reference_datetime=latest_reference,
+            is_stale=self._is_sin_stale(latest_reference),
+            dq_errors=int(dq_row[0] or 0) if dq_row else 0,
+            dq_warnings=int(dq_row[1] or 0) if dq_row else 0,
+        )
+
     # ── Internal ──────────────────────────────────────────────────────────────
 
     @staticmethod
@@ -252,3 +387,91 @@ class EnergyKPIReadService:
             value_owid=float(r[13]) if r[13] is not None else None,
             value_ember=float(r[14]) if r[14] is not None else None,
         )
+
+    @staticmethod
+    def _sin_row_to_dto(r) -> SINKPIObservationDTO:
+        return SINKPIObservationDTO(
+            kpi_id=r[0],
+            subsystem_code=r[1],
+            subsystem_name=r[2],
+            reference_datetime=r[3],
+            value=float(r[4]) if r[4] is not None else None,
+            unit=r[5] or "",
+            source=r[6] or "",
+            source_dataset=r[7] or "",
+            source_field=r[8] or "",
+            data_quality_status=r[9] or "ok",
+            snapshot_id=r[10] or "",
+        )
+
+    def _get_sin_source_statuses(self, conn) -> list[SINKPISourceStatusDTO]:
+        latest_log = conn.execute(text("""
+            SELECT status, error
+            FROM kpi_refresh_log
+            WHERE source = 'SIN'
+            ORDER BY started_at DESC
+            LIMIT 1
+        """)).fetchone()
+        latest_status = latest_log[0] if latest_log else None
+        error_by_dataset = self._parse_sin_error_by_dataset(latest_log[1] if latest_log else None)
+        records = conn.execute(text("""
+            SELECT source_dataset, COUNT(*) AS row_count, MAX(reference_datetime) AS latest_reference
+            FROM subsystem_kpi_values
+            GROUP BY source_dataset
+        """)).fetchall()
+        count_by_dataset = {row[0]: int(row[1] or 0) for row in records}
+        snapshots = conn.execute(text("""
+            SELECT source_version_label, MAX(fetched_at) AS fetched_at
+            FROM source_snapshots
+            WHERE source IN ('ONS', 'CCEE')
+            GROUP BY source_version_label
+        """)).fetchall()
+        snapshot_by_dataset: dict[str, str] = {}
+        for row in snapshots:
+            label = str(row[0] or "")
+            dataset = label.split(":", 1)[0]
+            if dataset:
+                snapshot_by_dataset[dataset] = row[1]
+        by_dataset: dict[str, SINKPISourceStatusDTO] = {}
+        for entry in SIN_KPI_CATALOG:
+            if entry.source_dataset in by_dataset:
+                continue
+            by_dataset[entry.source_dataset] = SINKPISourceStatusDTO(
+                source=entry.source,
+                dataset=entry.source_dataset,
+                frequency=entry.frequency,
+                last_snapshot_at=snapshot_by_dataset.get(entry.source_dataset),
+                local_records_count=count_by_dataset.get(entry.source_dataset, 0),
+                last_status=latest_status,
+                last_error=error_by_dataset.get(entry.source_dataset),
+            )
+        return list(by_dataset.values())
+
+    @staticmethod
+    def _parse_sin_error_by_dataset(error_text: str | None) -> dict[str, str]:
+        if not error_text:
+            return {}
+        try:
+            import json
+            items = json.loads(error_text)
+        except Exception:
+            return {"unknown": error_text}
+        if not isinstance(items, list):
+            return {}
+        result = {}
+        for item in items:
+            if isinstance(item, dict) and item.get("dataset"):
+                result[str(item["dataset"])] = str(item.get("error") or "")
+        return result
+
+    @staticmethod
+    def _is_sin_stale(latest_reference: str | None, threshold_days: int = 7) -> bool:
+        if not latest_reference:
+            return False
+        try:
+            ref = datetime.fromisoformat(str(latest_reference).replace("Z", "+00:00"))
+            if ref.tzinfo is None:
+                ref = ref.replace(tzinfo=timezone.utc)
+            return (datetime.now(timezone.utc) - ref).days > threshold_days
+        except Exception:
+            return False

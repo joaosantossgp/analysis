@@ -61,7 +61,7 @@ The app is local-first — your data and queries stay on your machine. New versi
 
 - Downloads and standardizes historical CVM filings (DFP / ITR) for B3-listed companies.
 - Persists everything in a local SQLite database for offline use.
-- Desktop UI with company directory, sector views, KPI dashboards, and statement matrices.
+- Desktop UI with company directory, sector views, an Indicators hub for macroeconomic and sector/company KPI context, and statement matrices.
 - Excel export for any company's financial history.
 - Background refresh queue with per-company status, retries, and freshness signals.
 - Auto-updater that downloads new releases from GitHub and applies them without overwriting user data.
