@@ -448,7 +448,7 @@ const MOCK_DB_DIAGNOSTICS: DatabaseDiagnostics = {
 
 const MOCK_APP_STATUS: AppStatusPayload = {
   runtime: {
-    version: "0.23.0-mock",
+    version: "0.25.1-mock",
     runtime_mode: "mock",
     bridge_status: "ready",
     frozen: false,
@@ -467,15 +467,15 @@ const MOCK_APP_STATUS: AppStatusPayload = {
   },
   database: MOCK_DB_DIAGNOSTICS,
   update: {
-    current_version: "0.23.0",
-    latest_version: "0.23.0",
+    current_version: "0.25.1",
+    latest_version: "0.25.1",
     update_available: false,
     status: "up_to_date",
     apply_supported: false,
   },
   diagnostics: {
     ok: true,
-    version: "0.23.0-mock",
+    version: "0.25.1-mock",
     dotnet_status: "mock",
     webview2_version: "mock",
     pythonnet_status: "mock",
@@ -793,7 +793,7 @@ export function createMockBridge(): Partial<BridgeApi> {
 
     get_health: async () => ({
       status: "ok",
-      version: "0.23.0-mock",
+      version: "0.25.1-mock",
       database_dialect: "sqlite",
       required_tables: ["financial_reports", "companies", "refresh_jobs"],
       warnings: [],
@@ -1158,7 +1158,7 @@ export function createMockBridge(): Partial<BridgeApi> {
       is_retry_allowed: false,
     }),
 
-    check_update: async () => ({ available: false, version: "0.23.0" }),
+    check_update: async () => ({ available: false, version: "0.25.1" }),
 
     apply_update: async () => ({ started: false, error: "[mock] Software update not available in mock mode" }),
 
