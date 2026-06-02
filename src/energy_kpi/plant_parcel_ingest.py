@@ -97,6 +97,7 @@ class PlantSnapshotRecord:
     row_count: int
     source_url: str
     source_version_label: str
+    downloaded_bytes: int = 0
     period_start: str | None = None
     period_end: str | None = None
     status: str = "ok"
@@ -225,11 +226,14 @@ def fetch_source_snapshot(
         stream=True,
         headers={"User-Agent": USER_AGENT},
     )
+    _raise_for_bad_response(response, f"{provider}:{dataset_name}")
     response.raise_for_status()
     with open(dest, "wb") as f:
         for chunk in response.iter_content(chunk_size=1024 * 128):
             if chunk:
                 f.write(chunk)
+    _raise_if_html_payload(dest, f"{provider}:{dataset_name}")
+    downloaded_bytes = dest.stat().st_size
 
     return PlantSnapshotRecord(
         snapshot_id=snapshot_id,
@@ -242,6 +246,7 @@ def fetch_source_snapshot(
         row_count=_count_data_rows(dest),
         source_url=url,
         source_version_label=source_version_label,
+        downloaded_bytes=downloaded_bytes,
         period_start=period_start,
         period_end=period_end,
     )
@@ -308,7 +313,7 @@ def parse_aneel_siga(snapshot: PlantSnapshotRecord) -> pd.DataFrame:
             "raw_payload_hash": _hash_payload(snapshot, ceg, raw),
             "snapshot_id": snapshot.snapshot_id,
         })
-    return pd.DataFrame(rows, columns=_ANEEL_COLUMNS)
+    return _with_parse_attrs(pd.DataFrame(rows, columns=_ANEEL_COLUMNS), df)
 
 
 def parse_ccee_monthly(snapshot: PlantSnapshotRecord) -> pd.DataFrame:
@@ -364,7 +369,7 @@ def parse_ccee_monthly(snapshot: PlantSnapshotRecord) -> pd.DataFrame:
             "raw_payload_hash": _hash_payload(snapshot, f"{ref}:{code}", raw),
             "snapshot_id": snapshot.snapshot_id,
         })
-    return pd.DataFrame(rows, columns=_MONTHLY_COLUMNS)
+    return _with_parse_attrs(pd.DataFrame(rows, columns=_MONTHLY_COLUMNS), df)
 
 
 def parse_ccee_hourly(snapshot: PlantSnapshotRecord) -> pd.DataFrame:
@@ -417,7 +422,7 @@ def parse_ccee_hourly(snapshot: PlantSnapshotRecord) -> pd.DataFrame:
             "raw_payload_hash": _hash_payload(snapshot, f"{ref_datetime}:{period}:{code}", raw),
             "snapshot_id": snapshot.snapshot_id,
         })
-    return pd.DataFrame(rows, columns=_HOURLY_COLUMNS)
+    return _with_parse_attrs(pd.DataFrame(rows, columns=_HOURLY_COLUMNS), df)
 
 
 def upsert_aneel_siga_plants(conn, df: pd.DataFrame) -> int:
@@ -547,6 +552,7 @@ def _fetch_package(api_template: str, package_id: str) -> dict[str, Any]:
         timeout=30,
         headers={"User-Agent": USER_AGENT},
     )
+    _raise_for_bad_response(response, f"CKAN package {package_id}")
     response.raise_for_status()
     payload = response.json()
     if not payload.get("success", False):
@@ -575,14 +581,35 @@ def _select_resource(
 
 
 def _read_csv(path: Path) -> pd.DataFrame:
-    return pd.read_csv(
-        path,
-        sep=None,
-        engine="python",
-        decimal=",",
-        encoding="utf-8-sig",
-        compression="infer",
-    )
+    last_error: Exception | None = None
+    for encoding in ("utf-8-sig", "utf-8", "cp1252", "latin1"):
+        try:
+            df = pd.read_csv(
+                path,
+                sep=None,
+                engine="python",
+                decimal=",",
+                encoding=encoding,
+                compression="infer",
+            )
+            df.attrs["detected_encoding"] = encoding
+            df.attrs["source_row_count"] = int(len(df))
+            df.attrs["source_columns"] = [str(col) for col in df.columns]
+            return df
+        except UnicodeDecodeError as exc:
+            last_error = exc
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError(f"Could not read CSV file: {path}")
+
+
+def _with_parse_attrs(normalized: pd.DataFrame, raw: pd.DataFrame) -> pd.DataFrame:
+    normalized.attrs["detected_encoding"] = raw.attrs.get("detected_encoding")
+    normalized.attrs["source_row_count"] = raw.attrs.get("source_row_count", int(len(raw)))
+    normalized.attrs["source_columns"] = raw.attrs.get("source_columns", [str(col) for col in raw.columns])
+    normalized.attrs["parsed_rows"] = int(len(normalized))
+    normalized.attrs["normalized_rows"] = int(len(normalized))
+    return normalized
 
 
 def _require_any_columns(cols: dict[str, str], required: set[str], dataset: str) -> None:
@@ -651,7 +678,13 @@ def _parse_int(value: object) -> int | None:
 def _parse_date(value: object) -> str | None:
     if value is None:
         return None
-    ts = pd.to_datetime(value, errors="coerce", dayfirst=True)
+    text_value = _clean_text(value)
+    if not text_value:
+        return None
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text_value):
+        ts = pd.to_datetime(text_value, errors="coerce", format="%Y-%m-%d")
+    else:
+        ts = pd.to_datetime(text_value, errors="coerce", dayfirst=True)
     if pd.isna(ts):
         return None
     return ts.to_pydatetime().date().isoformat()
@@ -729,8 +762,45 @@ def _sha256_file(path: Path) -> str:
 
 def _count_data_rows(path: Path) -> int:
     opener = gzip.open if path.suffix.lower() == ".gz" else open
-    with opener(path, "rt", encoding="utf-8-sig", errors="ignore") as f:
+    for encoding in ("utf-8-sig", "utf-8", "cp1252", "latin1"):
+        try:
+            with opener(path, "rt", encoding=encoding) as f:
+                return max(sum(1 for _ in f) - 1, 0)
+        except UnicodeDecodeError:
+            continue
+    with opener(path, "rt", encoding="latin1", errors="ignore") as f:
         return max(sum(1 for _ in f) - 1, 0)
+
+
+def _raise_for_bad_response(response: requests.Response, label: str) -> None:
+    if response.status_code < 400:
+        content_type = str(response.headers.get("content-type") or "").lower()
+        if "text/html" in content_type:
+            raise RuntimeError(
+                f"{label} returned HTML instead of a data file; "
+                f"HTTP {response.status_code}; title={_html_title(response.text)}"
+            )
+        return
+    message = (
+        f"{label} request failed with HTTP {response.status_code}; "
+        f"title={_html_title(response.text)}"
+    )
+    raise RuntimeError(message)
+
+
+def _raise_if_html_payload(path: Path, label: str) -> None:
+    opener = gzip.open if path.suffix.lower() == ".gz" else open
+    with opener(path, "rb") as f:
+        prefix = f.read(512).lstrip().lower()
+    if prefix.startswith(b"<!doctype html") or prefix.startswith(b"<html"):
+        raise RuntimeError(f"{label} download returned HTML instead of source data")
+
+
+def _html_title(text: str) -> str:
+    match = re.search(r"<title[^>]*>(.*?)</title>", text or "", flags=re.IGNORECASE | re.DOTALL)
+    if not match:
+        return "unknown"
+    return re.sub(r"\s+", " ", match.group(1)).strip() or "unknown"
 
 
 _ANEEL_COLUMNS = [

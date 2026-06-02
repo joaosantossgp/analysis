@@ -1133,16 +1133,35 @@ export interface PlantParcelSourceStatus {
   last_refresh_at: string | null;
   last_status: "running" | "success" | "partial" | "error" | string | null;
   last_error: string | null;
+  last_warning?: string | null;
+  last_requested_period?: string | null;
+  last_period_start?: string | null;
+  last_period_end?: string | null;
+  last_source_url?: string | null;
+  last_local_file_path?: string | null;
+  last_checksum?: string | null;
+  last_downloaded_bytes?: number | null;
+  last_source_rows?: number | null;
+  last_parsed_rows?: number | null;
+  last_normalized_rows?: number | null;
+  last_rows_inserted?: number | null;
+  last_rows_updated?: number | null;
+  last_rows_skipped?: number | null;
+  last_detected_encoding?: string | null;
   refresh_id: string | null;
-  cache_status: "missing" | "fresh" | "stale" | "failed" | "cached" | string;
+  cache_status: "never_refreshed" | "missing" | "fresh" | "stale" | "failed" | "warning" | "cached" | string;
 }
 
 export interface PlantParcelSourceStatusResponse {
   source_statuses: PlantParcelSourceStatus[];
   count: number;
   refresh_running: boolean;
+  refresh_status?: "running" | "success" | "warning" | "failed" | string | null;
   refresh_error: string | null;
+  refresh_warning?: string | null;
   refresh_source_id: string | null;
+  database_path?: string;
+  raw_data_dir?: string;
   error?: string;
 }
 
@@ -1232,14 +1251,26 @@ export interface PlantParcelRefreshParams {
 }
 
 export interface PlantParcelRefreshResult {
-  status: "started" | "already_running" | "success" | "partial" | "error";
+  status: "started" | "already_running" | "success" | "partial" | "warning" | "failed" | "error";
   error: string | null;
+  warning?: string | null;
   source_id?: string;
   refresh_id?: string;
   rows_inserted?: number;
   rows_read?: number;
+  source_rows?: number;
+  parsed_rows?: number;
+  normalized_rows?: number;
+  rows_skipped?: number;
+  downloaded_bytes?: number | null;
+  requested_period?: string | null;
+  dataset?: string | null;
+  source_url?: string | null;
+  detected_encoding?: string | null;
+  rows_updated?: number;
   period_start?: string | null;
   period_end?: string | null;
+  local_file_path?: string | null;
 }
 
 declare global {

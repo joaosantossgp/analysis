@@ -5,6 +5,8 @@ All methods query local SQLite. No network calls on the read path.
 from __future__ import annotations
 
 import logging
+import re
+import unicodedata
 from datetime import datetime, timezone
 from typing import Any
 
@@ -440,6 +442,8 @@ class EnergyKPIReadService:
                 local_records=int(count_info["records"] or 0),
                 latest_reference=count_info.get("latest_reference"),
                 source_id=source_id,
+                has_refresh_log=bool(log_row),
+                rows_inserted=log_row.get("rows_inserted"),
             )
             statuses.append({
                 **dict(row),
@@ -448,10 +452,30 @@ class EnergyKPIReadService:
                 "last_refresh_at": log_row.get("finished_at") or log_row.get("started_at"),
                 "last_status": log_row.get("status"),
                 "last_error": log_row.get("error_message"),
+                "last_warning": log_row.get("warning_message"),
+                "last_requested_period": log_row.get("requested_period"),
+                "last_period_start": log_row.get("period_start"),
+                "last_period_end": log_row.get("period_end"),
+                "last_source_url": log_row.get("source_url"),
+                "last_local_file_path": log_row.get("local_file_path"),
+                "last_checksum": log_row.get("checksum"),
+                "last_downloaded_bytes": log_row.get("downloaded_bytes"),
+                "last_source_rows": log_row.get("source_rows") or log_row.get("rows_downloaded"),
+                "last_parsed_rows": log_row.get("parsed_rows"),
+                "last_normalized_rows": log_row.get("normalized_rows"),
+                "last_rows_inserted": log_row.get("rows_inserted"),
+                "last_rows_updated": log_row.get("rows_updated"),
+                "last_rows_skipped": log_row.get("rows_skipped"),
+                "last_detected_encoding": log_row.get("detected_encoding"),
                 "refresh_id": log_row.get("refresh_id"),
                 "cache_status": status,
             })
-        return {"source_statuses": statuses, "count": len(statuses)}
+        return {
+            "source_statuses": statuses,
+            "count": len(statuses),
+            "database_path": str(self._settings.paths.energy_kpi_db_path),
+            "raw_data_dir": str(self._settings.paths.energy_kpi_raw_dir),
+        }
 
     def get_plant_parcel_catalog(
         self,
@@ -468,13 +492,18 @@ class EnergyKPIReadService:
         params: dict[str, Any] = {}
         conditions = []
         if search:
-            params["search"] = f"%{search.strip().lower()}%"
+            params["search"] = f"%{_normalize_search_text(search)}%"
             conditions.append(
-                "(LOWER(COALESCE(plant_name, '')) LIKE :search "
-                "OR LOWER(COALESCE(plant_parcel_code, '')) LIKE :search "
-                "OR LOWER(COALESCE(plant_parcel_acronym, '')) LIKE :search "
-                "OR LOWER(COALESCE(ceg, '')) LIKE :search "
-                "OR LOWER(COALESCE(agent_name, '')) LIKE :search)"
+                "(cvm_norm(COALESCE(entity_id, '')) LIKE :search "
+                "OR cvm_norm(COALESCE(plant_name, '')) LIKE :search "
+                "OR cvm_norm(COALESCE(plant_parcel_code, '')) LIKE :search "
+                "OR cvm_norm(COALESCE(plant_parcel_acronym, '')) LIKE :search "
+                "OR cvm_norm(COALESCE(ceg, '')) LIKE :search "
+                "OR cvm_norm(COALESCE(agent_name, '')) LIKE :search "
+                "OR cvm_norm(COALESCE(generation_source, '')) LIKE :search "
+                "OR cvm_norm(COALESCE(submarket, '')) LIKE :search "
+                "OR cvm_norm(COALESCE(uf, '')) LIKE :search "
+                "OR cvm_norm(COALESCE(phase, '')) LIKE :search)"
             )
         if entity_type:
             params["entity_type"] = entity_type
@@ -507,6 +536,7 @@ class EnergyKPIReadService:
         """
         with self._engine().begin() as conn:
             seed_plant_sources(conn)
+            _install_sqlite_functions(conn)
             rows = [dict(row) for row in conn.execute(text(sql), params).mappings().all()]
             total = int(conn.execute(text(count_sql), params).scalar() or 0)
 
@@ -856,10 +886,21 @@ class EnergyKPIReadService:
         local_records: int,
         latest_reference: str | None,
         source_id: str,
+        has_refresh_log: bool = True,
+        rows_inserted: Any = None,
     ) -> str:
-        if latest_status == "error":
+        if latest_status in {"error", "failed"}:
             return "failed"
+        if latest_status == "warning":
+            return "warning"
         if local_records <= 0:
+            if not has_refresh_log:
+                return "never_refreshed"
+            try:
+                if rows_inserted is not None and int(rows_inserted or 0) <= 0:
+                    return "warning"
+            except (TypeError, ValueError):
+                pass
             return "missing"
         if not latest_reference:
             return "cached"
@@ -1025,3 +1066,16 @@ def _kw_to_mw(value: Any) -> float | None:
         return float(value) / 1000.0
     except (TypeError, ValueError):
         return None
+
+
+def _normalize_search_text(value: Any) -> str:
+    no_accents = unicodedata.normalize("NFKD", str(value or "")).encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"\s+", " ", no_accents.strip().lower())
+
+
+def _install_sqlite_functions(conn) -> None:
+    raw_connection = getattr(conn.connection, "driver_connection", None)
+    if raw_connection is None:
+        raw_connection = getattr(conn.connection, "connection", None)
+    if raw_connection is not None:
+        raw_connection.create_function("cvm_norm", 1, _normalize_search_text)

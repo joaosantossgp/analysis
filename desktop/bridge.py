@@ -2789,9 +2789,12 @@ class CVMBridge:
         try:
             result = self._energy_svc().get_plant_parcel_source_statuses()
             result = self._sanitize_for_json(result)
-            result["refresh_running"] = self._plant_parcel_refresh_status().get("status") == "running"
-            result["refresh_error"] = self._plant_parcel_refresh_status().get("error")
-            result["refresh_source_id"] = self._plant_parcel_refresh_status().get("source_id")
+            refresh_state = self._plant_parcel_refresh_status()
+            result["refresh_running"] = refresh_state.get("status") == "running"
+            result["refresh_status"] = refresh_state.get("status")
+            result["refresh_error"] = refresh_state.get("error")
+            result["refresh_warning"] = refresh_state.get("warning")
+            result["refresh_source_id"] = refresh_state.get("source_id")
             return result
         except Exception as exc:
             return {
@@ -2866,6 +2869,7 @@ class CVMBridge:
                 self._plant_parcel_refresh_state = {
                     "status": result.get("status", "success"),
                     "error": result.get("error"),
+                    "warning": result.get("warning"),
                     "source_id": source_id,
                     "rows_inserted": result.get("rows_inserted", 0),
                     "refresh_id": result.get("refresh_id"),

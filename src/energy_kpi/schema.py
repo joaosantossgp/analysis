@@ -23,6 +23,17 @@ from sqlalchemy import create_engine, text, Engine
 from src.settings import AppSettings
 
 
+def _ensure_columns(conn, table_name: str, columns: dict[str, str]) -> None:
+    """Add missing SQLite columns for additive schema upgrades."""
+    existing = {
+        str(row[1])
+        for row in conn.execute(text(f"PRAGMA table_info({table_name})")).fetchall()
+    }
+    for column_name, column_type in columns.items():
+        if column_name not in existing:
+            conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"))
+
+
 def ensure_energy_kpi_tables_for_connection(conn) -> None:
     """Create all energy KPI tables. Safe to call multiple times (idempotent)."""
     conn.execute(text("PRAGMA journal_mode = WAL"))
@@ -234,6 +245,22 @@ def ensure_energy_kpi_tables_for_connection(conn) -> None:
             source_snapshot_date TEXT
         )
     """))
+    _ensure_columns(
+        conn,
+        "energy_source_refresh_log",
+        {
+            "requested_period": "TEXT",
+            "dataset_name": "TEXT",
+            "source_url": "TEXT",
+            "downloaded_bytes": "INTEGER",
+            "source_rows": "INTEGER",
+            "parsed_rows": "INTEGER",
+            "normalized_rows": "INTEGER",
+            "rows_skipped": "INTEGER",
+            "warning_message": "TEXT",
+            "detected_encoding": "TEXT",
+        },
+    )
     conn.execute(text(
         "CREATE INDEX IF NOT EXISTS idx_esrl_source_started ON "
         "energy_source_refresh_log(source_id, started_at)"

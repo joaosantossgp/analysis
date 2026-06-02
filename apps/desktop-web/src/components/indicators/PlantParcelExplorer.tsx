@@ -43,7 +43,7 @@ export function PlantParcelExplorer({ bridgeReady }: { bridgeReady: boolean }) {
   const [offset, setOffset] = useState(0);
   const [selected, setSelected] = useState<PlantParcelCatalogRecord | null>(null);
   const [refreshingSourceId, setRefreshingSourceId] = useState<string | null>(null);
-  const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
+  const [message, setMessage] = useState<{ text: string; severity: "success" | "warning" | "error" } | null>(null);
   const [monthlyYear, setMonthlyYear] = useState(String(now.getFullYear()));
   const [hourlyMonth, setHourlyMonth] = useState(
     `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`,
@@ -111,12 +111,18 @@ export function PlantParcelExplorer({ bridgeReady }: { bridgeReady: boolean }) {
     if (statusResponse.refresh_running) return;
     setRefreshingSourceId(null);
     if (statusResponse.refresh_error) {
-      setMessage({ text: `Refresh finished with an error: ${statusResponse.refresh_error}`, ok: false });
+      setMessage({ text: `Refresh finished with an error: ${statusResponse.refresh_error}`, severity: "error" });
+    } else if (statusResponse.refresh_warning || statusResponse.refresh_status === "warning") {
+      setMessage({
+        text: statusResponse.refresh_warning ?? "Refresh completed with a warning. Check the source card for details.",
+        severity: "warning",
+      });
     } else {
-      setMessage({ text: "Refresh finished. Local cache status has been updated.", ok: true });
+      setMessage({ text: "Refresh finished. Local cache status has been updated.", severity: "success" });
       window.setTimeout(() => setMessage(null), 6000);
-      void qc.invalidateQueries({ queryKey: ["plant-parcel-catalog"] });
     }
+    void qc.invalidateQueries({ queryKey: ["plant-parcel-source-statuses"] });
+    void qc.invalidateQueries({ queryKey: ["plant-parcel-catalog"] });
   }, [refreshingSourceId, statusResponse, qc]);
 
   const detailQuery = useQuery({
@@ -135,7 +141,7 @@ export function PlantParcelExplorer({ bridgeReady }: { bridgeReady: boolean }) {
   const refreshSource = useCallback(
     async (source: PlantParcelSourceStatus) => {
       setRefreshingSourceId(source.source_id);
-      setMessage({ text: `Starting refresh for ${source.source_name}...`, ok: true });
+      setMessage({ text: `Starting refresh for ${source.source_name}...`, severity: "success" });
       try {
         const params =
           source.source_id === "ccee_plant_parcel_monthly"
@@ -146,19 +152,29 @@ export function PlantParcelExplorer({ bridgeReady }: { bridgeReady: boolean }) {
         const result = await triggerPlantParcelRefresh(params);
         if (result.mode === "browser") {
           setRefreshingSourceId(null);
-          setMessage({ text: result.reason, ok: false });
+          setMessage({ text: result.reason, severity: "error" });
           return;
         }
-        if (result.result.status === "error") {
+        if (result.result.status === "error" || result.result.status === "failed") {
           setRefreshingSourceId(null);
-          setMessage({ text: result.result.error ?? "Refresh failed.", ok: false });
+          setMessage({ text: result.result.error ?? "Refresh failed.", severity: "error" });
+          return;
+        }
+        if (result.result.status === "warning") {
+          setRefreshingSourceId(null);
+          setMessage({
+            text: result.result.warning ?? "Refresh completed with no cached rows.",
+            severity: "warning",
+          });
+          void qc.invalidateQueries({ queryKey: ["plant-parcel-source-statuses"] });
+          void qc.invalidateQueries({ queryKey: ["plant-parcel-catalog"] });
           return;
         }
         if (result.result.status === "success" || result.result.status === "partial") {
           setRefreshingSourceId(null);
           setMessage({
             text: `Refresh completed: ${result.result.rows_inserted ?? 0} rows cached.`,
-            ok: true,
+            severity: "success",
           });
           void qc.invalidateQueries({ queryKey: ["plant-parcel-source-statuses"] });
           void qc.invalidateQueries({ queryKey: ["plant-parcel-catalog"] });
@@ -167,7 +183,7 @@ export function PlantParcelExplorer({ bridgeReady }: { bridgeReady: boolean }) {
         }
       } catch (error) {
         setRefreshingSourceId(null);
-        setMessage({ text: `Refresh failed: ${String(error)}`, ok: false });
+        setMessage({ text: `Refresh failed: ${String(error)}`, severity: "error" });
       }
     },
     [hourlyMonth, monthlyYear, qc, statusQuery],
@@ -225,7 +241,7 @@ export function PlantParcelExplorer({ bridgeReady }: { bridgeReady: boolean }) {
             <StateBanner
               variant="empty"
               title="No plant or parcel matches"
-              message="Refresh ANEEL SIGA and CCEE monthly data, or clear the current search and filters."
+              message={emptyCatalogMessage(statuses)}
             />
           ) : (
             <PlantCatalogTable records={records} selected={selected} onSelect={setSelected} />
@@ -294,7 +310,10 @@ function SourceStatusGrid({
             <Meta label="Latest ref" value={source.latest_reference ?? "—"} mono />
             <Meta label="Last refresh" value={formatDateTime(source.last_refresh_at)} mono />
             <Meta label="Dataset" value={source.dataset_name} mono />
+            <Meta label="Last status" value={statusLabel(source.last_status ?? source.cache_status)} mono />
+            <Meta label="Imported" value={formatNullableInteger(source.last_rows_inserted ?? source.local_records_count)} mono />
           </div>
+          <RefreshDiagnostics source={source} />
           {source.source_id === "ccee_plant_parcel_monthly" ? (
             <Input
               aria-label="CCEE monthly refresh year"
@@ -325,6 +344,9 @@ function SourceStatusGrid({
           </Button>
           {source.last_error ? (
             <p className="text-xs text-red-300">{source.last_error}</p>
+          ) : null}
+          {source.last_warning ? (
+            <p className="text-xs text-amber-300">{source.last_warning}</p>
           ) : null}
         </div>
       ))}
@@ -668,18 +690,26 @@ function RefreshMessage({
   message,
   onDismiss,
 }: {
-  message: { text: string; ok: boolean };
+  message: { text: string; severity: "success" | "warning" | "error" };
   onDismiss: () => void;
 }) {
+  const isError = message.severity === "error";
+  const isWarning = message.severity === "warning";
   return (
     <div
       className="flex items-center gap-2 rounded-md border p-3 text-sm"
       style={{
-        borderColor: message.ok ? "var(--color-border-subtle)" : "var(--color-state-err)",
+        borderColor: isError
+          ? "var(--color-state-err)"
+          : isWarning
+            ? "var(--color-state-warn)"
+            : "var(--color-border-subtle)",
         background: "var(--color-surface-2)",
       }}
     >
-      <span className={message.ok ? "text-emerald-400" : "text-red-300"}>{message.ok ? "ok" : "error"}</span>
+      <span className={isError ? "text-red-300" : isWarning ? "text-amber-300" : "text-emerald-400"}>
+        {isError ? "error" : isWarning ? "warning" : "ok"}
+      </span>
       <span className="text-zinc-300">{message.text}</span>
       <button type="button" className="ml-auto text-xs text-zinc-500" onClick={onDismiss}>
         dismiss
@@ -698,10 +728,10 @@ function Meta({ label, value, mono = false }: { label: string; value: string; mo
 }
 
 function StatusPill({ status }: { status: string }) {
-  const color = status === "failed" ? "text-red-300" : status === "missing" || status === "stale" ? "text-amber-300" : "text-emerald-300";
+  const color = status === "failed" ? "text-red-300" : status === "missing" || status === "never_refreshed" || status === "warning" || status === "stale" ? "text-amber-300" : "text-emerald-300";
   return (
     <span className={`rounded border border-zinc-800 px-2 py-1 font-mono text-[11px] ${color}`}>
-      {status}
+      {statusLabel(status)}
     </span>
   );
 }
@@ -743,6 +773,18 @@ function formatInteger(value: number): string {
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(value);
 }
 
+function formatNullableInteger(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "—";
+  return formatInteger(value);
+}
+
+function formatBytes(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "—";
+  if (value < 1024) return `${formatInteger(value)} B`;
+  if (value < 1024 * 1024) return `${formatNumber(value / 1024)} KB`;
+  return `${formatNumber(value / (1024 * 1024))} MB`;
+}
+
 function formatDateTime(value: string | null): string {
   if (!value) return "—";
   const parsed = new Date(value);
@@ -754,4 +796,48 @@ function textValue(row: Record<string, unknown>, key: string): string | null {
   const value = row[key];
   if (typeof value === "string" && value.trim()) return value;
   return null;
+}
+
+function statusLabel(status: string | null | undefined): string {
+  if (!status) return "—";
+  return status.replaceAll("_", " ");
+}
+
+function RefreshDiagnostics({ source }: { source: PlantParcelSourceStatus }) {
+  const hasDiagnostics =
+    source.last_source_rows !== undefined ||
+    source.last_parsed_rows !== undefined ||
+    source.last_normalized_rows !== undefined ||
+    source.last_rows_skipped !== undefined ||
+    source.last_downloaded_bytes !== undefined ||
+    source.last_requested_period;
+  if (!hasDiagnostics) return null;
+  return (
+    <div className="rounded border border-zinc-800 bg-zinc-900/40 px-2 py-1.5 text-[11px] text-zinc-500">
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1 font-mono">
+        <span>period {source.last_requested_period ?? source.last_period_start ?? "—"}</span>
+        <span>bytes {formatBytes(source.last_downloaded_bytes)}</span>
+        <span>source {formatNullableInteger(source.last_source_rows)}</span>
+        <span>parsed {formatNullableInteger(source.last_parsed_rows ?? source.last_normalized_rows)}</span>
+        <span>cached {formatNullableInteger(source.last_rows_inserted)}</span>
+        <span>skipped {formatNullableInteger(source.last_rows_skipped)}</span>
+      </div>
+      {source.last_detected_encoding ? (
+        <p className="mt-1 font-mono text-zinc-600">encoding {source.last_detected_encoding}</p>
+      ) : null}
+    </div>
+  );
+}
+
+function emptyCatalogMessage(statuses: PlantParcelSourceStatus[]): string {
+  if (statuses.some((source) => source.last_error || source.cache_status === "failed")) {
+    return "The latest source refresh failed. Check the source card error, then refresh again.";
+  }
+  if (statuses.some((source) => source.last_warning || source.cache_status === "warning")) {
+    return "The latest refresh imported no rows. Check the source warning or choose another period.";
+  }
+  if (statuses.every((source) => source.cache_status === "never_refreshed")) {
+    return "Refresh ANEEL SIGA or CCEE monthly data to populate the local plant catalog.";
+  }
+  return "Refresh ANEEL SIGA and CCEE monthly data, or clear the current search and filters.";
 }

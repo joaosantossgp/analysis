@@ -28,6 +28,7 @@ from src.energy_kpi.plant_parcel_ingest import (
     upsert_ccee_hourly,
     upsert_ccee_monthly,
 )
+from src.energy_kpi.plant_parcel_refresh import PlantParcelRefreshJob
 from src.energy_kpi.read import EnergyKPIReadService
 from src.settings import build_settings
 
@@ -49,6 +50,18 @@ def _snapshot(path: Path, source_id: str, provider: str, dataset: str) -> PlantS
 
 def _write_csv(path: Path, columns: list[str], rows: list[list[object]], sep: str = ";") -> Path:
     pd.DataFrame(rows, columns=columns).to_csv(path, index=False, sep=sep)
+    return path
+
+
+def _write_csv_encoded(
+    path: Path,
+    columns: list[str],
+    rows: list[list[object]],
+    *,
+    sep: str = ";",
+    encoding: str,
+) -> Path:
+    pd.DataFrame(rows, columns=columns).to_csv(path, index=False, sep=sep, encoding=encoding)
     return path
 
 
@@ -104,6 +117,29 @@ def test_parse_aneel_siga_and_missing_required_columns(tmp_path: Path):
     bad_path = _write_csv(tmp_path / "bad.csv", ["only"], [["x"]])
     with pytest.raises(RuntimeError, match="missing required columns"):
         parse_aneel_siga(_snapshot(bad_path, SOURCE_ANEEL_SIGA, "ANEEL", "siga-empreendimentos-geracao.csv"))
+
+
+def test_parse_aneel_siga_accepts_cp1252_source(tmp_path: Path):
+    path = _write_csv_encoded(
+        tmp_path / "siga_cp1252.csv",
+        [
+            "DatGeracaoConjuntoDados",
+            "CodCEG",
+            "NomEmpreendimento",
+            "SigUFPrincipal",
+            "DscFaseUsina",
+            "DscFonteCombustivel",
+            "MdaPotenciaOutorgadaKw",
+        ],
+        [["2026-06-02", "CEG-JUPIA", "Jupiá", "SP", "Operação", "Hidráulica", "1000,0"]],
+        encoding="cp1252",
+    )
+
+    df = parse_aneel_siga(_snapshot(path, SOURCE_ANEEL_SIGA, "ANEEL", "siga-empreendimentos-geracao.csv"))
+
+    assert df.iloc[0]["plant_name"] == "Jupiá"
+    assert df.iloc[0]["source_updated_at"] == "2026-06-02"
+    assert df.attrs["detected_encoding"] == "cp1252"
 
 
 def test_ccee_monthly_and_hourly_idempotent_upserts(tmp_path: Path, db_conn):
@@ -211,3 +247,114 @@ def test_plant_parcel_read_detail_is_offline_and_derives_metrics(tmp_path: Path,
     assert "generation_center_of_gravity_gwh" in metric_ids
     assert "capacity_factor_pct" in metric_ids
     assert detail["metadata"]["caveats"]
+
+
+def test_plant_catalog_search_is_accent_insensitive(tmp_path: Path, db_engine, monkeypatch):
+    aneel_path = _write_csv_encoded(
+        tmp_path / "siga.csv",
+        [
+            "DatGeracaoConjuntoDados",
+            "CodCEG",
+            "NomEmpreendimento",
+            "SigUFPrincipal",
+            "DscFaseUsina",
+            "DscFonteCombustivel",
+            "MdaPotenciaOutorgadaKw",
+        ],
+        [["02/06/2026", "CEG-JUPIA", "Jupiá", "SP", "Operação", "Hidráulica", "1000,0"]],
+        encoding="cp1252",
+    )
+    with db_engine.begin() as conn:
+        seed_plant_sources(conn)
+        upsert_aneel_siga_plants(
+            conn,
+            parse_aneel_siga(_snapshot(aneel_path, SOURCE_ANEEL_SIGA, "ANEEL", "siga-empreendimentos-geracao.csv")),
+        )
+
+    settings = build_settings(project_root=tmp_path)
+    svc = EnergyKPIReadService(settings)
+    monkeypatch.setattr(svc, "_engine", lambda: db_engine)
+
+    catalog = svc.get_plant_parcel_catalog(search="jupia")
+
+    assert catalog["total"] == 1
+    assert catalog["records"][0]["plant_name"] == "Jupiá"
+
+
+def test_source_status_reports_never_refreshed_and_warning(tmp_path: Path, db_engine, monkeypatch):
+    settings = build_settings(project_root=tmp_path)
+    svc = EnergyKPIReadService(settings)
+    monkeypatch.setattr(svc, "_engine", lambda: db_engine)
+
+    initial = svc.get_plant_parcel_source_statuses()
+    by_source = {row["source_id"]: row for row in initial["source_statuses"]}
+    assert by_source[SOURCE_ANEEL_SIGA]["cache_status"] == "never_refreshed"
+
+    with db_engine.begin() as conn:
+        conn.execute(
+            text("""
+                INSERT INTO energy_source_refresh_log
+                    (refresh_id, source_id, requested_by, started_at, finished_at,
+                     status, rows_downloaded, rows_inserted, source_rows, parsed_rows,
+                     normalized_rows, rows_skipped, warning_message)
+                VALUES
+                    ('warn-1', :source_id, 'test', '2026-06-01T00:00:00+00:00',
+                     '2026-06-01T00:00:01+00:00', 'warning', 10, 0, 10, 0, 0, 10,
+                     'Downloaded rows but no rows matched parser requirements.')
+            """),
+            {"source_id": SOURCE_ANEEL_SIGA},
+        )
+
+    warned = svc.get_plant_parcel_source_statuses()
+    by_source = {row["source_id"]: row for row in warned["source_statuses"]}
+    assert by_source[SOURCE_ANEEL_SIGA]["cache_status"] == "warning"
+    assert by_source[SOURCE_ANEEL_SIGA]["last_warning"].startswith("Downloaded rows")
+
+
+def test_refresh_job_marks_zero_insert_as_warning(tmp_path: Path, monkeypatch):
+    settings = build_settings(project_root=tmp_path)
+    path = _write_csv(tmp_path / "empty.csv", ["CodCEG", "NomEmpreendimento"], [])
+    snapshot = PlantSnapshotRecord(
+        snapshot_id="empty-aneel",
+        source_id=SOURCE_ANEEL_SIGA,
+        provider="ANEEL",
+        dataset_name="siga-empreendimentos-geracao.csv",
+        fetched_at="2026-06-01T00:00:00+00:00",
+        file_path=path,
+        sha256="deadbeef",
+        row_count=0,
+        source_url="https://example.test/source.csv",
+        source_version_label="SIGA:test",
+    )
+    empty_frame = pd.DataFrame(columns=[
+        "ceg",
+        "plant_name",
+        "ceg_core",
+        "generation_type",
+        "generation_source",
+        "uf",
+        "phase",
+        "operation_start_date",
+        "grant_type",
+        "authorized_capacity_kw",
+        "inspected_capacity_kw",
+        "physical_guarantee_kw",
+        "agent_name",
+        "ownership_description",
+        "source_updated_at",
+        "raw_payload_hash",
+        "snapshot_id",
+    ])
+    empty_frame.attrs["source_row_count"] = 0
+    empty_frame.attrs["parsed_rows"] = 0
+    empty_frame.attrs["normalized_rows"] = 0
+    empty_frame.attrs["detected_encoding"] = "utf-8-sig"
+
+    monkeypatch.setattr("src.energy_kpi.plant_parcel_refresh.fetch_aneel_siga_snapshot", lambda *_, **__: snapshot)
+    monkeypatch.setattr("src.energy_kpi.plant_parcel_refresh.parse_aneel_siga", lambda *_: empty_frame)
+
+    result = PlantParcelRefreshJob(settings).run(source_id=SOURCE_ANEEL_SIGA, triggered_by="test")
+
+    assert result["status"] == "warning"
+    assert result["rows_inserted"] == 0
+    assert "contained no rows" in result["warning"]
