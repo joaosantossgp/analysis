@@ -35,9 +35,11 @@ import type {
   DataCoverageRow,
   DatabaseDiagnostics,
   DataUpdateSettings,
+  EnergyKPICatalogResponse,
   EnergyKPIHealthResponse,
   EnergyKPIRefreshResult,
   KPIBundle,
+  KPICatalogEntry,
   OnboardingState,
   RefreshJobListResponse,
   RefreshJobStatus,
@@ -496,12 +498,12 @@ const MOCK_APP_STATUS: AppStatusPayload = {
 
 const COUNTRY_NS = "energy_utilities.country";
 const COUNTRY_FIXTURES = [
-  { iso: "BRA", name: "Brazil", hydro: 58, solar: 6, wind: 13, nuclear: 2, gas: 9, coal: 3, demand: 620, carbon: 96 },
-  { iso: "USA", name: "United States", hydro: 6, solar: 5, wind: 11, nuclear: 18, gas: 39, coal: 19, demand: 4300, carbon: 360 },
-  { iso: "CHN", name: "China", hydro: 15, solar: 6, wind: 9, nuclear: 5, gas: 3, coal: 58, demand: 8900, carbon: 560 },
-  { iso: "OWEU", name: "EU 27", hydro: 12, solar: 9, wind: 17, nuclear: 22, gas: 18, coal: 13, demand: 2800, carbon: 250 },
-  { iso: "CHL", name: "Chile", hydro: 21, solar: 19, wind: 12, nuclear: 0, gas: 18, coal: 24, demand: 86, carbon: 310 },
-  { iso: "ARG", name: "Argentina", hydro: 25, solar: 2, wind: 9, nuclear: 7, gas: 50, coal: 2, demand: 145, carbon: 330 },
+  { iso: "BRA", name: "Brazil",         hydro: 58, solar: 6,  wind: 13, nuclear: 2,  gas: 9,  coal: 3,  demand: 620,  carbon: 96,  demandPc: 2800,  ghg: 70,   energyRen: 47, energyFos: 43, ren5y: 5  },
+  { iso: "USA", name: "United States",  hydro: 6,  solar: 5,  wind: 11, nuclear: 18, gas: 39, coal: 19, demand: 4300, carbon: 360, demandPc: 12000, ghg: 1500, energyRen: 13, energyFos: 79, ren5y: 8  },
+  { iso: "CHN", name: "China",          hydro: 15, solar: 6,  wind: 9,  nuclear: 5,  gas: 3,  coal: 58, demand: 8900, carbon: 560, demandPc: 5800,  ghg: 5000, energyRen: 16, energyFos: 80, ren5y: 12 },
+  { iso: "OWEU", name: "EU 27",         hydro: 12, solar: 9,  wind: 17, nuclear: 22, gas: 18, coal: 13, demand: 2800, carbon: 250, demandPc: 5800,  ghg: 900,  energyRen: 23, energyFos: 69, ren5y: 11 },
+  { iso: "CHL", name: "Chile",          hydro: 21, solar: 19, wind: 12, nuclear: 0,  gas: 18, coal: 24, demand: 86,   carbon: 310, demandPc: 4300,  ghg: 35,   energyRen: 38, energyFos: 57, ren5y: 18 },
+  { iso: "ARG", name: "Argentina",      hydro: 25, solar: 2,  wind: 9,  nuclear: 7,  gas: 50, coal: 2,  demand: 145,  carbon: 330, demandPc: 3800,  ghg: 70,   energyRen: 13, energyFos: 83, ren5y: 7  },
 ] as const;
 
 const COUNTRY_KPIS = [
@@ -519,6 +521,12 @@ const COUNTRY_KPIS = [
   "elec_generation_total",
   "elec_demand_growth_yoy",
   "elec_net_imports_share",
+  "elec_demand_per_capita",
+  "elec_ghg_emissions",
+  "elec_net_imports",
+  "energy_renewables_share",
+  "energy_fossil_share",
+  "elec_renewables_share_5y_chg",
 ] as const;
 
 function buildMockCountryKpiValues(): CountryKPIValue[] {
@@ -541,6 +549,12 @@ function buildMockCountryKpiValues(): CountryKPIValue[] {
       const growth = 1.2 + shift * 2.4 + countryIdx * 0.2;
       const imports = ((demand - generation) / demand) * 100;
       const carbon = Math.max(35, country.carbon - yearOffset * 8 + shift * 8);
+      const demandPc = country.demandPc * (1 + yearOffset * 0.012 + shift * 0.006);
+      const ghg = Math.max(10, country.ghg * (1 - yearOffset * 0.015 + shift * 0.01));
+      const netImports = demand - generation; // TWh, negative = exporter
+      const energyRen = clampShare(country.energyRen + yearOffset * 0.6 + shift * 0.8);
+      const energyFos = clampShare(country.energyFos - yearOffset * 0.5 + shift * 0.4);
+      const ren5y = country.ren5y + yearOffset * 0.3 + shift * 0.5;
       const valueMap: Record<(typeof COUNTRY_KPIS)[number], number> = {
         elec_hydro_share: hydro,
         elec_solar_share: solar,
@@ -556,17 +570,33 @@ function buildMockCountryKpiValues(): CountryKPIValue[] {
         elec_generation_total: generation,
         elec_demand_growth_yoy: growth,
         elec_net_imports_share: imports,
+        elec_demand_per_capita: demandPc,
+        elec_ghg_emissions: ghg,
+        elec_net_imports: netImports,
+        energy_renewables_share: energyRen,
+        energy_fossil_share: energyFos,
+        elec_renewables_share_5y_chg: ren5y,
+      };
+      const UNIT_MAP: Record<string, string> = {
+        elec_carbon_intensity: "gCO2/kWh",
+        elec_demand_total: "TWh", elec_generation_total: "TWh", elec_net_imports: "TWh",
+        elec_demand_per_capita: "kWh",
+        elec_ghg_emissions: "MtCO2e",
+        elec_renewables_share_5y_chg: "pp",
       };
       for (const kpi of COUNTRY_KPIS) {
         const value = Number(valueMap[kpi].toFixed(2));
         const kpiId = `${COUNTRY_NS}.${kpi}`;
+        const unit = UNIT_MAP[kpi] ?? (
+          kpi.includes("share") || kpi.endsWith("growth_yoy") ? "%" : "TWh"
+        );
         rows.push({
           kpi_id: kpiId,
           iso_code: country.iso,
           country_name: country.name,
           period: year,
           value,
-          unit: kpi.includes("share") || kpi.endsWith("growth_yoy") ? "%" : kpi.endsWith("intensity") ? "gCO2/kWh" : "TWh",
+          unit,
           source: "mock",
           source_priority: 1,
           source_field: kpi,
@@ -616,6 +646,8 @@ const SIN_KPI_META: Record<string, { unit: string; source: string; dataset: stri
   [`${SIN_NS}.ear_stored_mwmes`]: { unit: "MWmes", source: "ONS", dataset: "ear_diario_subsistema", field: "ear_verif_subsistema_mwmes" },
   [`${SIN_NS}.ena_gross_mwmed`]: { unit: "MWmed", source: "ONS", dataset: "ena_diario_subsistema", field: "ena_bruta_regiao_mwmed" },
   [`${SIN_NS}.ena_gross_pct_mlt`]: { unit: "% MLT", source: "ONS", dataset: "ena_diario_subsistema", field: "ena_bruta_regiao_percentualmlt" },
+  [`${SIN_NS}.ena_storable_mwmed`]: { unit: "MWmed", source: "ONS", dataset: "ena_diario_subsistema", field: "ena_armazenavel_regiao_mwmed" },
+  [`${SIN_NS}.ena_storable_pct_mlt`]: { unit: "% MLT", source: "ONS", dataset: "ena_diario_subsistema", field: "ena_armazenavel_regiao_percentualmlt" },
   [`${SIN_NS}.cmo_brl_mwh`]: { unit: "R$/MWh", source: "ONS", dataset: "cmo_semihorario", field: "val_cmo" },
   [`${SIN_NS}.pld_brl_mwh`]: { unit: "R$/MWh", source: "CCEE", dataset: "pld_horario", field: "PLD_HORA" },
   [`${SIN_NS}.net_interchange_mwmed`]: { unit: "MWmed", source: "ONS", dataset: "balanco_energia_subsistema", field: "val_intercambio" },
@@ -649,6 +681,8 @@ function buildMockSINValues(): SINKPIObservation[] {
         [`${SIN_NS}.ear_stored_mwmes`]: [14500, 128000, 24800, 11800][idx] + wave * 600,
         [`${SIN_NS}.ena_gross_mwmed`]: [8200, 41000, 6400, 9000][idx] + wave * 700,
         [`${SIN_NS}.ena_gross_pct_mlt`]: [92, 84, 57, 103][idx] + wave * 5,
+        [`${SIN_NS}.ena_storable_mwmed`]: [6100, 30200, 4700, 6600][idx] + wave * 400,
+        [`${SIN_NS}.ena_storable_pct_mlt`]: [72, 65, 44, 87][idx] + wave * 4,
         [`${SIN_NS}.cmo_brl_mwh`]: [148, 152, 144, 155][idx] + wave * 9,
         [`${SIN_NS}.pld_brl_mwh`]: [142, 151, 139, 152][idx] + wave * 7,
         [`${SIN_NS}.net_interchange_mwmed`]: [-850, -4200, 780, 5400][idx] + wave * 350,
@@ -692,6 +726,136 @@ const MOCK_SIN_DASHBOARD: SINKPIDashboardResponse = {
   refresh_running: false,
   refresh_error: null,
 };
+
+// ---------------------------------------------------------------------------
+// KPI catalog fixture (dev-only)
+//
+// Mirrors the backend `kpi_catalog` so the Indicator Explorer renders a
+// realistic, fully metadata-tagged catalog under `npm run dev:mock`. This is
+// NOT shipped data — the mock module is excluded from production builds by Vite
+// dead-code elimination (see adapter.ts).
+// ---------------------------------------------------------------------------
+
+const COUNTRY_CAT_META: Record<
+  string,
+  { name: string; macro: string; unit: string; calc: string; hib: boolean | null; caveat?: string }
+> = {
+  elec_hydro_share: { name: "Hydro Share of Electricity", macro: "hydro", unit: "%", calc: "direct", hib: null, caveat: "High hydro share = hydrology/drought risk for Brazilian utilities" },
+  elec_solar_share: { name: "Solar Share of Electricity", macro: "renewables", unit: "%", calc: "direct", hib: true },
+  elec_wind_share: { name: "Wind Share of Electricity", macro: "renewables", unit: "%", calc: "direct", hib: true },
+  elec_nuclear_share: { name: "Nuclear Share of Electricity", macro: "nuclear", unit: "%", calc: "direct", hib: null },
+  elec_gas_share: { name: "Gas Share of Electricity", macro: "thermal", unit: "%", calc: "direct", hib: false },
+  elec_coal_share: { name: "Coal Share of Electricity", macro: "thermal", unit: "%", calc: "direct", hib: false },
+  elec_renewables_share: { name: "Renewable Share of Electricity", macro: "renewables", unit: "%", calc: "direct", hib: true, caveat: "OWID uses substitution method; shares comparable across sources" },
+  elec_fossil_share: { name: "Fossil Share of Electricity", macro: "fossil_dependence", unit: "%", calc: "direct", hib: false },
+  elec_low_carbon_share: { name: "Low-Carbon Share of Electricity", macro: "renewables", unit: "%", calc: "direct", hib: true },
+  elec_carbon_intensity: { name: "Carbon Intensity of Electricity", macro: "carbon_intensity", unit: "gCO₂/kWh", calc: "direct", hib: false },
+  elec_demand_total: { name: "Total Electricity Demand", macro: "demand", unit: "TWh", calc: "direct", hib: null },
+  elec_generation_total: { name: "Total Electricity Generation", macro: "generation", unit: "TWh", calc: "direct", hib: null },
+  elec_demand_growth_yoy: { name: "Electricity Demand Growth (YoY)", macro: "demand", unit: "%", calc: "derived_yoy", hib: null, caveat: "Derived locally; OWID revisions shift YoY figures retrospectively" },
+  elec_net_imports_share: { name: "Net Imports as % of Demand", macro: "trade", unit: "%", calc: "direct", hib: false },
+  elec_demand_per_capita: { name: "Electricity Demand per Capita", macro: "demand", unit: "kWh", calc: "direct", hib: null },
+  elec_ghg_emissions: { name: "Power-Sector GHG Emissions", macro: "emissions", unit: "MtCO₂e", calc: "direct", hib: false },
+  elec_net_imports: { name: "Net Electricity Imports", macro: "trade", unit: "TWh", calc: "direct", hib: null, caveat: "Negative = net exporter" },
+  energy_renewables_share: { name: "Renewable Share of Primary Energy", macro: "energy_mix", unit: "%", calc: "direct", hib: true, caveat: "Energy Institute Statistical Review origin; broader than electricity share" },
+  energy_fossil_share: { name: "Fossil Share of Primary Energy", macro: "energy_mix", unit: "%", calc: "direct", hib: false, caveat: "Energy Institute Statistical Review origin" },
+  elec_renewables_share_5y_chg: { name: "Renewable Share Δ5y", macro: "transition", unit: "pp", calc: "derived_trend", hib: true, caveat: "Derived; requires ≥5 years of coverage" },
+};
+
+const SIN_CAT_META: Record<string, { name: string; macro: string; calc: string }> = {
+  load_mwmed: { name: "Load", macro: "load", calc: "direct" },
+  generation_hydro_mwmed: { name: "Hydro Generation", macro: "generation", calc: "direct" },
+  generation_thermal_mwmed: { name: "Thermal Generation", macro: "generation", calc: "direct" },
+  generation_wind_mwmed: { name: "Wind Generation", macro: "generation", calc: "direct" },
+  generation_solar_mwmed: { name: "Solar Generation", macro: "generation", calc: "direct" },
+  generation_total_mwmed: { name: "Total Generation", macro: "generation", calc: "direct" },
+  mix_hydro_pct: { name: "Hydro Mix", macro: "generation_mix", calc: "derived_share" },
+  mix_thermal_pct: { name: "Thermal Mix", macro: "generation_mix", calc: "derived_share" },
+  mix_wind_pct: { name: "Wind Mix", macro: "generation_mix", calc: "derived_share" },
+  mix_solar_pct: { name: "Solar Mix", macro: "generation_mix", calc: "derived_share" },
+  ear_stored_pct: { name: "Stored Energy (%)", macro: "reservoirs", calc: "direct" },
+  ear_stored_mwmes: { name: "Stored Energy (MWmes)", macro: "reservoirs", calc: "direct" },
+  ena_gross_mwmed: { name: "Gross ENA", macro: "hydrology", calc: "direct" },
+  ena_gross_pct_mlt: { name: "Gross ENA % MLT", macro: "hydrology", calc: "direct" },
+  ena_storable_mwmed: { name: "Storable ENA", macro: "hydrology", calc: "direct" },
+  ena_storable_pct_mlt: { name: "Storable ENA % MLT", macro: "hydrology", calc: "direct" },
+  cmo_brl_mwh: { name: "CMO", macro: "price", calc: "direct" },
+  pld_brl_mwh: { name: "PLD", macro: "price", calc: "direct" },
+  net_interchange_mwmed: { name: "Net Interchange", macro: "interchange", calc: "direct" },
+};
+
+function buildMockKpiCatalog(): KPICatalogEntry[] {
+  const entries: KPICatalogEntry[] = [];
+  for (const kpi of COUNTRY_KPIS) {
+    const m = COUNTRY_CAT_META[kpi];
+    if (!m) continue;
+    entries.push({
+      kpi_id: `${COUNTRY_NS}.${kpi}`,
+      display_name: m.name,
+      description: `${m.name} — mock fixture entry.`,
+      kpi_type: m.calc === "derived_yoy" ? "growth" : "mix_share",
+      macro_category: m.macro,
+      subsector: "Electricity Market",
+      unit: m.unit,
+      primary_source: "OWID",
+      calculation_method: m.calc,
+      v1_status: "v1_required",
+      dashboard_priority: "lead",
+      excel_export_priority: "required",
+      source_verification_status: "verified",
+      higher_is_better: m.hib,
+      source_caveats: m.caveat ?? "",
+      audit_notes: "",
+    });
+  }
+  for (const [kpiId, meta] of Object.entries(SIN_KPI_META)) {
+    const suffix = kpiId.slice(SIN_NS.length + 1);
+    const m = SIN_CAT_META[suffix];
+    if (!m) continue;
+    entries.push({
+      kpi_id: kpiId,
+      display_name: m.name,
+      description: `${m.name} by SIN subsystem — mock fixture entry.`,
+      kpi_type: m.macro === "generation_mix" ? "mix_share" : m.macro === "price" ? "price" : "volume",
+      macro_category: m.macro,
+      subsector: "SIN Subsystems",
+      unit: meta.unit,
+      primary_source: meta.source,
+      calculation_method: m.calc,
+      v1_status: "v1_optional",
+      dashboard_priority: "lead",
+      excel_export_priority: "required",
+      source_verification_status: meta.source === "CCEE" ? "pending" : "verified",
+      higher_is_better: null,
+      source_caveats:
+        meta.source === "CCEE" ? "CCEE access may reject direct downloads in some environments." : "",
+      audit_notes:
+        suffix === "generation_total_mwmed" ? "Derived locally from ONS generation source columns." : "",
+    });
+  }
+  // One blocked entry so the Explorer demonstrates the "blocked" status + filter.
+  entries.push({
+    kpi_id: `${COUNTRY_NS}.capacity_installed_total`,
+    display_name: "Total Installed Capacity",
+    description: "Total installed electricity generation capacity (GW).",
+    kpi_type: "capacity",
+    macro_category: "capacity",
+    subsector: "Power Generation",
+    unit: "GW",
+    primary_source: "EMBER",
+    calculation_method: "direct",
+    v1_status: "blocked_by_source_verification",
+    dashboard_priority: "not_in_v1_dashboard",
+    excel_export_priority: "optional",
+    source_verification_status: "blocked",
+    higher_is_better: null,
+    source_caveats: "OWID has no capacity data; Ember field names unverified (key-gated).",
+    audit_notes: "Blocked until Ember API key obtained.",
+  });
+  return entries;
+}
+
+const MOCK_KPI_CATALOG = buildMockKpiCatalog();
 
 // ---------------------------------------------------------------------------
 // Onboarding state
@@ -807,9 +971,9 @@ export function createMockBridge(): Partial<BridgeApi> {
     get_base_health: async () => MOCK_BASE_HEALTH,
 
     get_kpi_catalog: async () => ({
-      entries: [],
-      count: 0,
-    }),
+      entries: MOCK_KPI_CATALOG,
+      count: MOCK_KPI_CATALOG.length,
+    } satisfies EnergyKPICatalogResponse),
 
     get_country_kpi_series: async (params) => {
       const kpiIds = Array.isArray(params?.kpi_ids) ? new Set(params.kpi_ids) : null;

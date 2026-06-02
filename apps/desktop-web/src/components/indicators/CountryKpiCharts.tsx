@@ -60,7 +60,10 @@ export const COUNTRY_COLORS: Record<string, string> = {
   ARG: "#FB923C",
 };
 
-const COUNTRY_LABELS: Record<string, string> = {
+/** v1 country universe — shared by the page and the Explorer detail chart. */
+export const COUNTRY_ISO_CODES = ["BRA", "USA", "CHN", "OWEU", "CHL", "ARG"] as const;
+
+export const COUNTRY_LABELS: Record<string, string> = {
   BRA: "Brazil",
   USA: "United States",
   CHN: "China",
@@ -76,7 +79,7 @@ const PCT_KPI_SUFFIXES = [
   "share", "growth_yoy", "net_imports_share",
 ];
 
-function isPctKpi(kpiId: string): boolean {
+export function isPctKpi(kpiId: string): boolean {
   return PCT_KPI_SUFFIXES.some(s => kpiId.endsWith(s));
 }
 
@@ -323,7 +326,7 @@ export function TrendView({ values, kpiId, isoCodes }: TrendViewProps) {
 
 // ── Series builder ────────────────────────────────────────────────────────────
 
-function buildTrendSeries(
+export function buildTrendSeries(
   values: CountryKPIValue[],
   kpiId: string,
   plottable: IndicatorSelection[],

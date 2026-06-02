@@ -683,7 +683,7 @@ function VisualPanel({
   );
 }
 
-function GenerationMix({ latestIndex }: { latestIndex: LatestIndex }) {
+export function GenerationMix({ latestIndex }: { latestIndex: LatestIndex }) {
   const mix = [
     { kpi: KPI.mixHydro, label: "Hydro", color: "#60A5FA" },
     { kpi: KPI.mixThermal, label: "Thermal", color: "#FB923C" },
