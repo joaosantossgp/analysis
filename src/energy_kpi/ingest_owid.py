@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 OWID_CSV_URL = "https://owid-public.owid.io/data/energy/owid-energy-data.csv"
-OWID_CODEBOOK_URL = "https://owid-public.owid.io/data/energy/owid-energy-codebook.csv"
+OWID_CODEBOOK_URL = "https://raw.githubusercontent.com/owid/energy-data/main/owid-energy-codebook.csv"
 
 # v1 country scope — ISO alpha-3 codes
 V1_ISO_CODES: frozenset[str] = frozenset({"BRA", "USA", "CHN", "OWEU", "CHL", "ARG"})
@@ -102,7 +102,13 @@ def fetch_owid_snapshot(paths: AppPaths) -> SnapshotRecord:
     _download(OWID_CSV_URL, csv_path)
 
     logger.info("Fetching OWID codebook → %s", codebook_path)
-    _download(OWID_CODEBOOK_URL, codebook_path)
+    try:
+        _download(OWID_CODEBOOK_URL, codebook_path)
+    except Exception as e:
+        # Codebook is informational — field names already verified in plan §6.1.
+        # Non-fatal: write an empty stub so downstream code has a file to open.
+        logger.warning("Codebook download failed (%s) — continuing without it", e)
+        codebook_path.write_text("column,description\n")
 
     sha256 = _sha256_file(csv_path)
 

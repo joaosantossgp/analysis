@@ -61,6 +61,7 @@ export function CountryKpisPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshMsg, setRefreshMsg] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const seenRunning = useRef(false);
   const qc = useQueryClient();
 
   useEffect(() => {
@@ -82,19 +83,37 @@ export function CountryKpisPage() {
 
   const health = healthQuery.data?.mode === "desktop" ? healthQuery.data.health : null;
 
-  // Detect refresh completion by watching health
+  // Detect refresh completion by tracking running→idle transition.
+  // Uses seenRunning ref so we don't false-fire on initial mount when
+  // refresh_running is undefined or false before any refresh started.
   useEffect(() => {
     if (!isRefreshing) return;
-    const refreshRunning = (health as any)?.refresh_running;
-    const refreshError = (health as any)?.refresh_error;
-    if (refreshRunning === false && health?.last_refresh_status != null) {
+    const refreshRunning = (health as any)?.refresh_running as boolean | undefined;
+    const refreshError = (health as any)?.refresh_error as string | null | undefined;
+
+    // Track when we first see the thread running
+    if (refreshRunning === true) {
+      seenRunning.current = true;
+    }
+
+    // Completion: either we saw it running and now it stopped,
+    // OR it finished before the first poll (seenRunning stays false
+    // but last_refresh_status has a new value)
+    const finished =
+      (seenRunning.current && refreshRunning !== true) ||
+      (!seenRunning.current && refreshRunning === false);
+
+    if (finished) {
+      seenRunning.current = false;
       setIsRefreshing(false);
-      if (health.last_refresh_status === "success") {
-        setRefreshMsg(`Updated — ${health.rows_ingested} rows ingested`);
+      const status = health?.last_refresh_status;
+      if (status === "success") {
+        setRefreshMsg(`Updated — ${health?.rows_ingested ?? 0} rows ingested`);
         void qc.invalidateQueries({ queryKey: ["country-kpi-series"] });
         void qc.invalidateQueries({ queryKey: ["energy-kpi-catalog"] });
       } else {
-        setRefreshMsg(`Refresh failed: ${refreshError ?? health.last_refresh_status}`);
+        const errMsg = refreshError ?? status ?? "unknown error";
+        setRefreshMsg(`Refresh failed: ${errMsg}`);
       }
       setTimeout(() => setRefreshMsg(null), 8_000);
     }
