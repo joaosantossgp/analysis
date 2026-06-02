@@ -10,6 +10,7 @@ interface IndicatorChartProps {
   periods: string[];
   config: ChartAesthetics;
   height?: number;
+  xTickFormatter?: (val: string) => string;
 }
 
 interface Domain {
@@ -32,11 +33,42 @@ interface AxisTick {
 const PAD_TOP = 16;
 const PAD_BOTTOM = 30;
 const PAD_LEFT = 52;
-const TICK_FRACTIONS = [0, 0.25, 0.5, 0.75, 1];
+const TICK_TARGET = 4; // aim for ~4 intervals (5 ticks)
 
-/** Data-driven axis bounds with padding; optionally pin the zero baseline. */
-function niceDomain(values: number[], includeZero: boolean): Domain {
-  if (values.length === 0) return { min: 0, max: 1 };
+/** Round a span to a human-friendly magnitude (1 / 2 / 5 × 10ⁿ). */
+function niceNum(range: number, round: boolean): number {
+  if (!Number.isFinite(range) || range <= 0) return 1;
+  const exp = Math.floor(Math.log10(range));
+  const frac = range / Math.pow(10, exp);
+  let nf: number;
+  if (round) {
+    nf = frac < 1.5 ? 1 : frac < 3 ? 2 : frac < 7 ? 5 : 10;
+  } else {
+    nf = frac <= 1 ? 1 : frac <= 2 ? 2 : frac <= 5 ? 5 : 10;
+  }
+  return nf * Math.pow(10, exp);
+}
+
+/** Build round tick values across [min, max] at a nice step. */
+function buildTicks(min: number, max: number, step: number): number[] {
+  if (step <= 0 || !Number.isFinite(step)) return [min, max];
+  const count = Math.round((max - min) / step);
+  const decimals = Math.max(0, -Math.floor(Math.log10(step)));
+  const factor = Math.pow(10, decimals);
+  const ticks: number[] = [];
+  for (let i = 0; i <= count; i += 1) {
+    ticks.push(Math.round((min + i * step) * factor) / factor);
+  }
+  return ticks;
+}
+
+/**
+ * Data-driven axis bounds rounded to human-friendly tick boundaries, so axis
+ * labels read 0/20/40/60/80% rather than 9/19/38/57/76%. Optionally pins the
+ * zero baseline (bar/area). Returns the rounded domain plus its tick values.
+ */
+function niceDomain(values: number[], includeZero: boolean): Domain & { ticks: number[] } {
+  if (values.length === 0) return { min: 0, max: 1, ticks: [0, 0.25, 0.5, 0.75, 1] };
   let min = Math.min(...values);
   let max = Math.max(...values);
   if (includeZero) {
@@ -44,14 +76,16 @@ function niceDomain(values: number[], includeZero: boolean): Domain {
     max = Math.max(max, 0);
   }
   if (min === max) {
-    const pad = Math.abs(min) * 0.1 || 1;
-    return { min: min - pad, max: max + pad };
+    // Flatline: center the value in a small nice range so it lands on a tick.
+    const step = niceNum((Math.abs(min) || 1) * 0.4, true);
+    const niceMin = min - 2 * step;
+    const niceMax = min + 2 * step;
+    return { min: niceMin, max: niceMax, ticks: buildTicks(niceMin, niceMax, step) };
   }
-  const pad = (max - min) * 0.08;
-  return {
-    min: includeZero && min >= 0 ? 0 : min - pad,
-    max: includeZero && max <= 0 ? 0 : max + pad,
-  };
+  const step = niceNum((max - min) / TICK_TARGET, true);
+  const niceMin = includeZero && min >= 0 ? 0 : Math.floor(min / step) * step;
+  const niceMax = includeZero && max <= 0 ? 0 : Math.ceil(max / step) * step;
+  return { min: niceMin, max: niceMax, ticks: buildTicks(niceMin, niceMax, step) };
 }
 
 /** Split a point array into contiguous runs of finite values. */
@@ -102,7 +136,7 @@ function areaPath(run: RunPoint[], smooth: boolean, baselineY: number): string {
   return `${top} L ${run[run.length - 1].x} ${baselineY} L ${run[0].x} ${baselineY} Z`;
 }
 
-export function IndicatorChart({ series, periods, config, height = 320 }: IndicatorChartProps) {
+export function IndicatorChart({ series, periods, config, height = 320, xTickFormatter }: IndicatorChartProps) {
   const [wrapRef, width] = useElementWidth<HTMLDivElement>();
   const [hover, setHover] = useState<number | null>(null);
 
@@ -144,18 +178,24 @@ export function IndicatorChart({ series, periods, config, height = 320 }: Indica
     const baselineLeftY = Math.min(Math.max(scaleLeft(0), PAD_TOP), PAD_TOP + plotH);
 
     // Pre-bake axis ticks so the render body never touches the raw domains.
-    const leftTicks: AxisTick[] = TICK_FRACTIONS.map((f) => ({
-      y: PAD_TOP + plotH - f * plotH,
-      label: formatAxisTick(leftDomain.min + f * (leftDomain.max - leftDomain.min), unitLeft, config.indexMode),
+    // The left axis lands on round values; the right axis reuses the left
+    // gridline positions so the two axes stay aligned.
+    const leftSpan = leftDomain.max - leftDomain.min || 1;
+    const leftTicks: AxisTick[] = leftDomain.ticks.map((v) => ({
+      y: scaleLeft(v),
+      label: formatAxisTick(v, unitLeft, config.indexMode),
     }));
-    const rightTicks: AxisTick[] = TICK_FRACTIONS.map((f) => ({
-      y: PAD_TOP + plotH - f * plotH,
-      label: formatAxisTick(
-        rightDomain.min + f * (rightDomain.max - rightDomain.min),
-        unitRight,
-        config.indexMode,
-      ),
-    }));
+    const rightTicks: AxisTick[] = leftDomain.ticks.map((v) => {
+      const f = (v - leftDomain.min) / leftSpan;
+      return {
+        y: scaleLeft(v),
+        label: formatAxisTick(
+          rightDomain.min + f * (rightDomain.max - rightDomain.min),
+          unitRight,
+          config.indexMode,
+        ),
+      };
+    });
 
     return {
       w,
@@ -194,7 +234,10 @@ export function IndicatorChart({ series, periods, config, height = 320 }: Indica
     layout;
 
   // X-axis label thinning to avoid overlap.
-  const maxLabels = Math.max(2, Math.floor(plotW / 56));
+  const maxLabelLength = periods.length > 0 ? Math.max(...periods.map((p) => p.length)) : 4;
+  const charWidth = 6.5;
+  const labelWidth = Math.max(64, maxLabelLength * charWidth + 16);
+  const maxLabels = Math.max(2, Math.floor(plotW / labelWidth));
   const labelStep = Math.max(1, Math.ceil(periods.length / maxLabels));
 
   const totalPoints = periods.length * series.length;
@@ -288,7 +331,7 @@ export function IndicatorChart({ series, periods, config, height = 320 }: Indica
               fill="var(--color-text-tertiary)"
               style={{ fontSize: "var(--text-2xs)" }}
             >
-              {label}
+              {xTickFormatter ? xTickFormatter(label) : label}
             </text>
           ) : null,
         )}
@@ -366,21 +409,23 @@ export function IndicatorChart({ series, periods, config, height = 320 }: Indica
                     strokeLinejoin="round"
                   />
                 ))}
-                {config.markers
-                  ? runs.flatMap((run) =>
-                      run.map((p) => (
-                        <circle
-                          key={`${s.id}-${p.index}`}
-                          cx={p.x}
-                          cy={p.y}
-                          r={hover === p.index ? 3.5 : 2.5}
-                          fill="var(--color-surface-1)"
-                          stroke={s.color}
-                          strokeWidth={1.5}
-                        />
-                      )),
-                    )
-                  : null}
+                {runs.flatMap((run) =>
+                  run.map((p) => {
+                    const isSinglePoint = run.length === 1;
+                    if (!config.markers && !isSinglePoint) return null;
+                    return (
+                      <circle
+                        key={`${s.id}-${p.index}`}
+                        cx={p.x}
+                        cy={p.y}
+                        r={hover === p.index ? 4.5 : isSinglePoint ? 3.5 : 2.5}
+                        fill="var(--color-surface-1)"
+                        stroke={s.color}
+                        strokeWidth={isSinglePoint ? 2 : 1.5}
+                      />
+                    );
+                  })
+                )}
               </g>
             );
           })}

@@ -11,6 +11,8 @@ interface IndicatorPickerProps {
   onToggle: (id: string) => void;
   /** Max number of indicators that can be selected at once. */
   maxSelected?: number;
+  /** Noun shown on the trigger button ("Indicators", "Countries", …). */
+  label?: string;
 }
 
 /**
@@ -24,6 +26,7 @@ export function IndicatorPicker({
   selectedIds,
   onToggle,
   maxSelected = 6,
+  label = "Indicators",
 }: IndicatorPickerProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -61,7 +64,7 @@ export function IndicatorPicker({
           padding: "0 10px",
         }}
       >
-        Indicators · {selectedIds.length}
+        {label} · {selectedIds.length}
         <span aria-hidden="true" style={{ marginLeft: 6, color: "var(--color-text-tertiary)" }}>
           ▾
         </span>

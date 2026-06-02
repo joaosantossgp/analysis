@@ -40,8 +40,8 @@ const MODULES: ModuleDef[] = [
   {
     id: "macro",
     label: "Indicators",
-    to: "/country-kpis",
-    matches: (p) => p.startsWith("/country-kpis"),
+    to: "/indicators",
+    matches: (p) => p.startsWith("/indicators") || p.startsWith("/country-kpis"),
   },
   {
     id: "database",

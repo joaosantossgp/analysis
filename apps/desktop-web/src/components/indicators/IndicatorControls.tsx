@@ -15,6 +15,12 @@ interface IndicatorControlsProps {
   frequency: Frequency;
   quarterlyAvailable: boolean;
   onFrequencyChange: (frequency: Frequency) => void;
+  /** Hide the Annual/Quarterly toggle when frequency is not a meaningful axis
+   *  (e.g. country energy or SIN subsystems, where it is permanently disabled). */
+  showFrequency?: boolean;
+  /** What the picker selects. "Indicators" for company KPIs, "Countries" /
+   *  "Subsystems" for the macro views that reuse this control. */
+  itemNoun?: string;
 
   defs: IndicatorDef[];
   selectedIds: string[];
@@ -46,6 +52,8 @@ export function IndicatorControls({
   frequency,
   quarterlyAvailable,
   onFrequencyChange,
+  showFrequency = true,
+  itemNoun = "Indicators",
   defs,
   selectedIds,
   onToggleIndicator,
@@ -59,17 +67,20 @@ export function IndicatorControls({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <Field label="Frequency">
-          <Segmented
-            ariaLabel="Frequency"
-            value={frequency}
-            options={FREQUENCY_OPTIONS(quarterlyAvailable)}
-            onChange={(v) => onFrequencyChange(v as Frequency)}
-          />
-        </Field>
+        {showFrequency ? (
+          <Field label="Frequency">
+            <Segmented
+              ariaLabel="Frequency"
+              value={frequency}
+              options={FREQUENCY_OPTIONS(quarterlyAvailable)}
+              onChange={(v) => onFrequencyChange(v as Frequency)}
+            />
+          </Field>
+        ) : null}
 
-        <Field label="Indicators">
+        <Field label={itemNoun}>
           <IndicatorPicker
+            label={itemNoun}
             defs={defs}
             selectedIds={selectedIds}
             onToggle={onToggleIndicator}

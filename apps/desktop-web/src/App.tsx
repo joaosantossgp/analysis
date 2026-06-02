@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { HashRouter, Route, Routes } from "react-router-dom";
+import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import { CommandBar } from "./components/command/CommandBar";
 import { useCommandPalette } from "./components/command/useCommandPalette";
@@ -166,7 +166,9 @@ function AppShellWithPalette() {
               path="/empresas/:cdCvm/model-mapping"
               element={<CompanyModelMappingPage />}
             />
-            <Route path="/country-kpis" element={<CountryKpisPage />} />
+            <Route path="/indicators" element={<CountryKpisPage />} />
+            {/* Backwards-compat: old bookmarks/deep links to the macro module. */}
+            <Route path="/country-kpis" element={<Navigate to="/indicators" replace />} />
             <Route path="/dev/data-ops" element={<DevDataOpsPage />} />
           </Routes>
         </Suspense>

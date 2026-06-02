@@ -40,6 +40,10 @@ export type CompanyDirectoryItem = {
   market_cap_as_of_date?: string | null;
   market_cap_source?: string | null;
   market_cap_provider_status?: string | null;
+  dividend_yield?: number | null;
+  pe_ratio?: number | null;
+  pb_ratio?: number | null;
+  beta?: number | null;
 };
 
 /** Present on CompanyDirectoryPage when the list was sorted by local market-cap snapshot. */
@@ -838,6 +842,26 @@ export type DataCoverageResponse = {
 };
 
 /**
+ * Per-year historical indicators for a single company (ROE, margins, price).
+ * Mirrors `CVMBridge.get_company_historical_indicators`: success carries
+ * `ok`/`cd_cvm`/`ticker_b3`/`yearly_data`; the failure path sets `error`.
+ */
+export interface CompanyHistoricalIndicatorsResult {
+  ok: boolean;
+  cd_cvm: number;
+  ticker_b3: string | null;
+  yearly_data: Array<{
+    year: number;
+    roe: number | null;
+    mg_ebit: number | null;
+    mg_liq: number | null;
+    stock_price: number | null;
+  }>;
+  /** Present only when the bridge call failed. */
+  error?: string;
+}
+
+/**
  * Complete bridge method surface. Add new methods here as Phase 1 grows.
  * Keep parameter shapes loose (Record<string, unknown>) — Python normalises
  * with .get(...) so the JS side does not need to construct exact dicts.
@@ -851,6 +875,9 @@ export interface BridgeApi {
   get_company_info(params: Record<string, unknown>): Promise<CompanyInfo>;
   get_company_years(params: Record<string, unknown>): Promise<CompanyYearsResult>;
   get_company_kpis(params: Record<string, unknown>): Promise<KPIBundle>;
+  get_company_historical_indicators(
+    params: Record<string, unknown>,
+  ): Promise<CompanyHistoricalIndicatorsResult>;
   get_company_statement(params: Record<string, unknown>): Promise<StatementMatrix>;
   get_base_health(params: Record<string, unknown>): Promise<BaseHealthSnapshot>;
   request_refresh(params: Record<string, unknown>): Promise<RefreshDispatchResponse>;

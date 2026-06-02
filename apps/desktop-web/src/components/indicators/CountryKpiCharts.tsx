@@ -280,6 +280,8 @@ export function TrendView({ values, kpiId, isoCodes }: TrendViewProps) {
         frequency="annual"
         quarterlyAvailable={false}
         onFrequencyChange={() => undefined}
+        showFrequency={false}
+        itemNoun="Countries"
         defs={defs}
         selectedIds={selected.map(s => s.id)}
         onToggleIndicator={toggle}

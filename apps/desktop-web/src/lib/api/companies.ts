@@ -9,8 +9,11 @@ import type {
   CompaniesQuery,
   CompanyDirectoryPage,
   CompanyFiltersResponse,
+  CompanyHistoricalIndicatorsResult,
   CompanySectorFilterOption,
 } from "../bridge/types";
+
+export type { CompanyHistoricalIndicatorsResult } from "../bridge/types";
 
 export type CompaniesResult =
   | { mode: "desktop"; page: CompanyDirectoryPage }
@@ -71,3 +74,25 @@ export async function fetchCompanyFilters(): Promise<CompanyFiltersResult> {
   }
   return { mode: "desktop", sectors: payload.sectors ?? [] };
 }
+
+export type FetchCompanyHistoricalIndicatorsResult =
+  | { mode: "desktop"; data: CompanyHistoricalIndicatorsResult }
+  | { mode: "browser"; data: null; reason: string };
+
+/**
+ * Fetch historical metrics (ROE, EBIT margin, net margin, and stock price) for a company.
+ */
+export async function fetchCompanyHistoricalIndicators(
+  cdCvm: number,
+): Promise<FetchCompanyHistoricalIndicatorsResult> {
+  const mode: BridgeMode = getBridgeMode();
+  if (mode === "browser") {
+    return { mode: "browser", data: null, reason: BROWSER_REASON };
+  }
+  const data = await callBridge("get_company_historical_indicators", { cd_cvm: cdCvm });
+  if (data.error) {
+    throw new Error(data.error);
+  }
+  return { mode: "desktop", data };
+}
+

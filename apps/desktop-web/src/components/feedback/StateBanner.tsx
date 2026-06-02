@@ -10,6 +10,7 @@ import { SkeletonRow } from "./Skeleton";
  * Visual contract:
  *   loading       — surface-2 panel + subtitle "Loading…" + 3-line skeleton
  *   empty         — surface-2 panel + title + body, muted
+ *   warning       — warn-toned border + title + message (recoverable, e.g. stale)
  *   error         — error-toned border + title + message, optional retry
  *   browser-only  — warn-toned border + title + reason
  *
@@ -18,7 +19,7 @@ import { SkeletonRow } from "./Skeleton";
  * with the color so the signal is not color-only.
  */
 
-type Variant = "loading" | "empty" | "error" | "browser-only";
+type Variant = "loading" | "empty" | "warning" | "error" | "browser-only";
 
 type Props = {
   variant: Variant;
@@ -49,6 +50,14 @@ const VARIANTS: Record<
     defaultTitle: "No data",
     color: "var(--color-text-secondary)",
     border: "var(--color-border-subtle)",
+    bg: "var(--color-surface-2)",
+    role: "status",
+  },
+  warning: {
+    glyph: "▲",
+    defaultTitle: "Warning",
+    color: "var(--color-state-warn)",
+    border: "var(--color-state-warn)",
     bg: "var(--color-surface-2)",
     role: "status",
   },
