@@ -98,7 +98,6 @@ export function CountryKpisPage() {
   };
 
   const years = Array.from({ length: 12 }, (_, i) => new Date().getFullYear() - 1 - i);
-  const trendKpiLabel = TREND_KPIS.find(k => k.kpi === trendKpiId)?.label ?? "";
   const breadcrumbs = [{ label: "Country KPIs" }];
 
   return (
@@ -192,7 +191,6 @@ export function CountryKpisPage() {
         <TrendView
           values={values}
           kpiId={trendKpiId}
-          kpiLabel={trendKpiLabel}
           isoCodes={[...V1_ISO_CODES]}
         />
       )}
