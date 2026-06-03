@@ -659,7 +659,17 @@ def parse_ccee_hourly(snapshot: PlantSnapshotRecord) -> pd.DataFrame:
     cols = _column_map(df)
     _require_any_columns(
         cols,
-        {"MES_REFERENCIA", "DATA", "PERIODO_COMERCIALIZACAO", "CODIGO_PARCELA_USINA"},
+        {
+            "MES_REFERENCIA",
+            "DATA",
+            "PERIODO_COMERCIALIZACAO",
+            "CODIGO_PARCELA_USINA",
+            "SIGLA_USINA",
+            "FONTE_PRIMARIA",
+            "SUBMERCADO",
+            "GERACAO_CENTRO_GRAVIDADE",
+            "INDISPONIBILIDADE_UTE_ORDEM_MERITO_ECONOMICO",
+        },
         snapshot.dataset_name,
     )
 
@@ -864,6 +874,7 @@ def _select_resource(
 
 def _read_csv(path: Path) -> pd.DataFrame:
     last_error: Exception | None = None
+    compression = "gzip" if path.suffix.lower() in {".gz", ".gzip"} else "infer"
     for encoding in ("utf-8-sig", "utf-8", "cp1252", "latin1"):
         try:
             df = pd.read_csv(
@@ -872,7 +883,7 @@ def _read_csv(path: Path) -> pd.DataFrame:
                 engine="python",
                 decimal=",",
                 encoding=encoding,
-                compression="infer",
+                compression=compression,
             )
             df.attrs["detected_encoding"] = encoding
             df.attrs["source_row_count"] = int(len(df))
@@ -1043,7 +1054,7 @@ def _sha256_file(path: Path) -> str:
 
 
 def _count_data_rows(path: Path) -> int:
-    opener = gzip.open if path.suffix.lower() == ".gz" else open
+    opener = gzip.open if path.suffix.lower() in {".gz", ".gzip"} else open
     for encoding in ("utf-8-sig", "utf-8", "cp1252", "latin1"):
         try:
             with opener(path, "rt", encoding=encoding) as f:

@@ -939,6 +939,8 @@ export interface BridgeApi {
   get_plant_parcel_detail(params: PlantParcelDetailParams): Promise<PlantParcelDetailResponse>;
   get_plant_parcel_chart_data(params: PlantParcelChartDataParams): Promise<PlantParcelChartDataResponse>;
   refresh_plant_parcel_source(params: PlantParcelRefreshParams): Promise<PlantParcelRefreshResult>;
+  select_plant_parcel_import_file(params: PlantParcelFilePickerParams): Promise<PlantParcelFilePickerResult>;
+  import_plant_parcel_source_file(params: PlantParcelManualImportParams): Promise<PlantParcelManualImportResult>;
 }
 
 // ── Energy KPI types ──────────────────────────────────────────────────────────
@@ -1149,6 +1151,24 @@ export interface PlantParcelSourceStatus {
   last_rows_updated?: number | null;
   last_rows_skipped?: number | null;
   last_detected_encoding?: string | null;
+  last_import_mode?: "automatic_refresh" | "manual_file" | string | null;
+  last_original_file_name?: string | null;
+  last_file_size_bytes?: number | null;
+  last_file_hash?: string | null;
+  last_file_type?: string | null;
+  last_detected_period?: string | null;
+  last_manual_import_at?: string | null;
+  last_manual_status?: string | null;
+  last_manual_error?: string | null;
+  last_manual_warning?: string | null;
+  last_manual_file_name?: string | null;
+  last_manual_file_size_bytes?: number | null;
+  last_manual_file_hash?: string | null;
+  last_manual_file_type?: string | null;
+  last_manual_detected_period?: string | null;
+  last_manual_rows_inserted?: number | null;
+  last_manual_rows_skipped?: number | null;
+  source_page_url?: string | null;
   refresh_id: string | null;
   cache_status: "never_refreshed" | "missing" | "fresh" | "stale" | "failed" | "warning" | "cached" | string;
 }
@@ -1271,6 +1291,40 @@ export interface PlantParcelRefreshResult {
   rows_updated?: number;
   period_start?: string | null;
   period_end?: string | null;
+}
+
+export interface PlantParcelFilePickerParams {
+  source_id: string;
+}
+
+export interface PlantParcelFilePickerResult {
+  ok: boolean;
+  canceled?: boolean;
+  file_path?: string | null;
+  file_name?: string | null;
+  file_paths?: string[];
+  file_names?: string[];
+  error?: string | null;
+}
+
+export interface PlantParcelManualImportParams {
+  source_id: string;
+  triggered_by?: string;
+  expected_period?: string | null;
+  file_path?: string;
+  file_content_base64?: string;
+  original_file_name?: string;
+}
+
+export interface PlantParcelManualImportResult extends PlantParcelRefreshResult {
+  import_id?: string;
+  import_mode?: "manual_file" | string;
+  file_size_bytes?: number | null;
+  file_hash?: string | null;
+  file_type?: string | null;
+  original_file_name?: string | null;
+  detected_period?: string | null;
+  source_page_url?: string | null;
 }
 
 export interface PlantParcelChartDataParams {

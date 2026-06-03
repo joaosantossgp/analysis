@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
+import type { DragEvent, ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { StateBanner } from "@/components/feedback/StateBanner";
@@ -11,6 +11,8 @@ import {
   fetchPlantParcelSourceStatuses,
   triggerPlantParcelRefresh,
   fetchPlantParcelChartData,
+  selectPlantParcelImportFile,
+  importPlantParcelManualFile,
 } from "@/lib/api/energyKpis";
 import type {
   PlantMetric,
@@ -22,12 +24,20 @@ import { IndicatorChart } from "./IndicatorChart";
 import type { ChartAesthetics } from "@/lib/indicators/types";
 
 const PAGE_SIZE = 100;
+const MAX_INLINE_DROP_BYTES = 50 * 1024 * 1024;
 
 type Filters = {
   entity_type: string;
   generation_source: string;
   submarket: string;
   uf: string;
+};
+
+type ManualImportFile = {
+  filePath?: string;
+  fileContentBase64?: string;
+  fileName?: string;
+  fileSize?: number;
 };
 
 const EMPTY_FILTERS: Filters = {
@@ -46,6 +56,7 @@ export function PlantParcelExplorer({ bridgeReady }: { bridgeReady: boolean }) {
   const [offset, setOffset] = useState(0);
   const [selected, setSelected] = useState<PlantParcelCatalogRecord | null>(null);
   const [refreshingSourceId, setRefreshingSourceId] = useState<string | null>(null);
+  const [manualImportingSourceId, setManualImportingSourceId] = useState<string | null>(null);
   const [message, setMessage] = useState<{ text: string; severity: "success" | "warning" | "error" } | null>(null);
   const [monthlyYear, setMonthlyYear] = useState(String(now.getFullYear()));
   const [hourlyMonth, setHourlyMonth] = useState(
@@ -66,7 +77,7 @@ export function PlantParcelExplorer({ bridgeReady }: { bridgeReady: boolean }) {
     queryFn: fetchPlantParcelSourceStatuses,
     enabled: bridgeReady,
     staleTime: 10_000,
-    refetchInterval: refreshingSourceId ? 2_000 : false,
+    refetchInterval: refreshingSourceId || manualImportingSourceId ? 2_000 : false,
   });
 
   const catalogQuery = useQuery({
@@ -192,6 +203,143 @@ export function PlantParcelExplorer({ bridgeReady }: { bridgeReady: boolean }) {
     [hourlyMonth, monthlyYear, qc, statusQuery],
   );
 
+  const invalidatePlantQueries = useCallback(() => {
+    void qc.invalidateQueries({ queryKey: ["plant-parcel-source-statuses"] });
+    void qc.invalidateQueries({ queryKey: ["plant-parcel-catalog"] });
+    void qc.invalidateQueries({ queryKey: ["plant-parcel-detail"] });
+    void qc.invalidateQueries({ queryKey: ["plant-parcel-chart-data"] });
+  }, [qc]);
+
+  const importManualFiles = useCallback(
+    async (source: PlantParcelSourceStatus, files: ManualImportFile[]) => {
+      if (files.length === 0) return;
+      setManualImportingSourceId(source.source_id);
+      setMessage({
+        text: files.length === 1
+          ? `Importing ${files[0].fileName ?? source.dataset_name}...`
+          : `Importing ${files.length} files for ${source.dataset_name}...`,
+        severity: "success",
+      });
+      try {
+        const summary = {
+          files: files.length,
+          succeeded: 0,
+          warnings: 0,
+          failed: 0,
+          rowsInserted: 0,
+          rowsSkipped: 0,
+          periods: [] as string[],
+          errors: [] as string[],
+          warningMessages: [] as string[],
+        };
+        for (const file of files) {
+          const result = await importPlantParcelManualFile({
+            source_id: source.source_id,
+            file_path: file.filePath,
+            file_content_base64: file.fileContentBase64,
+            original_file_name: file.fileName,
+            expected_period: null,
+          });
+          if (result.mode === "browser") {
+            setManualImportingSourceId(null);
+            setMessage({ text: result.reason, severity: "error" });
+            return;
+          }
+          const label = file.fileName ?? file.filePath ?? source.dataset_name;
+          summary.rowsInserted += result.result.rows_inserted ?? 0;
+          summary.rowsSkipped += result.result.rows_skipped ?? 0;
+          if (result.result.detected_period) summary.periods.push(result.result.detected_period);
+          if (result.result.status === "failed" || result.result.status === "error") {
+            summary.failed += 1;
+            summary.errors.push(`${label}: ${result.result.error ?? "failed"}`);
+          } else if (result.result.status === "warning") {
+            summary.warnings += 1;
+            summary.warningMessages.push(`${label}: ${result.result.warning ?? "warning"}`);
+          } else {
+            summary.succeeded += 1;
+          }
+        }
+        setManualImportingSourceId(null);
+        const severity = summary.failed === summary.files ? "error" : summary.failed > 0 || summary.warnings > 0 ? "warning" : "success";
+        setMessage({
+          text: manualBatchImportSummary(summary),
+          severity,
+        });
+        if (severity === "success") window.setTimeout(() => setMessage(null), 7000);
+        invalidatePlantQueries();
+      } catch (error) {
+        setManualImportingSourceId(null);
+        setMessage({ text: `Manual import failed: ${String(error)}`, severity: "error" });
+      }
+    },
+    [invalidatePlantQueries],
+  );
+
+  const chooseManualFile = useCallback(
+    async (source: PlantParcelSourceStatus) => {
+      try {
+        const picked = await selectPlantParcelImportFile(source.source_id);
+        if (picked.mode === "browser") {
+          setMessage({ text: picked.reason, severity: "error" });
+          return;
+        }
+        if (picked.result.canceled) return;
+        const paths = picked.result.file_paths?.length
+          ? picked.result.file_paths
+          : picked.result.file_path
+            ? [picked.result.file_path]
+            : [];
+        if (!picked.result.ok || paths.length === 0) {
+          setMessage({ text: picked.result.error ?? "No file selected.", severity: "error" });
+          return;
+        }
+        await importManualFiles(
+          source,
+          paths.map((filePath, index) => ({
+            filePath,
+            fileName: picked.result.file_names?.[index] ?? (paths.length === 1 ? picked.result.file_name ?? undefined : fileNameFromPath(filePath)),
+          })),
+        );
+      } catch (error) {
+        setMessage({ text: `File selection failed: ${String(error)}`, severity: "error" });
+      }
+    },
+    [importManualFiles],
+  );
+
+  const dropManualFiles = useCallback(
+    async (source: PlantParcelSourceStatus, files: File[]) => {
+      if (files.length === 0) return;
+      try {
+        const importFiles: ManualImportFile[] = [];
+        for (const file of files) {
+          const fileWithPath = file as File & { path?: string; mozFullPath?: string };
+          const path = fileWithPath.path || fileWithPath.mozFullPath;
+          if (path) {
+            importFiles.push({ filePath: path, fileName: file.name, fileSize: file.size });
+            continue;
+          }
+          if (file.size > MAX_INLINE_DROP_BYTES) {
+            setMessage({
+              text: `${file.name} is too large for drag-and-drop transfer. Use Choose files so the backend can stream it from disk.`,
+              severity: "warning",
+            });
+            return;
+          }
+          importFiles.push({
+            fileContentBase64: await fileToBase64(file),
+            fileName: file.name,
+            fileSize: file.size,
+          });
+        }
+        await importManualFiles(source, importFiles);
+      } catch (error) {
+        setMessage({ text: `Could not read dropped file: ${String(error)}`, severity: "error" });
+      }
+    },
+    [importManualFiles],
+  );
+
   if (!bridgeReady || statusQuery.isLoading || catalogQuery.isLoading) {
     return <StateBanner variant="loading" title="Loading plant parcel cache..." />;
   }
@@ -225,6 +373,9 @@ export function PlantParcelExplorer({ bridgeReady }: { bridgeReady: boolean }) {
         hourlyMonth={hourlyMonth}
         onHourlyMonthChange={setHourlyMonth}
         onRefresh={refreshSource}
+        manualImportingSourceId={manualImportingSourceId}
+        onChooseManualFile={chooseManualFile}
+        onDropManualFiles={dropManualFiles}
       />
 
       <div className="grid gap-4 xl:grid-cols-[1.55fr_1fr] items-start">
@@ -275,6 +426,9 @@ function SourceStatusGrid({
   hourlyMonth,
   onHourlyMonthChange,
   onRefresh,
+  manualImportingSourceId,
+  onChooseManualFile,
+  onDropManualFiles,
 }: {
   statuses: PlantParcelSourceStatus[];
   refreshingSourceId: string | null;
@@ -283,6 +437,9 @@ function SourceStatusGrid({
   hourlyMonth: string;
   onHourlyMonthChange: (value: string) => void;
   onRefresh: (source: PlantParcelSourceStatus) => void;
+  manualImportingSourceId: string | null;
+  onChooseManualFile: (source: PlantParcelSourceStatus) => void;
+  onDropManualFiles: (source: PlantParcelSourceStatus, files: File[]) => void;
 }) {
   if (statuses.length === 0) {
     return (
@@ -339,12 +496,21 @@ function SourceStatusGrid({
           <Button
             size="sm"
             loading={refreshingSourceId === source.source_id}
-            disabled={!!refreshingSourceId}
+            disabled={!!refreshingSourceId || !!manualImportingSourceId}
             onClick={() => onRefresh(source)}
             block
           >
             {refreshingSourceId === source.source_id ? "Refreshing" : "Refresh source"}
           </Button>
+          {isCceeManualSource(source.source_id) ? (
+            <ManualImportSection
+              source={source}
+              importing={manualImportingSourceId === source.source_id}
+              disabled={!!refreshingSourceId || !!manualImportingSourceId}
+              onChooseFile={() => onChooseManualFile(source)}
+              onDropFiles={(files) => onDropManualFiles(source, files)}
+            />
+          ) : null}
           {source.last_error ? (
             <p className="text-xs text-red-300">{source.last_error}</p>
           ) : null}
@@ -353,6 +519,126 @@ function SourceStatusGrid({
           ) : null}
         </div>
       ))}
+    </div>
+  );
+}
+
+function ManualImportSection({
+  source,
+  importing,
+  disabled,
+  onChooseFile,
+  onDropFiles,
+}: {
+  source: PlantParcelSourceStatus;
+  importing: boolean;
+  disabled: boolean;
+  onChooseFile: () => void;
+  onDropFiles: (files: File[]) => void;
+}) {
+  const [dragging, setDragging] = useState(false);
+  const copyLink = async () => {
+    const url = source.source_page_url ?? source.official_url;
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      window.prompt("Copy CCEE dataset link", url);
+    }
+  };
+  const openPage = () => {
+    const url = source.source_page_url ?? source.official_url;
+    if (!url) return;
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setDragging(false);
+    if (disabled) return;
+    const files = Array.from(event.dataTransfer.files);
+    if (files.length > 0) onDropFiles(files);
+  };
+  return (
+    <div className="rounded border border-zinc-800 bg-zinc-900/35 p-2.5 text-xs">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className="font-medium text-zinc-200">Manual import fallback</p>
+          <p className="mt-1 text-zinc-500">{manualImportDescription(source.source_id)}</p>
+        </div>
+        {source.last_import_mode === "manual_file" ? (
+          <span className="rounded border border-zinc-800 px-1.5 py-0.5 font-mono text-[10px] text-emerald-300">
+            manual
+          </span>
+        ) : null}
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <Button size="xs" variant="ghost" onClick={openPage} disabled={!source.official_url || disabled}>
+          Open CCEE dataset page
+        </Button>
+        <Button size="xs" variant="ghost" onClick={() => void copyLink()} disabled={!source.official_url || disabled}>
+          Copy dataset link
+        </Button>
+      </div>
+      <div
+        role="button"
+        tabIndex={0}
+        className={`mt-2 rounded border border-dashed px-3 py-3 text-center transition-colors ${
+          dragging ? "border-amber-400 bg-amber-400/10" : "border-zinc-700 bg-zinc-950/40"
+        }`}
+        onDragEnter={(event) => {
+          event.preventDefault();
+          if (!disabled) setDragging(true);
+        }}
+        onDragOver={(event) => event.preventDefault()}
+        onDragLeave={() => setDragging(false)}
+        onDrop={handleDrop}
+        onKeyDown={(event) => {
+          if ((event.key === "Enter" || event.key === " ") && !disabled) onChooseFile();
+        }}
+        aria-disabled={disabled}
+      >
+        <p className="font-mono text-[11px] text-zinc-300">
+          {importing ? "Importing files..." : manualDropLabel(source.source_id)}
+        </p>
+        <p className="mt-1 text-[11px] text-zinc-600">{manualAcceptedTypes(source.source_id)}</p>
+      </div>
+      <Button
+        size="xs"
+        loading={importing}
+        disabled={disabled}
+        onClick={onChooseFile}
+        block
+        style={{ marginTop: 8 }}
+      >
+        {importing ? "Importing" : "Choose files"}
+      </Button>
+      <ManualImportDiagnostics source={source} />
+    </div>
+  );
+}
+
+function ManualImportDiagnostics({ source }: { source: PlantParcelSourceStatus }) {
+  if (!source.last_manual_import_at && !source.last_manual_file_name) return null;
+  const hash = source.last_manual_file_hash ? `${source.last_manual_file_hash.slice(0, 12)}...` : "—";
+  return (
+    <div className="mt-2 rounded border border-zinc-800 bg-zinc-950/45 px-2 py-1.5 text-[11px] text-zinc-500">
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1 font-mono">
+        <span>manual {statusLabel(source.last_manual_status)}</span>
+        <span>{formatDateTime(source.last_manual_import_at ?? null)}</span>
+        <span className="truncate" title={source.last_manual_file_name ?? undefined}>
+          file {source.last_manual_file_name ?? "—"}
+        </span>
+        <span>type {source.last_manual_file_type ?? "—"}</span>
+        <span>period {source.last_manual_detected_period ?? "—"}</span>
+        <span>size {formatBytes(source.last_manual_file_size_bytes)}</span>
+        <span>cached {formatNullableInteger(source.last_manual_rows_inserted)}</span>
+        <span>skipped {formatNullableInteger(source.last_manual_rows_skipped)}</span>
+      </div>
+      <p className="mt-1 truncate font-mono text-zinc-600" title={source.last_manual_file_hash ?? undefined}>
+        hash {hash}
+      </p>
+      {source.last_manual_error ? <p className="mt-1 text-red-300">{source.last_manual_error}</p> : null}
+      {source.last_manual_warning ? <p className="mt-1 text-amber-300">{source.last_manual_warning}</p> : null}
     </div>
   );
 }
@@ -986,6 +1272,64 @@ function textValue(row: Record<string, unknown>, key: string): string | null {
 function statusLabel(status: string | null | undefined): string {
   if (!status) return "—";
   return status.replaceAll("_", " ");
+}
+
+function isCceeManualSource(sourceId: string): boolean {
+  return sourceId === "ccee_plant_parcel_monthly" || sourceId === "ccee_plant_generation_hourly";
+}
+
+function manualImportDescription(sourceId: string): string {
+  if (sourceId === "ccee_plant_generation_hourly") {
+    return "Download monthly GZIP files from Dados Abertos CCEE and drop them here. Import only the months needed for analysis; hourly files can be large.";
+  }
+  return "If the CCEE API is unavailable, download annual CSV files from Dados Abertos CCEE and drop them here. The app will validate, parse, and cache each file locally.";
+}
+
+function manualDropLabel(sourceId: string): string {
+  if (sourceId === "ccee_plant_generation_hourly") return "Drop one or more geracao_horaria_usina_YYYYMM GZIP files here";
+  return "Drop one or more parcela_usina_montante_mensal_YYYY CSV files here";
+}
+
+function manualAcceptedTypes(sourceId: string): string {
+  if (sourceId === "ccee_plant_generation_hourly") return "Accepted: .gz, .gzip, or .csv";
+  return "Accepted: .csv";
+}
+
+function manualBatchImportSummary(summary: {
+  files: number;
+  succeeded: number;
+  warnings: number;
+  failed: number;
+  rowsInserted: number;
+  rowsSkipped: number;
+  periods: string[];
+  errors: string[];
+  warningMessages: string[];
+}): string {
+  const periods = [...new Set(summary.periods)].join(", ");
+  const periodText = periods ? ` (${periods})` : "";
+  const problemText =
+    summary.failed > 0
+      ? ` ${summary.failed} failed: ${summary.errors.slice(0, 2).join(" | ")}`
+      : summary.warnings > 0
+        ? ` ${summary.warnings} warnings: ${summary.warningMessages.slice(0, 2).join(" | ")}`
+        : "";
+  return `Manual import completed${periodText}: ${summary.succeeded} of ${summary.files} files succeeded, ${formatInteger(summary.rowsInserted)} rows cached, ${formatInteger(summary.rowsSkipped)} skipped.${problemText}`;
+}
+
+function fileNameFromPath(filePath: string): string {
+  return filePath.split(/[\\/]/).pop() || filePath;
+}
+
+async function fileToBase64(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    const chunk = bytes.subarray(offset, offset + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return window.btoa(binary);
 }
 
 function RefreshDiagnostics({ source }: { source: PlantParcelSourceStatus }) {

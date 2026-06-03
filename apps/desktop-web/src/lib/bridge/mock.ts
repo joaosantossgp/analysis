@@ -454,7 +454,7 @@ const MOCK_DB_DIAGNOSTICS: DatabaseDiagnostics = {
 
 const MOCK_APP_STATUS: AppStatusPayload = {
   runtime: {
-    version: "0.26.2-mock",
+    version: "0.26.3-mock",
     runtime_mode: "mock",
     bridge_status: "ready",
     frozen: false,
@@ -473,15 +473,15 @@ const MOCK_APP_STATUS: AppStatusPayload = {
   },
   database: MOCK_DB_DIAGNOSTICS,
   update: {
-    current_version: "0.26.2",
-    latest_version: "0.26.2",
+    current_version: "0.26.3",
+    latest_version: "0.26.3",
     update_available: false,
     status: "up_to_date",
     apply_supported: false,
   },
   diagnostics: {
     ok: true,
-    version: "0.26.2-mock",
+    version: "0.26.3-mock",
     dotnet_status: "mock",
     webview2_version: "mock",
     pythonnet_status: "mock",
@@ -748,6 +748,7 @@ const MOCK_PLANT_SOURCES: PlantParcelSourceStatusResponse = {
       last_refresh_at: NOW,
       last_status: "success",
       last_error: null,
+      last_import_mode: "automatic_refresh",
       refresh_id: "mock-aneel-refresh",
       cache_status: "fresh",
     },
@@ -766,6 +767,19 @@ const MOCK_PLANT_SOURCES: PlantParcelSourceStatusResponse = {
       last_refresh_at: NOW,
       last_status: "success",
       last_error: null,
+      last_import_mode: "manual_file",
+      last_original_file_name: "parcela_usina_montante_mensal_2026.csv",
+      last_file_type: "csv",
+      last_detected_period: "2026-01..2026-05",
+      last_manual_import_at: NOW,
+      last_manual_status: "success",
+      last_manual_file_name: "parcela_usina_montante_mensal_2026.csv",
+      last_manual_file_size_bytes: 4096,
+      last_manual_file_hash: "mock-sha256",
+      last_manual_file_type: "csv",
+      last_manual_detected_period: "2026-01..2026-05",
+      last_manual_rows_inserted: 2,
+      last_manual_rows_skipped: 0,
       refresh_id: "mock-ccee-monthly-refresh",
       cache_status: "fresh",
     },
@@ -784,6 +798,19 @@ const MOCK_PLANT_SOURCES: PlantParcelSourceStatusResponse = {
       last_refresh_at: NOW,
       last_status: "success",
       last_error: null,
+      last_import_mode: "manual_file",
+      last_original_file_name: "geracao_horaria_usina_202605.csv.gz",
+      last_file_type: "gzip",
+      last_detected_period: "2026-05",
+      last_manual_import_at: NOW,
+      last_manual_status: "success",
+      last_manual_file_name: "geracao_horaria_usina_202605.csv.gz",
+      last_manual_file_size_bytes: 1_048_576,
+      last_manual_file_hash: "mock-sha256",
+      last_manual_file_type: "gzip",
+      last_manual_detected_period: "2026-05",
+      last_manual_rows_inserted: 96,
+      last_manual_rows_skipped: 0,
       refresh_id: "mock-ccee-hourly-refresh",
       cache_status: "fresh",
     },
@@ -1151,7 +1178,7 @@ export function createMockBridge(): Partial<BridgeApi> {
 
     get_health: async () => ({
       status: "ok",
-      version: "0.26.2-mock",
+      version: "0.26.3-mock",
       database_dialect: "sqlite",
       required_tables: ["financial_reports", "companies", "refresh_jobs"],
       warnings: [],
@@ -1363,6 +1390,46 @@ export function createMockBridge(): Partial<BridgeApi> {
       period_start: params?.year_month ?? (params?.year ? `${params.year}-01` : null),
       period_end: params?.year_month ?? (params?.year ? `${params.year}-12` : null),
     } satisfies PlantParcelRefreshResult),
+
+    select_plant_parcel_import_file: async (params) => ({
+      ok: true,
+      canceled: false,
+      file_path: params?.source_id === "ccee_plant_generation_hourly"
+        ? "C:\\mock\\geracao_horaria_usina_202605.csv.gz"
+        : "C:\\mock\\parcela_usina_montante_mensal_2026.csv",
+      file_name: params?.source_id === "ccee_plant_generation_hourly"
+        ? "geracao_horaria_usina_202605.csv.gz"
+        : "parcela_usina_montante_mensal_2026.csv",
+      file_paths: params?.source_id === "ccee_plant_generation_hourly"
+        ? ["C:\\mock\\geracao_horaria_usina_202605.csv.gz"]
+        : ["C:\\mock\\parcela_usina_montante_mensal_2025.csv", "C:\\mock\\parcela_usina_montante_mensal_2026.csv"],
+      file_names: params?.source_id === "ccee_plant_generation_hourly"
+        ? ["geracao_horaria_usina_202605.csv.gz"]
+        : ["parcela_usina_montante_mensal_2025.csv", "parcela_usina_montante_mensal_2026.csv"],
+    }),
+
+    import_plant_parcel_source_file: async (params) => ({
+      status: "success",
+      error: null,
+      warning: null,
+      source_id: params?.source_id,
+      refresh_id: "mock-manual-import",
+      import_id: "mock-manual-import",
+      import_mode: "manual_file",
+      rows_inserted: params?.source_id === "ccee_plant_generation_hourly" ? 96 : 2,
+      rows_read: params?.source_id === "ccee_plant_generation_hourly" ? 96 : 2,
+      source_rows: params?.source_id === "ccee_plant_generation_hourly" ? 96 : 2,
+      parsed_rows: params?.source_id === "ccee_plant_generation_hourly" ? 96 : 2,
+      rows_skipped: 0,
+      file_size_bytes: params?.source_id === "ccee_plant_generation_hourly" ? 1_048_576 : 4096,
+      file_hash: "mock-sha256",
+      file_type: params?.source_id === "ccee_plant_generation_hourly" ? "gzip" : "csv",
+      original_file_name: params?.original_file_name ?? null,
+      requested_period: params?.expected_period ?? null,
+      detected_period: params?.source_id === "ccee_plant_generation_hourly" ? "2026-05" : "2026-01..2026-05",
+      period_start: params?.expected_period ?? null,
+      period_end: params?.expected_period ?? null,
+    }),
 
     get_companies: async (params) => {
       const p = params as Record<string, unknown>;
@@ -1629,7 +1696,7 @@ export function createMockBridge(): Partial<BridgeApi> {
       is_retry_allowed: false,
     }),
 
-    check_update: async () => ({ available: false, version: "0.26.2" }),
+    check_update: async () => ({ available: false, version: "0.26.3" }),
 
     apply_update: async () => ({ started: false, error: "[mock] Software update not available in mock mode" }),
 

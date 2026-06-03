@@ -24,6 +24,9 @@ import type {
   PlantParcelSourceStatusResponse,
   PlantParcelChartDataParams,
   PlantParcelChartDataResponse,
+  PlantParcelFilePickerResult,
+  PlantParcelManualImportParams,
+  PlantParcelManualImportResult,
   SINKPIDashboardResponse,
   SINKPIHealthResponse,
   SINKPIObservation,
@@ -92,6 +95,14 @@ export type PlantParcelChartDataResult =
 
 export type PlantParcelRefreshResult_ =
   | { mode: "desktop"; result: PlantParcelRefreshResult }
+  | { mode: "browser"; result: null; reason: string };
+
+export type PlantParcelFilePickerResult_ =
+  | { mode: "desktop"; result: PlantParcelFilePickerResult }
+  | { mode: "browser"; result: null; reason: string };
+
+export type PlantParcelManualImportResult_ =
+  | { mode: "desktop"; result: PlantParcelManualImportResult }
   | { mode: "browser"; result: null; reason: string };
 
 // ── Fetch functions ───────────────────────────────────────────────────────────
@@ -296,6 +307,34 @@ export async function triggerPlantParcelRefresh(
   }
   const payload: PlantParcelRefreshResult = await callBridge(
     "refresh_plant_parcel_source",
+    { triggered_by: "user", ...params },
+  );
+  return { mode: "desktop", result: payload };
+}
+
+export async function selectPlantParcelImportFile(
+  sourceId: string,
+): Promise<PlantParcelFilePickerResult_> {
+  const mode: BridgeMode = getBridgeMode();
+  if (mode === "browser") {
+    return { mode: "browser", result: null, reason: BROWSER_REASON };
+  }
+  const payload: PlantParcelFilePickerResult = await callBridge(
+    "select_plant_parcel_import_file",
+    { source_id: sourceId },
+  );
+  return { mode: "desktop", result: payload };
+}
+
+export async function importPlantParcelManualFile(
+  params: PlantParcelManualImportParams,
+): Promise<PlantParcelManualImportResult_> {
+  const mode: BridgeMode = getBridgeMode();
+  if (mode === "browser") {
+    return { mode: "browser", result: null, reason: BROWSER_REASON };
+  }
+  const payload: PlantParcelManualImportResult = await callBridge(
+    "import_plant_parcel_source_file",
     { triggered_by: "user", ...params },
   );
   return { mode: "desktop", result: payload };

@@ -19,6 +19,7 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -2953,6 +2954,111 @@ class CVMBridge:
         except Exception as exc:
             return {"error": str(exc), "series": [], "periods": []}
 
+    def select_plant_parcel_import_file(self, params=None) -> dict:
+        params = params or {}
+        source_id = str(params.get("source_id") or "")
+        try:
+            import webview  # noqa: PLC0415
+
+            file_types = _plant_parcel_import_file_types(source_id)
+            if not webview.windows:
+                return {"ok": False, "canceled": False, "error": "Desktop window is not ready."}
+            try:
+                selected = webview.windows[0].create_file_dialog(
+                    webview.OPEN_DIALOG,
+                    allow_multiple=True,
+                    file_types=file_types,
+                )
+            except TypeError:
+                selected = webview.windows[0].create_file_dialog(
+                    webview.OPEN_DIALOG,
+                    allow_multiple=True,
+                )
+            if not selected:
+                return {"ok": False, "canceled": True, "error": None}
+            selected_paths = [
+                Path(str(item))
+                for item in (selected if isinstance(selected, (list, tuple)) else [selected])
+            ]
+            selected_path = selected_paths[0]
+            return self._sanitize_for_json({
+                "ok": True,
+                "canceled": False,
+                "file_path": str(selected_path),
+                "file_name": selected_path.name,
+                "file_paths": [str(path) for path in selected_paths],
+                "file_names": [path.name for path in selected_paths],
+            })
+        except Exception as exc:
+            return self._sanitize_for_json({"ok": False, "canceled": False, "error": str(exc)})
+
+    def import_plant_parcel_source_file(self, params=None) -> dict:
+        if not self._is_write_allowed():
+            return self._sanitize_for_json(self._write_blocked_response("import_plant_parcel_source_file"))
+        params = params or {}
+        source_id = str(params.get("source_id") or "")
+        if not source_id:
+            return {"status": "failed", "error": "source_id is required"}
+
+        temp_path: Path | None = None
+        file_path_value = params.get("file_path")
+        try:
+            from src.energy_kpi.plant_parcel_refresh import PlantParcelRefreshJob  # noqa: PLC0415
+            from src.settings import get_settings  # noqa: PLC0415
+
+            settings = get_settings()
+            original_file_name = str(params.get("original_file_name") or "")
+            if not file_path_value and params.get("file_content_base64"):
+                safe_name = Path(original_file_name or "manual-import.csv").name
+                temp_dir = settings.paths.energy_kpi_raw_dir / "manual_uploads_tmp"
+                temp_dir.mkdir(parents=True, exist_ok=True)
+                temp_path = temp_dir / f"{uuid.uuid4()}-{safe_name}"
+                temp_path.write_bytes(base64.b64decode(str(params.get("file_content_base64"))))
+                file_path_value = str(temp_path)
+            if not file_path_value:
+                return {
+                    "status": "failed",
+                    "error": "Either file_path or file_content_base64 must be provided.",
+                }
+
+            self._plant_parcel_refresh_state = {
+                "status": "running",
+                "error": None,
+                "warning": None,
+                "source_id": source_id,
+            }
+            job = PlantParcelRefreshJob(settings)
+            result = job.run_manual_file_import(
+                source_id=source_id,
+                file_path=Path(str(file_path_value)),
+                triggered_by=str(params.get("triggered_by") or "user"),
+                expected_period=params.get("expected_period"),
+                original_file_name=original_file_name or None,
+            )
+            self._plant_parcel_refresh_state = {
+                "status": result.get("status", "success"),
+                "error": result.get("error"),
+                "warning": result.get("warning"),
+                "source_id": source_id,
+                "rows_inserted": result.get("rows_inserted", 0),
+                "refresh_id": result.get("refresh_id"),
+            }
+            self._energy_read_service = None
+            return self._sanitize_for_json(result)
+        except Exception as exc:
+            self._plant_parcel_refresh_state = {
+                "status": "error",
+                "error": str(exc),
+                "source_id": source_id,
+            }
+            return self._sanitize_for_json({"status": "failed", "error": str(exc), "source_id": source_id})
+        finally:
+            if temp_path is not None:
+                try:
+                    temp_path.unlink(missing_ok=True)
+                except Exception:
+                    logger.debug("failed to remove temporary manual upload", exc_info=True)
+
 
     def refresh_plant_parcel_source(self, params=None) -> dict:
         params = params or {}
@@ -3004,6 +3110,14 @@ class CVMBridge:
 
         threading.Thread(target=_run, name="plant-parcel-refresh", daemon=True).start()
         return {"status": "started", "error": None, "source_id": source_id}
+
+
+def _plant_parcel_import_file_types(source_id: str) -> tuple[str, ...]:
+    if source_id == "ccee_plant_parcel_monthly":
+        return ("CSV files (*.csv)", "All files (*.*)")
+    if source_id == "ccee_plant_generation_hourly":
+        return ("GZIP files (*.gz;*.gzip)", "CSV files (*.csv)", "All files (*.*)")
+    return ("All files (*.*)",)
 
 
 def _serialize(obj: Any) -> Any:

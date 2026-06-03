@@ -30,6 +30,7 @@ from src.energy_kpi.plant_parcel_ingest import (
 )
 from src.energy_kpi.plant_parcel_refresh import PlantParcelRefreshJob
 from src.energy_kpi.read import EnergyKPIReadService
+from src.energy_kpi.schema import get_energy_kpi_engine
 from src.settings import build_settings
 
 
@@ -173,8 +174,9 @@ def test_ccee_monthly_and_hourly_idempotent_upserts(tmp_path: Path, db_conn):
             "GERACAO_CENTRO_GRAVIDADE",
             "GERACAO_VERIFICADA_ONS",
             "DISPONIBILIDADE_VERIFICADA_UG",
+            "INDISPONIBILIDADE_UTE_ORDEM_MERITO_ECONOMICO",
         ],
-        [["202602", "02/02/2026", 1, "1001", "PLT1", "Hidraulica", "SE/CO", "10", "9", "8"]],
+        [["202602", "02/02/2026", 1, "1001", "PLT1", "Hidraulica", "SE/CO", "10", "9", "8", "0"]],
     )
 
     monthly = parse_ccee_monthly(_snapshot(monthly_path, SOURCE_CCEE_MONTHLY, "CCEE", "PARCELA_USINA_MONTANTE_MENSAL"))
@@ -360,6 +362,158 @@ def test_refresh_job_marks_zero_insert_as_warning(tmp_path: Path, monkeypatch):
     assert "contained no rows" in result["warning"]
 
 
+def test_manual_ccee_monthly_import_logs_metadata_and_keeps_cache_after_auto_failure(tmp_path: Path):
+    settings = build_settings(project_root=tmp_path)
+    monthly_path = _write_csv(
+        tmp_path / "parcela_usina_montante_mensal_2026.csv",
+        [
+            "MES_REFERENCIA",
+            "COD_PARCELA_USINA",
+            "SIGLA_PARCELA_USINA",
+            "CEG",
+            "NOME_EMPRESARIAL",
+            "SUBMERCADO",
+            "FONTE_ENERGIA_PRIMARIA",
+            "ESTADO_UF",
+            "CAP_T",
+            "GARANTIA_FISICA",
+            "GERACAO_CENTRO_GRAVIDADE",
+        ],
+        [
+            ["2026-01", "1001", "PLT1", "CEG123", "Utility SA", "SE/CO", "Hidraulica", "SP", "100", "50", "40"],
+            ["2026-02", "1001", "PLT1", "CEG123", "Utility SA", "SE/CO", "Hidraulica", "SP", "100", "50", "45"],
+        ],
+    )
+
+    first = PlantParcelRefreshJob(settings).run_manual_file_import(
+        source_id=SOURCE_CCEE_MONTHLY,
+        file_path=monthly_path,
+        triggered_by="test",
+        expected_period="2026",
+    )
+    second = PlantParcelRefreshJob(settings).run_manual_file_import(
+        source_id=SOURCE_CCEE_MONTHLY,
+        file_path=monthly_path,
+        triggered_by="test",
+        expected_period="2026",
+    )
+
+    assert first["status"] == "success"
+    assert first["import_mode"] == "manual_file"
+    assert first["rows_inserted"] == 2
+    assert first["file_hash"]
+    assert first["detected_period"] == "2026-01..2026-02"
+    assert second["status"] == "success"
+
+    engine = get_energy_kpi_engine(settings)
+    with engine.begin() as conn:
+        assert conn.execute(text("SELECT COUNT(*) FROM ccee_plant_parcel_monthly")).scalar() == 2
+        assert conn.execute(text("SELECT COUNT(*) FROM ccee_plant_parcels")).scalar() == 1
+        manual_log = conn.execute(
+            text("""
+                SELECT import_mode, original_file_name, file_hash, detected_period, source_page_url
+                FROM energy_source_refresh_log
+                WHERE refresh_id = :refresh_id
+            """),
+            {"refresh_id": first["refresh_id"]},
+        ).mappings().one()
+        assert manual_log["import_mode"] == "manual_file"
+        assert manual_log["original_file_name"] == monthly_path.name
+        assert manual_log["file_hash"] == first["file_hash"]
+        assert manual_log["detected_period"] == "2026-01..2026-02"
+        assert manual_log["source_page_url"] == "https://dadosabertos.ccee.org.br/dataset/parcela_usina_montante_mensal"
+        conn.execute(
+            text("""
+                INSERT INTO energy_source_refresh_log
+                    (refresh_id, source_id, requested_by, started_at, finished_at, status,
+                     error_message, rows_inserted, import_mode)
+                VALUES
+                    ('auto-failed-after-manual', :source_id, 'test',
+                     '2999-01-01T00:00:00+00:00', '2999-01-01T00:00:01+00:00',
+                     'failed', '403 Forbidden', 0, 'automatic_refresh')
+            """),
+            {"source_id": SOURCE_CCEE_MONTHLY},
+        )
+
+    status = EnergyKPIReadService(settings).get_plant_parcel_source_statuses()
+    by_source = {row["source_id"]: row for row in status["source_statuses"]}
+    ccee_monthly = by_source[SOURCE_CCEE_MONTHLY]
+    assert ccee_monthly["cache_status"] == "cached"
+    assert ccee_monthly["last_status"] == "failed"
+    assert ccee_monthly["last_manual_file_name"] == monthly_path.name
+    assert ccee_monthly["last_manual_file_hash"] == first["file_hash"]
+
+
+def test_manual_ccee_hourly_import_accepts_gzip_and_rejects_period_mismatch(tmp_path: Path):
+    settings = build_settings(project_root=tmp_path)
+    hourly_path = _write_csv(
+        tmp_path / "geracao_horaria_usina_202602.csv.gz",
+        [
+            "MES_REFERENCIA",
+            "DATA",
+            "PERIODO_COMERCIALIZACAO",
+            "CODIGO_PARCELA_USINA",
+            "SIGLA_USINA",
+            "FONTE_PRIMARIA",
+            "SUBMERCADO",
+            "GERACAO_CENTRO_GRAVIDADE",
+            "GERACAO_VERIFICADA_ONS",
+            "DISPONIBILIDADE_VERIFICADA_UG",
+            "INDISPONIBILIDADE_UTE_ORDEM_MERITO_ECONOMICO",
+        ],
+        [["202602", "02/02/2026", 1, "1001", "PLT1", "Hidraulica", "SE/CO", "10", "9", "8", "0"]],
+    )
+
+    result = PlantParcelRefreshJob(settings).run_manual_file_import(
+        source_id=SOURCE_CCEE_HOURLY,
+        file_path=hourly_path,
+        triggered_by="test",
+        expected_period="2026-02",
+    )
+    mismatch = PlantParcelRefreshJob(settings).run_manual_file_import(
+        source_id=SOURCE_CCEE_HOURLY,
+        file_path=hourly_path,
+        triggered_by="test",
+        expected_period="2026-03",
+    )
+
+    assert result["status"] == "success"
+    assert result["rows_inserted"] == 1
+    assert result["file_type"] == "gzip"
+    assert result["detected_period"] == "2026-02"
+    assert mismatch["status"] == "failed"
+    assert "does not match the selected CCEE hourly month" in str(mismatch["error"])
+
+    engine = get_energy_kpi_engine(settings)
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT COUNT(*) FROM ccee_plant_parcel_hourly")).scalar() == 1
+
+
+def test_manual_ccee_import_rejects_invalid_extension_and_missing_columns(tmp_path: Path):
+    settings = build_settings(project_root=tmp_path)
+    txt_path = tmp_path / "parcela_usina_montante_mensal_2026.txt"
+    txt_path.write_text("MES_REFERENCIA;COD_PARCELA_USINA\n2026-01;1001\n", encoding="utf-8")
+    bad_csv = _write_csv(tmp_path / "parcela_usina_montante_mensal_2026.csv", ["only"], [["x"]])
+
+    invalid_extension = PlantParcelRefreshJob(settings).run_manual_file_import(
+        source_id=SOURCE_CCEE_MONTHLY,
+        file_path=txt_path,
+        triggered_by="test",
+        expected_period="2026",
+    )
+    missing_columns = PlantParcelRefreshJob(settings).run_manual_file_import(
+        source_id=SOURCE_CCEE_MONTHLY,
+        file_path=bad_csv,
+        triggered_by="test",
+        expected_period="2026",
+    )
+
+    assert invalid_extension["status"] == "failed"
+    assert "accepts annual .csv files" in str(invalid_extension["error"])
+    assert missing_columns["status"] == "failed"
+    assert "missing required columns" in str(missing_columns["error"])
+
+
 def test_get_plant_parcel_chart_data(tmp_path: Path, db_engine, monkeypatch):
     monthly_path = _write_csv(
         tmp_path / "monthly.csv",
@@ -394,10 +548,11 @@ def test_get_plant_parcel_chart_data(tmp_path: Path, db_engine, monkeypatch):
             "GERACAO_CENTRO_GRAVIDADE",
             "GERACAO_VERIFICADA_ONS",
             "DISPONIBILIDADE_VERIFICADA_UG",
+            "INDISPONIBILIDADE_UTE_ORDEM_MERITO_ECONOMICO",
         ],
         [
-            ["202602", "01/02/2026", 1, "1001", "PLT1", "Hidraulica", "SE/CO", "10", "9", "8"],
-            ["202602", "01/02/2026", 2, "1001", "PLT1", "Hidraulica", "SE/CO", "12", "10", "9"],
+            ["202602", "01/02/2026", 1, "1001", "PLT1", "Hidraulica", "SE/CO", "10", "9", "8", "0"],
+            ["202602", "01/02/2026", 2, "1001", "PLT1", "Hidraulica", "SE/CO", "12", "10", "9", "0"],
         ],
     )
 

@@ -259,6 +259,13 @@ def ensure_energy_kpi_tables_for_connection(conn) -> None:
             "rows_skipped": "INTEGER",
             "warning_message": "TEXT",
             "detected_encoding": "TEXT",
+            "import_mode": "TEXT",
+            "original_file_name": "TEXT",
+            "file_size_bytes": "INTEGER",
+            "file_hash": "TEXT",
+            "file_type": "TEXT",
+            "detected_period": "TEXT",
+            "source_page_url": "TEXT",
         },
     )
     conn.execute(text(

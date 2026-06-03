@@ -417,6 +417,21 @@ class EnergyKPIReadService:
                      AND x.started_at = l.started_at
                 """)).mappings().all()
             }
+            latest_manual_logs = {
+                row["source_id"]: dict(row)
+                for row in conn.execute(text("""
+                    SELECT l.*
+                    FROM energy_source_refresh_log l
+                    JOIN (
+                        SELECT source_id, MAX(started_at) AS started_at
+                        FROM energy_source_refresh_log
+                        WHERE import_mode = 'manual_file'
+                        GROUP BY source_id
+                    ) x
+                      ON x.source_id = l.source_id
+                     AND x.started_at = l.started_at
+                """)).mappings().all()
+            }
             counts = {
                 SOURCE_ANEEL_SIGA: {
                     "records": int(conn.execute(text("SELECT COUNT(*) FROM aneel_siga_plants")).scalar() or 0),
@@ -436,6 +451,7 @@ class EnergyKPIReadService:
         for row in source_rows:
             source_id = str(row["source_id"])
             log_row = latest_logs.get(source_id, {})
+            manual_log_row = latest_manual_logs.get(source_id, {})
             count_info = counts.get(source_id, {"records": 0, "latest_reference": None})
             status = self._plant_source_cache_status(
                 latest_status=log_row.get("status"),
@@ -467,6 +483,24 @@ class EnergyKPIReadService:
                 "last_rows_updated": log_row.get("rows_updated"),
                 "last_rows_skipped": log_row.get("rows_skipped"),
                 "last_detected_encoding": log_row.get("detected_encoding"),
+                "last_import_mode": log_row.get("import_mode"),
+                "last_original_file_name": log_row.get("original_file_name"),
+                "last_file_size_bytes": log_row.get("file_size_bytes"),
+                "last_file_hash": log_row.get("file_hash") or log_row.get("checksum"),
+                "last_file_type": log_row.get("file_type"),
+                "last_detected_period": log_row.get("detected_period"),
+                "last_manual_import_at": manual_log_row.get("finished_at") or manual_log_row.get("started_at"),
+                "last_manual_status": manual_log_row.get("status"),
+                "last_manual_error": manual_log_row.get("error_message"),
+                "last_manual_warning": manual_log_row.get("warning_message"),
+                "last_manual_file_name": manual_log_row.get("original_file_name"),
+                "last_manual_file_size_bytes": manual_log_row.get("file_size_bytes"),
+                "last_manual_file_hash": manual_log_row.get("file_hash") or manual_log_row.get("checksum"),
+                "last_manual_file_type": manual_log_row.get("file_type"),
+                "last_manual_detected_period": manual_log_row.get("detected_period"),
+                "last_manual_rows_inserted": manual_log_row.get("rows_inserted"),
+                "last_manual_rows_skipped": manual_log_row.get("rows_skipped"),
+                "source_page_url": log_row.get("source_page_url") or row["official_url"],
                 "refresh_id": log_row.get("refresh_id"),
                 "cache_status": status,
             })
@@ -889,11 +923,11 @@ class EnergyKPIReadService:
         has_refresh_log: bool = True,
         rows_inserted: Any = None,
     ) -> str:
-        if latest_status in {"error", "failed"}:
-            return "failed"
-        if latest_status == "warning":
-            return "warning"
         if local_records <= 0:
+            if latest_status in {"error", "failed"}:
+                return "failed"
+            if latest_status == "warning":
+                return "warning"
             if not has_refresh_log:
                 return "never_refreshed"
             try:
@@ -902,6 +936,8 @@ class EnergyKPIReadService:
             except (TypeError, ValueError):
                 pass
             return "missing"
+        if latest_status in {"error", "failed", "warning"}:
+            return "cached"
         if not latest_reference:
             return "cached"
         threshold = 45 if source_id in {SOURCE_CCEE_HOURLY, SOURCE_ANEEL_SIGA} else 75
