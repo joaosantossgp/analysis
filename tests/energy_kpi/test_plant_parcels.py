@@ -477,7 +477,7 @@ def test_manual_ccee_monthly_import_logs_metadata_and_keeps_cache_after_auto_fai
     assert ccee_monthly["last_manual_file_hash"] == first["file_hash"]
 
 
-def test_manual_ccee_hourly_import_accepts_gzip_and_rejects_period_mismatch(tmp_path: Path):
+def test_manual_ccee_hourly_import_accepts_gzip_and_rejects_period_mismatch(tmp_path: Path, monkeypatch):
     settings = build_settings(project_root=tmp_path)
     hourly_path = _write_csv(
         tmp_path / "geracao_horaria_usina_202602.csv.gz",
@@ -516,6 +516,19 @@ def test_manual_ccee_hourly_import_accepts_gzip_and_rejects_period_mismatch(tmp_
     assert result["detected_period"] == "2026-02"
     assert mismatch["status"] == "failed"
     assert "does not match the selected CCEE hourly month" in str(mismatch["error"])
+
+    monkeypatch.setattr(
+        "src.energy_kpi.plant_parcel_refresh.upsert_ccee_hourly",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("duplicate import should skip upsert")),
+    )
+    duplicate = PlantParcelRefreshJob(settings).run_manual_file_import(
+        source_id=SOURCE_CCEE_HOURLY,
+        file_path=hourly_path,
+        triggered_by="test",
+        expected_period="2026-02",
+    )
+    assert duplicate["status"] == "success"
+    assert duplicate["rows_inserted"] == 1
 
     engine = get_energy_kpi_engine(settings)
     with engine.connect() as conn:

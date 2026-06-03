@@ -408,37 +408,61 @@ class PlantParcelRefreshJob:
             checksum = snapshot.sha256
             snapshot_date = snapshot.fetched_at
             source_rows = int(snapshot.row_count or 0)
-            if source_id == SOURCE_CCEE_MONTHLY:
+            existing_import = _find_successful_manual_import(engine, source_id, checksum)
+            reuse_existing_import = bool(existing_import and _manual_import_period_matches(
+                source_id,
+                requested_period,
+                existing_import.get("detected_period"),
+            ))
+            if reuse_existing_import:
+                rows_inserted = int(existing_import.get("rows_inserted") or 0)
+                rows_skipped = int(existing_import.get("rows_skipped") or 0)
+                rows_read = int(existing_import.get("parsed_rows") or existing_import.get("normalized_rows") or 0)
+                source_rows = int(existing_import.get("source_rows") or source_rows)
+                parsed_rows = int(existing_import.get("parsed_rows") or rows_read)
+                normalized_rows = int(existing_import.get("normalized_rows") or rows_read)
+                detected_period = existing_import.get("detected_period")
+                period_start = existing_import.get("period_start") or requested_period
+                period_end = existing_import.get("period_end") or requested_period
+                detected_encoding = existing_import.get("detected_encoding")
+                self._stage("skip", f"manual file already imported: {safe_name}")
+            elif source_id == SOURCE_CCEE_MONTHLY:
                 frame = parse_ccee_monthly(snapshot)
             else:
                 frame = parse_ccee_hourly(snapshot)
 
-            detected_periods = _reference_periods_from_frame(frame)
-            detected_period = _format_detected_periods(detected_periods)
-            requested_period = _validate_manual_period(
-                source_id=source_id,
-                requested_period=requested_period,
-                detected_periods=detected_periods,
-            )
-            if source_id == SOURCE_CCEE_HOURLY and requested_period:
-                frame = frame.loc[frame["reference_month"] == requested_period].copy()
-                if not frame.empty:
-                    detected_periods = [requested_period]
-            normalized_rows = int(len(frame))
-            parsed_rows = int(frame.attrs.get("parsed_rows", normalized_rows))
-            source_rows = int(snapshot.row_count or frame.attrs.get("source_row_count") or 0)
-            rows_skipped = max(source_rows - normalized_rows, 0)
-            rows_read = normalized_rows
-            detected_encoding = frame.attrs.get("detected_encoding")
-            period_start = detected_periods[0] if detected_periods else requested_period
-            period_end = detected_periods[-1] if detected_periods else requested_period
+            if not reuse_existing_import:
+                detected_periods = _reference_periods_from_frame(frame)
+                detected_period = _format_detected_periods(detected_periods)
+                requested_period = _validate_manual_period(
+                    source_id=source_id,
+                    requested_period=requested_period,
+                    detected_periods=detected_periods,
+                )
+                if source_id == SOURCE_CCEE_HOURLY and requested_period:
+                    frame = frame.loc[frame["reference_month"] == requested_period].copy()
+                    if frame.empty:
+                        raise ValueError(
+                            "File reference month does not match the selected CCEE hourly month "
+                            f"{requested_period}: {_format_detected_periods(detected_periods)}."
+                        )
+                    if not frame.empty:
+                        detected_periods = [requested_period]
+                normalized_rows = int(len(frame))
+                parsed_rows = int(frame.attrs.get("parsed_rows", normalized_rows))
+                source_rows = int(snapshot.row_count or frame.attrs.get("source_row_count") or 0)
+                rows_skipped = max(source_rows - normalized_rows, 0)
+                rows_read = normalized_rows
+                detected_encoding = frame.attrs.get("detected_encoding")
+                period_start = detected_periods[0] if detected_periods else requested_period
+                period_end = detected_periods[-1] if detected_periods else requested_period
 
-            def _persist_manual_import(conn) -> int:
-                persist_plant_snapshot_record(conn, snapshot)
-                if source_id == SOURCE_CCEE_MONTHLY:
-                    return upsert_ccee_monthly(conn, frame)
-                return upsert_ccee_hourly(conn, frame)
-            rows_inserted = _with_write_retry(engine, _persist_manual_import)
+                def _persist_manual_import(conn) -> int:
+                    persist_plant_snapshot_record(conn, snapshot)
+                    if source_id == SOURCE_CCEE_MONTHLY:
+                        return upsert_ccee_monthly(conn, frame)
+                    return upsert_ccee_hourly(conn, frame)
+                rows_inserted = _with_write_retry(engine, _persist_manual_import)
 
             if rows_inserted <= 0:
                 status = "warning"
@@ -553,6 +577,41 @@ def _source_meta(source_id: str) -> dict[str, str]:
         if source["source_id"] == source_id:
             return dict(source)
     return {"dataset_name": source_id}
+
+
+def _find_successful_manual_import(engine, source_id: str, checksum: str | None) -> dict | None:
+    if not checksum:
+        return None
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("""
+                SELECT rows_inserted, rows_skipped, source_rows, parsed_rows,
+                       normalized_rows, detected_period, period_start, period_end,
+                       detected_encoding
+                FROM energy_source_refresh_log
+                WHERE source_id = :source_id
+                  AND import_mode = 'manual_file'
+                  AND status = 'success'
+                  AND file_hash = :checksum
+                  AND finished_at IS NOT NULL
+                ORDER BY finished_at DESC
+                LIMIT 1
+            """),
+            {"source_id": source_id, "checksum": checksum},
+        ).mappings().first()
+    return dict(row) if row else None
+
+
+def _manual_import_period_matches(source_id: str, requested_period: str | None, detected_period: str | None) -> bool:
+    if not requested_period:
+        return True
+    if not detected_period:
+        return False
+    if source_id == SOURCE_CCEE_HOURLY:
+        return detected_period == requested_period
+    if source_id == SOURCE_CCEE_MONTHLY:
+        return detected_period.startswith(str(requested_period))
+    return True
 
 
 def _requested_period(
