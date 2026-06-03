@@ -1,11 +1,12 @@
 """Tests for plant and plant-parcel energy indicator paths."""
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pandas as pd
 import pytest
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
 
 from src.energy_kpi.metrics import (
     capacity_factor,
@@ -30,7 +31,7 @@ from src.energy_kpi.plant_parcel_ingest import (
 )
 from src.energy_kpi.plant_parcel_refresh import PlantParcelRefreshJob
 from src.energy_kpi.read import EnergyKPIReadService
-from src.energy_kpi.schema import get_energy_kpi_engine
+from src.energy_kpi.schema import ensure_energy_kpi_tables_for_connection, get_energy_kpi_engine
 from src.settings import build_settings
 
 
@@ -311,6 +312,36 @@ def test_source_status_reports_never_refreshed_and_warning(tmp_path: Path, db_en
     by_source = {row["source_id"]: row for row in warned["source_statuses"]}
     assert by_source[SOURCE_ANEEL_SIGA]["cache_status"] == "warning"
     assert by_source[SOURCE_ANEEL_SIGA]["last_warning"].startswith("Downloaded rows")
+
+
+def test_source_status_is_read_only_during_sqlite_write_lock(tmp_path: Path, monkeypatch):
+    db_path = tmp_path / "energy_kpis.db"
+    engine = create_engine(
+        f"sqlite:///{db_path}",
+        connect_args={"check_same_thread": False, "timeout": 0.1},
+    )
+    with engine.begin() as conn:
+        ensure_energy_kpi_tables_for_connection(conn)
+
+    settings = build_settings(project_root=tmp_path)
+    svc = EnergyKPIReadService(settings)
+    monkeypatch.setattr(svc, "_engine", lambda: engine)
+
+    writer = sqlite3.connect(str(db_path), timeout=0.1)
+    writer.execute("PRAGMA journal_mode = WAL")
+    writer.execute("BEGIN IMMEDIATE")
+    try:
+        status = svc.get_plant_parcel_source_statuses()
+    finally:
+        writer.rollback()
+        writer.close()
+
+    by_source = {row["source_id"]: row for row in status["source_statuses"]}
+    assert status["count"] == 3
+    assert by_source[SOURCE_ANEEL_SIGA]["cache_status"] == "never_refreshed"
+    assert by_source[SOURCE_CCEE_MONTHLY]["source_name"] == "CCEE Plant Parcel Monthly"
+    with engine.connect() as conn:
+        assert int(conn.execute(text("SELECT COUNT(*) FROM energy_sources")).scalar() or 0) == 0
 
 
 def test_refresh_job_marks_zero_insert_as_warning(tmp_path: Path, monkeypatch):

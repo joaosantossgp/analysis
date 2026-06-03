@@ -28,10 +28,10 @@ from src.energy_kpi.metrics import (
     mwmed_to_mwh,
 )
 from src.energy_kpi.plant_parcel_ingest import (
+    PLANT_SOURCES,
     SOURCE_ANEEL_SIGA,
     SOURCE_CCEE_HOURLY,
     SOURCE_CCEE_MONTHLY,
-    seed_plant_sources,
 )
 from src.energy_kpi.schema import get_energy_kpi_engine
 from src.energy_kpi.sin_catalog import SIN_KPI_CATALOG
@@ -40,6 +40,17 @@ from src.settings import AppSettings
 logger = logging.getLogger(__name__)
 
 _STALE_THRESHOLD_DAYS = 90
+_PLANT_SOURCE_STATUS_ORDER = (SOURCE_ANEEL_SIGA, SOURCE_CCEE_MONTHLY, SOURCE_CCEE_HOURLY)
+
+
+def _plant_source_status_rows(db_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return plant source metadata without requiring a write on the read path."""
+    by_source_id = {str(row["source_id"]): dict(row) for row in db_rows}
+    fallback_by_source_id = {str(row["source_id"]): dict(row) for row in PLANT_SOURCES}
+    return [
+        by_source_id.get(source_id) or fallback_by_source_id[source_id]
+        for source_id in _PLANT_SOURCE_STATUS_ORDER
+    ]
 
 
 class EnergyKPIReadService:
@@ -384,25 +395,28 @@ class EnergyKPIReadService:
 
     def get_plant_parcel_source_statuses(self) -> dict[str, Any]:
         """Return local cache status for ANEEL SIGA and CCEE plant datasets."""
-        with self._engine().begin() as conn:
-            seed_plant_sources(conn)
-            source_rows = conn.execute(text("""
-                SELECT source_id, source_name, dataset_name, provider, official_url,
-                       refresh_frequency, granularity, description, known_caveats
-                FROM energy_sources
-                WHERE source_id IN (
-                    'ccee_plant_parcel_monthly',
-                    'ccee_plant_generation_hourly',
-                    'aneel_siga_plants'
-                )
-                ORDER BY
-                    CASE source_id
-                        WHEN 'aneel_siga_plants' THEN 1
-                        WHEN 'ccee_plant_parcel_monthly' THEN 2
-                        WHEN 'ccee_plant_generation_hourly' THEN 3
-                        ELSE 9
-                    END
-            """)).mappings().all()
+        with self._engine().connect() as conn:
+            db_source_rows = [
+                dict(row)
+                for row in conn.execute(text("""
+                    SELECT source_id, source_name, dataset_name, provider, official_url,
+                           refresh_frequency, granularity, description, known_caveats
+                    FROM energy_sources
+                    WHERE source_id IN (
+                        'ccee_plant_parcel_monthly',
+                        'ccee_plant_generation_hourly',
+                        'aneel_siga_plants'
+                    )
+                    ORDER BY
+                        CASE source_id
+                            WHEN 'aneel_siga_plants' THEN 1
+                            WHEN 'ccee_plant_parcel_monthly' THEN 2
+                            WHEN 'ccee_plant_generation_hourly' THEN 3
+                            ELSE 9
+                        END
+                """)).mappings().all()
+            ]
+            source_rows = _plant_source_status_rows(db_source_rows)
             latest_logs = {
                 row["source_id"]: dict(row)
                 for row in conn.execute(text("""
@@ -568,8 +582,7 @@ class EnergyKPIReadService:
             {self._plant_entities_cte()}
             SELECT COUNT(*) FROM entities {where}
         """
-        with self._engine().begin() as conn:
-            seed_plant_sources(conn)
+        with self._engine().connect() as conn:
             _install_sqlite_functions(conn)
             rows = [dict(row) for row in conn.execute(text(sql), params).mappings().all()]
             total = int(conn.execute(text(count_sql), params).scalar() or 0)
@@ -595,8 +608,7 @@ class EnergyKPIReadService:
         if not entity_id:
             return {"error": "entity_id is required"}
 
-        with self._engine().begin() as conn:
-            seed_plant_sources(conn)
+        with self._engine().connect() as conn:
             resolved_type = entity_type or self._resolve_plant_entity_type(conn, entity_id)
             parcel = None
             aneel = None
@@ -1107,8 +1119,7 @@ class EnergyKPIReadService:
         if not entity_id:
             return {"error": "entity_id is required", "series": [], "periods": []}
 
-        with self._engine().begin() as conn:
-            seed_plant_sources(conn)
+        with self._engine().connect() as conn:
             resolved_type = entity_type or self._resolve_plant_entity_type(conn, entity_id)
 
             periods: list[str] = []
