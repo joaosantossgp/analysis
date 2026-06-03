@@ -2999,52 +2999,153 @@ class CVMBridge:
         source_id = str(params.get("source_id") or "")
         if not source_id:
             return {"status": "failed", "error": "source_id is required"}
+        state = self._plant_parcel_refresh_status()
+        if state.get("status") == "running":
+            return {
+                "status": "already_running",
+                "error": None,
+                "source_id": state.get("source_id"),
+            }
 
-        temp_path: Path | None = None
-        file_path_value = params.get("file_path")
         try:
-            from src.energy_kpi.plant_parcel_refresh import PlantParcelRefreshJob  # noqa: PLC0415
             from src.settings import get_settings  # noqa: PLC0415
 
             settings = get_settings()
-            original_file_name = str(params.get("original_file_name") or "")
-            if not file_path_value and params.get("file_content_base64"):
-                safe_name = Path(original_file_name or "manual-import.csv").name
-                temp_dir = settings.paths.energy_kpi_raw_dir / "manual_uploads_tmp"
-                temp_dir.mkdir(parents=True, exist_ok=True)
-                temp_path = temp_dir / f"{uuid.uuid4()}-{safe_name}"
-                temp_path.write_bytes(base64.b64decode(str(params.get("file_content_base64"))))
-                file_path_value = str(temp_path)
-            if not file_path_value:
+            requested_files = params.get("files")
+            if not isinstance(requested_files, list) or not requested_files:
+                requested_files = [{
+                    "file_path": params.get("file_path"),
+                    "file_content_base64": params.get("file_content_base64"),
+                    "original_file_name": params.get("original_file_name"),
+                }]
+
+            temp_paths: list[Path] = []
+            import_files: list[dict[str, str | None]] = []
+            temp_dir = settings.paths.energy_kpi_raw_dir / "manual_uploads_tmp"
+            for raw_file in requested_files:
+                if not isinstance(raw_file, dict):
+                    continue
+                original_file_name = str(raw_file.get("original_file_name") or "")
+                file_path_value = raw_file.get("file_path")
+                if not file_path_value and raw_file.get("file_content_base64"):
+                    safe_name = Path(original_file_name or "manual-import.csv").name
+                    temp_dir.mkdir(parents=True, exist_ok=True)
+                    temp_path = temp_dir / f"{uuid.uuid4()}-{safe_name}"
+                    temp_path.write_bytes(base64.b64decode(str(raw_file.get("file_content_base64"))))
+                    temp_paths.append(temp_path)
+                    file_path_value = str(temp_path)
+                if file_path_value:
+                    import_files.append({
+                        "file_path": str(file_path_value),
+                        "original_file_name": original_file_name or None,
+                    })
+
+            if not import_files:
                 return {
                     "status": "failed",
-                    "error": "Either file_path or file_content_base64 must be provided.",
+                    "error": "At least one file_path or file_content_base64 entry must be provided.",
+                    "source_id": source_id,
                 }
 
+            import_id = str(uuid.uuid4())
             self._plant_parcel_refresh_state = {
                 "status": "running",
                 "error": None,
                 "warning": None,
                 "source_id": source_id,
+                "import_id": import_id,
+                "total_files": len(import_files),
             }
-            job = PlantParcelRefreshJob(settings)
-            result = job.run_manual_file_import(
-                source_id=source_id,
-                file_path=Path(str(file_path_value)),
-                triggered_by=str(params.get("triggered_by") or "user"),
-                expected_period=params.get("expected_period"),
-                original_file_name=original_file_name or None,
-            )
-            self._plant_parcel_refresh_state = {
-                "status": result.get("status", "success"),
-                "error": result.get("error"),
-                "warning": result.get("warning"),
+
+            def _run():
+                try:
+                    from src.energy_kpi.plant_parcel_refresh import PlantParcelRefreshJob  # noqa: PLC0415
+
+                    rows_inserted = 0
+                    rows_skipped = 0
+                    failed = 0
+                    warnings = 0
+                    errors: list[str] = []
+                    warning_messages: list[str] = []
+                    last_result: dict[str, Any] = {}
+                    for index, item in enumerate(import_files, start=1):
+                        label = item.get("original_file_name") or Path(str(item.get("file_path"))).name
+                        self._plant_parcel_refresh_state = {
+                            "status": "running",
+                            "error": None,
+                            "warning": None,
+                            "source_id": source_id,
+                            "import_id": import_id,
+                            "total_files": len(import_files),
+                            "current_file_index": index,
+                            "current_file_name": label,
+                        }
+                        result = PlantParcelRefreshJob(settings).run_manual_file_import(
+                            source_id=source_id,
+                            file_path=Path(str(item.get("file_path"))),
+                            triggered_by=str(params.get("triggered_by") or "user"),
+                            expected_period=params.get("expected_period"),
+                            original_file_name=item.get("original_file_name"),
+                        )
+                        last_result = result
+                        rows_inserted += int(result.get("rows_inserted") or 0)
+                        rows_skipped += int(result.get("rows_skipped") or 0)
+                        status = str(result.get("status") or "").lower()
+                        if status in {"failed", "error"}:
+                            failed += 1
+                            errors.append(f"{label}: {result.get('error') or 'failed'}")
+                        elif status == "warning":
+                            warnings += 1
+                            warning_messages.append(f"{label}: {result.get('warning') or 'warning'}")
+
+                    if failed >= len(import_files):
+                        final_status = "error"
+                        error = "; ".join(errors[:2]) or "Manual import failed."
+                        warning = None
+                    elif failed > 0 or warnings > 0:
+                        final_status = "warning"
+                        error = None
+                        warning_parts = errors[:2] if failed > 0 else warning_messages[:2]
+                        warning = "; ".join(warning_parts) or "Manual import completed with warnings."
+                    else:
+                        final_status = "success"
+                        error = None
+                        warning = None
+
+                    self._plant_parcel_refresh_state = {
+                        "status": final_status,
+                        "error": error,
+                        "warning": warning,
+                        "source_id": source_id,
+                        "import_id": import_id,
+                        "total_files": len(import_files),
+                        "rows_inserted": rows_inserted,
+                        "rows_skipped": rows_skipped,
+                        "refresh_id": last_result.get("refresh_id"),
+                    }
+                except Exception as exc:
+                    self._plant_parcel_refresh_state = {
+                        "status": "error",
+                        "error": str(exc),
+                        "source_id": source_id,
+                        "import_id": import_id,
+                    }
+                finally:
+                    self._energy_read_service = None
+                    for temp_path in temp_paths:
+                        try:
+                            temp_path.unlink(missing_ok=True)
+                        except Exception:
+                            logger.debug("failed to remove temporary manual upload", exc_info=True)
+
+            threading.Thread(target=_run, name="plant-parcel-manual-import", daemon=True).start()
+            return self._sanitize_for_json({
+                "status": "started",
+                "error": None,
                 "source_id": source_id,
-                "rows_inserted": result.get("rows_inserted", 0),
-                "refresh_id": result.get("refresh_id"),
-            }
-            self._energy_read_service = None
-            return self._sanitize_for_json(result)
+                "import_id": import_id,
+                "total_files": len(import_files),
+            })
         except Exception as exc:
             self._plant_parcel_refresh_state = {
                 "status": "error",
@@ -3052,12 +3153,6 @@ class CVMBridge:
                 "source_id": source_id,
             }
             return self._sanitize_for_json({"status": "failed", "error": str(exc), "source_id": source_id})
-        finally:
-            if temp_path is not None:
-                try:
-                    temp_path.unlink(missing_ok=True)
-                except Exception:
-                    logger.debug("failed to remove temporary manual upload", exc_info=True)
 
 
     def refresh_plant_parcel_source(self, params=None) -> dict:

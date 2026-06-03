@@ -1314,6 +1314,13 @@ export interface PlantParcelManualImportParams {
   file_path?: string;
   file_content_base64?: string;
   original_file_name?: string;
+  files?: PlantParcelManualImportFileParam[];
+}
+
+export interface PlantParcelManualImportFileParam {
+  file_path?: string;
+  file_content_base64?: string;
+  original_file_name?: string;
 }
 
 export interface PlantParcelManualImportResult extends PlantParcelRefreshResult {

@@ -18,6 +18,7 @@ import type {
   PlantMetric,
   PlantParcelCatalogRecord,
   PlantParcelDetailResponse,
+  PlantParcelManualImportResult,
   PlantParcelSourceStatus,
 } from "@/lib/bridge/types";
 import { IndicatorChart } from "./IndicatorChart";
@@ -57,6 +58,7 @@ export function PlantParcelExplorer({ bridgeReady }: { bridgeReady: boolean }) {
   const [selected, setSelected] = useState<PlantParcelCatalogRecord | null>(null);
   const [refreshingSourceId, setRefreshingSourceId] = useState<string | null>(null);
   const [manualImportingSourceId, setManualImportingSourceId] = useState<string | null>(null);
+  const [manualImportStartedAt, setManualImportStartedAt] = useState<number | null>(null);
   const [message, setMessage] = useState<{ text: string; severity: "success" | "warning" | "error" } | null>(null);
   const [monthlyYear, setMonthlyYear] = useState(String(now.getFullYear()));
   const [hourlyMonth, setHourlyMonth] = useState(
@@ -109,6 +111,13 @@ export function PlantParcelExplorer({ bridgeReady }: { bridgeReady: boolean }) {
         ? catalogQuery.data.reason
         : null;
 
+  const invalidatePlantQueries = useCallback(() => {
+    void qc.invalidateQueries({ queryKey: ["plant-parcel-source-statuses"] });
+    void qc.invalidateQueries({ queryKey: ["plant-parcel-catalog"] });
+    void qc.invalidateQueries({ queryKey: ["plant-parcel-detail"] });
+    void qc.invalidateQueries({ queryKey: ["plant-parcel-chart-data"] });
+  }, [qc]);
+
   useEffect(() => {
     if (records.length === 0) {
       setSelected(null);
@@ -138,6 +147,28 @@ export function PlantParcelExplorer({ bridgeReady }: { bridgeReady: boolean }) {
     void qc.invalidateQueries({ queryKey: ["plant-parcel-source-statuses"] });
     void qc.invalidateQueries({ queryKey: ["plant-parcel-catalog"] });
   }, [refreshingSourceId, statusResponse, qc]);
+
+  useEffect(() => {
+    if (!manualImportingSourceId || !statusResponse || manualImportStartedAt === null) return;
+    if (statusQuery.dataUpdatedAt < manualImportStartedAt) return;
+    if (statusResponse.refresh_source_id && statusResponse.refresh_source_id !== manualImportingSourceId) return;
+    if (statusResponse.refresh_running) return;
+
+    setManualImportingSourceId(null);
+    setManualImportStartedAt(null);
+    if (statusResponse.refresh_error) {
+      setMessage({ text: `Manual import finished with an error: ${statusResponse.refresh_error}`, severity: "error" });
+    } else if (statusResponse.refresh_warning || statusResponse.refresh_status === "warning") {
+      setMessage({
+        text: statusResponse.refresh_warning ?? "Manual import completed with a warning. Check the source card for details.",
+        severity: "warning",
+      });
+    } else {
+      setMessage({ text: "Manual import finished. Local cache status has been updated.", severity: "success" });
+      window.setTimeout(() => setMessage(null), 7000);
+    }
+    invalidatePlantQueries();
+  }, [manualImportingSourceId, manualImportStartedAt, statusResponse, statusQuery.dataUpdatedAt, invalidatePlantQueries]);
 
   const detailQuery = useQuery({
     queryKey: ["plant-parcel-detail", selected?.entity_type, selected?.entity_id],
@@ -203,13 +234,6 @@ export function PlantParcelExplorer({ bridgeReady }: { bridgeReady: boolean }) {
     [hourlyMonth, monthlyYear, qc, statusQuery],
   );
 
-  const invalidatePlantQueries = useCallback(() => {
-    void qc.invalidateQueries({ queryKey: ["plant-parcel-source-statuses"] });
-    void qc.invalidateQueries({ queryKey: ["plant-parcel-catalog"] });
-    void qc.invalidateQueries({ queryKey: ["plant-parcel-detail"] });
-    void qc.invalidateQueries({ queryKey: ["plant-parcel-chart-data"] });
-  }, [qc]);
-
   const importManualFiles = useCallback(
     async (source: PlantParcelSourceStatus, files: ManualImportFile[]) => {
       if (files.length === 0) return;
@@ -221,58 +245,61 @@ export function PlantParcelExplorer({ bridgeReady }: { bridgeReady: boolean }) {
         severity: "success",
       });
       try {
-        const summary = {
-          files: files.length,
-          succeeded: 0,
-          warnings: 0,
-          failed: 0,
-          rowsInserted: 0,
-          rowsSkipped: 0,
-          periods: [] as string[],
-          errors: [] as string[],
-          warningMessages: [] as string[],
-        };
-        for (const file of files) {
-          const result = await importPlantParcelManualFile({
-            source_id: source.source_id,
+        const startedAt = Date.now();
+        setManualImportStartedAt(startedAt);
+        const result = await importPlantParcelManualFile({
+          source_id: source.source_id,
+          expected_period: null,
+          files: files.map((file) => ({
             file_path: file.filePath,
             file_content_base64: file.fileContentBase64,
             original_file_name: file.fileName,
-            expected_period: null,
+          })),
+        });
+        if (result.mode === "browser") {
+          setManualImportingSourceId(null);
+          setManualImportStartedAt(null);
+          setMessage({ text: result.reason, severity: "error" });
+          return;
+        }
+        if (result.result.status === "started") {
+          setMessage({
+            text: files.length === 1
+              ? `Manual import started for ${files[0].fileName ?? source.dataset_name}. You can keep using the app while it runs.`
+              : `Manual import started for ${files.length} files. You can keep using the app while it runs.`,
+            severity: "success",
           });
-          if (result.mode === "browser") {
-            setManualImportingSourceId(null);
-            setMessage({ text: result.reason, severity: "error" });
-            return;
-          }
-          const label = file.fileName ?? file.filePath ?? source.dataset_name;
-          summary.rowsInserted += result.result.rows_inserted ?? 0;
-          summary.rowsSkipped += result.result.rows_skipped ?? 0;
-          if (result.result.detected_period) summary.periods.push(result.result.detected_period);
-          if (result.result.status === "failed" || result.result.status === "error") {
-            summary.failed += 1;
-            summary.errors.push(`${label}: ${result.result.error ?? "failed"}`);
-          } else if (result.result.status === "warning") {
-            summary.warnings += 1;
-            summary.warningMessages.push(`${label}: ${result.result.warning ?? "warning"}`);
-          } else {
-            summary.succeeded += 1;
-          }
+          void statusQuery.refetch();
+          return;
+        }
+        if (result.result.status === "already_running") {
+          setManualImportingSourceId(null);
+          setManualImportStartedAt(null);
+          setMessage({ text: "Another plant source refresh or import is already running.", severity: "warning" });
+          void statusQuery.refetch();
+          return;
         }
         setManualImportingSourceId(null);
-        const severity = summary.failed === summary.files ? "error" : summary.failed > 0 || summary.warnings > 0 ? "warning" : "success";
+        setManualImportStartedAt(null);
+        const severity =
+          result.result.status === "failed" || result.result.status === "error"
+            ? "error"
+            : result.result.status === "warning"
+              ? "warning"
+              : "success";
         setMessage({
-          text: manualBatchImportSummary(summary),
+          text: manualImportResultSummary(result.result, files.length),
           severity,
         });
         if (severity === "success") window.setTimeout(() => setMessage(null), 7000);
         invalidatePlantQueries();
       } catch (error) {
         setManualImportingSourceId(null);
+        setManualImportStartedAt(null);
         setMessage({ text: `Manual import failed: ${String(error)}`, severity: "error" });
       }
     },
-    [invalidatePlantQueries],
+    [invalidatePlantQueries, statusQuery],
   );
 
   const chooseManualFile = useCallback(
@@ -1295,26 +1322,17 @@ function manualAcceptedTypes(sourceId: string): string {
   return "Accepted: .csv";
 }
 
-function manualBatchImportSummary(summary: {
-  files: number;
-  succeeded: number;
-  warnings: number;
-  failed: number;
-  rowsInserted: number;
-  rowsSkipped: number;
-  periods: string[];
-  errors: string[];
-  warningMessages: string[];
-}): string {
-  const periods = [...new Set(summary.periods)].join(", ");
-  const periodText = periods ? ` (${periods})` : "";
-  const problemText =
-    summary.failed > 0
-      ? ` ${summary.failed} failed: ${summary.errors.slice(0, 2).join(" | ")}`
-      : summary.warnings > 0
-        ? ` ${summary.warnings} warnings: ${summary.warningMessages.slice(0, 2).join(" | ")}`
-        : "";
-  return `Manual import completed${periodText}: ${summary.succeeded} of ${summary.files} files succeeded, ${formatInteger(summary.rowsInserted)} rows cached, ${formatInteger(summary.rowsSkipped)} skipped.${problemText}`;
+function manualImportResultSummary(result: PlantParcelManualImportResult, fileCount: number): string {
+  const periodText = result.detected_period ? ` (${result.detected_period})` : "";
+  const fileText = fileCount === 1 ? "1 file" : `${fileCount} files`;
+  const rowsText = `${formatInteger(result.rows_inserted ?? 0)} rows cached, ${formatInteger(result.rows_skipped ?? 0)} skipped`;
+  if (result.status === "failed" || result.status === "error") {
+    return `Manual import failed for ${fileText}${periodText}: ${result.error ?? "failed"}`;
+  }
+  if (result.status === "warning") {
+    return `Manual import completed with warning for ${fileText}${periodText}: ${rowsText}. ${result.warning ?? ""}`.trim();
+  }
+  return `Manual import completed for ${fileText}${periodText}: ${rowsText}.`;
 }
 
 function fileNameFromPath(filePath: string): string {
