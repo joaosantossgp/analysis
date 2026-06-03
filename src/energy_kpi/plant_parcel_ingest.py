@@ -673,48 +673,58 @@ def parse_ccee_hourly(snapshot: PlantSnapshotRecord) -> pd.DataFrame:
         snapshot.dataset_name,
     )
 
-    rows: list[dict[str, Any]] = []
-    for _, row in df.iterrows():
-        ref_month = _parse_month_value(_get(row, cols, "MES_REFERENCIA"))
-        code = _clean_code(_get(row, cols, "CODIGO_PARCELA_USINA", "COD_PARCELA_USINA"))
-        period = _parse_int(_get(row, cols, "PERIODO_COMERCIALIZACAO"))
-        ref_datetime = _parse_hourly_datetime(_get(row, cols, "DATA"), ref_month, period)
-        if not ref_month or not code or period is None or not ref_datetime:
-            continue
-        gcg_mwmed = _to_float(_get(row, cols, "GERACAO_CENTRO_GRAVIDADE"))
-        raw = _json_safe_row(row.to_dict())
-        rows.append({
-            "reference_datetime": ref_datetime,
-            "reference_month": ref_month,
-            "commercialization_period": period,
-            "plant_parcel_code": code,
-            "plant_acronym": _clean_text(_get(row, cols, "SIGLA_USINA")),
-            "generation_source": _clean_text(_get(row, cols, "FONTE_PRIMARIA")),
-            "submarket": _clean_text(_get(row, cols, "SUBMERCADO")),
-            "plant_type": _clean_text(_get(row, cols, "TIPO_USINA")),
-            "generation_center_of_gravity_mwmed": gcg_mwmed,
-            "generation_center_of_gravity_mwh": gcg_mwmed,
-            "internal_loss_factor_pct": _to_float(_get(row, cols, "FATOR_PERDA_INTERNA")),
-            "loss_generation_apportionment_factor_mwh": _to_float(_get(row, cols, "FATOR_RATEIO_PERDA_GERACAO")),
-            "energy_security_generation_mwh": _to_float(_get(row, cols, "GERACAO_SEGURANCA_ENERGETICA")),
-            "constrained_on_generation_mwh": _to_float(_get(row, cols, "GERACAO_RESTRICAO_OPERATIVA_CONST_ON")),
-            "adjusted_restriction_charge_energy_mwmed": _to_float(_get(row, cols, "ENERGIA_AJUSTADA_ENCARGO_RESTRICAO_OPERATIVA")),
-            "unavailability_mwh": _to_float(_get(row, cols, "INDISPONIBILIDADE_UTE_ORDEM_MERITO_ECONOMICO")),
-            "declared_cost_mwh": _to_float(_get(row, cols, "CUSTO_DECLARADO_PARCELA_USINA")),
-            "hydraulic_displacement_factor_mwh": _to_float(_get(row, cols, "FATOR_DESLOCAMENTO_HIDRAULICO")),
-            "verified_generation_ons_mwh": _to_float(_get(row, cols, "GERACAO_VERIFICADA_ONS")),
-            "verified_availability_mwh": _to_float(_get(row, cols, "DISPONIBILIDADE_VERIFICADA_UG")),
-            "inflexible_generation_mwmed": _to_float(_get(row, cols, "GERACAO_INFLEXIVEL")),
-            "substitute_unavailability_generation_mwh": _to_float(_get(row, cols, "GERACAO_SUBSTITUTA_COMPENSACAO_INDISPONIBILIDADE")),
-            "reserve_power_generation_mwh": _to_float(_get(row, cols, "GERACAO_RESERVA_POTENCIA")),
-            "unit_commitment_generation_mwmed": _to_float(_get(row, cols, "GERACAO_UNIT_COMMITMENT")),
-            "final_merit_order_generation_mwh": _to_float(_get(row, cols, "GERACAO_FINAL_ORDEM_MERITO")),
-            "adjusted_physical_guarantee_mwh": _to_float(_get(row, cols, "GARANTIA_FISICA_AJUSTADA_FATOR_DISPONIBILIDADE")),
-            "source_dataset": snapshot.dataset_name,
-            "raw_payload_hash": _hash_payload(snapshot, f"{ref_datetime}:{period}:{code}", raw),
-            "snapshot_id": snapshot.snapshot_id,
-        })
-    return _with_parse_attrs(pd.DataFrame(rows, columns=_HOURLY_COLUMNS), df)
+    ref_month = _month_series(_source_column(df, cols, "MES_REFERENCIA"))
+    period = _numeric_series(_source_column(df, cols, "PERIODO_COMERCIALIZACAO"))
+    ref_datetime = _hourly_datetime_series(_source_column(df, cols, "DATA"), ref_month, period)
+    code = _clean_code_series(_source_column(df, cols, "CODIGO_PARCELA_USINA", "COD_PARCELA_USINA"))
+    gcg_mwmed = _numeric_series(_source_column(df, cols, "GERACAO_CENTRO_GRAVIDADE"))
+
+    out = pd.DataFrame(index=df.index)
+    out["reference_datetime"] = ref_datetime
+    out["reference_month"] = ref_month
+    out["commercialization_period"] = period
+    out["plant_parcel_code"] = code
+    out["plant_acronym"] = _clean_text_series(_source_column(df, cols, "SIGLA_USINA"))
+    out["generation_source"] = _clean_text_series(_source_column(df, cols, "FONTE_PRIMARIA"))
+    out["submarket"] = _clean_text_series(_source_column(df, cols, "SUBMERCADO"))
+    out["plant_type"] = _clean_text_series(_source_column(df, cols, "TIPO_USINA"))
+    out["generation_center_of_gravity_mwmed"] = gcg_mwmed
+    out["generation_center_of_gravity_mwh"] = gcg_mwmed
+    out["internal_loss_factor_pct"] = _numeric_series(_source_column(df, cols, "FATOR_PERDA_INTERNA"))
+    out["loss_generation_apportionment_factor_mwh"] = _numeric_series(_source_column(df, cols, "FATOR_RATEIO_PERDA_GERACAO"))
+    out["energy_security_generation_mwh"] = _numeric_series(_source_column(df, cols, "GERACAO_SEGURANCA_ENERGETICA"))
+    out["constrained_on_generation_mwh"] = _numeric_series(_source_column(df, cols, "GERACAO_RESTRICAO_OPERATIVA_CONST_ON"))
+    out["adjusted_restriction_charge_energy_mwmed"] = _numeric_series(_source_column(df, cols, "ENERGIA_AJUSTADA_ENCARGO_RESTRICAO_OPERATIVA"))
+    out["unavailability_mwh"] = _numeric_series(_source_column(df, cols, "INDISPONIBILIDADE_UTE_ORDEM_MERITO_ECONOMICO"))
+    out["declared_cost_mwh"] = _numeric_series(_source_column(df, cols, "CUSTO_DECLARADO_PARCELA_USINA"))
+    out["hydraulic_displacement_factor_mwh"] = _numeric_series(_source_column(df, cols, "FATOR_DESLOCAMENTO_HIDRAULICO"))
+    out["verified_generation_ons_mwh"] = _numeric_series(_source_column(df, cols, "GERACAO_VERIFICADA_ONS"))
+    out["verified_availability_mwh"] = _numeric_series(_source_column(df, cols, "DISPONIBILIDADE_VERIFICADA_UG"))
+    out["inflexible_generation_mwmed"] = _numeric_series(_source_column(df, cols, "GERACAO_INFLEXIVEL"))
+    out["substitute_unavailability_generation_mwh"] = _numeric_series(_source_column(df, cols, "GERACAO_SUBSTITUTA_COMPENSACAO_INDISPONIBILIDADE"))
+    out["reserve_power_generation_mwh"] = _numeric_series(_source_column(df, cols, "GERACAO_RESERVA_POTENCIA"))
+    out["unit_commitment_generation_mwmed"] = _numeric_series(_source_column(df, cols, "GERACAO_UNIT_COMMITMENT"))
+    out["final_merit_order_generation_mwh"] = _numeric_series(_source_column(df, cols, "GERACAO_FINAL_ORDEM_MERITO"))
+    out["adjusted_physical_guarantee_mwh"] = _numeric_series(_source_column(df, cols, "GARANTIA_FISICA_AJUSTADA_FATOR_DISPONIBILIDADE"))
+    out["source_dataset"] = snapshot.dataset_name
+    out["snapshot_id"] = snapshot.snapshot_id
+
+    valid = (
+        out["reference_month"].notna()
+        & out["plant_parcel_code"].notna()
+        & out["commercialization_period"].notna()
+        & out["reference_datetime"].notna()
+    )
+    out = out.loc[valid].copy()
+    out["commercialization_period"] = out["commercialization_period"].astype(int)
+    out["raw_payload_hash"] = _hash_natural_keys(
+        snapshot,
+        out["reference_datetime"],
+        out["commercialization_period"],
+        out["plant_parcel_code"],
+    )
+    out = out[_HOURLY_COLUMNS].reset_index(drop=True)
+    return _with_parse_attrs(out, df)
 
 
 def upsert_aneel_siga_plants(conn, df: pd.DataFrame) -> int:
@@ -802,39 +812,38 @@ def upsert_ccee_monthly(conn, df: pd.DataFrame) -> int:
 def upsert_ccee_hourly(conn, df: pd.DataFrame) -> int:
     if df.empty:
         return 0
-    conn.execute(
-        text("""
-            INSERT OR REPLACE INTO ccee_plant_parcel_hourly
-                (reference_datetime, reference_month, commercialization_period,
-                 plant_parcel_code, plant_acronym, generation_source, submarket,
-                 plant_type, generation_center_of_gravity_mwmed,
-                 generation_center_of_gravity_mwh, internal_loss_factor_pct,
-                 loss_generation_apportionment_factor_mwh,
-                 energy_security_generation_mwh, constrained_on_generation_mwh,
-                 adjusted_restriction_charge_energy_mwmed, unavailability_mwh,
-                 declared_cost_mwh, hydraulic_displacement_factor_mwh,
-                 verified_generation_ons_mwh, verified_availability_mwh,
-                 inflexible_generation_mwmed, substitute_unavailability_generation_mwh,
-                 reserve_power_generation_mwh, unit_commitment_generation_mwmed,
-                 final_merit_order_generation_mwh, adjusted_physical_guarantee_mwh,
-                 source_dataset, raw_payload_hash, snapshot_id, updated_at)
-            VALUES
-                (:reference_datetime, :reference_month, :commercialization_period,
-                 :plant_parcel_code, :plant_acronym, :generation_source, :submarket,
-                 :plant_type, :generation_center_of_gravity_mwmed,
-                 :generation_center_of_gravity_mwh, :internal_loss_factor_pct,
-                 :loss_generation_apportionment_factor_mwh,
-                 :energy_security_generation_mwh, :constrained_on_generation_mwh,
-                 :adjusted_restriction_charge_energy_mwmed, :unavailability_mwh,
-                 :declared_cost_mwh, :hydraulic_displacement_factor_mwh,
-                 :verified_generation_ons_mwh, :verified_availability_mwh,
-                 :inflexible_generation_mwmed, :substitute_unavailability_generation_mwh,
-                 :reserve_power_generation_mwh, :unit_commitment_generation_mwmed,
-                 :final_merit_order_generation_mwh, :adjusted_physical_guarantee_mwh,
-                 :source_dataset, :raw_payload_hash, :snapshot_id, datetime('now'))
-        """),
-        _records(df),
-    )
+    stmt = text("""
+        INSERT OR REPLACE INTO ccee_plant_parcel_hourly
+            (reference_datetime, reference_month, commercialization_period,
+             plant_parcel_code, plant_acronym, generation_source, submarket,
+             plant_type, generation_center_of_gravity_mwmed,
+             generation_center_of_gravity_mwh, internal_loss_factor_pct,
+             loss_generation_apportionment_factor_mwh,
+             energy_security_generation_mwh, constrained_on_generation_mwh,
+             adjusted_restriction_charge_energy_mwmed, unavailability_mwh,
+             declared_cost_mwh, hydraulic_displacement_factor_mwh,
+             verified_generation_ons_mwh, verified_availability_mwh,
+             inflexible_generation_mwmed, substitute_unavailability_generation_mwh,
+             reserve_power_generation_mwh, unit_commitment_generation_mwmed,
+             final_merit_order_generation_mwh, adjusted_physical_guarantee_mwh,
+             source_dataset, raw_payload_hash, snapshot_id, updated_at)
+        VALUES
+            (:reference_datetime, :reference_month, :commercialization_period,
+             :plant_parcel_code, :plant_acronym, :generation_source, :submarket,
+             :plant_type, :generation_center_of_gravity_mwmed,
+             :generation_center_of_gravity_mwh, :internal_loss_factor_pct,
+             :loss_generation_apportionment_factor_mwh,
+             :energy_security_generation_mwh, :constrained_on_generation_mwh,
+             :adjusted_restriction_charge_energy_mwmed, :unavailability_mwh,
+             :declared_cost_mwh, :hydraulic_displacement_factor_mwh,
+             :verified_generation_ons_mwh, :verified_availability_mwh,
+             :inflexible_generation_mwmed, :substitute_unavailability_generation_mwh,
+             :reserve_power_generation_mwh, :unit_commitment_generation_mwmed,
+             :final_merit_order_generation_mwh, :adjusted_physical_guarantee_mwh,
+             :source_dataset, :raw_payload_hash, :snapshot_id, datetime('now'))
+    """)
+    for start in range(0, len(df), 50_000):
+        conn.execute(stmt, _records(df.iloc[start:start + 50_000]))
     return int(len(df))
 
 
@@ -876,21 +885,29 @@ def _read_csv(path: Path) -> pd.DataFrame:
     last_error: Exception | None = None
     compression = "gzip" if path.suffix.lower() in {".gz", ".gzip"} else "infer"
     for encoding in ("utf-8-sig", "utf-8", "cp1252", "latin1"):
-        try:
-            df = pd.read_csv(
-                path,
-                sep=None,
-                engine="python",
-                decimal=",",
-                encoding=encoding,
-                compression=compression,
-            )
-            df.attrs["detected_encoding"] = encoding
-            df.attrs["source_row_count"] = int(len(df))
-            df.attrs["source_columns"] = [str(col) for col in df.columns]
-            return df
-        except UnicodeDecodeError as exc:
-            last_error = exc
+        for sep, engine in ((";", "c"), (None, "python")):
+            try:
+                df = pd.read_csv(
+                    path,
+                    sep=sep,
+                    engine=engine,
+                    decimal=",",
+                    encoding=encoding,
+                    compression=compression,
+                )
+                if sep == ";" and len(df.columns) <= 1:
+                    continue
+                df.attrs["detected_encoding"] = encoding
+                df.attrs["source_row_count"] = int(len(df))
+                df.attrs["source_columns"] = [str(col) for col in df.columns]
+                return df
+            except UnicodeDecodeError as exc:
+                last_error = exc
+                break
+            except Exception as exc:
+                last_error = exc
+                if sep is None:
+                    raise
     if last_error is not None:
         raise last_error
     raise RuntimeError(f"Could not read CSV file: {path}")
@@ -903,6 +920,90 @@ def _with_parse_attrs(normalized: pd.DataFrame, raw: pd.DataFrame) -> pd.DataFra
     normalized.attrs["parsed_rows"] = int(len(normalized))
     normalized.attrs["normalized_rows"] = int(len(normalized))
     return normalized
+
+
+def _source_column(df: pd.DataFrame, cols: dict[str, str], *candidates: str) -> pd.Series:
+    for candidate in candidates:
+        real = cols.get(_normalize_col(candidate))
+        if real is not None:
+            return df[real]
+    return pd.Series(pd.NA, index=df.index, dtype="object")
+
+
+def _clean_text_series(series: pd.Series) -> pd.Series:
+    text = (
+        series.astype("string")
+        .str.replace("\xa0", " ", regex=False)
+        .str.replace(r"\s+", " ", regex=True)
+        .str.strip()
+    )
+    return text.mask(text == "")
+
+
+def _clean_code_series(series: pd.Series) -> pd.Series:
+    text = _clean_text_series(series)
+    trailing_decimal = text.str.fullmatch(r"\d+\.0", na=False)
+    text = text.mask(trailing_decimal, text.str[:-2])
+    return text
+
+
+def _numeric_series(series: pd.Series) -> pd.Series:
+    if pd.api.types.is_numeric_dtype(series):
+        return pd.to_numeric(series, errors="coerce")
+    text = _clean_text_series(series)
+    comma_decimal = text.str.contains(",", regex=False, na=False) & ~text.str.contains(".", regex=False, na=False)
+    normalized = text.mask(
+        comma_decimal,
+        text.str.replace(".", "", regex=False).str.replace(",", ".", regex=False),
+    )
+    return pd.to_numeric(normalized, errors="coerce")
+
+
+def _month_series(series: pd.Series) -> pd.Series:
+    text = _clean_text_series(series)
+    result = pd.Series(pd.NA, index=series.index, dtype="string")
+    compact = text.str.fullmatch(r"\d{6}", na=False)
+    result.loc[compact] = text.loc[compact].str.slice(0, 4) + "-" + text.loc[compact].str.slice(4, 6)
+    iso = text.str.match(r"^\d{4}-\d{2}", na=False)
+    result.loc[iso] = text.loc[iso].str.slice(0, 7)
+    remaining = result.isna() & text.notna()
+    if remaining.any():
+        result.loc[remaining] = text.loc[remaining].map(_parse_month_value)
+    return result
+
+
+def _hourly_datetime_series(day_values: pd.Series, reference_month: pd.Series, period: pd.Series) -> pd.Series:
+    day_text = _clean_text_series(day_values)
+    day_only = day_text.str.fullmatch(r"\d+(\.0)?", na=False)
+    parsed = pd.to_datetime(day_text.mask(day_only), errors="coerce", dayfirst=True)
+
+    day_number = pd.to_numeric(day_text.where(day_only).str.replace(",", ".", regex=False), errors="coerce")
+    day_int = day_number.astype("Int64").astype("string").str.zfill(2)
+    fallback = pd.to_datetime(
+        reference_month.astype("string") + "-" + day_int,
+        errors="coerce",
+        format="%Y-%m-%d",
+    )
+    parsed = parsed.fillna(fallback)
+
+    period_number = pd.to_numeric(period, errors="coerce")
+    hours = (period_number - 1).clip(lower=0, upper=23).fillna(0).astype("int64")
+    datetimes = parsed + pd.to_timedelta(hours, unit="h")
+    formatted = datetimes.dt.strftime("%Y-%m-%dT%H:%M:%S")
+    return formatted.mask(datetimes.isna())
+
+
+def _hash_natural_keys(
+    snapshot: PlantSnapshotRecord,
+    reference_datetime: pd.Series,
+    commercialization_period: pd.Series,
+    plant_parcel_code: pd.Series,
+) -> list[str]:
+    prefix = f"{snapshot.snapshot_id}|{snapshot.source_id}|{snapshot.dataset_name}|"
+    return [
+        hashlib.sha256(f"{prefix}{dt}|{period}|{code}".encode("utf-8")).hexdigest()
+        for dt, period, code in zip(reference_datetime, commercialization_period, plant_parcel_code)
+    ]
 
 
 def _require_any_columns(cols: dict[str, str], required: set[str], dataset: str) -> None:
