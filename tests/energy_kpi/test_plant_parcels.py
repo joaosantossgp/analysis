@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
+import time
 from pathlib import Path
 
 import pandas as pd
@@ -543,6 +545,55 @@ def test_manual_ccee_import_rejects_invalid_extension_and_missing_columns(tmp_pa
     assert "accepts annual .csv files" in str(invalid_extension["error"])
     assert missing_columns["status"] == "failed"
     assert "missing required columns" in str(missing_columns["error"])
+
+
+def test_manual_import_retries_transient_sqlite_write_lock(tmp_path: Path):
+    settings = build_settings(project_root=tmp_path)
+    engine = get_energy_kpi_engine(settings)
+    with engine.begin() as conn:
+        seed_plant_sources(conn)
+
+    hourly_path = _write_csv(
+        tmp_path / "geracao_horaria_usina_202607.csv",
+        [
+            "MES_REFERENCIA",
+            "DATA",
+            "PERIODO_COMERCIALIZACAO",
+            "CODIGO_PARCELA_USINA",
+            "SIGLA_USINA",
+            "FONTE_PRIMARIA",
+            "SUBMERCADO",
+            "GERACAO_CENTRO_GRAVIDADE",
+            "GERACAO_VERIFICADA_ONS",
+            "DISPONIBILIDADE_VERIFICADA_UG",
+            "INDISPONIBILIDADE_UTE_ORDEM_MERITO_ECONOMICO",
+        ],
+        [["202607", "01/07/2026", 1, "1001", "PLT1", "Hidraulica", "SE/CO", "10", "9", "8", "0"]],
+    )
+
+    writer = sqlite3.connect(str(settings.paths.energy_kpi_db_path), timeout=0.1, check_same_thread=False)
+    writer.execute("PRAGMA journal_mode = WAL")
+    writer.execute("BEGIN IMMEDIATE")
+
+    def release_lock() -> None:
+        time.sleep(0.3)
+        writer.rollback()
+        writer.close()
+
+    releaser = threading.Thread(target=release_lock)
+    releaser.start()
+    try:
+        result = PlantParcelRefreshJob(settings).run_manual_file_import(
+            source_id=SOURCE_CCEE_HOURLY,
+            file_path=hourly_path,
+            triggered_by="test",
+            original_file_name=hourly_path.name,
+        )
+    finally:
+        releaser.join(timeout=2)
+
+    assert result["status"] == "success"
+    assert result["rows_inserted"] == 1
 
 
 def test_get_plant_parcel_chart_data(tmp_path: Path, db_engine, monkeypatch):

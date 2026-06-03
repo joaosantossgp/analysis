@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 
 from src.energy_kpi.metrics import normalize_reference_month
 from src.energy_kpi.plant_parcel_ingest import (
@@ -35,6 +37,32 @@ from src.settings import AppSettings
 logger = logging.getLogger(__name__)
 
 StageCallback = Callable[[str, str], None]
+SQLITE_WRITE_MAX_RETRIES = 8
+SQLITE_WRITE_BACKOFF_SECONDS = 0.5
+
+
+def _is_sqlite_locked(exc: OperationalError) -> bool:
+    return "database is locked" in str(exc).lower()
+
+
+def _with_write_retry(engine, write_fn):
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            with engine.begin() as conn:
+                return write_fn(conn)
+        except OperationalError as exc:
+            if attempt >= SQLITE_WRITE_MAX_RETRIES or not _is_sqlite_locked(exc):
+                raise
+            sleep_s = SQLITE_WRITE_BACKOFF_SECONDS * attempt
+            logger.warning(
+                "Transient SQLite lock in plant parcel refresh write attempt=%s/%s; retrying in %.1fs",
+                attempt,
+                SQLITE_WRITE_MAX_RETRIES,
+                sleep_s,
+            )
+            time.sleep(sleep_s)
 
 
 class PlantParcelRefreshJob:
@@ -80,7 +108,7 @@ class PlantParcelRefreshJob:
         period_start: str | None = None
         period_end: str | None = None
 
-        with engine.begin() as conn:
+        def _insert_running_log(conn) -> None:
             seed_plant_sources(conn)
             conn.execute(
                 text("""
@@ -100,6 +128,7 @@ class PlantParcelRefreshJob:
                     "dataset_name": dataset_name,
                 },
             )
+        _with_write_retry(engine, _insert_running_log)
 
         rows_read = 0
         rows_inserted = 0
@@ -123,9 +152,10 @@ class PlantParcelRefreshJob:
                 self._stage("fetch", f"CCEE monthly plant parcels {selected_year}")
                 snapshot = fetch_ccee_monthly_snapshot(self.settings, selected_year)
                 frame = parse_ccee_monthly(snapshot)
-                with engine.begin() as conn:
+                def _persist_ccee_monthly(conn) -> int:
                     persist_plant_snapshot_record(conn, snapshot)
-                    rows_inserted = upsert_ccee_monthly(conn, frame)
+                    return upsert_ccee_monthly(conn, frame)
+                rows_inserted = _with_write_retry(engine, _persist_ccee_monthly)
                 rows_read = int(len(frame))
                 period_start = snapshot.period_start
                 period_end = snapshot.period_end
@@ -135,9 +165,10 @@ class PlantParcelRefreshJob:
                 self._stage("fetch", f"CCEE hourly plant generation {year_month}")
                 snapshot = fetch_ccee_hourly_snapshot(self.settings, year_month)
                 frame = parse_ccee_hourly(snapshot)
-                with engine.begin() as conn:
+                def _persist_ccee_hourly(conn) -> int:
                     persist_plant_snapshot_record(conn, snapshot)
-                    rows_inserted = upsert_ccee_hourly(conn, frame)
+                    return upsert_ccee_hourly(conn, frame)
+                rows_inserted = _with_write_retry(engine, _persist_ccee_hourly)
                 rows_read = int(len(frame))
                 period_start = snapshot.period_start
                 period_end = snapshot.period_end
@@ -145,9 +176,10 @@ class PlantParcelRefreshJob:
                 self._stage("fetch", "ANEEL SIGA plant registry")
                 snapshot = fetch_aneel_siga_snapshot(self.settings.paths, daily=use_daily_aneel)
                 frame = parse_aneel_siga(snapshot)
-                with engine.begin() as conn:
+                def _persist_aneel_siga(conn) -> int:
                     persist_plant_snapshot_record(conn, snapshot)
-                    rows_inserted = upsert_aneel_siga_plants(conn, frame)
+                    return upsert_aneel_siga_plants(conn, frame)
+                rows_inserted = _with_write_retry(engine, _persist_aneel_siga)
                 rows_read = int(len(frame))
             else:
                 raise ValueError(f"unsupported plant source_id: {source_id}")
@@ -192,7 +224,8 @@ class PlantParcelRefreshJob:
 
 
         finished_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        with engine.begin() as conn:
+
+        def _update_refresh_log(conn) -> None:
             conn.execute(
                 text("""
                     UPDATE energy_source_refresh_log
@@ -252,6 +285,7 @@ class PlantParcelRefreshJob:
                     "refresh_id": self._refresh_id,
                 },
             )
+        _with_write_retry(engine, _update_refresh_log)
 
         return {
             "refresh_id": self._refresh_id,
@@ -307,7 +341,7 @@ class PlantParcelRefreshJob:
         file_type = _file_type_from_path(safe_name)
         file_size_bytes = src_path.stat().st_size if src_path.exists() and src_path.is_file() else None
 
-        with engine.begin() as conn:
+        def _insert_manual_running_log(conn) -> None:
             seed_plant_sources(conn)
             conn.execute(
                 text("""
@@ -333,6 +367,7 @@ class PlantParcelRefreshJob:
                     "source_page_url": source_page_url,
                 },
             )
+        _with_write_retry(engine, _insert_manual_running_log)
 
         rows_read = 0
         rows_inserted = 0
@@ -398,12 +433,12 @@ class PlantParcelRefreshJob:
             period_start = detected_periods[0] if detected_periods else requested_period
             period_end = detected_periods[-1] if detected_periods else requested_period
 
-            with engine.begin() as conn:
+            def _persist_manual_import(conn) -> int:
                 persist_plant_snapshot_record(conn, snapshot)
                 if source_id == SOURCE_CCEE_MONTHLY:
-                    rows_inserted = upsert_ccee_monthly(conn, frame)
-                else:
-                    rows_inserted = upsert_ccee_hourly(conn, frame)
+                    return upsert_ccee_monthly(conn, frame)
+                return upsert_ccee_hourly(conn, frame)
+            rows_inserted = _with_write_retry(engine, _persist_manual_import)
 
             if rows_inserted <= 0:
                 status = "warning"
@@ -420,7 +455,8 @@ class PlantParcelRefreshJob:
             logger.warning("Manual plant parcel import failed for %s: %s", source_id, exc)
 
         finished_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        with engine.begin() as conn:
+
+        def _update_manual_refresh_log(conn) -> None:
             conn.execute(
                 text("""
                     UPDATE energy_source_refresh_log
@@ -476,6 +512,7 @@ class PlantParcelRefreshJob:
                     "refresh_id": self._refresh_id,
                 },
             )
+        _with_write_retry(engine, _update_manual_refresh_log)
 
         return {
             "refresh_id": self._refresh_id,
