@@ -2900,6 +2900,17 @@ class CVMBridge:
             result["refresh_error"] = refresh_state.get("error")
             result["refresh_warning"] = refresh_state.get("warning")
             result["refresh_source_id"] = refresh_state.get("source_id")
+            result["refresh_mode"] = refresh_state.get("mode")
+            result["refresh_id"] = refresh_state.get("refresh_id")
+            result["refresh_import_id"] = refresh_state.get("import_id")
+            result["refresh_total_files"] = refresh_state.get("total_files")
+            result["refresh_current_file_index"] = refresh_state.get("current_file_index")
+            result["refresh_current_file_name"] = refresh_state.get("current_file_name")
+            result["refresh_rows_inserted"] = refresh_state.get("rows_inserted")
+            result["refresh_rows_skipped"] = refresh_state.get("rows_skipped")
+            result["refresh_started_at"] = refresh_state.get("started_at")
+            result["refresh_updated_at"] = refresh_state.get("updated_at")
+            result["refresh_finished_at"] = refresh_state.get("finished_at")
             return result
         except Exception as exc:
             return {
@@ -3048,13 +3059,17 @@ class CVMBridge:
                 }
 
             import_id = str(uuid.uuid4())
+            started_at = datetime.now(timezone.utc).isoformat()
             self._plant_parcel_refresh_state = {
                 "status": "running",
                 "error": None,
                 "warning": None,
                 "source_id": source_id,
+                "mode": "manual_file",
                 "import_id": import_id,
                 "total_files": len(import_files),
+                "started_at": started_at,
+                "updated_at": started_at,
             }
 
             def _run():
@@ -3068,17 +3083,24 @@ class CVMBridge:
                     errors: list[str] = []
                     warning_messages: list[str] = []
                     last_result: dict[str, Any] = {}
+                    last_label: str | None = None
                     for index, item in enumerate(import_files, start=1):
                         label = item.get("original_file_name") or Path(str(item.get("file_path"))).name
+                        last_label = label
                         self._plant_parcel_refresh_state = {
                             "status": "running",
                             "error": None,
                             "warning": None,
                             "source_id": source_id,
+                            "mode": "manual_file",
                             "import_id": import_id,
                             "total_files": len(import_files),
                             "current_file_index": index,
                             "current_file_name": label,
+                            "rows_inserted": rows_inserted,
+                            "rows_skipped": rows_skipped,
+                            "started_at": started_at,
+                            "updated_at": datetime.now(timezone.utc).isoformat(),
                         }
                         result = PlantParcelRefreshJob(settings).run_manual_file_import(
                             source_id=source_id,
@@ -3117,18 +3139,29 @@ class CVMBridge:
                         "error": error,
                         "warning": warning,
                         "source_id": source_id,
+                        "mode": "manual_file",
                         "import_id": import_id,
                         "total_files": len(import_files),
+                        "current_file_index": len(import_files),
+                        "current_file_name": last_label,
                         "rows_inserted": rows_inserted,
                         "rows_skipped": rows_skipped,
                         "refresh_id": last_result.get("refresh_id"),
+                        "started_at": started_at,
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                        "finished_at": datetime.now(timezone.utc).isoformat(),
                     }
                 except Exception as exc:
+                    finished_at = datetime.now(timezone.utc).isoformat()
                     self._plant_parcel_refresh_state = {
                         "status": "error",
                         "error": str(exc),
                         "source_id": source_id,
+                        "mode": "manual_file",
                         "import_id": import_id,
+                        "started_at": started_at,
+                        "updated_at": finished_at,
+                        "finished_at": finished_at,
                     }
                 finally:
                     self._energy_read_service = None
@@ -3168,10 +3201,14 @@ class CVMBridge:
                 "source_id": state.get("source_id"),
             }
 
+        started_at = datetime.now(timezone.utc).isoformat()
         self._plant_parcel_refresh_state = {
             "status": "running",
             "error": None,
             "source_id": source_id,
+            "mode": "automatic_refresh",
+            "started_at": started_at,
+            "updated_at": started_at,
         }
 
         def _run():
@@ -3191,14 +3228,23 @@ class CVMBridge:
                     "error": result.get("error"),
                     "warning": result.get("warning"),
                     "source_id": source_id,
+                    "mode": "automatic_refresh",
                     "rows_inserted": result.get("rows_inserted", 0),
                     "refresh_id": result.get("refresh_id"),
+                    "started_at": started_at,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "finished_at": datetime.now(timezone.utc).isoformat(),
                 }
             except Exception as exc:
+                finished_at = datetime.now(timezone.utc).isoformat()
                 self._plant_parcel_refresh_state = {
                     "status": "error",
                     "error": str(exc),
                     "source_id": source_id,
+                    "mode": "automatic_refresh",
+                    "started_at": started_at,
+                    "updated_at": finished_at,
+                    "finished_at": finished_at,
                 }
             finally:
                 self._energy_read_service = None

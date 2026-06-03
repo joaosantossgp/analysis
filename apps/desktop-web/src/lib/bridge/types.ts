@@ -1181,6 +1181,17 @@ export interface PlantParcelSourceStatusResponse {
   refresh_error: string | null;
   refresh_warning?: string | null;
   refresh_source_id: string | null;
+  refresh_mode?: "manual_file" | "automatic_refresh" | string | null;
+  refresh_id?: string | null;
+  refresh_import_id?: string | null;
+  refresh_total_files?: number | null;
+  refresh_current_file_index?: number | null;
+  refresh_current_file_name?: string | null;
+  refresh_rows_inserted?: number | null;
+  refresh_rows_skipped?: number | null;
+  refresh_started_at?: string | null;
+  refresh_updated_at?: string | null;
+  refresh_finished_at?: string | null;
   database_path?: string;
   raw_data_dir?: string;
   error?: string;

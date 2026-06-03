@@ -20,6 +20,7 @@ import type {
   PlantParcelDetailResponse,
   PlantParcelManualImportResult,
   PlantParcelSourceStatus,
+  PlantParcelSourceStatusResponse,
 } from "@/lib/bridge/types";
 import { IndicatorChart } from "./IndicatorChart";
 import type { ChartAesthetics } from "@/lib/indicators/types";
@@ -41,6 +42,21 @@ type ManualImportFile = {
   fileSize?: number;
 };
 
+function shouldPollPlantJob(data: unknown): boolean {
+  if (!data || typeof data !== "object") return false;
+  const payload = data as { mode?: string; response?: PlantParcelSourceStatusResponse | null };
+  return payload.mode === "desktop" && Boolean(payload.response?.refresh_running);
+}
+
+function plantJobKey(status: PlantParcelSourceStatusResponse, fallbackStartedAt: number | null): string {
+  return [
+    status.refresh_import_id ?? status.refresh_id ?? "plant-job",
+    status.refresh_source_id ?? "unknown-source",
+    status.refresh_status ?? "unknown-status",
+    status.refresh_finished_at ?? status.refresh_updated_at ?? String(fallbackStartedAt ?? ""),
+  ].join(":");
+}
+
 const EMPTY_FILTERS: Filters = {
   entity_type: "",
   generation_source: "",
@@ -57,8 +73,10 @@ export function PlantParcelExplorer({ bridgeReady }: { bridgeReady: boolean }) {
   const [offset, setOffset] = useState(0);
   const [selected, setSelected] = useState<PlantParcelCatalogRecord | null>(null);
   const [refreshingSourceId, setRefreshingSourceId] = useState<string | null>(null);
+  const [refreshStartedAt, setRefreshStartedAt] = useState<number | null>(null);
   const [manualImportingSourceId, setManualImportingSourceId] = useState<string | null>(null);
   const [manualImportStartedAt, setManualImportStartedAt] = useState<number | null>(null);
+  const [handledPlantJobKey, setHandledPlantJobKey] = useState<string | null>(null);
   const [message, setMessage] = useState<{ text: string; severity: "success" | "warning" | "error" } | null>(null);
   const [monthlyYear, setMonthlyYear] = useState(String(now.getFullYear()));
   const [hourlyMonth, setHourlyMonth] = useState(
@@ -79,7 +97,9 @@ export function PlantParcelExplorer({ bridgeReady }: { bridgeReady: boolean }) {
     queryFn: fetchPlantParcelSourceStatuses,
     enabled: bridgeReady,
     staleTime: 10_000,
-    refetchInterval: refreshingSourceId || manualImportingSourceId ? 2_000 : false,
+    refetchInterval: (query) =>
+      refreshingSourceId || manualImportingSourceId || shouldPollPlantJob(query.state.data) ? 2_000 : false,
+    refetchIntervalInBackground: true,
   });
 
   const catalogQuery = useQuery({
@@ -104,6 +124,12 @@ export function PlantParcelExplorer({ bridgeReady }: { bridgeReady: boolean }) {
   const facets = catalogResponse?.facets ?? {};
   const statuses = statusQuery.data?.mode === "desktop" ? statusQuery.data.statuses : [];
   const statusResponse = statusQuery.data?.mode === "desktop" ? statusQuery.data.response : null;
+  const plantJobActive = Boolean(statusResponse?.refresh_running || refreshingSourceId || manualImportingSourceId);
+  const runningBackendSourceId = statusResponse?.refresh_running ? statusResponse.refresh_source_id : null;
+  const effectiveManualImportingSourceId =
+    manualImportingSourceId ?? (statusResponse?.refresh_mode === "manual_file" ? runningBackendSourceId : null);
+  const effectiveRefreshingSourceId =
+    refreshingSourceId ?? (statusResponse?.refresh_mode !== "manual_file" ? runningBackendSourceId : null);
   const bridgeReason =
     statusQuery.data?.mode === "browser"
       ? statusQuery.data.reason
@@ -111,11 +137,15 @@ export function PlantParcelExplorer({ bridgeReady }: { bridgeReady: boolean }) {
         ? catalogQuery.data.reason
         : null;
 
-  const invalidatePlantQueries = useCallback(() => {
+  const refreshVisiblePlantQueries = useCallback(() => {
     void qc.invalidateQueries({ queryKey: ["plant-parcel-source-statuses"] });
+    void qc.refetchQueries({ queryKey: ["plant-parcel-source-statuses"], type: "active" });
     void qc.invalidateQueries({ queryKey: ["plant-parcel-catalog"] });
+    void qc.refetchQueries({ queryKey: ["plant-parcel-catalog"], type: "active" });
     void qc.invalidateQueries({ queryKey: ["plant-parcel-detail"] });
+    void qc.refetchQueries({ queryKey: ["plant-parcel-detail"], type: "active" });
     void qc.invalidateQueries({ queryKey: ["plant-parcel-chart-data"] });
+    void qc.refetchQueries({ queryKey: ["plant-parcel-chart-data"], type: "active" });
   }, [qc]);
 
   useEffect(() => {
@@ -131,8 +161,15 @@ export function PlantParcelExplorer({ bridgeReady }: { bridgeReady: boolean }) {
 
   useEffect(() => {
     if (!refreshingSourceId || !statusResponse) return;
+    if (refreshStartedAt !== null && statusQuery.dataUpdatedAt < refreshStartedAt) return;
+    if (statusResponse.refresh_source_id && statusResponse.refresh_source_id !== refreshingSourceId) return;
+    if (!statusResponse.refresh_source_id && statusResponse.refresh_status === "idle") return;
     if (statusResponse.refresh_running) return;
+    const completedKey = plantJobKey(statusResponse, null);
+    if (handledPlantJobKey === completedKey) return;
+    setHandledPlantJobKey(completedKey);
     setRefreshingSourceId(null);
+    setRefreshStartedAt(null);
     if (statusResponse.refresh_error) {
       setMessage({ text: `Refresh finished with an error: ${statusResponse.refresh_error}`, severity: "error" });
     } else if (statusResponse.refresh_warning || statusResponse.refresh_status === "warning") {
@@ -144,16 +181,28 @@ export function PlantParcelExplorer({ bridgeReady }: { bridgeReady: boolean }) {
       setMessage({ text: "Refresh finished. Local cache status has been updated.", severity: "success" });
       window.setTimeout(() => setMessage(null), 6000);
     }
-    void qc.invalidateQueries({ queryKey: ["plant-parcel-source-statuses"] });
-    void qc.invalidateQueries({ queryKey: ["plant-parcel-catalog"] });
-  }, [refreshingSourceId, statusResponse, qc]);
+    refreshVisiblePlantQueries();
+  }, [
+    refreshingSourceId,
+    refreshStartedAt,
+    statusResponse,
+    statusQuery.dataUpdatedAt,
+    handledPlantJobKey,
+    refreshVisiblePlantQueries,
+  ]);
 
   useEffect(() => {
     if (!manualImportingSourceId || !statusResponse || manualImportStartedAt === null) return;
     if (statusQuery.dataUpdatedAt < manualImportStartedAt) return;
     if (statusResponse.refresh_source_id && statusResponse.refresh_source_id !== manualImportingSourceId) return;
-    if (statusResponse.refresh_running) return;
+    if (statusResponse.refresh_running) {
+      setMessage({ text: plantJobProgressText(statusResponse), severity: "success" });
+      return;
+    }
 
+    const completedKey = plantJobKey(statusResponse, manualImportStartedAt);
+    if (handledPlantJobKey === completedKey) return;
+    setHandledPlantJobKey(completedKey);
     setManualImportingSourceId(null);
     setManualImportStartedAt(null);
     if (statusResponse.refresh_error) {
@@ -167,8 +216,15 @@ export function PlantParcelExplorer({ bridgeReady }: { bridgeReady: boolean }) {
       setMessage({ text: "Manual import finished. Local cache status has been updated.", severity: "success" });
       window.setTimeout(() => setMessage(null), 7000);
     }
-    invalidatePlantQueries();
-  }, [manualImportingSourceId, manualImportStartedAt, statusResponse, statusQuery.dataUpdatedAt, invalidatePlantQueries]);
+    refreshVisiblePlantQueries();
+  }, [
+    manualImportingSourceId,
+    manualImportStartedAt,
+    statusResponse,
+    statusQuery.dataUpdatedAt,
+    handledPlantJobKey,
+    refreshVisiblePlantQueries,
+  ]);
 
   const detailQuery = useQuery({
     queryKey: ["plant-parcel-detail", selected?.entity_type, selected?.entity_id],
@@ -179,6 +235,8 @@ export function PlantParcelExplorer({ bridgeReady }: { bridgeReady: boolean }) {
       }),
     enabled: bridgeReady && !!selected,
     staleTime: 30_000,
+    refetchInterval: plantJobActive ? 3_000 : false,
+    refetchIntervalInBackground: true,
   });
 
   const detail = detailQuery.data?.mode === "desktop" ? detailQuery.data.detail : null;
@@ -186,6 +244,8 @@ export function PlantParcelExplorer({ bridgeReady }: { bridgeReady: boolean }) {
   const refreshSource = useCallback(
     async (source: PlantParcelSourceStatus) => {
       setRefreshingSourceId(source.source_id);
+      setRefreshStartedAt(Date.now());
+      setHandledPlantJobKey(null);
       setMessage({ text: `Starting refresh for ${source.source_name}...`, severity: "success" });
       try {
         const params =
@@ -197,41 +257,44 @@ export function PlantParcelExplorer({ bridgeReady }: { bridgeReady: boolean }) {
         const result = await triggerPlantParcelRefresh(params);
         if (result.mode === "browser") {
           setRefreshingSourceId(null);
+          setRefreshStartedAt(null);
           setMessage({ text: result.reason, severity: "error" });
           return;
         }
         if (result.result.status === "error" || result.result.status === "failed") {
           setRefreshingSourceId(null);
+          setRefreshStartedAt(null);
           setMessage({ text: result.result.error ?? "Refresh failed.", severity: "error" });
           return;
         }
         if (result.result.status === "warning") {
           setRefreshingSourceId(null);
+          setRefreshStartedAt(null);
           setMessage({
             text: result.result.warning ?? "Refresh completed with no cached rows.",
             severity: "warning",
           });
-          void qc.invalidateQueries({ queryKey: ["plant-parcel-source-statuses"] });
-          void qc.invalidateQueries({ queryKey: ["plant-parcel-catalog"] });
+          refreshVisiblePlantQueries();
           return;
         }
         if (result.result.status === "success" || result.result.status === "partial") {
           setRefreshingSourceId(null);
+          setRefreshStartedAt(null);
           setMessage({
             text: `Refresh completed: ${result.result.rows_inserted ?? 0} rows cached.`,
             severity: "success",
           });
-          void qc.invalidateQueries({ queryKey: ["plant-parcel-source-statuses"] });
-          void qc.invalidateQueries({ queryKey: ["plant-parcel-catalog"] });
+          refreshVisiblePlantQueries();
         } else {
           void statusQuery.refetch();
         }
       } catch (error) {
         setRefreshingSourceId(null);
+        setRefreshStartedAt(null);
         setMessage({ text: `Refresh failed: ${String(error)}`, severity: "error" });
       }
     },
-    [hourlyMonth, monthlyYear, qc, statusQuery],
+    [hourlyMonth, monthlyYear, refreshVisiblePlantQueries, statusQuery],
   );
 
   const importManualFiles = useCallback(
@@ -246,6 +309,7 @@ export function PlantParcelExplorer({ bridgeReady }: { bridgeReady: boolean }) {
       });
       try {
         const startedAt = Date.now();
+        setHandledPlantJobKey(null);
         setManualImportStartedAt(startedAt);
         const result = await importPlantParcelManualFile({
           source_id: source.source_id,
@@ -292,14 +356,14 @@ export function PlantParcelExplorer({ bridgeReady }: { bridgeReady: boolean }) {
           severity,
         });
         if (severity === "success") window.setTimeout(() => setMessage(null), 7000);
-        invalidatePlantQueries();
+        refreshVisiblePlantQueries();
       } catch (error) {
         setManualImportingSourceId(null);
         setManualImportStartedAt(null);
         setMessage({ text: `Manual import failed: ${String(error)}`, severity: "error" });
       }
     },
-    [invalidatePlantQueries, statusQuery],
+    [refreshVisiblePlantQueries, statusQuery],
   );
 
   const chooseManualFile = useCallback(
@@ -391,16 +455,17 @@ export function PlantParcelExplorer({ bridgeReady }: { bridgeReady: boolean }) {
   return (
     <div className="space-y-4">
       {message ? <RefreshMessage message={message} onDismiss={() => setMessage(null)} /> : null}
+      {statusResponse?.refresh_running ? <PlantJobProgressBanner status={statusResponse} /> : null}
 
       <SourceStatusGrid
         statuses={statuses}
-        refreshingSourceId={refreshingSourceId}
+        refreshingSourceId={effectiveRefreshingSourceId}
         monthlyYear={monthlyYear}
         onMonthlyYearChange={setMonthlyYear}
         hourlyMonth={hourlyMonth}
         onHourlyMonthChange={setHourlyMonth}
         onRefresh={refreshSource}
-        manualImportingSourceId={manualImportingSourceId}
+        manualImportingSourceId={effectiveManualImportingSourceId}
         onChooseManualFile={chooseManualFile}
         onDropManualFiles={dropManualFiles}
       />
@@ -438,7 +503,12 @@ export function PlantParcelExplorer({ bridgeReady }: { bridgeReady: boolean }) {
         </div>
 
         <div className="min-w-0 xl:sticky xl:top-4">
-          <PlantDetailPanel selected={selected} detail={detail} loading={detailQuery.isLoading} />
+          <PlantDetailPanel
+            selected={selected}
+            detail={detail}
+            loading={detailQuery.isLoading}
+            dataRefreshing={plantJobActive}
+          />
         </div>
       </div>
     </div>
@@ -546,6 +616,31 @@ function SourceStatusGrid({
           ) : null}
         </div>
       ))}
+    </div>
+  );
+}
+
+function PlantJobProgressBanner({ status }: { status: PlantParcelSourceStatusResponse }) {
+  const label = status.refresh_mode === "manual_file" ? "Manual import" : "Source refresh";
+  const progress =
+    status.refresh_total_files && status.refresh_current_file_index
+      ? `${status.refresh_current_file_index}/${status.refresh_total_files}`
+      : "running";
+  const fileName = status.refresh_current_file_name ? ` · ${status.refresh_current_file_name}` : "";
+  return (
+    <div className="rounded-md border border-sky-500/30 bg-sky-500/8 px-3 py-2 text-xs text-sky-100">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-medium">{label} in progress</span>
+        <span className="font-mono text-sky-200">{progress}</span>
+      </div>
+      <p className="mt-1 truncate font-mono text-sky-200/80" title={status.refresh_current_file_name ?? undefined}>
+        {status.refresh_source_id ?? "plant source"}{fileName}
+      </p>
+      <div className="mt-1 flex flex-wrap gap-3 font-mono text-[11px] text-sky-200/70">
+        <span>cached {formatNullableInteger(status.refresh_rows_inserted)}</span>
+        <span>skipped {formatNullableInteger(status.refresh_rows_skipped)}</span>
+        <span>updated {formatDateTime(status.refresh_updated_at ?? status.refresh_started_at ?? null)}</span>
+      </div>
     </div>
   );
 }
@@ -803,10 +898,12 @@ function PlantDetailPanel({
   selected,
   detail,
   loading,
+  dataRefreshing,
 }: {
   selected: PlantParcelCatalogRecord | null;
   detail: PlantParcelDetailResponse | null;
   loading: boolean;
+  dataRefreshing: boolean;
 }) {
   const [chartFreq, setChartFreq] = useState<"monthly" | "daily" | "hourly">("monthly");
   const [chartMonth, setChartMonth] = useState<string>("");
@@ -840,6 +937,8 @@ function PlantDetailPanel({
       }),
     enabled: !!detail?.entity_id && (chartFreq === "monthly" || !!chartMonth),
     staleTime: 30_000,
+    refetchInterval: dataRefreshing ? 3_000 : false,
+    refetchIntervalInBackground: true,
   });
 
   if (!selected) {
@@ -1333,6 +1432,18 @@ function manualImportResultSummary(result: PlantParcelManualImportResult, fileCo
     return `Manual import completed with warning for ${fileText}${periodText}: ${rowsText}. ${result.warning ?? ""}`.trim();
   }
   return `Manual import completed for ${fileText}${periodText}: ${rowsText}.`;
+}
+
+function plantJobProgressText(status: PlantParcelSourceStatusResponse): string {
+  const label = status.refresh_current_file_name
+    ? `Importing ${status.refresh_current_file_name}`
+    : "Manual import is running";
+  const progress =
+    status.refresh_total_files && status.refresh_current_file_index
+      ? ` (${status.refresh_current_file_index}/${status.refresh_total_files})`
+      : "";
+  const rows = status.refresh_rows_inserted ? ` · ${formatInteger(status.refresh_rows_inserted)} rows cached` : "";
+  return `${label}${progress}${rows}. You can keep using the app.`;
 }
 
 function fileNameFromPath(filePath: string): string {
