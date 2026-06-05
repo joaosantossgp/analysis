@@ -28,6 +28,8 @@ logger = logging.getLogger("desktop.bridge")
 
 
 class CVMBridge:
+    BASE_HEALTH_CACHE_SCHEMA_VERSION = 1
+    DATA_COVERAGE_CACHE_SCHEMA_VERSION = 1
     DATA_UPDATE_PRESETS = {"top_100", "top_200", "top_500", "all"}
     DATA_UPDATE_BATCH_SIZES = {50, 100, 200, 500}
     DATA_UPDATE_SETTING_KEYS = {
@@ -39,6 +41,7 @@ class CVMBridge:
         "data_update_end_year",
     }
     CVM_MIN_YEAR = 2010
+    SIN_DASHBOARD_CACHE_SCHEMA_VERSION = 1
 
     def __init__(self) -> None:
         self._service = None
@@ -47,6 +50,9 @@ class CVMBridge:
         self._company_info_cache: dict[int, dict[str, Any]] = {}
         self._company_info_pending: set[int] = set()
         self._company_info_lock = threading.RLock()
+        self._read_payload_cache_lock = threading.RLock()
+        self._data_coverage_cache: tuple[Any, dict[str, Any]] | None = None
+        self._sin_dashboard_cache: tuple[Any, dict[str, Any]] | None = None
         # auto-updater state
         self._update_info: dict | None = None
         self._latest_update_status: dict | None = None
@@ -107,6 +113,294 @@ class CVMBridge:
         if isinstance(value, tuple):
             return [CVMBridge._sanitize_for_json(item) for item in value]
         return value
+
+    @staticmethod
+    def _path_signature(path: Path) -> dict[str, Any]:
+        try:
+            stat = path.stat()
+        except FileNotFoundError:
+            return {"path": str(path), "exists": False}
+        except Exception:
+            return {"path": str(path), "exists": None}
+        return {
+            "path": str(path),
+            "exists": True,
+            "size": int(stat.st_size),
+            "mtime_ns": int(stat.st_mtime_ns),
+        }
+
+    @classmethod
+    def _sqlite_signature(cls, db_path: Path) -> list[dict[str, Any]]:
+        return [
+            cls._path_signature(db_path),
+            cls._path_signature(Path(f"{db_path}-wal")),
+        ]
+
+    @staticmethod
+    def _table_fingerprint(
+        cur: sqlite3.Cursor,
+        table_name: str,
+        *,
+        max_columns: tuple[str, ...] = (),
+        include_count: bool = False,
+    ) -> dict[str, Any]:
+        exists = cur.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            (table_name,),
+        ).fetchone()
+        if not exists:
+            return {"exists": False}
+
+        fingerprint: dict[str, Any] = {"exists": True}
+        if include_count:
+            safe_table = str(table_name).replace('"', '""')
+            fingerprint["row_count"] = cur.execute(
+                f'SELECT COUNT(*) FROM "{safe_table}"'
+            ).fetchone()[0]
+        safe_table = str(table_name).replace('"', '""')
+        fingerprint["max_rowid"] = cur.execute(
+            f'SELECT MAX(rowid) FROM "{safe_table}"'
+        ).fetchone()[0]
+        for column in max_columns:
+            safe_column = str(column).replace('"', '""')
+            fingerprint[str(column)] = cur.execute(
+                f'SELECT MAX("{safe_column}") FROM "{safe_table}"'
+            ).fetchone()[0]
+        return fingerprint
+
+    def _cvm_data_cache_signature(self, db_path: Path) -> dict[str, Any]:
+        if not db_path.exists():
+            return {"database": str(db_path), "exists": False}
+        try:
+            with sqlite3.connect(str(db_path)) as conn:
+                cur = conn.cursor()
+                return {
+                    "database": str(db_path.resolve()),
+                    "exists": True,
+                    "financial_reports": self._table_fingerprint(
+                        cur,
+                        "financial_reports",
+                        max_columns=("REPORT_YEAR",),
+                    ),
+                    "companies": self._table_fingerprint(
+                        cur,
+                        "companies",
+                        include_count=True,
+                    ),
+                    "company_refresh_status": self._table_fingerprint(
+                        cur,
+                        "company_refresh_status",
+                        max_columns=("updated_at", "last_success_at", "last_attempt_at"),
+                        include_count=True,
+                    ),
+                }
+        except Exception:
+            return {"database": str(db_path), "exists": None}
+
+    @staticmethod
+    def _read_payload_cache(
+        cache_path: Path,
+        *,
+        schema_version: int,
+        signature: Any,
+    ) -> dict[str, Any] | None:
+        try:
+            with cache_path.open("r", encoding="utf-8") as fh:
+                cached = json.load(fh)
+        except Exception:
+            return None
+        if not isinstance(cached, dict):
+            return None
+        if cached.get("schema_version") != schema_version:
+            return None
+        if cached.get("signature") != signature:
+            return None
+        payload = cached.get("payload")
+        return payload if isinstance(payload, dict) else None
+
+    @staticmethod
+    def _write_payload_cache(
+        cache_path: Path,
+        *,
+        schema_version: int,
+        signature: Any,
+        payload: dict[str, Any],
+    ) -> None:
+        try:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            temp_path = cache_path.with_suffix(cache_path.suffix + ".tmp")
+            with temp_path.open("w", encoding="utf-8") as fh:
+                json.dump(
+                    {
+                        "schema_version": schema_version,
+                        "signature": signature,
+                        "payload": payload,
+                    },
+                    fh,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+            temp_path.replace(cache_path)
+        except Exception:
+            logger.debug("failed to write bridge payload cache %s", cache_path, exc_info=True)
+
+    def _clear_data_coverage_cache(self) -> None:
+        with self._read_payload_cache_lock:
+            self._data_coverage_cache = None
+
+    def _clear_sin_dashboard_cache(self) -> None:
+        with self._read_payload_cache_lock:
+            self._sin_dashboard_cache = None
+
+    def _data_coverage_cache_signature_from_settings(self, settings: Any) -> list[Any]:
+        today = datetime.now().date()
+        return [
+            "data_coverage",
+            self.DATA_COVERAGE_CACHE_SCHEMA_VERSION,
+            int(today.year),
+            self._cvm_data_cache_signature(Path(settings.paths.db_path)),
+            self._path_signature(Path(settings.paths.active_universe_cache_path)),
+        ]
+
+    def _data_coverage_cache_signature(self, svc: Any) -> list[Any]:
+        return self._data_coverage_cache_signature_from_settings(svc.settings)
+
+    def _base_health_cache_signature(
+        self,
+        settings: Any,
+        *,
+        start_year: int,
+        end_year: int,
+    ) -> list[Any]:
+        return [
+            "base_health",
+            self.BASE_HEALTH_CACHE_SCHEMA_VERSION,
+            int(start_year),
+            int(end_year),
+            self._cvm_data_cache_signature(Path(settings.paths.db_path)),
+            self._path_signature(Path(settings.paths.active_universe_cache_path)),
+        ]
+
+    @staticmethod
+    def _coerce_health_priorities(rows: Any) -> list[dict[str, Any]]:
+        priorities: list[dict[str, Any]] = []
+        for raw_row in rows or []:
+            if not isinstance(raw_row, dict):
+                continue
+            row = dict(raw_row)
+            row["cd_cvm"] = int(row.get("cd_cvm") or 0)
+            row["company_name"] = str(row.get("company_name") or "")
+            row["priority_score"] = int(row.get("priority_score") or 0)
+            row["missing_years_count"] = int(row.get("missing_years_count") or 0)
+            row["gap_to_leader_years"] = int(row.get("gap_to_leader_years") or 0)
+            row["years_missing"] = [int(year) for year in row.get("years_missing") or []]
+            row["recommended_action"] = str(row.get("recommended_action") or "")
+            row["reason"] = str(row.get("reason") or "")
+            priorities.append(row)
+        return priorities
+
+    def _base_health_snapshot_from_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        global_stats = payload.get("global") if isinstance(payload.get("global"), dict) else {}
+        throughput = payload.get("throughput") if isinstance(payload.get("throughput"), dict) else {}
+        company_inventory = (
+            payload.get("company_inventory")
+            if isinstance(payload.get("company_inventory"), dict)
+            else {}
+        )
+        total_companies = int(
+            company_inventory.get("total_companies")
+            or global_stats.get("active_universe")
+            or 0
+        )
+        companies_with_historical_data = int(
+            company_inventory.get("companies_with_historical_data")
+            or global_stats.get("companies_with_historical_data")
+            or 0
+        )
+        return {
+            "generated_at": payload.get("generated_at"),
+            "start_year": int(payload.get("start_year") or 0),
+            "end_year": int(payload.get("end_year") or 0),
+            "total_cells": int(global_stats.get("total_cells") or 0),
+            "completed_cells": int(global_stats.get("completed_cells") or 0),
+            "missing_cells": int(global_stats.get("missing_cells") or 0),
+            "pct": float(global_stats.get("pct") or 0.0),
+            "health_score": float(payload.get("health_score") or 0.0),
+            "health_status": str(payload.get("health_status") or ""),
+            "eta_hours": (
+                float(global_stats.get("eta_hours"))
+                if global_stats.get("eta_hours") is not None
+                else None
+            ),
+            "throughput_per_hour": (
+                float(throughput.get("per_hour"))
+                if throughput.get("per_hour") is not None
+                else None
+            ),
+            "throughput_confidence": str(throughput.get("confidence") or "low"),
+            "per_year": list(payload.get("per_year") or []),
+            "prioritized_companies": self._coerce_health_priorities(
+                payload.get("prioritized_companies")
+            ),
+            "raw": dict(payload),
+            "total_companies": total_companies,
+            "companies_with_historical_data": companies_with_historical_data,
+            "companies_without_historical_data": max(
+                0,
+                total_companies - companies_with_historical_data,
+            ),
+            "companies_with_any_local_financial_report": int(
+                company_inventory.get("companies_with_any_local_financial_report") or 0
+            ),
+            "companies_partial_local": int(company_inventory.get("companies_partial_local") or 0),
+            "companies_fully_updated": int(company_inventory.get("companies_fully_updated") or 0),
+            "companies_with_refresh_status_recorded": int(
+                company_inventory.get("companies_with_refresh_status_recorded") or 0
+            ),
+            "companies_with_last_refresh_error": int(
+                company_inventory.get("companies_with_last_refresh_error") or 0
+            ),
+        }
+
+    def _get_cached_base_health_snapshot(
+        self,
+        *,
+        start_year: int,
+        end_year: int,
+    ) -> dict[str, Any] | None:
+        from src.settings import get_settings  # noqa: PLC0415
+
+        settings = get_settings()
+        cache_path = settings.paths.cache_dir / (
+            f"base_health_db_snapshot_v{self.BASE_HEALTH_CACHE_SCHEMA_VERSION}.json"
+        )
+        signature = self._base_health_cache_signature(
+            settings,
+            start_year=start_year,
+            end_year=end_year,
+        )
+        try:
+            cached = json.loads(cache_path.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+        if not isinstance(cached, dict):
+            return None
+        if cached.get("schema_version") != self.BASE_HEALTH_CACHE_SCHEMA_VERSION:
+            return None
+        if cached.get("signature") != signature:
+            return None
+        raw_payload = cached.get("data")
+        if not isinstance(raw_payload, dict):
+            return None
+        return self._base_health_snapshot_from_payload(raw_payload)
+
+    def _sin_dashboard_cache_signature(self, settings: Any) -> list[Any]:
+        return [
+            "sin_dashboard",
+            self.SIN_DASHBOARD_CACHE_SCHEMA_VERSION,
+            datetime.now(timezone.utc).date().isoformat(),
+            self._sqlite_signature(Path(settings.paths.energy_kpi_db_path)),
+        ]
 
     def _append_runtime_log(self, message: str) -> None:
         """Append bridge diagnostics to the packaged runtime log surface."""
@@ -584,7 +878,15 @@ class CVMBridge:
     def get_sectors(self, params=None) -> dict:
         try:
             p = params or {}
-            result = self._svc().list_sectors(group_by=str(p.get("group_by") or "sector"))
+            raw_include_snapshots = p.get("include_snapshots", True)
+            include_snapshots = not (
+                raw_include_snapshots is False
+                or str(raw_include_snapshots).strip().lower() in {"0", "false", "no"}
+            )
+            result = self._svc().list_sectors(
+                group_by=str(p.get("group_by") or "sector"),
+                include_snapshots=include_snapshots,
+            )
             return self._sanitize_for_json(dataclasses.asdict(result))
         except Exception as exc:
             return {"error": str(exc), "items": []}
@@ -624,9 +926,229 @@ class CVMBridge:
     # Refresh
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _persistable_refresh_job(job: dict[str, Any]) -> dict[str, Any]:
+        payload = dict(job)
+        payload["result"] = None
+        payload["log_lines"] = list(payload.get("log_lines") or [])[-200:]
+        return payload
+
+    @staticmethod
+    def _public_refresh_job(
+        job: dict[str, Any],
+        *,
+        include_result: bool = False,
+    ) -> dict[str, Any]:
+        payload = {
+            "job_id": job.get("job_id"),
+            "state": job.get("state"),
+            "status": job.get("state"),
+            "mode": job.get("mode"),
+            "stage": job.get("stage"),
+            "queued": int(job.get("queued") or 0),
+            "processed": int(job.get("processed") or 0),
+            "failures": int(job.get("failures") or 0),
+            "current_cvm": job.get("current_cvm"),
+            "log_lines": list(job.get("log_lines") or []),
+            "accepted_at": job.get("accepted_at"),
+            "started_at": job.get("started_at"),
+            "finished_at": job.get("finished_at"),
+            "updated_at": job.get("updated_at"),
+            "error": job.get("error"),
+            "result": None,
+        }
+        if include_result:
+            payload["result"] = job.get("result")
+        return payload
+
+    @staticmethod
+    def _db_worker_refresh_job_to_public(row: dict[str, Any]) -> dict[str, Any]:
+        state = str(row.get("state") or "").strip().lower()
+        if state in {"no_data"}:
+            state = "success"
+        elif state in {"error", "failed"}:
+            state = "error"
+        progress_total = int(row.get("progress_total") or 1) or 1
+        progress_current = int(row.get("progress_current") or 0)
+        message = row.get("progress_message") or row.get("error_message") or ""
+        log_lines = [str(message)] if message else []
+        return {
+            "job_id": str(row.get("id") or ""),
+            "state": state,
+            "status": state,
+            "mode": "single",
+            "stage": row.get("stage"),
+            "queued": 1,
+            "processed": 1 if state in {"success", "error", "cancelled"} else progress_current,
+            "failures": 1 if state == "error" else 0,
+            "current_cvm": int(row.get("cd_cvm")) if row.get("cd_cvm") is not None else None,
+            "log_lines": log_lines,
+            "accepted_at": row.get("requested_at"),
+            "started_at": row.get("started_at"),
+            "finished_at": row.get("finished_at"),
+            "updated_at": (
+                row.get("finished_at")
+                or row.get("heartbeat_at")
+                or row.get("started_at")
+                or row.get("requested_at")
+            ),
+            "error": row.get("error_message"),
+            "result": None,
+            "source": "db_worker",
+            "progress_current": progress_current,
+            "progress_total": progress_total,
+        }
+
+    @staticmethod
+    def _refresh_jobs_path() -> Path:
+        from src.settings import get_settings  # noqa: PLC0415
+
+        return get_settings().paths.data_dir / "refresh_jobs.json"
+
+    def _load_refresh_jobs_light(self) -> dict[str, dict[str, Any]]:
+        jobs_path = self._refresh_jobs_path()
+        if not jobs_path.exists():
+            return {}
+        try:
+            payload = json.loads(jobs_path.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+        if not isinstance(payload, dict) or not isinstance(payload.get("jobs"), list):
+            return {}
+
+        now_iso = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+        jobs: dict[str, dict[str, Any]] = {}
+        changed = False
+        for raw_job in payload["jobs"]:
+            if not isinstance(raw_job, dict) or not raw_job.get("job_id"):
+                continue
+            job = self._persistable_refresh_job(raw_job)
+            if str(job.get("state")) in {"queued", "running"}:
+                job["state"] = "interrupted"
+                job["finished_at"] = now_iso
+                job["updated_at"] = now_iso
+                job["error"] = "O app foi encerrado antes do refresh terminar."
+                log_lines = list(job.get("log_lines") or [])
+                log_lines.append(str(job["error"]))
+                job["log_lines"] = log_lines[-200:]
+            if job != raw_job:
+                changed = True
+            jobs[str(job["job_id"])] = job
+
+        if changed:
+            try:
+                jobs_path.write_text(
+                    json.dumps(
+                        {
+                            "jobs": sorted(
+                                jobs.values(),
+                                key=lambda row: str(row.get("created_at") or ""),
+                                reverse=True,
+                            )
+                        },
+                        ensure_ascii=True,
+                        indent=2,
+                        default=str,
+                    ),
+                    encoding="utf-8",
+                )
+            except Exception:
+                pass
+        return jobs
+
+    @staticmethod
+    def _db_worker_refresh_rows(
+        *,
+        job_id: str | None = None,
+        limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        from src.settings import get_settings  # noqa: PLC0415
+
+        db_path = get_settings().paths.db_path
+        if not db_path.exists():
+            return []
+        try:
+            with sqlite3.connect(str(db_path)) as conn:
+                conn.row_factory = sqlite3.Row
+                cur = conn.cursor()
+                exists = cur.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='refresh_jobs'"
+                ).fetchone()
+                if not exists:
+                    return []
+                if job_id:
+                    row = cur.execute(
+                        """
+                        SELECT *
+                        FROM refresh_jobs
+                        WHERE id = ?
+                        """,
+                        (str(job_id),),
+                    ).fetchone()
+                    return [dict(row)] if row is not None else []
+                active_rows = cur.execute(
+                    """
+                    SELECT *
+                    FROM refresh_jobs
+                    WHERE state IN ('queued', 'running')
+                    ORDER BY requested_at DESC, id ASC
+                    """
+                ).fetchall()
+                terminal_rows = cur.execute(
+                    """
+                    SELECT *
+                    FROM refresh_jobs
+                    WHERE state NOT IN ('queued', 'running')
+                    ORDER BY COALESCE(finished_at, requested_at) DESC, id DESC
+                    LIMIT ?
+                    """,
+                    (int(limit),),
+                ).fetchall()
+                return [dict(row) for row in (*active_rows, *terminal_rows)]
+        except Exception:
+            return []
+
+    def _get_refresh_status_light(self, params: dict[str, Any]) -> dict[str, Any]:
+        job_id = params.get("job_id")
+        include_result = str(params.get("include_result") or "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+        }
+        jobs = self._load_refresh_jobs_light()
+        if job_id:
+            job = jobs.get(str(job_id))
+            if job is not None:
+                return self._public_refresh_job(job, include_result=True)
+            db_rows = self._db_worker_refresh_rows(job_id=str(job_id))
+            if db_rows:
+                return self._db_worker_refresh_job_to_public(db_rows[0])
+            return {
+                "state": "not_found",
+                "job_id": str(job_id),
+                "processed": 0,
+                "failures": 0,
+                "current_cvm": None,
+                "log_lines": [],
+            }
+
+        items = [
+            self._public_refresh_job(job, include_result=include_result)
+            for job in jobs.values()
+        ]
+        items.extend(
+            self._db_worker_refresh_job_to_public(row)
+            for row in self._db_worker_refresh_rows(limit=10)
+        )
+        items.sort(key=lambda row: str(row.get("updated_at") or ""), reverse=True)
+        return {"items": items}
+
     def get_refresh_status(self, params=None) -> dict:
         try:
-            return self._sanitize_for_json(self._refresh().get_refresh_status(params or {}))
+            p = params or {}
+            if self._refresh_manager is None and p.get("cd_cvm") in (None, ""):
+                return self._sanitize_for_json(self._get_refresh_status_light(p))
+            return self._sanitize_for_json(self._refresh().get_refresh_status(p))
         except Exception as exc:
             return self._sanitize_for_json({
                 "state": "error",
@@ -671,6 +1193,7 @@ class CVMBridge:
                     end_year=end_year,
                 )
                 self._svc().invalidate_read_caches()
+                self._clear_data_coverage_cache()
                 return self._sanitize_for_json(dataclasses.asdict(result))
             except Exception as exc:
                 return self._sanitize_for_json({
@@ -685,6 +1208,7 @@ class CVMBridge:
         try:
             result = self._refresh().request_refresh(p)
             self._svc().invalidate_read_caches()
+            self._clear_data_coverage_cache()
             return self._sanitize_for_json(result)
         except Exception as exc:
             return self._sanitize_for_json({
@@ -771,6 +1295,7 @@ class CVMBridge:
         if not job_id:
             self._onboarding().mark_setup_completed(status=str(dispatch.get("status") or "success"))
         self._svc().invalidate_read_caches()
+        self._clear_data_coverage_cache()
         return self._sanitize_for_json({
             **dispatch,
             "selection": selection.to_dict(),
@@ -946,6 +1471,7 @@ class CVMBridge:
             }:
                 self._write_app_settings(settings)
             self._svc().invalidate_read_caches()
+            self._clear_data_coverage_cache()
             return self._sanitize_for_json({
                 **dispatch,
                 "selection": selection.to_dict(),
@@ -972,6 +1498,7 @@ class CVMBridge:
                     MarketCapService(settings=svc_settings, read_service=_rs).fetch_from_yahoo_finance()
                     # Retry universe resolution with the freshly created snapshot
                     self._svc().invalidate_read_caches()
+                    self._clear_data_coverage_cache()
                     selection = self._onboarding().get_company_universe_by_preset(
                         str(settings["universe_preset"])
                     )
@@ -983,6 +1510,7 @@ class CVMBridge:
                     }:
                         self._write_app_settings(settings)
                     self._svc().invalidate_read_caches()
+                    self._clear_data_coverage_cache()
                     return self._sanitize_for_json({
                         **dispatch,
                         "selection": selection.to_dict(),
@@ -1263,6 +1791,7 @@ class CVMBridge:
         self._remove_runtime_state_files(removed)
         self._write_app_settings(settings_snapshot)
         svc.invalidate_read_caches()
+        self._clear_data_coverage_cache()
         return {
             "backup_path": None,
             "removed": removed,
@@ -2209,6 +2738,7 @@ class CVMBridge:
                     },
                 )
             svc.invalidate_read_caches()
+            self._clear_data_coverage_cache()
             return self._sanitize_for_json({
                 "ok": True,
                 "cd_cvm": int(cd_cvm),
@@ -2240,13 +2770,37 @@ class CVMBridge:
         from datetime import datetime as _dt  # noqa: PLC0415
 
         try:
+            from src.settings import get_settings  # noqa: PLC0415
+
+            settings = get_settings()
+            cache_signature = self._data_coverage_cache_signature_from_settings(settings)
+            cache_path = (
+                Path(settings.paths.cache_dir)
+                / f"data_coverage_v{self.DATA_COVERAGE_CACHE_SCHEMA_VERSION}.json"
+            )
+            with self._read_payload_cache_lock:
+                if (
+                    self._data_coverage_cache is not None
+                    and self._data_coverage_cache[0] == cache_signature
+                ):
+                    return self._sanitize_for_json(self._data_coverage_cache[1])
+            cached_payload = self._read_payload_cache(
+                cache_path,
+                schema_version=self.DATA_COVERAGE_CACHE_SCHEMA_VERSION,
+                signature=cache_signature,
+            )
+            if cached_payload is not None:
+                with self._read_payload_cache_lock:
+                    self._data_coverage_cache = (cache_signature, cached_payload)
+                return self._sanitize_for_json(cached_payload)
+
             from src.ticker_map import TICKER_MAP  # noqa: PLC0415
             from desktop.services import IntelligentSelectorService  # noqa: PLC0415
 
             svc = self._svc()
+            db_path = svc.settings.paths.db_path
             selector = IntelligentSelectorService(settings=svc.settings)
             universe = selector._load_active_universe()
-            db_path = svc.settings.paths.db_path
             db_exists = db_path.exists()
             now_year = _dt.now().year
             stale_cutoff_year = now_year - 2
@@ -2471,13 +3025,22 @@ class CVMBridge:
                 )
             )
 
-            return self._sanitize_for_json({
+            payload = self._sanitize_for_json({
                 "generated_at": _dt.now().isoformat(timespec="seconds"),
                 "stale_cutoff_year": int(stale_cutoff_year),
                 "summary": summary,
                 "filter_counts": filter_counts,
                 "rows": rows,
             })
+            with self._read_payload_cache_lock:
+                self._data_coverage_cache = (cache_signature, payload)
+            self._write_payload_cache(
+                cache_path,
+                schema_version=self.DATA_COVERAGE_CACHE_SCHEMA_VERSION,
+                signature=cache_signature,
+                payload=payload,
+            )
+            return payload
         except Exception as exc:
             return self._sanitize_for_json({
                 "generated_at": None,
@@ -2507,6 +3070,13 @@ class CVMBridge:
                 if isinstance(force_raw, str)
                 else bool(force_raw)
             )
+            if not force_refresh:
+                cached = self._get_cached_base_health_snapshot(
+                    start_year=start_year,
+                    end_year=end_year,
+                )
+                if cached is not None:
+                    return self._sanitize_for_json(cached)
             result = self._svc().get_health_snapshot(
                 start_year=start_year,
                 end_year=end_year,
@@ -2551,6 +3121,7 @@ class CVMBridge:
         import sqlite3  # noqa: PLC0415
 
         try:
+            p = params or {}
             svc = self._svc()
             db_path = svc.settings.paths.db_path
             data_dir = svc.settings.paths.data_dir
@@ -2558,6 +3129,7 @@ class CVMBridge:
             data_root_str = str(data_dir)
             db_exists = db_path.exists()
             db_size_bytes = int(db_path.stat().st_size) if db_exists else 0
+            summary_only = self._truthy(p.get("summary_only", False))
 
             counts: dict[str, int | None] = {
                 "companies": None,
@@ -2579,16 +3151,17 @@ class CVMBridge:
                         cur = conn.cursor()
                         cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
                         present = {row[0] for row in cur.fetchall()}
-                        for table in counts.keys():
-                            if table not in present:
-                                counts[table] = 0
-                                continue
-                            try:
-                                cur.execute(f'SELECT COUNT(*) FROM "{table}"')
-                                counts[table] = int(cur.fetchone()[0] or 0)
-                            except Exception:
-                                counts[table] = None
-                        if "financial_reports" in present:
+                        if not summary_only:
+                            for table in counts.keys():
+                                if table not in present:
+                                    counts[table] = 0
+                                    continue
+                                try:
+                                    cur.execute(f'SELECT COUNT(*) FROM "{table}"')
+                                    counts[table] = int(cur.fetchone()[0] or 0)
+                                except Exception:
+                                    counts[table] = None
+                        if "financial_reports" in present and not summary_only:
                             try:
                                 cur.execute(
                                     'SELECT "REPORT_YEAR", "PERIOD_LABEL" '
@@ -2651,11 +3224,14 @@ class CVMBridge:
                         "error": f"sqlite_open_failed: {exc}",
                     })
 
-            is_empty = (
-                not db_exists
-                or (counts.get("companies") or 0) == 0
-                or (counts.get("financial_reports") or 0) == 0
-            )
+            if summary_only:
+                is_empty = not db_exists
+            else:
+                is_empty = (
+                    not db_exists
+                    or (counts.get("companies") or 0) == 0
+                    or (counts.get("financial_reports") or 0) == 0
+                )
 
             return self._sanitize_for_json({
                 "db_path": db_path_str,
@@ -2814,8 +3390,47 @@ class CVMBridge:
 
     def get_sin_kpi_dashboard(self, params=None) -> dict:
         try:
+            from src.settings import get_settings  # noqa: PLC0415
+
+            settings = get_settings()
+            cache_signature = self._sin_dashboard_cache_signature(settings)
+            cache_path = (
+                Path(settings.paths.cache_dir)
+                / f"sin_kpi_dashboard_v{self.SIN_DASHBOARD_CACHE_SCHEMA_VERSION}.json"
+            )
+            with self._read_payload_cache_lock:
+                if (
+                    self._sin_dashboard_cache is not None
+                    and self._sin_dashboard_cache[0] == cache_signature
+                ):
+                    result = self._sanitize_for_json(self._sin_dashboard_cache[1])
+                    result["refresh_running"] = self._sin_refresh_status().get("status") == "running"
+                    result["refresh_error"] = self._sin_refresh_status().get("error")
+                    return result
+            cached_payload = self._read_payload_cache(
+                cache_path,
+                schema_version=self.SIN_DASHBOARD_CACHE_SCHEMA_VERSION,
+                signature=cache_signature,
+            )
+            if cached_payload is not None:
+                with self._read_payload_cache_lock:
+                    self._sin_dashboard_cache = (cache_signature, cached_payload)
+                result = self._sanitize_for_json(cached_payload)
+                result["refresh_running"] = self._sin_refresh_status().get("status") == "running"
+                result["refresh_error"] = self._sin_refresh_status().get("error")
+                return result
+
             dashboard = self._energy_svc().get_sin_kpi_dashboard()
-            result = self._sanitize_for_json(dashboard.to_dict())
+            payload = self._sanitize_for_json(dashboard.to_dict())
+            with self._read_payload_cache_lock:
+                self._sin_dashboard_cache = (cache_signature, payload)
+            self._write_payload_cache(
+                cache_path,
+                schema_version=self.SIN_DASHBOARD_CACHE_SCHEMA_VERSION,
+                signature=cache_signature,
+                payload=payload,
+            )
+            result = self._sanitize_for_json(payload)
             result["refresh_running"] = self._sin_refresh_status().get("status") == "running"
             result["refresh_error"] = self._sin_refresh_status().get("error")
             return result
@@ -2861,6 +3476,7 @@ class CVMBridge:
         if state.get("status") == "running":
             return {"status": "already_running", "error": None}
 
+        self._clear_sin_dashboard_cache()
         self._sin_refresh_state = {"status": "running", "error": None}
 
         def _run():

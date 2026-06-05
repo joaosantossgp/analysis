@@ -14,6 +14,7 @@ function normalizeGroupBy(value: string | null): SectorGroupBy {
 export function SectorsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const groupBy = normalizeGroupBy(searchParams.get("visao"));
+  const includeSnapshots = false;
   const [bridgeReady, setBridgeReady] = useState(false);
 
   useEffect(() => {
@@ -27,8 +28,8 @@ export function SectorsPage() {
   }, []);
 
   const query = useQuery<SectorDirectoryResult>({
-    queryKey: ["sectors", groupBy],
-    queryFn: () => fetchSectors(groupBy),
+    queryKey: ["sectors", groupBy, { includeSnapshots }],
+    queryFn: () => fetchSectors(groupBy, { includeSnapshots }),
     enabled: bridgeReady,
     staleTime: 60_000,
   });
@@ -50,7 +51,7 @@ export function SectorsPage() {
     <section className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-6 shadow-lg space-y-4">
       <PageHeader
         title="Sectors directory"
-        subtitle="GICS hub view — counts and coverage from the local CVM database."
+        subtitle="GICS hub view — company counts and classification from the local CVM database."
         actions={
           <Status query={query} groups={items.length} totalCompanies={totalCompanies} />
         }
@@ -69,7 +70,7 @@ export function SectorsPage() {
         />
       </div>
 
-      <Body query={query} items={items} groupBy={groupBy} />
+      <Body query={query} items={items} groupBy={groupBy} showLatestYear={includeSnapshots} />
     </section>
   );
 }
@@ -123,10 +124,12 @@ function Body({
   query,
   items,
   groupBy,
+  showLatestYear,
 }: {
   query: ReturnType<typeof useQuery<SectorDirectoryResult>>;
   items: SectorDirectoryResult extends { items: infer T } ? (T extends Array<infer I> ? I[] : never) : never;
   groupBy: SectorGroupBy;
+  showLatestYear: boolean;
 }) {
   if (query.isError) {
     return (
@@ -157,12 +160,13 @@ function Body({
       />
     );
   }
-  return <SectorsTable items={items} groupBy={groupBy} />;
+  return <SectorsTable items={items} groupBy={groupBy} showLatestYear={showLatestYear} />;
 }
 
 function SectorsTable({
   items,
   groupBy,
+  showLatestYear,
 }: {
   items: Array<{
     sector_name: string;
@@ -174,6 +178,7 @@ function SectorsTable({
     parent_sector_slug: string | null;
   }>;
   groupBy: SectorGroupBy;
+  showLatestYear: boolean;
 }) {
   return (
     <div className="overflow-hidden rounded border border-zinc-800">
@@ -189,13 +194,18 @@ function SectorsTable({
               <th scope="col" className="px-3 py-2 font-medium">Sub-industries</th>
             )}
             <th scope="col" className="px-3 py-2 text-right font-medium">Companies</th>
-            <th scope="col" className="px-3 py-2 text-right font-medium">Latest year</th>
+            {showLatestYear ? <th scope="col" className="px-3 py-2 text-right font-medium">Latest year</th> : null}
             <th scope="col" className="px-3 py-2 font-medium">Actions</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-zinc-800/80 text-zinc-200">
           {items.map((item) => (
-            <SectorRow key={`${item.sector_slug}-${item.parent_sector_slug ?? "root"}`} item={item} groupBy={groupBy} />
+            <SectorRow
+              key={`${item.sector_slug}-${item.parent_sector_slug ?? "root"}`}
+              item={item}
+              groupBy={groupBy}
+              showLatestYear={showLatestYear}
+            />
           ))}
         </tbody>
       </table>
@@ -206,6 +216,7 @@ function SectorsTable({
 function SectorRow({
   item,
   groupBy,
+  showLatestYear,
 }: {
   item: {
     sector_name: string;
@@ -217,6 +228,7 @@ function SectorRow({
     parent_sector_slug: string | null;
   };
   groupBy: SectorGroupBy;
+  showLatestYear: boolean;
 }) {
   // Detail page is keyed by GICS hub sector slug. Sub-industries point at
   // their parent sector so the user lands somewhere meaningful.
@@ -257,9 +269,11 @@ function SectorRow({
       <td className="px-3 py-2 text-right font-mono text-xs text-zinc-300">
         {item.company_count.toLocaleString("en-US")}
       </td>
-      <td className="px-3 py-2 text-right font-mono text-xs text-zinc-400">
-        {item.latest_year ?? "—"}
-      </td>
+      {showLatestYear ? (
+        <td className="px-3 py-2 text-right font-mono text-xs text-zinc-400">
+          {item.latest_year ?? "—"}
+        </td>
+      ) : null}
       <td className="px-3 py-2 text-xs">
         <Link
           to={`/empresas?sector=${encodeURIComponent(item.sector_slug)}`}

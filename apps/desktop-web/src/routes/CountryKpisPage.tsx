@@ -11,20 +11,29 @@
  * since it is owned by a different data layer (read-service / KPI engine) and is
  * not part of the energy `kpi_catalog`.
  */
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState, useTransition } from "react";
 
 import { PageHeader } from "@/components/PageHeader";
+import { StateBanner } from "@/components/feedback/StateBanner";
 import { Segmented } from "@/components/indicators/Segmented";
-import { IndicatorExplorer } from "@/components/indicators/explorer/IndicatorExplorer";
-import { PlantParcelExplorer } from "@/components/indicators/PlantParcelExplorer";
-import { SectorCompanyPanel } from "@/components/indicators/SectorCompanyPanel";
 import { whenBridgeReady } from "@/lib/bridge/adapter";
 
 type View = "explorer" | "plants" | "sector";
 
+const IndicatorExplorer = lazy(() =>
+  import("@/components/indicators/explorer/IndicatorExplorer").then((m) => ({ default: m.IndicatorExplorer })),
+);
+const PlantParcelExplorer = lazy(() =>
+  import("@/components/indicators/PlantParcelExplorer").then((m) => ({ default: m.PlantParcelExplorer })),
+);
+const SectorCompanyPanel = lazy(() =>
+  import("@/components/indicators/SectorCompanyPanel").then((m) => ({ default: m.SectorCompanyPanel })),
+);
+
 export function CountryKpisPage() {
   const [bridgeReady, setBridgeReady] = useState(false);
   const [view, setView] = useState<View>("explorer");
+  const [, startTransition] = useTransition();
 
   useEffect(() => {
     let cancelled = false;
@@ -57,18 +66,20 @@ export function CountryKpisPage() {
               { value: "plants", label: "Plant Parcels" },
               { value: "sector", label: "Sector & Company" },
             ]}
-            onChange={setView}
+            onChange={(next) => startTransition(() => setView(next))}
           />
         }
       />
 
-      {view === "explorer" ? (
-        <IndicatorExplorer bridgeReady={bridgeReady} />
-      ) : view === "plants" ? (
-        <PlantParcelExplorer bridgeReady={bridgeReady} />
-      ) : (
-        <SectorCompanyPanel bridgeReady={bridgeReady} />
-      )}
+      <Suspense fallback={<StateBanner variant="loading" title="Loading indicator view…" />}>
+        {view === "explorer" ? (
+          <IndicatorExplorer bridgeReady={bridgeReady} />
+        ) : view === "plants" ? (
+          <PlantParcelExplorer bridgeReady={bridgeReady} />
+        ) : (
+          <SectorCompanyPanel bridgeReady={bridgeReady} />
+        )}
+      </Suspense>
     </section>
   );
 }

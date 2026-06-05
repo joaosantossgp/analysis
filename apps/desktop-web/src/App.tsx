@@ -2,10 +2,8 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 
-import { CommandBar } from "./components/command/CommandBar";
 import { useCommandPalette } from "./components/command/useCommandPalette";
 import { StateBanner } from "./components/feedback/StateBanner";
-import { FirstRunOnboarding } from "./components/onboarding/FirstRunOnboarding";
 import { TerminalShell } from "./components/shell/TerminalShell";
 import { fetchOnboardingState } from "./lib/api/onboarding";
 import { whenBridgeReady } from "./lib/bridge/adapter";
@@ -58,6 +56,12 @@ const DevDataOpsPage = lazy(() =>
 const CountryKpisPage = lazy(() =>
   import("./routes/CountryKpisPage").then((m) => ({ default: m.CountryKpisPage })),
 );
+const CommandBar = lazy(() =>
+  import("./components/command/CommandBar").then((m) => ({ default: m.CommandBar })),
+);
+const FirstRunOnboarding = lazy(() =>
+  import("./components/onboarding/FirstRunOnboarding").then((m) => ({ default: m.FirstRunOnboarding })),
+);
 
 function RouteFallback() {
   return (
@@ -100,45 +104,42 @@ function AppShellWithPalette() {
     staleTime: 5_000,
   });
 
-  if (!bridgeReady || onboardingQuery.isLoading) {
-    return (
-      <div style={{ padding: "24px 20px" }}>
-        <StateBanner variant="loading" title="Preparing workspace…" />
-      </div>
-    );
-  }
-
-  if (onboardingQuery.isError) {
-    return (
-      <div style={{ padding: "24px 20px" }}>
-        <StateBanner
-          variant="error"
-          title="Could not load setup"
-          message={
-            onboardingQuery.error instanceof Error
-              ? onboardingQuery.error.message
-              : String(onboardingQuery.error)
-          }
-          onRetry={() => { void onboardingQuery.refetch(); }}
-        />
-      </div>
-    );
-  }
-
   const onboardingState =
     onboardingQuery.data?.mode === "desktop" ? onboardingQuery.data.state : null;
   if (onboardingState?.should_show && !onboardingDismissed) {
     return (
-      <FirstRunOnboarding
-        initialState={onboardingState}
-        onDone={() => setOnboardingDismissed(true)}
-      />
+      <Suspense
+        fallback={
+          <div style={{ padding: "24px 20px" }}>
+            <StateBanner variant="loading" title="Loading setup…" />
+          </div>
+        }
+      >
+        <FirstRunOnboarding
+          initialState={onboardingState}
+          onDone={() => setOnboardingDismissed(true)}
+        />
+      </Suspense>
     );
   }
+
+  const setupError = onboardingQuery.isError ? (
+    <StateBanner
+      variant="warning"
+      title="Setup status unavailable"
+      message={
+        onboardingQuery.error instanceof Error
+          ? onboardingQuery.error.message
+          : String(onboardingQuery.error)
+      }
+      size="dense"
+    />
+  ) : null;
 
   return (
     <>
       <TerminalShell onOpenPalette={palette.open_}>
+        {setupError}
         <Suspense fallback={<RouteFallback />}>
           <Routes>
             <Route path="/" element={<HomePage />} />
@@ -173,11 +174,15 @@ function AppShellWithPalette() {
           </Routes>
         </Suspense>
       </TerminalShell>
-      <CommandBar
-        open={palette.open}
-        primed={palette.primed}
-        onClose={palette.close_}
-      />
+      {palette.primed ? (
+        <Suspense fallback={null}>
+          <CommandBar
+            open={palette.open}
+            primed={palette.primed}
+            onClose={palette.close_}
+          />
+        </Suspense>
+      ) : null}
     </>
   );
 }

@@ -13,6 +13,7 @@ import {
   setCompanyExcelMappingDefault,
   type ExcelMappingWorkspaceResult,
 } from "@/lib/api/excelMappings";
+import { whenBridgeReady } from "@/lib/bridge/adapter";
 import type {
   ExcelMappingDefinition,
   ExcelMappingEntry,
@@ -62,11 +63,22 @@ export function CompanyModelMappingPage() {
   const [rawSearch, setRawSearch] = useState("");
   const [rawStatementFilter, setRawStatementFilter] = useState("current");
   const [showValidation, setShowValidation] = useState(false);
+  const [bridgeReady, setBridgeReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    whenBridgeReady().then(() => {
+      if (!cancelled) setBridgeReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const workspaceQuery = useQuery<ExcelMappingWorkspaceResult>({
     queryKey: ["excel-mapping-workspace", cdCvm, selectedPresetId, periodScope],
     queryFn: () => fetchExcelMappingWorkspace(cdCvm, selectedPresetId, periodScope),
-    enabled: Number.isFinite(cdCvm) && cdCvm > 0,
+    enabled: bridgeReady && Number.isFinite(cdCvm) && cdCvm > 0,
   });
 
   const workspace =
@@ -226,7 +238,7 @@ export function CompanyModelMappingPage() {
   if (!Number.isFinite(cdCvm) || cdCvm <= 0) {
     return <StateBanner variant="error" title="Invalid CVM code" />;
   }
-  if (workspaceQuery.isLoading) {
+  if (!bridgeReady || workspaceQuery.isLoading) {
     return <StateBanner variant="loading" title="Loading model builder..." />;
   }
   if (workspaceQuery.isError) {

@@ -60,7 +60,7 @@ export function HomePage() {
 
   const diagQuery = useQuery({
     queryKey: ["db-diagnostics"],
-    queryFn: fetchDatabaseDiagnostics,
+    queryFn: () => fetchDatabaseDiagnostics({ summaryOnly: true }),
     enabled: bridgeReady,
     refetchInterval: isRunning ? 5_000 : 30_000,
   });

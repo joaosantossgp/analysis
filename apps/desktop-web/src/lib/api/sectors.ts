@@ -17,6 +17,10 @@ const BROWSER_REASON =
 
 export type SectorGroupBy = "sector" | "sub_sector";
 
+type FetchSectorsOptions = {
+  includeSnapshots?: boolean;
+};
+
 export type SectorDirectoryResult =
   | { mode: "desktop"; items: SectorDirectoryItem[] }
   | { mode: "browser"; items: []; reason: string };
@@ -28,6 +32,7 @@ export type SectorDetailResult =
 
 export async function fetchSectors(
   groupBy: SectorGroupBy = "sector",
+  options: FetchSectorsOptions = {},
 ): Promise<SectorDirectoryResult> {
   const mode: BridgeMode = getBridgeMode();
   if (mode === "browser") {
@@ -35,6 +40,7 @@ export async function fetchSectors(
   }
   const payload: SectorDirectoryResponse = await callBridge("get_sectors", {
     group_by: groupBy,
+    include_snapshots: options.includeSnapshots ?? true,
   });
   if (payload.error) {
     throw new Error(payload.error);

@@ -164,7 +164,7 @@ export function UpdateBasePage() {
       fetchBaseHealth({
         startYear: defaults.startYear,
         endYear: defaults.endYear,
-        forceRefresh: true,
+        forceRefresh: false,
       }),
     enabled: bridgeReady,
     refetchInterval: isRunning ? 5_000 : false,
@@ -172,7 +172,7 @@ export function UpdateBasePage() {
 
   const diagnosticsQuery = useQuery({
     queryKey: ["db-diagnostics"],
-    queryFn: fetchDatabaseDiagnostics,
+    queryFn: () => fetchDatabaseDiagnostics(),
     enabled: bridgeReady,
     refetchInterval: isRunning ? DIAG_ACTIVE_POLL_MS : DIAG_IDLE_POLL_MS,
   });

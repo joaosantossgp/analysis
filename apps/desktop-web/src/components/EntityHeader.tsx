@@ -1,9 +1,10 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
 import { IdentifierBadge } from "@/components/data/IdentifierBadge";
 import { fetchCompanyInfo, type CompanyInfoResult } from "@/lib/api/companyDetail";
+import { whenBridgeReady } from "@/lib/bridge/adapter";
 import { formatBRDateTime } from "@/lib/format/date";
 import { ExportCompanyButton } from "./ExportCompanyButton";
 import { Breadcrumbs } from "./Breadcrumbs";
@@ -20,18 +21,30 @@ export function EntityHeader({
   activeTab,
   showExports = true,
 }: EntityHeaderProps) {
+  const [bridgeReady, setBridgeReady] = useState(false);
   const [searchParams] = useSearchParams();
   const rawStmt = searchParams.get("stmt");
   const activeStatement = (rawStmt && ["DRE", "BPA", "BPP", "DFC"].includes(rawStmt.toUpperCase()))
     ? rawStmt.toUpperCase()
     : "DRE";
 
+  useEffect(() => {
+    let cancelled = false;
+    whenBridgeReady().then(() => {
+      if (!cancelled) setBridgeReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const query = useQuery<CompanyInfoResult>({
     queryKey: ["company-info", cdCvm],
     queryFn: () => fetchCompanyInfo(cdCvm),
+    enabled: bridgeReady && Number.isFinite(cdCvm) && cdCvm > 0,
   });
 
-  if (query.isLoading) {
+  if (!bridgeReady || query.isLoading) {
     return <StateBanner variant="loading" title="Loading company data…" />;
   }
 

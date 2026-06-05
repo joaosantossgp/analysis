@@ -27,6 +27,11 @@ import type { ChartAesthetics } from "@/lib/indicators/types";
 
 const PAGE_SIZE = 100;
 const MAX_INLINE_DROP_BYTES = 50 * 1024 * 1024;
+const CCEE_PLANT_ENTITY_TYPE = "ccee_plant_parcel";
+const CCEE_PLANT_SOURCE_IDS = new Set<string>([
+  "ccee_plant_parcel_monthly",
+  "ccee_plant_generation_hourly",
+]);
 
 type Filters = {
   entity_type: string;
@@ -90,7 +95,7 @@ export function PlantParcelExplorer({ bridgeReady }: { bridgeReady: boolean }) {
 
   useEffect(() => {
     setOffset(0);
-  }, [debouncedSearch, filters.entity_type, filters.generation_source, filters.submarket, filters.uf]);
+  }, [debouncedSearch, filters.generation_source, filters.submarket, filters.uf]);
 
   const statusQuery = useQuery({
     queryKey: ["plant-parcel-source-statuses"],
@@ -103,11 +108,19 @@ export function PlantParcelExplorer({ bridgeReady }: { bridgeReady: boolean }) {
   });
 
   const catalogQuery = useQuery({
-    queryKey: ["plant-parcel-catalog", debouncedSearch, filters, offset],
+    queryKey: [
+      "plant-parcel-catalog",
+      CCEE_PLANT_ENTITY_TYPE,
+      debouncedSearch,
+      filters.generation_source,
+      filters.submarket,
+      filters.uf,
+      offset,
+    ],
     queryFn: () =>
       fetchPlantParcelCatalog({
         search: debouncedSearch || undefined,
-        entity_type: filters.entity_type || undefined,
+        entity_type: CCEE_PLANT_ENTITY_TYPE,
         generation_source: filters.generation_source || undefined,
         submarket: filters.submarket || undefined,
         uf: filters.uf || undefined,
@@ -122,14 +135,25 @@ export function PlantParcelExplorer({ bridgeReady }: { bridgeReady: boolean }) {
   const catalogResponse = catalogQuery.data?.mode === "desktop" ? catalogQuery.data.response : null;
   const total = catalogResponse?.total ?? 0;
   const facets = catalogResponse?.facets ?? {};
-  const statuses = statusQuery.data?.mode === "desktop" ? statusQuery.data.statuses : [];
+  const statuses = statusQuery.data?.mode === "desktop"
+    ? statusQuery.data.statuses.filter((source) => isCceePlantSource(source.source_id))
+    : [];
   const statusResponse = statusQuery.data?.mode === "desktop" ? statusQuery.data.response : null;
-  const plantJobActive = Boolean(statusResponse?.refresh_running || refreshingSourceId || manualImportingSourceId);
   const runningBackendSourceId = statusResponse?.refresh_running ? statusResponse.refresh_source_id : null;
+  const visibleBackendPlantJobRunning = Boolean(
+    statusResponse?.refresh_running && (!runningBackendSourceId || isCceePlantSource(runningBackendSourceId)),
+  );
+  const plantJobActive = Boolean(visibleBackendPlantJobRunning || refreshingSourceId || manualImportingSourceId);
   const effectiveManualImportingSourceId =
-    manualImportingSourceId ?? (statusResponse?.refresh_mode === "manual_file" ? runningBackendSourceId : null);
+    manualImportingSourceId ??
+    (statusResponse?.refresh_mode === "manual_file" && runningBackendSourceId && isCceePlantSource(runningBackendSourceId)
+      ? runningBackendSourceId
+      : null);
   const effectiveRefreshingSourceId =
-    refreshingSourceId ?? (statusResponse?.refresh_mode !== "manual_file" ? runningBackendSourceId : null);
+    refreshingSourceId ??
+    (statusResponse?.refresh_mode !== "manual_file" && runningBackendSourceId && isCceePlantSource(runningBackendSourceId)
+      ? runningBackendSourceId
+      : null);
   const bridgeReason =
     statusQuery.data?.mode === "browser"
       ? statusQuery.data.reason
@@ -455,7 +479,7 @@ export function PlantParcelExplorer({ bridgeReady }: { bridgeReady: boolean }) {
   return (
     <div className="space-y-4">
       {message ? <RefreshMessage message={message} onDismiss={() => setMessage(null)} /> : null}
-      {statusResponse?.refresh_running ? <PlantJobProgressBanner status={statusResponse} /> : null}
+      {visibleBackendPlantJobRunning && statusResponse ? <PlantJobProgressBanner status={statusResponse} /> : null}
 
       <SourceStatusGrid
         statuses={statuses}
@@ -486,7 +510,7 @@ export function PlantParcelExplorer({ bridgeReady }: { bridgeReady: boolean }) {
           {records.length === 0 ? (
             <StateBanner
               variant="empty"
-              title="No plant or parcel matches"
+              title="No CCEE plant parcel matches"
               message={emptyCatalogMessage(statuses)}
             />
           ) : (
@@ -542,13 +566,13 @@ function SourceStatusGrid({
     return (
       <StateBanner
         variant="empty"
-        title="No plant source metadata"
-        message="The local energy source catalog has not been initialized yet."
+        title="No CCEE plant source metadata"
+        message="No CCEE plant source metadata is available in the local energy source catalog."
       />
     );
   }
   return (
-    <div className="grid gap-3 lg:grid-cols-3">
+    <div className="grid gap-3 lg:grid-cols-2">
       {statuses.map((source) => (
         <div
           key={source.source_id}
@@ -797,15 +821,9 @@ function CatalogToolbar({
           {visible} shown · {total} total · offset {offset}
         </div>
       </div>
-      <div className="grid gap-2 md:grid-cols-4">
+      <div className="grid gap-2 md:grid-cols-3">
         <SelectFilter
-          label="Entity"
-          value={filters.entity_type}
-          options={facets.entity_type ?? []}
-          onChange={(value) => onFiltersChange({ ...filters, entity_type: value })}
-        />
-        <SelectFilter
-          label="Source"
+          label="Generation source"
           value={filters.generation_source}
           options={facets.generation_source ?? []}
           onChange={(value) => onFiltersChange({ ...filters, generation_source: value })}
@@ -847,7 +865,7 @@ function PlantCatalogTable({
             <Th>Entity</Th>
             <Th>Plant / Parcel</Th>
             <Th>CEG</Th>
-            <Th>Source</Th>
+            <Th>Generation source</Th>
             <Th>Submarket</Th>
             <Th align="right">Capacity</Th>
             <Th align="right">Latest generation</Th>
@@ -866,7 +884,7 @@ function PlantCatalogTable({
                 <Td>
                   <div className="font-medium text-zinc-100">{row.plant_name ?? row.plant_parcel_acronym ?? row.entity_id}</div>
                   <div className="font-mono text-xs text-zinc-500">
-                    {row.plant_parcel_code ? `parcel ${row.plant_parcel_code}` : "ANEEL plant"}
+                    {row.plant_parcel_code ? `parcel ${row.plant_parcel_code}` : "plant parcel"}
                     {row.plant_parcel_acronym ? ` · ${row.plant_parcel_acronym}` : ""}
                   </div>
                 </Td>
@@ -945,7 +963,7 @@ function PlantDetailPanel({
     return (
       <StateBanner
         variant="empty"
-        title="Select a plant or parcel"
+        title="Select a CCEE plant parcel"
         message="The detail panel opens one selected entity at a time and does not render bulk charts."
       />
     );
@@ -955,9 +973,10 @@ function PlantDetailPanel({
   }
 
   const parcel = detail.parcel ?? {};
-  const aneel = detail.aneel_plant ?? {};
   const monthly = detail.monthly_series ?? [];
   const hourly = detail.hourly_preview ?? [];
+  const cceeMetrics = (detail.metrics ?? []).filter((metric) => isCceePlantSource(metric.source_id));
+  const caveats = (detail.metadata?.caveats ?? []).filter((item: string) => !item.includes("ANEEL"));
 
   const displayedSeries = (() => {
     const rawSeries = chartQuery.data?.mode === "desktop" ? chartQuery.data.data.series : [];
@@ -999,17 +1018,17 @@ function PlantDetailPanel({
       <div>
         <p className="text-xs uppercase tracking-wide text-zinc-500">{entityLabel(detail.entity_type)}</p>
         <h3 className="text-base font-semibold text-zinc-100">
-          {textValue(parcel, "plant_name") || textValue(aneel, "plant_name") || selected.plant_name || selected.entity_id}
+          {textValue(parcel, "plant_name") || selected.plant_name || selected.entity_id}
         </h3>
         <div className="mt-1 flex flex-wrap gap-2 text-xs text-zinc-500">
           <span className="font-mono">entity {detail.entity_id}</span>
           {textValue(parcel, "plant_parcel_code") ? <span className="font-mono">parcel {textValue(parcel, "plant_parcel_code")}</span> : null}
-          {textValue(parcel, "ceg") || textValue(aneel, "ceg") ? <span className="font-mono">CEG {textValue(parcel, "ceg") || textValue(aneel, "ceg")}</span> : null}
+          {textValue(parcel, "ceg") || selected.ceg ? <span className="font-mono">CEG {textValue(parcel, "ceg") || selected.ceg}</span> : null}
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-2">
-        {(detail.metrics ?? []).slice(0, 6).map((metric: PlantMetric) => (
+        {cceeMetrics.slice(0, 6).map((metric: PlantMetric) => (
           <MetricTile key={metric.metric_id} metric={metric} />
         ))}
       </div>
@@ -1118,13 +1137,13 @@ function PlantDetailPanel({
       </div>
 
       <div className="grid grid-cols-2 gap-2 text-xs">
-        <Meta label="ANEEL phase" value={textValue(aneel, "phase") ?? "—"} />
         <Meta label="Agent" value={textValue(parcel, "agent_name") ?? selected.agent_name ?? "—"} />
+        <Meta label="Generation source" value={textValue(parcel, "generation_source") ?? selected.generation_source ?? "—"} />
         <Meta label="Submarket" value={textValue(parcel, "submarket") ?? selected.submarket ?? "—"} mono />
-        <Meta label="UF" value={textValue(parcel, "uf") ?? textValue(aneel, "uf") ?? selected.uf ?? "—"} mono />
+        <Meta label="UF" value={textValue(parcel, "uf") ?? selected.uf ?? "—"} mono />
       </div>
 
-      <MethodologyList metrics={detail.metrics ?? []} />
+      <MethodologyList metrics={cceeMetrics} />
 
       <SeriesPreview
         title="Monthly generation preview"
@@ -1148,7 +1167,7 @@ function PlantDetailPanel({
 
       <div className="space-y-1">
         <p className="text-xs uppercase tracking-wide text-zinc-500">Caveats</p>
-        {(detail.metadata?.caveats ?? []).map((item: string) => (
+        {caveats.map((item: string) => (
           <p key={item} className="text-xs text-zinc-400">- {item}</p>
         ))}
       </div>
@@ -1351,7 +1370,7 @@ function Td({
 
 function entityLabel(entityType: string): string {
   if (entityType === "ccee_plant_parcel") return "CCEE parcel";
-  if (entityType === "aneel_plant") return "ANEEL plant";
+  if (entityType === "aneel_plant") return "Plant";
   return entityType;
 }
 
@@ -1400,8 +1419,12 @@ function statusLabel(status: string | null | undefined): string {
   return status.replaceAll("_", " ");
 }
 
+function isCceePlantSource(sourceId: string): boolean {
+  return CCEE_PLANT_SOURCE_IDS.has(sourceId);
+}
+
 function isCceeManualSource(sourceId: string): boolean {
-  return sourceId === "ccee_plant_parcel_monthly" || sourceId === "ccee_plant_generation_hourly";
+  return isCceePlantSource(sourceId);
 }
 
 function manualImportDescription(sourceId: string): string {
@@ -1495,7 +1518,7 @@ function emptyCatalogMessage(statuses: PlantParcelSourceStatus[]): string {
     return "The latest refresh imported no rows. Check the source warning or choose another period.";
   }
   if (statuses.every((source) => source.cache_status === "never_refreshed")) {
-    return "Refresh ANEEL SIGA or CCEE monthly data to populate the local plant catalog.";
+    return "Refresh CCEE monthly data to populate the local plant parcel catalog.";
   }
-  return "Refresh ANEEL SIGA and CCEE monthly data, or clear the current search and filters.";
+  return "Refresh CCEE monthly data, or clear the current search and filters.";
 }

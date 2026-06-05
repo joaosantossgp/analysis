@@ -24,7 +24,6 @@ import json
 import logging
 import re
 import time
-from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import Engine, inspect, text
@@ -158,6 +157,23 @@ class CVMQueryLayer:
             return ""
         return ",\n                " + ",\n                ".join(parts)
 
+    def _persisted_gics_select_sql(self) -> str:
+        cols = self._company_column_names()
+        parts: list[str] = []
+        mapping = (
+            ("gics_sector", "persisted_gics_sector"),
+            ("gics_sector_slug", "persisted_gics_sector_slug"),
+            ("gics_industry_group", "persisted_gics_industry_group"),
+            ("gics_industry", "persisted_gics_industry"),
+            ("gics_sub_industry", "persisted_gics_sub_industry"),
+        )
+        for col, alias in mapping:
+            if col in cols:
+                parts.append(f"c.{col} AS {alias}")
+        if not parts:
+            return ""
+        return ",\n                " + ",\n                ".join(parts)
+
     def _sector_bucket_expression_sql(self) -> str:
         """Prefer persisted GICS sector label when present for histograms/filters."""
         return gics_sector_bucket_sql(self._company_column_names(), table_alias="c")
@@ -207,30 +223,56 @@ class CVMQueryLayer:
             paged_params["limit"] = int(page_size)
             paged_params["offset"] = max(0, (int(page) - 1) * int(page_size))
 
-        gics_sql = self._persisted_gics_max_sql()
+        gics_sql = self._persisted_gics_select_sql()
         rows_sql = text(
             f"""
+            WITH ranked AS (
+                SELECT
+                    c.cd_cvm,
+                    c.company_name,
+                    COALESCE(c.ticker_b3, '') AS ticker_b3,
+                    c.setor_analitico,
+                    c.setor_cvm,
+                    {_CANONICAL_SECTOR_SQL} AS sector_name,
+                    CASE
+                        WHEN EXISTS (
+                            SELECT 1
+                            FROM financial_reports fr_exists
+                            WHERE fr_exists."CD_CVM" = c.cd_cvm
+                            LIMIT 1
+                        ) THEN 1
+                        ELSE 0
+                    END AS has_financial_data,
+                    c.coverage_rank{gics_sql}
+                FROM companies c
+                WHERE {where_sql}
+            ),
+            page AS (
+                SELECT *
+                FROM ranked
+                ORDER BY
+                    CASE WHEN has_financial_data > 0 THEN 0 ELSE 1 END ASC,
+                    CASE WHEN coverage_rank IS NULL THEN 1 ELSE 0 END ASC,
+                    coverage_rank ASC,
+                    company_name ASC
+                {paging_sql}
+            ),
+            page_counts AS (
+                SELECT fr."CD_CVM" AS cd_cvm, COUNT(*) AS total_rows
+                FROM financial_reports fr
+                WHERE fr."CD_CVM" IN (SELECT cd_cvm FROM page)
+                GROUP BY fr."CD_CVM"
+            )
             SELECT
-                c.cd_cvm,
-                c.company_name,
-                COALESCE(c.ticker_b3, '') AS ticker_b3,
-                c.setor_analitico,
-                c.setor_cvm,
-                {_CANONICAL_SECTOR_SQL} AS sector_name,
-                COALESCE(COUNT(fr."CD_CVM"), 0) AS total_rows,
-                CASE WHEN COUNT(fr."CD_CVM") > 0 THEN 1 ELSE 0 END AS has_financial_data,
-                c.coverage_rank{gics_sql}
-            FROM companies c
-            LEFT JOIN financial_reports fr ON fr."CD_CVM" = c.cd_cvm
-            WHERE {where_sql}
-            GROUP BY c.cd_cvm, c.company_name, c.ticker_b3, c.setor_analitico, c.setor_cvm, c.coverage_rank
+                page.*,
+                COALESCE(page_counts.total_rows, 0) AS total_rows
+            FROM page
+            LEFT JOIN page_counts ON page_counts.cd_cvm = page.cd_cvm
             ORDER BY
-                CASE WHEN COUNT(fr."CD_CVM") > 0 THEN 0 ELSE 1 END ASC,
-                CASE WHEN c.coverage_rank IS NULL THEN 1 ELSE 0 END ASC,
-                c.coverage_rank ASC,
-                COUNT(fr."CD_CVM") DESC,
-                c.company_name ASC
-            {paging_sql}
+                CASE WHEN page.has_financial_data > 0 THEN 0 ELSE 1 END ASC,
+                CASE WHEN page.coverage_rank IS NULL THEN 1 ELSE 0 END ASC,
+                page.coverage_rank ASC,
+                page.company_name ASC
             """
         )
         rows_df = _pd().read_sql(rows_sql, self.engine, params=paged_params)
@@ -247,6 +289,53 @@ class CVMQueryLayer:
             LEFT JOIN financial_reports fr ON fr."CD_CVM" = c.cd_cvm
             GROUP BY {bucket}
             ORDER BY sector_name ASC
+            """
+        )
+        return _pd().read_sql(sql, self.engine).reset_index(drop=True)
+
+    @slow_query_warn(threshold_ms=200)
+    def get_companies_directory_light(self) -> _pd().DataFrame:
+        """Return all local company rows without counting financial report rows.
+
+        Used by in-memory catalog/market-cap merges where exact row counts are
+        not needed for sorting or display. Avoids a full aggregation over the
+        multi-million-row financial_reports table.
+        """
+        gics_sql = self._persisted_gics_select_sql()
+        sql = text(
+            f"""
+            SELECT
+                c.cd_cvm,
+                c.company_name,
+                COALESCE(c.ticker_b3, '') AS ticker_b3,
+                c.setor_analitico,
+                c.setor_cvm,
+                {_CANONICAL_SECTOR_SQL} AS sector_name,
+                0 AS total_rows,
+                CASE
+                    WHEN EXISTS (
+                        SELECT 1
+                        FROM financial_reports fr_exists
+                        WHERE fr_exists."CD_CVM" = c.cd_cvm
+                        LIMIT 1
+                    ) THEN 1
+                    ELSE 0
+                END AS has_financial_data,
+                c.coverage_rank{gics_sql}
+            FROM companies c
+            ORDER BY
+                CASE
+                    WHEN EXISTS (
+                        SELECT 1
+                        FROM financial_reports fr_exists
+                        WHERE fr_exists."CD_CVM" = c.cd_cvm
+                        LIMIT 1
+                    ) THEN 0
+                    ELSE 1
+                END ASC,
+                CASE WHEN c.coverage_rank IS NULL THEN 1 ELSE 0 END ASC,
+                c.coverage_rank ASC,
+                c.company_name ASC
             """
         )
         return _pd().read_sql(sql, self.engine).reset_index(drop=True)
@@ -379,7 +468,18 @@ class CVMQueryLayer:
         *,
         sector_name: str | None = None,
         years: list[int] | None = None,
+        cd_cvms: list[int] | None = None,
     ) -> _pd().DataFrame:
+        result_columns = [
+            "cd_cvm",
+            "company_name",
+            "ticker_b3",
+            "sector_name",
+            "report_year",
+            "roe",
+            "mg_ebit",
+            "mg_liq",
+        ]
         where_parts = [
             'fr."PERIOD_LABEL" = CAST(fr."REPORT_YEAR" AS TEXT)',
             'fr."QA_CONFLICT" = false',
@@ -396,6 +496,14 @@ class CVMQueryLayer:
             placeholders = ", ".join(f":y{i}" for i in range(len(normalized_years)))
             where_parts.append(f'fr."REPORT_YEAR" IN ({placeholders})')
             params.update({f"y{i}": year for i, year in enumerate(normalized_years)})
+
+        normalized_cd_cvms = sorted({int(cd_cvm) for cd_cvm in cd_cvms or []})
+        if cd_cvms is not None and not normalized_cd_cvms:
+            return _pd().DataFrame(columns=result_columns)
+        if normalized_cd_cvms:
+            placeholders = ", ".join(f":cd{i}" for i in range(len(normalized_cd_cvms)))
+            where_parts.append(f'fr."CD_CVM" IN ({placeholders})')
+            params.update({f"cd{i}": cd_cvm for i, cd_cvm in enumerate(normalized_cd_cvms)})
 
         sql = text(
             f"""
@@ -421,18 +529,7 @@ class CVMQueryLayer:
         )
         df = _pd().read_sql(sql, self.engine, params=params)
         if df.empty:
-            return _pd().DataFrame(
-                columns=[
-                    "cd_cvm",
-                    "company_name",
-                    "ticker_b3",
-                    "sector_name",
-                    "report_year",
-                    "roe",
-                    "mg_ebit",
-                    "mg_liq",
-                ]
-            )
+            return _pd().DataFrame(columns=result_columns)
 
         pivot = df.pivot_table(
             index=["cd_cvm", "company_name", "ticker_b3", "sector_name", "REPORT_YEAR"],
@@ -464,18 +561,7 @@ class CVMQueryLayer:
         pivot["mg_liq"] = lucro_liq.divide(receita.where(receita != 0))
         pivot["roe"] = lucro_liq.divide(pl.where(pl != 0))
 
-        return pivot[
-            [
-                "cd_cvm",
-                "company_name",
-                "ticker_b3",
-                "sector_name",
-                "report_year",
-                "roe",
-                "mg_ebit",
-                "mg_liq",
-            ]
-        ].reset_index(drop=True)
+        return pivot[result_columns].reset_index(drop=True)
 
     @slow_query_warn(threshold_ms=200)
     def get_company_years_map(self, cd_cvms: list[int]) -> dict[int, tuple[int, ...]]:
@@ -494,19 +580,13 @@ class CVMQueryLayer:
             return {int(cd_cvm): () for cd_cvm in unique_ids}
 
         placeholders = ", ".join(f":cd{i}" for i in range(len(unique_ids)))
-        current_year = datetime.now(timezone.utc).year
-        annual_labels = tuple(str(year) for year in range(1990, current_year + 1))
-        label_placeholders = ", ".join(f":period{i}" for i in range(len(annual_labels)))
         params = {f"cd{i}": cd_cvm for i, cd_cvm in enumerate(unique_ids)}
-        params.update({f"period{i}": label for i, label in enumerate(annual_labels)})
         sql = text(
             f"""
-            SELECT "CD_CVM", "REPORT_YEAR"
+            SELECT DISTINCT "CD_CVM", "REPORT_YEAR"
             FROM financial_reports
             WHERE "CD_CVM" IN ({placeholders})
-              AND "PERIOD_LABEL" IN ({label_placeholders})
               AND "PERIOD_LABEL" = CAST("REPORT_YEAR" AS TEXT)
-            GROUP BY "CD_CVM", "REPORT_YEAR"
             ORDER BY "CD_CVM", "REPORT_YEAR"
             """
         )
@@ -529,7 +609,54 @@ class CVMQueryLayer:
         unique_ids = [int(cd) for cd in cvm_ids]
         placeholders = ", ".join(f":id_{i}" for i in range(len(unique_ids)))
         params: dict[str, object] = {f"id_{i}": cd for i, cd in enumerate(unique_ids)}
-        gics_sql = self._persisted_gics_max_sql()
+        gics_sql = self._persisted_gics_select_sql()
+        sql = text(
+            f"""
+            WITH selected_companies AS (
+                SELECT
+                    c.cd_cvm,
+                    c.company_name,
+                    COALESCE(c.ticker_b3, '') AS ticker_b3,
+                    c.setor_analitico,
+                    c.setor_cvm,
+                    {_CANONICAL_SECTOR_SQL} AS sector_name,
+                    CASE
+                        WHEN EXISTS (
+                            SELECT 1
+                            FROM financial_reports fr_exists
+                            WHERE fr_exists."CD_CVM" = c.cd_cvm
+                            LIMIT 1
+                        ) THEN 1
+                        ELSE 0
+                    END AS has_financial_data,
+                    c.coverage_rank{gics_sql}
+                FROM companies c
+                WHERE c.cd_cvm IN ({placeholders})
+            ),
+            selected_counts AS (
+                SELECT fr."CD_CVM" AS cd_cvm, COUNT(*) AS total_rows
+                FROM financial_reports fr
+                WHERE fr."CD_CVM" IN ({placeholders})
+                GROUP BY fr."CD_CVM"
+            )
+            SELECT
+                selected_companies.*,
+                COALESCE(selected_counts.total_rows, 0) AS total_rows
+            FROM selected_companies
+            LEFT JOIN selected_counts ON selected_counts.cd_cvm = selected_companies.cd_cvm
+            """
+        )
+        return _pd().read_sql(sql, self.engine, params=params).reset_index(drop=True)
+
+    @slow_query_warn(threshold_ms=200)
+    def get_companies_by_cvm_ids_light(self, cvm_ids: list[int]) -> _pd().DataFrame:
+        """Return company rows for specific CVM IDs without report row counts."""
+        if not cvm_ids:
+            return _pd().DataFrame()
+        unique_ids = [int(cd) for cd in cvm_ids]
+        placeholders = ", ".join(f":id_{i}" for i in range(len(unique_ids)))
+        params: dict[str, object] = {f"id_{i}": cd for i, cd in enumerate(unique_ids)}
+        gics_sql = self._persisted_gics_select_sql()
         sql = text(
             f"""
             SELECT
@@ -539,14 +666,19 @@ class CVMQueryLayer:
                 c.setor_analitico,
                 c.setor_cvm,
                 {_CANONICAL_SECTOR_SQL} AS sector_name,
-                COALESCE(COUNT(fr."CD_CVM"), 0) AS total_rows,
-                CASE WHEN COUNT(fr."CD_CVM") > 0 THEN 1 ELSE 0 END AS has_financial_data,
+                0 AS total_rows,
+                CASE
+                    WHEN EXISTS (
+                        SELECT 1
+                        FROM financial_reports fr_exists
+                        WHERE fr_exists."CD_CVM" = c.cd_cvm
+                        LIMIT 1
+                    ) THEN 1
+                    ELSE 0
+                END AS has_financial_data,
                 c.coverage_rank{gics_sql}
             FROM companies c
-            LEFT JOIN financial_reports fr ON fr."CD_CVM" = c.cd_cvm
             WHERE c.cd_cvm IN ({placeholders})
-            GROUP BY c.cd_cvm, c.company_name, c.ticker_b3,
-                     c.setor_analitico, c.setor_cvm, c.coverage_rank
             """
         )
         return _pd().read_sql(sql, self.engine, params=params).reset_index(drop=True)

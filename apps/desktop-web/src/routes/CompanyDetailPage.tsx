@@ -68,6 +68,7 @@ function CompanyReferenceWorkspace({
   const companyQuery = useQuery<CompanyInfoResult>({
     queryKey: ["company-info", cdCvm],
     queryFn: () => fetchCompanyInfo(cdCvm),
+    enabled: bridgeReady,
   });
 
   const yearsQuery = useQuery<CompanyYearsResultUI>({

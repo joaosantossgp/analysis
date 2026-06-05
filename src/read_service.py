@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import functools
+import json
 import time
 from collections import Counter, defaultdict
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from statistics import median
 from typing import Any, Callable
 
@@ -602,6 +604,8 @@ class CVMReadService:
     REFRESH_QUEUE_STALL_SECONDS = 12 * 60
     CATALOG_FALLBACK_MIN_LOCAL_COMPANIES = 100
     READ_CACHE_VERSION_CHECK_SECONDS = 30.0
+    BASE_HEALTH_CACHE_SCHEMA_VERSION = 1
+    SECTOR_DIRECTORY_CACHE_SCHEMA_VERSION = 1
 
     def __init__(self, settings: AppSettings | None = None):
         self.settings = settings or get_settings()
@@ -615,22 +619,34 @@ class CVMReadService:
         self._read_cache_data_version: int | None = None
         self._read_cache_checked_at = 0.0
         self._company_universe_cache: tuple[CompanySearchResult, ...] | None = None
+        self._company_universe_light_cache: tuple[CompanySearchResult, ...] | None = None
+        self._merged_company_catalog_cache: tuple[CompanySearchResult, ...] | None = None
+        self._merged_company_catalog_light_cache: tuple[CompanySearchResult, ...] | None = None
         self._company_page_cache: dict[tuple[str, str | None, int, int], CompanyDirectoryPage] = {}
+        self._market_cap_page_cache: dict[tuple[str, str | None, int, int], CompanyDirectoryPage] = {}
         self._local_company_catalog_is_sufficient_cache: bool | None = None
         self._company_filters_cache: CompanyFiltersDTO | None = None
         self._market_cap_index_cache: tuple[dict[int, Any], dict[str, Any], list[Any]] | None = None
         self._market_cap_index_mtime: float | None = None
-        self._sector_directory_cache: dict[str, SectorDirectoryDTO] = {}
+        self._sector_directory_cache: dict[tuple[str, bool], SectorDirectoryDTO] = {}
+        self._sector_metric_rows_cache: pd.DataFrame | None = None
         self._health_snapshot_cache: dict[tuple[int, int], HealthSnapshot] = {}
 
     def invalidate_read_caches(self) -> None:
         self._company_universe_cache = None
+        self._company_universe_light_cache = None
+        self._merged_company_catalog_cache = None
+        self._merged_company_catalog_light_cache = None
         self._company_page_cache.clear()
+        self._market_cap_page_cache.clear()
         self._local_company_catalog_is_sufficient_cache = None
         self._company_filters_cache = None
         self._market_cap_index_cache = None
         self._market_cap_index_mtime = None
         self._sector_directory_cache.clear()
+        self._sector_metric_rows_cache = None
+        self._clear_sector_directory_persistent_cache()
+        self._clear_base_health_persistent_cache()
         self._health_snapshot_cache.clear()
         self._read_cache_data_version = None
         self._read_cache_checked_at = 0.0
@@ -1080,17 +1096,33 @@ class CVMReadService:
         when the snapshot is unavailable or unreadable so the caller can
         transparently use the existing sort path.
         """
+        normalized_search = str(search or "").strip().lower()
+        normalized_sector_slug = str(sector_slug or "").strip().lower() or None
+        cache_key = (
+            normalized_search,
+            normalized_sector_slug,
+            int(page),
+            int(page_size),
+        )
+        cached = self._market_cap_page_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         idx = self._load_market_cap_index()
         if idx is None:
             return None
 
         by_cd_cvm, by_ticker, all_entries = idx
-        # Always use the full catalog merge so every known company is visible,
-        # regardless of how many have been downloaded (DB threshold bypassed).
-        all_items = self._merge_catalog_with_db()
-
-        normalized_search = str(search or "").strip().lower()
-        normalized_sector_slug = str(sector_slug or "").strip().lower() or None
+        use_local_universe = (
+            not normalized_search
+            and normalized_sector_slug is None
+            and self._has_sufficient_local_company_catalog()
+        )
+        all_items = (
+            self._list_company_universe_results_light()
+            if use_local_universe
+            else self._merge_catalog_with_db(include_years=False)
+        )
 
         # Filter DB companies
         filtered: list[CompanySearchResult] = []
@@ -1174,8 +1206,19 @@ class CVMReadService:
         start = max(0, (int(page) - 1) * int(page_size))
         end = start + int(page_size)
         total_pages = max(1, ((total_items - 1) // int(page_size)) + 1) if total_items else 1
-        return CompanyDirectoryPage(
-            items=tuple(enriched[start:end]),
+        page_items = enriched[start:end]
+        page_years_map = self.query_layer.get_company_years_map(
+            [int(item.cd_cvm) for item in page_items]
+        )
+        page_items = [
+            replace(
+                item,
+                anos_disponiveis=tuple(page_years_map.get(int(item.cd_cvm), ())),
+            )
+            for item in page_items
+        ]
+        result = CompanyDirectoryPage(
+            items=tuple(page_items),
             pagination=CompanyDirectoryPagination(
                 page=int(page),
                 page_size=int(page_size),
@@ -1190,6 +1233,8 @@ class CVMReadService:
             ),
             market_cap_sort_meta=meta,
         )
+        self._market_cap_page_cache[cache_key] = result
+        return result
 
     def list_companies(
         self,
@@ -1486,7 +1531,7 @@ class CVMReadService:
             return self._company_filters_cache
 
         sector_counts: dict[str, int] = defaultdict(int)
-        for item in self._list_company_universe_results():
+        for item in self._list_company_universe_results_light():
             if item.gics_sector and item.gics_sector in GICS_11_SECTORS:
                 sector_counts[item.gics_sector] += 1
 
@@ -1598,20 +1643,26 @@ class CVMReadService:
     def resolve_sector_slug(self, sector_slug: str | None) -> str | None:
         return self._resolve_sector_slug(sector_slug)
 
-    def list_sectors(self, group_by: str = "sector") -> SectorDirectoryDTO:
+    def list_sectors(self, group_by: str = "sector", *, include_snapshots: bool = True) -> SectorDirectoryDTO:
         self._ensure_read_cache_fresh()
         normalized_group_by = str(group_by or "sector").strip().lower()
         if normalized_group_by in {"subsector", "sub-sector", "sub_setor", "sub-setor"}:
             normalized_group_by = "sub_sector"
         if normalized_group_by not in {"sector", "sub_sector"}:
             normalized_group_by = "sector"
-        cached = self._sector_directory_cache.get(normalized_group_by)
+        cache_key = (normalized_group_by, bool(include_snapshots))
+        cached = self._sector_directory_cache.get(cache_key)
         if cached is not None:
             return cached
+        if include_snapshots:
+            persisted = self._load_sector_directory_persistent_cache(normalized_group_by)
+            if persisted is not None:
+                self._sector_directory_cache[cache_key] = persisted
+                return persisted
 
         # Full unpaged directory so hub counts match the entire `companies` universe (not capped at
         # BATCH_REFRESH_MAX_PAGE_SIZE used for refresh batching).
-        company_items = self._list_company_universe_results()
+        company_items = self._list_company_universe_results_light()
         companies_by_gics: dict[str, list[CompanySearchResult]] = defaultdict(list)
         companies_by_sub_sector: dict[str, list[CompanySearchResult]] = defaultdict(list)
         hub_counts: dict[str, int] = defaultdict(int)
@@ -1630,7 +1681,7 @@ class CVMReadService:
                 sub_industry_counts_by_gics[sector_hub][item.gics_sub_industry] += 1
                 companies_by_sub_sector[item.gics_sub_industry].append(item)
 
-        metric_rows = self.query_layer.get_sector_metric_rows()
+        metric_rows = self._get_sector_metric_rows() if include_snapshots else pd.DataFrame()
         if metric_rows is not None and not metric_rows.empty and company_items:
             gics_by_cd_cvm = {
                 int(item.cd_cvm): item.gics_sector
@@ -1735,7 +1786,9 @@ class CVMReadService:
 
         items.sort(key=lambda item: gics_sector_sort_key(item.sector_name))
         result = SectorDirectoryDTO(items=tuple(items))
-        self._sector_directory_cache[normalized_group_by] = result
+        self._sector_directory_cache[cache_key] = result
+        if include_snapshots:
+            self._write_sector_directory_persistent_cache(normalized_group_by, result)
         return result
 
     def _list_companies_by_gics_sector(
@@ -1787,19 +1840,21 @@ class CVMReadService:
         if resolved_sector_name in GICS_11_SECTORS:
             company_items = [
                 item
-                for item in self._list_company_universe_results()
+                for item in self._list_company_universe_results_light()
                 if item.gics_sector == resolved_sector_name
             ]
             if not company_items:
                 return None
             total_items = len(company_items)
+            company_codes = [int(item.cd_cvm) for item in company_items]
+            years_map = self.query_layer.get_company_years_map(company_codes)
             company_rows = pd.DataFrame(
                 [
                     {
                         "cd_cvm": int(item.cd_cvm),
                         "company_name": str(item.company_name),
                         "ticker_b3": item.ticker_b3,
-                        "anos_disponiveis": tuple(item.anos_disponiveis),
+                        "anos_disponiveis": years_map.get(int(item.cd_cvm), ()),
                         "gics_sub_industry": item.gics_sub_industry,
                     }
                     for item in company_items
@@ -1851,7 +1906,7 @@ class CVMReadService:
                 )
 
         if resolved_sector_name in GICS_11_SECTORS:
-            metric_rows = self.query_layer.get_sector_metric_rows()
+            metric_rows = self._get_sector_metric_rows(cd_cvms=company_rows["cd_cvm"].tolist())
             company_codes = {int(value) for value in company_rows["cd_cvm"].tolist()}
             if metric_rows is None or metric_rows.empty:
                 metric_rows = pd.DataFrame(
@@ -1861,7 +1916,7 @@ class CVMReadService:
                 metric_rows = metric_rows[metric_rows["cd_cvm"].map(lambda code: int(code) in company_codes)].copy()
                 metric_rows["sector_name"] = resolved_sector_name
         else:
-            metric_rows = self.query_layer.get_sector_metric_rows(sector_name=resolved_sector_name)
+            metric_rows = self._get_sector_metric_rows(sector_name=resolved_sector_name)
         yearly = self._aggregate_sector_yearly_metrics(metric_rows)
         yearly_overview = tuple(
             SectorYearOverviewDTO(
@@ -1937,7 +1992,7 @@ class CVMReadService:
         if not normalized_sub_slug:
             return None
 
-        universe = self._list_company_universe_results()
+        universe = self._list_company_universe_results_light()
         sub_industry_name: str | None = None
         matching: list[CompanySearchResult] = []
         for item in universe:
@@ -1953,13 +2008,15 @@ class CVMReadService:
         if not matching or sub_industry_name is None:
             return None
 
+        matching_codes = [int(item.cd_cvm) for item in matching]
+        years_map = self.query_layer.get_company_years_map(matching_codes)
         company_rows = pd.DataFrame(
             [
                 {
                     "cd_cvm": int(item.cd_cvm),
                     "company_name": str(item.company_name),
                     "ticker_b3": item.ticker_b3,
-                    "anos_disponiveis": tuple(item.anos_disponiveis),
+                    "anos_disponiveis": years_map.get(int(item.cd_cvm), ()),
                     "gics_sub_industry": item.gics_sub_industry,
                 }
                 for item in matching
@@ -2005,7 +2062,7 @@ class CVMReadService:
                     f"O parametro 'year' precisa ser um dos anos disponiveis do sub-setor: {', '.join(str(value) for value in available_years)}."
                 )
 
-        metric_rows = self.query_layer.get_sector_metric_rows()
+        metric_rows = self._get_sector_metric_rows(cd_cvms=company_rows["cd_cvm"].tolist())
         company_codes = {int(value) for value in company_rows["cd_cvm"].tolist()}
         if metric_rows is None or metric_rows.empty:
             metric_rows = pd.DataFrame(
@@ -2651,6 +2708,13 @@ class CVMReadService:
             cached = self._health_snapshot_cache.get((resolved_start_year, resolved_end_year))
             if cached is not None:
                 return cached
+            persisted = self._load_base_health_persistent_cache(
+                start_year=resolved_start_year,
+                end_year=resolved_end_year,
+            )
+            if persisted is not None:
+                self._health_snapshot_cache[(resolved_start_year, resolved_end_year)] = persisted
+                return persisted
 
         payload = self._build_db_health_snapshot(
             start_year=resolved_start_year,
@@ -2658,6 +2722,11 @@ class CVMReadService:
         )
         snapshot = HealthSnapshot.from_payload(payload)
         self._health_snapshot_cache[(resolved_start_year, resolved_end_year)] = snapshot
+        self._write_base_health_persistent_cache(
+            start_year=resolved_start_year,
+            end_year=resolved_end_year,
+            payload=payload,
+        )
         return snapshot
 
     def list_refresh_status(self, cd_cvm: int | None = None) -> list[RefreshStatusDTO]:
@@ -3634,14 +3703,17 @@ class CVMReadService:
         )
         return rows
 
-    def _load_local_company_universe_results(self) -> list[CompanySearchResult]:
-        rows_df, _ = self.query_layer.get_companies_directory_page(
-            search="",
-            sector_name=None,
-            page=1,
-            page_size=None,
-        )
-        if not rows_df.empty:
+    def _load_local_company_universe_results(self, *, include_years: bool = True) -> list[CompanySearchResult]:
+        if include_years:
+            rows_df, _ = self.query_layer.get_companies_directory_page(
+                search="",
+                sector_name=None,
+                page=1,
+                page_size=None,
+            )
+        else:
+            rows_df = self.query_layer.get_companies_directory_light()
+        if include_years and not rows_df.empty:
             years_map = self.query_layer.get_company_years_map(rows_df["cd_cvm"].tolist())
             rows_df = rows_df.copy()
             rows_df["anos_disponiveis"] = rows_df["cd_cvm"].map(
@@ -4698,7 +4770,7 @@ class CVMReadService:
         if df is None or df.empty:
             return results
 
-        for _, row in df.iterrows():
+        for row in df.to_dict(orient="records"):
             setor_analitico = self._clean_optional_text(row.get("setor_analitico"))
             setor_cvm = self._clean_optional_text(row.get("setor_cvm"))
             raw_sector_name = self._clean_optional_text(row.get("sector_name"))
@@ -4755,7 +4827,7 @@ class CVMReadService:
             )
         return results
 
-    def _merge_catalog_with_db(self) -> list[CompanySearchResult]:
+    def _merge_catalog_with_db(self, *, include_years: bool = True) -> list[CompanySearchResult]:
         """Full catalog × DB merge — always returns all active catalog companies.
 
         For each catalog entry the local DB row is used when present (has
@@ -4766,24 +4838,44 @@ class CVMReadService:
         CATALOG_FALLBACK_MIN_LOCAL_COMPANIES threshold, so it always exposes the
         full known universe regardless of how many companies have been downloaded.
         """
-        local_items = self._load_local_company_universe_results()
+        cached = (
+            self._merged_company_catalog_cache
+            if include_years
+            else self._merged_company_catalog_light_cache
+        )
+        if cached is not None:
+            return list(cached)
+
+        def _cache_and_return(items: list[CompanySearchResult]) -> list[CompanySearchResult]:
+            if include_years:
+                self._merged_company_catalog_cache = tuple(items)
+                return list(self._merged_company_catalog_cache)
+            self._merged_company_catalog_light_cache = tuple(items)
+            return list(self._merged_company_catalog_light_cache)
+
+        local_items = self._load_local_company_universe_results(include_years=include_years)
         try:
             catalog_entries = [entry for entry in self.company_catalog.list_entries() if entry.is_active]
         except CompanyCatalogUnavailableError:
-            return local_items
+            return _cache_and_return(local_items)
         if not catalog_entries:
-            return local_items
+            return _cache_and_return(local_items)
 
         page_codes = [int(entry.cd_cvm) for entry in catalog_entries]
         local_results_by_code: dict[int, CompanySearchResult] = {}
         if page_codes:
-            local_rows = self.query_layer.get_companies_by_cvm_ids(page_codes)
+            local_rows = (
+                self.query_layer.get_companies_by_cvm_ids(page_codes)
+                if include_years
+                else self.query_layer.get_companies_by_cvm_ids_light(page_codes)
+            )
             if not local_rows.empty:
                 local_rows = local_rows.copy()
-                years_map = self.query_layer.get_company_years_map(local_rows["cd_cvm"].tolist())
-                local_rows["anos_disponiveis"] = local_rows["cd_cvm"].map(
-                    lambda cd_cvm: years_map.get(int(cd_cvm), ())
-                )
+                if include_years:
+                    years_map = self.query_layer.get_company_years_map(local_rows["cd_cvm"].tolist())
+                    local_rows["anos_disponiveis"] = local_rows["cd_cvm"].map(
+                        lambda cd_cvm: years_map.get(int(cd_cvm), ())
+                    )
                 local_results_by_code = {
                     int(item.cd_cvm): item for item in self._build_company_results(local_rows)
                 }
@@ -4827,7 +4919,7 @@ class CVMReadService:
             if item.cd_cvm not in seen:
                 items.append(item)
 
-        return items
+        return _cache_and_return(items)
 
     def _list_company_universe_results(self) -> list[CompanySearchResult]:
         self._ensure_read_cache_fresh()
@@ -4843,6 +4935,22 @@ class CVMReadService:
             return _cache_and_return(local_items)
 
         merged = self._merge_catalog_with_db()
+        return _cache_and_return(merged)
+
+    def _list_company_universe_results_light(self) -> list[CompanySearchResult]:
+        self._ensure_read_cache_fresh()
+        if self._company_universe_light_cache is not None:
+            return list(self._company_universe_light_cache)
+
+        def _cache_and_return(items: list[CompanySearchResult]) -> list[CompanySearchResult]:
+            self._company_universe_light_cache = tuple(items)
+            return list(self._company_universe_light_cache)
+
+        local_items = self._load_local_company_universe_results(include_years=False)
+        if len(local_items) >= self.CATALOG_FALLBACK_MIN_LOCAL_COMPANIES:
+            return _cache_and_return(local_items)
+
+        merged = self._merge_catalog_with_db(include_years=False)
         return _cache_and_return(merged)
 
     def _sector_company_preview(
@@ -4891,6 +4999,285 @@ class CVMReadService:
         return None
 
     @staticmethod
+    def _file_cache_stat(path: Path) -> dict[str, Any]:
+        try:
+            stat = path.stat()
+        except FileNotFoundError:
+            return {"path": str(path), "exists": False}
+        except Exception:
+            return {"path": str(path), "exists": None}
+        return {
+            "path": str(path),
+            "exists": True,
+            "size": int(stat.st_size),
+            "mtime_ns": int(stat.st_mtime_ns),
+        }
+
+    @staticmethod
+    def _table_cache_fingerprint(
+        conn: Any,
+        table_name: str,
+        *,
+        max_columns: tuple[str, ...] = (),
+        include_count: bool = False,
+    ) -> dict[str, Any]:
+        exists = conn.exec_driver_sql(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            (table_name,),
+        ).fetchone()
+        if not exists:
+            return {"exists": False}
+
+        fingerprint: dict[str, Any] = {"exists": True}
+        safe_table = str(table_name).replace('"', '""')
+        if include_count:
+            fingerprint["row_count"] = conn.exec_driver_sql(
+                f'SELECT COUNT(*) FROM "{safe_table}"'
+            ).scalar()
+        fingerprint["max_rowid"] = conn.exec_driver_sql(
+            f'SELECT MAX(rowid) FROM "{safe_table}"'
+        ).scalar()
+        for column in max_columns:
+            safe_column = str(column).replace('"', '""')
+            fingerprint[str(column)] = conn.exec_driver_sql(
+                f'SELECT MAX("{safe_column}") FROM "{safe_table}"'
+            ).scalar()
+        return fingerprint
+
+    def _cvm_data_cache_signature(self) -> dict[str, Any]:
+        db_path = Path(self.settings.paths.db_path)
+        if not db_path.exists():
+            return {"database": str(db_path), "exists": False}
+        try:
+            with self.engine.connect() as conn:
+                return {
+                    "database": str(db_path.resolve()),
+                    "exists": True,
+                    "financial_reports": self._table_cache_fingerprint(
+                        conn,
+                        "financial_reports",
+                        max_columns=("REPORT_YEAR",),
+                    ),
+                    "companies": self._table_cache_fingerprint(
+                        conn,
+                        "companies",
+                        include_count=True,
+                    ),
+                    "company_refresh_status": self._table_cache_fingerprint(
+                        conn,
+                        "company_refresh_status",
+                        max_columns=("updated_at", "last_success_at", "last_attempt_at"),
+                        include_count=True,
+                    ),
+                }
+        except Exception:
+            return {"database": str(db_path), "exists": None}
+
+    @classmethod
+    def _sqlite_cache_signature(cls, db_path: Path) -> list[dict[str, Any]]:
+        return [
+            cls._file_cache_stat(db_path),
+            cls._file_cache_stat(Path(f"{db_path}-wal")),
+        ]
+
+    def _base_health_cache_path(self) -> Path:
+        return self.settings.paths.cache_dir / (
+            f"base_health_db_snapshot_v{self.BASE_HEALTH_CACHE_SCHEMA_VERSION}.json"
+        )
+
+    def _base_health_cache_signature(self, *, start_year: int, end_year: int) -> list[Any] | None:
+        if self.engine.dialect.name != "sqlite":
+            return None
+        db_path = Path(self.settings.paths.db_path)
+        return [
+            "base_health",
+            self.BASE_HEALTH_CACHE_SCHEMA_VERSION,
+            int(start_year),
+            int(end_year),
+            self._cvm_data_cache_signature(),
+            self._file_cache_stat(Path(self.settings.paths.active_universe_cache_path)),
+        ]
+
+    def _load_base_health_persistent_cache(
+        self,
+        *,
+        start_year: int,
+        end_year: int,
+    ) -> HealthSnapshot | None:
+        signature = self._base_health_cache_signature(
+            start_year=start_year,
+            end_year=end_year,
+        )
+        if signature is None:
+            return None
+
+        try:
+            raw_payload = json.loads(self._base_health_cache_path().read_text(encoding="utf-8"))
+        except Exception:
+            return None
+        if not isinstance(raw_payload, dict):
+            return None
+        if raw_payload.get("schema_version") != self.BASE_HEALTH_CACHE_SCHEMA_VERSION:
+            return None
+        if raw_payload.get("signature") != signature:
+            return None
+        payload = raw_payload.get("data")
+        if not isinstance(payload, dict):
+            return None
+        try:
+            return HealthSnapshot.from_payload(payload)
+        except Exception:
+            return None
+
+    def _write_base_health_persistent_cache(
+        self,
+        *,
+        start_year: int,
+        end_year: int,
+        payload: dict[str, Any],
+    ) -> None:
+        signature = self._base_health_cache_signature(
+            start_year=start_year,
+            end_year=end_year,
+        )
+        if signature is None:
+            return
+        cache_path = self._base_health_cache_path()
+        raw_payload = {
+            "schema_version": self.BASE_HEALTH_CACHE_SCHEMA_VERSION,
+            "signature": signature,
+            "data": payload,
+        }
+        try:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp_path = cache_path.with_suffix(f"{cache_path.suffix}.tmp")
+            tmp_path.write_text(json.dumps(raw_payload, ensure_ascii=False), encoding="utf-8")
+            tmp_path.replace(cache_path)
+        except Exception:
+            return
+
+    def _clear_base_health_persistent_cache(self) -> None:
+        try:
+            cache_path = self._base_health_cache_path()
+            cache_path.unlink(missing_ok=True)
+        except Exception:
+            return
+
+    def _sector_directory_cache_path(self, group_by: str) -> Path:
+        safe_group = "sub_sector" if group_by == "sub_sector" else "sector"
+        return self.settings.paths.cache_dir / f"sector_directory_{safe_group}_v1.json"
+
+    def _sector_directory_cache_signature(self) -> dict[str, Any] | None:
+        if self.engine.dialect.name != "sqlite":
+            return None
+        db_path = Path(self.settings.paths.db_path)
+        if not db_path.exists():
+            return None
+        return {
+            "database": str(db_path.resolve()),
+            "tables": self._cvm_data_cache_signature(),
+        }
+
+    def _load_sector_directory_persistent_cache(self, group_by: str) -> SectorDirectoryDTO | None:
+        signature = self._sector_directory_cache_signature()
+        if signature is None:
+            return None
+
+        cache_path = self._sector_directory_cache_path(group_by)
+        try:
+            raw_payload = json.loads(cache_path.read_text(encoding="utf-8"))
+            if raw_payload.get("schema_version") != self.SECTOR_DIRECTORY_CACHE_SCHEMA_VERSION:
+                return None
+            if raw_payload.get("group_by") != group_by:
+                return None
+            if raw_payload.get("signature") != signature:
+                return None
+            return self._sector_directory_from_payload(raw_payload.get("data") or {})
+        except Exception:
+            return None
+
+    def _write_sector_directory_persistent_cache(
+        self,
+        group_by: str,
+        result: SectorDirectoryDTO,
+    ) -> None:
+        signature = self._sector_directory_cache_signature()
+        if signature is None:
+            return
+
+        cache_path = self._sector_directory_cache_path(group_by)
+        payload = {
+            "schema_version": self.SECTOR_DIRECTORY_CACHE_SCHEMA_VERSION,
+            "group_by": group_by,
+            "signature": signature,
+            "data": result.to_dict(),
+        }
+        try:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp_path = cache_path.with_suffix(f"{cache_path.suffix}.tmp")
+            tmp_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+            tmp_path.replace(cache_path)
+        except Exception:
+            return
+
+    def _clear_sector_directory_persistent_cache(self) -> None:
+        try:
+            cache_dir = self.settings.paths.cache_dir
+            for cache_path in cache_dir.glob("sector_directory_*_v1.json"):
+                cache_path.unlink(missing_ok=True)
+        except Exception:
+            return
+
+    def _sector_directory_from_payload(self, payload: dict[str, Any]) -> SectorDirectoryDTO:
+        items: list[SectorDirectoryItemDTO] = []
+        for raw_item in payload.get("items") or []:
+            raw_snapshot = raw_item.get("snapshot") or {}
+            raw_breakdown = raw_item.get("sub_industry_breakdown") or ()
+            raw_companies = raw_item.get("companies") or ()
+
+            items.append(
+                SectorDirectoryItemDTO(
+                    sector_name=str(raw_item["sector_name"]),
+                    sector_slug=str(raw_item["sector_slug"]),
+                    company_count=int(raw_item["company_count"]),
+                    latest_year=(
+                        int(raw_item["latest_year"])
+                        if raw_item.get("latest_year") is not None
+                        else None
+                    ),
+                    snapshot=SectorSnapshotDTO(
+                        roe=self._coerce_optional_float(raw_snapshot.get("roe")),
+                        mg_ebit=self._coerce_optional_float(raw_snapshot.get("mg_ebit")),
+                        mg_liq=self._coerce_optional_float(raw_snapshot.get("mg_liq")),
+                    ),
+                    sub_industries=tuple(str(value) for value in raw_item.get("sub_industries") or ()),
+                    sub_industry_breakdown=tuple(
+                        SubIndustryCountDTO(
+                            name=str(row["name"]),
+                            count=int(row["count"]),
+                        )
+                        for row in raw_breakdown
+                    ),
+                    group_type=str(raw_item.get("group_type") or "sector"),
+                    parent_sector_name=self._clean_optional_text(raw_item.get("parent_sector_name")),
+                    parent_sector_slug=self._clean_optional_text(raw_item.get("parent_sector_slug")),
+                    companies=tuple(
+                        SectorCompanyMetricDTO(
+                            cd_cvm=int(row["cd_cvm"]),
+                            company_name=str(row["company_name"]),
+                            ticker_b3=self._clean_optional_text(row.get("ticker_b3")),
+                            gics_sub_industry=self._clean_optional_text(row.get("gics_sub_industry")),
+                            roe=self._coerce_optional_float(row.get("roe")),
+                            mg_ebit=self._coerce_optional_float(row.get("mg_ebit")),
+                            mg_liq=self._coerce_optional_float(row.get("mg_liq")),
+                        )
+                        for row in raw_companies
+                    ),
+                )
+            )
+        return SectorDirectoryDTO(items=tuple(items))
+
+    @staticmethod
     def _extract_years_from_company_rows(df: pd.DataFrame) -> list[int]:
         years: set[int] = set()
         if df is None or df.empty:
@@ -4898,6 +5285,23 @@ class CVMReadService:
         for raw_years in df.get("anos_disponiveis", []):
             years.update(_parse_years(raw_years))
         return sorted(years)
+
+    def _get_sector_metric_rows(
+        self,
+        *,
+        sector_name: str | None = None,
+        years: list[int] | None = None,
+        cd_cvms: list[int] | None = None,
+    ) -> pd.DataFrame:
+        if sector_name is None and not years and cd_cvms is None:
+            if self._sector_metric_rows_cache is None:
+                self._sector_metric_rows_cache = self.query_layer.get_sector_metric_rows()
+            return self._sector_metric_rows_cache
+        return self.query_layer.get_sector_metric_rows(
+            sector_name=sector_name,
+            years=years,
+            cd_cvms=cd_cvms,
+        )
 
     @staticmethod
     def _aggregate_sector_yearly_metrics(metric_rows: pd.DataFrame) -> pd.DataFrame:

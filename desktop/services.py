@@ -818,18 +818,10 @@ class IntelligentSelectorService:
             raise ValueError("start_year must be <= end_year")
 
         now = datetime.now()
-        years = list(range(start, end + 1))
-        processed_signature = self._processed_files_signature(start, end)
         last_success_marker = self._latest_refresh_success_marker()
-
         cached = self._read_cached_json(self.base_health_cache_path)
         previous_snapshot = cached if isinstance(cached, dict) else None
         if isinstance(cached, dict) and not force_refresh:
-            generated_at = self._parse_fetched_at(str(cached.get("generated_at") or ""))
-            is_fresh = (
-                generated_at is not None
-                and generated_at >= now - timedelta(seconds=self.BASE_HEALTH_CACHE_TTL_SECONDS)
-            )
             try:
                 cached_start = int(cached.get("start_year", -1))
                 cached_end = int(cached.get("end_year", -1))
@@ -837,13 +829,14 @@ class IntelligentSelectorService:
                 cached_start = -1
                 cached_end = -1
             if (
-                is_fresh
-                and cached_start == start
+                cached_start == start
                 and cached_end == end
-                and cached.get("processed_signature") == processed_signature
                 and str(cached.get("last_success_marker") or "") == last_success_marker
             ):
                 return cached
+
+        years = list(range(start, end + 1))
+        processed_signature = self._processed_files_signature(start, end)
 
         active_universe = self._load_active_universe()
         statement_presence = self._load_statement_presence(start, end)
@@ -1331,9 +1324,7 @@ class DesktopRefreshJobManager:
     ) -> None:
         self.settings = settings or build_settings()
         self.read_service = read_service
-        self.refresh_service = refresh_service or HeadlessRefreshService(
-            settings=self.settings,
-        )
+        self._refresh_service = refresh_service
         self.jobs_path = jobs_path or (self.settings.paths.data_dir / "refresh_jobs.json")
         self.autostart = bool(autostart)
         self._lock = threading.RLock()
@@ -1341,6 +1332,12 @@ class DesktopRefreshJobManager:
         self._cancel_events: dict[str, threading.Event] = {}
         self._jobs = self._load_jobs()
         self._mark_unfinished_jobs_interrupted()
+
+    @property
+    def refresh_service(self) -> HeadlessRefreshService:
+        if self._refresh_service is None:
+            self._refresh_service = HeadlessRefreshService(settings=self.settings)
+        return self._refresh_service
 
     def request_refresh(self, params: dict[str, Any] | None = None) -> dict[str, Any]:
         p = dict(params or {})
@@ -1437,6 +1434,7 @@ class DesktopRefreshJobManager:
         p = dict(params or {})
         job_id = p.get("job_id")
         cd_cvm = p.get("cd_cvm")
+        include_result = str(p.get("include_result") or "").strip().lower() in {"1", "true", "yes"}
         with self._lock:
             if cd_cvm not in (None, "") and not job_id:
                 try:
@@ -1451,7 +1449,7 @@ class DesktopRefreshJobManager:
             if job_id:
                 job = self._jobs.get(str(job_id))
                 if job is not None:
-                    return self._public_job(job)
+                    return self._public_job(job, include_result=True)
                 db_job = self._lookup_db_worker_job(str(job_id))
                 if db_job is not None:
                     return db_job
@@ -1464,7 +1462,7 @@ class DesktopRefreshJobManager:
                     "log_lines": [],
                 }
 
-            jobs = [self._public_job(job) for job in self._jobs.values()]
+            jobs = [self._public_job(job, include_result=include_result) for job in self._jobs.values()]
         # Single-company refresh jobs live in the refresh_jobs table (drained
         # by RefreshJobWorker), not in DesktopRefreshJobManager's JSON store.
         # Surface them alongside batch jobs so UpdateBasePage / onboarding see
@@ -1824,17 +1822,25 @@ class DesktopRefreshJobManager:
         except Exception:
             return {}
         if isinstance(payload, dict) and isinstance(payload.get("jobs"), list):
-            return {
-                str(job.get("job_id")): dict(job)
-                for job in payload["jobs"]
-                if isinstance(job, dict) and job.get("job_id")
-            }
+            jobs: dict[str, dict[str, Any]] = {}
+            changed = False
+            for job in payload["jobs"]:
+                if not isinstance(job, dict) or not job.get("job_id"):
+                    continue
+                normalized = self._persistable_job(job)
+                if normalized != job:
+                    changed = True
+                jobs[str(normalized.get("job_id"))] = normalized
+            if changed:
+                self._jobs = jobs
+                self._save_jobs()
+            return jobs
         return {}
 
     def _save_jobs(self) -> None:
         self.jobs_path.parent.mkdir(parents=True, exist_ok=True)
         jobs = sorted(
-            self._jobs.values(),
+            (self._persistable_job(job) for job in self._jobs.values()),
             key=lambda row: str(row.get("created_at") or ""),
             reverse=True,
         )
@@ -1842,6 +1848,12 @@ class DesktopRefreshJobManager:
             json.dumps({"jobs": jobs}, ensure_ascii=True, indent=2, default=str),
             encoding="utf-8",
         )
+
+    def _persistable_job(self, job: dict[str, Any]) -> dict[str, Any]:
+        payload = dict(job)
+        payload["result"] = None
+        payload["log_lines"] = list(payload.get("log_lines") or [])[-self.MAX_LOG_LINES :]
+        return payload
 
     def _mark_unfinished_jobs_interrupted(self) -> None:
         changed = False
@@ -1857,8 +1869,8 @@ class DesktopRefreshJobManager:
             self._save_jobs()
 
     @staticmethod
-    def _public_job(job: dict[str, Any]) -> dict[str, Any]:
-        return {
+    def _public_job(job: dict[str, Any], *, include_result: bool = False) -> dict[str, Any]:
+        payload = {
             "job_id": job.get("job_id"),
             "state": job.get("state"),
             "status": job.get("state"),
@@ -1874,8 +1886,11 @@ class DesktopRefreshJobManager:
             "finished_at": job.get("finished_at"),
             "updated_at": job.get("updated_at"),
             "error": job.get("error"),
-            "result": job.get("result"),
+            "result": None,
         }
+        if include_result:
+            payload["result"] = job.get("result")
+        return payload
 
     @staticmethod
     def _now_iso() -> str:

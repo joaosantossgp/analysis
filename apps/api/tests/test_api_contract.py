@@ -646,13 +646,28 @@ def test_request_refresh_returns_404_for_unknown_company(client: TestClient):
 
 def test_request_refresh_returns_already_current_without_creating_job(
     client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     from sqlalchemy import text as sa_text
+    import src.read_service as read_service_module
+    import src.refresh_service as refresh_service_module
+
+    test_end_year = 2025
+    monkeypatch.setattr(
+        read_service_module,
+        "current_reporting_year_cap",
+        lambda: test_end_year,
+    )
+    monkeypatch.setattr(
+        refresh_service_module,
+        "current_reporting_year_cap",
+        lambda: test_end_year + 1,
+    )
 
     engine = client.app.state.read_service.engine
     with engine.begin() as conn:
         annual_rows = []
-        for report_year in range(2010, 2026):
+        for report_year in range(2010, test_end_year + 1):
             for statement_type in ("BPA", "BPP", "DRE", "DFC"):
                 annual_rows.append(
                     {
@@ -1000,11 +1015,19 @@ def test_company_excel_export_returns_404_for_unknown_company(client: TestClient
     assert response.json()["error"]["code"] == "not_found"
 
 
-def test_company_excel_export_returns_422_when_company_has_no_exportable_years(client: TestClient):
+def test_company_excel_export_supports_itr_only_company(client: TestClient):
     response = client.get("/companies/77889/export/excel")
 
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "invalid_request"
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+    workbook = openpyxl.load_workbook(io.BytesIO(response.content))
+    assert workbook.sheetnames[:2] == ["Model", "README"]
+    dre = workbook["raw_DRE"]
+    headers = {str(cell.value) for cell in dre[1] if cell.value is not None}
+    assert "2Q25" in headers
 
 
 def test_company_statement_returns_matrix(client: TestClient):

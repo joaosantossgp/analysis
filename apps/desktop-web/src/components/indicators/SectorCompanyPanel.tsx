@@ -22,7 +22,7 @@ export function SectorCompanyPanel({ bridgeReady }: { bridgeReady: boolean }) {
 
   const sectorsQuery = useQuery({
     queryKey: ["micro-indicators-sectors"],
-    queryFn: () => fetchSectors("sector"),
+    queryFn: () => fetchSectors("sector", { includeSnapshots: false }),
     enabled: bridgeReady,
     staleTime: 60_000,
   });
@@ -34,6 +34,15 @@ export function SectorCompanyPanel({ bridgeReady }: { bridgeReady: boolean }) {
   });
 
   const sectors = sectorsQuery.data?.mode === "desktop" ? sectorsQuery.data.items : [];
+  const sectorSnapshotsQuery = useQuery({
+    queryKey: ["micro-indicators-sector-snapshots"],
+    queryFn: () => fetchSectors("sector", { includeSnapshots: true }),
+    enabled: bridgeReady && microViewMode === "overview" && sectors.length > 0,
+    staleTime: 60_000,
+  });
+  const snapshotSectors = sectorSnapshotsQuery.data?.mode === "desktop"
+    ? sectorSnapshotsQuery.data.items
+    : sectors;
 
   // Default selection to first 3 sectors
   useEffect(() => {
@@ -78,7 +87,7 @@ export function SectorCompanyPanel({ bridgeReady }: { bridgeReady: boolean }) {
   const totalCompanies = page?.pagination.total_items ?? companies.length;
   const latestYear = Math.max(
     0,
-    ...sectors.map((sector) => sector.latest_year ?? 0),
+    ...snapshotSectors.map((sector) => sector.latest_year ?? 0),
     ...companies.flatMap((company) => company.anos_disponiveis ?? []),
   );
 
@@ -181,8 +190,15 @@ export function SectorCompanyPanel({ bridgeReady }: { bridgeReady: boolean }) {
           <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
             <section className="min-w-0 rounded border border-zinc-800 bg-zinc-950/35">
               <div className="border-b border-zinc-800 px-4 py-3">
-                <h3 className="text-sm font-medium text-zinc-100">Sector KPI Snapshot</h3>
-                <p className="text-[11px] text-zinc-500">Microeconomic indicators grouped by sector from the local CVM database.</p>
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-medium text-zinc-100">Sector KPI Snapshot</h3>
+                    <p className="text-[11px] text-zinc-500">Microeconomic indicators grouped by sector from the local CVM database.</p>
+                  </div>
+                  {sectorSnapshotsQuery.isFetching ? (
+                    <span className="shrink-0 text-[11px] text-amber-300">Loading metrics...</span>
+                  ) : null}
+                </div>
               </div>
               <div className="max-w-full overflow-x-auto">
                 <table className="min-w-[620px] w-full border-collapse text-sm">
@@ -197,7 +213,7 @@ export function SectorCompanyPanel({ bridgeReady }: { bridgeReady: boolean }) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-800/80">
-                    {sectors.map((sector) => (
+                    {snapshotSectors.map((sector) => (
                       <tr key={sector.sector_slug} className="hover:bg-zinc-900/50">
                         <td className="px-3 py-2">
                           <Link

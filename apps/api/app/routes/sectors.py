@@ -35,11 +35,14 @@ def list_sectors(
     response: Response,
     request: Request,
     group_by: str = "sector",
+    include_snapshots: bool = True,
     service: CVMReadService = Depends(get_read_service),
 ) -> SectorDirectoryPayload:
     ensure_api_ready(get_settings(request))
     apply_cache_headers(response, SECTOR_DIRECTORY_CACHE_CONTROL)
-    return present_sector_directory(service.list_sectors(group_by=group_by))
+    return present_sector_directory(
+        service.list_sectors(group_by=group_by, include_snapshots=include_snapshots)
+    )
 
 
 @router.get(

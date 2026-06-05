@@ -360,13 +360,13 @@ export async function cancelRefresh(jobId: string): Promise<CancelRefreshRespons
   return response;
 }
 
-export async function fetchDatabaseDiagnostics(): Promise<DatabaseDiagnosticsResult> {
+export async function fetchDatabaseDiagnostics(params?: { summaryOnly?: boolean }): Promise<DatabaseDiagnosticsResult> {
   if (getBridgeMode() === "browser") {
     return { mode: "browser", diagnostics: null, reason: BROWSER_REASON };
   }
   const diagnostics = (await callBridge(
     "get_database_diagnostics",
-    {},
+    { summary_only: params?.summaryOnly ?? false },
   )) as DatabaseDiagnostics;
   return { mode: "desktop", diagnostics };
 }
