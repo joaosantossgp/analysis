@@ -86,6 +86,27 @@ def test_hot_read_paths_have_cache_controls() -> None:
     assert hasattr(CVMQueryLayer.get_sector_years_map, "cache_info")
 
 
+def test_desktop_bridge_retries_transient_sqlite_energy_locks(monkeypatch) -> None:
+    bridge = CVMBridge()
+    bridge._energy_read_service = object()
+    calls = 0
+    sleeps: list[float] = []
+
+    monkeypatch.setattr("desktop.bridge.time.sleep", sleeps.append)
+
+    def read_once() -> dict[str, bool]:
+        nonlocal calls
+        calls += 1
+        if calls < 3:
+            raise RuntimeError("database is locked")
+        return {"ok": True}
+
+    assert bridge._retry_energy_read(read_once) == {"ok": True}
+    assert calls == 3
+    assert sleeps == [0.2, 0.4]
+    assert bridge._energy_read_service is None
+
+
 def test_scraper_reuses_thread_local_http_session() -> None:
     scraper = object.__new__(CVMScraper)
     scraper._http_state = threading.local()

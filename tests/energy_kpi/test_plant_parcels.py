@@ -350,7 +350,7 @@ def test_source_status_is_read_only_during_sqlite_write_lock(tmp_path: Path, mon
         assert int(conn.execute(text("SELECT COUNT(*) FROM energy_sources")).scalar() or 0) == 0
 
 
-def test_energy_kpi_engine_first_access_tolerates_locked_wal_setup(tmp_path: Path):
+def test_energy_kpi_engine_first_access_tolerates_locked_pragma_setup(tmp_path: Path):
     settings = build_settings(project_root=tmp_path)
     db_path = settings.paths.energy_kpi_db_path
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -362,16 +362,23 @@ def test_energy_kpi_engine_first_access_tolerates_locked_wal_setup(tmp_path: Pat
         conn.execute("PRAGMA journal_mode = DELETE")
 
     _build_energy_kpi_engine.cache_clear()
-    writer = sqlite3.connect(str(db_path), timeout=0.1)
-    writer.execute("BEGIN IMMEDIATE")
+    writer = sqlite3.connect(str(db_path), timeout=0.1, check_same_thread=False)
+    writer.execute("BEGIN EXCLUSIVE")
+
+    def release_lock() -> None:
+        time.sleep(0.4)
+        writer.rollback()
+        writer.close()
+
+    releaser = threading.Thread(target=release_lock)
+    releaser.start()
     engine = None
     try:
         engine = get_energy_kpi_engine(settings)
         with engine.connect() as conn:
             assert int(conn.execute(text("SELECT COUNT(*) FROM kpi_catalog")).scalar() or 0) == 0
     finally:
-        writer.rollback()
-        writer.close()
+        releaser.join(timeout=2)
         if engine is not None:
             engine.dispose()
         _build_energy_kpi_engine.cache_clear()

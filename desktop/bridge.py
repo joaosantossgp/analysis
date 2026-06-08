@@ -3333,6 +3333,27 @@ class CVMBridge:
     def _plant_parcel_refresh_status(self) -> dict:
         return getattr(self, "_plant_parcel_refresh_state", {"status": "idle", "error": None})
 
+    @staticmethod
+    def _is_sqlite_locked_error(exc: Exception) -> bool:
+        return "database is locked" in str(exc).lower()
+
+    def _retry_energy_read(self, fn, *, attempts: int = 4):
+        last_exc: Exception | None = None
+        for attempt in range(max(1, attempts)):
+            try:
+                return fn()
+            except Exception as exc:
+                if not self._is_sqlite_locked_error(exc):
+                    raise
+                last_exc = exc
+                self._energy_read_service = None
+                if attempt >= attempts - 1:
+                    break
+                time.sleep(0.2 * (attempt + 1))
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError("energy KPI read failed")
+
     def get_kpi_catalog(self, params=None) -> dict:
         params = params or {}
         try:
@@ -3360,13 +3381,15 @@ class CVMBridge:
                     self._kpi_catalog_cache = (cache_signature, cached_payload)
                 return self._sanitize_for_json(cached_payload)
 
-            entries = self._energy_svc().get_kpi_catalog(
-                sector=params.get("sector"),
-                v1_status=params.get("v1_status"),
-                dashboard_priority=params.get("dashboard_priority"),
-                excel_export_priority=params.get("excel_export_priority"),
-                macro_category=params.get("macro_category"),
-                source_verification_status=params.get("source_verification_status"),
+            entries = self._retry_energy_read(
+                lambda: self._energy_svc().get_kpi_catalog(
+                    sector=params.get("sector"),
+                    v1_status=params.get("v1_status"),
+                    dashboard_priority=params.get("dashboard_priority"),
+                    excel_export_priority=params.get("excel_export_priority"),
+                    macro_category=params.get("macro_category"),
+                    source_verification_status=params.get("source_verification_status"),
+                )
             )
             payload = self._sanitize_for_json({
                 "entries": [e.to_dict() for e in entries],
@@ -3411,10 +3434,12 @@ class CVMBridge:
                     self._country_kpi_series_cache = (cache_signature, cached_payload)
                 return self._sanitize_for_json(cached_payload)
 
-            values = self._energy_svc().get_country_kpi_series(
-                kpi_ids=params.get("kpi_ids"),
-                iso_codes=params.get("iso_codes"),
-                years=params.get("years"),
+            values = self._retry_energy_read(
+                lambda: self._energy_svc().get_country_kpi_series(
+                    kpi_ids=params.get("kpi_ids"),
+                    iso_codes=params.get("iso_codes"),
+                    years=params.get("years"),
+                )
             )
             payload = self._sanitize_for_json({
                 "values": [v.to_dict() for v in values],
@@ -3437,7 +3462,9 @@ class CVMBridge:
         try:
             kpi_id = params.get("kpi_id", "")
             year = int(params.get("year", 0))
-            values = self._energy_svc().get_country_kpi_compare(kpi_id=kpi_id, year=year)
+            values = self._retry_energy_read(
+                lambda: self._energy_svc().get_country_kpi_compare(kpi_id=kpi_id, year=year)
+            )
             return self._sanitize_for_json({
                 "kpi_id": kpi_id,
                 "year": year,
@@ -3448,7 +3475,7 @@ class CVMBridge:
 
     def get_energy_kpi_health(self, params=None) -> dict:
         try:
-            health = self._energy_svc().get_energy_kpi_health()
+            health = self._retry_energy_read(lambda: self._energy_svc().get_energy_kpi_health())
             result = self._sanitize_for_json(health.to_dict())
             result["refresh_running"] = self._energy_refresh_status().get("status") == "running"
             result["refresh_error"] = self._energy_refresh_status().get("error")
@@ -3532,7 +3559,7 @@ class CVMBridge:
                 result["refresh_error"] = self._sin_refresh_status().get("error")
                 return result
 
-            dashboard = self._energy_svc().get_sin_kpi_dashboard()
+            dashboard = self._retry_energy_read(lambda: self._energy_svc().get_sin_kpi_dashboard())
             payload = self._sanitize_for_json(dashboard.to_dict())
             with self._read_payload_cache_lock:
                 self._sin_dashboard_cache = (cache_signature, payload)
@@ -3558,12 +3585,14 @@ class CVMBridge:
     def get_sin_kpi_series(self, params=None) -> dict:
         params = params or {}
         try:
-            values = self._energy_svc().get_sin_kpi_series(
-                kpi_ids=params.get("kpi_ids"),
-                subsystem_codes=params.get("subsystem_codes"),
-                start_datetime=params.get("start_datetime"),
-                end_datetime=params.get("end_datetime"),
-                limit=params.get("limit"),
+            values = self._retry_energy_read(
+                lambda: self._energy_svc().get_sin_kpi_series(
+                    kpi_ids=params.get("kpi_ids"),
+                    subsystem_codes=params.get("subsystem_codes"),
+                    start_datetime=params.get("start_datetime"),
+                    end_datetime=params.get("end_datetime"),
+                    limit=params.get("limit"),
+                )
             )
             return self._sanitize_for_json({
                 "values": [v.to_dict() for v in values],
@@ -3574,7 +3603,7 @@ class CVMBridge:
 
     def get_sin_kpi_health(self, params=None) -> dict:
         try:
-            health = self._energy_svc().get_sin_kpi_health()
+            health = self._retry_energy_read(lambda: self._energy_svc().get_sin_kpi_health())
             result = self._sanitize_for_json(health.to_dict())
             result["refresh_running"] = self._sin_refresh_status().get("status") == "running"
             result["refresh_error"] = self._sin_refresh_status().get("error")
@@ -3624,7 +3653,9 @@ class CVMBridge:
             source_ids = params.get("source_ids")
             if source_ids is not None and not isinstance(source_ids, list):
                 source_ids = [source_ids]
-            result = self._energy_svc().get_plant_parcel_source_statuses(source_ids=source_ids)
+            result = self._retry_energy_read(
+                lambda: self._energy_svc().get_plant_parcel_source_statuses(source_ids=source_ids)
+            )
             result = self._sanitize_for_json(result)
             refresh_state = self._plant_parcel_refresh_status()
             result["refresh_running"] = refresh_state.get("status") == "running"
@@ -3658,14 +3689,16 @@ class CVMBridge:
         params = params or {}
         try:
             return self._sanitize_for_json(
-                self._energy_svc().get_plant_parcel_catalog(
-                    search=params.get("search"),
-                    entity_type=params.get("entity_type"),
-                    generation_source=params.get("generation_source"),
-                    submarket=params.get("submarket"),
-                    uf=params.get("uf"),
-                    limit=int(params.get("limit", 100) or 100),
-                    offset=int(params.get("offset", 0) or 0),
+                self._retry_energy_read(
+                    lambda: self._energy_svc().get_plant_parcel_catalog(
+                        search=params.get("search"),
+                        entity_type=params.get("entity_type"),
+                        generation_source=params.get("generation_source"),
+                        submarket=params.get("submarket"),
+                        uf=params.get("uf"),
+                        limit=int(params.get("limit", 100) or 100),
+                        offset=int(params.get("offset", 0) or 0),
+                    )
                 )
             )
         except Exception as exc:
@@ -3675,9 +3708,11 @@ class CVMBridge:
         params = params or {}
         try:
             return self._sanitize_for_json(
-                self._energy_svc().get_plant_parcel_detail(
-                    entity_id=str(params.get("entity_id") or ""),
-                    entity_type=params.get("entity_type"),
+                self._retry_energy_read(
+                    lambda: self._energy_svc().get_plant_parcel_detail(
+                        entity_id=str(params.get("entity_id") or ""),
+                        entity_type=params.get("entity_type"),
+                    )
                 )
             )
         except Exception as exc:
@@ -3687,11 +3722,13 @@ class CVMBridge:
         params = params or {}
         try:
             return self._sanitize_for_json(
-                self._energy_svc().get_plant_parcel_chart_data(
-                    entity_id=str(params.get("entity_id") or ""),
-                    entity_type=params.get("entity_type"),
-                    frequency=str(params.get("frequency") or "monthly"),
-                    year_month=params.get("year_month"),
+                self._retry_energy_read(
+                    lambda: self._energy_svc().get_plant_parcel_chart_data(
+                        entity_id=str(params.get("entity_id") or ""),
+                        entity_type=params.get("entity_type"),
+                        frequency=str(params.get("frequency") or "monthly"),
+                        year_month=params.get("year_month"),
+                    )
                 )
             )
         except Exception as exc:

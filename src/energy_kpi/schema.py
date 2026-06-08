@@ -17,6 +17,7 @@ Usage:
 from __future__ import annotations
 
 import logging
+import threading
 from functools import lru_cache
 
 from sqlalchemy import create_engine, text, Engine
@@ -24,6 +25,7 @@ from sqlalchemy import create_engine, text, Engine
 from src.settings import AppSettings
 
 logger = logging.getLogger(__name__)
+_ENGINE_BUILD_LOCK = threading.RLock()
 
 
 def _is_sqlite_locked_error(exc: Exception) -> bool:
@@ -40,8 +42,13 @@ def _configure_energy_kpi_connection(conn, *, enable_wal: bool) -> None:
             if not _is_sqlite_locked_error(exc):
                 raise
             logger.debug("energy KPI WAL setup skipped because database is locked")
+    try:
+        conn.execute(text("PRAGMA synchronous = OFF"))
+    except Exception as exc:
+        if not _is_sqlite_locked_error(exc):
+            raise
+        logger.debug("energy KPI synchronous setup skipped because database is locked")
     conn.execute(text("PRAGMA busy_timeout = 5000"))
-    conn.execute(text("PRAGMA synchronous = OFF"))
 
 
 def _ensure_columns(conn, table_name: str, columns: dict[str, str]) -> None:
@@ -516,4 +523,5 @@ def get_energy_kpi_engine(settings: AppSettings) -> Engine:
     cvm_financials.db to allow independent refresh and zero migration risk.
     """
     settings.paths.energy_kpi_db_path.parent.mkdir(parents=True, exist_ok=True)
-    return _build_energy_kpi_engine(settings.paths.energy_kpi_sqlite_url)
+    with _ENGINE_BUILD_LOCK:
+        return _build_energy_kpi_engine(settings.paths.energy_kpi_sqlite_url)
