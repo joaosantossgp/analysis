@@ -33,7 +33,11 @@ from src.energy_kpi.plant_parcel_ingest import (
 )
 from src.energy_kpi.plant_parcel_refresh import PlantParcelRefreshJob
 from src.energy_kpi.read import EnergyKPIReadService
-from src.energy_kpi.schema import ensure_energy_kpi_tables_for_connection, get_energy_kpi_engine
+from src.energy_kpi.schema import (
+    _build_energy_kpi_engine,
+    ensure_energy_kpi_tables_for_connection,
+    get_energy_kpi_engine,
+)
 from src.settings import build_settings
 
 
@@ -344,6 +348,51 @@ def test_source_status_is_read_only_during_sqlite_write_lock(tmp_path: Path, mon
     assert by_source[SOURCE_CCEE_MONTHLY]["source_name"] == "CCEE Plant Parcel Monthly"
     with engine.connect() as conn:
         assert int(conn.execute(text("SELECT COUNT(*) FROM energy_sources")).scalar() or 0) == 0
+
+
+def test_energy_kpi_engine_first_access_tolerates_locked_wal_setup(tmp_path: Path):
+    settings = build_settings(project_root=tmp_path)
+    db_path = settings.paths.energy_kpi_db_path
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    seed_engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
+    with seed_engine.begin() as conn:
+        ensure_energy_kpi_tables_for_connection(conn)
+    seed_engine.dispose()
+    with sqlite3.connect(str(db_path), timeout=1.0) as conn:
+        conn.execute("PRAGMA journal_mode = DELETE")
+
+    _build_energy_kpi_engine.cache_clear()
+    writer = sqlite3.connect(str(db_path), timeout=0.1)
+    writer.execute("BEGIN IMMEDIATE")
+    engine = None
+    try:
+        engine = get_energy_kpi_engine(settings)
+        with engine.connect() as conn:
+            assert int(conn.execute(text("SELECT COUNT(*) FROM kpi_catalog")).scalar() or 0) == 0
+    finally:
+        writer.rollback()
+        writer.close()
+        if engine is not None:
+            engine.dispose()
+        _build_energy_kpi_engine.cache_clear()
+
+
+def test_source_status_can_be_limited_to_ccee_sources(db_engine, monkeypatch):
+    with db_engine.begin() as conn:
+        seed_plant_sources(conn)
+    settings = build_settings()
+    svc = EnergyKPIReadService(settings)
+    monkeypatch.setattr(svc, "_engine", lambda: db_engine)
+
+    status = svc.get_plant_parcel_source_statuses(
+        source_ids=[SOURCE_CCEE_MONTHLY, SOURCE_CCEE_HOURLY],
+    )
+
+    assert status["count"] == 2
+    assert [row["source_id"] for row in status["source_statuses"]] == [
+        SOURCE_CCEE_MONTHLY,
+        SOURCE_CCEE_HOURLY,
+    ]
 
 
 def test_refresh_job_marks_zero_insert_as_warning(tmp_path: Path, monkeypatch):

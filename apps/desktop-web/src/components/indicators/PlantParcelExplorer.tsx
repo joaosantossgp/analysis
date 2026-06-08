@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { DragEvent, ReactNode } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { StateBanner } from "@/components/feedback/StateBanner";
 import { Button } from "@/components/ui/Button";
@@ -28,10 +28,11 @@ import type { ChartAesthetics } from "@/lib/indicators/types";
 const PAGE_SIZE = 100;
 const MAX_INLINE_DROP_BYTES = 50 * 1024 * 1024;
 const CCEE_PLANT_ENTITY_TYPE = "ccee_plant_parcel";
-const CCEE_PLANT_SOURCE_IDS = new Set<string>([
+const CCEE_PLANT_SOURCE_ID_LIST = [
   "ccee_plant_parcel_monthly",
   "ccee_plant_generation_hourly",
-]);
+] as const;
+const CCEE_PLANT_SOURCE_IDS = new Set<string>(CCEE_PLANT_SOURCE_ID_LIST);
 
 type Filters = {
   entity_type: string;
@@ -98,8 +99,8 @@ export function PlantParcelExplorer({ bridgeReady }: { bridgeReady: boolean }) {
   }, [debouncedSearch, filters.generation_source, filters.submarket, filters.uf]);
 
   const statusQuery = useQuery({
-    queryKey: ["plant-parcel-source-statuses"],
-    queryFn: fetchPlantParcelSourceStatuses,
+    queryKey: ["plant-parcel-source-statuses", [...CCEE_PLANT_SOURCE_ID_LIST]],
+    queryFn: () => fetchPlantParcelSourceStatuses({ source_ids: [...CCEE_PLANT_SOURCE_ID_LIST] }),
     enabled: bridgeReady,
     staleTime: 10_000,
     refetchInterval: (query) =>
@@ -129,6 +130,7 @@ export function PlantParcelExplorer({ bridgeReady }: { bridgeReady: boolean }) {
       }),
     enabled: bridgeReady,
     staleTime: 30_000,
+    placeholderData: keepPreviousData,
   });
 
   const records = catalogQuery.data?.mode === "desktop" ? catalogQuery.data.records : [];
@@ -955,6 +957,7 @@ function PlantDetailPanel({
       }),
     enabled: !!detail?.entity_id && (chartFreq === "monthly" || !!chartMonth),
     staleTime: 30_000,
+    placeholderData: keepPreviousData,
     refetchInterval: dataRefreshing ? 3_000 : false,
     refetchIntervalInBackground: true,
   });

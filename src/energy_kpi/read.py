@@ -10,7 +10,7 @@ import unicodedata
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 
 from src.contracts import (
     CountryKPIValueDTO,
@@ -43,13 +43,23 @@ _STALE_THRESHOLD_DAYS = 90
 _PLANT_SOURCE_STATUS_ORDER = (SOURCE_ANEEL_SIGA, SOURCE_CCEE_MONTHLY, SOURCE_CCEE_HOURLY)
 
 
-def _plant_source_status_rows(db_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _normalize_plant_source_ids(source_ids: list[str] | None) -> list[str]:
+    if not source_ids:
+        return list(_PLANT_SOURCE_STATUS_ORDER)
+    requested = {str(source_id) for source_id in source_ids}
+    return [source_id for source_id in _PLANT_SOURCE_STATUS_ORDER if source_id in requested]
+
+
+def _plant_source_status_rows(
+    db_rows: list[dict[str, Any]],
+    source_ids: list[str],
+) -> list[dict[str, Any]]:
     """Return plant source metadata without requiring a write on the read path."""
     by_source_id = {str(row["source_id"]): dict(row) for row in db_rows}
     fallback_by_source_id = {str(row["source_id"]): dict(row) for row in PLANT_SOURCES}
     return [
         by_source_id.get(source_id) or fallback_by_source_id[source_id]
-        for source_id in _PLANT_SOURCE_STATUS_ORDER
+        for source_id in source_ids
     ]
 
 
@@ -393,20 +403,18 @@ class EnergyKPIReadService:
 
     # ── Plant / plant-parcel KPIs ───────────────────────────────────────────
 
-    def get_plant_parcel_source_statuses(self) -> dict[str, Any]:
+    def get_plant_parcel_source_statuses(self, source_ids: list[str] | None = None) -> dict[str, Any]:
         """Return local cache status for ANEEL SIGA and CCEE plant datasets."""
+        selected_source_ids = _normalize_plant_source_ids(source_ids)
         with self._engine().connect() as conn:
             db_source_rows = [
                 dict(row)
-                for row in conn.execute(text("""
+                for row in conn.execute(
+                    text("""
                     SELECT source_id, source_name, dataset_name, provider, official_url,
                            refresh_frequency, granularity, description, known_caveats
                     FROM energy_sources
-                    WHERE source_id IN (
-                        'ccee_plant_parcel_monthly',
-                        'ccee_plant_generation_hourly',
-                        'aneel_siga_plants'
-                    )
+                    WHERE source_id IN :source_ids
                     ORDER BY
                         CASE source_id
                             WHEN 'aneel_siga_plants' THEN 1
@@ -414,52 +422,64 @@ class EnergyKPIReadService:
                             WHEN 'ccee_plant_generation_hourly' THEN 3
                             ELSE 9
                         END
-                """)).mappings().all()
+                    """).bindparams(bindparam("source_ids", expanding=True)),
+                    {"source_ids": selected_source_ids},
+                ).mappings().all()
             ]
-            source_rows = _plant_source_status_rows(db_source_rows)
+            source_rows = _plant_source_status_rows(db_source_rows, selected_source_ids)
             latest_logs = {
                 row["source_id"]: dict(row)
-                for row in conn.execute(text("""
+                for row in conn.execute(
+                    text("""
                     SELECT l.*
                     FROM energy_source_refresh_log l
                     JOIN (
                         SELECT source_id, MAX(started_at) AS started_at
                         FROM energy_source_refresh_log
+                        WHERE source_id IN :source_ids
                         GROUP BY source_id
                     ) x
                       ON x.source_id = l.source_id
                      AND x.started_at = l.started_at
-                """)).mappings().all()
+                    """).bindparams(bindparam("source_ids", expanding=True)),
+                    {"source_ids": selected_source_ids},
+                ).mappings().all()
             }
             latest_manual_logs = {
                 row["source_id"]: dict(row)
-                for row in conn.execute(text("""
+                for row in conn.execute(
+                    text("""
                     SELECT l.*
                     FROM energy_source_refresh_log l
                     JOIN (
                         SELECT source_id, MAX(started_at) AS started_at
                         FROM energy_source_refresh_log
                         WHERE import_mode = 'manual_file'
+                          AND source_id IN :source_ids
                         GROUP BY source_id
                     ) x
                       ON x.source_id = l.source_id
                      AND x.started_at = l.started_at
-                """)).mappings().all()
+                    """).bindparams(bindparam("source_ids", expanding=True)),
+                    {"source_ids": selected_source_ids},
+                ).mappings().all()
             }
-            counts = {
-                SOURCE_ANEEL_SIGA: {
+            counts: dict[str, dict[str, Any]] = {}
+            if SOURCE_ANEEL_SIGA in selected_source_ids:
+                counts[SOURCE_ANEEL_SIGA] = {
                     "records": int(conn.execute(text("SELECT COUNT(*) FROM aneel_siga_plants")).scalar() or 0),
                     "latest_reference": conn.execute(text("SELECT MAX(source_updated_at) FROM aneel_siga_plants")).scalar(),
-                },
-                SOURCE_CCEE_MONTHLY: {
+                }
+            if SOURCE_CCEE_MONTHLY in selected_source_ids:
+                counts[SOURCE_CCEE_MONTHLY] = {
                     "records": int(conn.execute(text("SELECT COUNT(*) FROM ccee_plant_parcel_monthly")).scalar() or 0),
                     "latest_reference": conn.execute(text("SELECT MAX(reference_month) FROM ccee_plant_parcel_monthly")).scalar(),
-                },
-                SOURCE_CCEE_HOURLY: {
+                }
+            if SOURCE_CCEE_HOURLY in selected_source_ids:
+                counts[SOURCE_CCEE_HOURLY] = {
                     "records": int(conn.execute(text("SELECT COUNT(*) FROM ccee_plant_parcel_hourly")).scalar() or 0),
                     "latest_reference": conn.execute(text("SELECT MAX(reference_datetime) FROM ccee_plant_parcel_hourly")).scalar(),
-                },
-            }
+                }
 
         statuses: list[dict[str, Any]] = []
         for row in source_rows:

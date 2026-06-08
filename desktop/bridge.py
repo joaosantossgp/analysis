@@ -41,6 +41,8 @@ class CVMBridge:
         "data_update_end_year",
     }
     CVM_MIN_YEAR = 2010
+    KPI_CATALOG_CACHE_SCHEMA_VERSION = 1
+    COUNTRY_KPI_SERIES_CACHE_SCHEMA_VERSION = 1
     SIN_DASHBOARD_CACHE_SCHEMA_VERSION = 1
 
     def __init__(self) -> None:
@@ -52,6 +54,8 @@ class CVMBridge:
         self._company_info_lock = threading.RLock()
         self._read_payload_cache_lock = threading.RLock()
         self._data_coverage_cache: tuple[Any, dict[str, Any]] | None = None
+        self._kpi_catalog_cache: tuple[Any, dict[str, Any]] | None = None
+        self._country_kpi_series_cache: tuple[Any, dict[str, Any]] | None = None
         self._sin_dashboard_cache: tuple[Any, dict[str, Any]] | None = None
         # auto-updater state
         self._update_info: dict | None = None
@@ -252,6 +256,12 @@ class CVMBridge:
         with self._read_payload_cache_lock:
             self._sin_dashboard_cache = None
 
+    def _clear_energy_indicator_caches(self) -> None:
+        with self._read_payload_cache_lock:
+            self._kpi_catalog_cache = None
+            self._country_kpi_series_cache = None
+            self._sin_dashboard_cache = None
+
     def _data_coverage_cache_signature_from_settings(self, settings: Any) -> list[Any]:
         today = datetime.now().date()
         return [
@@ -399,6 +409,41 @@ class CVMBridge:
             "sin_dashboard",
             self.SIN_DASHBOARD_CACHE_SCHEMA_VERSION,
             datetime.now(timezone.utc).date().isoformat(),
+            self._sqlite_signature(Path(settings.paths.energy_kpi_db_path)),
+        ]
+
+    @staticmethod
+    def _normalized_cache_list(values: Any) -> list[Any]:
+        if not values:
+            return []
+        if isinstance(values, (list, tuple, set)):
+            return sorted(str(value) for value in values)
+        return [str(values)]
+
+    def _kpi_catalog_cache_signature(self, settings: Any, params: dict[str, Any]) -> list[Any]:
+        return [
+            "kpi_catalog",
+            self.KPI_CATALOG_CACHE_SCHEMA_VERSION,
+            {
+                "sector": params.get("sector") or None,
+                "v1_status": params.get("v1_status") or None,
+                "dashboard_priority": params.get("dashboard_priority") or None,
+                "excel_export_priority": params.get("excel_export_priority") or None,
+                "macro_category": params.get("macro_category") or None,
+                "source_verification_status": params.get("source_verification_status") or None,
+            },
+            self._sqlite_signature(Path(settings.paths.energy_kpi_db_path)),
+        ]
+
+    def _country_kpi_series_cache_signature(self, settings: Any, params: dict[str, Any]) -> list[Any]:
+        return [
+            "country_kpi_series",
+            self.COUNTRY_KPI_SERIES_CACHE_SCHEMA_VERSION,
+            {
+                "kpi_ids": self._normalized_cache_list(params.get("kpi_ids")),
+                "iso_codes": self._normalized_cache_list(params.get("iso_codes")),
+                "years": self._normalized_cache_list(params.get("years")),
+            },
             self._sqlite_signature(Path(settings.paths.energy_kpi_db_path)),
         ]
 
@@ -3291,6 +3336,30 @@ class CVMBridge:
     def get_kpi_catalog(self, params=None) -> dict:
         params = params or {}
         try:
+            from src.settings import get_settings  # noqa: PLC0415
+
+            settings = get_settings()
+            cache_signature = self._kpi_catalog_cache_signature(settings, params)
+            cache_path = (
+                Path(settings.paths.cache_dir)
+                / f"energy_kpi_catalog_v{self.KPI_CATALOG_CACHE_SCHEMA_VERSION}.json"
+            )
+            with self._read_payload_cache_lock:
+                if (
+                    self._kpi_catalog_cache is not None
+                    and self._kpi_catalog_cache[0] == cache_signature
+                ):
+                    return self._sanitize_for_json(self._kpi_catalog_cache[1])
+            cached_payload = self._read_payload_cache(
+                cache_path,
+                schema_version=self.KPI_CATALOG_CACHE_SCHEMA_VERSION,
+                signature=cache_signature,
+            )
+            if cached_payload is not None:
+                with self._read_payload_cache_lock:
+                    self._kpi_catalog_cache = (cache_signature, cached_payload)
+                return self._sanitize_for_json(cached_payload)
+
             entries = self._energy_svc().get_kpi_catalog(
                 sector=params.get("sector"),
                 v1_status=params.get("v1_status"),
@@ -3299,25 +3368,67 @@ class CVMBridge:
                 macro_category=params.get("macro_category"),
                 source_verification_status=params.get("source_verification_status"),
             )
-            return self._sanitize_for_json({
+            payload = self._sanitize_for_json({
                 "entries": [e.to_dict() for e in entries],
                 "count": len(entries),
             })
+            with self._read_payload_cache_lock:
+                self._kpi_catalog_cache = (cache_signature, payload)
+            self._write_payload_cache(
+                cache_path,
+                schema_version=self.KPI_CATALOG_CACHE_SCHEMA_VERSION,
+                signature=cache_signature,
+                payload=payload,
+            )
+            return payload
         except Exception as exc:
             return {"error": str(exc), "entries": [], "count": 0}
 
     def get_country_kpi_series(self, params=None) -> dict:
         params = params or {}
         try:
+            from src.settings import get_settings  # noqa: PLC0415
+
+            settings = get_settings()
+            cache_signature = self._country_kpi_series_cache_signature(settings, params)
+            cache_path = (
+                Path(settings.paths.cache_dir)
+                / f"country_kpi_series_v{self.COUNTRY_KPI_SERIES_CACHE_SCHEMA_VERSION}.json"
+            )
+            with self._read_payload_cache_lock:
+                if (
+                    self._country_kpi_series_cache is not None
+                    and self._country_kpi_series_cache[0] == cache_signature
+                ):
+                    return self._sanitize_for_json(self._country_kpi_series_cache[1])
+            cached_payload = self._read_payload_cache(
+                cache_path,
+                schema_version=self.COUNTRY_KPI_SERIES_CACHE_SCHEMA_VERSION,
+                signature=cache_signature,
+            )
+            if cached_payload is not None:
+                with self._read_payload_cache_lock:
+                    self._country_kpi_series_cache = (cache_signature, cached_payload)
+                return self._sanitize_for_json(cached_payload)
+
             values = self._energy_svc().get_country_kpi_series(
                 kpi_ids=params.get("kpi_ids"),
                 iso_codes=params.get("iso_codes"),
                 years=params.get("years"),
             )
-            return self._sanitize_for_json({
+            payload = self._sanitize_for_json({
                 "values": [v.to_dict() for v in values],
                 "count": len(values),
             })
+            with self._read_payload_cache_lock:
+                self._country_kpi_series_cache = (cache_signature, payload)
+            self._write_payload_cache(
+                cache_path,
+                schema_version=self.COUNTRY_KPI_SERIES_CACHE_SCHEMA_VERSION,
+                signature=cache_signature,
+                payload=payload,
+            )
+            return payload
         except Exception as exc:
             return {"error": str(exc), "values": [], "count": 0}
 
@@ -3369,6 +3480,7 @@ class CVMBridge:
             finally:
                 # Invalidate read service so next read sees fresh data
                 self._energy_read_service = None
+                self._clear_energy_indicator_caches()
 
         threading.Thread(target=_run, name="energy-kpi-refresh", daemon=True).start()
         return {"status": "started", "error": None}
@@ -3476,7 +3588,7 @@ class CVMBridge:
         if state.get("status") == "running":
             return {"status": "already_running", "error": None}
 
-        self._clear_sin_dashboard_cache()
+        self._clear_energy_indicator_caches()
         self._sin_refresh_state = {"status": "running", "error": None}
 
         def _run():
@@ -3507,8 +3619,12 @@ class CVMBridge:
         return {"status": "started", "error": None}
 
     def get_plant_parcel_source_statuses(self, params=None) -> dict:
+        params = params or {}
         try:
-            result = self._energy_svc().get_plant_parcel_source_statuses()
+            source_ids = params.get("source_ids")
+            if source_ids is not None and not isinstance(source_ids, list):
+                source_ids = [source_ids]
+            result = self._energy_svc().get_plant_parcel_source_statuses(source_ids=source_ids)
             result = self._sanitize_for_json(result)
             refresh_state = self._plant_parcel_refresh_status()
             result["refresh_running"] = refresh_state.get("status") == "running"

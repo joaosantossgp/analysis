@@ -251,14 +251,16 @@ export async function triggerSINKPIRefresh(
   return { mode: "desktop", result: payload };
 }
 
-export async function fetchPlantParcelSourceStatuses(): Promise<PlantParcelSourceStatusResult> {
+export async function fetchPlantParcelSourceStatuses(params?: {
+  source_ids?: string[];
+}): Promise<PlantParcelSourceStatusResult> {
   const mode: BridgeMode = getBridgeMode();
   if (mode === "browser") {
     return { mode: "browser", statuses: [], response: null, reason: BROWSER_REASON };
   }
   const payload: PlantParcelSourceStatusResponse = await callBridge(
     "get_plant_parcel_source_statuses",
-    {},
+    params ?? {},
   );
   if (payload.error) throw new Error(payload.error);
   return {

@@ -9,7 +9,7 @@
  * indicator. Source refreshes stay local-first and explicit.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { StateBanner } from "@/components/feedback/StateBanner";
 import { COUNTRY_ISO_CODES } from "@/components/indicators/CountryKpiCharts";
@@ -71,6 +71,7 @@ export function IndicatorExplorer({ bridgeReady }: { bridgeReady: boolean }) {
     queryFn: () => fetchCountryKPISeries({ iso_codes: [...COUNTRY_ISO_CODES] }),
     enabled: bridgeReady,
     staleTime: 60_000,
+    placeholderData: keepPreviousData,
   });
   const energyHealthQuery = useQuery({
     queryKey: ["energy-kpi-health"],
@@ -114,6 +115,8 @@ export function IndicatorExplorer({ bridgeReady }: { bridgeReady: boolean }) {
   const sorted = useMemo(() => sortRecords(filtered, sort), [filtered, sort]);
 
   const selected = selectedId ? recordsById.get(selectedId) ?? null : null;
+  const loadingValues =
+    seriesQuery.isFetching || energyHealthQuery.isFetching || sinDashboardQuery.isFetching;
 
   // ── Refresh completion detection (running → idle transition) ──────────────
   useEffect(() => {
@@ -210,7 +213,7 @@ export function IndicatorExplorer({ bridgeReady }: { bridgeReady: boolean }) {
   }, []);
 
   // ── Top-level states ──────────────────────────────────────────────────────
-  if (!bridgeReady || catalogQuery.isLoading || seriesQuery.isLoading) {
+  if (!bridgeReady || catalogQuery.isLoading) {
     return <StateBanner variant="loading" title="Loading indicator catalog…" />;
   }
   if (catalogQuery.data?.mode === "browser") {
@@ -251,6 +254,21 @@ export function IndicatorExplorer({ bridgeReady }: { bridgeReady: boolean }) {
   return (
     <div className="space-y-4">
       {msg ? <RefreshMsg msg={msg} onDismiss={() => setMsg(null)} /> : null}
+      {loadingValues ? (
+        <StateBanner variant="loading" size="dense" title="Loading cached values…">
+          <p style={{ color: "var(--color-text-secondary)", fontSize: "var(--text-xs)", margin: 0 }}>
+            The catalog is available while local series and cache status finish loading.
+          </p>
+        </StateBanner>
+      ) : null}
+      {seriesQuery.isError ? (
+        <StateBanner
+          variant="warning"
+          size="dense"
+          title="Series values unavailable"
+          message={seriesQuery.error instanceof Error ? seriesQuery.error.message : String(seriesQuery.error)}
+        />
+      ) : null}
 
       <ExplorerStatusStrip records={records} />
 

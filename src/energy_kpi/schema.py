@@ -16,11 +16,32 @@ Usage:
 """
 from __future__ import annotations
 
+import logging
 from functools import lru_cache
 
 from sqlalchemy import create_engine, text, Engine
 
 from src.settings import AppSettings
+
+logger = logging.getLogger(__name__)
+
+
+def _is_sqlite_locked_error(exc: Exception) -> bool:
+    return "database is locked" in str(exc).lower()
+
+
+def _configure_energy_kpi_connection(conn, *, enable_wal: bool) -> None:
+    """Apply SQLite pragmas without making read-only startup fail on locks."""
+    conn.execute(text("PRAGMA busy_timeout = 250"))
+    if enable_wal:
+        try:
+            conn.execute(text("PRAGMA journal_mode = WAL"))
+        except Exception as exc:
+            if not _is_sqlite_locked_error(exc):
+                raise
+            logger.debug("energy KPI WAL setup skipped because database is locked")
+    conn.execute(text("PRAGMA busy_timeout = 5000"))
+    conn.execute(text("PRAGMA synchronous = OFF"))
 
 
 def _ensure_columns(conn, table_name: str, columns: dict[str, str]) -> None:
@@ -34,10 +55,9 @@ def _ensure_columns(conn, table_name: str, columns: dict[str, str]) -> None:
             conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"))
 
 
-def ensure_energy_kpi_tables_for_connection(conn) -> None:
+def ensure_energy_kpi_tables_for_connection(conn, *, enable_wal: bool = True) -> None:
     """Create all energy KPI tables. Safe to call multiple times (idempotent)."""
-    conn.execute(text("PRAGMA journal_mode = WAL"))
-    conn.execute(text("PRAGMA synchronous = OFF"))
+    _configure_energy_kpi_connection(conn, enable_wal=enable_wal)
 
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS kpi_catalog (
@@ -483,7 +503,7 @@ def ensure_energy_kpi_tables(engine: Engine) -> None:
 
 @lru_cache(maxsize=1)
 def _build_energy_kpi_engine(db_url: str) -> Engine:
-    engine = create_engine(db_url, connect_args={"check_same_thread": False})
+    engine = create_engine(db_url, connect_args={"check_same_thread": False, "timeout": 5.0})
     ensure_energy_kpi_tables(engine)
     return engine
 
