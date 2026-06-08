@@ -14,6 +14,7 @@ ROOT = Path(SPECPATH).parent  # repo root (spec está em desktop/, ROOT é um n�
 VITE_DIST_DIR = ROOT / "apps" / "desktop-web" / "dist"
 UPDATE_HELPER = ROOT / "desktop" / "update_helper.ps1"
 GICS_MAPPING_CSV = ROOT / "data" / "import" / "gics_mapping.csv"
+CANONICAL_ACCOUNTS_CSV = ROOT / "data" / "import" / "canonical_accounts.csv"
 
 datas = []
 
@@ -32,6 +33,11 @@ datas.append((str(UPDATE_HELPER), "."))
 # render only "Sem classificacao GICS".
 if GICS_MAPPING_CSV.exists():
     datas.append((str(GICS_MAPPING_CSV), "data/import"))
+
+# Ship the canonical CVM account dictionary used by scraper/Excel paths that
+# can run from the packaged desktop bridge.
+if CANONICAL_ACCOUNTS_CSV.exists():
+    datas.append((str(CANONICAL_ACCOUNTS_CSV), "data/import"))
 
 # v0.3.1: pythonnet's .NET assembly cannot bind its dependencies without
 # Python.Runtime.deps.json sitting next to Python.Runtime.dll. PyInstaller's
@@ -62,8 +68,33 @@ a = Analysis(
         "desktop.bridge",
         # provenance gerado por build_desktop.ps1 (import condicional em bridge.py)
         "desktop._build_info",
-        "src.read_service",
-        "src.db",
+        "desktop.bridge_api.base",
+        "desktop.bridge_api.companies",
+        "desktop.bridge_api.energy",
+        "desktop.bridge_api.refresh",
+        "desktop.bridge_api.status",
+        "src.companies.gics_manual_mapping",
+        "src.companies.market_cap",
+        "src.companies.sector_taxonomy",
+        "src.companies.ticker_map",
+        "src.companies.universe",
+        "src.energy_kpi.excel",
+        "src.energy_kpi.plant_parcel_refresh",
+        "src.energy_kpi.read",
+        "src.energy_kpi.refresh",
+        "src.energy_kpi.sin_refresh",
+        "src.financials.database",
+        "src.financials.read_service",
+        "src.financials.read_service_coverage",
+        "src.financials.read_service_export",
+        "src.financials.read_service_query",
+        "src.financials.read_service_refresh_selection",
+        "src.platform.settings",
+        "src.platform.db",
+        "src.refresh.github_dispatch",
+        "src.refresh.job_worker",
+        "src.refresh.jobs",
+        "src.refresh.service",
         # clr/pythonnet necessário para pywebview no Windows
         "clr",
         "clr_loader",

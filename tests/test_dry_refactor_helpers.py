@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi.responses import Response
 
 from apps.api.app.dependencies import apply_cache_headers
-from src.contracts import default_incremental_refresh_policy
+from src.platform.contracts import default_incremental_refresh_policy
 
 
 def test_apply_cache_headers_adds_origin_vary_once() -> None:

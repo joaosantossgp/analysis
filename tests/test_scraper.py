@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Sessão 17 — Testes pytest para src/scraper.py.
+Sessão 17 — Testes pytest para src/financials/scraper.py.
 Rodar: pytest tests/test_scraper.py -v
 
 Estratégia:
@@ -38,12 +38,12 @@ def scraper(tmp_path):
       - AccountStandardizer mockado (sem CSV)
       - Diretórios criados em tmp_path (sem acesso ao projeto)
     """
-    with patch('src.scraper.CVMDatabase') as mock_db_cls, \
-         patch('src.scraper.AccountStandardizer') as mock_std_cls:
+    with patch('src.financials.scraper.CVMDatabase') as mock_db_cls, \
+         patch('src.financials.scraper.AccountStandardizer') as mock_std_cls:
         mock_db_cls.return_value = MagicMock()
         mock_std_cls.return_value = MagicMock()
 
-        from src.scraper import CVMScraper
+        from src.financials.scraper import CVMScraper
         s = CVMScraper(
             output_dir=str(tmp_path / 'output' / 'reports'),
             data_dir=str(tmp_path / 'data'),

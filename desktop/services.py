@@ -21,12 +21,12 @@ from uuid import uuid4
 import pandas as pd
 import requests
 
-from src.ticker_map import TICKER_MAP
-from src.contracts import RefreshPolicy, RefreshProgressUpdate, RefreshRequest
-from src.read_service import resolve_refresh_year_range
-from src.refresh_service import HeadlessRefreshService
-from src.settings import AppSettings, build_settings
-from src.utils import now_iso_seconds
+from src.companies.ticker_map import TICKER_MAP
+from src.platform.contracts import RefreshPolicy, RefreshProgressUpdate, RefreshRequest
+from src.financials.read_service import resolve_refresh_year_range
+from src.refresh.service import HeadlessRefreshService
+from src.platform.settings import AppSettings, build_settings
+from src.financials.utils import now_iso_seconds
 
 
 @dataclass
@@ -1475,7 +1475,7 @@ class DesktopRefreshJobManager:
 
     def _synthesize_db_worker_jobs(self) -> list[dict[str, Any]]:
         try:
-            from src.refresh_jobs import (  # noqa: PLC0415
+            from src.refresh.jobs import (  # noqa: PLC0415
                 ensure_refresh_runtime_tables_for_connection,
             )
             from sqlalchemy import text  # noqa: PLC0415
@@ -1517,7 +1517,7 @@ class DesktopRefreshJobManager:
 
     def _lookup_db_worker_job(self, job_id: str) -> dict[str, Any] | None:
         try:
-            from src.refresh_jobs import (  # noqa: PLC0415
+            from src.refresh.jobs import (  # noqa: PLC0415
                 ensure_refresh_runtime_tables_for_connection,
             )
             from sqlalchemy import text  # noqa: PLC0415
@@ -1669,7 +1669,7 @@ class DesktopRefreshJobManager:
         self._cleanup_job_runtime(job_id)
 
     def _resolve_batch_selection(self, params: dict[str, Any], *, mode: str):
-        from src.read_service import resolve_refresh_batch_selection  # noqa: PLC0415
+        from src.financials.read_service import resolve_refresh_batch_selection  # noqa: PLC0415
 
         return resolve_refresh_batch_selection(
             self._read_service(),
@@ -1687,7 +1687,7 @@ class DesktopRefreshJobManager:
 
     def _read_service(self):
         if self.read_service is None:
-            from src.read_service import CVMReadService  # noqa: PLC0415
+            from src.financials.read_service import CVMReadService  # noqa: PLC0415
 
             self.read_service = CVMReadService(settings=self.settings)
         return self.read_service

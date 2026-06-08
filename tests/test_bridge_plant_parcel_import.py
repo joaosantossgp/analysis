@@ -6,7 +6,7 @@ from pathlib import Path
 import pandas as pd
 
 from desktop.bridge import CVMBridge
-from src.settings import build_settings
+from src.platform.settings import build_settings
 
 
 def _write_hourly_csv(path: Path) -> Path:
@@ -39,7 +39,7 @@ def _write_hourly_csv(path: Path) -> Path:
 
 def test_manual_plant_parcel_import_returns_started_and_finishes_in_background(tmp_path, monkeypatch):
     settings = build_settings(tmp_path)
-    monkeypatch.setattr("src.settings.get_settings", lambda: settings)
+    monkeypatch.setattr("src.platform.settings.get_settings", lambda: settings)
     hourly_path = _write_hourly_csv(tmp_path / "geracao_horaria_usina_202605.csv")
     bridge = CVMBridge()
 
@@ -61,7 +61,7 @@ def test_manual_plant_parcel_import_returns_started_and_finishes_in_background(t
 
 def test_manual_plant_parcel_import_exposes_progress_status(tmp_path, monkeypatch):
     settings = build_settings(tmp_path)
-    monkeypatch.setattr("src.settings.get_settings", lambda: settings)
+    monkeypatch.setattr("src.platform.settings.get_settings", lambda: settings)
     first_path = _write_hourly_csv(tmp_path / "geracao_horaria_usina_202605.csv")
     second_path = _write_hourly_csv(tmp_path / "geracao_horaria_usina_202606.csv")
 

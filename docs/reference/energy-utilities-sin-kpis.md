@@ -7,7 +7,7 @@ Active reference for the local-first SIN subsystem KPI module.
 - Active UI surface: `apps/desktop-web`, inside the `Indicators` module under `Macroeconomic` -> `SIN Subsystems`.
 - Desktop bridge: `desktop/bridge.py` methods `get_sin_kpi_dashboard`, `get_sin_kpi_series`, `get_sin_kpi_health`, `refresh_sin_kpis`.
 - Python core: `src/energy_kpi/sin_catalog.py`, `src/energy_kpi/sin_ingest.py`, `src/energy_kpi/sin_refresh.py`, and `src/energy_kpi/read.py`.
-- Local database: the existing `energy_kpis.db`, resolved by `src/settings.py` as `settings.paths.energy_kpi_db_path`.
+- Local database: the existing `energy_kpis.db`, resolved by `src/platform/settings.py` as `settings.paths.energy_kpi_db_path`.
 - Reads are offline-only. Opening the dashboard does not call ONS, CCEE, EPE, ANEEL, or any other network source.
 
 ## Supported MVP Sources

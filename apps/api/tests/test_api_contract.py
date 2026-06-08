@@ -11,8 +11,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from apps.api.app.main import create_app
-from src.company_catalog import CompanyCatalogEntry
-from src.settings import build_settings
+from src.companies.catalog import CompanyCatalogEntry
+from src.platform.settings import build_settings
 
 
 class StaticCompanyCatalog:
@@ -649,8 +649,8 @@ def test_request_refresh_returns_already_current_without_creating_job(
     monkeypatch: pytest.MonkeyPatch,
 ):
     from sqlalchemy import text as sa_text
-    import src.read_service as read_service_module
-    import src.refresh_service as refresh_service_module
+    import src.financials.read_service as read_service_module
+    import src.refresh.service as refresh_service_module
 
     test_end_year = 2025
     monkeypatch.setattr(
@@ -769,7 +769,7 @@ def test_request_top_ranked_historical_refresh_queues_only_missing_and_excludes_
     monkeypatch: pytest.MonkeyPatch,
 ):
     from sqlalchemy import text as sa_text
-    import src.github_dispatch as github_dispatch
+    import src.refresh.github_dispatch as github_dispatch
 
     calls: list[tuple[int, int | None, int | None]] = []
 

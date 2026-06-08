@@ -23,11 +23,11 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 
-from src.contracts import RefreshRequest, default_incremental_refresh_policy
-from src.db import build_engine
-from src.refresh_service import HeadlessRefreshService
-from src.settings import build_settings
-from src.startup import collect_startup_report, format_startup_report
+from src.platform.contracts import RefreshRequest, default_incremental_refresh_policy
+from src.platform.db import build_engine
+from src.refresh.service import HeadlessRefreshService
+from src.platform.settings import build_settings
+from src.platform.startup import collect_startup_report, format_startup_report
 
 BATCH_SIZE = 10
 DEFAULT_ANOS = [datetime.now().year - 1, datetime.now().year]

@@ -26,7 +26,7 @@ Depois:
 2. Abra o executavel do CVM Analytics.
 3. Atualize a base local pelo proprio app.
 
-A pagina publica de download vive em `landing/` e e publicada via GitHub Pages. O deploy Vercel foi aposentado.
+A pagina publica de download vive em `apps/landing/` e e publicada via GitHub Pages. O deploy Vercel foi aposentado.
 
 ---
 

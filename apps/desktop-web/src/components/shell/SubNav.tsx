@@ -25,6 +25,13 @@ function subNavFor(pathname: string, params: Record<string, string | undefined>)
     ];
   }
 
+  if (pathname.startsWith("/settings") || pathname.startsWith("/status")) {
+    return [
+      { to: "/settings", label: "Settings", end: true },
+      { to: "/status", label: "Diagnostics", end: true },
+    ];
+  }
+
   // Setores hub keeps breadcrumb-based navigation inside the page itself;
   // no top-level sub-nav for now.
   return [];

@@ -12,6 +12,7 @@
  * not part of the energy `kpi_catalog`.
  */
 import { lazy, Suspense, useEffect, useState, useTransition } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import { PageHeader } from "@/components/PageHeader";
 import { StateBanner } from "@/components/feedback/StateBanner";
@@ -32,8 +33,9 @@ const SectorCompanyPanel = lazy(() =>
 
 export function CountryKpisPage() {
   const [bridgeReady, setBridgeReady] = useState(false);
-  const [view, setView] = useState<View>("explorer");
+  const [searchParams, setSearchParams] = useSearchParams();
   const [, startTransition] = useTransition();
+  const view = parseView(searchParams.get("view"));
 
   useEffect(() => {
     let cancelled = false;
@@ -66,7 +68,17 @@ export function CountryKpisPage() {
               { value: "plants", label: "Plant Parcels" },
               { value: "sector", label: "Sector & Company" },
             ]}
-            onChange={(next) => startTransition(() => setView(next))}
+            onChange={(next) => {
+              startTransition(() => {
+                const params = new URLSearchParams(searchParams);
+                if (next === "explorer") {
+                  params.delete("view");
+                } else {
+                  params.set("view", next);
+                }
+                setSearchParams(params);
+              });
+            }}
           />
         }
       />
@@ -82,4 +94,8 @@ export function CountryKpisPage() {
       </Suspense>
     </section>
   );
+}
+
+function parseView(raw: string | null): View {
+  return raw === "plants" || raw === "sector" ? raw : "explorer";
 }

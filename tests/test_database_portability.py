@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Regression tests for cross-dialect behavior in src/database.py.
+Regression tests for cross-dialect behavior in src/financials/database.py.
 """
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.database import CVMDatabase
+from src.financials.database import CVMDatabase
 
 
 class _RecorderConn:

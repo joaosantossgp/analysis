@@ -8,7 +8,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.excel_exporter import (
+from src.financials.excel_exporter import (
     DEFAULT_PERIOD_WINDOW,
     ExcelExporter,
     build_excel_filename,
@@ -767,7 +767,7 @@ def test_pick_model_periods_itr_only_year_included():
     assert "1Q26" in result, "1Q26 should be included (ITR-only year)"
     assert "2Q26" in result, "2Q26 should be included (ITR-only year)"
     # Result is sorted chronologically
-    from src.excel_exporter import _period_sort_key
+    from src.financials.excel_exporter import _period_sort_key
     assert result == sorted(result, key=_period_sort_key)
 
 

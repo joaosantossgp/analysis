@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 
 from desktop.bridge import CVMBridge  # noqa: E402
-from src.read_service import CVMReadService  # noqa: E402
+from src.financials.read_service import CVMReadService  # noqa: E402
 
 
 def _time_call(fn: Callable[[], Any], *, runs: int) -> dict[str, float]:

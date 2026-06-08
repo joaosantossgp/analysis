@@ -9,8 +9,8 @@ Contrato HTTP da Fase 1 da V2 em `apps/api`.
 
 Base tecnica:
 - app: `apps/api/app/main.py`
-- dominio: `src/read_service.py`
-- DTOs: `src/contracts.py`
+- dominio: `src/financials/read_service.py`
+- DTOs: `src/platform/contracts.py`
 
 ## Endpoints
 
@@ -427,8 +427,8 @@ Headers principais:
 Regras do endpoint:
 - `404` para `cd_cvm` inexistente no catalogo consultado
 - `422` para empresa existente sem anos exportaveis
-- o workbook e gerado no dominio Python (`src/read_service.py` +
-  `src/excel_exporter.py`), nao na camada HTTP
+- o workbook e gerado no dominio Python (`src/financials/read_service.py` +
+  `src/financials/excel_exporter.py`), nao na camada HTTP
 
 ### `GET /companies/{cd_cvm}/years`
 
@@ -683,7 +683,7 @@ Resposta exemplo:
 
 ## Regras de interface
 
-- respostas usam DTOs estabilizados em `src/contracts.py`
+- respostas usam DTOs estabilizados em `src/platform/contracts.py`
 - nao expor `DataFrame` bruto nos endpoints JSON
 - `404` para empresa inexistente
 - `422` para validacao HTTP e parametros invalidos

@@ -1,15 +1,36 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-from src.settings import build_settings
+from src.platform.settings import build_settings
+
+
+def test_build_settings_defaults_to_documents_runtime_root(monkeypatch, tmp_path):
+    monkeypatch.delenv("CVM_DATA_DIR", raising=False)
+    monkeypatch.delenv("CVM_DB_DIR", raising=False)
+    monkeypatch.delenv("SQLITE_PATH", raising=False)
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+
+    settings = build_settings()
+
+    expected = (tmp_path / "Documents" / "CVMAnalytics").resolve()
+    assert settings.paths.data_dir == expected
+    assert settings.paths.db_dir == expected / "db"
+    assert settings.paths.db_path == expected / "db" / "cvm_financials.db"
+    assert settings.paths.energy_kpi_db_path == expected / "db" / "energy_kpis.db"
+
+
+def test_build_settings_with_explicit_project_root_keeps_isolated_data(tmp_path):
+    settings = build_settings(project_root=tmp_path)
+
+    assert settings.paths.data_dir == (tmp_path / "data").resolve()
+    assert settings.paths.db_path == (tmp_path / "data" / "db" / "cvm_financials.db").resolve()
 
 
 def test_build_settings_prefers_shared_runtime_files_inside_task_worktree(tmp_path):
     repo_root = tmp_path / "repo"
     worktree_root = repo_root / ".claude" / "worktrees" / "backend" / "33-postgres-contract-hardening"
     shared_db_path = repo_root / "data" / "db" / "cvm_financials.db"
-    # canonical_accounts.csv agora vive em config/ (nao em data/)
-    shared_canonical_path = repo_root / "config" / "canonical_accounts.csv"
+    shared_canonical_path = repo_root / "data" / "import" / "canonical_accounts.csv"
     shared_dictionary_path = repo_root / "data" / "cvm_account_dictionary.csv"
 
     worktree_root.mkdir(parents=True, exist_ok=True)
@@ -31,8 +52,7 @@ def test_build_settings_keeps_local_runtime_files_when_worktree_has_own_copy(tmp
     repo_root = tmp_path / "repo"
     worktree_root = repo_root / ".claude" / "worktrees" / "backend" / "33-postgres-contract-hardening"
     local_db_path = worktree_root / "data" / "db" / "cvm_financials.db"
-    # canonical_accounts.csv agora vive em config/ (nao em data/)
-    local_canonical_path = worktree_root / "config" / "canonical_accounts.csv"
+    local_canonical_path = worktree_root / "data" / "import" / "canonical_accounts.csv"
     local_dictionary_path = worktree_root / "data" / "cvm_account_dictionary.csv"
 
     local_db_path.parent.mkdir(parents=True, exist_ok=True)

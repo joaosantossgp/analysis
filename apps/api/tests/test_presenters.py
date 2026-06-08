@@ -11,7 +11,7 @@ from apps.api.app.presenters import (
     present_statement,
     present_statement_summary,
 )
-from src.contracts import (
+from src.platform.contracts import (
     CompanyDirectoryAppliedFilters,
     CompanyDirectoryPage,
     CompanyDirectoryPagination,

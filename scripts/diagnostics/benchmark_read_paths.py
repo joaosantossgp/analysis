@@ -29,7 +29,7 @@ from sqlalchemy import create_engine, text
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 
-from src.database import init_db_tables  # noqa: E402
+from src.financials.database import init_db_tables  # noqa: E402
 
 # --- synthetic dataset dimensions -------------------------------------------
 N_COMPANIES = 449

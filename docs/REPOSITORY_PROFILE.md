@@ -8,7 +8,7 @@ Local-first desktop financial data tool for Brazilian companies, built with Pyth
 
 ## Website / Homepage
 
-`https://analisys-nine.vercel.app` — keep. It is the existing marketing landing page (sourced from `landing/`). It is not the product runtime; the product is the packaged Windows desktop executable distributed via GitHub Releases.
+`https://analisys-nine.vercel.app` — keep. It is the existing marketing landing page (sourced from `apps/landing/`). It is not the product runtime; the product is the packaged Windows desktop executable distributed via GitHub Releases.
 
 If at any point the landing page is taken down, blank the homepage field instead of pointing it at a non-existent URL.
 

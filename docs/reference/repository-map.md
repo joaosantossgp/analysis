@@ -10,17 +10,15 @@ Single-stop orientation for contributors and AI agents. Maps every top-level fol
 
 | Folder | Classification | Notes |
 |---|---|---|
-| `src/` | **Python core** | Pipeline, DB access, KPI engine, refresh worker, Excel export, standardizer, scraper. Start here for data/financial logic. |
-| `desktop/` | **Desktop shell** | pywebview window, Python-JS bridge, auto-updater, PyInstaller spec, build script. Start here for packaging/updater changes. |
+| `src/` | **Python core** | Domain packages: `platform/` for paths/contracts/DB engine, `companies/` for catalog/universe/market data, `financials/` for CVM statements/KPIs/Excel/read service, `refresh/` for jobs/workers, and `energy_kpi/` for energy data. Start here for data/financial logic. |
+| `desktop/` | **Desktop shell** | pywebview window, Python-JS bridge entry point plus `bridge_api/` mixins, auto-updater, PyInstaller spec, build script. Start here for packaging/updater changes. |
 | `apps/desktop-web/` | **Packaged desktop UI** | Vite + React + TypeScript SPA. The only UI runtime bundled into `CVMAnalytics.exe`. Start here for desktop UI changes. |
 | `apps/api/` | **HTTP API adapter** | FastAPI API/test surface. Not the desktop frontend and not packaged as UI. `railway.toml` points here. |
 | `tests/` | **Test suite** | pytest for Python core and desktop runtime. Run with `pytest tests/`. |
 | `docs/` | **Documentation** | Active reference, completed migration history, ADRs, performance baselines. See doc status table below. |
 | `scripts/` | **Utility / tooling** | Setup, diagnostics, validation, batch ops. See the `scripts/` cluster table below. |
-| `landing/` | **Marketing surface** | Static HTML deployed to GitHub Pages. Not the product runtime. |
-| `config/` | **Reference data** | `canonical_accounts.csv` — CVM account mapping used by the financial standardizer. Referenced by `src/settings.py` and 8+ scripts. Do not move without updating all callers and re-verifying the packaged build. |
-| `migrations/` | **DB schema** | SQLite migration SQL files. |
-| `data/` | **Local dev data** | Dev-mode SQLite DB, raw CVM inputs, cache. Content is gitignored. |
+| `apps/landing/` | **Marketing surface** | Static HTML deployed to GitHub Pages. Not the product runtime. |
+| `data/` | **Data assets and local dev data** | `import/` contains approved import references, `schema/migrations/` contains SQLite migration SQL, and local DB/raw/cache/report outputs are gitignored. |
 | `archive/` | **Historical archive** | Governance snapshots, old experiments, old local-ops evidence. Excluded from AI context via `.claudeignore`. Do not treat as current. |
 | `build/` | **Generated artifact** | PyInstaller build intermediates. Gitignored. Do not commit. |
 | `dist/` | **Generated artifact** | PyInstaller final output (`CVMAnalytics.exe`). Gitignored. |
@@ -53,7 +51,7 @@ QA scripts share `workbook_paths.py` via sibling import, so they stay co-located
 
 | Subfolder | Files | Status | Notes |
 |---|---|---|---|
-| `scripts/data/` | `atualizar_todos.py`, `atualizar_dados.ps1`, `batch_completo.py`, `restaurar_historico.py`, `seed_catalog.py`, `test_seed_catalog.py`, `expand_tickers.py`, `import_company_gics.py`, `backfill_company_gics.py`, `build_canonical_dict.py`, `canonicalize_data_layout.py` | Active | CVM ingestion/maintenance. `atualizar_todos.py`, `batch_completo.py`, `restaurar_historico.py`, `seed_catalog.py` are referenced from `.github/workflows/*.yml` — high-risk, breaking these breaks CI. `build_canonical_dict.py` is wired into `src/standardizer.py` error path. |
+| `scripts/data/` | `atualizar_todos.py`, `atualizar_dados.ps1`, `batch_completo.py`, `restaurar_historico.py`, `seed_catalog.py`, `test_seed_catalog.py`, `expand_tickers.py`, `import_company_gics.py`, `backfill_company_gics.py`, `build_canonical_dict.py`, `canonicalize_data_layout.py` | Active | CVM ingestion/maintenance. `atualizar_todos.py`, `batch_completo.py`, `restaurar_historico.py`, `seed_catalog.py` are referenced from `.github/workflows/*.yml` — high-risk, breaking these breaks CI. `build_canonical_dict.py` is wired into `src/financials/standardizer.py` error path. |
 | `scripts/setup/` | `setup_db.py`, `setup_companies_table.py`, `bootstrap_windows.ps1` | Active | DB/env bootstrap. `setup_db.py` is referenced from `refresh.yml`/`seed_catalog.yml`. Listed in path-policy `critical-bootstrap`. |
 | `scripts/diagnostics/` | `runtime_doctor.py`, `smoke_validate.py`, `db_portability_smoke.py`, `update_base_smoke.py`, `test_update_base_smoke.py`, `phase1_pywebview_smoke.py`, `benchmark_read_paths.py`, `benchmark_real_read_paths.py` | Active | Health checks, smokes, perf benchmarks. `runtime_doctor.py`, `smoke_validate.py`, `db_portability_smoke.py` listed in path-policy `critical-bootstrap`. |
 | `scripts/qa/` | `quick_verify.py`, `verify_consolidation.py`, `verify_line_id_base.py`, `final_verification.py`, `workbook_paths.py` | Active manual QA | Excel-export checks. Documented in `docs/COMO_RODAR.md`. All share the `workbook_paths.py` helper via sibling import (must stay co-located). Never CI. |
@@ -71,7 +69,7 @@ QA scripts share `workbook_paths.py` via sibling import, so they stay co-located
 |---|---|---|---|
 | `ci.yml` | **Active** | Push / PR | Python core tests + compile checks |
 | `release-desktop.yml` | **Active** | Tag push / manual | Builds Windows EXE, publishes GitHub Release |
-| `deploy-landing.yml` | **Active** | Push to `landing/**` / manual | Deploys `landing/` to GitHub Pages |
+| `deploy-landing.yml` | **Active** | Push to `apps/landing/**` / manual | Deploys `apps/landing/` to GitHub Pages |
 | `refresh.yml` | **Active** | Scheduled (1st of each month) | Monthly CVM data refresh on Railway |
 | `ingest.yml` | **Active** | Manual | Full CVM ingestion with configurable year range |
 | `on_demand_ingest.yml` | **Active** | Manual | Per-company on-demand CVM refresh |
@@ -144,6 +142,6 @@ through `window.pywebview.api`, not through these HTTP routes.
 | `desktop/build_desktop.ps1` | Build pipeline. Test end-to-end on Windows before merging. |
 | `desktop/update_helper.ps1` | Updater swap script. The allowlist entries are a contract with already-deployed app versions. |
 | `.github/workflows/release-desktop.yml` | Release CI. Changes affect artifacts downloaded by real users. |
-| `src/settings.py` | User data paths. Wrong changes break the DB location for users running the packaged app. |
-| `config/canonical_accounts.csv` | Referenced by `src/settings.py` and 8 scripts. Moving requires coordinated multi-file update + build verification. |
+| `src/platform/settings.py` | User data paths. Wrong changes break the DB location for users running the packaged app. |
+| `data/import/canonical_accounts.csv` | Referenced by `src/platform/settings.py` and bundled by `desktop/app.spec`. Moving requires coordinated multi-file update + build verification. |
 | `apps/api/`, `railway.toml` | HTTP API/deploy surface. Not part of the desktop UI, but still active for API tests/dev-hosted access. |

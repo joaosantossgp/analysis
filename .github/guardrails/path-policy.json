@@ -12,7 +12,7 @@
       "apps/api/tests/**",
       "main.py",
       "requirements.txt",
-      "migrations/**"
+      "data/schema/migrations/**"
     ],
     "master": [
       "apps/desktop-web/**",
@@ -24,7 +24,7 @@
       "apps/api/tests/**",
       "main.py",
       "requirements.txt",
-      "migrations/**"
+      "data/schema/migrations/**"
     ],
     "ops-quality": [
       ".github/**",
@@ -39,7 +39,7 @@
       "AGENTS.md",
       "README.md",
       "docs/COMO_RODAR.md",
-      "landing/**",
+      "apps/landing/**",
       "pytest.ini",
       "railway.toml",
       ".gitignore",

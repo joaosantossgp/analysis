@@ -14,7 +14,7 @@ from src.energy_kpi.ingest_owid import (
 )
 from src.energy_kpi.merge import merge_sources, set_data_quality_status
 from src.energy_kpi.read import EnergyKPIReadService
-from src.settings import build_settings
+from src.platform.settings import build_settings
 
 
 @pytest.fixture()

@@ -14,7 +14,7 @@ jobs:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       CVM_DATA_DIR: /tmp/cvm_data
       CVM_LOG_DIR: /tmp/cvm_logs
-      CVM_CANONICAL_ACCOUNTS_PATH: config/canonical_accounts.csv
+      CVM_CANONICAL_ACCOUNTS_PATH: data/import/canonical_accounts.csv
 
     steps:
       - uses: actions/checkout@v4

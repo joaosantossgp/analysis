@@ -3,8 +3,8 @@ from __future__ import annotations
 import logging
 import os
 
-from src.refresh_job_worker import RefreshJobWorker, RefreshWorkerConfig
-from src.settings import get_settings
+from src.refresh.job_worker import RefreshJobWorker, RefreshWorkerConfig
+from src.platform.settings import get_settings
 
 
 def _env_float(name: str, default: float) -> float:

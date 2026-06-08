@@ -32,7 +32,7 @@ from src.energy_kpi.plant_parcel_ingest import (
     upsert_ccee_monthly,
 )
 from src.energy_kpi.schema import get_energy_kpi_engine
-from src.settings import AppSettings
+from src.platform.settings import AppSettings
 
 logger = logging.getLogger(__name__)
 

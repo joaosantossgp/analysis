@@ -22,9 +22,9 @@ from apps.api.app.routes.refresh import router as refresh_router
 from apps.api.app.routes.sectors import router as sectors_router
 from apps.api.app.routes.status import router as status_router
 from apps.api.app.services.refresh_jobs import ApiRefreshJobManager
-from src.database import init_db_tables
-from src.read_service import CVMReadService
-from src.settings import AppSettings, get_settings as get_shared_settings
+from src.financials.database import init_db_tables
+from src.financials.read_service import CVMReadService
+from src.platform.settings import AppSettings, get_settings as get_shared_settings
 
 log = logging.getLogger("cvm.api")
 INFRA_SILENT_PATHS = frozenset({"/health", "/metrics"})

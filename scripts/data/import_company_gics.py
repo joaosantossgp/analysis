@@ -25,10 +25,10 @@ sys.path.insert(0, str(ROOT))
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-from src.db import build_engine  # noqa: E402
-from src.gics_manual_mapping import GICS_11_SECTORS  # noqa: E402
-from src.sector_taxonomy import sector_slugify  # noqa: E402
-from src.settings import build_settings  # noqa: E402
+from src.platform.db import build_engine  # noqa: E402
+from src.companies.gics_manual_mapping import GICS_11_SECTORS  # noqa: E402
+from src.companies.sector_taxonomy import sector_slugify  # noqa: E402
+from src.platform.settings import build_settings  # noqa: E402
 
 DEFAULT_MAPPING_PATH = ROOT / "data" / "import" / "gics_mapping.csv"
 DEFAULT_REPORT_PATH = ROOT / "data" / "reports" / "gics_backfill_report.json"

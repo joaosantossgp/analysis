@@ -5,10 +5,10 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-from src.contracts import RefreshPolicy, RefreshRequest
-from src.refresh_service import HeadlessRefreshService
-from src.settings import build_settings
-from src.utils import current_reporting_year_cap
+from src.platform.contracts import RefreshPolicy, RefreshRequest
+from src.refresh.service import HeadlessRefreshService
+from src.platform.settings import build_settings
+from src.financials.utils import current_reporting_year_cap
 
 
 def _create_financial_reports_table(path: Path) -> None:
@@ -222,7 +222,7 @@ def test_max_refresh_year_helper_caps_at_current_year():
 
 
 def test_execute_includes_market_cap_step(tmp_path, monkeypatch):
-    from src.contracts import RefreshRequest, RefreshPolicy
+    from src.platform.contracts import RefreshRequest, RefreshPolicy
     from types import SimpleNamespace
     import requests
 
@@ -271,7 +271,7 @@ def test_execute_includes_market_cap_step(tmp_path, monkeypatch):
     service.read_service = FakeReadService()
 
     # Stub CVMScraper.run so it doesn't try to query actual CVM servers or read raw files
-    from src.scraper import CVMScraper
+    from src.financials.scraper import CVMScraper
     monkeypatch.setattr(CVMScraper, "run", lambda *args, **kwargs: {})
 
     request = RefreshRequest(
@@ -305,7 +305,7 @@ def test_execute_includes_market_cap_step(tmp_path, monkeypatch):
 
 
 def test_execute_market_cap_fallback_to_cache(tmp_path, monkeypatch):
-    from src.contracts import RefreshRequest, RefreshPolicy
+    from src.platform.contracts import RefreshRequest, RefreshPolicy
     import requests
 
     db_path = tmp_path / "data" / "db" / "cvm_financials.db"
@@ -328,7 +328,7 @@ def test_execute_market_cap_fallback_to_cache(tmp_path, monkeypatch):
     monkeypatch.setattr(requests.Session, "get", mock_session_get)
 
     # Stub CVMScraper.run
-    from src.scraper import CVMScraper
+    from src.financials.scraper import CVMScraper
     monkeypatch.setattr(CVMScraper, "run", lambda *args, **kwargs: {})
 
     request = RefreshRequest(
@@ -349,7 +349,7 @@ def test_execute_market_cap_fallback_to_cache(tmp_path, monkeypatch):
 
 
 def test_execute_market_cap_blocked_when_no_snapshot(tmp_path, monkeypatch):
-    from src.contracts import RefreshRequest, RefreshPolicy
+    from src.platform.contracts import RefreshRequest, RefreshPolicy
     import requests
 
     db_path = tmp_path / "data" / "db" / "cvm_financials.db"
@@ -369,7 +369,7 @@ def test_execute_market_cap_blocked_when_no_snapshot(tmp_path, monkeypatch):
     monkeypatch.setattr(requests.Session, "get", mock_session_get)
 
     # Stub CVMScraper.run
-    from src.scraper import CVMScraper
+    from src.financials.scraper import CVMScraper
     monkeypatch.setattr(CVMScraper, "run", lambda *args, **kwargs: {})
 
     request = RefreshRequest(

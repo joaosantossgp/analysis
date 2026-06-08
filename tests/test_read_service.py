@@ -3,10 +3,10 @@ from __future__ import annotations
 
 import sqlite3
 
-from src.gics_manual_mapping import GICS_11_SECTORS
-from src.read_service import CVMReadService, resolve_refresh_year_range
-from src.settings import build_settings
-from src.utils import current_reporting_year_cap
+from src.companies.gics_manual_mapping import GICS_11_SECTORS
+from src.financials.read_service import CVMReadService, resolve_refresh_year_range
+from src.platform.settings import build_settings
+from src.financials.utils import current_reporting_year_cap
 
 
 def test_resolve_refresh_year_range_defaults_through_current_year():

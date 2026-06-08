@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Tests for the slow_query_warn decorator in src/query_layer.py."""
+"""Tests for the slow_query_warn decorator in src/financials/query_layer.py."""
 from __future__ import annotations
 
 import json
@@ -8,11 +8,11 @@ import time
 
 import pytest
 
-from src.query_layer import slow_query_warn
+from src.financials.query_layer import slow_query_warn
 
 
 # ---------------------------------------------------------------------------
-# Helper: capture log records emitted by src.query_layer logger
+# Helper: capture log records emitted by src.financials.query_layer logger
 # ---------------------------------------------------------------------------
 
 class _LogCapture(logging.Handler):
@@ -27,7 +27,7 @@ class _LogCapture(logging.Handler):
 @pytest.fixture()
 def log_capture():
     handler = _LogCapture()
-    logger = logging.getLogger("src.query_layer")
+    logger = logging.getLogger("src.financials.query_layer")
     logger.addHandler(handler)
     original_level = logger.level
     logger.setLevel(logging.WARNING)

@@ -15,8 +15,8 @@ Do not modify code under `apps/api/` for desktop work — that is a separate Fas
 | Location | Purpose |
 |----------|---------|
 | `desktop/app.py` | pywebview entry point; path setup; window creation |
-| `desktop/bridge.py` | `CVMBridge` — all Python methods exposed to the JS frontend |
-| `src/settings.py` | All path resolution logic (`AppPaths`, `build_settings()`) |
+| `desktop/bridge.py` + `desktop/bridge_api/` | `CVMBridge` public entry point and domain mixins exposed to the JS frontend |
+| `src/platform/settings.py` | All path resolution logic (`AppPaths`, `build_settings()`) |
 
 ## Data directory — release app
 
@@ -39,39 +39,36 @@ which only runs when `sys.frozen=True` (packaged build).
 Override with `CVMANALYTICS_DATA_DIR` env var to redirect the release app to a
 different location (useful for staging or operator installs).
 
-## Data directory — dev mode (default: isolated)
+## Data directory — dev mode (default: shared Documents data)
 
-When running `python -m desktop.app --dev`, the app is NOT frozen, so
-`_configure_bundled_data_paths()` skips the Documents path. Instead,
-`src/settings.py` defaults all paths to the repo root:
+When running `python -m desktop.app --dev`, the app uses the same user-visible
+data root as the packaged release app:
 
 ```
-{repo}/data/
+%USERPROFILE%\Documents\CVMAnalytics\
 ├── db\
 │   └── cvm_financials.db
-├── input\
+│   └── energy_kpis.db
+├── output\
+├── logs\
 ├── cache\
-└── metadata\
+└── raw\
 ```
 
-This is isolated from the release app — safe for destructive testing.
+This keeps dev smoke tests aligned with the real large databases used by the
+release app. It avoids testing against a small repo-local database and missing
+performance problems such as large CCEE Plant Parcels caches.
 
-## Data directory — dev mode with release data
+In dev, `desktop.app` sets `CVMANALYTICS_USE_RELEASE_DATA=1` automatically when
+it points at Documents. The Status page shows the shared-data warning and
+destructive bridge actions remain blocked unless explicitly allowed.
 
-Set `CVMANALYTICS_USE_RELEASE_DATA=1` before starting the desktop app to make
-dev mode use the same `%USERPROFILE%\Documents\CVMAnalytics\` directory as the
-release app. This is useful when you want to:
-
-- Test UI changes against real production data.
-- Validate update/refresh features without setting up a fresh database.
-- Inspect the exact state the release app left behind.
-
-`CVM_DATA_DIR` takes precedence over `CVMANALYTICS_USE_RELEASE_DATA`. If you
-have already set `CVM_DATA_DIR`, it will be used as-is.
+`CVM_DATA_DIR` takes precedence. Set it explicitly when you need a sandbox or
+isolated fixture data.
 
 ## Dev commands
 
-### Default dev (isolated data)
+### Default dev (shared Documents data)
 
 ```powershell
 # From repo root
@@ -82,20 +79,6 @@ python -m desktop.app --dev
 .\scripts\release\dev-desktop.ps1 --debug    # opens DevTools
 ```
 
-Data lives in `{repo}/data/`. Safe for resets and experiments.
-
-### Dev with release data
-
-```powershell
-# From repo root (env var set inline)
-$env:CVMANALYTICS_USE_RELEASE_DATA = "1"
-python -m desktop.app --dev
-
-# Or use the convenience script
-.\scripts\release\dev-desktop-release-data.ps1
-.\scripts\release\dev-desktop-release-data.ps1 --debug
-```
-
 Data lives in `%USERPROFILE%\Documents\CVMAnalytics\` — same as the release app.
 
 ### Dev with custom data directory
@@ -104,6 +87,9 @@ Data lives in `%USERPROFILE%\Documents\CVMAnalytics\` — same as the release ap
 $env:CVM_DATA_DIR = "C:\path\to\your\test-data"
 python -m desktop.app --dev
 ```
+
+Use this for isolated dev data, destructive experiments, or fixtures that must
+not touch the shared Documents database.
 
 ### Vite-only (browser preview, no bridge)
 
@@ -145,8 +131,8 @@ The Status strip shows **BRIDGE · MOCK** in violet and the Status page shows
 
 | Variable | Default (dev) | Purpose |
 |----------|---------------|---------|
-| `CVM_DATA_DIR` | `{repo}/data` | Root data directory (all modes) |
-| `CVMANALYTICS_USE_RELEASE_DATA` | — | Set to `1` in dev to use the release Documents path |
+| `CVM_DATA_DIR` | `%USERPROFILE%\Documents\CVMAnalytics` | Root data directory (all modes); set explicitly for isolated data |
+| `CVMANALYTICS_USE_RELEASE_DATA` | `1` in desktop dev shared-data mode | Marks dev as using the release Documents path |
 | `CVMANALYTICS_ALLOW_RELEASE_DATA_WRITES` | — | Set to `1` to allow destructive bridge calls in dev+release-data mode (normally blocked) |
 | `CVMANALYTICS_CONCURRENT_LOCK_DETECTED` | — | Set automatically at startup when another process holds the same data directory lock; forces read-only mode |
 | `CVMANALYTICS_DATA_DIR` | — | Override data root for the packaged release app |
@@ -198,9 +184,9 @@ starts in **restricted mode**:
 
 ## Write mode in dev+release-data
 
-When `CVMANALYTICS_USE_RELEASE_DATA=1` is set in dev mode, the app points at
-the release `Documents\CVMAnalytics\` directory. To prevent accidental mutations
-to real user data, all destructive bridge calls are blocked by default:
+When desktop dev points at the release `Documents\CVMAnalytics\` directory, the
+app sets `CVMANALYTICS_USE_RELEASE_DATA=1`. To prevent accidental mutations to
+real user data, all destructive bridge calls are blocked by default:
 
 ```
 {"ok": false, "status": "blocked", "status_reason_code": "release_data_write_blocked"}
@@ -210,7 +196,7 @@ To opt in to writes explicitly:
 
 ```powershell
 $env:CVMANALYTICS_ALLOW_RELEASE_DATA_WRITES = "1"
-.\scripts\release\dev-desktop-release-data.ps1
+.\scripts\release\dev-desktop.ps1
 ```
 
 The release app (packaged, `sys.frozen=True`) is never affected — it always has
@@ -232,31 +218,32 @@ under "Runtime diagnostics". When `CVMANALYTICS_USE_RELEASE_DATA=1` is active:
 
 ## Testing workflows
 
-### Run dev against isolated data
+### Run dev against shared Documents data
 
 ```powershell
 .\scripts\release\dev-desktop.ps1
 ```
 
-Safe for resets. Data under `{repo}/data/` is not shared with the release app.
+Same database as the installed app. Check the Status page to confirm the path.
+Destructive bridge actions are blocked by default in dev shared-data mode.
 
-### Run dev against release data
+### Run dev against isolated data
 
 ```powershell
-.\scripts\release\dev-desktop-release-data.ps1
+$env:CVM_DATA_DIR = "$PWD\data"
+python -m desktop.app --dev
 ```
 
-Same database as the installed app. Check the Status page to confirm the path.
+Safe for resets. Data under `{repo}/data/` is not shared with the release app.
 
-### Reset only onboarding state (isolated data)
+### Reset only onboarding state (explicit isolated data)
 
 Delete `{repo}/data/onboarding_state.json`, then reload the app.
 
-### Reset isolated dev database
+### Reset explicit isolated dev database
 
 Delete `{repo}/data/db/cvm_financials.db`. The app will re-initialize schema on
-next start. Or use the Reset Database action on the Update Base page (dev only,
-isolated data).
+next start.
 
 ### Verify active data directory
 

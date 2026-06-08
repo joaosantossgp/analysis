@@ -8,8 +8,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from apps.api.app.services.refresh_jobs import ApiRefreshJobManager, RefreshBatchRequestError
-from src.contracts import RefreshResult
-from src.settings import AppSettings
+from src.platform.contracts import RefreshResult
+from src.platform.settings import AppSettings
 
 
 def _running_job(job_id: str = "job-batch-1") -> dict[str, object]:

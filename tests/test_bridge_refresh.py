@@ -8,13 +8,13 @@ from types import SimpleNamespace
 from apps.api.app.services.refresh_jobs import ApiRefreshJobManager
 from desktop.bridge import CVMBridge
 from desktop.services import DesktopRefreshJobManager
-from src.company_universe import (
+from src.companies.universe import (
     CompanyUniverseEntry,
     CompanyUniverseSelection,
     CompanyUniverseUnavailableError,
 )
-from src.contracts import CompanyRefreshResult, RefreshResult
-from src.settings import build_settings
+from src.platform.contracts import CompanyRefreshResult, RefreshResult
+from src.platform.settings import build_settings
 
 
 class FakeReadService:

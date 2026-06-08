@@ -2,12 +2,6 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "Next.js Web",
-      "runtimeExecutable": "cmd",
-      "runtimeArgs": ["/c", "apps\\web\\start-web.cmd"],
-      "port": 3000
-    },
-    {
       "name": "Desktop App (pywebview)",
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "desktop.app", "--dev"]

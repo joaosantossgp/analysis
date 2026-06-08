@@ -44,6 +44,9 @@ const SubSectorDetailPage = lazy(() =>
 const StatusPage = lazy(() =>
   import("./routes/StatusPage").then((m) => ({ default: m.StatusPage })),
 );
+const SettingsPage = lazy(() =>
+  import("./routes/SettingsPage").then((m) => ({ default: m.SettingsPage })),
+);
 const UpdateBasePage = lazy(() =>
   import("./routes/UpdateBasePage").then((m) => ({ default: m.UpdateBasePage })),
 );
@@ -144,6 +147,7 @@ function AppShellWithPalette() {
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/empresas" element={<CompaniesPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
             <Route path="/status" element={<StatusPage />} />
             <Route path="/atualizar-base" element={<UpdateBasePage />} />
             <Route path="/data-coverage" element={<DataCoveragePage />} />

@@ -22,7 +22,7 @@ import requests
 from sqlalchemy import text
 
 from src.energy_kpi.metrics import normalize_reference_month, parse_reference_month
-from src.settings import AppSettings, AppPaths
+from src.platform.settings import AppSettings, AppPaths
 
 class CCEEBlockedException(Exception):
     """Custom exception raised when CCEE blocks access with a 403 or maintenance page."""

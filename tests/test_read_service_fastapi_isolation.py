@@ -6,8 +6,8 @@ from contextlib import contextmanager
 
 import pytest
 
-from src.api_errors import NotFoundError
-from src.read_service import CVMReadService
+from src.platform.api_errors import NotFoundError
+from src.financials.read_service import CVMReadService
 
 
 class _ForbiddenImportFinder(importlib.abc.MetaPathFinder):

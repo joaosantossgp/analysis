@@ -38,7 +38,7 @@ from src.energy_kpi.schema import (
     ensure_energy_kpi_tables_for_connection,
     get_energy_kpi_engine,
 )
-from src.settings import build_settings
+from src.platform.settings import build_settings
 
 
 def _snapshot(path: Path, source_id: str, provider: str, dataset: str) -> PlantSnapshotRecord:

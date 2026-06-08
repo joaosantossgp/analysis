@@ -18,7 +18,7 @@ from apps.api.app.presenters import (
     present_sector_detail,
     present_sector_directory,
 )
-from src.read_service import CVMReadService
+from src.financials.read_service import CVMReadService
 
 router = APIRouter(tags=["sectors"])
 

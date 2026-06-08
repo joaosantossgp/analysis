@@ -5,23 +5,23 @@ from dataclasses import replace
 import pytest
 from sqlalchemy import text
 
-from src.contracts import (
+from src.platform.contracts import (
     CompanyRefreshResult,
     RefreshProgressUpdate,
     RefreshRequest,
     RefreshResult,
 )
-from src.database import init_db_tables
-from src.db import build_engine
-from src.refresh_job_worker import RefreshJobWorker, RefreshWorkerConfig
-from src.refresh_jobs import (
+from src.financials.database import init_db_tables
+from src.platform.db import build_engine
+from src.refresh.job_worker import RefreshJobWorker, RefreshWorkerConfig
+from src.refresh.jobs import (
     JOB_STATE_ERROR,
     JOB_STATE_NO_DATA,
     JOB_STATE_SUCCESS,
     RefreshJobRepository,
     build_postgres_claim_next_job_sql,
 )
-from src.settings import build_settings
+from src.platform.settings import build_settings
 
 
 def _make_repository(tmp_path):

@@ -5,7 +5,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.statement_summary import build_general_summary_blocks, build_statement_summary
+from src.financials.statement_summary import build_general_summary_blocks, build_statement_summary
 
 
 def _statement_df(rows: list[dict[str, object]]) -> pd.DataFrame:

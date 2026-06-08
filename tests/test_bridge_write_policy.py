@@ -5,7 +5,7 @@ import sys
 import pytest
 
 from desktop.bridge import CVMBridge
-from src.contracts import HealthSnapshot
+from src.platform.contracts import HealthSnapshot
 
 
 def _make_bridge(fake_svc) -> CVMBridge:

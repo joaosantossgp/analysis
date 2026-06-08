@@ -20,7 +20,7 @@ import requests
 from sqlalchemy import text
 
 from src.energy_kpi.sin_catalog import SIN_CATALOG_BY_ID, SIN_KPI_CATALOG, SIN_NS, SIN_SUBSYSTEMS
-from src.settings import AppPaths
+from src.platform.settings import AppPaths
 
 logger = logging.getLogger(__name__)
 

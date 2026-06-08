@@ -4,9 +4,9 @@ import threading
 from dataclasses import dataclass
 
 from desktop.bridge import CVMBridge
-from src.query_layer import CVMQueryLayer
-from src.read_service import CVMReadService
-from src.scraper import CVMScraper
+from src.financials.query_layer import CVMQueryLayer
+from src.financials.read_service import CVMReadService
+from src.financials.scraper import CVMScraper
 
 
 @dataclass(frozen=True)

@@ -4,7 +4,7 @@
 
 CVMAnalytics is a local-first Windows desktop application for collecting, organizing, and analyzing Brazilian public company financial data. The app combines a Python data pipeline, a local SQLite database, and a packaged desktop UI through pywebview.
 
-The authoritative runtime is the packaged Windows desktop executable. The public landing page (`landing/`, published via GitHub Pages) is a marketing surface only — it is not the product. The old Vercel deploy is retired.
+The authoritative runtime is the packaged Windows desktop executable. The public landing page (`apps/landing/`, published via GitHub Pages) is a marketing surface only — it is not the product. The old Vercel deploy is retired.
 
 ## Download
 
@@ -246,14 +246,13 @@ See:
 desktop/          pywebview shell, PyInstaller spec, updater, build script
 apps/desktop-web/ Vite static SPA packaged into the .exe  ← only packaged UI
 apps/api/         HTTP API/development backend adapter + API tests, not desktop UI
-src/              Python core: scraper, KPI engine, refresh/read services
+apps/landing/     Marketing landing page
+src/              Python core packages: platform, companies, financials, refresh, energy_kpi
 main.py           CLI entry point for headless refresh
 scripts/          Setup, batches, diagnostics, validation helpers
-landing/          Marketing landing page
-data/             Dev-mode SQLite DB + raw inputs (gitignored)
+data/             Import references, DB schema, dev SQLite/raw/cache/report outputs
 docs/             Active documentation, migration docs, ADRs
 tests/            pytest suite
-config/           canonical_accounts.csv — CVM account mapping (referenced by src/)
 ```
 
 See [docs/reference/repository-map.md](docs/reference/repository-map.md) for a full folder, workflow, and documentation status map.
@@ -264,7 +263,7 @@ Key docs: [docs/COMO_RODAR.md](docs/COMO_RODAR.md) (run guide) · [docs/DESIGN.m
 
 **"I want to change the desktop UI"** → `apps/desktop-web/src/`. Read `docs/skills/CVMANALYTICS_VITE_UI_SKILL.md` first. Run `python -m desktop.app --dev` to see changes live. Components call Python exclusively through `lib/bridge/adapter.ts` — never call `window.pywebview.api` directly.
 
-**"I want to change data or financial logic"** → `src/`. The Python core owns the pipeline, KPI engine, DB access, refresh worker, and Excel export. Read `docs/CONTEXT.md` before touching financial calculations or column conventions.
+**"I want to change data or financial logic"** -> `src/`. The Python core owns the pipeline, KPI engine, DB access, refresh worker, and Excel export across `src/financials/`, `src/companies/`, `src/platform/`, and `src/refresh/`. Read `docs/CONTEXT.md` before touching financial calculations or column conventions.
 
 **"I want to change packaging or the updater"** → `desktop/`. The PyInstaller spec is `desktop/app.spec`. Build script is `desktop/build_desktop.ps1`. Auto-updater is `desktop/updater.py` + `desktop/update_helper.ps1`. Do not change these without re-running the full release pipeline — a wrong path in the spec produces a broken EXE with no obvious build-time error.
 
@@ -276,8 +275,8 @@ Key docs: [docs/COMO_RODAR.md](docs/COMO_RODAR.md) (run guide) · [docs/DESIGN.m
 - `desktop/app.spec` — PyInstaller spec; a wrong entry produces a broken EXE
 - `desktop/build_desktop.ps1` — build pipeline; test end-to-end before merging
 - `.github/workflows/release-desktop.yml` — changes affect artifacts downloaded by real users
-- `src/settings.py` — user data paths; wrong changes break the live DB location
-- `config/canonical_accounts.csv` — referenced by `src/settings.py` and 8+ scripts; moving requires coordinated multi-file update
+- `src/platform/settings.py` — user data paths; wrong changes break the live DB location
+- `data/import/canonical_accounts.csv` — referenced by `src/platform/settings.py` and packaged with the desktop build
 
 ## Roadmap
 

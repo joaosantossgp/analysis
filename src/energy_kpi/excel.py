@@ -6,7 +6,7 @@ Tabs:
   3. Source Metadata — source registry + last snapshot info
   4. Data Quality    — DQ checks for last run
 
-Conventions (matching src/excel_exporter.py):
+Conventions (matching src/financials/excel_exporter.py):
   - Negatives in parentheses: (value)
   - Zeros → "-"
   - Units in column headers
@@ -23,7 +23,7 @@ import xlsxwriter
 
 from src.energy_kpi.read import EnergyKPIReadService
 from src.energy_kpi.schema import get_energy_kpi_engine
-from src.settings import AppSettings
+from src.platform.settings import AppSettings
 
 logger = logging.getLogger(__name__)
 

@@ -22,7 +22,7 @@ from functools import lru_cache
 
 from sqlalchemy import create_engine, text, Engine
 
-from src.settings import AppSettings
+from src.platform.settings import AppSettings
 
 logger = logging.getLogger(__name__)
 _ENGINE_BUILD_LOCK = threading.RLock()

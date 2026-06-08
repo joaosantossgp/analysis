@@ -18,8 +18,8 @@ from unittest.mock import patch
 
 import pytest
 
-from src.read_service import CVMReadService
-from src.settings import build_settings
+from src.financials.read_service import CVMReadService
+from src.platform.settings import build_settings
 
 
 class _EmptyCompanyCatalog:

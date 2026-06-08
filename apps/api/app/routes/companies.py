@@ -34,8 +34,8 @@ from apps.api.app.presenters import (
     present_statement,
     present_statement_summary,
 )
-from src.company_catalog import CompanyCatalogUnavailableError
-from src.read_service import CVMReadService, RefreshAlreadyActiveError
+from src.companies.catalog import CompanyCatalogUnavailableError
+from src.financials.read_service import CVMReadService, RefreshAlreadyActiveError
 
 router = APIRouter(tags=["companies"])
 

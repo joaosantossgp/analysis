@@ -7,7 +7,7 @@ import { NavLink, useLocation } from "react-router-dom";
  * the parent "Empresas" pill.
  */
 
-type ModuleId = "companies" | "empresas" | "sectors" | "macro" | "database" | "diagnostics";
+type ModuleId = "companies" | "empresas" | "sectors" | "macro" | "database" | "system";
 
 type ModuleDef = {
   id: ModuleId;
@@ -51,10 +51,10 @@ const MODULES: ModuleDef[] = [
       p.startsWith("/atualizar-base") || p.startsWith("/data-coverage"),
   },
   {
-    id: "diagnostics",
-    label: "System",
-    to: "/status",
-    matches: (p) => p.startsWith("/status"),
+    id: "system",
+    label: "Settings",
+    to: "/settings",
+    matches: (p) => p.startsWith("/settings") || p.startsWith("/status"),
   },
 ];
 

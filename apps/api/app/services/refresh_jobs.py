@@ -4,11 +4,11 @@ import threading
 from typing import Any
 from uuid import uuid4
 
-from src.contracts import RefreshPolicy, RefreshProgressUpdate, RefreshRequest
-from src.read_service import resolve_refresh_year_range
-from src.refresh_service import HeadlessRefreshService
-from src.settings import AppSettings
-from src.utils import now_iso_seconds
+from src.platform.contracts import RefreshPolicy, RefreshProgressUpdate, RefreshRequest
+from src.financials.read_service import resolve_refresh_year_range
+from src.refresh.service import HeadlessRefreshService
+from src.platform.settings import AppSettings
+from src.financials.utils import now_iso_seconds
 
 
 class RefreshBatchRequestError(ValueError):
@@ -286,7 +286,7 @@ class ApiRefreshJobManager:
         self._cancel_events.pop(job_id, None)
 
     def _resolve_batch_selection(self, params: dict[str, Any], *, mode: str):
-        from src.read_service import resolve_refresh_batch_selection  # noqa: PLC0415
+        from src.financials.read_service import resolve_refresh_batch_selection  # noqa: PLC0415
 
         return resolve_refresh_batch_selection(
             self.read_service,

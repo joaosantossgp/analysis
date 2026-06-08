@@ -10,11 +10,9 @@ Uso:
   python -m desktop.app --diagnose-runtime  # write diagnostics log and exit
 
 Dev data path:
-  By default, --dev mode stores data under {repo}/data/ (isolated from release).
-  Set CVMANALYTICS_USE_RELEASE_DATA=1 to use the same Documents path as the
-  packaged release app (%USERPROFILE%\\Documents\\CVMAnalytics) for realistic
-  local testing without building a release.
-  Set CVM_DATA_DIR=<path> to use an arbitrary data directory in any mode.
+  By default, --dev mode uses the same Documents path as the packaged release
+  app (%USERPROFILE%\\Documents\\CVMAnalytics) for realistic local testing.
+  Set CVM_DATA_DIR=<path> to use an arbitrary or isolated data directory.
 
 Phase 5B (v0.15.0): the packaged desktop runtime is Vite only. The legacy
 web runtime is no longer bundled. The updater, bundle layout, and user-data
@@ -124,14 +122,12 @@ def _legacy_install_data_root() -> Path | None:
 
 def _configure_bundled_data_paths() -> None:
     if not _bundled():
-        # In dev mode, CVMANALYTICS_USE_RELEASE_DATA=1 points at the same
-        # Documents path the release app uses — useful for testing against real
-        # data without a packaging step. CVM_DATA_DIR takes precedence if set.
-        use_release = os.environ.get("CVMANALYTICS_USE_RELEASE_DATA", "").strip().lower() in {
-            "1", "true", "yes",
-        }
-        if use_release and not os.environ.get("CVM_DATA_DIR"):
+        # In dev mode, default to the same Documents path the release app uses
+        # so local smoke tests exercise the real large databases. CVM_DATA_DIR
+        # remains the explicit escape hatch for isolated/sandbox data.
+        if not os.environ.get("CVM_DATA_DIR"):
             user_root = _user_data_root()
+            os.environ.setdefault("CVMANALYTICS_USE_RELEASE_DATA", "1")
             os.environ["CVM_DATA_DIR"] = str(user_root)
             os.environ.setdefault("CVM_DB_DIR", str(user_root / "db"))
             os.environ.setdefault("SQLITE_PATH", str(user_root / "db" / "cvm_financials.db"))
@@ -718,8 +714,8 @@ def _ensure_db_initialized() -> None:
     if not _bundled():
         return
     try:
-        from src.database import init_db_tables  # noqa: PLC0415
-        from src.db import build_engine  # noqa: PLC0415
+        from src.financials.database import init_db_tables  # noqa: PLC0415
+        from src.platform.db import build_engine  # noqa: PLC0415
 
         engine = build_engine()
         try:
@@ -773,8 +769,8 @@ def _ensure_gics_backfilled() -> None:
         return
 
     try:
-        from src.gics_manual_mapping import GICS_11_SECTORS  # noqa: PLC0415
-        from src.sector_taxonomy import sector_slugify  # noqa: PLC0415
+        from src.companies.gics_manual_mapping import GICS_11_SECTORS  # noqa: PLC0415
+        from src.companies.sector_taxonomy import sector_slugify  # noqa: PLC0415
     except Exception as exc:
         _log_recovery(_user_data_root(), f"gics backfill aborted (import failed): {exc!r}")
         return

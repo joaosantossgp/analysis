@@ -59,10 +59,19 @@ export function buildNavigationCommands(navigate: NavigateFunction): Command[] {
       id: "nav:status",
       group: "navigation",
       glyph: "route",
-      label: "System",
+      label: "System Diagnostics",
       secondary: "/status",
       keywords: ["diagnostics", "status", "runtime", "sistema", "versão"],
       run: goto("/status"),
+    },
+    {
+      id: "nav:settings",
+      group: "navigation",
+      glyph: "route",
+      label: "Settings",
+      secondary: "/settings",
+      keywords: ["settings", "config", "configuration", "paths", "database", "base", "dados"],
+      run: goto("/settings"),
     },
   ];
 }

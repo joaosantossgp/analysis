@@ -9,7 +9,7 @@ from apps.api.app.presenters import (
     present_health_snapshot,
     present_refresh_status,
 )
-from src.read_service import CVMReadService
+from src.financials.read_service import CVMReadService
 
 router = APIRouter(tags=["operations"])
 

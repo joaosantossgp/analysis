@@ -8,7 +8,7 @@ Estratégia em duas etapas:
 
 Saídas:
   - data/metadata/ticker_candidates.csv   ← para revisão manual antes de adicionar
-  - Imprime snippet Python pronto para colar em src/ticker_map.py
+  - Imprime snippet Python pronto para colar em src/companies/ticker_map.py
 
 Uso:
     python scripts/expand_tickers.py                 # busca + valida no Yahoo Finance
@@ -154,7 +154,7 @@ def fetch_b3_companies(settings) -> dict:
 
 def load_companies_without_ticker(settings) -> list[dict]:
     """Retorna empresas no banco sem ticker mapeado."""
-    from src.db import build_engine
+    from src.platform.db import build_engine
     from sqlalchemy import text
 
     engine = build_engine(settings)
@@ -176,7 +176,7 @@ def load_companies_without_ticker(settings) -> list[dict]:
         pass
 
     # Fallback: via financial_reports
-    from src.ticker_map import TICKER_MAP
+    from src.companies.ticker_map import TICKER_MAP
     with engine.connect() as conn:
         rows = conn.execute(text(
             'SELECT DISTINCT "CD_CVM", "COMPANY_NAME" FROM financial_reports ORDER BY "CD_CVM"'
@@ -236,7 +236,7 @@ def match_by_cvm_code(companies: list[dict], b3_map: dict) -> tuple[list, list]:
 
 def match_by_fuzzy(unmatched: list[dict], b3_map: dict, threshold: float = 0.75) -> list:
     """Tenta match por nome (fuzzy) para empresas sem código CVM no B3."""
-    from src.ticker_map import TICKER_MAP
+    from src.companies.ticker_map import TICKER_MAP
 
     by_cvm   = b3_map.get("by_cvm",  {})
     by_cnpj  = b3_map.get("by_cnpj", {})
@@ -364,7 +364,7 @@ def save_results(settings, all_candidates: list[dict], validated: list[dict]) ->
     # Snippet Python para constants.py
     log.info("")
     log.info("=" * 70)
-    log.info("Snippet para adicionar em src/ticker_map.py → TICKER_MAP:")
+    log.info("Snippet para adicionar em src/companies/ticker_map.py → TICKER_MAP:")
     log.info("=" * 70)
     log.info("    # ── Novos tickers descobertos por expand_tickers.py ────────────────")
     for c in validated:
@@ -377,8 +377,8 @@ def save_results(settings, all_candidates: list[dict], validated: list[dict]) ->
 # ── Orquestrador ──────────────────────────────────────────────────────────────
 
 def main():
-    from src.settings import build_settings
-    from src.startup import collect_startup_report, format_startup_report
+    from src.platform.settings import build_settings
+    from src.platform.startup import collect_startup_report, format_startup_report
 
     parser = argparse.ArgumentParser(
         description="Descobre tickers B3 para empresas sem mapeamento"

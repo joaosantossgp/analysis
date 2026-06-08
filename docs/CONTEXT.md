@@ -70,7 +70,7 @@ Abas **QA_LOG** e **QA_Errors** sao obrigatorias para rastreabilidade.
 - Scripts em lote: `scripts/data/batch_completo.py`, `scripts/data/atualizar_todos.py`
 
 **2. Download e extracao**
-- `src/scraper.py` baixa ZIPs da CVM para `data/input/raw`
+- `src/financials/scraper.py` baixa ZIPs da CVM para `data/input/raw`
 - CSVs (BPA/BPP/DRE/DFC/DVA/DMPL) sao extraidos para `data/input/processed`
 
 **3. Transform e normalizacao**
@@ -79,13 +79,13 @@ Abas **QA_LOG** e **QA_Errors** sao obrigatorias para rastreabilidade.
 - gera `LINE_ID_BASE`, aplica padronizacao e logs de QA
 
 **4. Persistencia**
-- `src/database.py` escreve linhas long-form em `financial_reports` e eventos de QA em `qa_logs`
+- `src/financials/database.py` escreve linhas long-form em `financial_reports` e eventos de QA em `qa_logs`
 - metadados de empresa sao atualizados em `companies`
 - status de refresh persistido em `company_refresh_status`
 - exportacao Excel disponivel em `output/reports/`
 
 **5. Consulta**
-- `src/read_service.py` e a fonte de verdade da camada de leitura
+- `src/financials/read_service.py` e a fonte de verdade da camada de leitura
 - `apps/api` (FastAPI) e o adaptador HTTP fino sobre `read_service`
 - App desktop usa o Vite SPA em `apps/desktop-web` e o bridge Python direto via `desktop/bridge.py`, evitando o salto HTTP em runtime local
 
@@ -104,33 +104,30 @@ Abas **QA_LOG** e **QA_Errors** sao obrigatorias para rastreabilidade.
 ```text
 cvm_repots_capture/
 |-- src/                        # Pipeline de extracao e processamento
-|   |-- scraper.py              # CVMScraper
-|   |-- database.py             # CVMDatabase
-|   |-- db.py                   # get_engine() SQLite/PostgreSQL
-|   |-- standardizer.py         # AccountStandardizer
-|   |-- query_layer.py          # Camada de leitura
-|   |-- read_service.py         # Servico de leitura canonico (consumido pelo apps/api e bridge)
-|   |-- refresh_service.py      # Servico de refresh headless
-|   |-- kpi_engine.py           # KPIs financeiros
-|   |-- excel_exporter.py       # Exportacao Excel
-|   |-- statement_summary.py    # Resumos de demonstracoes
-|   |-- ticker_map.py           # Mapa CVM -> ticker
-|   `-- utils.py                # Helpers compartilhados
+|   |-- platform/               # Settings, DB engine, data layout, contracts, errors
+|   |-- companies/              # Catalogo, universo, tickers, market cap, GICS/setores
+|   |-- financials/             # Scraper, database, read/query services, KPIs, Excel
+|   |-- refresh/                # Refresh service, jobs, worker, GitHub dispatch
+|   `-- energy_kpi/             # KPIs energeticos e dados SIN/parcelas de usinas
 |-- desktop/                    # App desktop oficial (pywebview + Vite estatico)
 |   |-- app.py                  # Entry point pywebview
-|   |-- bridge.py               # Bridge Python expondo read/refresh para a UI
+|   |-- bridge.py               # Entry point CVMBridge; implementacao em bridge_api/
 |   |-- services.py             # Logica de negocio compartilhada
 |   |-- build_desktop.ps1       # Script de build do .exe via PyInstaller
 |   `-- updater.py              # Auto-updater do desktop
 |-- apps/
 |   |-- api/                    # FastAPI read-only (adaptador HTTP hospedado/dev)
-|   `-- desktop-web/            # Vite SPA empacotada no desktop
+|   |-- desktop-web/            # Vite SPA empacotada no desktop
+|   `-- landing/                # Pagina publica de download
 |-- scripts/                    # Tooling em subpastas: data/ setup/ diagnostics/ qa/ release/ governance/
 |-- archive/                    # Scripts e governanca antigos
 |-- tests/                      # Suite pytest
 |-- data/
+|   |-- import/                 # Mapeamentos aprovados, incluindo canonical_accounts.csv e GICS
+|   |-- schema/migrations/      # SQL de migracoes
 |   |-- db/cvm_financials.db    # SQLite local
 |   |-- cache/                  # Caches auxiliares
+|   |-- reports/                # Relatorios gerados, nao versionados
 |   `-- metadata/               # Metadados de empresas e tickers
 |-- docs/
 |   |-- CONTEXT.md              # Este arquivo
@@ -230,4 +227,4 @@ Decisões de implementação que não são óbvias da leitura do código e que j
 | SQLAlchemy IN clause: `bindparam("x", expanding=True)` | listas como params SQL |
 | `_upsert_company_metadata`: INSERT OR IGNORE + UPDATE | preserva CNPJ/ticker preenchidos por `setup_companies_table` |
 | `fillna("")` antes de `pivot_table` | evita perda silenciosa de linhas com `STANDARD_NAME` nulo |
-| `apps/api` consome `src/read_service.py` | evita reimplementar SQL e KPI logic no adaptador HTTP |
+| `apps/api` consome `src/financials/read_service.py` | evita reimplementar SQL e KPI logic no adaptador HTTP |

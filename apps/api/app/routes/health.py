@@ -10,7 +10,7 @@ from apps.api.app.dependencies import (
     get_read_service,
 )
 from apps.api.app.presenters import HealthResponsePayload, present_issue
-from src.read_service import CVMReadService
+from src.financials.read_service import CVMReadService
 
 router = APIRouter(tags=["health"])
 

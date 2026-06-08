@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import sqlite3
 
-from src.settings import build_settings
-from src.startup import collect_startup_report
+from src.platform.settings import build_settings
+from src.platform.startup import collect_startup_report
 
 
 def _init_required_tables(db_path) -> None:

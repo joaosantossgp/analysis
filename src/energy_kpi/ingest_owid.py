@@ -21,7 +21,7 @@ from src.energy_kpi.catalog import (
     OWID_FIELD_MAP,
     _ENERGY_CATALOG,
 )
-from src.settings import AppPaths
+from src.platform.settings import AppPaths
 
 if TYPE_CHECKING:
     pass

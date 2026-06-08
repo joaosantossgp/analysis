@@ -9,14 +9,14 @@ from sqlalchemy import create_engine
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.excel_exporter import ExcelExporter, build_default_model_mapping
-from src.excel_mapping import (
+from src.financials.excel_exporter import ExcelExporter, build_default_model_mapping
+from src.financials.excel_mapping import (
     ExcelMappingRepository,
     ModelMappingDefinition,
     ModelMappingSource,
     SYSTEM_DEFAULT_PRESET_ID,
 )
-from src.read_service import CVMReadService
+from src.financials.read_service import CVMReadService
 
 
 def _company() -> dict[str, object]:

@@ -70,6 +70,7 @@ logs/
 
 # Local caches and reports
 data/cache/
+data/reports/
 perf-guardrail-report.local.json
 
 # Build-time portable Node binary (copied from system Node by build_desktop.ps1)

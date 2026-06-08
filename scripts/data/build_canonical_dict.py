@@ -1,11 +1,11 @@
 """
 build_canonical_dict.py — Constrói o dicionário canônico de contas CVM.
 
-Lê os arquivos XLSX de plano de contas fixas da CVM (entender_CD/plano-contas-fixas-DFP/)
-e gera data/canonical_accounts.csv com a hierarquia completa de CD_CONTA → STANDARD_NAME.
+Lê os arquivos XLSX de plano de contas fixas da CVM em docs/vendor/entender_CD
+e gera data/import/canonical_accounts.csv com a hierarquia completa de CD_CONTA → STANDARD_NAME.
 
 Uso:
-    python scripts/build_canonical_dict.py
+    python scripts/data/build_canonical_dict.py
 """
 
 import sys
@@ -23,10 +23,10 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
 # USER CONFIGURATION
 # ==============================================================================
 # Pasta com os XLSXs do plano de contas fixas da CVM
-ENTENDER_CD_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'entender_CD', 'plano-contas-fixas-DFP')
+ENTENDER_CD_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'docs', 'vendor', 'entender_CD', 'plano-contas-fixas-DFP')
 
 # Arquivo de saída
-OUTPUT_CSV = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'canonical_accounts.csv')
+OUTPUT_CSV = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'import', 'canonical_accounts.csv')
 # ==============================================================================
 
 # Mapeamento: trecho do nome da aba -> STATEMENT_TYPE

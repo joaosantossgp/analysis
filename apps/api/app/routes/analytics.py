@@ -5,7 +5,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from apps.api.app.dependencies import ensure_api_ready, get_read_service, get_settings
-from src.read_service import CVMReadService
+from src.financials.read_service import CVMReadService
 
 router = APIRouter(tags=["analytics"])
 

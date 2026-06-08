@@ -6,12 +6,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.company_universe import (
+from src.companies.universe import (
     CompanyUniverseService,
     CompanyUniverseUnavailableError,
 )
-from src.db import build_engine
-from src.settings import build_settings
+from src.platform.db import build_engine
+from src.platform.settings import build_settings
 
 
 class FakeReadService:

@@ -115,8 +115,15 @@ export function HomePage() {
               ? "green"
               : health && health.pct > 0
                 ? "amber"
-                : "neutral"
+            : "neutral"
           }
+        />
+        <QuickNavCard
+          to="/settings"
+          title="Settings"
+          value="DATA"
+          detail="local bases and imports"
+          accent="neutral"
         />
       </div>
     </section>

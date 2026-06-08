@@ -26,7 +26,7 @@ from src.energy_kpi.merge import (
     set_data_quality_status,
 )
 from src.energy_kpi.schema import get_energy_kpi_engine
-from src.settings import AppSettings
+from src.platform.settings import AppSettings
 
 logger = logging.getLogger(__name__)
 

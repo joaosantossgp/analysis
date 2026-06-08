@@ -3,10 +3,10 @@ from __future__ import annotations
 import argparse
 import sys
 
-from src.contracts import RefreshPolicy, RefreshRequest
-from src.refresh_service import HeadlessRefreshService
-from src.settings import get_settings
-from src.startup import collect_startup_report, format_startup_report
+from src.platform.contracts import RefreshPolicy, RefreshRequest
+from src.refresh.service import HeadlessRefreshService
+from src.platform.settings import get_settings
+from src.platform.startup import collect_startup_report, format_startup_report
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")

@@ -26,7 +26,7 @@ from src.energy_kpi.sin_ingest import (
     seed_subsystem_dimension,
     upsert_subsystem_kpi_values,
 )
-from src.settings import AppSettings
+from src.platform.settings import AppSettings
 
 logger = logging.getLogger(__name__)
 

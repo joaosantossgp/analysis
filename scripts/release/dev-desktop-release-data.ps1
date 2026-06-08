@@ -1,5 +1,5 @@
-# Run the desktop app in dev mode pointing at the RELEASE data directory.
-# Use this to test against real data without building a release package.
+# Compatibility wrapper for the default dev desktop workflow.
+# Dev mode now points at the shared Documents data directory by default.
 #
 # WARNING: This uses the same database as the installed release app.
 # Destructive actions (database reset, onboarding reset) affect real user data.
@@ -10,7 +10,7 @@
 #   .\scripts\dev-desktop-release-data.ps1 --debug    # opens DevTools
 #
 # Data directory: %USERPROFILE%\Documents\CVMAnalytics
-# To use isolated dev data instead, run dev-desktop.ps1
+# To use isolated dev data, set CVM_DATA_DIR explicitly before launching.
 
 param(
     [switch]$Debug

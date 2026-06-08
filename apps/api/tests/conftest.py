@@ -10,8 +10,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from apps.api.app.main import create_app
-from src.db import build_engine
-from src.settings import AppSettings, build_settings
+from src.platform.db import build_engine
+from src.platform.settings import AppSettings, build_settings
 
 API_TEST_DATABASE_URL_ENV = "API_TEST_DATABASE_URL"
 

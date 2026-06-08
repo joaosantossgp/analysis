@@ -5,7 +5,7 @@ on:
     branches:
       - main
     paths:
-      - "landing/**"
+      - "apps/landing/**"
       - ".github/workflows/deploy-landing.yml"
   workflow_dispatch:
 
@@ -36,7 +36,7 @@ jobs:
       - name: Upload landing artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: landing
+          path: apps/landing
 
       - name: Deploy to GitHub Pages
         id: deployment

@@ -5,16 +5,16 @@ from typing import Iterable
 from fastapi import HTTPException, Query, Request
 from fastapi.responses import Response
 
-from src.api_errors import (
+from src.platform.api_errors import (
     ApiError,
     InvalidRequestError,
     NotFoundError,
     ServiceUnavailableError,
 )
-from src.company_catalog import CompanyCatalogUnavailableError
-from src.read_service import CVMReadService
-from src.settings import AppSettings
-from src.startup import StartupReport, collect_startup_report
+from src.companies.catalog import CompanyCatalogUnavailableError
+from src.financials.read_service import CVMReadService
+from src.platform.settings import AppSettings
+from src.platform.startup import StartupReport, collect_startup_report
 
 API_VERSION = "v2-phase1"
 REQUIRED_TABLES = ("financial_reports", "companies")

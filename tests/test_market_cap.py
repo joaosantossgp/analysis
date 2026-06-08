@@ -5,8 +5,8 @@ import pytest
 from pathlib import Path
 from types import SimpleNamespace
 
-from src.market_cap import MarketCapService, MarketCapEntry
-from src.settings import build_settings
+from src.companies.market_cap import MarketCapService, MarketCapEntry
+from src.platform.settings import build_settings
 from tests.test_company_universe import FakeReadService
 
 

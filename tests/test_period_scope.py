@@ -17,9 +17,9 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.query_layer import CVMQueryLayer
-from src.read_service import CVMReadService
-from src.settings import build_settings
+from src.financials.query_layer import CVMQueryLayer
+from src.financials.read_service import CVMReadService
+from src.platform.settings import build_settings
 
 
 # ─── DB fixtures ──────────────────────────────────────────────────────────────

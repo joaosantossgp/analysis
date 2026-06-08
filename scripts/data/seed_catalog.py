@@ -6,7 +6,7 @@ Seed idempotente da tabela `companies` a partir do cadastro CVM.
 - Mantem ticker_b3 e company_type ja existentes quando o catalogo nao traz
   informacao melhor.
 - Atribui coverage_rank de 1 a 120 para os primeiros cd_cvm definidos em
-  src.ticker_map.TICKER_MAP.
+  src.companies.ticker_map.TICKER_MAP.
 """
 from __future__ import annotations
 
@@ -27,10 +27,10 @@ sys.path.insert(0, str(ROOT))
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-from src.db import build_engine
-from src.settings import build_settings
-from src.startup import collect_startup_report, format_startup_report
-from src.ticker_map import TICKER_MAP
+from src.platform.db import build_engine
+from src.platform.settings import build_settings
+from src.platform.startup import collect_startup_report, format_startup_report
+from src.companies.ticker_map import TICKER_MAP
 
 logging.basicConfig(
     level=logging.INFO,

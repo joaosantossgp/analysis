@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Sessão 15 — Testes pytest para src/utils.py.
+Sessão 15 — Testes pytest para src/financials/utils.py.
 Rodar: pytest tests/test_utils.py -v
 """
 import sys
@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from src.utils import normalize_account_name, generate_line_id_base, validate_line_ids
+from src.financials.utils import normalize_account_name, generate_line_id_base, validate_line_ids
 
 
 # ──────────────────────────────────────────────────────────────────────────────

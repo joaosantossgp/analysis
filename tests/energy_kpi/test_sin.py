@@ -22,7 +22,7 @@ from src.energy_kpi.sin_ingest import (
     seed_subsystem_dimension,
     upsert_subsystem_kpi_values,
 )
-from src.settings import build_settings
+from src.platform.settings import build_settings
 
 
 def _snapshot(path: Path, dataset: str, source: str = "ONS") -> SINSnapshotRecord:

@@ -12,7 +12,7 @@ from typing import Any
 
 from sqlalchemy import bindparam, text
 
-from src.contracts import (
+from src.platform.contracts import (
     CountryKPIValueDTO,
     EnergyKPIHealthDTO,
     KPICatalogEntryDTO,
@@ -35,7 +35,7 @@ from src.energy_kpi.plant_parcel_ingest import (
 )
 from src.energy_kpi.schema import get_energy_kpi_engine
 from src.energy_kpi.sin_catalog import SIN_KPI_CATALOG
-from src.settings import AppSettings
+from src.platform.settings import AppSettings
 
 logger = logging.getLogger(__name__)
 

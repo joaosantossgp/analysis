@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.gics_manual_mapping import resolve_gics_classification, resolve_gics_sector_name
+from src.companies.gics_manual_mapping import resolve_gics_classification, resolve_gics_sector_name
 
 
 def test_resolve_gics_prefers_persisted_fields_and_keeps_sub_industry_separate():

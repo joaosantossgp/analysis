@@ -18,8 +18,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 
-from src.data_layout import build_data_layout_sync_plan
-from src.settings import build_settings
+from src.platform.data_layout import build_data_layout_sync_plan
+from src.platform.settings import build_settings
 
 
 def parse_args() -> argparse.Namespace:

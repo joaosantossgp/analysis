@@ -31,11 +31,11 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 
-from src.contracts import RefreshPolicy, RefreshRequest
-from src.db import build_engine
-from src.refresh_service import HeadlessRefreshService
-from src.settings import build_settings
-from src.startup import collect_startup_report, format_startup_report
+from src.platform.contracts import RefreshPolicy, RefreshRequest
+from src.platform.db import build_engine
+from src.refresh.service import HeadlessRefreshService
+from src.platform.settings import build_settings
+from src.platform.startup import collect_startup_report, format_startup_report
 
 BATCH_SIZE = 10
 DEFAULT_MAX = 150
@@ -269,7 +269,7 @@ def prefetch_yfinance(cache_path: Path) -> None:
         log.warning("yfinance nao instalado. Pulando pre-cache de mercado.")
         return
 
-    from src.ticker_map import TICKER_MAP
+    from src.companies.ticker_map import TICKER_MAP
 
     cache_path.parent.mkdir(parents=True, exist_ok=True)
 

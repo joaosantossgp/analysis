@@ -2,7 +2,7 @@
  * Type contracts for the configurable company Indicators workspace.
  *
  * The financial calculation lives entirely in the Python KPI engine
- * (`src/kpi_engine.py`, surfaced through `get_company_kpis`). These types only
+ * (`src/financials/kpi_engine.py`, surfaced through `get_company_kpis`). These types only
  * describe the *presentation* configuration and the chart-ready shapes that the
  * transform layer (`series.ts`) produces from the raw `KPIBundle`.
  */

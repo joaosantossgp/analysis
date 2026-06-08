@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-from src.data_layout import build_data_layout_sync_plan, find_loose_input_files
-from src.settings import build_settings
+from src.platform.data_layout import build_data_layout_sync_plan, find_loose_input_files
+from src.platform.settings import build_settings
 
 
 def test_find_loose_input_files_detects_top_level_zip_and_csv(tmp_path):
