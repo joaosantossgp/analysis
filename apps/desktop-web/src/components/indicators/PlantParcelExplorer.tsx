@@ -457,14 +457,14 @@ export function PlantParcelExplorer({ bridgeReady }: { bridgeReady: boolean }) {
     [importManualFiles],
   );
 
-  if (!bridgeReady || statusQuery.isLoading || catalogQuery.isLoading) {
+  if (!bridgeReady || catalogQuery.isLoading) {
     return <StateBanner variant="loading" title="Loading plant parcel cache..." />;
   }
   if (bridgeReason) {
     return <StateBanner variant="browser-only" message={bridgeReason} />;
   }
-  if (statusQuery.isError || catalogQuery.isError) {
-    const error = statusQuery.error ?? catalogQuery.error;
+  if (catalogQuery.isError) {
+    const error = catalogQuery.error;
     return (
       <StateBanner
         variant="error"
@@ -485,6 +485,11 @@ export function PlantParcelExplorer({ bridgeReady }: { bridgeReady: boolean }) {
 
       <SourceStatusGrid
         statuses={statuses}
+        loading={statusQuery.isLoading}
+        error={statusQuery.error}
+        onRetry={() => {
+          void statusQuery.refetch();
+        }}
         refreshingSourceId={effectiveRefreshingSourceId}
         monthlyYear={monthlyYear}
         onMonthlyYearChange={setMonthlyYear}
@@ -543,6 +548,9 @@ export function PlantParcelExplorer({ bridgeReady }: { bridgeReady: boolean }) {
 
 function SourceStatusGrid({
   statuses,
+  loading,
+  error,
+  onRetry,
   refreshingSourceId,
   monthlyYear,
   onMonthlyYearChange,
@@ -554,6 +562,9 @@ function SourceStatusGrid({
   onDropManualFiles,
 }: {
   statuses: PlantParcelSourceStatus[];
+  loading: boolean;
+  error: unknown;
+  onRetry: () => void;
   refreshingSourceId: string | null;
   monthlyYear: string;
   onMonthlyYearChange: (value: string) => void;
@@ -564,6 +575,19 @@ function SourceStatusGrid({
   onChooseManualFile: (source: PlantParcelSourceStatus) => void;
   onDropManualFiles: (source: PlantParcelSourceStatus, files: File[]) => void;
 }) {
+  if (loading) {
+    return <StateBanner variant="loading" title="Loading plant parcel source status..." />;
+  }
+  if (error) {
+    return (
+      <StateBanner
+        variant="error"
+        title="Could not load plant parcel source status"
+        message={error instanceof Error ? error.message : String(error)}
+        onRetry={onRetry}
+      />
+    );
+  }
   if (statuses.length === 0) {
     return (
       <StateBanner

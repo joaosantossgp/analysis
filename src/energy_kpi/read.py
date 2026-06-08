@@ -477,7 +477,7 @@ class EnergyKPIReadService:
                 }
             if SOURCE_CCEE_HOURLY in selected_source_ids:
                 counts[SOURCE_CCEE_HOURLY] = {
-                    "records": int(conn.execute(text("SELECT COUNT(*) FROM ccee_plant_parcel_hourly")).scalar() or 0),
+                    "records": self._fast_ccee_hourly_record_count(conn, latest_logs.get(SOURCE_CCEE_HOURLY, {})),
                     "latest_reference": conn.execute(text("SELECT MAX(reference_datetime) FROM ccee_plant_parcel_hourly")).scalar(),
                 }
 
@@ -944,6 +944,47 @@ class EnergyKPIReadService:
         if exists:
             return "ccee_plant_parcel"
         return "aneel_plant"
+
+    @staticmethod
+    def _positive_int(value: Any) -> int:
+        try:
+            parsed = int(value or 0)
+        except (TypeError, ValueError):
+            return 0
+        return parsed if parsed > 0 else 0
+
+    @classmethod
+    def _fast_ccee_hourly_record_count(cls, conn, latest_log: dict[str, Any]) -> int:
+        """Return a fast row-count estimate for the large CCEE hourly cache.
+
+        The packaged database can hold tens of millions of hourly rows. SQLite's
+        exact COUNT(*) can take over a minute on that table, and this status is
+        used only to decide/display whether a local cache exists.
+        """
+        try:
+            rowid_estimate = cls._positive_int(
+                conn.execute(text("SELECT MAX(rowid) FROM ccee_plant_parcel_hourly")).scalar()
+            )
+            if rowid_estimate:
+                return rowid_estimate
+        except Exception:
+            logger.debug("could not estimate CCEE hourly rows from rowid", exc_info=True)
+
+        log_estimate = max(
+            cls._positive_int(latest_log.get("rows_inserted")),
+            cls._positive_int(latest_log.get("normalized_rows")),
+            cls._positive_int(latest_log.get("parsed_rows")),
+            cls._positive_int(latest_log.get("source_rows")),
+            cls._positive_int(latest_log.get("rows_downloaded")),
+        )
+        if log_estimate:
+            return log_estimate
+
+        try:
+            return 1 if conn.execute(text("SELECT 1 FROM ccee_plant_parcel_hourly LIMIT 1")).scalar() else 0
+        except Exception:
+            logger.debug("could not detect CCEE hourly cache presence", exc_info=True)
+            return 0
 
     @staticmethod
     def _plant_source_cache_status(

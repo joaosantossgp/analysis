@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 
 from src.energy_kpi.metrics import (
     capacity_factor,
@@ -348,6 +348,48 @@ def test_source_status_is_read_only_during_sqlite_write_lock(tmp_path: Path, mon
     assert by_source[SOURCE_CCEE_MONTHLY]["source_name"] == "CCEE Plant Parcel Monthly"
     with engine.connect() as conn:
         assert int(conn.execute(text("SELECT COUNT(*) FROM energy_sources")).scalar() or 0) == 0
+
+
+def test_source_status_uses_fast_hourly_cache_presence(db_engine, monkeypatch):
+    with db_engine.begin() as conn:
+        seed_plant_sources(conn)
+        conn.execute(text("""
+            INSERT INTO ccee_plant_parcel_hourly
+                (reference_datetime, reference_month, commercialization_period, plant_parcel_code,
+                 plant_acronym, generation_source, submarket, source_dataset, raw_payload_hash)
+            VALUES
+                ('2026-04-30T23:00:00', '2026-04', 1, '1001',
+                 'PLT1', 'Hidraulica', 'SE/CO', 'GERACAO_HORARIA_USINA', 'hash-hourly')
+        """))
+        conn.execute(text("""
+            INSERT INTO energy_source_refresh_log
+                (refresh_id, source_id, requested_by, started_at, finished_at,
+                 status, rows_inserted, source_rows, parsed_rows, normalized_rows)
+            VALUES
+                ('hourly-fast-1', :source_id, 'test', '2026-06-01T00:00:00+00:00',
+                 '2026-06-01T00:00:01+00:00', 'success', 1, 1, 1, 1)
+        """), {"source_id": SOURCE_CCEE_HOURLY})
+
+    statements: list[str] = []
+
+    def capture_statement(_conn, _cursor, statement, _parameters, _context, _executemany):
+        statements.append(" ".join(str(statement).split()))
+
+    event.listen(db_engine, "before_cursor_execute", capture_statement)
+    try:
+        settings = build_settings()
+        svc = EnergyKPIReadService(settings)
+        monkeypatch.setattr(svc, "_engine", lambda: db_engine)
+
+        status = svc.get_plant_parcel_source_statuses(source_ids=[SOURCE_CCEE_HOURLY])
+    finally:
+        event.remove(db_engine, "before_cursor_execute", capture_statement)
+
+    hourly = status["source_statuses"][0]
+    assert hourly["source_id"] == SOURCE_CCEE_HOURLY
+    assert hourly["local_records_count"] == 1
+    assert hourly["latest_reference"] == "2026-04-30T23:00:00"
+    assert not any("COUNT(*) FROM ccee_plant_parcel_hourly" in stmt for stmt in statements)
 
 
 def test_energy_kpi_engine_first_access_tolerates_locked_pragma_setup(tmp_path: Path):
