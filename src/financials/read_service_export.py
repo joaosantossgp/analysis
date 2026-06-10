@@ -69,6 +69,7 @@ from src.financials.excel_exporter import (
     build_excel_filename,
     _pick_model_periods,
     _period_sort_key,
+    is_financial_company_info,
 )
 from src.financials.excel_mapping import (
     SYSTEM_DEFAULT_PRESET_ID,
@@ -211,6 +212,10 @@ class ReadServiceExportMixin:
             self.excel_mapping_repository.get_company_default_preset_id(cd_cvm)
             or SYSTEM_DEFAULT_PRESET_ID
         )
+        is_financial = is_financial_company_info(company_info)
+        from src.financials.formulas import get_formula_definitions
+        formula_defs = get_formula_definitions(is_financial)
+
         active_preset_id = preset_id or company_default_preset_id
         mapping = self.resolve_excel_model_mapping(cd_cvm, active_preset_id)
         scope = self.resolve_excel_export_scope(cd_cvm, period_scope)
@@ -222,6 +227,14 @@ class ReadServiceExportMixin:
         )
         mapped_targets = self._mapping_source_targets(mapping)
 
+        preview_rows = self._model_preview_rows(
+            mapping,
+            raw_statements,
+            preview_periods,
+            issues,
+            is_financial,
+        )
+
         return {
             "ok": True,
             "company": company_info,
@@ -232,13 +245,10 @@ class ReadServiceExportMixin:
             "active_preset_id": mapping.preset_id,
             "company_default_preset_id": company_default_preset_id,
             "mapping": mapping.to_dict(),
+            "formula_definitions": formula_defs,
+            "is_financial": is_financial,
             "preview_periods": preview_periods,
-            "model_preview_rows": self._model_preview_rows(
-                mapping,
-                raw_statements,
-                preview_periods,
-                issues,
-            ),
+            "model_preview_rows": preview_rows,
             "raw_lines": self._raw_mapping_lines(
                 raw_statements,
                 preview_periods=preview_periods,
@@ -485,8 +495,30 @@ class ReadServiceExportMixin:
         statements: dict[str, pd.DataFrame],
         preview_periods: list[str],
         issues: list[MappingValidationIssue],
+        is_financial: bool = False,
     ) -> list[dict[str, Any]]:
         indexes = ReadServiceExportMixin._statement_indexes(statements)
+        
+        # 1. Initialize with direct/mapped preview values
+        values_by_target_period: dict[str, dict[str, float | None]] = {}
+        for entry in mapping.entries:
+            values_by_target_period[entry.target_id] = {}
+            for period in preview_periods:
+                values_by_target_period[entry.target_id][period] = ReadServiceExportMixin._model_preview_value(entry, period, indexes)
+
+        # 2. Evaluate formulas dynamically
+        from src.financials.formulas import evaluate_formulas
+        values_by_target_period, check_statuses, formula_issues = evaluate_formulas(
+            is_financial=is_financial,
+            entries=list(mapping.entries),
+            periods=preview_periods,
+            values_by_target_period=values_by_target_period,
+        )
+        
+        # 3. Append formula warning issues to the validation issues list
+        issues.extend(formula_issues)
+
+        # 4. Count validation issues per target row
         issue_counts: dict[str, dict[str, int]] = {}
         for issue in issues:
             if not issue.target_id:
@@ -496,12 +528,12 @@ class ReadServiceExportMixin:
                 counts["errors"] += 1
             else:
                 counts["warnings"] += 1
+
+        # 5. Build final row payloads
         rows: list[dict[str, Any]] = []
         for entry in mapping.entries:
-            values: dict[str, float | None] = {}
-            for period in preview_periods:
-                values[period] = ReadServiceExportMixin._model_preview_value(entry, period, indexes)
             counts = issue_counts.get(entry.target_id, {"errors": 0, "warnings": 0})
+            row_check_statuses = check_statuses.get(entry.target_id, {})
             rows.append({
                 "target_id": entry.target_id,
                 "target_label": entry.target_label,
@@ -515,7 +547,8 @@ class ReadServiceExportMixin:
                 "source_count": len(entry.sources),
                 "warning_count": counts["warnings"],
                 "error_count": counts["errors"],
-                "values_by_period": values,
+                "values_by_period": values_by_target_period.get(entry.target_id, {}),
+                "check_status": row_check_statuses,
             })
         return rows
 

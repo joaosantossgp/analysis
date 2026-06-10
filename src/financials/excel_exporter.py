@@ -1233,6 +1233,89 @@ class ExcelExporter:
         ws.hide_gridlines(2)
         ws.freeze_panes(2, 0)
 
+    def _populate_model_row_indices(self, periods: list[str]) -> None:
+        """Pre-computes the row index of every mapped/spine target ID on the Model sheet
+
+        to resolve forward/backward cell references in formulas.
+        """
+        # Replicates the row cursor increments on the Model sheet
+        header_row = 23
+        row = header_row + 4
+
+        # 1. Income Statement
+        row += 2  # heading
+        _is_fin = self._is_financial_firm
+        stmt_type = "DRE"
+        from src.financials.excel_exporter import _FIN_DRE_SPINE, _DRE_SPINE  # noqa: PLC0415
+        spine = _FIN_DRE_SPINE if _is_fin else _DRE_SPINE
+        mapped_entries = self._mapping_entries("Income Statement", stmt_type)
+        if mapped_entries:
+            for entry in mapped_entries:
+                self._model_rows[entry.target_id] = row + 1
+                row += 1
+            row += 1
+        else:
+            for code, _ in spine:
+                self._model_rows[f"{stmt_type}:{code}"] = row + 1
+                row += 1
+            row += 1
+
+        # 2. EBITDA and D&A
+        # D&A row
+        self._model_rows["COMP:DA"] = row + 1
+        row += 1
+        # EBITDA row
+        self._model_rows["COMP:EBITDA"] = row + 1
+        row += 2  # returns row + 2
+
+        # 3. Balance Sheet
+        if not (("BPA" not in self.stmts or self.stmts["BPA"].empty)
+                and ("BPP" not in self.stmts or self.stmts["BPP"].empty)):
+            row += 2  # heading
+
+            def simulate_block(stype, spine_list, sub_label):
+                nonlocal row
+                idx = self._raw_index.get(stype)
+                if idx is None:
+                    return
+                row += 1  # sub_label
+                m_entries = self._mapping_entries(sub_label, stype)
+                if m_entries:
+                    for entry in m_entries:
+                        self._model_rows[entry.target_id] = row + 1
+                        row += 1
+                    row += 1
+                    return
+                for code, _ in spine_list:
+                    self._model_rows[f"{stype}:{code}"] = row + 1
+                    row += 1
+                row += 1
+
+            from src.financials.excel_exporter import _FIN_BPA_SPINE, _BPA_SPINE, _FIN_BPP_SPINE, _BPP_SPINE  # noqa: PLC0415
+            if self._is_financial_firm:
+                simulate_block("BPA", _FIN_BPA_SPINE, "Assets")
+                simulate_block("BPP", _FIN_BPP_SPINE, "Liabilities & Equity")
+            else:
+                simulate_block("BPA", _BPA_SPINE, "Assets")
+                simulate_block("BPP", _BPP_SPINE, "Liabilities & Equity")
+
+        # 4. Cash Flow Statement
+        stmt_type = "DFC"
+        from src.financials.excel_exporter import _DFC_SPINE  # noqa: PLC0415
+        spine = _DFC_SPINE
+        row += 2  # heading
+        mapped_entries = self._mapping_entries("Cash Flow Statement", stmt_type)
+        if mapped_entries:
+            for entry in mapped_entries:
+                self._model_rows[entry.target_id] = row + 1
+                row += 1
+            row += 1
+        else:
+            for code, _ in spine:
+                self._model_rows[f"{stmt_type}:{code}"] = row + 1
+                row += 1
+            row += 1
+
     # ── Model sheet — main analyst view ───────────────────────────────────
     def _write_model_sheet(self):
         ws = self._wb.add_worksheet(MODEL_SHEET)
@@ -1253,6 +1336,7 @@ class ExcelExporter:
             quarters_per_year=self.period_window[1],
         )
         self._model_periods = periods
+        self._populate_model_row_indices(periods)
 
         # Columns: A margin, B labels, C gap, D+ periods
         ws.set_column(0, 0, 2)
@@ -1485,6 +1569,77 @@ class ExcelExporter:
         is_sub: bool,
     ) -> tuple[bool, list[str]]:
         f = self._fmt
+        from src.financials.formulas import is_formula_row, get_formula_definitions  # noqa: PLC0415
+        is_fin = self._is_financial_firm
+
+        if is_formula_row(entry.target_id, is_fin):
+            formula_def = get_formula_definitions(is_fin)[entry.target_id]
+            deps = formula_def["dependencies"]
+            reqs = formula_def["required"]
+            
+            all_reqs_in_model = all(r in self._model_rows for r in reqs)
+            warnings = []
+            for dep_id in reqs:
+                if dep_id not in self._model_rows:
+                    warnings.append(f"required dependency {dep_id} is missing from Model layout")
+            for dep_id in deps:
+                if dep_id not in reqs and dep_id not in self._model_rows:
+                    warnings.append(f"optional dependency {dep_id} is missing from Model layout")
+
+            resolved_formula = ""
+            for c_idx, p in enumerate(periods, start=3):
+                is_y = _is_annual_period(p)
+                cell_fmt = (f["num_subtotal_y"] if is_sub and is_y
+                            else f["num_subtotal"] if is_sub
+                            else f["num_linked_y"] if is_y
+                            else f["num_linked"])
+                if not all_reqs_in_model:
+                    ws.write_blank(row, c_idx, None, cell_fmt)
+                    continue
+
+                col_letter = xlsxwriter.utility.xl_col_to_name(c_idx)
+                req_refs = [f"{col_letter}{self._model_rows[dep_id]}" for dep_id in reqs if dep_id in self._model_rows]
+                
+                # Check optional deps mapping to see if they are active
+                entries_by_id = {e.target_id: e for e in self.model_mapping.entries}
+                opt_refs = []
+                for dep_id in deps:
+                    if dep_id not in reqs and dep_id in self._model_rows:
+                        dep_entry = entries_by_id.get(dep_id)
+                        if dep_entry and dep_entry.sources:
+                            opt_refs.append(f"{col_letter}{self._model_rows[dep_id]}")
+
+                all_refs = req_refs + opt_refs
+                if not all_refs:
+                    ws.write_blank(row, c_idx, None, cell_fmt)
+                    continue
+
+                if req_refs:
+                    cond_check = "AND(" + ",".join(f"ISNUMBER({ref})" for ref in req_refs) + ")"
+                else:
+                    cond_check = "OR(" + ",".join(f"ISNUMBER({ref})" for ref in opt_refs) + ")"
+
+                sum_expression = "SUM(" + ",".join(all_refs) + ")"
+                formula = f'=IF({cond_check},{sum_expression},"-")'
+                if not resolved_formula:
+                    resolved_formula = formula
+                ws.write_formula(row, c_idx, formula, cell_fmt)
+
+            self._mapping_audit_rows.append(
+                {
+                    "target_id": entry.target_id,
+                    "target_label": entry.target_label,
+                    "group": entry.group,
+                    "statement_type": entry.statement_type,
+                    "operation": "formula",
+                    "sources": "; ".join(deps),
+                    "resolved": "yes" if all_reqs_in_model else "no",
+                    "resolved_formula": resolved_formula,
+                    "warnings": "; ".join(warnings),
+                }
+            )
+            return all_reqs_in_model, warnings
+
         source_resolutions = [
             (source, *self._resolve_mapping_source(source))
             for source in entry.sources

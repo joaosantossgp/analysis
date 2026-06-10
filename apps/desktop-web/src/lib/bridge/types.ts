@@ -679,6 +679,11 @@ export type ExcelMappingPreviewRow = {
   warning_count: number;
   error_count: number;
   values_by_period: Record<string, number | null>;
+  check_status?: Record<string, {
+    status: "pass" | "rounding_difference" | "mismatch" | "unavailable" | "calculated";
+    variance: number | null;
+    reported_value: number | null;
+  }>;
 };
 
 export type ExcelMappingValidationIssue = {
@@ -701,6 +706,11 @@ export type ExcelMappingWorkspace = {
   model_preview_rows: ExcelMappingPreviewRow[];
   raw_lines: ExcelMappingRawLine[];
   validation: ExcelMappingValidationIssue[];
+  formula_definitions?: Record<string, {
+    dependencies: string[];
+    required: string[];
+  }>;
+  is_financial?: boolean;
   error?: string;
 };
 

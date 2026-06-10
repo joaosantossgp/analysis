@@ -23,6 +23,7 @@ import type {
   ExcelMappingRawLine,
   ExcelMappingSource,
   ExcelMappingValidationIssue,
+  ExcelMappingWorkspace,
 } from "@/lib/bridge/types";
 
 const SYSTEM_DEFAULT_PRESET_ID = "system:default";
@@ -127,19 +128,41 @@ export function CompanyModelMappingPage() {
     setTouched(false);
   }, [draft?.preset_id, touched, workspace]);
 
-  const validation = useMemo(
-    () => mergeValidationIssues(
+  const formulaEvaluation = useMemo(() => {
+    if (!draft || !workspace) return { values: {}, checkStatuses: {}, issues: [] };
+    
+    const initialValues: Record<string, Record<string, number | null>> = {};
+    const fallbackById = new Map(workspace.model_preview_rows.map((row) => [row.target_id, row]));
+    const rawByKey = new Map(workspace.raw_lines.map((line) => [`${line.statement_type}:${line.line_id_base}`, line]));
+    
+    for (const entry of draft.entries) {
+      initialValues[entry.target_id] = {};
+      const fallback = fallbackById.get(entry.target_id);
+      for (const period of workspace.preview_periods) {
+        initialValues[entry.target_id][period] = previewValueForEntry(entry, period, rawByKey)
+          ?? fallback?.values_by_period[period]
+          ?? null;
+      }
+    }
+    
+    return evaluateFormulasJS(draft, workspace, initialValues);
+  }, [draft, workspace]);
+
+  const validation = useMemo(() => {
+    const baseIssues = mergeValidationIssues(
       workspace?.validation ?? [],
       draft && workspace ? validateDraft(draft, workspace.raw_lines) : [],
-    ),
-    [draft, workspace],
-  );
+    );
+    const filteredBase = baseIssues.filter((issue) => issue.code !== "calculated_mismatch");
+    return [...filteredBase, ...formulaEvaluation.issues];
+  }, [draft, workspace, formulaEvaluation.issues]);
+
   const blockingCount = validation.filter((issue) => issue.severity === "error").length;
   const warningCount = validation.filter((issue) => issue.severity !== "error").length;
 
   const previewRows = useMemo(
-    () => buildPreviewRows(draft, workspace, validation),
-    [draft, validation, workspace],
+    () => buildPreviewRows(draft, workspace, validation, formulaEvaluation),
+    [draft, validation, workspace, formulaEvaluation],
   );
   const statementGroups = useMemo(
     () => buildStatementGroups(previewRows),
@@ -384,6 +407,7 @@ export function CompanyModelMappingPage() {
             statement={activeStatementGroup}
             selectedTargetId={selectedEntry?.target_id ?? null}
             onSelectRow={setSelectedTargetId}
+            workspace={workspace}
           />
           <ValidationStrip
             validation={validation}
@@ -401,6 +425,8 @@ export function CompanyModelMappingPage() {
           periods={workspace.preview_periods}
           validation={validation}
           touched={touched}
+          workspace={workspace}
+          rows={previewRows}
           onOpenPicker={() => setPickerOpen(true)}
           onOperationChange={(operation) => {
             if (!selectedEntry) return;
@@ -688,17 +714,25 @@ function ModelPreviewTable({
   statement,
   selectedTargetId,
   onSelectRow,
+  workspace,
 }: {
   periods: string[];
   rows: PreviewRow[];
   statement: StatementGroupSummary | null;
   selectedTargetId: string | null;
   onSelectRow: (targetId: string) => void;
+  workspace: ExcelMappingWorkspace | null;
 }) {
   const grouped = groupRows(rows);
   const statementLabel = statement?.label ?? "Statement";
   const statementType = statement?.statementType ?? "";
   const statementSummary = statement ? statementSummaryText(statement) : "No statement rows";
+  
+  const hasMismatch = (row: PreviewRow) => {
+    if (!row.check_status) return false;
+    return Object.values(row.check_status).some((check) => check.status === "mismatch");
+  };
+
   return (
     <Panel
       dense
@@ -747,6 +781,12 @@ function ModelPreviewTable({
                           </span>
                           <span className="ml-2 inline-flex gap-1 align-middle">
                             {row.edited ? <MiniBadge tone="warn">Edited</MiniBadge> : null}
+                            {workspace?.formula_definitions?.[row.target_id] ? (
+                              <MiniBadge tone="muted">Formula</MiniBadge>
+                            ) : null}
+                            {hasMismatch(row) ? (
+                              <MiniBadge tone="error">Mismatch</MiniBadge>
+                            ) : null}
                             {row.error_count > 0 ? <MiniBadge tone="error">{row.error_count} error</MiniBadge> : null}
                             {row.warning_count > 0 ? <MiniBadge tone="warn">{row.warning_count} warn</MiniBadge> : null}
                           </span>
@@ -757,11 +797,33 @@ function ModelPreviewTable({
                           {row.source_count} source{row.source_count === 1 ? "" : "s"}
                         </MiniBadge>
                       </td>
-                      {periods.map((period) => (
-                        <td key={period} style={valueCellStyle}>
-                          {formatModelValue(row.values_by_period[period])}
-                        </td>
-                      ))}
+                      {periods.map((period) => {
+                        const check = row.check_status?.[period];
+                        const cellStyle = { ...valueCellStyle };
+                        let titleText = "";
+                        if (check) {
+                          const varianceVal = check.variance ?? 0;
+                          if (check.status === "mismatch") {
+                            cellStyle.color = "var(--color-state-err, #ef4444)";
+                            cellStyle.fontWeight = 650;
+                            titleText = `Mismatch! Calculated: ${formatModelValue(row.values_by_period[period])}, Reported: ${formatModelValue(check.reported_value)}. Variance: ${varianceVal > 0 ? "+" : ""}${varianceVal.toFixed(2)} R$ mm.`;
+                          } else if (check.status === "rounding_difference") {
+                            cellStyle.color = "var(--color-state-warn, #f59e0b)";
+                            titleText = `Minor Rounding Diff. Calculated: ${formatModelValue(row.values_by_period[period])}, Reported: ${formatModelValue(check.reported_value)}. Variance: ${varianceVal > 0 ? "+" : ""}${varianceVal.toFixed(2)} R$ mm.`;
+                          } else if (check.status === "pass") {
+                            titleText = `Matches reported value: ${formatModelValue(check.reported_value)} R$ mm.`;
+                          } else if (check.status === "calculated") {
+                            titleText = `Calculated value (no reported value mapped)`;
+                          } else if (check.status === "unavailable") {
+                            titleText = `Unavailable: missing required dependencies`;
+                          }
+                        }
+                        return (
+                          <td key={period} style={cellStyle} title={titleText}>
+                            {formatModelValue(row.values_by_period[period])}
+                          </td>
+                        );
+                      })}
                     </tr>
                   );
                 })}
@@ -787,6 +849,8 @@ function RowInspector({
   periods,
   validation,
   touched,
+  workspace,
+  rows,
   onOpenPicker,
   onOperationChange,
   onRemoveSource,
@@ -797,6 +861,8 @@ function RowInspector({
   periods: string[];
   validation: ExcelMappingValidationIssue[];
   touched: boolean;
+  workspace: ExcelMappingWorkspace | null;
+  rows: PreviewRow[];
   onOpenPicker: () => void;
   onOperationChange: (operation: string) => void;
   onRemoveSource: (index: number) => void;
@@ -805,6 +871,9 @@ function RowInspector({
   const entryIssues = entry
     ? validation.filter((issue) => issue.target_id === entry.target_id)
     : [];
+  
+  const isFormula = entry && workspace?.formula_definitions?.[entry.target_id];
+
   return (
     <Panel
       dense
@@ -822,27 +891,40 @@ function RowInspector({
             <MetricBox label="Sources" value={String(entry.sources.length)} tone={entry.sources.length ? "ok" : "warn"} />
             <MetricBox label="Latest preview" value={formatModelValue(latestPreviewValue(previewRow, periods))} tone="neutral" />
           </div>
-          <label style={labelStyle}>
-            Formula behavior
-            <Select
-              value={entry.operation}
-              onChange={(event) => onOperationChange(event.target.value)}
-              style={controlStyle}
-            >
-              {OPERATIONS.map((operation) => (
-                <option key={operation.value} value={operation.value}>
-                  {operation.label}
-                </option>
-              ))}
-            </Select>
-          </label>
+          
+          {isFormula ? (
+            <div style={formulaBoxStyle}>
+              <div style={{ color: "var(--color-text-primary)", fontSize: "var(--text-xs)", fontWeight: 650 }}>
+                Formula Row
+              </div>
+              <div style={{ color: "var(--color-text-secondary)", fontSize: "var(--text-xs)", marginTop: 4 }}>
+                This row is calculated dynamically from other model rows. Any mapped CVM source lines are used strictly as the "Reported Total" for reconciliation and checks.
+              </div>
+            </div>
+          ) : (
+            <label style={labelStyle}>
+              Formula behavior
+              <Select
+                value={entry.operation}
+                onChange={(event) => onOperationChange(event.target.value)}
+                style={controlStyle}
+              >
+                {OPERATIONS.map((operation) => (
+                  <option key={operation.value} value={operation.value}>
+                    {operation.label}
+                  </option>
+                ))}
+              </Select>
+            </label>
+          )}
+
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2">
               <div style={{ color: "var(--color-text-primary)", fontSize: "var(--text-sm)", fontWeight: 650 }}>
-                CVM source lines
+                {isFormula ? 'CVM reconciliation lines' : 'CVM source lines'}
               </div>
               <Button size="xs" variant="secondary" onClick={onOpenPicker}>
-                Add CVM Source
+                {isFormula ? 'Add CVM check line' : 'Add CVM Source'}
               </Button>
             </div>
             {entry.sources.map((source, index) => (
@@ -856,25 +938,105 @@ function RowInspector({
             ))}
             {entry.sources.length === 0 ? (
               <div style={emptyInsetStyle}>
-                This row has no mapped CVM source line.
+                This row has no mapped CVM {isFormula ? 'check' : 'source'} line.
               </div>
             ) : null}
           </div>
+          
           <div style={formulaBoxStyle}>
             <div style={{ color: "var(--color-text-primary)", fontSize: "var(--text-xs)", fontWeight: 650 }}>
               Friendly formula
             </div>
-            <div style={{ color: "var(--color-text-secondary)", fontSize: "var(--text-xs)", marginTop: 4 }}>
-              {friendlyFormula(entry)}
+            <div style={{ color: "var(--color-text-secondary)", fontSize: "var(--text-xs)", marginTop: 4, whiteSpace: "pre-line" }}>
+              {friendlyFormula(entry, workspace)}
             </div>
           </div>
+
+          {isFormula && previewRow?.check_status && (
+            <div className="space-y-2">
+              <div style={{ color: "var(--color-text-primary)", fontSize: "var(--text-sm)", fontWeight: 650 }}>
+                Reconciliation & Checks
+              </div>
+              <div className="space-y-1">
+                {periods.map((period) => {
+                  const check = previewRow.check_status?.[period];
+                  if (!check) return null;
+                  
+                  let badgeColor = "var(--color-text-tertiary)";
+                  let badgeText = "No data";
+                  let detail = "";
+                  
+                  if (check.status === "pass") {
+                    badgeColor = "#10b981";
+                    badgeText = "Matches";
+                    detail = `Matches reported CVM total of ${formatModelValue(check.reported_value)} R$ mm.`;
+                  } else if (check.status === "rounding_difference") {
+                    badgeColor = "#f59e0b";
+                    badgeText = "Rounding";
+                    const varianceVal = check.variance ?? 0;
+                    detail = `Calculated: ${formatModelValue(previewRow.values_by_period[period])} R$ mm, Reported: ${formatModelValue(check.reported_value)} R$ mm (Variance: ${varianceVal > 0 ? "+" : ""}${varianceVal?.toFixed(2)} R$ mm).`;
+                  } else if (check.status === "mismatch") {
+                    badgeColor = "#ef4444";
+                    badgeText = "Mismatch";
+                    const varianceVal = check.variance ?? 0;
+                    detail = `Calculated: ${formatModelValue(previewRow.values_by_period[period])} R$ mm, Reported: ${formatModelValue(check.reported_value)} R$ mm (Variance: ${varianceVal > 0 ? "+" : ""}${varianceVal?.toFixed(2)} R$ mm).`;
+                  } else if (check.status === "calculated") {
+                    badgeColor = "#3b82f6";
+                    badgeText = "Calculated";
+                    detail = `Calculated: ${formatModelValue(previewRow.values_by_period[period])} R$ mm (No reported CVM total mapped).`;
+                  } else if (check.status === "unavailable") {
+                    badgeColor = "#6b7280";
+                    badgeText = "Unavailable";
+                    
+                    const formulaDef = workspace?.formula_definitions?.[entry.target_id];
+                    const missingReqs: string[] = [];
+                    if (formulaDef) {
+                      for (const reqId of formulaDef.required) {
+                        const depRow = rows.find((r) => r.target_id === reqId);
+                        const depVal = depRow?.values_by_period?.[period];
+                        if (depVal === null || depVal === undefined) {
+                          missingReqs.push(depRow ? depRow.target_label : reqId);
+                        }
+                      }
+                    }
+                    if (missingReqs.length > 0) {
+                      detail = `Calculation unavailable in ${period}. Missing required inputs: ${missingReqs.join(", ")}.`;
+                    } else {
+                      detail = `Calculation unavailable in ${period}.`;
+                    }
+                  }
+                  
+                  return (
+                    <div key={period} className="flex items-start gap-2 text-xs border border-dashed border-border-subtle p-2 rounded" style={{ borderColor: "var(--color-border-subtle)", background: "var(--color-surface-1)" }}>
+                      <span style={{
+                        background: badgeColor,
+                        color: "#fff",
+                        padding: "1px 6px",
+                        borderRadius: 4,
+                        fontSize: "9px",
+                        fontWeight: 600,
+                        textTransform: "uppercase"
+                      }}>
+                        {badgeText}
+                      </span>
+                      <div className="flex-1">
+                        <strong className="block text-3xs text-secondary">{period}</strong>
+                        <span style={{ color: "var(--color-text-secondary)" }}>{detail}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <details>
             <summary style={{ color: "var(--color-text-secondary)", cursor: "pointer", fontSize: "var(--text-xs)" }}>
               Advanced audit
             </summary>
             <div className="mt-2 space-y-1 font-mono" style={{ color: "var(--color-text-tertiary)", fontSize: "var(--text-2xs)" }}>
               <div>target: {entry.target_id}</div>
-              <div>operation: {entry.operation}</div>
+              <div>operation: {isFormula ? "formula" : entry.operation}</div>
               <div>sources: {entry.sources.map((source) => `${source.statement_type}:${source.line_id_base}`).join(" + ") || "none"}</div>
               <div>Excel export: raw sheet links with /1000 scaling and IFERROR guard.</div>
             </div>
@@ -1170,10 +1332,13 @@ function buildPreviewRows(
   mapping: ExcelMappingDefinition | null,
   workspace: NonNullable<ExcelMappingWorkspaceResult["workspace"]> | null,
   validation: ExcelMappingValidationIssue[],
+  formulaEvaluation: {
+    values: Record<string, Record<string, number | null>>;
+    checkStatuses: Record<string, Record<string, any>>;
+  },
 ): PreviewRow[] {
   if (!mapping || !workspace) return [];
   const fallbackById = new Map(workspace.model_preview_rows.map((row) => [row.target_id, row]));
-  const rawByKey = new Map(workspace.raw_lines.map((line) => [`${line.statement_type}:${line.line_id_base}`, line]));
   const issuesByTarget = new Map<string, ExcelMappingValidationIssue[]>();
   for (const issue of validation) {
     if (!issue.target_id) continue;
@@ -1183,12 +1348,8 @@ function buildPreviewRows(
   return mapping.entries.map((entry) => {
     const fallback = fallbackById.get(entry.target_id);
     const rowIssues = issuesByTarget.get(entry.target_id) ?? [];
-    const values_by_period: Record<string, number | null> = {};
-    for (const period of workspace.preview_periods) {
-      values_by_period[period] = previewValueForEntry(entry, period, rawByKey)
-        ?? fallback?.values_by_period[period]
-        ?? null;
-    }
+    const values_by_period = formulaEvaluation.values[entry.target_id] ?? {};
+    const check_status = formulaEvaluation.checkStatuses[entry.target_id] ?? fallback?.check_status ?? {};
     return {
       target_id: entry.target_id,
       target_label: entry.target_label,
@@ -1204,6 +1365,7 @@ function buildPreviewRows(
       error_count: rowIssues.filter((issue) => issue.severity === "error").length,
       values_by_period,
       rowIssues,
+      check_status,
       edited: !sameEntryMapping(entry, originalEntries.get(entry.target_id)),
     };
   });
@@ -1425,7 +1587,34 @@ function mergeValidationIssues(
   return merged;
 }
 
-function friendlyFormula(entry: ExcelMappingEntry): string {
+function friendlyFormula(entry: ExcelMappingEntry, workspace: ExcelMappingWorkspace | null): string {
+  const formulaDef = workspace?.formula_definitions?.[entry.target_id];
+  if (formulaDef) {
+    const depLabels = formulaDef.dependencies.map((depId: string) => {
+      const depEntry = workspace.mapping.entries.find((e: any) => e.target_id === depId);
+      return depEntry ? depEntry.target_label : depId;
+    });
+    const joined = depLabels.join(" + ");
+    let text = `${entry.target_label} = ${joined}`;
+    
+    const reqs = formulaDef.required;
+    const optionalDeps = formulaDef.dependencies.filter((d: string) => !reqs.includes(d));
+    if (optionalDeps.length > 0) {
+      const optionalUnmapped = optionalDeps.filter((d: string) => {
+        const depEntry = workspace.mapping.entries.find((e: any) => e.target_id === d);
+        return !depEntry || depEntry.sources.length === 0;
+      });
+      if (optionalUnmapped.length > 0) {
+        const optionalLabels = optionalUnmapped.map((d: string) => {
+          const depEntry = workspace.mapping.entries.find((e: any) => e.target_id === d);
+          return depEntry ? depEntry.target_label : d;
+        });
+        text += `\n(Note: Optional inputs [${optionalLabels.join(", ")}] are unmapped and treated as zero)`;
+      }
+    }
+    return text;
+  }
+
   if (entry.sources.length === 0) {
     return `${entry.target_label} has no mapped CVM source line yet.`;
   }
@@ -1649,3 +1838,141 @@ const rawLineStyle: CSSProperties = {
   justifyContent: "space-between",
   padding: "9px 10px",
 };
+
+const FORMULA_EVAL_ORDER = [
+  "BPA:1",
+  "BPP:2",
+  "DFC:6.01",
+  "DFC:6.05",
+  "DRE:3.03",
+  "DRE:3.06",
+  "DRE:3.05",
+  "DRE:3.07",
+  "DRE:3.09",
+  "DRE:3.11",
+];
+
+function evaluateFormulasJS(
+  mapping: ExcelMappingDefinition,
+  workspace: NonNullable<ExcelMappingWorkspaceResult["workspace"]>,
+  valuesByTargetPeriod: Record<string, Record<string, number | null>>,
+): {
+  values: Record<string, Record<string, number | null>>;
+  checkStatuses: Record<string, Record<string, {
+    status: "pass" | "rounding_difference" | "mismatch" | "unavailable" | "calculated";
+    variance: number | null;
+    reported_value: number | null;
+  }>>;
+  issues: ExcelMappingValidationIssue[];
+} {
+  const defs = workspace.formula_definitions ?? {};
+  const entriesById = new Map(mapping.entries.map((e) => [e.target_id, e]));
+  const activeTargetIds = new Set(mapping.entries.map((e) => e.target_id));
+  
+  const checkStatuses: Record<string, Record<string, any>> = {};
+  for (const targetId of Object.keys(defs)) {
+    checkStatuses[targetId] = {};
+  }
+
+  const values: Record<string, Record<string, number | null>> = {};
+  for (const targetId of Object.keys(valuesByTargetPeriod)) {
+    values[targetId] = { ...valuesByTargetPeriod[targetId] };
+  }
+
+  const issues: ExcelMappingValidationIssue[] = [];
+  const periods = workspace.preview_periods;
+  const tolerance = 1.0;
+
+  for (const period of periods) {
+    for (const targetId of FORMULA_EVAL_ORDER) {
+      if (!defs[targetId] || !activeTargetIds.has(targetId)) {
+        continue;
+      }
+
+      const formulaDef = defs[targetId];
+      const deps = formulaDef.dependencies;
+      const reqs = formulaDef.required;
+
+      let missingDep = false;
+      let calculatedSum = 0;
+
+      for (const depId of deps) {
+        const depEntry = entriesById.get(depId);
+        const depHasSources = depEntry ? depEntry.sources.length > 0 : false;
+
+        if (!values[depId]) {
+          if (reqs.includes(depId)) {
+            missingDep = true;
+            break;
+          } else {
+            continue;
+          }
+        }
+
+        let depVal = values[depId][period];
+        if (depVal === null || depVal === undefined) {
+          if (depHasSources || reqs.includes(depId)) {
+            missingDep = true;
+            break;
+          } else {
+            depVal = 0.0;
+          }
+        }
+
+        calculatedSum += depVal;
+      }
+
+      if (!values[targetId]) {
+        values[targetId] = {};
+      }
+
+      const reportedVal = values[targetId][period];
+
+      if (missingDep) {
+        values[targetId][period] = null;
+        checkStatuses[targetId][period] = {
+          status: "unavailable",
+          variance: null,
+          reported_value: reportedVal !== undefined && reportedVal !== null ? reportedVal : null,
+        };
+      } else {
+        values[targetId][period] = calculatedSum;
+
+        if (reportedVal !== null && reportedVal !== undefined) {
+          const variance = calculatedSum - reportedVal;
+          const absVar = Math.abs(variance);
+          let status: "pass" | "rounding_difference" | "mismatch" = "pass";
+          if (absVar <= 1e-7) {
+            status = "pass";
+          } else if (absVar <= tolerance) {
+            status = "rounding_difference";
+          } else {
+            status = "mismatch";
+            
+            const entry = entriesById.get(targetId);
+            issues.push({
+              severity: "warning",
+              code: "calculated_mismatch",
+              message: `Calculated subtotal for ${entry ? entry.target_label : targetId} (${calculatedSum.toFixed(2)} R$ mm) does not match reported CVM value (${reportedVal.toFixed(2)} R$ mm) in ${period}. Variance: ${variance > 0 ? "+" : ""}${variance.toFixed(2)} R$ mm.`,
+              target_id: targetId,
+              source_id: null,
+            });
+          }
+          checkStatuses[targetId][period] = {
+            status,
+            variance,
+            reported_value: reportedVal,
+          };
+        } else {
+          checkStatuses[targetId][period] = {
+            status: "calculated",
+            variance: null,
+            reported_value: null,
+          };
+        }
+      }
+    }
+  }
+
+  return { values, checkStatuses, issues };
+}
