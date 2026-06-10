@@ -19,7 +19,7 @@ import { SkeletonRow } from "./Skeleton";
  * with the color so the signal is not color-only.
  */
 
-type Variant = "loading" | "empty" | "warning" | "error" | "browser-only";
+type Variant = "loading" | "empty" | "success" | "warning" | "error" | "browser-only";
 
 type Props = {
   variant: Variant;
@@ -50,6 +50,14 @@ const VARIANTS: Record<
     defaultTitle: "No data",
     color: "var(--color-text-secondary)",
     border: "var(--color-border-subtle)",
+    bg: "var(--color-surface-2)",
+    role: "status",
+  },
+  success: {
+    glyph: "●",
+    defaultTitle: "Complete",
+    color: "var(--color-state-ok)",
+    border: "var(--color-state-ok)",
     bg: "var(--color-surface-2)",
     role: "status",
   },

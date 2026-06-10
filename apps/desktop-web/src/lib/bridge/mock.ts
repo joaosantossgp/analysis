@@ -1208,6 +1208,11 @@ export function createMockBridge(): Partial<BridgeApi> {
       error: "[mock] Excel export not available in browser/mock mode",
     }),
 
+    export_company_market_history_excel: async () => ({
+      ok: false,
+      error: "[mock] Market-history Excel export not available in browser/mock mode",
+    }),
+
     get_excel_mapping_workspace: async () => ({
       ok: true,
       company: {

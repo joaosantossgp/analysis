@@ -6,8 +6,10 @@ import { IndicatorChart } from "@/components/indicators/IndicatorChart";
 import { IndicatorPicker } from "@/components/indicators/IndicatorPicker";
 import { Segmented } from "@/components/indicators/Segmented";
 import { Panel } from "@/components/surface/Panel";
+import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { PeriodSelect } from "@/components/ui/PeriodSelect";
+import { exportMarketHistoryWorkbook } from "@/lib/api/exports";
 import { fetchMarketHistory, fetchMarketHistoryStatus, triggerMarketHistoryRefresh } from "@/lib/api/marketHistory";
 import type { CompanyMarketHistoryObservation, CompanyMarketHistorySummary } from "@/lib/bridge/types";
 import { formatValue } from "@/lib/indicators/format";
@@ -177,7 +179,44 @@ export function MarketHistoryPanel({ cdCvm, bridgeReady, compact = false }: Mark
     }),
     [chart, observations.length],
   );
-
+  const exportMutation = useMutation({
+    mutationFn: () =>
+      exportMarketHistoryWorkbook({
+        cdCvm,
+        ticker: activeTicker || ticker,
+        period: selectedPeriod,
+        customStart: selectedPeriod === "custom" ? customStart : null,
+        customEnd: selectedPeriod === "custom" ? customEnd : null,
+        interval,
+        view: marketView,
+        selectedSeries: selectedSeriesIds,
+        valueMode: marketView === "price" && chart.indexMode ? "base_100" : null,
+        chartType: config.chartTypeByView[marketView],
+      }),
+  });
+  const exportResult = exportMutation.data?.mode === "desktop" ? exportMutation.data.result : null;
+  const exportBrowserReason = exportMutation.data?.mode === "browser" ? exportMutation.data.reason : null;
+  const exportError =
+    exportMutation.error instanceof Error
+      ? exportMutation.error.message
+      : exportMutation.error
+        ? String(exportMutation.error)
+        : exportResult?.error ?? exportBrowserReason ?? null;
+  const exportDisabledReason = !bridgeReady
+    ? "Desktop bridge is not ready."
+    : !(activeTicker || ticker)
+      ? "No ticker resolved."
+      : !hasLocalData
+        ? "No local market history is cached."
+        : historyQuery.isLoading && observations.length === 0
+          ? "Market observations are still loading."
+          : isCustomRangeInvalid
+            ? "Custom date range is invalid."
+            : observations.length === 0
+              ? "The current query has no observations."
+              : selectedSeriesIds.length === 0
+                ? "Select at least one visible series."
+                : null;
   function handleRefresh() {
     refreshMutation.mutate();
   }
@@ -249,8 +288,11 @@ export function MarketHistoryPanel({ cdCvm, bridgeReady, compact = false }: Mark
             isStale={isStale}
             isError
             isUpdating={refreshMutation.isPending}
+            isExporting={exportMutation.isPending}
+            exportDisabledReason={exportDisabledReason}
             lastDownloaded={lastDownloaded}
             onRefresh={handleRefresh}
+            onExport={() => exportMutation.mutate()}
           />
         }
       >
@@ -280,8 +322,11 @@ export function MarketHistoryPanel({ cdCvm, bridgeReady, compact = false }: Mark
           isStale={isStale}
           isError={historyQuery.isError}
           isUpdating={refreshMutation.isPending}
+          isExporting={exportMutation.isPending}
+          exportDisabledReason={exportDisabledReason}
           lastDownloaded={lastDownloaded}
           onRefresh={handleRefresh}
+          onExport={() => exportMutation.mutate()}
         />
       }
       dense={compact}
@@ -300,6 +345,24 @@ export function MarketHistoryPanel({ cdCvm, bridgeReady, compact = false }: Mark
             variant="error"
             title="Update failed"
             message={`${refreshMutation.error instanceof Error ? refreshMutation.error.message : String(refreshMutation.error)}. Retaining previous local cache.`}
+          />
+        ) : null}
+
+        {exportMutation.isSuccess && exportResult?.ok ? (
+          <StateBanner
+            variant="success"
+            size="dense"
+            title="Export complete"
+            message={`${exportResult.file_name ?? "Market data workbook"} exported with ${exportResult.observation_count ?? observations.length} observations to ${exportResult.output_dir ?? "the output folder"}.`}
+          />
+        ) : null}
+
+        {exportError ? (
+          <StateBanner
+            variant="error"
+            size="dense"
+            title="Export failed"
+            message={exportError}
           />
         ) : null}
 
@@ -421,15 +484,21 @@ function MarketActions({
   isStale,
   isError,
   isUpdating,
+  isExporting,
+  exportDisabledReason,
   lastDownloaded,
   onRefresh,
+  onExport,
 }: {
   hasLocalData: boolean;
   isStale: boolean;
   isError: boolean;
   isUpdating: boolean;
+  isExporting: boolean;
+  exportDisabledReason: string | null;
   lastDownloaded: string | null;
   onRefresh: () => void;
+  onExport: () => void;
 }) {
   const label = isUpdating
     ? "updating"
@@ -449,7 +518,7 @@ function MarketActions({
         ? "Refresh failed. Cached local data remains visible when available."
         : undefined;
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center justify-end gap-2">
       <StatusBadge
         label={isStale && lastDownloaded ? `${label} · ${formatDate(lastDownloaded.slice(0, 10))}` : label}
         tone={tone}
@@ -474,6 +543,18 @@ function MarketActions({
       >
         {hasLocalData ? "Update Data" : "Download History"}
       </button>
+      <Button
+        type="button"
+        variant="secondary"
+        size="xs"
+        loading={isExporting}
+        disabled={Boolean(exportDisabledReason)}
+        title={exportDisabledReason ?? "Export the currently visible market dataset to Excel."}
+        onClick={onExport}
+        style={{ height: 26, fontFamily: "var(--font-mono)", padding: "0 10px" }}
+      >
+        {isExporting ? "Exporting..." : "Export Excel"}
+      </Button>
     </div>
   );
 }

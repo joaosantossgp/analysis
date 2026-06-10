@@ -590,6 +590,12 @@ export type ExportCompanyResult = {
   error?: string;
 };
 
+export type ExportMarketHistoryResult = ExportCompanyResult & {
+  observation_count?: number;
+  first_observation_date?: string | null;
+  last_observation_date?: string | null;
+};
+
 export type OutputDirInfo = {
   path: string | null;
   exists: boolean;
@@ -1067,6 +1073,7 @@ export interface BridgeApi {
   get_sectors(params?: Record<string, unknown>): Promise<SectorDirectoryResponse>;
   get_sector_detail(params: Record<string, unknown>): Promise<SectorDetailResponse>;
   export_company_excel(params: Record<string, unknown>): Promise<ExportCompanyResult>;
+  export_company_market_history_excel(params: Record<string, unknown>): Promise<ExportMarketHistoryResult>;
   get_output_dir(params?: Record<string, unknown>): Promise<OutputDirInfo>;
   get_excel_mapping_workspace(params: Record<string, unknown>): Promise<ExcelMappingWorkspace>;
   save_excel_mapping_preset(params: Record<string, unknown>): Promise<SaveExcelMappingPresetResult>;

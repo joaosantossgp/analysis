@@ -449,6 +449,58 @@ class CompanyBridgeMixin:
         except Exception as exc:
             return self._sanitize_for_json({"ok": False, "error": str(exc)})
 
+    def export_company_market_history_excel(self, params=None) -> dict:
+        """Write the currently selected market-history dataset to output/."""
+        if not self._is_write_allowed():
+            return self._sanitize_for_json(self._write_blocked_response("export_company_market_history_excel"))
+        p = params or {}
+        try:
+            cd_cvm = int(p.get("cd_cvm", 0))
+            if cd_cvm <= 0:
+                return self._sanitize_for_json({"ok": False, "error": "cd_cvm is required"})
+
+            selected_series_raw = p.get("selected_series") or []
+            if not isinstance(selected_series_raw, (list, tuple)):
+                selected_series_raw = []
+
+            from src.companies.market_history import MarketHistoryService  # noqa: PLC0415
+            from src.companies.market_history_exporter import build_market_history_export  # noqa: PLC0415
+
+            svc = self._svc()
+            market_service = MarketHistoryService(settings=svc.settings, read_service=svc)
+            filename, payload, export_info = build_market_history_export(
+                service=market_service,
+                read_service=svc,
+                cd_cvm=cd_cvm,
+                ticker=p.get("ticker"),
+                period=str(p.get("period") or "1Y"),
+                custom_start=p.get("custom_start"),
+                custom_end=p.get("custom_end"),
+                interval=str(p.get("interval") or "1d"),
+                view=str(p.get("view") or "price"),
+                selected_series=[str(item) for item in selected_series_raw],
+                value_mode=str(p.get("value_mode") or "") or None,
+                chart_type=str(p.get("chart_type") or "") or None,
+            )
+            output_dir = Path(svc.settings.paths.output_dir)
+            output_dir.mkdir(parents=True, exist_ok=True)
+            target = self._unique_output_path(output_dir, filename)
+            target.write_bytes(payload)
+            return self._sanitize_for_json({
+                "ok": True,
+                "file_path": str(target),
+                "file_name": target.name,
+                "output_dir": str(output_dir),
+                "size_bytes": int(target.stat().st_size),
+                "revealed": False,
+                "observation_count": export_info.get("observation_count"),
+                "first_observation_date": export_info.get("first_observation_date"),
+                "last_observation_date": export_info.get("last_observation_date"),
+            })
+        except Exception as exc:
+            logger.exception("Market history Excel export failed")
+            return self._sanitize_for_json({"ok": False, "error": str(exc)})
+
     def get_excel_mapping_workspace(self, params=None) -> dict:
         p = params or {}
         try:
