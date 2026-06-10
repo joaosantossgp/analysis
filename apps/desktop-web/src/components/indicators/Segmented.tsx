@@ -28,6 +28,7 @@ export function Segmented<T extends string>({
       aria-label={ariaLabel}
       style={{
         display: "inline-flex",
+        flexShrink: 0,
         background: "var(--color-surface-1)",
         border: "1px solid var(--color-border-default)",
         borderRadius: "var(--radius-md)",
@@ -55,10 +56,13 @@ export function Segmented<T extends string>({
                   ? "var(--color-action-primary)"
                   : "var(--color-text-secondary)",
               cursor: opt.disabled ? "not-allowed" : "pointer",
+              flexShrink: 0,
               fontSize: "var(--text-xs)",
               height: 26,
+              minWidth: opt.label.length >= 8 ? 76 : 0,
               outlineColor: "var(--color-border-focus)",
               padding: "0 10px",
+              whiteSpace: "nowrap",
             }}
           >
             {opt.label}

@@ -21,7 +21,7 @@ export type AxisSide = "left" | "right";
  * The engine only emits `pct` and `ratio`, but we keep `number` as a safe
  * fallback so unknown future formats still render.
  */
-export type IndicatorUnit = "pct" | "ratio" | "number";
+export type IndicatorUnit = "pct" | "ratio" | "number" | "brl" | "volume";
 
 /** A KPI the user can pick, derived at runtime from the active KPI table. */
 export interface IndicatorDef {
@@ -80,4 +80,7 @@ export interface ResolvedSeries {
   points: Array<number | null>;
   /** Latest finite value (for legend), or null. */
   latest: number | null;
+  /** Optional presentation overrides for dense or secondary series. */
+  opacity?: number;
+  strokeDasharray?: string;
 }

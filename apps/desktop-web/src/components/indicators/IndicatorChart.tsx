@@ -32,7 +32,7 @@ interface AxisTick {
 
 const PAD_TOP = 16;
 const PAD_BOTTOM = 30;
-const PAD_LEFT = 52;
+const PAD_LEFT = 64;
 const TICK_TARGET = 4; // aim for ~4 intervals (5 ticks)
 
 /** Round a span to a human-friendly magnitude (1 / 2 / 5 × 10ⁿ). */
@@ -136,12 +136,18 @@ function areaPath(run: RunPoint[], smooth: boolean, baselineY: number): string {
   return `${top} L ${run[run.length - 1].x} ${baselineY} L ${run[0].x} ${baselineY} Z`;
 }
 
+function xLabelPosition(index: number, count: number, centerX: (i: number) => number, rightX: number) {
+  if (index === 0) return { x: PAD_LEFT, anchor: "start" as const };
+  if (index === count - 1) return { x: rightX, anchor: "end" as const };
+  return { x: centerX(index), anchor: "middle" as const };
+}
+
 export function IndicatorChart({ series, periods, config, height = 320, xTickFormatter }: IndicatorChartProps) {
   const [wrapRef, width] = useElementWidth<HTMLDivElement>();
   const [hover, setHover] = useState<number | null>(null);
 
   const hasRightAxis = useMemo(() => series.some((s) => s.axis === "right"), [series]);
-  const padRight = hasRightAxis ? 52 : 16;
+  const padRight = hasRightAxis ? 72 : 34;
   const unitLeft = useMemo(() => series.find((s) => s.axis === "left")?.unit ?? "number", [series]);
   const unitRight = useMemo(
     () => series.find((s) => s.axis === "right")?.unit ?? "number",
@@ -149,7 +155,7 @@ export function IndicatorChart({ series, periods, config, height = 320, xTickFor
   );
 
   const layout = useMemo(() => {
-    const w = Math.max(width, 320);
+    const w = width > 0 ? width : 320;
     const plotW = Math.max(0, w - PAD_LEFT - padRight);
     const plotH = Math.max(0, height - PAD_TOP - PAD_BOTTOM);
     const n = periods.length;
@@ -248,14 +254,14 @@ export function IndicatorChart({ series, periods, config, height = 320, xTickFor
     .join(", ")} across ${periods.length} periods`;
 
   return (
-    <div ref={wrapRef} style={{ position: "relative", width: "100%" }}>
+    <div ref={wrapRef} style={{ minWidth: 0, position: "relative", width: "100%" }}>
       <svg
-        width={w}
+        width="100%"
         height={height}
         viewBox={`0 0 ${w} ${height}`}
         role="img"
         aria-label={ariaLabel}
-        style={{ display: "block", maxWidth: "100%" }}
+        style={{ display: "block", maxWidth: "100%", overflow: "visible" }}
       >
         {/* Horizontal grid + left/right axis ticks */}
         {leftTicks.map((tick, i) => (
@@ -320,21 +326,23 @@ export function IndicatorChart({ series, periods, config, height = 320, xTickFor
         ) : null}
 
         {/* X labels */}
-        {periods.map((label, i) =>
-          i % labelStep === 0 || i === periods.length - 1 ? (
+        {periods.map((label, i) => {
+          if (i % labelStep !== 0 && i !== periods.length - 1) return null;
+          const labelPosition = xLabelPosition(i, periods.length, centerX, w - padRight);
+          return (
             <text
-              key={label}
-              x={centerX(i)}
+              key={`${label}-${i}`}
+              x={labelPosition.x}
               y={height - 10}
-              textAnchor="middle"
+              textAnchor={labelPosition.anchor}
               className="font-mono"
               fill="var(--color-text-tertiary)"
               style={{ fontSize: "var(--text-2xs)" }}
             >
               {xTickFormatter ? xTickFormatter(label) : label}
             </text>
-          ) : null,
-        )}
+          );
+        })}
 
         {/* Area fills (drawn first so lines/bars sit on top) */}
         {series
@@ -404,6 +412,8 @@ export function IndicatorChart({ series, periods, config, height = 320, xTickFor
                     d={linePath(run, config.smooth)}
                     fill="none"
                     stroke={s.color}
+                    strokeDasharray={s.strokeDasharray}
+                    opacity={s.opacity ?? 1}
                     strokeWidth={2}
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -421,6 +431,7 @@ export function IndicatorChart({ series, periods, config, height = 320, xTickFor
                         r={hover === p.index ? 4.5 : isSinglePoint ? 3.5 : 2.5}
                         fill="var(--color-surface-1)"
                         stroke={s.color}
+                        opacity={s.opacity ?? 1}
                         strokeWidth={isSinglePoint ? 2 : 1.5}
                       />
                     );
@@ -512,7 +523,7 @@ function ChartTooltip({
   width: number;
   indexMode: boolean;
 }) {
-  const boxWidth = 196;
+  const boxWidth = Math.min(196, Math.max(140, width));
   const left = x > width / 2 ? x - boxWidth - 12 : x + 12;
   return (
     <div

@@ -43,9 +43,11 @@ export function IndicatorPicker({
   const groups = groupIndicators(defs);
   const selectedSet = new Set(selectedIds);
   const atLimit = selectedIds.length >= maxSelected;
+  const noun = label.toLowerCase();
+  const countLabel = `${selectedIds.length} ${selectedIds.length === 1 ? noun.replace(/s$/, "") : noun}`;
 
   return (
-    <div ref={rootRef} style={{ position: "relative", display: "inline-block" }}>
+    <div ref={rootRef} style={{ position: "relative", display: "inline-block", maxWidth: "100%" }}>
       <button
         type="button"
         aria-haspopup="listbox"
@@ -58,13 +60,17 @@ export function IndicatorPicker({
           borderRadius: "var(--radius-md)",
           color: "var(--color-text-secondary)",
           cursor: "pointer",
+          display: "inline-flex",
+          alignItems: "center",
           fontSize: "var(--text-xs)",
           height: 26,
+          maxWidth: "100%",
+          minWidth: label.toLowerCase() === "series" ? 86 : 112,
           outlineColor: "var(--color-border-focus)",
           padding: "0 10px",
         }}
       >
-        {label} · {selectedIds.length}
+        <span className="truncate">{countLabel}</span>
         <span aria-hidden="true" style={{ marginLeft: 6, color: "var(--color-text-tertiary)" }}>
           ▾
         </span>
@@ -94,7 +100,7 @@ export function IndicatorPicker({
               position: "absolute",
               top: "calc(100% + 4px)",
               left: 0,
-              width: 300,
+              width: "min(300px, calc(100vw - 32px))",
               maxHeight: 360,
               overflowY: "auto",
               background: "var(--color-surface-2)",

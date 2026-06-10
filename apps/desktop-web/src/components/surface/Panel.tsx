@@ -49,7 +49,8 @@ export function Panel({
         background: "var(--color-surface-2)",
         border: "1px solid var(--color-border-subtle)",
         borderRadius: "var(--radius-md)",
-        overflow: "hidden",
+        minWidth: 0,
+        overflow: "visible",
         ...style,
       }}
     >
@@ -61,7 +62,7 @@ export function Panel({
             padding: dense ? "10px 12px" : "12px 16px",
           }}
         >
-          <div className="min-w-0">
+          <div className="min-w-0" style={{ flex: "1 1 0" }}>
             {title ? renderHeading(headingLevel, title) : null}
             {subtitle ? (
               <p
@@ -78,7 +79,7 @@ export function Panel({
           {actions ? <div className="shrink-0">{actions}</div> : null}
         </header>
       ) : null}
-      <div style={{ padding: dense ? "12px" : "16px" }}>{children}</div>
+      <div style={{ minWidth: 0, padding: dense ? "12px" : "16px" }}>{children}</div>
       {footer ? (
         <footer
           style={{

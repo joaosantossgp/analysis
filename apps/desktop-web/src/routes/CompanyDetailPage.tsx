@@ -1,16 +1,16 @@
-import { memo, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 
-import { DeltaBadge } from "@/components/data/DeltaBadge";
-import { MetricTape, type MetricTapeItem } from "@/components/data/MetricTape";
-import { NumberCell } from "@/components/data/NumberCell";
-import { Sparkline } from "@/components/data/Sparkline";
 import { CompanyCommandBar } from "@/components/CompanyCommandBar";
 import { EntityHeader } from "@/components/EntityHeader";
 import { MarketHistoryPanel } from "@/components/MarketHistoryPanel";
 import { StateBanner } from "@/components/feedback/StateBanner";
 import { Panel } from "@/components/surface/Panel";
+import { IndicatorChart } from "@/components/indicators/IndicatorChart";
+import { IndicatorControls } from "@/components/indicators/IndicatorControls";
+import { IndicatorLegend } from "@/components/indicators/IndicatorLegend";
+import { IndicatorTable } from "@/components/indicators/IndicatorTable";
 import {
   fetchCompanyInfo,
   fetchCompanyKpis,
@@ -20,11 +20,30 @@ import {
   type CompanyYearsResultUI,
 } from "@/lib/api/companyDetail";
 import { whenBridgeReady } from "@/lib/bridge/adapter";
-import type { KPIBundle, TabularRow } from "@/lib/bridge/types";
-import { formatUnit } from "@/lib/formatters";
+import type { KPIBundle } from "@/lib/bridge/types";
+import { buildIndicatorDefs, defaultSelectedIds } from "@/lib/indicators/catalog";
+import { resolveSeries, selectPeriods } from "@/lib/indicators/series";
+import type {
+  AxisSide,
+  ChartType,
+  Frequency,
+  IndicatorSelection,
+} from "@/lib/indicators/types";
+import { useIndicatorConfig } from "@/lib/indicators/useIndicatorConfig";
 
-const MAX_KPI_YEARS = 5;
-const TAPE_KPI_IDS = ["MG_EBITDA", "MG_LIQ", "ROE", "DIV_EBITDA"] as const;
+const MAX_SELECTED = 6;
+const DEFAULT_RECENT_YEARS = 5;
+type YearPeriodPreset = "last5" | "last10" | "all";
+
+const YEAR_PERIOD_OPTIONS: Array<{ value: YearPeriodPreset; label: string }> = [
+  { value: "last5", label: "Last 5" },
+  { value: "last10", label: "Last 10" },
+  { value: "all", label: "All" },
+];
+
+// ---------------------------------------------------------------------------
+// Page root
+// ---------------------------------------------------------------------------
 
 export function CompanyDetailPage() {
   const params = useParams<{ cdCvm: string }>();
@@ -55,6 +74,10 @@ export function CompanyDetailPage() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Workspace: command bar + two-column analytical grid
+// ---------------------------------------------------------------------------
+
 function CompanyReferenceWorkspace({
   cdCvm,
   bridgeReady,
@@ -74,12 +97,21 @@ function CompanyReferenceWorkspace({
     enabled: bridgeReady,
   });
 
-  const allYears = yearsQuery.data?.mode === "desktop" ? yearsQuery.data.years : [];
-  const selectedYears = useMemo(() => {
-    if (allYears.length === 0) return [] as number[];
-    const sorted = [...allYears].sort((a, b) => b - a);
-    return sorted.slice(0, MAX_KPI_YEARS).sort((a, b) => a - b);
-  }, [allYears]);
+  const allYears = useMemo(
+    () => (yearsQuery.data?.mode === "desktop" ? yearsQuery.data.years : []),
+    [yearsQuery.data],
+  );
+
+  // Default: last DEFAULT_RECENT_YEARS years, re-computed when years load.
+  const [selectedYears, setSelectedYears] = useState<number[]>([]);
+  const sortedYears = useMemo(() => [...allYears].sort((a, b) => a - b), [allYears]);
+
+  useEffect(() => {
+    if (selectedYears.length === 0 && sortedYears.length > 0) {
+      const desc = [...sortedYears].sort((a, b) => b - a);
+      setSelectedYears(desc.slice(0, DEFAULT_RECENT_YEARS).sort((a, b) => a - b));
+    }
+  }, [sortedYears, selectedYears.length]);
 
   const kpiQuery = useQuery<CompanyKpisResult>({
     queryKey: ["company-kpis", cdCvm, selectedYears.join(",")],
@@ -90,10 +122,6 @@ function CompanyReferenceWorkspace({
   const info =
     companyQuery.data?.mode === "desktop" ? companyQuery.data.info : null;
   const bundle = kpiQuery.data?.mode === "desktop" ? kpiQuery.data.bundle : null;
-  const metricItems = useMemo(
-    () => buildMetricTapeItems(bundle, selectedYears),
-    [bundle, selectedYears],
-  );
 
   return (
     <div className="space-y-4">
@@ -104,299 +132,571 @@ function CompanyReferenceWorkspace({
         yearsAvailable={info?.readable_years_count ?? null}
         lastModelUpdatedAt={info?.read_model_updated_at ?? null}
       />
-      <MetricTape items={metricItems} ariaLabel="Company reference metrics" />
 
-      <div className="min-w-0 space-y-4">
-        <KpiHistoryPanel
+      {/* Two-column analytical workspace */}
+      <AnalyticalWorkspace
+        cdCvm={cdCvm}
+        bridgeReady={bridgeReady}
+        bundle={bundle}
+        yearsQuery={yearsQuery}
+        kpiQuery={kpiQuery}
+        sortedYears={sortedYears}
+        selectedYears={selectedYears}
+        onSelectedYearsChange={setSelectedYears}
+      />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Responsive two-column grid
+// ---------------------------------------------------------------------------
+
+function AnalyticalWorkspace({
+  cdCvm,
+  bridgeReady,
+  bundle,
+  yearsQuery,
+  kpiQuery,
+  sortedYears,
+  selectedYears,
+  onSelectedYearsChange,
+}: {
+  cdCvm: number;
+  bridgeReady: boolean;
+  bundle: KPIBundle | null;
+  yearsQuery: UseQueryResult<CompanyYearsResultUI>;
+  kpiQuery: UseQueryResult<CompanyKpisResult>;
+  sortedYears: number[];
+  selectedYears: number[];
+  onSelectedYearsChange: (years: number[]) => void;
+}) {
+  return (
+    <div
+      style={{
+        display: "grid",
+        // Two equal columns on wide viewports; collapses via responsive class below.
+        gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+        gap: "var(--spacing-4, 16px)",
+        alignItems: "start",
+      }}
+      className="workspace-grid"
+    >
+      {/* Left: Historical market data */}
+      <div className="min-w-0">
+        <MarketHistoryPanel cdCvm={cdCvm} bridgeReady={bridgeReady} compact />
+      </div>
+
+      {/* Right: Financial indicator chart */}
+      <div className="min-w-0">
+        <CompactIndicatorPanel
+          bundle={bundle}
           yearsQuery={yearsQuery}
           kpiQuery={kpiQuery}
+          sortedYears={sortedYears}
           selectedYears={selectedYears}
+          onSelectedYearsChange={onSelectedYearsChange}
           bridgeReady={bridgeReady}
         />
-        <MarketHistoryPanel cdCvm={cdCvm} bridgeReady={bridgeReady} />
       </div>
     </div>
   );
 }
 
-function KpiHistoryPanel({
-  yearsQuery,
-  kpiQuery,
-  selectedYears,
-  bridgeReady,
-}: {
+// ---------------------------------------------------------------------------
+// Right panel: Financial indicator chart (compact, Overview-specific)
+// ---------------------------------------------------------------------------
+
+interface CompactIndicatorPanelProps {
+  bundle: KPIBundle | null;
   yearsQuery: UseQueryResult<CompanyYearsResultUI>;
   kpiQuery: UseQueryResult<CompanyKpisResult>;
+  sortedYears: number[];
   selectedYears: number[];
+  onSelectedYearsChange: (years: number[]) => void;
   bridgeReady: boolean;
-}) {
-  return (
-    <Panel
-      title="Annual KPI history"
-      subtitle={
-        selectedYears.length
-          ? `Years ${selectedYears.join(", ")}`
-          : "Waiting for local annual coverage"
-      }
-      actions={
-        kpiQuery.isFetching && kpiQuery.data ? (
-          <span
-            className="font-mono"
-            style={{ color: "var(--color-state-warn)", fontSize: "var(--text-xs)" }}
-          >
-            polling
-          </span>
-        ) : null
-      }
-    >
-      <KpiBody
-        yearsQuery={yearsQuery}
-        kpiQuery={kpiQuery}
-        selectedYears={selectedYears}
-        bridgeReady={bridgeReady}
-      />
-    </Panel>
-  );
 }
 
-function KpiBody({
+function CompactIndicatorPanel({
+  bundle,
   yearsQuery,
   kpiQuery,
+  sortedYears,
   selectedYears,
+  onSelectedYearsChange,
   bridgeReady,
-}: {
-  yearsQuery: UseQueryResult<CompanyYearsResultUI>;
-  kpiQuery: UseQueryResult<CompanyKpisResult>;
-  selectedYears: number[];
-  bridgeReady: boolean;
-}) {
+}: CompactIndicatorPanelProps) {
+  // Independent indicator config (persisted to localStorage, shared with any
+  // future Indicators tab usage).
+  const { config, setFrequency, setSelected, setChart } = useIndicatorConfig();
+  const { frequency, chart } = config;
+
   if (!bridgeReady || yearsQuery.isLoading) {
-    return <StateBanner variant="loading" title="Loading years…" />;
+    return (
+      <Panel title="Financial indicators" subtitle="Loading…">
+        <StateBanner variant="loading" title="Loading years…" />
+      </Panel>
+    );
   }
+
   if (yearsQuery.isError) {
     return (
-      <StateBanner
-        variant="error"
-        onRetry={() => yearsQuery.refetch()}
-        message={
-          yearsQuery.error instanceof Error
-            ? yearsQuery.error.message
-            : String(yearsQuery.error)
-        }
-      />
+      <Panel title="Financial indicators" subtitle="Year data unavailable">
+        <StateBanner
+          variant="error"
+          onRetry={() => yearsQuery.refetch()}
+          message={
+            yearsQuery.error instanceof Error
+              ? yearsQuery.error.message
+              : String(yearsQuery.error)
+          }
+        />
+      </Panel>
     );
   }
+
   if (yearsQuery.data?.mode === "browser") {
-    return <StateBanner variant="browser-only" message={yearsQuery.data.reason} />;
-  }
-  if (selectedYears.length === 0) {
     return (
-      <StateBanner
-        variant="empty"
-        title="No financial history yet"
-        message="Download or update this company's data to compute indicators."
-      />
+      <Panel title="Financial indicators" subtitle="">
+        <StateBanner variant="browser-only" message={yearsQuery.data.reason} />
+      </Panel>
     );
   }
-  if (kpiQuery.isLoading) {
-    return <StateBanner variant="loading" title="Loading KPIs…" />;
+
+  if (sortedYears.length === 0) {
+    return (
+      <Panel title="Financial indicators" subtitle="No annual data">
+        <StateBanner
+          variant="empty"
+          title="No financial history yet"
+          message="Download or update this company's data to compute indicators."
+        />
+      </Panel>
+    );
   }
+
+  if (kpiQuery.isLoading) {
+    return (
+      <Panel title="Financial indicators" subtitle="Loading…">
+        <StateBanner variant="loading" title="Loading indicators…" />
+      </Panel>
+    );
+  }
+
   if (kpiQuery.isError) {
     return (
-      <StateBanner
-        variant="error"
-        onRetry={() => kpiQuery.refetch()}
-        message={
-          kpiQuery.error instanceof Error
-            ? kpiQuery.error.message
-            : String(kpiQuery.error)
-        }
-      />
+      <Panel title="Financial indicators" subtitle="Indicator data unavailable">
+        <StateBanner
+          variant="error"
+          onRetry={() => kpiQuery.refetch()}
+          message={
+            kpiQuery.error instanceof Error
+              ? kpiQuery.error.message
+              : String(kpiQuery.error)
+          }
+        />
+      </Panel>
     );
   }
-  if (!kpiQuery.data || kpiQuery.data.mode !== "desktop") {
+
+  if (kpiQuery.data?.mode === "browser") {
     return (
-      <StateBanner
-        variant="empty"
-        title="No KPIs"
-        message="Bridge returned an empty payload for the selected years."
-      />
+      <Panel title="Financial indicators" subtitle="">
+        <StateBanner variant="browser-only" message={kpiQuery.data.reason} />
+      </Panel>
     );
   }
-  const { annual } = kpiQuery.data.bundle;
-  if (annual.rows.length === 0 || annual.columns.length === 0) {
+
+  if (!bundle) {
     return (
-      <StateBanner
-        variant="empty"
-        title="No annual KPIs"
-        message="No annual rows for the selected years."
-      />
+      <Panel title="Financial indicators" subtitle="No data">
+        <StateBanner
+          variant="empty"
+          title="No indicators"
+          message="Bridge returned an empty payload for the selected years."
+        />
+      </Panel>
     );
   }
-  return <KpiTable columns={annual.columns} rows={annual.rows} years={selectedYears} />;
+
+  return (
+    <IndicatorChartPanel
+      bundle={bundle}
+      sortedYears={sortedYears}
+      selectedYears={selectedYears}
+      onSelectedYearsChange={onSelectedYearsChange}
+      frequency={frequency}
+      setFrequency={setFrequency}
+      chart={chart}
+      setChart={setChart}
+      config={config}
+      setSelected={setSelected}
+    />
+  );
 }
 
-function KpiTable({
-  columns,
-  rows,
-  years,
+// ---------------------------------------------------------------------------
+// Indicator chart panel body (receives a resolved bundle)
+// ---------------------------------------------------------------------------
+
+function IndicatorChartPanel({
+  bundle,
+  sortedYears,
+  selectedYears,
+  onSelectedYearsChange,
+  frequency,
+  setFrequency,
+  chart,
+  setChart,
+  config,
+  setSelected,
 }: {
-  columns: string[];
-  rows: TabularRow[];
-  years: number[];
+  bundle: KPIBundle;
+  sortedYears: number[];
+  selectedYears: number[];
+  onSelectedYearsChange: (years: number[]) => void;
+  frequency: Frequency;
+  setFrequency: (f: Frequency) => void;
+  chart: ReturnType<typeof useIndicatorConfig>["config"]["chart"];
+  setChart: ReturnType<typeof useIndicatorConfig>["setChart"];
+  config: ReturnType<typeof useIndicatorConfig>["config"];
+  setSelected: ReturnType<typeof useIndicatorConfig>["setSelected"];
 }) {
-  const yearColumns = useMemo(
-    () => years.map((y) => String(y)).filter((year) => columns.includes(year)),
-    [years, columns],
+  const activeTable = frequency === "annual" ? bundle.annual : bundle.quarterly;
+
+  const annualDefs = useMemo(() => buildIndicatorDefs(bundle.annual), [bundle.annual]);
+  const defs = useMemo(() => buildIndicatorDefs(activeTable), [activeTable]);
+  const defsById = useMemo(() => new Map(defs.map((d) => [d.id, d])), [defs]);
+
+  const quarterlyPeriods = useMemo(
+    () => selectPeriods(bundle.quarterly, "quarterly", selectedYears),
+    [bundle.quarterly, selectedYears],
   );
-  const showDelta = columns.includes("DELTA_YOY_PCT");
+  const quarterlyAvailable = quarterlyPeriods.length > 0;
+
+  const periods = useMemo(
+    () => selectPeriods(activeTable, frequency, selectedYears),
+    [activeTable, frequency, selectedYears],
+  );
+
+  // Seed default indicator selection on first use.
+  const seededRef = useRef(false);
+  useEffect(() => {
+    if (!seededRef.current && config.selected.length === 0 && annualDefs.length > 0) {
+      seededRef.current = true;
+      const seeded: IndicatorSelection[] = defaultSelectedIds(annualDefs).map((id) => ({
+        id,
+        axis: "auto",
+        type: "auto",
+      }));
+      if (seeded.length > 0) setSelected(seeded);
+    }
+  }, [annualDefs, config.selected.length, setSelected]);
+
+  // Fall back to annual if quarterly is unavailable.
+  useEffect(() => {
+    if (frequency === "quarterly" && !quarterlyAvailable) setFrequency("annual");
+  }, [frequency, quarterlyAvailable, setFrequency]);
+
+  const selectionById = useMemo(
+    () => new Map(config.selected.map((s) => [s.id, s] as const)),
+    [config.selected],
+  );
+
+  const plottable = useMemo(
+    () => config.selected.filter((s) => defsById.get(s.id)?.available),
+    [config.selected, defsById],
+  );
+  const plottableIds = useMemo(() => plottable.map((s) => s.id), [plottable]);
+
+  const series = useMemo(
+    () => resolveSeries(activeTable, periods, plottable, chart.type, chart.indexMode),
+    [activeTable, periods, plottable, chart.type, chart.indexMode],
+  );
+
+  const showAxisControls = useMemo(
+    () => new Set(series.map((s) => s.unit)).size > 1,
+    [series],
+  );
+
+  const selectedExistingCount = config.selected.filter((s) => defsById.has(s.id)).length;
+  const droppedCount = selectedExistingCount - plottable.length;
+  const noIndicatorsAtAll = annualDefs.filter((d) => d.available).length === 0;
+
+  function toggleIndicator(id: string) {
+    const exists = config.selected.some((s) => s.id === id);
+    if (exists) {
+      setSelected(config.selected.filter((s) => s.id !== id));
+    } else if (config.selected.length < MAX_SELECTED) {
+      setSelected([...config.selected, { id, axis: "auto", type: "auto" }]);
+    }
+  }
+
+  function setAxis(id: string, axis: "auto" | AxisSide) {
+    setSelected(config.selected.map((s) => (s.id === id ? { ...s, axis } : s)));
+  }
+
+  function setType(id: string, type: "auto" | ChartType) {
+    setSelected(config.selected.map((s) => (s.id === id ? { ...s, type } : s)));
+  }
+
+  function yearsForPreset(preset: YearPeriodPreset) {
+    const desc = [...sortedYears].sort((a, b) => b - a);
+    if (preset === "all") return [...sortedYears];
+    const count = preset === "last10" ? 10 : 5;
+    return desc.slice(0, count).sort((a, b) => a - b);
+  }
+
+  function currentYearPreset(): YearPeriodPreset {
+    for (const option of YEAR_PERIOD_OPTIONS) {
+      const target = yearsForPreset(option.value);
+      if (target.length === selectedYears.length && target.every((year, index) => year === selectedYears[index])) {
+        return option.value;
+      }
+    }
+    return "last5";
+  }
+
+  function setYearPreset(preset: string) {
+    onSelectedYearsChange(yearsForPreset(preset as YearPeriodPreset));
+  }
+
+  const methodology =
+    frequency === "annual"
+      ? "Annual KPIs at fiscal-year close."
+      : "Quarterly — flow metrics LTM (trailing 4Q); balance-sheet at quarter-end.";
+
   return (
-    <div className="overflow-x-auto">
-      <table
-        className="w-full border-collapse"
-        style={{ fontSize: "var(--text-sm)" }}
-      >
-        <thead>
-          <tr
-            className="text-left"
-            style={{
-              borderBottom: "1px solid var(--color-border-default)",
-              color: "var(--color-text-tertiary)",
-              fontSize: "var(--text-xs)",
-              letterSpacing: "0.04em",
-              textTransform: "uppercase",
-            }}
+    <div className="space-y-3">
+      <Panel
+        title="Financial indicators"
+        subtitle={methodology}
+        actions={
+          <span
+            className="font-mono"
+            style={{ color: "var(--color-text-tertiary)", fontSize: "var(--text-xs)" }}
           >
-            <th scope="col" className="sticky left-0 px-2 py-2 font-medium" style={{ background: "var(--color-surface-2)" }}>
-              KPI
-            </th>
-            <th scope="col" className="px-2 py-2 font-medium">Category</th>
-            <th scope="col" className="px-2 py-2 font-medium">Unit</th>
-            <th scope="col" className="px-2 py-2 font-medium">Trend</th>
-            {yearColumns.map((c) => (
-              <th scope="col" key={c} className="px-2 py-2 text-right font-medium">
-                {c}
-              </th>
-            ))}
-            {showDelta ? <th scope="col" className="px-2 py-2 text-right font-medium">ΔYoY</th> : null}
-          </tr>
-        </thead>
-        <tbody style={{ color: "var(--color-text-secondary)" }}>
-          {rows.map((row, i) => (
-            <KpiTableRow
-              key={String(row.KPI_ID ?? i)}
-              row={row}
-              yearColumns={yearColumns}
-              showDelta={showDelta}
+            {series.length}/{config.selected.length} plotted
+          </span>
+        }
+      >
+        <div className="space-y-3">
+          {/* Indicator controls: frequency + picker + chart type */}
+          <IndicatorControls
+            periodValue={currentYearPreset()}
+            periodOptions={YEAR_PERIOD_OPTIONS}
+            onPeriodChange={setYearPreset}
+            frequency={frequency}
+            quarterlyAvailable={quarterlyAvailable}
+            onFrequencyChange={setFrequency}
+            defs={defs}
+            selectedIds={config.selected.map((s) => s.id)}
+            onToggleIndicator={toggleIndicator}
+            maxSelected={MAX_SELECTED}
+            chart={chart}
+            onChartChange={setChart}
+          />
+
+          <IndicatorMetadataRow
+            selectedYears={selectedYears}
+            frequency={frequency}
+            plottedCount={series.length}
+            selectedCount={config.selected.length}
+          />
+
+          {/* Chart area with state machine */}
+          <ChartArea
+            noIndicatorsAtAll={noIndicatorsAtAll}
+            frequency={frequency}
+            quarterlyAvailable={quarterlyAvailable}
+            periodsCount={periods.length}
+            selectedCount={config.selected.length}
+            plottedCount={series.length}
+          >
+            <IndicatorChart series={series} periods={periods} config={chart} />
+          </ChartArea>
+
+          {/* Dropped indicators warning */}
+          {droppedCount > 0 ? (
+            <p
+              style={{
+                color: "var(--color-state-warn)",
+                fontSize: "var(--text-xs)",
+                margin: 0,
+              }}
+            >
+              {droppedCount} selected indicator{droppedCount > 1 ? "s are" : " is"} unavailable
+              for the {frequency} view and {droppedCount > 1 ? "were" : "was"} hidden.
+            </p>
+          ) : null}
+
+          {/* Legend */}
+          {chart.legend && series.length > 0 ? (
+            <IndicatorLegend
+              series={series}
+              selectionById={selectionById}
+              indexMode={chart.indexMode}
+              showAxisControls={showAxisControls}
+              onSetAxis={setAxis}
+              onSetType={setType}
+              onRemove={(id) => toggleIndicator(id)}
             />
-          ))}
-        </tbody>
-      </table>
+          ) : null}
+        </div>
+      </Panel>
+
+      {/* Collapsed disclosure: underlying indicator data table */}
+      {series.length > 0 && periods.length > 0 ? (
+        <details
+          style={{
+            background: "var(--color-surface-2)",
+            border: "1px solid var(--color-border-subtle)",
+            borderRadius: "var(--radius-md)",
+            overflow: "hidden",
+          }}
+        >
+          <summary
+            style={{
+              color: "var(--color-text-tertiary)",
+              cursor: "pointer",
+              fontSize: "var(--text-xs)",
+              fontWeight: 500,
+              letterSpacing: "0.03em",
+              listStyle: "none",
+              padding: "8px 14px",
+              userSelect: "none",
+            }}
+            className="focus-visible:outline focus-visible:outline-1"
+          >
+            <span aria-hidden="true" style={{ marginRight: 6 }}>▸</span>
+            View underlying data
+            <span style={{ color: "var(--color-text-muted)", marginLeft: 6 }}>
+              {series.length} indicator{series.length !== 1 ? "s" : ""} · {periods.length} period{periods.length !== 1 ? "s" : ""}
+            </span>
+          </summary>
+          <div style={{ borderTop: "1px solid var(--color-border-subtle)" }}>
+            <IndicatorTable table={activeTable} periods={periods} selectedIds={plottableIds} />
+          </div>
+        </details>
+      ) : null}
     </div>
   );
 }
 
-const KpiTableRow = memo(function KpiTableRow({
-  row,
-  yearColumns,
-  showDelta,
+function IndicatorMetadataRow({
+  selectedYears,
+  frequency,
+  plottedCount,
+  selectedCount,
 }: {
-  row: TabularRow;
-  yearColumns: string[];
-  showDelta: boolean;
+  selectedYears: number[];
+  frequency: Frequency;
+  plottedCount: number;
+  selectedCount: number;
 }) {
-  const sparklineValues = useMemo(
-    () => yearColumns.map((year) => numericOrNull(row[year])),
-    [row, yearColumns],
-  );
+  const first = selectedYears[0];
+  const last = selectedYears[selectedYears.length - 1];
   return (
-    <tr style={{ borderBottom: "1px solid var(--color-border-subtle)" }}>
-      <td
-        className="sticky left-0 px-2 py-2"
-        style={{
-          background: "var(--color-surface-2)",
-          color: "var(--color-text-primary)",
-          minWidth: 210,
-        }}
-      >
-        <div className="flex flex-col gap-1">
-          <span>{String(row.KPI_NOME ?? row.KPI_ID ?? "—")}</span>
-          {row.KPI_ID ? (
-            <span
-              className="font-mono"
-              style={{ color: "var(--color-text-tertiary)", fontSize: "var(--text-2xs)" }}
-            >
-              {String(row.KPI_ID)}
-            </span>
-          ) : null}
-        </div>
-      </td>
-      <td className="px-2 py-2" style={{ color: "var(--color-text-tertiary)", fontSize: "var(--text-xs)" }}>
-        {String(row.CATEGORIA ?? "—")}
-      </td>
-      <td className="px-2 py-2 font-mono" style={{ color: "var(--color-text-tertiary)", fontSize: "var(--text-xs)" }}>
-        {formatUnit(row.FORMAT_TYPE)}
-      </td>
-      <td className="px-2 py-2">
-        <Sparkline
-          values={sparklineValues}
-          width={84}
-          height={24}
-          label={`${String(row.KPI_NOME ?? row.KPI_ID ?? "KPI")} trend`}
-        />
-      </td>
-      {yearColumns.map((c) => (
-        <td key={c} className="px-2 py-2 text-right">
-          <NumberCell value={row[c]} formatType={row.FORMAT_TYPE} />
-        </td>
-      ))}
-      {showDelta ? (
-        <td className="px-2 py-2 text-right">
-          <DeltaBadge value={row.DELTA_YOY_PCT} />
-        </td>
-      ) : null}
-    </tr>
+    <div
+      className="market-summary-row"
+      style={{
+        alignItems: "baseline",
+        color: "var(--color-text-secondary)",
+        display: "flex",
+        flexWrap: "wrap",
+        gap: "4px 8px",
+        minHeight: 24,
+      }}
+    >
+      <span className="flex items-baseline gap-1.5">
+        <span
+          className="font-mono"
+          style={{ color: "var(--color-text-primary)", fontSize: "var(--text-sm)", fontWeight: 650 }}
+        >
+          {first && last ? `${first}-${last}` : "No period"}
+        </span>
+        <span style={{ color: "var(--color-text-tertiary)", fontSize: "var(--text-2xs)" }}>period</span>
+      </span>
+      <span className="flex items-baseline gap-1.5">
+        <span style={{ color: "var(--color-text-tertiary)" }}>·</span>
+        <span
+          className="font-mono"
+          style={{ color: "var(--color-text-primary)", fontSize: "var(--text-sm)", fontWeight: 650 }}
+        >
+          {frequency === "annual" ? "Annual" : "Quarterly"}
+        </span>
+        <span style={{ color: "var(--color-text-tertiary)", fontSize: "var(--text-2xs)" }}>frequency</span>
+      </span>
+      <span className="flex items-baseline gap-1.5">
+        <span style={{ color: "var(--color-text-tertiary)" }}>·</span>
+        <span
+          className="font-mono"
+          style={{ color: "var(--color-text-primary)", fontSize: "var(--text-sm)", fontWeight: 650 }}
+        >
+          {plottedCount}/{selectedCount}
+        </span>
+        <span style={{ color: "var(--color-text-tertiary)", fontSize: "var(--text-2xs)" }}>plotted</span>
+      </span>
+    </div>
   );
-});
-
-function buildMetricTapeItems(
-  bundle: KPIBundle | null,
-  selectedYears: number[],
-): MetricTapeItem[] {
-  const latestYear = selectedYears.length ? Math.max(...selectedYears) : null;
-  const rowsById = new Map<string, TabularRow>();
-  for (const row of bundle?.annual.rows ?? []) {
-    const id = String(row.KPI_ID ?? "").trim();
-    if (id) rowsById.set(id, row);
-  }
-
-  const items: MetricTapeItem[] = [];
-
-  for (const id of TAPE_KPI_IDS) {
-    const row = rowsById.get(id);
-    const label = row ? String(row.KPI_NOME ?? humanizeKpiId(id)) : humanizeKpiId(id);
-    items.push({
-      id,
-      label,
-      value: latestYear && row ? row[String(latestYear)] : null,
-      formatType: row?.FORMAT_TYPE,
-      tone: id === "DIV_EBITDA" ? "neutral" : "auto",
-      sublabel: latestYear ? String(latestYear) : "no year",
-      delta: row?.DELTA_YOY_PCT ?? null,
-      sparkline: selectedYears.map((year) => numericOrNull(row?.[String(year)])),
-    });
-  }
-
-  return items;
 }
 
-function numericOrNull(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
+// ---------------------------------------------------------------------------
+// Chart-area state machine (same logic as IndicatorWorkspace)
+// ---------------------------------------------------------------------------
 
-function humanizeKpiId(id: string): string {
-  return id
-    .toLowerCase()
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+function ChartArea({
+  noIndicatorsAtAll,
+  frequency,
+  quarterlyAvailable,
+  periodsCount,
+  selectedCount,
+  plottedCount,
+  children,
+}: {
+  noIndicatorsAtAll: boolean;
+  frequency: "annual" | "quarterly";
+  quarterlyAvailable: boolean;
+  periodsCount: number;
+  selectedCount: number;
+  plottedCount: number;
+  children: ReactNode;
+}) {
+  if (noIndicatorsAtAll) {
+    return (
+      <StateBanner
+        variant="empty"
+        title="No indicators available"
+        message="The KPI engine returned no computable indicators for this company. Update this company's data and try again."
+      />
+    );
+  }
+  if (frequency === "quarterly" && (!quarterlyAvailable || periodsCount === 0)) {
+    return (
+      <StateBanner
+        variant="empty"
+        title="No quarterly data"
+        message="This company has no quarterly (LTM) indicator series for the selected years. Switch to Annual or widen the year range."
+      />
+    );
+  }
+  if (selectedCount === 0) {
+    return (
+      <StateBanner
+        variant="empty"
+        title="No indicators selected"
+        message="Use the Indicators picker to choose what to plot."
+      />
+    );
+  }
+  if (plottedCount === 0) {
+    return (
+      <StateBanner
+        variant="empty"
+        title="Selected indicators unavailable"
+        message={`None of the selected indicators can be computed for the ${frequency} view. Pick different indicators or switch frequency.`}
+      />
+    );
+  }
+  return <>{children}</>;
 }

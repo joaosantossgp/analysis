@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import { formatValue } from "@/lib/indicators/format";
 import type {
@@ -52,9 +52,10 @@ export function IndicatorLegend({
   onSetType,
   onRemove,
 }: IndicatorLegendProps) {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   if (series.length === 0) return null;
   return (
-    <ul className="flex flex-wrap" style={{ gap: 8, listStyle: "none", margin: 0, padding: 0 }}>
+    <ul className="flex flex-wrap" style={{ gap: 8, listStyle: "none", margin: 0, minWidth: 0, padding: 0 }}>
       {series.map((s) => {
         const sel = selectionById.get(s.id);
         const axisValue = sel?.axis ?? "auto";
@@ -68,6 +69,8 @@ export function IndicatorLegend({
               border: "1px solid var(--color-border-subtle)",
               borderRadius: "var(--radius-sm)",
               gap: 8,
+              maxWidth: "100%",
+              minWidth: 0,
               padding: "4px 6px",
             }}
           >
@@ -75,7 +78,11 @@ export function IndicatorLegend({
               aria-hidden="true"
               style={{ background: s.color, borderRadius: 1, flexShrink: 0, height: 10, width: 10 }}
             />
-            <span style={{ color: "var(--color-text-primary)", fontSize: "var(--text-xs)" }}>
+            <span
+              className="truncate"
+              style={{ color: "var(--color-text-primary)", fontSize: "var(--text-xs)", minWidth: 0 }}
+              title={s.label}
+            >
               {s.label}
             </span>
             <span
@@ -89,30 +96,40 @@ export function IndicatorLegend({
               {formatValue(s.latest, s.unit, indexMode)}
             </span>
 
-            <span
-              aria-hidden="true"
-              style={{ background: "var(--color-border-subtle)", height: 14, width: 1 }}
-            />
-
             <MiniButton
-              onClick={() => onSetType(s.id, next(TYPE_CYCLE, typeValue))}
-              title="Cycle this series' chart type"
+              onClick={() => setExpandedId((current) => (current === s.id ? null : s.id))}
+              title="Edit this series"
             >
-              {TYPE_LABEL[typeValue]}
+              Edit
             </MiniButton>
-
-            {showAxisControls && !indexMode ? (
-              <MiniButton
-                onClick={() => onSetAxis(s.id, next(AXIS_CYCLE, axisValue))}
-                title="Cycle this series' axis (auto / left / right)"
-              >
-                {AXIS_LABEL[axisValue]}
-              </MiniButton>
-            ) : null}
 
             <MiniButton onClick={() => onRemove(s.id)} title="Remove from chart" danger>
               ×
             </MiniButton>
+
+            {expandedId === s.id ? (
+              <>
+                <span
+                  aria-hidden="true"
+                  style={{ background: "var(--color-border-subtle)", height: 14, width: 1 }}
+                />
+                <MiniButton
+                  onClick={() => onSetType(s.id, next(TYPE_CYCLE, typeValue))}
+                  title="Cycle this series' chart type"
+                >
+                  {TYPE_LABEL[typeValue]}
+                </MiniButton>
+
+                {showAxisControls && !indexMode ? (
+                  <MiniButton
+                    onClick={() => onSetAxis(s.id, next(AXIS_CYCLE, axisValue))}
+                    title="Cycle this series' axis (auto / left / right)"
+                  >
+                    {AXIS_LABEL[axisValue]}
+                  </MiniButton>
+                ) : null}
+              </>
+            ) : null}
           </li>
         );
       })}

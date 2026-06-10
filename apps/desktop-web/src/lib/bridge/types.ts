@@ -690,6 +690,7 @@ export type ExcelMappingWorkspace = {
   active_preset_id: string;
   company_default_preset_id: string;
   mapping: ExcelMappingDefinition;
+  period_scope_label?: string | null;
   preview_periods: string[];
   model_preview_rows: ExcelMappingPreviewRow[];
   raw_lines: ExcelMappingRawLine[];
@@ -937,6 +938,88 @@ export interface CompanyHistoricalIndicatorsResult {
   error?: string;
 }
 
+export interface CompanyMarketHistoryStatus {
+  cd_cvm: number;
+  ticker: string | null;
+  available_tickers: string[];
+  has_local_data: boolean;
+  first_date: string | null;
+  last_date: string | null;
+  row_count: number;
+  last_downloaded_at: string | null;
+  is_stale: boolean;
+  warnings: string[];
+  error?: string;
+}
+
+export interface CompanyMarketHistoryObservation {
+  date: string;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  close: number | null;
+  adjusted_close: number | null;
+  volume: number | null;
+  dividend: number;
+  split_ratio: number;
+  price_return_index: number | null;
+  total_return_index: number | null;
+  ttm_dividend_yield: number | null;
+}
+
+export interface CompanyMarketHistorySummary {
+  initial_close: number | null;
+  final_close: number | null;
+  absolute_change: number | null;
+  price_return: number | null;
+  total_return: number | null;
+  annualized_total_return: number | null;
+  period_high: number | null;
+  period_low: number | null;
+  average_daily_volume: number | null;
+  dividends_per_share: number | null;
+  first_available_date: string | null;
+  last_available_date: string | null;
+}
+
+export interface CompanyMarketHistoryResult {
+  cd_cvm: number;
+  ticker: string;
+  source: string;
+  provider_status: string;
+  requested_start_date: string | null;
+  requested_end_date: string | null;
+  actual_start_date: string | null;
+  actual_end_date: string | null;
+  interval: string;
+  last_downloaded_at: string | null;
+  is_stale: boolean;
+  has_local_data: boolean;
+  warnings: string[];
+  observations: CompanyMarketHistoryObservation[];
+  summary: CompanyMarketHistorySummary | null;
+  error?: string;
+}
+
+export interface CompanyMarketHistoryRefreshResult {
+  ok: boolean;
+  ticker: string;
+  requested_start_date: string | null;
+  requested_end_date: string | null;
+  provider_date_range?: string | null;
+  downloaded_rows: number;
+  inserted_rows: number;
+  updated_rows: number;
+  unchanged_rows: number;
+  rejected_rows: number;
+  first_stored_date?: string | null;
+  last_stored_date?: string | null;
+  provider_warnings: string[];
+  completion_timestamp: string;
+  refresh_duration_seconds: number;
+  error?: string;
+}
+
 /**
  * Complete bridge method surface. Add new methods here as Phase 1 grows.
  * Keep parameter shapes loose (Record<string, unknown>) — Python normalises
@@ -954,6 +1037,9 @@ export interface BridgeApi {
   get_company_historical_indicators(
     params: Record<string, unknown>,
   ): Promise<CompanyHistoricalIndicatorsResult>;
+  get_company_market_history_status(params: Record<string, unknown>): Promise<CompanyMarketHistoryStatus>;
+  get_company_market_history(params: Record<string, unknown>): Promise<CompanyMarketHistoryResult>;
+  refresh_company_market_history(params: Record<string, unknown>): Promise<CompanyMarketHistoryRefreshResult>;
   get_company_statement(params: Record<string, unknown>): Promise<StatementMatrix>;
   get_base_health(params: Record<string, unknown>): Promise<BaseHealthSnapshot>;
   request_refresh(params: Record<string, unknown>): Promise<RefreshDispatchResponse>;

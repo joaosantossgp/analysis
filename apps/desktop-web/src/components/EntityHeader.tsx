@@ -1,17 +1,15 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
 import { IdentifierBadge } from "@/components/data/IdentifierBadge";
 import { fetchCompanyInfo, type CompanyInfoResult } from "@/lib/api/companyDetail";
 import { whenBridgeReady } from "@/lib/bridge/adapter";
 import { formatCNPJ } from "@/lib/format/cnpj";
-import { Breadcrumbs } from "./Breadcrumbs";
 import { StateBanner } from "./feedback/StateBanner";
 
 export interface EntityHeaderProps {
   cdCvm: number;
-  activeTab: "overview" | "statements" | "kpis" | "mapping";
+  activeTab: "overview" | "statements" | "mapping";
 }
 
 export function EntityHeader({
@@ -85,155 +83,124 @@ export function EntityHeader({
       : "No local financial statements found for this company.";
   const yearsAvailableLabel = info.readable_years_count === 1 ? "1 year available" : `${info.readable_years_count} years available`;
 
-  // Breadcrumbs items:
-  // If sector is available: Sectors > [Sector Name] > [Company Name]
-  // Else: Companies > [Company Name]
-  const breadcrumbs = info.sector_name && info.sector_slug
-    ? [
-        { label: "Sectors", to: "/setores" },
-        { label: info.sector_name, to: `/setores/${info.sector_slug}` },
-        { label: `${info.company_name} (${info.ticker_b3 ?? info.cd_cvm})` },
-      ]
-    : [
-        { label: "Companies", to: "/" },
-        { label: `${info.company_name} (${info.ticker_b3 ?? info.cd_cvm})` },
-      ];
-
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <Breadcrumbs items={breadcrumbs} />
-        <Link
-          to="/"
-          className="focus-visible:outline focus-visible:outline-1"
-          style={{
-            color: "var(--color-text-tertiary)",
-            fontSize: "var(--text-xs)",
-            outlineColor: "var(--color-border-focus)",
-          }}
-        >
-          Company directory
-        </Link>
-      </div>
-
-      <article
+    <article
+      style={{
+        background: "var(--color-surface-2)",
+        border: "1px solid var(--color-border-subtle)",
+        borderRadius: "var(--radius-md)",
+        overflow: "hidden",
+      }}
+    >
+      <header
+        className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]"
         style={{
-          background: "var(--color-surface-2)",
-          border: "1px solid var(--color-border-subtle)",
-          borderRadius: "var(--radius-md)",
-          overflow: "hidden",
+          borderBottom: "1px solid var(--color-border-subtle)",
+          padding: "14px 16px 12px",
         }}
       >
-        <header
-          className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]"
-          style={{
-            borderBottom: "1px solid var(--color-border-subtle)",
-            padding: "14px 16px 12px",
-          }}
-        >
-          <div className="min-w-0 space-y-2">
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <h1
-                className="min-w-0 max-w-full truncate"
-                style={{
-                  color: "var(--color-text-primary)",
-                  fontSize: "var(--text-2xl)",
-                  fontWeight: 650,
-                  letterSpacing: 0,
-                  lineHeight: 1.05,
-                  margin: 0,
-                }}
-              >
-              {info.company_name}
-              </h1>
-              {info.ticker_b3 ? (
-                <IdentifierBadge label="B3">{info.ticker_b3}</IdentifierBadge>
-              ) : null}
-              <IdentifierBadge label="CVM" muted>{info.cd_cvm}</IdentifierBadge>
-            </div>
-            {subtitle ? (
-              <p
-                className="truncate"
-                style={{
-                  color: "var(--color-text-secondary)",
-                  fontSize: "var(--text-xs)",
-                  margin: 0,
-                }}
-              >
-                {subtitle}
-              </p>
-            ) : null}
-            <div className="flex flex-wrap gap-2">
-              <IdentifierBadge muted>{info.sector_name ?? info.setor_cvm ?? "sector n/a"}</IdentifierBadge>
-              {info.gics_sub_industry ?? info.gics_industry ? (
-                <IdentifierBadge muted>
-                  {info.gics_sub_industry ?? info.gics_industry}
-                </IdentifierBadge>
-              ) : null}
-              <StatusChip tone={info.has_local_financial_reports ? "ok" : "warn"}>
-                {localDataLabel}
-              </StatusChip>
-            </div>
-          </div>
-
-          <div className="flex min-w-[180px] flex-col items-start gap-1 lg:items-end lg:text-right">
-            <span
+        <div className="min-w-0 space-y-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <h1
+              className="min-w-0 max-w-full truncate"
               style={{
-                color: "var(--color-text-tertiary)",
-                fontSize: "var(--text-2xs)",
-                fontWeight: 650,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-              }}
-            >
-              Data through
-            </span>
-            <span
-              className="font-mono"
-              style={{
-                color: latestPeriodDisplay ? "var(--color-text-primary)" : "var(--color-state-warn)",
+                color: "var(--color-text-primary)",
                 fontSize: "var(--text-2xl)",
-                fontVariantNumeric: "tabular-nums",
-                fontWeight: 700,
-                lineHeight: 1,
-              }}
-              title={dataFreshnessMessage}
-            >
-              {latestPeriodDisplay ?? "—"}
-            </span>
-            <span
-              className="font-mono"
-              style={{
-                color: latestPeriodDisplay ? "var(--color-text-tertiary)" : "var(--color-state-warn)",
-                fontSize: "var(--text-2xs)",
+                fontWeight: 650,
+                letterSpacing: 0,
+                lineHeight: 1.05,
+                margin: 0,
               }}
             >
-              local read model
-            </span>
+            {info.company_name}
+            </h1>
+            {info.ticker_b3 ? (
+              <IdentifierBadge label="B3">{info.ticker_b3}</IdentifierBadge>
+            ) : null}
+            <IdentifierBadge label="CVM" muted>{info.cd_cvm}</IdentifierBadge>
           </div>
-        </header>
+          {subtitle ? (
+            <p
+              className="truncate"
+              style={{
+                color: "var(--color-text-secondary)",
+                fontSize: "var(--text-xs)",
+                margin: 0,
+              }}
+            >
+              {subtitle}
+            </p>
+          ) : null}
+          <div className="flex flex-wrap gap-2">
+            <IdentifierBadge muted>{info.sector_name ?? info.setor_cvm ?? "sector n/a"}</IdentifierBadge>
+            {info.gics_sub_industry ?? info.gics_industry ? (
+              <IdentifierBadge muted>
+                {info.gics_sub_industry ?? info.gics_industry}
+              </IdentifierBadge>
+            ) : null}
+            <StatusChip tone={info.has_local_financial_reports ? "ok" : "warn"}>
+              {localDataLabel}
+            </StatusChip>
+          </div>
+        </div>
 
-        <dl
-          className="flex flex-wrap items-center gap-x-4 gap-y-1"
-          style={{
-            background: "var(--color-surface-1)",
-            borderBottom: "1px solid var(--color-border-subtle)",
-            color: "var(--color-text-secondary)",
-            fontSize: "var(--text-xs)",
-            margin: 0,
-            padding: "7px 16px",
-          }}
-        >
-          <InlineMeta label="CNPJ" value={formatCNPJ(info.cnpj)} mono />
-          <InlineMeta label="Years available" value={yearsAvailableLabel} mono />
-          <InlineMeta
-            label={info.is_active === false ? "Historical ticker" : "Ticker"}
-            value={info.ticker_b3 ? info.ticker_b3 : "Not available"}
-            mono
-          />
-        </dl>
-      </article>
-    </div>
+        <div className="flex min-w-[180px] flex-col items-start gap-1 lg:items-end lg:text-right">
+          <span
+            style={{
+              color: "var(--color-text-tertiary)",
+              fontSize: "var(--text-2xs)",
+              fontWeight: 650,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+            }}
+          >
+            Data through
+          </span>
+          <span
+            className="font-mono"
+            style={{
+              color: latestPeriodDisplay ? "var(--color-text-primary)" : "var(--color-state-warn)",
+              fontSize: "var(--text-2xl)",
+              fontVariantNumeric: "tabular-nums",
+              fontWeight: 700,
+              lineHeight: 1,
+            }}
+            title={dataFreshnessMessage}
+          >
+            {latestPeriodDisplay ?? "—"}
+          </span>
+          <span
+            className="font-mono"
+            style={{
+              color: latestPeriodDisplay ? "var(--color-text-tertiary)" : "var(--color-state-warn)",
+              fontSize: "var(--text-2xs)",
+            }}
+          >
+            local read model
+          </span>
+        </div>
+      </header>
+
+      <dl
+        className="flex flex-wrap items-center gap-x-4 gap-y-1"
+        style={{
+          background: "var(--color-surface-1)",
+          borderBottom: "1px solid var(--color-border-subtle)",
+          color: "var(--color-text-secondary)",
+          fontSize: "var(--text-xs)",
+          margin: 0,
+          padding: "7px 16px",
+        }}
+      >
+        <InlineMeta label="CNPJ" value={formatCNPJ(info.cnpj)} mono />
+        <InlineMeta label="Years available" value={yearsAvailableLabel} mono />
+        <InlineMeta
+          label={info.is_active === false ? "Historical ticker" : "Ticker"}
+          value={info.ticker_b3 ? info.ticker_b3 : "Not available"}
+          mono
+        />
+      </dl>
+    </article>
   );
 }
 

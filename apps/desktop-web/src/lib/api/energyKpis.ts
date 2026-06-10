@@ -336,7 +336,7 @@ export async function importPlantParcelManualFile(
     return { mode: "browser", result: null, reason: BROWSER_REASON };
   }
   const payload: PlantParcelManualImportResult = await callBridge(
-    "get_plant_parcel_source_file",
+    "import_plant_parcel_source_file",
     { triggered_by: "user", ...params },
   );
   return { mode: "desktop", result: payload };

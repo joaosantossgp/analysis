@@ -1,8 +1,10 @@
 export function formatUnit(formatType: unknown): string {
   const f = typeof formatType === "string" ? formatType.toLowerCase() : "";
   if (f === "pct") return "%";
+  if (f === "brl") return "R$";
   if (f === "money") return "R$";
   if (f === "ratio") return "x";
+  if (f === "volume") return "vol";
   if (f === "bps") return "bps";
   return "—";
 }

@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 
 import { Checkbox } from "@/components/ui/Checkbox";
+import { PeriodSelect, type PeriodSelectOption } from "@/components/ui/PeriodSelect";
 import type {
   ChartAesthetics,
   ChartType,
@@ -12,6 +13,9 @@ import { IndicatorPicker } from "./IndicatorPicker";
 import { Segmented } from "./Segmented";
 
 interface IndicatorControlsProps {
+  periodValue?: string;
+  periodOptions?: ReadonlyArray<PeriodSelectOption<string>>;
+  onPeriodChange?: (period: string) => void;
   frequency: Frequency;
   quarterlyAvailable: boolean;
   onFrequencyChange: (frequency: Frequency) => void;
@@ -49,6 +53,9 @@ const CHART_TYPE_OPTIONS = [
 ];
 
 export function IndicatorControls({
+  periodValue,
+  periodOptions,
+  onPeriodChange,
   frequency,
   quarterlyAvailable,
   onFrequencyChange,
@@ -66,7 +73,18 @@ export function IndicatorControls({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+      <div className="chart-toolbar">
+        {periodValue && periodOptions && onPeriodChange ? (
+          <Field label="Period">
+            <PeriodSelect
+              ariaLabel="Financial indicator period"
+              value={periodValue}
+              options={periodOptions}
+              onChange={onPeriodChange}
+            />
+          </Field>
+        ) : null}
+
         {showFrequency ? (
           <Field label="Frequency">
             <Segmented
@@ -97,7 +115,7 @@ export function IndicatorControls({
           />
         </Field>
 
-        <div style={{ marginLeft: "auto" }}>
+        <div className="chart-toolbar__actions">
           <button
             type="button"
             aria-expanded={showOptions}
@@ -172,7 +190,7 @@ export function IndicatorControls({
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+    <div className="chart-toolbar__field" style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
       <span
         style={{
           color: "var(--color-text-tertiary)",

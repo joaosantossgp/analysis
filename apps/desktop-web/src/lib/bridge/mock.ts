@@ -879,7 +879,7 @@ export function createMockBridge(): Partial<BridgeApi> {
         : ["parcela_usina_montante_mensal_2025.csv", "parcela_usina_montante_mensal_2026.csv"],
     }),
 
-    get_plant_parcel_source_file: async (params: any) => ({
+    import_plant_parcel_source_file: async (params: any) => ({
       status: "success",
       error: null,
       warning: null,
