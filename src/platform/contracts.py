@@ -262,11 +262,18 @@ class CompanyInfoDTO:
     sector_slug: str
     company_type: str | None
     ticker_b3: str | None
+    is_active: bool = True
     has_local_financial_reports: bool = False
     read_model_updated_at: str | None = None
     has_readable_current_data: bool = False
     readable_years_count: int = 0
     latest_readable_year: int | None = None
+    readable_financial_periods_count: int = 0
+    latest_financial_period_label: str | None = None
+    latest_financial_period_display: str | None = None
+    latest_financial_period_type: str | None = None
+    latest_financial_period_year: int | None = None
+    latest_financial_period_quarter: int | None = None
     read_availability_code: str | None = None
     read_availability_message: str | None = None
     gics_sector: str | None = None
@@ -277,6 +284,7 @@ class CompanyInfoDTO:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
 
 
 @dataclass(frozen=True)

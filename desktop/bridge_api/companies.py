@@ -222,7 +222,7 @@ class CompanyBridgeMixin:
                         "mg_liq": mg_liq,
                     }
 
-            # 2. Fetch stock price history from Yahoo Finance
+            # 2. Fetch stock price history from Yahoo Finance or local cache
             from src.companies.market_cap import MarketCapService  # noqa: PLC0415
             mkt_cap_svc = MarketCapService(settings=svc.settings, read_service=svc)
 
@@ -237,7 +237,29 @@ class CompanyBridgeMixin:
 
             prices_by_year = {}
             if ticker:
-                prices_by_year = mkt_cap_svc.fetch_yahoo_price_history(ticker)
+                try:
+                    # Try local cache first
+                    with svc.engine.connect() as conn:
+                        rows = conn.execute(
+                            text(
+                                """
+                                SELECT date, adjusted_close
+                                FROM market_history
+                                WHERE cd_cvm = :cd_cvm
+                                ORDER BY date ASC
+                                """
+                            ),
+                            {"cd_cvm": cd_cvm},
+                        ).fetchall()
+                    if rows:
+                        for r_date, r_close in rows:
+                            if r_close is not None:
+                                yr = datetime.strptime(r_date, "%Y-%m-%d").year
+                                prices_by_year[yr] = float(r_close)
+                    else:
+                        prices_by_year = mkt_cap_svc.fetch_yahoo_price_history(ticker)
+                except Exception:
+                    prices_by_year = mkt_cap_svc.fetch_yahoo_price_history(ticker)
 
             # 3. Merge
             all_years = sorted(list(set(metrics_by_year.keys()) | set(prices_by_year.keys())))
@@ -262,6 +284,62 @@ class CompanyBridgeMixin:
 
         except Exception as exc:
             return {"error": str(exc), "yearly_data": []}
+
+    def get_company_market_history_status(self, params=None) -> dict:
+        p = params or {}
+        try:
+            cd_cvm = int(p.get("cd_cvm", 0))
+            if not cd_cvm:
+                return {"error": "cd_cvm is required"}
+            ticker = p.get("ticker")
+            from src.companies.market_history import MarketHistoryService  # noqa: PLC0415
+            svc = self._svc()
+            mkt_svc = MarketHistoryService(settings=svc.settings, read_service=svc)
+            return self._sanitize_for_json(mkt_svc.get_market_history_status(cd_cvm, ticker=ticker))
+        except Exception as exc:
+            return {"error": str(exc)}
+
+    def get_company_market_history(self, params=None) -> dict:
+        p = params or {}
+        try:
+            cd_cvm = int(p.get("cd_cvm", 0))
+            if not cd_cvm:
+                return {"error": "cd_cvm is required"}
+            ticker = p.get("ticker")
+            start_date = p.get("start_date")
+            end_date = p.get("end_date")
+            period = p.get("period")
+            interval = p.get("interval", "1d")
+            from src.companies.market_history import MarketHistoryService  # noqa: PLC0415
+            svc = self._svc()
+            mkt_svc = MarketHistoryService(settings=svc.settings, read_service=svc)
+            result = mkt_svc.get_market_history(
+                cd_cvm,
+                ticker=ticker,
+                start_date=start_date,
+                end_date=end_date,
+                period=period,
+                interval=interval,
+            )
+            return self._sanitize_for_json(result)
+        except Exception as exc:
+            return {"error": str(exc)}
+
+    def refresh_company_market_history(self, params=None) -> dict:
+        p = params or {}
+        try:
+            cd_cvm = int(p.get("cd_cvm", 0))
+            if not cd_cvm:
+                return {"error": "cd_cvm is required"}
+            ticker = p.get("ticker")
+            from src.companies.market_history import MarketHistoryService  # noqa: PLC0415
+            svc = self._svc()
+            mkt_svc = MarketHistoryService(settings=svc.settings, read_service=svc)
+            result = mkt_svc.refresh_market_history(cd_cvm, ticker=ticker)
+            svc.invalidate_read_caches()
+            return self._sanitize_for_json(result)
+        except Exception as exc:
+            return {"error": str(exc)}
 
     def get_company_statement(self, params=None) -> dict:
         p = params or {}
@@ -331,7 +409,7 @@ class CompanyBridgeMixin:
             statement_type = p.get("statement_type")
             if statement_type:
                 statement_type = str(statement_type).upper()
-                if statement_type not in ("DRE", "BPA", "BPP", "DFC", "DVA", "DMPL"):
+                if statement_type not in ("DRE", "BPA", "BPP", "DFC", "DMPL"):
                     return self._sanitize_for_json({
                         "ok": False,
                         "error": f"Invalid statement type: {statement_type}",

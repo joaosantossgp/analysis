@@ -12,6 +12,7 @@ from src.companies.universe import ensure_company_universe_tables_for_connection
 from src.financials.excel_mapping import ensure_excel_mapping_tables_for_connection
 from src.refresh.jobs import ensure_refresh_runtime_tables_for_connection
 from src.energy_kpi.schema import get_energy_kpi_engine
+from src.companies.market_history import ensure_market_history_tables_for_connection
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +100,8 @@ def init_db_tables(engine: Engine) -> None:
         ensure_refresh_runtime_tables_for_connection(conn)
         ensure_company_universe_tables_for_connection(conn)
         ensure_excel_mapping_tables_for_connection(conn)
-        _ensure_company_gics_columns(conn)
+        ensure_market_history_tables_for_connection(conn)
+        _ensure_company_columns(conn)
 
     _index_ddl = [
         'CREATE INDEX {c}IF NOT EXISTS idx_company_views_count ON company_views(view_count DESC)',
@@ -130,25 +132,104 @@ def init_db_tables(engine: Engine) -> None:
                 idx_conn.execute(text(ddl.format(c="")))
 
     logger.info("init_db_tables completed dialect=%s", dialect)
+    _backfill_companies_metadata(engine)
 
 
-def _ensure_company_gics_columns(conn) -> None:
+def _backfill_companies_metadata(engine: Engine) -> None:
+    """Idempotently backfills missing CNPJ or ticker_b3 values for existing companies in the database locally.
+
+    Accepts a SQLAlchemy Engine or compatible connection object.
+    """
+    try:
+        # Check if companies table exists and has rows with NULL cnpj or ticker_b3
+        with engine.connect() as conn:
+            inspector = inspect(conn)
+            if not inspector.has_table("companies"):
+                return
+            
+            rows = conn.execute(
+                text("SELECT cd_cvm, cnpj, ticker_b3 FROM companies")
+            ).fetchall()
+            
+        if not rows:
+            return
+            
+        logger.info("Running automatic local metadata backfill for %d companies...", len(rows))
+        from src.companies.ticker_map import TICKER_MAP
+        from src.companies.cnpj import validate_cnpj
+        
+        updates_list = []
+        
+        for row in rows:
+            cd_cvm = row[0]
+            cnpj = row[1]
+            ticker_b3 = row[2]
+            
+            updates = {}
+            # 1. Normalize existing CNPJ to exactly 14 digits if it is valid but formatted/mismatched
+            if cnpj:
+                cleaned_cnpj = "".join(c for c in str(cnpj) if c.isdigit())
+                if cleaned_cnpj != cnpj and validate_cnpj(cleaned_cnpj):
+                    updates["cnpj"] = cleaned_cnpj
+            
+            # 2. Backfill ticker if missing
+            if not ticker_b3:
+                raw_ticker = TICKER_MAP.get(int(cd_cvm))
+                if raw_ticker:
+                    clean_ticker = raw_ticker.strip().upper()
+                    if clean_ticker.endswith(".SA"):
+                        clean_ticker = clean_ticker[:-3]
+                    updates["ticker_b3"] = clean_ticker
+            
+            if updates:
+                updates_list.append((cd_cvm, updates))
+        
+        if updates_list:
+            with engine.begin() as conn:
+                for cd_cvm, updates in updates_list:
+                    set_clause = ", ".join([f"{k} = :{k}" for k in updates.keys()])
+                    updates["cd_cvm"] = cd_cvm
+                    conn.execute(
+                        text(f"UPDATE companies SET {set_clause} WHERE cd_cvm = :cd_cvm"),
+                        updates
+                    )
+            logger.info("Local metadata backfill completed. Normalized/Updated %d companies.", len(updates_list))
+    except Exception as exc:
+        logger.debug("Bypassing local metadata backfill (inspection not supported or other database constraint): %s", exc)
+
+
+
+def _ensure_company_columns(conn) -> None:
     inspector = inspect(conn, raiseerr=False)
     if inspector is None:
         return
+    
     existing = {
         str(column.get("name") or "").lower()
         for column in inspector.get_columns("companies")
     }
-    for column_name in (
-        "gics_sector",
-        "gics_sector_slug",
-        "gics_industry_group",
-        "gics_industry",
-        "gics_sub_industry",
-    ):
-        if column_name not in existing:
-            conn.execute(text(f"ALTER TABLE companies ADD COLUMN {column_name} TEXT"))
+
+    # Add missing columns dynamically to support smooth database migrations/upgrades
+    columns_to_ensure = {
+        "nome_comercial": "TEXT",
+        "cnpj": "TEXT",
+        "setor_cvm": "TEXT",
+        "setor_analitico": "TEXT",
+        "gics_sector": "TEXT",
+        "gics_sector_slug": "TEXT",
+        "gics_industry_group": "TEXT",
+        "gics_industry": "TEXT",
+        "gics_sub_industry": "TEXT",
+        "company_type": "TEXT NOT NULL DEFAULT 'comercial'",
+        "ticker_b3": "TEXT",
+        "coverage_rank": "INTEGER",
+        "is_active": "INTEGER NOT NULL DEFAULT 1",
+        "updated_at": "TEXT NOT NULL DEFAULT ''"
+    }
+
+    for col_name, col_type in columns_to_ensure.items():
+        if col_name.lower() not in existing:
+            conn.execute(text(f"ALTER TABLE companies ADD COLUMN {col_name} {col_type}"))
 SQLITE_WRITE_BACKOFF_SECONDS = 0.6
 DEFAULT_TO_SQL_CHUNKSIZE = 2000
 SQLITE_SAFE_MAX_VARIABLES = 900
@@ -191,9 +272,42 @@ class CVMDatabase:
 
     def _upsert_company_metadata(self, conn, company_name: str, cvm_code: int,
                                  company_type: str, setor_cvm: str | None = None,
-                                 ticker_b3: str | None = None) -> None:
+                                 ticker_b3: str | None = None,
+                                 cnpj: str | None = None) -> None:
         """Persiste metadados na tabela companies (se existir). Idempotente."""
         updated_at = datetime.utcnow().replace(microsecond=0).isoformat()
+
+        # Resolve ticker_b3 if not provided
+        if not ticker_b3:
+            from src.companies.ticker_map import TICKER_MAP
+            raw_ticker = TICKER_MAP.get(int(cvm_code))
+            if raw_ticker:
+                ticker_b3 = raw_ticker.strip().upper()
+                if ticker_b3.endswith(".SA"):
+                    ticker_b3 = ticker_b3[:-3]
+
+        # Resolve cnpj if not provided
+        if not cnpj:
+            try:
+                from src.companies.catalog import CompanyCatalogService
+                catalog = CompanyCatalogService(timeout=5)
+                entry = catalog.lookup_company(int(cvm_code))
+                if entry and entry.cnpj:
+                    from src.companies.cnpj import validate_cnpj
+                    if validate_cnpj(entry.cnpj):
+                        cnpj = "".join(c for c in str(entry.cnpj) if c.isdigit())
+                        if not ticker_b3 and entry.ticker_b3:
+                            ticker_b3 = entry.ticker_b3
+            except Exception:
+                pass
+        else:
+            # Validate provided CNPJ
+            from src.companies.cnpj import validate_cnpj
+            if validate_cnpj(cnpj):
+                cnpj = "".join(c for c in str(cnpj) if c.isdigit())
+            else:
+                cnpj = None
+
         gics = resolve_gics_classification(
             sector_name=setor_cvm,
             setor_analitico=None,
@@ -205,6 +319,7 @@ class CVMDatabase:
             "ctype": company_type or "comercial",
             "setor": setor_cvm,
             "ticker": ticker_b3,
+            "cnpj": cnpj,
             "updated_at": updated_at,
             "gics_sector": gics.gics_sector if gics else None,
             "gics_sector_slug": gics.gics_sector_slug if gics else None,
@@ -216,12 +331,12 @@ class CVMDatabase:
         conn.execute(text("""
             INSERT INTO companies
                 (
-                    cd_cvm, company_name, company_type, setor_cvm, ticker_b3,
+                    cd_cvm, company_name, company_type, setor_cvm, ticker_b3, cnpj,
                     gics_sector, gics_sector_slug, gics_industry_group,
                     gics_industry, gics_sub_industry, updated_at
                 )
             SELECT
-                :cd, :name, :ctype, :setor, :ticker,
+                :cd, :name, :ctype, :setor, :ticker, :cnpj,
                 :gics_sector, :gics_sector_slug, :gics_industry_group,
                 :gics_industry, :gics_sub_industry, :updated_at
             WHERE NOT EXISTS (
@@ -234,6 +349,7 @@ class CVMDatabase:
                 company_type = :ctype,
                 setor_cvm    = COALESCE(:setor, setor_cvm),
                 ticker_b3    = COALESCE(:ticker, ticker_b3),
+                cnpj         = COALESCE(:cnpj, cnpj),
                 gics_sector  = COALESCE(:gics_sector, gics_sector),
                 gics_sector_slug = COALESCE(:gics_sector_slug, gics_sector_slug),
                 gics_industry_group = COALESCE(:gics_industry_group, gics_industry_group),
@@ -286,7 +402,8 @@ class CVMDatabase:
     def insert_company_data(self, company_name: str, cvm_code: int, company_type: str,
                             processed_reports: dict, qa_logs: list,
                             setor_cvm: str | None = None,
-                            ticker_b3: str | None = None):
+                            ticker_b3: str | None = None,
+                            cnpj: str | None = None):
         """
         Melts wide dataframes into long format and inserts them into the database.
         Deletes existing data for this company to allow idempotency.
@@ -298,7 +415,7 @@ class CVMDatabase:
             try:
                 with conn.begin_nested():
                     self._upsert_company_metadata(
-                        conn, company_name, cvm_code, company_type, setor_cvm, ticker_b3
+                        conn, company_name, cvm_code, company_type, setor_cvm, ticker_b3, cnpj
                     )
             except Exception as exc:
                 logger.warning(

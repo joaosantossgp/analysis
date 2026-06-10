@@ -6,6 +6,7 @@ import { IdentifierBadge } from "@/components/data/IdentifierBadge";
 import { fetchCompanyInfo, type CompanyInfoResult } from "@/lib/api/companyDetail";
 import { whenBridgeReady } from "@/lib/bridge/adapter";
 import { formatBRDateTime } from "@/lib/format/date";
+import { formatCNPJ } from "@/lib/format/cnpj";
 import { ExportCompanyButton } from "./ExportCompanyButton";
 import { Breadcrumbs } from "./Breadcrumbs";
 import { StateBanner } from "./feedback/StateBanner";
@@ -84,8 +85,14 @@ export function EntityHeader({
   const subtitle = info.nome_comercial && info.nome_comercial !== info.company_name
     ? info.nome_comercial
     : null;
-  const localDataLabel = info.has_local_financial_reports ? "dados locais" : "sem base local";
-  const currentDataLabel = info.has_readable_current_data ? "atual legível" : "parcial";
+  const latestPeriodDisplay = info.latest_financial_period_display;
+  const localDataLabel = info.has_local_financial_reports ? "local data" : "no local data";
+  const currentDataLabel = latestPeriodDisplay ? `through ${latestPeriodDisplay}` : "partial";
+  const dataFreshnessMessage = latestPeriodDisplay
+    ? `Updated through ${latestPeriodDisplay}.`
+    : info.has_local_financial_reports
+      ? "Local financial rows exist, but no complete BPA/BPP/DRE/DFC period is available."
+      : "No local financial statements found for this company.";
 
   // Breadcrumbs items:
   // If sector is available: Sectors > [Sector Name] > [Company Name]
@@ -174,33 +181,38 @@ export function EntityHeader({
               <StatusChip tone={info.has_local_financial_reports ? "ok" : "warn"}>
                 {localDataLabel}
               </StatusChip>
-              <StatusChip tone={info.has_readable_current_data ? "ok" : "warn"}>
+              <StatusChip tone={latestPeriodDisplay ? "ok" : "warn"}>
                 {currentDataLabel}
               </StatusChip>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-2 xl:text-right">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-5 xl:grid-cols-2 xl:text-right">
             <MetaField
-              label="Ano mais recente"
-              value={info.latest_readable_year?.toString() ?? null}
+              label="Latest period"
+              value={latestPeriodDisplay}
               mono
             />
             <MetaField
-              label="Anos legíveis"
+              label="Annual years"
               value={info.readable_years_count.toString()}
               mono
             />
-            <MetaField label="CNPJ" value={info.cnpj} mono />
+            <MetaField label="CNPJ" value={formatCNPJ(info.cnpj)} mono />
             <MetaField
-              label="Modelo leitura"
+              label={info.is_active === false ? "Ticker (historical)" : "Ticker"}
+              value={info.ticker_b3 ? info.ticker_b3 : "Not available"}
+              mono
+            />
+            <MetaField
+              label="Read model"
               value={formatBRDateTime(info.read_model_updated_at)}
               mono
             />
           </div>
         </header>
 
-        {info.read_availability_message ? (
+        {dataFreshnessMessage ? (
           <p
             style={{
               background: "var(--color-surface-1)",
@@ -211,7 +223,7 @@ export function EntityHeader({
               padding: "10px 16px",
             }}
           >
-            {info.read_availability_message}
+            {dataFreshnessMessage}
           </p>
         ) : null}
 
@@ -224,17 +236,17 @@ export function EntityHeader({
               <ExportCompanyButton
                 cdCvm={info.cd_cvm}
                 statementType={activeStatement}
-                scopeLabel={`${activeStatement} selecionado`}
-                scopeNote={`Exporta capa, metadados e a aba ${activeStatement}.`}
+                scopeLabel={`${activeStatement} selected`}
+                scopeNote={`Exports the cover, metadata, and ${activeStatement} sheet.`}
               />
             )}
             <ExportCompanyButton
               cdCvm={info.cd_cvm}
-              scopeLabel={activeTab === "kpis" ? "Workbook com KPIs" : "Workbook completo"}
+              scopeLabel={activeTab === "kpis" ? "KPI workbook" : "Full workbook"}
               scopeNote={
                 activeTab === "kpis"
-                  ? "O bridge atual exporta o workbook completo da empresa, incluindo KPIs e demonstrativos disponíveis."
-                  : "Inclui demonstrativos disponíveis, KPIs e metadados locais."
+                  ? "Exports the full company workbook, including KPIs and available statements."
+                  : "Includes available statements, KPIs, and local metadata."
               }
             />
           </div>

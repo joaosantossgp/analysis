@@ -970,6 +970,125 @@ def _start_vite_dev_server() -> tuple[subprocess.Popen[bytes] | None, str]:
     return proc, _VITE_DEV_URL
 
 
+_refresh_lock = threading.Lock()
+_refresh_in_progress = False
+
+
+def _background_remote_metadata_refresh() -> None:
+    """Background, non-blocking refresh of company catalog metadata (CNPJ) from CVM CAD URL."""
+    global _refresh_in_progress
+    import json
+    
+    # 1. Instance protection: verify this process owns the cross-process runtime lock
+    from desktop import lockfile
+    if lockfile.get_status().get("status") != "locked_by_self":
+        print("[desktop] Background remote catalog refresh: process does not own the runtime lock. Skipping.")
+        return
+        
+    with _refresh_lock:
+        if _refresh_in_progress:
+            return
+        _refresh_in_progress = True
+        
+    try:
+        # Wait for UI to initialize
+        time.sleep(2.0)
+        
+        db_path = _user_data_root() / "db" / "cvm_financials.db"
+        if not db_path.exists():
+            return
+            
+        now_ts = int(time.time())
+        ttl_seconds = 604800  # 7 days TTL
+        
+        # 2. Check last successful refresh timestamp in app_settings
+        last_refresh = 0
+        conn = sqlite3.connect(str(db_path), timeout=5.0)
+        try:
+            cur = conn.cursor()
+            cur.execute("CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL)")
+            cur.execute("SELECT value FROM app_settings WHERE key = 'metadata_last_successful_refresh'")
+            row = cur.fetchone()
+            if row:
+                try:
+                    last_refresh = int(json.loads(row[0]))
+                except Exception:
+                    pass
+            
+            # Check if companies table exists
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='companies'")
+            if not cur.fetchone():
+                return
+            
+            # Find companies with missing CNPJs
+            cur.execute("SELECT cd_cvm FROM companies WHERE cnpj IS NULL")
+            missing_companies = cur.fetchall()
+        except sqlite3.OperationalError as e:
+            print(f"[desktop] Warning: DB access during remote refresh check failed: {e}")
+            return
+        finally:
+            conn.close()
+            
+        # If no companies are missing CNPJs, we don't need to refresh
+        if not missing_companies:
+            return
+            
+        # 3. Check TTL
+        if now_ts - last_refresh < ttl_seconds:
+            last_date = datetime.fromtimestamp(last_refresh, tz=timezone.utc).isoformat()
+            print(f"[desktop] Background remote catalog refresh: TTL not expired. Last refreshed at {last_date}. Skipping.")
+            return
+            
+        print(f"[desktop] Background remote catalog refresh: starting fetch for {len(missing_companies)} companies...")
+        
+        from src.companies.catalog import CompanyCatalogService
+        from src.companies.cnpj import validate_cnpj
+        
+        # Explicit 10s timeout
+        catalog = CompanyCatalogService(timeout=10)
+        # Force catalog load once. If the network or remote catalog service is down,
+        # it throws CompanyCatalogUnavailableError, propagating to the outer handler
+        # and preventing save of success timestamp.
+        catalog.list_entries()
+        
+        updates = []
+        
+        for (cd_cvm,) in missing_companies:
+            try:
+                entry = catalog.lookup_company(int(cd_cvm))
+                if entry and entry.cnpj:
+                    cleaned_cnpj = "".join(c for c in str(entry.cnpj) if c.isdigit())
+                    if validate_cnpj(cleaned_cnpj):
+                        updates.append((cleaned_cnpj, int(cd_cvm)))
+            except Exception:
+                pass
+                
+        # 4. Short transaction update & update last_successful_refresh
+        conn = sqlite3.connect(str(db_path), timeout=10.0)
+        try:
+            cur = conn.cursor()
+            if updates:
+                cur.executemany("UPDATE companies SET cnpj = ? WHERE cd_cvm = ?", updates)
+            
+            # Save successful refresh timestamp
+            cur.execute(
+                "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('metadata_last_successful_refresh', ?, ?)",
+                (json.dumps(now_ts), datetime.now(timezone.utc).isoformat())
+            )
+            conn.commit()
+            print(f"[desktop] Background remote catalog refresh completed. Saved {len(updates)} CNPJs. Last success timestamp persisted.")
+        except sqlite3.OperationalError as e:
+            print(f"[desktop] Warning: Failed to persist remote refresh updates: {e}")
+        finally:
+            conn.close()
+            
+    except Exception as exc:
+        print(f"[desktop] Warning: background remote metadata refresh skipped: {exc}")
+    finally:
+        with _refresh_lock:
+            _refresh_in_progress = False
+
+
 def main() -> None:
     args = sys.argv[1:]
     if "--diagnose-runtime" in args:
@@ -1069,6 +1188,12 @@ def main() -> None:
     threading.Thread(
         target=bridge._start_refresh_worker,
         name="desktop-refresh-worker",
+        daemon=True,
+    ).start()
+
+    threading.Thread(
+        target=_background_remote_metadata_refresh,
+        name="desktop-remote-metadata-refresh",
         daemon=True,
     ).start()
 

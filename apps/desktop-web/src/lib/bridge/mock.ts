@@ -591,6 +591,54 @@ function toDirectoryItem(c: FixtureCompany): CompanyDirectoryItem {
   };
 }
 
+const DOWNLOADED_MARKET_HISTORIES = new Set<number>([9512, 14311]);
+
+function resolveMockTicker(cdCvm: number, requestedTicker?: string | null): string | null {
+  if (requestedTicker) {
+    let t = requestedTicker.trim().toUpperCase();
+    if (t) {
+      if (!t.includes(".")) {
+        t = `${t}.SA`;
+      }
+      return t;
+    }
+  }
+
+  const company = FIXTURE_COMPANIES.find((c) => c.cd_cvm === cdCvm);
+  if (company && company.ticker_b3) {
+    let t = company.ticker_b3.trim().toUpperCase();
+    if (!t.includes(".")) {
+      t = `${t}.SA`;
+    }
+    return t;
+  }
+
+  return null;
+}
+
+function resolveMockCompanyTickers(cdCvm: number, requestedTicker?: string | null): string[] {
+  const primary = resolveMockTicker(cdCvm, requestedTicker);
+  if (!primary) {
+    return [];
+  }
+  
+  const m = primary.match(/^([A-Z]{4})\d+/);
+  if (!m) {
+    return [primary];
+  }
+  const base = m[1];
+  const suffixes = ["3", "4", "5", "6", "11"];
+  const candidates = suffixes.map((s) => `${base}${s}.SA`);
+  
+  const result = [primary];
+  for (const c of candidates) {
+    if (!result.includes(c)) {
+      result.push(c);
+    }
+  }
+  return result;
+}
+
 // ---------------------------------------------------------------------------
 // createMockBridge — exported factory
 // ---------------------------------------------------------------------------
@@ -831,7 +879,7 @@ export function createMockBridge(): Partial<BridgeApi> {
         : ["parcela_usina_montante_mensal_2025.csv", "parcela_usina_montante_mensal_2026.csv"],
     }),
 
-    import_plant_parcel_source_file: async (params) => ({
+    get_plant_parcel_source_file: async (params: any) => ({
       status: "success",
       error: null,
       warning: null,
@@ -893,6 +941,7 @@ export function createMockBridge(): Partial<BridgeApi> {
         return {
           cd_cvm: cdCvm,
           company_name: "Unknown",
+          is_active: true,
           nome_comercial: null,
           cnpj: null,
           ticker_b3: null,
@@ -903,6 +952,12 @@ export function createMockBridge(): Partial<BridgeApi> {
           has_readable_current_data: false,
           readable_years_count: 0,
           latest_readable_year: null,
+          readable_financial_periods_count: 0,
+          latest_financial_period_label: null,
+          latest_financial_period_display: null,
+          latest_financial_period_type: null,
+          latest_financial_period_year: null,
+          latest_financial_period_quarter: null,
           read_model_updated_at: null,
           read_availability_code: null,
           read_availability_message: null,
@@ -912,6 +967,7 @@ export function createMockBridge(): Partial<BridgeApi> {
       return {
         cd_cvm: c.cd_cvm,
         company_name: c.company_name,
+        is_active: true,
         nome_comercial: c.company_name,
         cnpj: c.cnpj,
         ticker_b3: c.ticker_b3,
@@ -924,6 +980,14 @@ export function createMockBridge(): Partial<BridgeApi> {
         has_readable_current_data: c.has_financial_data,
         readable_years_count: c.anos_disponiveis.length,
         latest_readable_year: c.anos_disponiveis.at(-1) ?? null,
+        readable_financial_periods_count: c.anos_disponiveis.length,
+        latest_financial_period_label: c.anos_disponiveis.at(-1)?.toString() ?? null,
+        latest_financial_period_display: c.anos_disponiveis.at(-1)
+          ? `FY${c.anos_disponiveis.at(-1)}`
+          : null,
+        latest_financial_period_type: c.has_financial_data ? "annual" : null,
+        latest_financial_period_year: c.anos_disponiveis.at(-1) ?? null,
+        latest_financial_period_quarter: null,
         read_model_updated_at: c.has_financial_data
           ? new Date(Date.now() - 86_400_000).toISOString()
           : null,
@@ -1152,6 +1216,7 @@ export function createMockBridge(): Partial<BridgeApi> {
         nome_comercial: "PETROBRAS PN",
         cnpj: "33.000.167/0001-01",
         ticker_b3: "PETR4",
+        is_active: true,
         company_type: "SA",
         setor_cvm: "Petróleo e Gás",
         setor_analitico: "Petróleo e Gás",
@@ -1161,10 +1226,17 @@ export function createMockBridge(): Partial<BridgeApi> {
         has_readable_current_data: true,
         readable_years_count: 5,
         latest_readable_year: YEAR - 1,
+        readable_financial_periods_count: 5,
+        latest_financial_period_label: String(YEAR - 1),
+        latest_financial_period_display: `FY${YEAR - 1}`,
+        latest_financial_period_type: "annual",
+        latest_financial_period_year: YEAR - 1,
+        latest_financial_period_quarter: null,
         read_model_updated_at: NOW,
         read_availability_code: "readable",
         read_availability_message: "Data available",
       },
+      period_scope_label: "Last 5 years",
       presets: [
         {
           preset_id: "system:default",
@@ -1501,5 +1573,210 @@ export function createMockBridge(): Partial<BridgeApi> {
         warnings: [],
       },
     }),
+
+    get_company_market_history_status: async (params: { cd_cvm: number; ticker?: string | null }) => {
+      const cdCvm = Number(params?.cd_cvm ?? 9512);
+      const ticker = resolveMockTicker(cdCvm, params?.ticker);
+      
+      if (!ticker) {
+        return {
+          cd_cvm: cdCvm,
+          ticker: null,
+          available_tickers: [],
+          has_local_data: false,
+          first_date: null,
+          last_date: null,
+          row_count: 0,
+          last_downloaded_at: null,
+          is_stale: true,
+          warnings: ["No ticker resolved for this CVM code."],
+        };
+      }
+
+      const hasLocalData = DOWNLOADED_MARKET_HISTORIES.has(cdCvm);
+      
+      return {
+        cd_cvm: cdCvm,
+        ticker,
+        available_tickers: resolveMockCompanyTickers(cdCvm, params?.ticker),
+        has_local_data: hasLocalData,
+        first_date: hasLocalData ? "2024-06-08" : null,
+        last_date: hasLocalData ? "2026-06-08" : null,
+        row_count: hasLocalData ? 730 : 0,
+        last_downloaded_at: hasLocalData ? NOW : null,
+        is_stale: !hasLocalData,
+        warnings: [],
+      };
+    },
+
+    get_company_market_history: async (params: {
+      cd_cvm: number;
+      ticker?: string | null;
+      start_date?: string | null;
+      end_date?: string | null;
+      period?: string | null;
+      interval?: string;
+    }) => {
+      const cdCvm = Number(params?.cd_cvm ?? 9512);
+      const ticker = resolveMockTicker(cdCvm, params?.ticker);
+      
+      if (!ticker) {
+        return {
+          cd_cvm: cdCvm,
+          ticker: "",
+          source: "yahoo_finance",
+          provider_status: "unofficial_free",
+          requested_start_date: String(params?.start_date ?? null),
+          requested_end_date: String(params?.end_date ?? null),
+          actual_start_date: null,
+          actual_end_date: null,
+          interval: String(params?.interval ?? "1d"),
+          last_downloaded_at: null,
+          is_stale: true,
+          has_local_data: false,
+          warnings: ["No ticker resolved for this CVM code."],
+          observations: [],
+          summary: null,
+        };
+      }
+
+      const hasLocalData = DOWNLOADED_MARKET_HISTORIES.has(cdCvm);
+      if (!hasLocalData) {
+        return {
+          cd_cvm: cdCvm,
+          ticker,
+          source: "yahoo_finance",
+          provider_status: "unofficial_free",
+          requested_start_date: String(params?.start_date ?? null),
+          requested_end_date: String(params?.end_date ?? null),
+          actual_start_date: null,
+          actual_end_date: null,
+          interval: String(params?.interval ?? "1d"),
+          last_downloaded_at: null,
+          is_stale: true,
+          has_local_data: false,
+          warnings: ["No local market history has been downloaded yet."],
+          observations: [],
+          summary: null,
+        };
+      }
+
+      const observations = [];
+      const numDays = 730;
+      const initialClose = cdCvm === 14311 ? 110.0 : 35.0;
+      let prevClose = initialClose;
+      
+      let seed = cdCvm;
+      function pseudoRandom() {
+        const x = Math.sin(seed++) * 10000;
+        return x - Math.floor(x);
+      }
+
+      for (let i = numDays; i >= 0; i--) {
+        const d = new Date(Date.now() - i * 24 * 3600 * 1000);
+        const dateStr = d.toISOString().split("T")[0];
+        
+        const change = (pseudoRandom() - 0.48) * 1.5;
+        const close = Math.round((prevClose + change) * 100) / 100;
+        const open = Math.round((prevClose + (pseudoRandom() - 0.5) * 0.5) * 100) / 100;
+        const high = Math.round(Math.max(open, close) * 1.02 * 100) / 100;
+        const low = Math.round(Math.min(open, close) * 0.98 * 100) / 100;
+        const adjClose = Math.round(close * 0.95 * 100) / 100;
+        const volume = Math.round(5_000_000 + pseudoRandom() * 10_000_000);
+        
+        const dividend = (i > 0 && i % 180 === 0) ? 1.25 : 0.0;
+        
+        prevClose = close;
+        
+        observations.push({
+          date: dateStr,
+          open,
+          high,
+          low,
+          close,
+          adjusted_close: adjClose,
+          volume,
+          dividend,
+          split_ratio: 1.0,
+          price_return_index: Math.round((close / initialClose) * 1000) / 1000,
+          total_return_index: Math.round((adjClose / (initialClose * 0.95)) * 1000) / 1000,
+          ttm_dividend_yield: dividend > 0 ? 0.085 : 0.082,
+        });
+      }
+
+      const finalClose = prevClose;
+      const annualizedTotalReturn = Math.round((Math.sqrt((finalClose * 0.95) / (initialClose * 0.95)) - 1.0) * 1000) / 1000;
+
+      return {
+        cd_cvm: cdCvm,
+        ticker,
+        source: "yahoo_finance",
+        provider_status: "unofficial_free",
+        requested_start_date: String(params?.start_date ?? null),
+        requested_end_date: String(params?.end_date ?? null),
+        actual_start_date: observations[0].date,
+        actual_end_date: observations[observations.length - 1].date,
+        interval: String(params?.interval ?? "1d"),
+        last_downloaded_at: NOW,
+        is_stale: false,
+        has_local_data: true,
+        warnings: [],
+        observations,
+        summary: {
+          initial_close: initialClose,
+          final_close: finalClose,
+          absolute_change: Math.round((finalClose - initialClose) * 100) / 100,
+          price_return: Math.round(((finalClose / initialClose) - 1.0) * 1000) / 1000,
+          total_return: Math.round(((finalClose * 0.95 / (initialClose * 0.95)) - 1.0) * 1000) / 1000,
+          annualized_total_return: annualizedTotalReturn,
+          period_high: Math.round(initialClose * 1.3 * 100) / 100,
+          period_low: Math.round(initialClose * 0.8 * 100) / 100,
+          average_daily_volume: 8500000.0,
+          dividends_per_share: 5.0,
+          first_available_date: observations[0].date,
+          last_available_date: observations[observations.length - 1].date,
+        },
+      };
+    },
+
+    refresh_company_market_history: async (params: { cd_cvm: number; ticker?: string | null }) => {
+      const cdCvm = Number(params?.cd_cvm ?? 9512);
+      const ticker = resolveMockTicker(cdCvm, params?.ticker);
+      if (!ticker) {
+        return {
+          ok: false,
+          ticker: "",
+          requested_start_date: null,
+          requested_end_date: null,
+          provider_date_range: null,
+          downloaded_rows: 0,
+          inserted_rows: 0,
+          updated_rows: 0,
+          unchanged_rows: 0,
+          rejected_rows: 0,
+          provider_warnings: ["No ticker resolved"],
+          completion_timestamp: NOW,
+          refresh_duration_seconds: 0.0,
+        };
+      }
+      
+      DOWNLOADED_MARKET_HISTORIES.add(cdCvm);
+      
+      return {
+        ok: true,
+        ticker,
+        requested_start_date: null,
+        requested_end_date: null,
+        provider_date_range: "2024-06-08 to 2026-06-08",
+        downloaded_rows: 730,
+        inserted_rows: 730,
+        updated_rows: 0,
+        unchanged_rows: 0,
+        rejected_rows: 0,
+        provider_warnings: [],
+        completion_timestamp: NOW,
+        refresh_duration_seconds: 0.12,
+      };
+    },
   };
 }

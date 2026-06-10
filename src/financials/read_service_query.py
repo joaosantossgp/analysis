@@ -302,6 +302,7 @@ class ReadServiceQueryMixin:
             sector_slug=sector_slugify(sector_name),
             company_type=company_type,
             ticker_b3=payload.get("ticker_b3"),
+            is_active=bool(payload.get("is_active") if payload.get("is_active") is not None else 1),
             gics_sector=gics.gics_sector if gics else None,
             gics_sector_slug=gics.gics_sector_slug if gics else None,
             gics_industry_group=gics.gics_industry_group if gics else None,
@@ -327,6 +328,16 @@ class ReadServiceQueryMixin:
             if state.get("latest_readable_year") is not None
             else None
         )
+        latest_financial_period_year = (
+            int(state["latest_financial_period_year"])
+            if state.get("latest_financial_period_year") is not None
+            else None
+        )
+        latest_financial_period_quarter = (
+            int(state["latest_financial_period_quarter"])
+            if state.get("latest_financial_period_quarter") is not None
+            else None
+        )
         read_availability = self._build_read_availability_summary(
             has_readable_current_data=bool(state.get("has_readable_current_data")),
             readable_years_count=readable_years_count,
@@ -343,6 +354,14 @@ class ReadServiceQueryMixin:
             has_readable_current_data=bool(state.get("has_readable_current_data")),
             readable_years_count=readable_years_count,
             latest_readable_year=latest_readable_year,
+            readable_financial_periods_count=int(
+                state.get("readable_financial_periods_count") or 0
+            ),
+            latest_financial_period_label=state.get("latest_financial_period_label"),
+            latest_financial_period_display=state.get("latest_financial_period_display"),
+            latest_financial_period_type=state.get("latest_financial_period_type"),
+            latest_financial_period_year=latest_financial_period_year,
+            latest_financial_period_quarter=latest_financial_period_quarter,
             read_availability_code=read_availability["code"],
             read_availability_message=read_availability["message"],
         )

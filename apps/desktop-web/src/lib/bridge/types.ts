@@ -164,6 +164,7 @@ export type CompanyInfo = {
   nome_comercial: string | null;
   cnpj: string | null;
   ticker_b3: string | null;
+  is_active: boolean;
   company_type: string | null;
   setor_cvm: string | null;
   setor_analitico: string | null;
@@ -178,6 +179,12 @@ export type CompanyInfo = {
   has_readable_current_data: boolean;
   readable_years_count: number;
   latest_readable_year: number | null;
+  readable_financial_periods_count: number;
+  latest_financial_period_label: string | null;
+  latest_financial_period_display: string | null;
+  latest_financial_period_type: string | null;
+  latest_financial_period_year: number | null;
+  latest_financial_period_quarter: number | null;
   read_model_updated_at: string | null;
   read_availability_code: string | null;
   read_availability_message: string | null;

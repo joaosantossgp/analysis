@@ -100,6 +100,10 @@ _KPI_ACCOUNTS = {
     "FCF": "6.03",
 }
 
+_REQUIRED_PERIOD_STATEMENTS = ("BPA", "BPP", "DRE", "DFC")
+_ANNUAL_PERIOD_RE = re.compile(r"^(?:19|20)\d{2}$")
+_QUARTER_PERIOD_RE = re.compile(r"^([1-4])[QT](\d{2}|\d{4})$", flags=re.IGNORECASE)
+
 _CANONICAL_SECTOR_SQL = canonical_sector_sql("c")
 
 _HAS_ANNUAL_HISTORY_SQL = """
@@ -112,13 +116,41 @@ EXISTS (
 """
 
 
+def _parse_period_label(label: object) -> tuple[int, int | None] | None:
+    text_value = str(label or "").strip()
+    if _ANNUAL_PERIOD_RE.match(text_value):
+        return int(text_value), None
+    q_match = _QUARTER_PERIOD_RE.match(text_value)
+    if not q_match:
+        return None
+    year_text = q_match.group(2)
+    year = int(year_text) if len(year_text) == 4 else 2000 + int(year_text)
+    return year, int(q_match.group(1))
+
+
 def _period_sort_key(label: str) -> tuple[int, int]:
-    m = re.match(r"(\d{4})", label)
-    year = int(m.group(1)) if m else 0
-    q_match = re.match(r"(\d)Q(\d{2})", label)
-    if q_match:
-        return (2000 + int(q_match.group(2)), int(q_match.group(1)))
-    return (year, 99)
+    parsed = _parse_period_label(label)
+    if parsed is None:
+        return (9999, 99)
+    year, quarter = parsed
+    return (year, 5 if quarter is None else quarter)
+
+
+def _period_display_label(label: object) -> str | None:
+    parsed = _parse_period_label(label)
+    if parsed is None:
+        return None
+    year, quarter = parsed
+    if quarter is None:
+        return f"FY{year}"
+    return f"{quarter}Q{year % 100:02d}"
+
+
+def _period_type(label: object) -> str | None:
+    parsed = _parse_period_label(label)
+    if parsed is None:
+        return None
+    return "annual" if parsed[1] is None else "quarter"
 
 
 class CVMQueryLayer:
@@ -835,12 +867,83 @@ class CVMQueryLayer:
                 c.cd_cvm,
                 c.company_name,
                 c.nome_comercial,
+        inspector = inspect(self.engine)
+        has_financial_reports = inspector.has_table("financial_reports")
+        has_refresh_status = inspector.has_table("company_refresh_status")
+        has_status_read_model = False
+        if has_refresh_status:
+            status_columns = {
+                str(column.get("name") or "").lower()
+                for column in inspector.get_columns("company_refresh_status")
+            }
+            has_status_read_model = "read_model_updated_at" in status_columns
+
+        annual_join = ""
+        readable_years_count = "0"
+        latest_readable_year = "NULL"
+        has_local_financial_reports_sql = "0"
+        if has_financial_reports:
+            has_local_financial_reports_sql = """CASE WHEN EXISTS (
+                    SELECT 1 FROM financial_reports fr WHERE fr."CD_CVM" = c.cd_cvm LIMIT 1
+                ) THEN 1 ELSE 0 END"""
+            annual_join = """
+            LEFT JOIN (
+                SELECT
+                    "CD_CVM" AS cd_cvm,
+                    COUNT(DISTINCT "REPORT_YEAR") AS readable_years_count,
+                    MAX("REPORT_YEAR") AS latest_readable_year
+                FROM financial_reports
+                WHERE "CD_CVM" = :cd_cvm
+                  AND "PERIOD_LABEL" = CAST("REPORT_YEAR" AS TEXT)
+                GROUP BY "CD_CVM"
+            ) annual ON annual.cd_cvm = c.cd_cvm
+            """
+            readable_years_count = "COALESCE(annual.readable_years_count, 0)"
+            latest_readable_year = "annual.latest_readable_year"
+
+        status_join = ""
+        read_model_updated_at = (
+            f"CASE WHEN {latest_readable_year} IS NOT NULL THEN c.updated_at ELSE NULL END"
+        )
+        if has_status_read_model:
+            status_join = """
+            LEFT JOIN company_refresh_status crs ON crs.cd_cvm = c.cd_cvm
+            """
+            read_model_updated_at = (
+                "COALESCE(crs.read_model_updated_at, "
+                f"CASE WHEN {latest_readable_year} IS NOT NULL THEN c.updated_at ELSE NULL END)"
+            )
+
+        cols = self._company_column_names()
+        is_active_sql = "1 AS is_active"
+        if "is_active" in cols:
+            is_active_sql = "COALESCE(c.is_active, 1) AS is_active"
+
+        gics_parts: list[str] = []
+        for col in (
+            "gics_sector",
+            "gics_sector_slug",
+            "gics_industry_group",
+            "gics_industry",
+            "gics_sub_industry",
+        ):
+            if col in cols:
+                gics_parts.append(f"c.{col}")
+        gics_cols_sql = (",\n                " + ",\n                ".join(gics_parts)) if gics_parts else ""
+
+        sql = text(
+            f"""
+            SELECT
+                c.cd_cvm,
+                c.company_name,
+                c.nome_comercial,
                 c.cnpj,
                 c.setor_cvm,
                 c.setor_analitico,
                 {_CANONICAL_SECTOR_SQL} AS sector_name,
                 c.company_type,
                 c.ticker_b3,
+                {is_active_sql},
                 {has_local_financial_reports_sql} AS has_local_financial_reports,
                 CASE WHEN {latest_readable_year} IS NOT NULL THEN 1 ELSE 0 END AS has_readable_current_data,
                 {readable_years_count} AS readable_years_count,
@@ -856,7 +959,9 @@ class CVMQueryLayer:
         row = _pd().read_sql(sql, self.engine, params={"cd_cvm": int(cd_cvm)})
         if row.empty:
             return {}
-        return row.iloc[0].to_dict()
+        payload = row.iloc[0].to_dict()
+        payload.update(self.get_latest_financial_period(cd_cvm))
+        return payload
 
     def get_available_years(self, cd_cvm: int) -> list[int]:
         """Retorna os anos com dados anuais completos (DFP) para a empresa.
@@ -880,20 +985,92 @@ class CVMQueryLayer:
         df = _pd().read_sql(sql, self.engine, params={"cd_cvm": int(cd_cvm)})
         return [int(year) for year in df["REPORT_YEAR"].tolist()]
 
+    def get_company_complete_periods(self, cd_cvm: int) -> list[dict]:
+        """Return periods with the full core statement package available.
+
+        A period is complete only when BPA, BPP, DRE, and DFC all have at
+        least one non-conflict row for the same ``PERIOD_LABEL``. This keeps
+        freshness labels and export scope from overstating partial ITR loads.
+        """
+        if not inspect(self.engine).has_table("financial_reports"):
+            return []
+
+        statement_placeholders = ", ".join(
+            f":stmt{i}" for i, _ in enumerate(_REQUIRED_PERIOD_STATEMENTS)
+        )
+        params: dict[str, object] = {
+            "cd_cvm": int(cd_cvm),
+            "required_count": len(_REQUIRED_PERIOD_STATEMENTS),
+        }
+        params.update(
+            {f"stmt{i}": stmt for i, stmt in enumerate(_REQUIRED_PERIOD_STATEMENTS)}
+        )
+        sql = text(
+            f"""
+            SELECT
+                "REPORT_YEAR",
+                "PERIOD_LABEL",
+                COUNT(DISTINCT "STATEMENT_TYPE") AS statement_count
+            FROM financial_reports
+            WHERE "CD_CVM" = :cd_cvm
+              AND "STATEMENT_TYPE" IN ({statement_placeholders})
+              AND "PERIOD_LABEL" IS NOT NULL
+              AND COALESCE("QA_CONFLICT", 0) = 0
+            GROUP BY "REPORT_YEAR", "PERIOD_LABEL"
+            HAVING COUNT(DISTINCT "STATEMENT_TYPE") = :required_count
+            """
+        )
+        df = _pd().read_sql(sql, self.engine, params=params)
+        if df.empty:
+            return []
+
+        periods: list[dict] = []
+        for _, row in df.iterrows():
+            period_label = str(row["PERIOD_LABEL"])
+            parsed = _parse_period_label(period_label)
+            if parsed is None:
+                continue
+            year, quarter = parsed
+            periods.append(
+                {
+                    "report_year": int(row["REPORT_YEAR"]),
+                    "period_label": period_label,
+                    "period_display": _period_display_label(period_label),
+                    "period_type": "annual" if quarter is None else "quarter",
+                    "period_year": int(year),
+                    "period_quarter": int(quarter) if quarter is not None else None,
+                    "statement_count": int(row["statement_count"]),
+                }
+            )
+        return sorted(periods, key=lambda item: _period_sort_key(item["period_label"]))
+
+    def get_latest_financial_period(self, cd_cvm: int) -> dict:
+        complete_periods = self.get_company_complete_periods(cd_cvm)
+        latest = complete_periods[-1] if complete_periods else {}
+        return {
+            "readable_financial_periods_count": len(complete_periods),
+            "latest_financial_period_label": latest.get("period_label"),
+            "latest_financial_period_display": latest.get("period_display"),
+            "latest_financial_period_type": latest.get("period_type"),
+            "latest_financial_period_year": latest.get("period_year"),
+            "latest_financial_period_quarter": latest.get("period_quarter"),
+        }
+
     def get_available_export_periods(self, cd_cvm: int) -> dict:
         """Returns exportable periods split into annual DFP years and ITR-only years.
 
-        Annual years: REPORT_YEAR where a closing DFP exists
-        (PERIOD_LABEL = REPORT_YEAR, e.g. '2025').
+        Annual years: years where a complete closing DFP package exists
+        (BPA + BPP + DRE + DFC at PERIOD_LABEL = REPORT_YEAR).
 
-        ITR-only years: REPORT_YEAR where only quarterly ITR periods exist and
+        ITR-only years: years where complete quarterly periods exist and
         the year is strictly newer than the latest annual year (e.g. 2026 when
-        only 1Q26 / 2Q26 exist but the 2026 DFP has not been filed yet).  Older
-        years that have only ITR data are excluded — they are typically data-
-        quality gaps, not genuine current-year ITR windows.
+        1Q26 exists but the 2026 DFP has not been filed yet). Older years that
+        have only ITR data are excluded — they are typically data-quality gaps,
+        not genuine current-year ITR windows.
 
-        When no annual years exist at all, every year with data is returned as
-        an ITR-only year so companies without any DFP can still be exported.
+        When no annual years exist at all, every year with complete quarterly
+        data is returned as an ITR-only year so companies without any DFP can
+        still be exported.
 
         Returns
         -------
@@ -902,42 +1079,31 @@ class CVMQueryLayer:
           itr_only_years    — sorted list[int]
           all_export_years  — annual_years + itr_only_years, sorted
         """
-        sql = text(
-            """
-            SELECT
-                "REPORT_YEAR",
-                MAX(
-                    CASE WHEN "PERIOD_LABEL" = CAST("REPORT_YEAR" AS TEXT)
-                         THEN 1 ELSE 0 END
-                ) AS has_annual
-            FROM financial_reports
-            WHERE "CD_CVM" = :cd_cvm
-            GROUP BY "REPORT_YEAR"
-            ORDER BY "REPORT_YEAR"
-            """
-        )
-        df = _pd().read_sql(sql, self.engine, params={"cd_cvm": int(cd_cvm)})
-        if df.empty:
+        complete_periods = self.get_company_complete_periods(cd_cvm)
+        if not complete_periods:
             return {"annual_years": [], "itr_only_years": [], "all_export_years": []}
 
         annual_years: list[int] = sorted(
-            int(row["REPORT_YEAR"])
-            for _, row in df.iterrows()
-            if int(row["has_annual"]) == 1
+            {
+                int(period["period_year"])
+                for period in complete_periods
+                if period["period_type"] == "annual"
+            }
+        )
+        quarter_years: list[int] = sorted(
+            {
+                int(period["period_year"])
+                for period in complete_periods
+                if period["period_type"] == "quarter"
+            }
         )
 
         max_annual: int | None = max(annual_years, default=None)
         if max_annual is None:
-            # No annual DFP exists — include every year with any data.
-            itr_only_years: list[int] = sorted(
-                int(row["REPORT_YEAR"]) for _, row in df.iterrows()
-            )
+            # No annual DFP exists — include every complete quarterly year.
+            itr_only_years: list[int] = quarter_years
         else:
-            itr_only_years = sorted(
-                int(row["REPORT_YEAR"])
-                for _, row in df.iterrows()
-                if int(row["has_annual"]) == 0 and int(row["REPORT_YEAR"]) > max_annual
-            )
+            itr_only_years = [year for year in quarter_years if year > max_annual]
 
         return {
             "annual_years": annual_years,
