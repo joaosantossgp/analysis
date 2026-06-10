@@ -2,6 +2,8 @@ import { Fragment, useEffect, useMemo, useState, type CSSProperties, type ReactN
 import { useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { CompanyCommandBar } from "@/components/CompanyCommandBar";
+import { EntityHeader } from "@/components/EntityHeader";
 import { StateBanner } from "@/components/feedback/StateBanner";
 import { useExportAction } from "@/components/export/useExportAction";
 import { Panel } from "@/components/surface/Panel";
@@ -321,6 +323,12 @@ export function CompanyModelMappingPage() {
 
   return (
     <section className="space-y-4">
+      <EntityHeader cdCvm={cdCvm} activeTab="mapping" />
+      <CompanyCommandBar
+        cdCvm={cdCvm}
+        bridgeReady={bridgeReady}
+        latestPeriod={workspace.company.latest_financial_period_display}
+      />
       <BuilderCommandBar
         companyName={workspace.company.company_name}
         ticker={workspace.company.ticker_b3}

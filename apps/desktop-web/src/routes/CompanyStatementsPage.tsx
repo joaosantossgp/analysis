@@ -9,6 +9,7 @@ import {
 } from "@/components/data/FinancialDataGrid";
 import { StatementLineLabel } from "@/components/data/StatementLineLabel";
 import { TableToolbar } from "@/components/data/TableToolbar";
+import { CompanyCommandBar } from "@/components/CompanyCommandBar";
 import { EntityHeader } from "@/components/EntityHeader";
 import { StateBanner } from "@/components/feedback/StateBanner";
 import { Panel } from "@/components/surface/Panel";
@@ -81,6 +82,7 @@ export function CompanyStatementsPage() {
   return (
     <section className="space-y-4">
       <EntityHeader cdCvm={cdCvm} activeTab="statements" />
+      <CompanyCommandBar cdCvm={cdCvm} bridgeReady={bridgeReady} />
       <StatementSelector active={statementType} onChange={handleStatementChange} />
       <StatementPanel
         cdCvm={cdCvm}

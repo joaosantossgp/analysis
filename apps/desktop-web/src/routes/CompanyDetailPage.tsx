@@ -1,15 +1,13 @@
-import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 
 import { DeltaBadge } from "@/components/data/DeltaBadge";
-import { IdentifierBadge } from "@/components/data/IdentifierBadge";
 import { MetricTape, type MetricTapeItem } from "@/components/data/MetricTape";
 import { NumberCell } from "@/components/data/NumberCell";
 import { Sparkline } from "@/components/data/Sparkline";
+import { CompanyCommandBar } from "@/components/CompanyCommandBar";
 import { EntityHeader } from "@/components/EntityHeader";
-import { ExportActionPanel } from "@/components/export/ExportActionPanel";
-import { CompanyRefreshPanel } from "@/components/CompanyRefreshPanel";
 import { MarketHistoryPanel } from "@/components/MarketHistoryPanel";
 import { StateBanner } from "@/components/feedback/StateBanner";
 import { Panel } from "@/components/surface/Panel";
@@ -22,8 +20,7 @@ import {
   type CompanyYearsResultUI,
 } from "@/lib/api/companyDetail";
 import { whenBridgeReady } from "@/lib/bridge/adapter";
-import type { CompanyInfo, KPIBundle, TabularRow } from "@/lib/bridge/types";
-import { formatBRDateTime } from "@/lib/format/date";
+import type { KPIBundle, TabularRow } from "@/lib/bridge/types";
 import { formatUnit } from "@/lib/formatters";
 
 const MAX_KPI_YEARS = 5;
@@ -52,7 +49,7 @@ export function CompanyDetailPage() {
 
   return (
     <section className="space-y-4">
-      <EntityHeader cdCvm={cdCvm} activeTab="overview" showExports={false} />
+      <EntityHeader cdCvm={cdCvm} activeTab="overview" />
       <CompanyReferenceWorkspace cdCvm={cdCvm} bridgeReady={bridgeReady} />
     </section>
   );
@@ -65,7 +62,6 @@ function CompanyReferenceWorkspace({
   cdCvm: number;
   bridgeReady: boolean;
 }) {
-  const refreshPanelRef = useRef<HTMLDivElement>(null);
   const companyQuery = useQuery<CompanyInfoResult>({
     queryKey: ["company-info", cdCvm],
     queryFn: () => fetchCompanyInfo(cdCvm),
@@ -95,40 +91,29 @@ function CompanyReferenceWorkspace({
     companyQuery.data?.mode === "desktop" ? companyQuery.data.info : null;
   const bundle = kpiQuery.data?.mode === "desktop" ? kpiQuery.data.bundle : null;
   const metricItems = useMemo(
-    () => buildMetricTapeItems(info, bundle, selectedYears),
-    [bundle, info, selectedYears],
+    () => buildMetricTapeItems(bundle, selectedYears),
+    [bundle, selectedYears],
   );
 
   return (
     <div className="space-y-4">
+      <CompanyCommandBar
+        cdCvm={cdCvm}
+        bridgeReady={bridgeReady}
+        latestPeriod={info?.latest_financial_period_display ?? null}
+        yearsAvailable={info?.readable_years_count ?? null}
+        lastModelUpdatedAt={info?.read_model_updated_at ?? null}
+      />
       <MetricTape items={metricItems} ariaLabel="Company reference metrics" />
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="min-w-0 space-y-4">
-          <KpiHistoryPanel
-            yearsQuery={yearsQuery}
-            kpiQuery={kpiQuery}
-            selectedYears={selectedYears}
-            bridgeReady={bridgeReady}
-            onScrollToUpdate={() =>
-              refreshPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" })
-            }
-          />
-          <MarketHistoryPanel cdCvm={cdCvm} bridgeReady={bridgeReady} />
-        </div>
-
-        <aside className="space-y-4 self-start xl:sticky xl:top-0">
-          <div ref={refreshPanelRef}>
-            <CompanyRefreshPanel cdCvm={cdCvm} bridgeReady={bridgeReady} />
-          </div>
-          <ExportPanel cdCvm={cdCvm} />
-          <DataStatusPanel
-            companyQuery={companyQuery}
-            yearsQuery={yearsQuery}
-            kpiQuery={kpiQuery}
-            selectedYears={selectedYears}
-          />
-        </aside>
+      <div className="min-w-0 space-y-4">
+        <KpiHistoryPanel
+          yearsQuery={yearsQuery}
+          kpiQuery={kpiQuery}
+          selectedYears={selectedYears}
+          bridgeReady={bridgeReady}
+        />
+        <MarketHistoryPanel cdCvm={cdCvm} bridgeReady={bridgeReady} />
       </div>
     </div>
   );
@@ -139,13 +124,11 @@ function KpiHistoryPanel({
   kpiQuery,
   selectedYears,
   bridgeReady,
-  onScrollToUpdate,
 }: {
   yearsQuery: UseQueryResult<CompanyYearsResultUI>;
   kpiQuery: UseQueryResult<CompanyKpisResult>;
   selectedYears: number[];
   bridgeReady: boolean;
-  onScrollToUpdate?: () => void;
 }) {
   return (
     <Panel
@@ -171,7 +154,6 @@ function KpiHistoryPanel({
         kpiQuery={kpiQuery}
         selectedYears={selectedYears}
         bridgeReady={bridgeReady}
-        onScrollToUpdate={onScrollToUpdate}
       />
     </Panel>
   );
@@ -182,13 +164,11 @@ function KpiBody({
   kpiQuery,
   selectedYears,
   bridgeReady,
-  onScrollToUpdate,
 }: {
   yearsQuery: UseQueryResult<CompanyYearsResultUI>;
   kpiQuery: UseQueryResult<CompanyKpisResult>;
   selectedYears: number[];
   bridgeReady: boolean;
-  onScrollToUpdate?: () => void;
 }) {
   if (!bridgeReady || yearsQuery.isLoading) {
     return <StateBanner variant="loading" title="Loading years…" />;
@@ -215,19 +195,7 @@ function KpiBody({
         variant="empty"
         title="No financial history yet"
         message="Download or update this company's data to compute indicators."
-      >
-        {onScrollToUpdate ? (
-          <div className="flex flex-wrap justify-center gap-2">
-            <button
-              type="button"
-              onClick={onScrollToUpdate}
-              className="rounded border border-cyan-700 bg-cyan-950/60 px-3 py-1.5 text-xs font-medium text-cyan-300 hover:border-cyan-500 hover:text-cyan-200 focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-cyan-600"
-            >
-              Update this company →
-            </button>
-          </div>
-        ) : null}
-      </StateBanner>
+      />
     );
   }
   if (kpiQuery.isLoading) {
@@ -391,133 +359,7 @@ const KpiTableRow = memo(function KpiTableRow({
   );
 });
 
-function ExportPanel({ cdCvm }: { cdCvm: number }) {
-  return (
-    <ExportActionPanel
-      cdCvm={cdCvm}
-      title="Report export"
-      description="Local workbook for external analysis in Excel, auditing, and reporting."
-      scopeNote="Includes DRE, BPA, BPP, DFC, plus DMPL when available, KPIs, and metadata."
-    />
-  );
-}
-
-function DataStatusPanel({
-  companyQuery,
-  yearsQuery,
-  kpiQuery,
-  selectedYears,
-}: {
-  companyQuery: UseQueryResult<CompanyInfoResult>;
-  yearsQuery: UseQueryResult<CompanyYearsResultUI>;
-  kpiQuery: UseQueryResult<CompanyKpisResult>;
-  selectedYears: number[];
-}) {
-  const info = companyQuery.data?.mode === "desktop" ? companyQuery.data.info : null;
-  const annualRows =
-    kpiQuery.data?.mode === "desktop" ? kpiQuery.data.bundle.annual.rows.length : null;
-  const allYears = yearsQuery.data?.mode === "desktop" ? yearsQuery.data.years : [];
-
-  return (
-    <Panel dense headingLevel={3} title="Data status" subtitle="Local read model">
-      {companyQuery.isLoading ? (
-        <StateBanner variant="loading" size="dense" title="Loading metadata…" />
-      ) : companyQuery.isError ? (
-        <StateBanner
-          variant="error"
-          size="dense"
-          message={
-            companyQuery.error instanceof Error
-              ? companyQuery.error.message
-              : String(companyQuery.error)
-          }
-          onRetry={() => companyQuery.refetch()}
-        />
-      ) : companyQuery.data?.mode === "browser" ? (
-        <StateBanner variant="browser-only" size="dense" message={companyQuery.data.reason} />
-      ) : companyQuery.data?.mode === "desktop-not-found" ? (
-        <StateBanner
-          variant="error"
-          size="dense"
-          title="Company not found"
-          message={`No record for CVM ${companyQuery.data.cd_cvm}.`}
-        />
-      ) : (
-        <dl className="grid gap-2">
-          <StatusRow label="CVM">
-            <IdentifierBadge>{info?.cd_cvm ?? "—"}</IdentifierBadge>
-          </StatusRow>
-          <StatusRow label="Latest period" value={info?.latest_financial_period_display ?? "—"} mono />
-          <StatusRow label="Complete periods" value={String(info?.readable_financial_periods_count ?? 0)} mono />
-          <StatusRow label="Years in database" value={allYears.length ? allYears.join(", ") : "—"} mono />
-          <StatusRow label="Panel window" value={selectedYears.length ? selectedYears.join(", ") : "—"} mono />
-          <StatusRow label="Annual KPIs" value={annualRows == null ? "—" : String(annualRows)} mono />
-          <StatusRow
-            label="Local data"
-            value={info?.has_local_financial_reports ? "● yes" : "▲ no"}
-            tone={info?.has_local_financial_reports ? "ok" : "warn"}
-            mono
-          />
-          <StatusRow
-            label="Model updated"
-            value={formatBRDateTime(info?.read_model_updated_at)}
-            mono
-          />
-        </dl>
-      )}
-    </Panel>
-  );
-}
-
-function StatusRow({
-  label,
-  value,
-  children,
-  mono = false,
-  tone,
-}: {
-  label: string;
-  value?: string;
-  children?: ReactNode;
-  mono?: boolean;
-  tone?: "ok" | "warn";
-}) {
-  const color =
-    tone === "ok"
-      ? "var(--color-state-ok)"
-      : tone === "warn"
-        ? "var(--color-state-warn)"
-        : "var(--color-text-secondary)";
-  return (
-    <div
-      className="grid grid-cols-[120px_minmax(0,1fr)] items-center gap-2"
-      style={{ minHeight: 24 }}
-    >
-      <dt
-        style={{
-          color: "var(--color-text-tertiary)",
-          fontSize: "var(--text-xs)",
-        }}
-      >
-        {label}
-      </dt>
-      <dd
-        className={mono ? "truncate font-mono" : "truncate"}
-        style={{
-          color,
-          fontSize: "var(--text-xs)",
-          margin: 0,
-        }}
-        title={value}
-      >
-        {children ?? value ?? "—"}
-      </dd>
-    </div>
-  );
-}
-
 function buildMetricTapeItems(
-  info: CompanyInfo | null,
   bundle: KPIBundle | null,
   selectedYears: number[],
 ): MetricTapeItem[] {
@@ -528,32 +370,7 @@ function buildMetricTapeItems(
     if (id) rowsById.set(id, row);
   }
 
-  const items: MetricTapeItem[] = [
-    {
-      id: "latest-period",
-      label: "Period",
-      value: info?.latest_financial_period_display ?? null,
-      sublabel: "updated through",
-    },
-    {
-      id: "readable-years",
-      label: "Coverage",
-      value: info?.readable_years_count ?? null,
-      sublabel: "readable years",
-    },
-    {
-      id: "local-data",
-      label: "Local database",
-      valueNode: info ? (
-        <MetricStatusValue ok={Boolean(info?.has_local_financial_reports)}>
-          {info?.has_local_financial_reports ? "yes" : "no"}
-        </MetricStatusValue>
-      ) : (
-        <NumberCell value={null} size="lg" align="left" />
-      ),
-      sublabel: info?.read_availability_code ?? "status",
-    },
-  ];
+  const items: MetricTapeItem[] = [];
 
   for (const id of TAPE_KPI_IDS) {
     const row = rowsById.get(id);
@@ -571,33 +388,6 @@ function buildMetricTapeItems(
   }
 
   return items;
-}
-
-function MetricStatusValue({
-  ok,
-  children,
-}: {
-  ok: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <span
-      className="font-mono"
-      style={{
-        alignItems: "center",
-        color: ok ? "var(--color-state-ok)" : "var(--color-state-warn)",
-        display: "inline-flex",
-        fontSize: "var(--text-xl)",
-        fontVariantNumeric: "tabular-nums",
-        fontWeight: 600,
-        gap: 6,
-        lineHeight: 1.2,
-      }}
-    >
-      <span aria-hidden="true">{ok ? "●" : "▲"}</span>
-      {children}
-    </span>
-  );
 }
 
 function numericOrNull(value: unknown): number | null {

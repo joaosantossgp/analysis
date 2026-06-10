@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
 import { MetricTape, type MetricTapeItem } from "@/components/data/MetricTape";
+import { CompanyCommandBar } from "@/components/CompanyCommandBar";
 import { EntityHeader } from "@/components/EntityHeader";
 import { StateBanner } from "@/components/feedback/StateBanner";
 import { IndicatorWorkspace } from "@/components/indicators/IndicatorWorkspace";
@@ -42,6 +43,7 @@ export function CompanyKpisPage() {
   return (
     <section className="space-y-4">
       <EntityHeader cdCvm={cdCvm} activeTab="kpis" />
+      <CompanyCommandBar cdCvm={cdCvm} bridgeReady={bridgeReady} />
       <KpiBody cdCvm={cdCvm} bridgeReady={bridgeReady} />
     </section>
   );
