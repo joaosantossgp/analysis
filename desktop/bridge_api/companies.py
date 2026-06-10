@@ -396,8 +396,6 @@ class CompanyBridgeMixin:
         Collisions are resolved by suffixing `` (1)``, `` (2)``, ... so an
         existing export is never overwritten.
         """
-        if not self._is_write_allowed():
-            return self._sanitize_for_json(self._write_blocked_response("export_company_excel"))
         p = params or {}
         try:
             cd_cvm = int(p.get("cd_cvm", 0))
@@ -451,8 +449,6 @@ class CompanyBridgeMixin:
 
     def export_company_market_history_excel(self, params=None) -> dict:
         """Write the currently selected market-history dataset to output/."""
-        if not self._is_write_allowed():
-            return self._sanitize_for_json(self._write_blocked_response("export_company_market_history_excel"))
         p = params or {}
         try:
             cd_cvm = int(p.get("cd_cvm", 0))
