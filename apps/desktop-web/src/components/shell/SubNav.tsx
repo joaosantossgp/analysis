@@ -25,10 +25,18 @@ function subNavFor(pathname: string, params: Record<string, string | undefined>)
     ];
   }
 
-  if (pathname.startsWith("/settings") || pathname.startsWith("/status")) {
+  if (
+    pathname.startsWith("/settings") ||
+    pathname.startsWith("/status") ||
+    pathname.startsWith("/data-coverage") ||
+    pathname.startsWith("/atualizar-base")
+  ) {
     return [
       { to: "/settings", label: "Settings", end: true },
-      { to: "/status", label: "Diagnostics", end: true },
+      { to: "/settings/imports", label: "User Imports" },
+      { to: "/settings/updates", label: "Database Updates" },
+      { to: "/settings/coverage", label: "Data Coverage" },
+      { to: "/settings/diagnostics", label: "Diagnostics" },
     ];
   }
 

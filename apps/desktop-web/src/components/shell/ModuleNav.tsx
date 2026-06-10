@@ -44,17 +44,14 @@ const MODULES: ModuleDef[] = [
     matches: (p) => p.startsWith("/indicators") || p.startsWith("/country-kpis"),
   },
   {
-    id: "database",
-    label: "Updates",
-    to: "/atualizar-base",
-    matches: (p) =>
-      p.startsWith("/atualizar-base") || p.startsWith("/data-coverage"),
-  },
-  {
     id: "system",
     label: "Settings",
     to: "/settings",
-    matches: (p) => p.startsWith("/settings") || p.startsWith("/status"),
+    matches: (p) =>
+      p.startsWith("/settings") ||
+      p.startsWith("/status") ||
+      p.startsWith("/data-coverage") ||
+      p.startsWith("/atualizar-base"),
   },
 ];
 

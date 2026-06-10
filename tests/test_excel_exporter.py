@@ -100,9 +100,6 @@ def _wide_statements() -> dict[str, pd.DataFrame]:
             make_row("6.03",       "CFF",        -60_000),
             make_row("6.05",       "Var. Caixa",  70_000),
         ]),
-        "DVA": _statement([
-            make_row("7.08", "Valor Adicionado", 100_000),
-        ]),
     }
 
 
@@ -152,13 +149,12 @@ def test_full_export_sheet_layout():
         company_info=_sample_company(),
         statements=_wide_statements(),
         kpis_df=_minimal_kpis(),
-        extra_sheets=["DVA"],
     )
     payload = exporter.export()
     wb = openpyxl.load_workbook(io.BytesIO(payload))
     assert wb.sheetnames[0] == "Model"
     assert wb.sheetnames[1] == "README"
-    for raw in ("raw_DRE", "raw_BPA", "raw_BPP", "raw_DFC", "raw_DVA",
+    for raw in ("raw_DRE", "raw_BPA", "raw_BPP", "raw_DFC",
                  "raw_KPIs", "metadata"):
         assert raw in wb.sheetnames, f"{raw} missing from workbook"
 
@@ -168,7 +164,6 @@ def test_raw_sheets_are_hidden_by_default():
         company_info=_sample_company(),
         statements=_wide_statements(),
         kpis_df=_minimal_kpis(),
-        extra_sheets=["DVA"],
     )
     payload = exporter.export()
     wb = openpyxl.load_workbook(io.BytesIO(payload))
@@ -176,7 +171,7 @@ def test_raw_sheets_are_hidden_by_default():
     hidden = [name for name in wb.sheetnames if wb[name].sheet_state == "hidden"]
     assert "Model" in visible
     assert "README" in visible
-    for raw in ("raw_DRE", "raw_BPA", "raw_BPP", "raw_DFC", "raw_DVA",
+    for raw in ("raw_DRE", "raw_BPA", "raw_BPP", "raw_DFC",
                  "raw_KPIs", "metadata"):
         assert raw in hidden, f"{raw} should be hidden, got {wb[raw].sheet_state}"
 
@@ -242,7 +237,6 @@ def test_workbook_has_no_error_cells():
         company_info=_sample_company(),
         statements=_wide_statements(),
         kpis_df=_minimal_kpis(),
-        extra_sheets=["DVA"],
     )
     payload = exporter.export()
     wb = openpyxl.load_workbook(io.BytesIO(payload), data_only=False)
@@ -264,7 +258,6 @@ def test_model_sheet_contains_required_sections():
         company_info=_sample_company(),
         statements=_wide_statements(),
         kpis_df=_minimal_kpis(),
-        extra_sheets=["DVA"],
     )
     payload = exporter.export()
     wb = openpyxl.load_workbook(io.BytesIO(payload))
@@ -273,32 +266,11 @@ def test_model_sheet_contains_required_sections():
               for r in range(1, ws.max_row + 1)]
     body = " | ".join(labels)
     for section in ("Income Statement", "Balance Sheet", "Cash Flow Statement",
-                     "Value Added Statement", "KPIs / Ratios", "Checks",
-                     "Source / Data Quality"):
+                     "KPIs / Ratios", "Checks", "Source / Data Quality"):
         assert section in body, f"section '{section}' missing from Model sheet"
     # Computed lines present
     assert "EBITDA (=)" in body
     assert "Free Cash Flow (FCF) (=)" in body
-
-
-def test_model_sheet_dva_unavailable_when_absent():
-    stmts = _wide_statements()
-    del stmts["DVA"]
-    exporter = ExcelExporter(
-        company_info=_sample_company(),
-        statements=stmts,
-        kpis_df=_minimal_kpis(),
-    )
-    payload = exporter.export()
-    wb = openpyxl.load_workbook(io.BytesIO(payload))
-    ws = wb["Model"]
-    labels = [str(ws.cell(row=r, column=c).value or "")
-              for r in range(1, ws.max_row + 1)
-              for c in (2, 3, 4)]
-    body = " | ".join(labels)
-    assert "DVA Availability" in body
-    assert "DVA" in body and "unavailable" in body.lower()
-
 
 def test_model_sheet_kpi_formulas_use_iferror():
     exporter = ExcelExporter(
@@ -555,7 +527,6 @@ def test_no_merged_cells_anywhere():
         company_info=_sample_company(),
         statements=_wide_statements(),
         kpis_df=_minimal_kpis(),
-        extra_sheets=["DVA"],
     )
     payload = exporter.export()
     wb = openpyxl.load_workbook(io.BytesIO(payload))
@@ -609,45 +580,22 @@ def test_latest_fiscal_year_populated_from_periods():
     assert str(val) == "2025", f"expected 2025, got {val!r}"
 
 
-def test_readme_does_not_mention_missing_raw_sheets():
-    """If DVA is absent from statements, no `raw_DVA` mention in README."""
-    stmts = _wide_statements()
-    del stmts["DVA"]
+def test_readme_lists_only_present_raw_sheets():
     exporter = ExcelExporter(
         company_info=_sample_company(),
-        statements=stmts,
+        statements=_wide_statements(),
         kpis_df=_minimal_kpis(),
     )
     payload = exporter.export()
     wb = openpyxl.load_workbook(io.BytesIO(payload))
-    assert "raw_DVA" not in wb.sheetnames
     ws = wb["README"]
     full_text = " ".join(
         str(ws.cell(row=r, column=c).value or "")
         for r in range(1, ws.max_row + 1)
         for c in range(1, ws.max_column + 1)
     )
-    assert "raw_DVA" not in full_text or "not** present" in full_text or "not present" in full_text
-
-
-def test_model_sheet_dva_section_visible_when_absent():
-    """DVA section heading must be visible even when no DVA data exists,
-    with an explicit unavailability note row."""
-    stmts = _wide_statements()
-    del stmts["DVA"]
-    exporter = ExcelExporter(
-        company_info=_sample_company(),
-        statements=stmts,
-        kpis_df=_minimal_kpis(),
-    )
-    payload = exporter.export()
-    wb = openpyxl.load_workbook(io.BytesIO(payload))
-    ws = wb["Model"]
-    labels = [str(ws.cell(row=r, column=2).value or "")
-              for r in range(1, ws.max_row + 1)]
-    body = " | ".join(labels)
-    assert "Value Added Statement" in body
-    assert "DVA unavailable" in body
+    assert "raw_DRE" in full_text
+    assert "raw_DFC" in full_text
 
 
 def test_model_statement_is_expanded_taxonomy():
@@ -656,7 +604,6 @@ def test_model_statement_is_expanded_taxonomy():
         company_info=_sample_company(),
         statements=_wide_statements(),
         kpis_df=_minimal_kpis(),
-        extra_sheets=["DVA"],
     )
     payload = exporter.export()
     wb = openpyxl.load_workbook(io.BytesIO(payload))
@@ -681,7 +628,6 @@ def test_checks_include_cash_flow_tie_and_net_income_tie():
         company_info=_sample_company(),
         statements=_wide_statements(),
         kpis_df=_minimal_kpis(),
-        extra_sheets=["DVA"],
     )
     payload = exporter.export()
     wb = openpyxl.load_workbook(io.BytesIO(payload))

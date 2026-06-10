@@ -67,7 +67,7 @@ from src.financials.excel_exporter import (
     ExcelExporter,
     build_default_model_mapping,
     build_excel_filename,
-    _is_annual_period,
+    _pick_model_periods,
     _period_sort_key,
 )
 from src.financials.excel_mapping import (
@@ -213,14 +213,19 @@ class ReadServiceExportMixin:
         )
         active_preset_id = preset_id or company_default_preset_id
         mapping = self.resolve_excel_model_mapping(cd_cvm, active_preset_id)
+        scope = self.resolve_excel_export_scope(cd_cvm, period_scope)
         raw_statements = self._load_export_statement_frames(cd_cvm, period_scope)
         issues = self.validate_excel_model_mapping(mapping, raw_statements)
-        preview_periods = self._mapping_preview_periods(raw_statements)
+        preview_periods = self._mapping_preview_periods(
+            raw_statements,
+            period_window=scope["period_window"],
+        )
         mapped_targets = self._mapping_source_targets(mapping)
 
         return {
             "ok": True,
             "company": company_info,
+            "period_scope_label": scope["scope_label"],
             "presets": self.excel_mapping_repository.list_presets(
                 company_default_preset_id=company_default_preset_id
             ),
@@ -373,17 +378,22 @@ class ReadServiceExportMixin:
         }
 
     @staticmethod
-    def _mapping_preview_periods(statements: dict[str, pd.DataFrame]) -> list[str]:
+    def _mapping_preview_periods(
+        statements: dict[str, pd.DataFrame],
+        *,
+        period_window: tuple[int, int],
+    ) -> list[str]:
         all_periods: set[str] = set()
         meta_cols = {"CD_CONTA", "DS_CONTA", "STANDARD_NAME", "LINE_ID_BASE"}
         for df in statements.values():
             if df is None or df.empty:
                 continue
             all_periods.update(str(col) for col in df.columns if col not in meta_cols)
-        annuals = sorted((period for period in all_periods if _is_annual_period(period)), key=_period_sort_key)
-        if annuals:
-            return annuals
-        return sorted(all_periods, key=_period_sort_key)
+        return _pick_model_periods(
+            sorted(all_periods, key=_period_sort_key),
+            annuals=period_window[0],
+            quarters_per_year=period_window[1],
+        )
 
     @staticmethod
     def _mapping_source_targets(mapping: ModelMappingDefinition) -> dict[tuple[str, str], list[dict[str, str]]]:
@@ -609,7 +619,7 @@ class ReadServiceExportMixin:
             exportable_statements = {
                 statement_type: df
             } if df is not None and not df.empty else {}
-            extra_sheets = [statement_type] if statement_type in ("DVA", "DMPL") else []
+            extra_sheets = [statement_type] if statement_type == "DMPL" else []
             kpis_df = pd.DataFrame()
         else:
             all_stmts = {
@@ -623,7 +633,7 @@ class ReadServiceExportMixin:
             }
             extra_sheets = [
                 stmt_type
-                for stmt_type in ("DVA", "DMPL")
+                for stmt_type in ("DMPL",)
                 if stmt_type in exportable_statements
             ]
             kpis_df = self.get_kpi_bundle(cd_cvm, years).quarterly_dataframe()

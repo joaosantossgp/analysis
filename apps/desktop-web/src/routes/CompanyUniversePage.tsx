@@ -69,8 +69,8 @@ export function CompanyUniversePage() {
         initialState={result.state}
         surface="page"
         cancelLabel="Back to Database Updates"
-        onCancel={() => navigate("/atualizar-base")}
-        onDone={() => navigate("/atualizar-base")}
+        onCancel={() => navigate("/settings/updates")}
+        onDone={() => navigate("/settings/updates")}
       />
     </section>
   );

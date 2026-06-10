@@ -47,6 +47,9 @@ const StatusPage = lazy(() =>
 const SettingsPage = lazy(() =>
   import("./routes/SettingsPage").then((m) => ({ default: m.SettingsPage })),
 );
+const UserImportsPage = lazy(() =>
+  import("./routes/UserImportsPage").then((m) => ({ default: m.UserImportsPage })),
+);
 const UpdateBasePage = lazy(() =>
   import("./routes/UpdateBasePage").then((m) => ({ default: m.UpdateBasePage })),
 );
@@ -148,9 +151,14 @@ function AppShellWithPalette() {
             <Route path="/" element={<HomePage />} />
             <Route path="/empresas" element={<CompaniesPage />} />
             <Route path="/settings" element={<SettingsPage />} />
-            <Route path="/status" element={<StatusPage />} />
-            <Route path="/atualizar-base" element={<UpdateBasePage />} />
-            <Route path="/data-coverage" element={<DataCoveragePage />} />
+            <Route path="/settings/imports" element={<UserImportsPage />} />
+            <Route path="/settings/updates" element={<UpdateBasePage />} />
+            <Route path="/settings/coverage" element={<DataCoveragePage />} />
+            <Route path="/settings/diagnostics" element={<StatusPage />} />
+            {/* Backwards compatibility redirects */}
+            <Route path="/atualizar-base" element={<Navigate to="/settings/updates" replace />} />
+            <Route path="/data-coverage" element={<Navigate to="/settings/coverage" replace />} />
+            <Route path="/status" element={<Navigate to="/settings/diagnostics" replace />} />
             <Route path="/company-universe" element={<CompanyUniversePage />} />
             <Route path="/setores" element={<SectorsPage />} />
             <Route path="/setores/:slug" element={<SectorDetailPage />} />

@@ -309,7 +309,7 @@ export function UpdateBasePage() {
         subtitle="Manage updates, rebuilds, and coverage for your local database."
         actions={
           <div className="flex flex-wrap items-center justify-end gap-2">
-            <LinkButton to="/data-coverage">View Data Coverage</LinkButton>
+            <LinkButton to="/settings/coverage">View Data Coverage</LinkButton>
             <StatusPill tone={desktopMode ? "good" : "warn"}>
               {desktopMode ? "Bridge ready" : bridgeReady ? "Browser mode" : "Connecting"}
             </StatusPill>
@@ -611,7 +611,7 @@ function ResultSummary({ job }: { job: RefreshJobStatus }) {
             Finished at {formatDateTime(job.finished_at ?? job.updated_at ?? null)}
           </p>
         </div>
-        {failed > 0 ? <LinkButton to="/data-coverage">View pending issues</LinkButton> : null}
+        {failed > 0 ? <LinkButton to="/settings/coverage">View pending issues</LinkButton> : null}
       </div>
       <dl className="mt-4 grid gap-3 sm:grid-cols-4">
         <Field label="Updated" value={fmtInt(success)} />
@@ -851,8 +851,8 @@ function ManagementPanel({
         />
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
-        <LinkButton to="/data-coverage">Open Data Coverage</LinkButton>
-        <LinkButton to="/status">View diagnostics</LinkButton>
+        <LinkButton to="/settings/coverage">Open Data Coverage</LinkButton>
+        <LinkButton to="/settings/diagnostics">View diagnostics</LinkButton>
       </div>
       <p className="mt-3 text-xs leading-5 text-zinc-500">
         This action may remove local data and cannot be undone without a backup.

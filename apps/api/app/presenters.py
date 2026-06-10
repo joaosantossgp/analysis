@@ -93,6 +93,12 @@ class CompanyInfoPayload(BaseModel):
     has_readable_current_data: bool = False
     readable_years_count: int = 0
     latest_readable_year: int | None = None
+    readable_financial_periods_count: int = 0
+    latest_financial_period_label: str | None = None
+    latest_financial_period_display: str | None = None
+    latest_financial_period_type: str | None = None
+    latest_financial_period_year: int | None = None
+    latest_financial_period_quarter: int | None = None
     read_availability_code: str | None = None
     read_availability_message: str | None = None
     gics_sector: str | None = None

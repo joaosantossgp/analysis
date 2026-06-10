@@ -18,7 +18,7 @@ from src.platform.startup import StartupReport, collect_startup_report
 
 API_VERSION = "v2-phase1"
 REQUIRED_TABLES = ("financial_reports", "companies")
-SUPPORTED_STATEMENTS = frozenset({"BPA", "BPP", "DRE", "DFC", "DVA", "DMPL"})
+SUPPORTED_STATEMENTS = frozenset({"BPA", "BPP", "DRE", "DFC", "DMPL"})
 _API_READY_CACHE: dict[tuple[str, str, str], StartupReport] = {}
 
 __all__ = [

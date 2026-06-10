@@ -75,7 +75,8 @@ class _FakeFrame:
         return None
 
 
-def test_init_db_applies_pragmas_for_sqlite_only():
+@patch("src.financials.database._backfill_companies_metadata")
+def test_init_db_applies_pragmas_for_sqlite_only(mock_backfill):
     db = _new_db_with_engine(_FakeEngine("sqlite"))
     db._init_db()
 
@@ -91,7 +92,8 @@ def test_init_db_applies_pragmas_for_sqlite_only():
     assert "CONCURRENTLY" not in ddl_sql
 
 
-def test_init_db_skips_pragmas_for_postgresql():
+@patch("src.financials.database._backfill_companies_metadata")
+def test_init_db_skips_pragmas_for_postgresql(mock_backfill):
     db = _new_db_with_engine(_FakeEngine("postgresql"))
     db._init_db()
 

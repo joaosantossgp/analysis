@@ -71,7 +71,7 @@ Abas **QA_LOG** e **QA_Errors** sao obrigatorias para rastreabilidade.
 
 **2. Download e extracao**
 - `src/financials/scraper.py` baixa ZIPs da CVM para `data/input/raw`
-- CSVs (BPA/BPP/DRE/DFC/DVA/DMPL) sao extraidos para `data/input/processed`
+- CSVs (BPA/BPP/DRE/DFC/DMPL) sao extraidos para `data/input/processed`
 
 **3. Transform e normalizacao**
 - filtra por `CD_CVM`, normaliza unidades financeiras
@@ -96,6 +96,20 @@ Abas **QA_LOG** e **QA_Errors** sao obrigatorias para rastreabilidade.
 - **Ano fechado:** so conta como coberto quando o pacote completo existir no
   periodo anual `YYYY`; `1Q/2Q/3Q` sem anual nao contam como cobertura anual
 - **Sinal hibrido:** `financial_reports` + arquivos raw/processados + cache local
+
+### Freshness por periodo financeiro
+
+- O indicador "updated through" da empresa usa o periodo completo mais recente
+  por `CD_CVM`, nao uma data global nem apenas o ultimo ano anual.
+- Um periodo so e considerado completo quando existe pacote core
+  `BPA + BPP + DRE + DFC` para o mesmo `PERIOD_LABEL`, com `QA_CONFLICT = false`.
+- Periodos anuais sao exibidos como `FY2025`; periodos trimestrais permanecem
+  no formato normalizado `1Q26`, `2Q26`, etc.
+- Anos trimestrais mais novos que o ultimo DFP completo entram no escopo do
+  Excel apenas quando ha pelo menos um trimestre completo nesse ano.
+- Valores trimestrais persistidos em `financial_reports` ja passaram pela
+  normalizacao do scraper; DFC/DRE YTD sao convertidos para standalone antes
+  de leitura, UI, Model Mapping e Excel consumirem os dados.
 
 ---
 

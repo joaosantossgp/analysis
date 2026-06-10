@@ -417,7 +417,7 @@ Uso:
 - retorna o workbook Excel completo da empresa como binario `.xlsx`
 - usa sempre todos os anos disponiveis da empresa na base
 - preserva o contrato atual do exportador da V1: `CAPA`, `GERAL`, `KPIs`,
-  `DRE`, `BPA`, `BPP`, `DFC`, opcionais `DVA` e `DMPL` quando houver dados, e
+  `DRE`, `BPA`, `BPP`, `DFC`, opcional `DMPL` quando houver dados, e
   `METADADOS`
 
 Headers principais:
@@ -452,7 +452,7 @@ Regras do endpoint:
 ### `GET /companies/{cd_cvm}/statements?stmt=&years=`
 
 Parametros:
-- `stmt`: obrigatorio; aceitos `BPA`, `BPP`, `DRE`, `DFC`, `DVA`, `DMPL`
+- `stmt`: obrigatorio; aceitos `BPA`, `BPP`, `DRE`, `DFC`, `DMPL`
 - `years`: obrigatorio; CSV de inteiros sem duplicatas, ex. `2023,2024`
 
 DTO de saida:

@@ -178,8 +178,8 @@ Why this slice:
 - High user value: closes the most-requested export workflow without
   forcing users back to the Next UI.
 - Existing backend: `CVMReadService.build_company_excel_export` already
-  emits a complete `.xlsx` (DRE/BPA/BPP/DFC plus DVA/DMPL when present
-  and the quarterly KPI bundle). No `excel_exporter.py` changes.
+  emits a complete `.xlsx` (DRE/BPA/BPP/DFC plus DMPL when present and
+  the quarterly KPI bundle). No `excel_exporter.py` changes.
 - Narrow new bridge surface: `export_company_excel` writes into
   `<settings.output_dir>/` (which resolves to
   `Documents/CVMAnalytics/output/` in packaged mode) and returns

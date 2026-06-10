@@ -96,7 +96,7 @@ export function SettingsPage() {
             >
               Open data folder
             </Button>
-            <LinkButton to="/status">Diagnostics</LinkButton>
+            <LinkButton to="/settings/diagnostics">Diagnostics</LinkButton>
           </div>
         }
       />
@@ -359,7 +359,7 @@ function SourceImportRow({ source }: { source: PlantParcelSourceStatus }) {
           <h3 className="mt-1 text-sm font-semibold text-zinc-100">{source.source_name}</h3>
           <p className="mt-1 font-mono text-xs text-zinc-500">{source.dataset_name}</p>
         </div>
-        <LinkButton to="/indicators?view=plants">Open import</LinkButton>
+        <LinkButton to="/settings/imports">Open import</LinkButton>
       </div>
       <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
         <Field label="Records" value={formatNumber(source.local_records_count)} mono />
@@ -393,7 +393,7 @@ function ManagedSourcesCard({
           label="Financial statements and company directory"
           status={status.database?.row_counts.financial_reports ? "available" : "needs update"}
           details={`${formatNumber(status.database?.row_counts.financial_reports)} financial rows · ${formatNumber(status.database?.row_counts.companies)} companies`}
-          to="/atualizar-base"
+          to="/settings/updates"
           action="Update base"
         />
         <ManagedSourceRow
@@ -401,7 +401,7 @@ function ManagedSourcesCard({
           label="Completeness monitor for company/year filings"
           status={status.database ? "available" : "unavailable"}
           details="Tracks missing, failed, ignored, and complete company coverage."
-          to="/data-coverage"
+          to="/settings/coverage"
           action="View coverage"
         />
         <ManagedSourceRow

@@ -462,7 +462,7 @@ function SuccessState({
         <p className="mt-3 text-sm" style={{ color: "var(--color-state-warn, #f59e0b)" }}>
           Some companies encountered errors during download.{" "}
           <Link
-            to="/data-coverage"
+            to="/settings/coverage"
             style={{ textDecoration: "underline" }}
           >
             View Data Coverage →

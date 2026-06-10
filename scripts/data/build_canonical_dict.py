@@ -37,7 +37,6 @@ SHEET_TO_STATEMENT = [
     ('Resultado Abrangente', 'DRA'),
     ('Fluxo',                'DFC'),
     ('DMPL',                 'DMPL'),
-    ('Valor Adicionado',     'DVA'),
 ]
 
 # Mapeamento de arquivo -> tipo de empresa

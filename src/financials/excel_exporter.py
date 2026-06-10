@@ -3,7 +3,7 @@
 
 Produces a workbook centered on a single user-facing ``Model`` sheet
 that consolidates the Income Statement, Balance Sheet, Cash Flow
-Statement, optional Value Added Statement, KPIs, Checks, and Source /
+Statement, KPIs, Checks, and Source /
 Data Quality blocks. The full CVM tree and full period history remain
 available in hidden ``raw_*`` sheets so the workbook stays auditable
 without the model view becoming a data dump.
@@ -13,7 +13,7 @@ Visible sheets:
     README   — sheet map, conventions, period policy
 
 Hidden sheets:
-    raw_DRE / raw_BPA / raw_BPP / raw_DFC / raw_DVA (optional)
+    raw_DRE / raw_BPA / raw_BPP / raw_DFC / raw_DMPL (optional)
     raw_KPIs
     metadata
 
@@ -87,7 +87,6 @@ _LEGACY_TO_RAW = {
     "BPA": "raw_BPA",
     "BPP": "raw_BPP",
     "DFC": "raw_DFC",
-    "DVA": "raw_DVA",
     "DMPL": "raw_DMPL",
 }
 
@@ -196,20 +195,6 @@ _MODEL_LINE_LABELS: dict[str, str] = {
     "6.05":         "Change in Cash",
     "6.05.01":      "Cash at Beginning of Period",
     "6.05.02":      "Cash at End of Period",
-    # DVA
-    "7.01":     "Revenue (Value Added base)",
-    "7.01.01":  "Sales",
-    "7.02":     "Inputs Acquired from Third Parties",
-    "7.03":     "Gross Value Added",
-    "7.04":     "Retentions (Depreciation)",
-    "7.05":     "Net Value Added Produced",
-    "7.06":     "Value Added Received in Transfer",
-    "7.07":     "Value Added to Distribute",
-    "7.08":     "Value Added Distribution",
-    "7.08.01":  "Personnel",
-    "7.08.02":  "Taxes, Fees & Contributions",
-    "7.08.03":  "Third-party Capital Remuneration",
-    "7.08.04":  "Own Capital Remuneration",
     # Computed (not raw)
     "6.01.01.DA": "Depreciation & Amortization",
 }
@@ -232,7 +217,6 @@ _DRE_SIGN_HINTS: dict[str, str] = {
 _BPA_SUBTOTALS = {"1", "1.01", "1.02"}
 _BPP_SUBTOTALS = {"2", "2.01", "2.02", "2.03"}
 _DFC_SUBTOTALS = {"6.01", "6.01.01", "6.01.02", "6.02", "6.03", "6.05"}
-_DVA_SUBTOTALS = {"7.03", "7.05", "7.07", "7.08"}
 
 # Analyst spine — codes rendered on the Model sheet for each statement,
 # with their indent level. A code not present in the raw data renders as
@@ -289,19 +273,6 @@ _DFC_SPINE: list[tuple[str, int]] = [
     ("6.05", 0),
     ("6.05.01", 1), ("6.05.02", 1),
 ]
-_DVA_SPINE: list[tuple[str, int]] = [
-    ("7.01", 0), ("7.01.01", 1),
-    ("7.02", 0),
-    ("7.03", 0),
-    ("7.04", 0),
-    ("7.05", 0),
-    ("7.06", 0),
-    ("7.07", 0),
-    ("7.08", 0),
-    ("7.08.01", 1), ("7.08.02", 1),
-    ("7.08.03", 1), ("7.08.04", 1),
-]
-
 # ── Financial institution spines ──────────────────────────────────────────────
 # Banks and insurers file under COSIF/IFRS7 rules; their CVM CD_CONTA tree
 # differs from the generic industrial spine above.  These spines cover the
@@ -534,12 +505,6 @@ def build_default_model_mapping(
         spine=_DFC_SPINE,
         subtotal_codes=_DFC_SUBTOTALS,
     )
-    add_spine(
-        group="Value Added Statement",
-        stmt_type="DVA",
-        spine=_DVA_SPINE,
-        subtotal_codes=_DVA_SUBTOTALS,
-    )
 
     return ModelMappingDefinition(
         preset_id=SYSTEM_DEFAULT_PRESET_ID,
@@ -730,7 +695,7 @@ class ExcelExporter:
     kpis_df : pd.DataFrame
         Output of ``KPIBundle.quarterly_dataframe()``.
     extra_sheets : list[str], optional
-        Extra statement types to include (e.g. ``["DVA"]``).
+        Extra statement types to include (e.g. ``["DMPL"]``).
     statement_type : str, optional
         If set, the workbook is scoped to a single statement.
     period_window : (int, int), optional
@@ -834,7 +799,7 @@ class ExcelExporter:
             # can reference their final row coordinates via formulas.
             for stype in ("DRE", "BPA", "BPP", "DFC"):
                 self._write_raw_statement(stype)
-            for stype in ("DVA", "DMPL"):
+            for stype in ("DMPL",):
                 if stype in self.stmts and not self.stmts[stype].empty:
                     self._write_raw_statement(stype)
             self._write_raw_kpi_sheet()
@@ -1147,7 +1112,7 @@ class ExcelExporter:
         info = self.info
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         stmts_present = scope or ", ".join(
-            k for k in ("DRE", "BPA", "BPP", "DFC", "DVA", "DMPL")
+            k for k in ("DRE", "BPA", "BPP", "DFC", "DMPL")
             if k in self.stmts and not self.stmts[k].empty
         )
 
@@ -1209,21 +1174,16 @@ class ExcelExporter:
             raw_sheets_present.append(RAW_KPI_SHEET)
         if METADATA_SHEET not in raw_sheets_present:
             raw_sheets_present.append(METADATA_SHEET)
-        dva_available = "DVA" in self.stmts and not self.stmts["DVA"].empty
-        dva_status_line = ("present (raw_DVA)" if dva_available
-                           else "**not** present (no DVA in source data)")
-
         checks_present = (
             "Balance Sheet Tie, Cash Flow Tie, Net Income Tie, "
             "Period Completeness, Critical Line Availability, "
-            "DVA Availability, Formula Error Scan."
+            "Formula Error Scan."
         )
 
         section_rows = [
             ("Main sheet",
              "`Model` — analyst-curated single sheet with Income Statement, "
-             "Balance Sheet, Cash Flow Statement, Value Added Statement "
-             "(or explicit unavailability note), KPIs, Checks, and Source / "
+             "Balance Sheet, Cash Flow Statement, KPIs, Checks, and Source / "
              "Data Quality blocks."),
             ("Period window",
              f"Annual: last {self.period_window[0]} fiscal years "
@@ -1243,8 +1203,6 @@ class ExcelExporter:
              "Right-click any visible sheet tab → Unhide… to audit. "
              "Sheets actually present in this workbook: "
              + ", ".join(raw_sheets_present) + "."),
-            ("DVA status",
-             f"DVA is {dva_status_line} for this company."),
             ("Conventions",
              "Linked values are green (formula link into raw_*); calculated "
              "values are black (formula in cell); negative numbers appear "
@@ -1443,35 +1401,14 @@ class ExcelExporter:
         # Computed: FCF = CFO + Capex (Capex is negative in CVM source)
         cur = self._write_model_fcf(ws, cur, periods)
 
-        # Section: Value Added Statement (DVA) — always visible. If the
-        # company does not file DVA, render the heading and a single
-        # warning note so the analyst sees it explicitly.
-        dva_available = "DVA" in self.stmts and not self.stmts["DVA"].empty
-        if dva_available:
-            cur = self._write_model_section(
-                ws, cur, periods,
-                heading="Value Added Statement",
-                stmt_type="DVA",
-                spine=_DVA_SPINE,
-                subtotal_codes=_DVA_SUBTOTALS,
-            )
-        else:
-            cur = self._write_section_heading(ws, cur, "Value Added Statement")
-            ws.set_row(cur, 16)
-            ws.write(cur, 1,
-                     "DVA unavailable in current export pipeline / "
-                     "company data.",
-                     f["source_warning"])
-            cur += 2
-
         # KPIs
         cur = self._write_model_kpis(ws, cur, periods)
 
         # Checks
-        cur = self._write_model_checks(ws, cur, periods, dva_available)
+        cur = self._write_model_checks(ws, cur, periods)
 
         # Source / Data Quality
-        cur = self._write_model_source(ws, cur, periods, dva_available)
+        cur = self._write_model_source(ws, cur, periods)
 
         # Print setup (carried over from v0.18.3)
         ws.set_landscape()
@@ -2001,7 +1938,7 @@ class ExcelExporter:
 
         return row + 1
 
-    def _write_model_checks(self, ws, start_row: int, periods: list[str], dva_available: bool) -> int:
+    def _write_model_checks(self, ws, start_row: int, periods: list[str]) -> int:
         f = self._fmt
         row = self._write_section_heading(ws, start_row, "Checks")
 
@@ -2180,16 +2117,6 @@ class ExcelExporter:
                      f["source_warning"])
         row += 1
 
-        # DVA Availability
-        ws.set_row(row, 14)
-        ws.write(row, 1, "DVA Availability", f["check_label"])
-        ws.write(row, 2, "OK" if dva_available else "WARNING",
-                 f["check_ok"] if dva_available else f["check_warning"])
-        if not dva_available:
-            ws.write(row, 3, "DVA not in current export pipeline",
-                     f["source_warning"])
-        row += 1
-
         # D&A Resolution — EBITDA = EBIT + D&A depends on the D&A line
         # resolving in the DFC raw sheet (substring match on a 6.01.01.*
         # 'depreci' line). Surface it so a silently-missing D&A (and thus a
@@ -2221,12 +2148,12 @@ class ExcelExporter:
 
         return row + 1
 
-    def _write_model_source(self, ws, start_row: int, periods: list[str], dva_available: bool) -> int:
+    def _write_model_source(self, ws, start_row: int, periods: list[str]) -> int:
         f = self._fmt
         row = self._write_section_heading(ws, start_row, "Source / Data Quality")
         info = self.info
 
-        stmts_present = [k for k in ("DRE", "BPA", "BPP", "DFC", "DVA")
+        stmts_present = [k for k in ("DRE", "BPA", "BPP", "DFC", "DMPL")
                          if k in self.stmts and not self.stmts[k].empty]
         rows_by_stmt = ", ".join(
             f"{k}={len(self.stmts[k])}"
@@ -2248,14 +2175,9 @@ class ExcelExporter:
             ("Units",               "Model: R$ mm. CVM source: R$ mil. Conversion: ÷1,000."),
             ("Full history",        "Available in hidden raw_* sheets."),
         ]
-        if not dva_available:
-            rows_src.append(
-                ("Note — DVA",
-                 "DVA: unavailable in current export pipeline for this company."),
-            )
         # Surface unmapped spine codes per statement so the analyst can
         # see exactly which lines were not present in the raw filing.
-        for stype in ("DRE", "BPA", "BPP", "DFC", "DVA"):
+        for stype in ("DRE", "BPA", "BPP", "DFC", "DMPL"):
             unmapped = self._unmapped_codes.get(stype, [])
             if unmapped:
                 rows_src.append(
@@ -2398,5 +2320,4 @@ def _stmt_subtotals(stmt_type: str) -> set[str]:
         "BPA": _BPA_SUBTOTALS,
         "BPP": _BPP_SUBTOTALS,
         "DFC": _DFC_SUBTOTALS,
-        "DVA": {"7.08"},
     }.get(stmt_type, set())

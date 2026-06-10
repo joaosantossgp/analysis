@@ -92,7 +92,7 @@ class AccountStandardizer:
 
         Args:
             df: DataFrame com coluna LINE_ID_BASE (= CD_CONTA) como coluna ou índice
-            statement_type: 'BPA', 'BPP', 'DRE', 'DFC', 'DMPL', 'DVA'
+            statement_type: 'BPA', 'BPP', 'DRE', 'DFC', 'DMPL'
             empresa_tipo: 'comercial', 'financeira' ou 'seguradora'
             is_consolidated: True se demonstração consolidada
 

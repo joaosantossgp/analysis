@@ -84,29 +84,50 @@ def _seed_db(tmp_path: Path) -> CVMReadService:
             [
                 (9512,  "PETROBRAS", None, None, None, None, None, None, None, None, None, "comercial", "PETR4", 1, 1, "2026"),
                 (11223, "ITR_ONLY",  None, None, None, None, None, None, None, None, None, "comercial", None,    2, 1, "2026"),
-                (99999, "NO_DATA",   None, None, None, None, None, None, None, None, None, "comercial", None,    3, 1, "2026"),
+                (33445, "PARTIAL_ITR", None, None, None, None, None, None, None, None, None, "comercial", None, 3, 1, "2026"),
+                (44556, "CONFLICTED_ITR", None, None, None, None, None, None, None, None, None, "comercial", None, 4, 1, "2026"),
+                (99999, "NO_DATA",   None, None, None, None, None, None, None, None, None, "comercial", None,    5, 1, "2026"),
             ],
         )
 
         # PETROBRAS: DFP years 2021–2025 + ITR-only 1Q26, 2Q26
         petr_rows = []
+        core_lines = {
+            "BPA": ("1", "Ativo Total", "Ativo Total"),
+            "BPP": ("2", "Passivo Total", "Passivo Total"),
+            "DRE": ("3.01", "Receita", "Receita"),
+            "DFC": ("6.01", "Fluxo de Caixa Operacional", "Fluxo de Caixa Operacional"),
+        }
+
+        def add_package(rows, company, cd_cvm, year, period, value, qa_conflict=0):
+            for stmt, (cd_conta, ds_conta, standard_name) in core_lines.items():
+                rows.append(
+                    (
+                        company,
+                        cd_cvm,
+                        stmt,
+                        year,
+                        period,
+                        f"{stmt.lower()}-{cd_conta}",
+                        cd_conta,
+                        ds_conta,
+                        standard_name,
+                        qa_conflict,
+                        float(value),
+                    )
+                )
+
         for year in (2021, 2022, 2023, 2024, 2025):
-            # Annual DFP row for DRE
-            petr_rows.append(
-                ("PETROBRAS", 9512, "DRE", year, str(year), "dre-1", "3.01", "Receita", "Receita", 0, float(year * 100))
-            )
+            # Annual DFP package
+            add_package(petr_rows, "PETROBRAS", 9512, year, str(year), year * 100)
             # Quarterly ITR rows for same year
             for q in (1, 2, 3, 4):
                 period = f"{q}Q{year - 2000}"
-                petr_rows.append(
-                    ("PETROBRAS", 9512, "DRE", year, period, "dre-1", "3.01", "Receita", "Receita", 0, float(year * 25))
-                )
+                add_package(petr_rows, "PETROBRAS", 9512, year, period, year * 25)
         # ITR-only year 2026 (no annual DFP row for 2026)
         for q, val in ((1, 290_000.0), (2, 295_000.0)):
             period = f"{q}Q26"
-            petr_rows.append(
-                ("PETROBRAS", 9512, "DRE", 2026, period, "dre-1", "3.01", "Receita", "Receita", 0, val)
-            )
+            add_package(petr_rows, "PETROBRAS", 9512, 2026, period, val)
         conn.executemany(
             """
             INSERT INTO financial_reports (
@@ -118,10 +139,18 @@ def _seed_db(tmp_path: Path) -> CVMReadService:
         )
 
         # ITR_ONLY company: only quarterly data, no DFP
-        itr_rows = [
-            ("ITR_ONLY", 11223, "DRE", 2025, "1Q25", "dre-1", "3.01", "Receita", "Receita", 0, 50_000.0),
-            ("ITR_ONLY", 11223, "DRE", 2025, "2Q25", "dre-1", "3.01", "Receita", "Receita", 0, 55_000.0),
-        ]
+        itr_rows = []
+        add_package(itr_rows, "ITR_ONLY", 11223, 2025, "1Q25", 50_000.0)
+        add_package(itr_rows, "ITR_ONLY", 11223, 2025, "2Q25", 55_000.0)
+        # PARTIAL_ITR: latest 1Q26 has only DRE, so freshness must stay FY2025.
+        for year in (2024, 2025):
+            add_package(itr_rows, "PARTIAL_ITR", 33445, year, str(year), year * 10)
+        itr_rows.append(
+            ("PARTIAL_ITR", 33445, "DRE", 2026, "1Q26", "dre-3.01", "3.01", "Receita", "Receita", 0, 10_000.0)
+        )
+        # CONFLICTED_ITR: complete-looking 1Q26 rows are all conflicted, so they are ignored.
+        add_package(itr_rows, "CONFLICTED_ITR", 44556, 2025, "2025", 202_500.0)
+        add_package(itr_rows, "CONFLICTED_ITR", 44556, 2026, "1Q26", 20_260.0, qa_conflict=1)
         conn.executemany(
             """
             INSERT INTO financial_reports (
@@ -176,6 +205,39 @@ def test_query_layer_get_available_export_periods_no_data(tmp_path):
     assert result == {"annual_years": [], "itr_only_years": [], "all_export_years": []}
 
 
+def test_latest_financial_period_prefers_complete_itr_when_newer(tmp_path):
+    svc = _seed_db(tmp_path)
+    info = svc.get_company_info_dict(9512)
+    assert info["latest_financial_period_label"] == "2Q26"
+    assert info["latest_financial_period_display"] == "2Q26"
+    assert info["latest_financial_period_type"] == "quarter"
+    assert info["latest_financial_period_year"] == 2026
+    assert info["latest_financial_period_quarter"] == 2
+
+
+def test_latest_financial_period_uses_annual_when_no_complete_newer_quarter(tmp_path):
+    svc = _seed_db(tmp_path)
+    info = svc.get_company_info_dict(33445)
+    assert info["latest_financial_period_label"] == "2025"
+    assert info["latest_financial_period_display"] == "FY2025"
+    assert info["latest_financial_period_type"] == "annual"
+
+
+def test_latest_financial_period_ignores_conflicted_quarter(tmp_path):
+    svc = _seed_db(tmp_path)
+    info = svc.get_company_info_dict(44556)
+    assert info["latest_financial_period_label"] == "2025"
+    assert info["latest_financial_period_display"] == "FY2025"
+
+
+def test_latest_financial_period_supports_itr_only_company(tmp_path):
+    svc = _seed_db(tmp_path)
+    info = svc.get_company_info_dict(11223)
+    assert info["latest_financial_period_label"] == "2Q25"
+    assert info["latest_financial_period_display"] == "2Q25"
+    assert info["latest_financial_period_type"] == "quarter"
+
+
 # ─── CVMReadService.resolve_excel_export_scope ───────────────────────────────
 
 def test_resolve_scope_last_5_years(tmp_path):
@@ -223,7 +285,22 @@ def test_resolve_scope_itr_only_company(tmp_path):
     assert scope["period_window"] == (0, 4)
 
 
+def test_resolve_scope_does_not_include_incomplete_newer_itr_year(tmp_path):
+    svc = _seed_db(tmp_path)
+    scope = svc.resolve_excel_export_scope(33445, "last_5_years")
+    assert scope["all_export_years"] == [2024, 2025]
+    assert scope["itr_only_years"] == []
+
+
 def test_resolve_scope_invalid_raises(tmp_path):
     svc = _seed_db(tmp_path)
     with pytest.raises(ValueError, match="Invalid period_scope"):
         svc.resolve_excel_export_scope(9512, "last_99_years")
+
+
+def test_model_mapping_preview_includes_latest_itr_periods(tmp_path):
+    svc = _seed_db(tmp_path)
+    workspace = svc.get_excel_mapping_workspace(9512, period_scope="last_5_years")
+    assert "1Q26" in workspace["preview_periods"]
+    assert "2Q26" in workspace["preview_periods"]
+    assert workspace["company"]["latest_financial_period_display"] == "2Q26"

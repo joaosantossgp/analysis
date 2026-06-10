@@ -10,6 +10,7 @@ import { Sparkline } from "@/components/data/Sparkline";
 import { EntityHeader } from "@/components/EntityHeader";
 import { ExportActionPanel } from "@/components/export/ExportActionPanel";
 import { CompanyRefreshPanel } from "@/components/CompanyRefreshPanel";
+import { MarketHistoryPanel } from "@/components/MarketHistoryPanel";
 import { StateBanner } from "@/components/feedback/StateBanner";
 import { Panel } from "@/components/surface/Panel";
 import {
@@ -113,6 +114,7 @@ function CompanyReferenceWorkspace({
               refreshPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" })
             }
           />
+          <MarketHistoryPanel cdCvm={cdCvm} bridgeReady={bridgeReady} />
         </div>
 
         <aside className="space-y-4 self-start xl:sticky xl:top-0">
@@ -395,7 +397,7 @@ function ExportPanel({ cdCvm }: { cdCvm: number }) {
       cdCvm={cdCvm}
       title="Report export"
       description="Local workbook for external analysis in Excel, auditing, and reporting."
-      scopeNote="Includes DRE, BPA, BPP, DFC, plus DVA/DMPL when available, KPIs, and metadata."
+      scopeNote="Includes DRE, BPA, BPP, DFC, plus DMPL when available, KPIs, and metadata."
     />
   );
 }
@@ -445,7 +447,8 @@ function DataStatusPanel({
           <StatusRow label="CVM">
             <IdentifierBadge>{info?.cd_cvm ?? "—"}</IdentifierBadge>
           </StatusRow>
-          <StatusRow label="Latest year" value={info?.latest_readable_year?.toString() ?? "—"} mono />
+          <StatusRow label="Latest period" value={info?.latest_financial_period_display ?? "—"} mono />
+          <StatusRow label="Complete periods" value={String(info?.readable_financial_periods_count ?? 0)} mono />
           <StatusRow label="Years in database" value={allYears.length ? allYears.join(", ") : "—"} mono />
           <StatusRow label="Panel window" value={selectedYears.length ? selectedYears.join(", ") : "—"} mono />
           <StatusRow label="Annual KPIs" value={annualRows == null ? "—" : String(annualRows)} mono />
@@ -527,10 +530,10 @@ function buildMetricTapeItems(
 
   const items: MetricTapeItem[] = [
     {
-      id: "latest-year",
-      label: "Year",
-      value: info?.latest_readable_year?.toString() ?? null,
-      sublabel: "latest",
+      id: "latest-period",
+      label: "Period",
+      value: info?.latest_financial_period_display ?? null,
+      sublabel: "updated through",
     },
     {
       id: "readable-years",

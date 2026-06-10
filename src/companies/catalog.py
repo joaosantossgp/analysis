@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import os
 import threading
 import time
 from dataclasses import dataclass
@@ -10,7 +11,10 @@ import requests
 
 from src.companies.ticker_map import TICKER_MAP
 
-CVM_MASTER_URL = "https://dados.cvm.gov.br/dados/CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv"
+CVM_MASTER_URL = os.environ.get(
+    "CVM_CATALOG_URL",
+    "https://dados.cvm.gov.br/dados/CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv"
+)
 ACTIVE_STATUS_VALUES = {"ATIVO", "A"}
 DEFAULT_CATALOG_TTL_SECONDS = 900
 

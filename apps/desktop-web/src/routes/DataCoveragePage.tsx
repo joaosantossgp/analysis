@@ -261,7 +261,7 @@ export function DataCoveragePage() {
         subtitle="Companies with missing, incomplete, stale, or failed data."
         actions={
           <Link
-            to="/atualizar-base"
+            to="/settings/updates"
             style={{
               color: "var(--color-text-secondary)",
               fontSize: "var(--text-xs)",

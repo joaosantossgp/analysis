@@ -537,7 +537,7 @@ function UpdateCard({
               <span className="font-semibold text-zinc-400">Note:</span> This update changes the software version via GitHub Releases.
               To update company data (CVM financial statements), use the{" "}
               <a
-                href="#/atualizar-base"
+                href="#/settings/updates"
                 className="font-semibold text-zinc-300 underline decoration-zinc-600 underline-offset-2 hover:text-cyan-100"
               >
                 Database Updates

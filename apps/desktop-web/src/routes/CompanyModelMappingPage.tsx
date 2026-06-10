@@ -37,15 +37,38 @@ const PERIOD_SCOPE_OPTIONS = [
 ] as const;
 const STATEMENT_LABELS: Record<string, string> = {
   DRE: "Income Statement",
-  BPA: "Assets",
+  BPA: "Balance Sheet Assets",
   BPP: "Liabilities & Equity",
   DFC: "Cash Flow",
-  DVA: "Value Added",
+  DMPL: "Changes in Equity",
 };
+const STATEMENT_DESCRIPTIONS: Record<string, string> = {
+  DRE: "Revenue, costs, margins, and earnings",
+  BPA: "Asset accounts mapped into the model",
+  BPP: "Liability and equity accounts",
+  DFC: "Cash flow accounts and subtotal lines",
+  DMPL: "Equity movement accounts",
+};
+const STATEMENT_ORDER = ["DRE", "BPA", "BPP", "DFC", "DMPL"] as const;
+const CORE_STATEMENT_TYPES = ["DRE", "BPA", "BPP", "DFC"] as const;
+const UNKNOWN_STATEMENT_TYPE = "UNKNOWN";
 
 type PreviewRow = ExcelMappingPreviewRow & {
   rowIssues: ExcelMappingValidationIssue[];
   edited: boolean;
+};
+type StatementGroupSummary = {
+  statementType: string;
+  label: string;
+  description: string;
+  rows: PreviewRow[];
+  rowCount: number;
+  mappedCount: number;
+  sourceCount: number;
+  warningCount: number;
+  errorCount: number;
+  editedCount: number;
+  rowIds: string;
 };
 
 export function CompanyModelMappingPage() {
@@ -63,6 +86,7 @@ export function CompanyModelMappingPage() {
   const [rawSearch, setRawSearch] = useState("");
   const [rawStatementFilter, setRawStatementFilter] = useState("current");
   const [showValidation, setShowValidation] = useState(false);
+  const [activeStatementType, setActiveStatementType] = useState<string>("DRE");
   const [bridgeReady, setBridgeReady] = useState(false);
 
   useEffect(() => {
@@ -111,15 +135,52 @@ export function CompanyModelMappingPage() {
   const blockingCount = validation.filter((issue) => issue.severity === "error").length;
   const warningCount = validation.filter((issue) => issue.severity !== "error").length;
 
-  const selectedEntry = useMemo(
-    () => draft?.entries.find((entry) => entry.target_id === selectedTargetId)
-      ?? draft?.entries[0]
-      ?? null,
-    [draft, selectedTargetId],
-  );
   const previewRows = useMemo(
     () => buildPreviewRows(draft, workspace, validation),
     [draft, validation, workspace],
+  );
+  const statementGroups = useMemo(
+    () => buildStatementGroups(previewRows),
+    [previewRows],
+  );
+  const activeStatementGroup = useMemo(
+    () => {
+      const fallback = statementGroups.find((group) => group.rowCount > 0)
+        ?? statementGroups[0]
+        ?? null;
+      return statementGroups.find((group) => group.statementType === activeStatementType)
+        ?? fallback;
+    },
+    [activeStatementType, statementGroups],
+  );
+  useEffect(() => {
+    if (statementGroups.length === 0) return;
+    if (statementGroups.some((group) => group.statementType === activeStatementType)) return;
+    const nextStatement = statementGroups.find((group) => group.rowCount > 0)?.statementType
+      ?? statementGroups[0]?.statementType;
+    if (nextStatement) setActiveStatementType(nextStatement);
+  }, [activeStatementType, statementGroups]);
+  useEffect(() => {
+    if (!activeStatementGroup) return;
+    const selectedStillVisible = Boolean(
+      selectedTargetId
+        && activeStatementGroup.rows.some((row) => row.target_id === selectedTargetId),
+    );
+    if (selectedStillVisible) return;
+    setSelectedTargetId(activeStatementGroup.rows[0]?.target_id ?? null);
+  }, [activeStatementGroup, selectedTargetId]);
+  const selectedEntry = useMemo(
+    () => {
+      if (!draft || !selectedTargetId) return null;
+      if (
+        activeStatementGroup
+        && !activeStatementGroup.rows.some((row) => row.target_id === selectedTargetId)
+      ) {
+        return null;
+      }
+      return draft.entries.find((entry) => entry.target_id === selectedTargetId) ?? null;
+    },
+    [activeStatementGroup, draft, selectedTargetId],
   );
   const selectedPreviewRow = useMemo(
     () => previewRows.find((row) => row.target_id === selectedEntry?.target_id) ?? null,
@@ -273,6 +334,8 @@ export function CompanyModelMappingPage() {
         touched={touched}
         blockingCount={blockingCount}
         warningCount={warningCount}
+        latestPeriod={workspace.company.latest_financial_period_display}
+        periodScopeLabel={workspace.period_scope_label ?? null}
         exportStatus={exportAction.status}
         exportError={exportAction.errorMessage}
         exportFile={exportAction.result?.file_name ?? null}
@@ -302,9 +365,15 @@ export function CompanyModelMappingPage() {
       />
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0 space-y-3">
+          <StatementMappingSelector
+            groups={statementGroups}
+            activeStatementType={activeStatementGroup?.statementType ?? activeStatementType}
+            onChange={setActiveStatementType}
+          />
           <ModelPreviewTable
             periods={workspace.preview_periods}
-            rows={previewRows}
+            rows={activeStatementGroup?.rows ?? []}
+            statement={activeStatementGroup}
             selectedTargetId={selectedEntry?.target_id ?? null}
             onSelectRow={setSelectedTargetId}
           />
@@ -364,6 +433,71 @@ export function CompanyModelMappingPage() {
   );
 }
 
+function StatementMappingSelector({
+  groups,
+  activeStatementType,
+  onChange,
+}: {
+  groups: StatementGroupSummary[];
+  activeStatementType: string;
+  onChange: (statementType: string) => void;
+}) {
+  return (
+    <Panel dense title="Statement" subtitle="Model mapping family">
+      <div className="grid gap-2 md:grid-cols-2 2xl:grid-cols-4">
+        {groups.map((group) => {
+          const selected = group.statementType === activeStatementType;
+          const hasIssues = group.errorCount > 0 || group.warningCount > 0;
+          return (
+            <button
+              key={group.statementType}
+              type="button"
+              aria-pressed={selected}
+              onClick={() => onChange(group.statementType)}
+              className="text-left focus-visible:outline focus-visible:outline-1"
+              style={{
+                background: selected ? "var(--color-surface-3)" : "var(--color-surface-1)",
+                border: `1px solid ${
+                  selected ? "var(--color-action-primary)" : "var(--color-border-default)"
+                }`,
+                borderRadius: "var(--radius-sm)",
+                color: selected ? "var(--color-action-primary)" : "var(--color-text-primary)",
+                minHeight: 74,
+                outlineColor: "var(--color-border-focus)",
+                padding: "8px 10px",
+              }}
+            >
+              <span className="flex items-center justify-between gap-2">
+                <span className="font-mono" style={{ fontSize: "var(--text-sm)" }}>
+                  {group.statementType}
+                </span>
+                <span style={{ color: selected ? "var(--color-action-primary)" : "var(--color-text-tertiary)", fontSize: "var(--text-2xs)" }}>
+                  {group.rowCount} rows
+                </span>
+              </span>
+              <span className="mt-1 block truncate" style={{ color: "var(--color-text-primary)", fontSize: "var(--text-xs)", fontWeight: 650 }}>
+                {group.label}
+              </span>
+              <span className="mt-0.5 block truncate" style={{ color: "var(--color-text-tertiary)", fontSize: "var(--text-2xs)" }}>
+                {group.description}
+              </span>
+              <span className="mt-2 flex flex-wrap gap-1.5">
+                <MiniBadge tone={group.mappedCount > 0 ? "ok" : "warn"}>
+                  {group.mappedCount} mapped
+                </MiniBadge>
+                {group.editedCount > 0 ? <MiniBadge tone="warn">{group.editedCount} edited</MiniBadge> : null}
+                {group.errorCount > 0 ? <MiniBadge tone="error">{group.errorCount} error</MiniBadge> : null}
+                {!group.errorCount && group.warningCount > 0 ? <MiniBadge tone="warn">{group.warningCount} warn</MiniBadge> : null}
+                {!hasIssues ? <MiniBadge tone="ok">Clean</MiniBadge> : null}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </Panel>
+  );
+}
+
 function BuilderCommandBar({
   companyName,
   ticker,
@@ -377,6 +511,8 @@ function BuilderCommandBar({
   touched,
   blockingCount,
   warningCount,
+  latestPeriod,
+  periodScopeLabel,
   exportStatus,
   exportError,
   exportFile,
@@ -406,6 +542,8 @@ function BuilderCommandBar({
   touched: boolean;
   blockingCount: number;
   warningCount: number;
+  latestPeriod: string | null;
+  periodScopeLabel: string | null;
   exportStatus: string;
   exportError: string | null;
   exportFile: string | null;
@@ -449,6 +587,10 @@ function BuilderCommandBar({
             <StatusChip tone={blockingCount > 0 ? "error" : warningCount > 0 ? "warn" : "ok"}>
               {blockingCount > 0 ? `${blockingCount} errors` : warningCount > 0 ? `${warningCount} warnings` : "Validated"}
             </StatusChip>
+            <StatusChip tone={latestPeriod ? "ok" : "warn"}>
+              {latestPeriod ? `Updated through ${latestPeriod}` : "No complete period"}
+            </StatusChip>
+            {periodScopeLabel ? <StatusChip tone="muted">{periodScopeLabel}</StatusChip> : null}
           </div>
         </div>
         <div className="grid gap-2 md:grid-cols-[minmax(150px,0.7fr)_minmax(180px,1fr)_minmax(180px,1fr)]">
@@ -535,20 +677,25 @@ function BuilderCommandBar({
 function ModelPreviewTable({
   periods,
   rows,
+  statement,
   selectedTargetId,
   onSelectRow,
 }: {
   periods: string[];
   rows: PreviewRow[];
+  statement: StatementGroupSummary | null;
   selectedTargetId: string | null;
   onSelectRow: (targetId: string) => void;
 }) {
   const grouped = groupRows(rows);
+  const statementLabel = statement?.label ?? "Statement";
+  const statementType = statement?.statementType ?? "";
+  const statementSummary = statement ? statementSummaryText(statement) : "No statement rows";
   return (
     <Panel
       dense
-      title="Model Preview"
-      subtitle="R$ mm. Click a row to inspect source lines and export logic."
+      title={`Model Preview: ${statementLabel}`}
+      subtitle={`${statementType ? `${statementType} | ` : ""}${statementSummary}. R$ mm. Click a row to inspect source lines and export logic.`}
       footer="Values are previewed from local CVM data and scaled like the exported Excel Model sheet."
     >
       <div className="overflow-x-auto" style={tableFrameStyle}>
@@ -615,7 +762,7 @@ function ModelPreviewTable({
             {rows.length === 0 ? (
               <tr>
                 <td colSpan={periods.length + 2} style={{ color: "var(--color-text-tertiary)", padding: 24, textAlign: "center" }}>
-                  No model rows are available for this mapping.
+                  No model rows are available for this statement in the active mapping.
                 </td>
               </tr>
             ) : null}
@@ -654,7 +801,7 @@ function RowInspector({
     <Panel
       dense
       title={entry ? entry.target_label : "Selected Model Row"}
-      subtitle={entry ? `${STATEMENT_LABELS[entry.statement_type] ?? entry.statement_type} | ${entry.required ? "Required" : "Optional"}` : "Click a row in the preview"}
+      subtitle={entry ? `${statementLabel(entry.statement_type)} | ${entry.required ? "Required" : "Optional"}` : "Click a row in the preview"}
       footer={touched ? "Save the preset before export if these draft changes should be used." : "Saved mapping is ready for export."}
     >
       {!entry ? (
@@ -767,7 +914,9 @@ function RawSourcePicker({
     const query = search.trim().toLowerCase();
     const selectedStatement = statementFilter === "current" ? entry?.statement_type : statementFilter;
     return rawLines
-      .filter((line) => !selectedStatement || selectedStatement === "all" || line.statement_type === selectedStatement)
+      .filter((line) => !selectedStatement
+        || selectedStatement === "all"
+        || canonicalStatementType(line.statement_type) === canonicalStatementType(selectedStatement))
       .filter((line) => {
         if (!query) return true;
         return `${line.cd_conta ?? ""} ${line.line_id_base} ${line.label} ${line.ds_conta ?? ""} ${line.statement_type}`
@@ -776,6 +925,10 @@ function RawSourcePicker({
       })
       .slice(0, 200);
   }, [entry, rawLines, search, statementFilter]);
+  const statementOptions = useMemo(
+    () => buildSourceStatementOptions(rawLines, entry),
+    [entry, rawLines],
+  );
   const selectedKeys = new Set(entry?.sources.map((source) => `${source.statement_type}:${source.line_id_base}`) ?? []);
   return (
     <div style={overlayStyle} role="dialog" aria-modal="true" aria-label="Add CVM source">
@@ -806,11 +959,11 @@ function RawSourcePicker({
           >
             <option value="current">Current statement</option>
             <option value="all">All statements</option>
-            <option value="DRE">Income Statement</option>
-            <option value="BPA">Assets</option>
-            <option value="BPP">Liabilities & Equity</option>
-            <option value="DFC">Cash Flow</option>
-            <option value="DVA">Value Added</option>
+            {statementOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
           </Select>
         </div>
         <div className="space-y-2 overflow-auto" style={{ maxHeight: "calc(100vh - 170px)", padding: "0 12px 12px" }}>
@@ -1077,6 +1230,94 @@ function sameEntryMapping(entry: ExcelMappingEntry, original: ExcelMappingEntry 
       && source.line_id_base === other.line_id_base
       && source.sign === other.sign;
   });
+}
+
+function buildStatementGroups(rows: PreviewRow[]): StatementGroupSummary[] {
+  const rowsByStatement = new Map<string, PreviewRow[]>();
+  for (const row of rows) {
+    const statementType = canonicalStatementType(row.statement_type);
+    rowsByStatement.set(statementType, [...(rowsByStatement.get(statementType) ?? []), row]);
+  }
+
+  const statementTypes = new Set<string>(CORE_STATEMENT_TYPES);
+  for (const statementType of rowsByStatement.keys()) {
+    statementTypes.add(statementType);
+  }
+
+  return [...statementTypes]
+    .sort(compareStatementTypes)
+    .map((statementType) => {
+      const statementRows = [...(rowsByStatement.get(statementType) ?? [])]
+        .sort((a, b) => a.display_order - b.display_order);
+      const warningCount = statementRows.reduce((total, row) => total + row.warning_count, 0);
+      const errorCount = statementRows.reduce((total, row) => total + row.error_count, 0);
+      return {
+        statementType,
+        label: statementLabel(statementType),
+        description: statementDescription(statementType),
+        rows: statementRows,
+        rowCount: statementRows.length,
+        mappedCount: statementRows.filter((row) => row.source_count > 0).length,
+        sourceCount: statementRows.reduce((total, row) => total + row.source_count, 0),
+        warningCount,
+        errorCount,
+        editedCount: statementRows.filter((row) => row.edited).length,
+        rowIds: statementRows.map((row) => row.target_id).join("|"),
+      };
+    });
+}
+
+function buildSourceStatementOptions(rawLines: ExcelMappingRawLine[], entry: ExcelMappingEntry | null) {
+  const statementTypes = new Set<string>(CORE_STATEMENT_TYPES);
+  if (entry?.statement_type) {
+    statementTypes.add(canonicalStatementType(entry.statement_type));
+  }
+  for (const line of rawLines) {
+    statementTypes.add(canonicalStatementType(line.statement_type));
+  }
+  return [...statementTypes]
+    .sort(compareStatementTypes)
+    .map((statementType) => ({
+      value: statementType,
+      label: statementLabel(statementType),
+    }));
+}
+
+function canonicalStatementType(value: string | null | undefined): string {
+  const statementType = String(value ?? "").trim().toUpperCase();
+  return statementType || UNKNOWN_STATEMENT_TYPE;
+}
+
+function compareStatementTypes(a: string, b: string): number {
+  const aIndex = STATEMENT_ORDER.findIndex((statementType) => statementType === a);
+  const bIndex = STATEMENT_ORDER.findIndex((statementType) => statementType === b);
+  if (aIndex !== -1 || bIndex !== -1) {
+    return (aIndex === -1 ? 1000 : aIndex) - (bIndex === -1 ? 1000 : bIndex);
+  }
+  if (a === UNKNOWN_STATEMENT_TYPE) return 1;
+  if (b === UNKNOWN_STATEMENT_TYPE) return -1;
+  return a.localeCompare(b);
+}
+
+function statementLabel(statementType: string): string {
+  if (statementType === UNKNOWN_STATEMENT_TYPE) return "Unknown Statement";
+  return STATEMENT_LABELS[statementType] ?? statementType;
+}
+
+function statementDescription(statementType: string): string {
+  if (statementType === UNKNOWN_STATEMENT_TYPE) {
+    return "Statement family not recognized by the current UI";
+  }
+  return STATEMENT_DESCRIPTIONS[statementType] ?? "Additional statement family from local data";
+}
+
+function statementSummaryText(statement: StatementGroupSummary): string {
+  const issueText = statement.errorCount > 0
+    ? `${statement.errorCount} error${statement.errorCount === 1 ? "" : "s"}`
+    : statement.warningCount > 0
+      ? `${statement.warningCount} warning${statement.warningCount === 1 ? "" : "s"}`
+      : "clean";
+  return `${statement.rowCount} row${statement.rowCount === 1 ? "" : "s"}, ${statement.mappedCount} mapped, ${statement.sourceCount} source${statement.sourceCount === 1 ? "" : "s"}, ${issueText}`;
 }
 
 function groupRows(rows: PreviewRow[]) {

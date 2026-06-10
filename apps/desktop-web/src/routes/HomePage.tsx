@@ -102,7 +102,7 @@ export function HomePage() {
           accent="neutral"
         />
         <QuickNavCard
-          to="/data-coverage"
+          to="/settings/coverage"
           title="Coverage"
           value={health ? fmtPct(health.pct) : "—"}
           detail={
@@ -175,7 +175,7 @@ function StatusSummaryCard({
         </div>
         <div className="shrink-0">
           <Link
-            to="/atualizar-base"
+            to="/settings/updates"
             className="inline-flex items-center rounded-md border border-cyan-600/50 bg-cyan-500/10 px-4 py-2 text-sm font-medium text-cyan-100 hover:bg-cyan-500/15"
           >
             {isRunning ? "Update in progress →" : "Manage database →"}

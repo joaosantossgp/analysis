@@ -141,6 +141,7 @@ class CVMScraper:
         
         self.companies_map = {}
         self.setores_map = {}
+        self.cnpjs_map = {}
         
         # Standardizer
         canonical_csv_path = str(self.settings.paths.canonical_accounts_path)
@@ -190,6 +191,10 @@ class CVMScraper:
             
             df['CD_CVM_STR'] = df['CD_CVM'].astype(str)
             self.setores_map = df[df['SETOR_ATIV'].notna()].set_index('CD_CVM_STR')['SETOR_ATIV'].to_dict()
+            if 'CNPJ_CIA' in df.columns:
+                self.cnpjs_map = df[df['CNPJ_CIA'].notna()].set_index('CD_CVM_STR')['CNPJ_CIA'].to_dict()
+            else:
+                self.cnpjs_map = {}
             return df
         except Exception as e:
             print(f"Error fetching company list: {e}")
@@ -595,6 +600,14 @@ class CVMScraper:
                 final[s] = self.standardizer.enrich(df, s, tipo, (self.report_type=="consolidated"))
         else: final = reports
         
+        from src.companies.ticker_map import TICKER_MAP
+        raw_ticker = TICKER_MAP.get(int(cvm))
+        ticker_b3 = None
+        if raw_ticker:
+            ticker_b3 = raw_ticker.strip().upper()
+            if ticker_b3.endswith(".SA"):
+                ticker_b3 = ticker_b3[:-3]
+
         rows_inserted = self.db.insert_company_data(
             name,
             int(cvm),
@@ -602,6 +615,8 @@ class CVMScraper:
             final,
             qas,
             self.setores_map.get(str(cvm)),
+            ticker_b3=ticker_b3,
+            cnpj=self.cnpjs_map.get(str(cvm)),
         )
         
         for attempt in range(1, self.max_excel_lock_retries + 1):
