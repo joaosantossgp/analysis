@@ -179,6 +179,7 @@ _MODEL_LINE_LABELS: dict[str, str] = {
     "6.01.01.02":   "Depreciation & Amortization",
     "6.01.01.03":   "Depreciation & Amortization",
     "6.01.02":      "Working Capital Changes",
+    "6.01.03":      "Other Operating Cash Flows",
     "6.01.02.01":   "Δ Receivables",
     "6.01.02.02":   "Δ Inventories",
     "6.01.02.03":   "Δ Suppliers",
@@ -265,6 +266,7 @@ _DFC_SPINE: list[tuple[str, int]] = [
     ("6.01.02", 1),
     ("6.01.02.01", 2), ("6.01.02.02", 2),
     ("6.01.02.03", 2), ("6.01.02.04", 2),
+    ("6.01.03", 1),
     ("6.02", 0),
     ("6.02.01", 1), ("6.02.02", 1), ("6.02.03", 1),
     ("6.03", 0),
@@ -716,8 +718,10 @@ class ExcelExporter:
         itr_only_years: Optional[list[int]] = None,
         model_mapping: Optional[ModelMappingDefinition | dict] = None,
         mapping_validation_issues: Optional[list[MappingValidationIssue | dict]] = None,
+        engine: Optional[Any] = None,
     ):
         self.info = company_info or {}
+        self.engine = engine
         self.stmts = statements or {}
         self.kpis = kpis_df if kpis_df is not None else pd.DataFrame()
         self.extra = extra_sheets or []
@@ -1243,30 +1247,32 @@ class ExcelExporter:
         row = header_row + 4
 
         # 1. Income Statement
-        row += 2  # heading
         _is_fin = self._is_financial_firm
         stmt_type = "DRE"
-        from src.financials.excel_exporter import _FIN_DRE_SPINE, _DRE_SPINE  # noqa: PLC0415
-        spine = _FIN_DRE_SPINE if _is_fin else _DRE_SPINE
-        mapped_entries = self._mapping_entries("Income Statement", stmt_type)
-        if mapped_entries:
-            for entry in mapped_entries:
-                self._model_rows[entry.target_id] = row + 1
+        if self._raw_index.get(stmt_type) is not None:
+            row += 2  # heading
+            from src.financials.excel_exporter import _FIN_DRE_SPINE, _DRE_SPINE  # noqa: PLC0415
+            spine = _FIN_DRE_SPINE if _is_fin else _DRE_SPINE
+            mapped_entries = self._mapping_entries("Income Statement", stmt_type)
+            if mapped_entries:
+                for entry in mapped_entries:
+                    self._model_rows[entry.target_id] = row + 1
+                    row += 1
                 row += 1
-            row += 1
-        else:
-            for code, _ in spine:
-                self._model_rows[f"{stmt_type}:{code}"] = row + 1
+            else:
+                for code, _ in spine:
+                    self._model_rows[f"{stmt_type}:{code}"] = row + 1
+                    row += 1
                 row += 1
-            row += 1
 
         # 2. EBITDA and D&A
-        # D&A row
-        self._model_rows["COMP:DA"] = row + 1
-        row += 1
-        # EBITDA row
-        self._model_rows["COMP:EBITDA"] = row + 1
-        row += 2  # returns row + 2
+        if self._raw_index.get("DFC") is not None and not (self.stmts.get("DFC") is None or self.stmts["DFC"].empty):
+            # D&A row
+            self._model_rows["COMP:DA"] = row + 1
+            row += 1
+            # EBITDA row
+            self._model_rows["COMP:EBITDA"] = row + 1
+            row += 2  # returns row + 2
 
         # 3. Balance Sheet
         if not (("BPA" not in self.stmts or self.stmts["BPA"].empty)
@@ -1301,20 +1307,21 @@ class ExcelExporter:
 
         # 4. Cash Flow Statement
         stmt_type = "DFC"
-        from src.financials.excel_exporter import _DFC_SPINE  # noqa: PLC0415
-        spine = _DFC_SPINE
-        row += 2  # heading
-        mapped_entries = self._mapping_entries("Cash Flow Statement", stmt_type)
-        if mapped_entries:
-            for entry in mapped_entries:
-                self._model_rows[entry.target_id] = row + 1
+        if self._raw_index.get(stmt_type) is not None:
+            from src.financials.excel_exporter import _DFC_SPINE  # noqa: PLC0415
+            spine = _DFC_SPINE
+            row += 2  # heading
+            mapped_entries = self._mapping_entries("Cash Flow Statement", stmt_type)
+            if mapped_entries:
+                for entry in mapped_entries:
+                    self._model_rows[entry.target_id] = row + 1
+                    row += 1
                 row += 1
-            row += 1
-        else:
-            for code, _ in spine:
-                self._model_rows[f"{stmt_type}:{code}"] = row + 1
+            else:
+                for code, _ in spine:
+                    self._model_rows[f"{stmt_type}:{code}"] = row + 1
+                    row += 1
                 row += 1
-            row += 1
 
     # ── Model sheet — main analyst view ───────────────────────────────────
     def _write_model_sheet(self):
@@ -1531,12 +1538,87 @@ class ExcelExporter:
             return idx["std_name_to_row"].get(std_name)
         return None
 
+    def _resolve_raw_row_for_p(self, stmt_type: str, code: str, period: str) -> Optional[int]:
+        """Look up the 1-indexed Excel row in the raw sheet for a code in a specific period.
+        Handles description changes / duplicate codes dynamically by picking the row
+        containing a safe number for the target period.
+        """
+        df = self.stmts.get(stmt_type)
+        if df is None or df.empty:
+            return None
+        
+        matching_rows = []
+        for r_idx, (_, row) in enumerate(df.iterrows(), start=2): # 2-indexed (header is row 1)
+            cd = str(row.get("CD_CONTA", "")).strip()
+            line_id = str(row.get("LINE_ID_BASE") or "").strip()
+            if cd == code or line_id == code:
+                val = row.get(period)
+                if _is_safe_number(val):
+                    return r_idx
+                matching_rows.append(r_idx)
+        
+        if matching_rows:
+            return matching_rows[0]
+        return None
+
     def _mapping_entries(self, group: str, stmt_type: str) -> list[ModelMappingEntry]:
         return [
             entry
             for entry in self.model_mapping.entries
             if entry.group == group and entry.statement_type == stmt_type
         ]
+
+    def _get_ltm_quarters(self, p: str, periods: list[str]) -> Optional[list[str]]:
+        """Return the column letters for the 4 quarters ending at period p (inclusive).
+        
+        If p is a quarter (e.g. "1Q25"), we need "1Q25", "4Q24", "3Q24", "2Q24".
+        All 4 must exist in `periods`. If any is missing, returns None.
+        """
+        parsed = _parse_quarter(p)
+        if parsed is None:
+            return None
+        year, q = parsed
+        
+        target_tuples = []
+        cy, cq = year, q
+        for _ in range(4):
+            target_tuples.append((cy, cq))
+            cq -= 1
+            if cq == 0:
+                cq = 4
+                cy -= 1
+                
+        col_letters = []
+        for ty, tq in target_tuples:
+            found_col = None
+            for c_idx, p_lbl in enumerate(periods, start=3):
+                p_parsed = _parse_quarter(p_lbl)
+                if p_parsed == (ty, tq):
+                    found_col = xlsxwriter.utility.xl_col_to_name(c_idx)
+                    break
+            if found_col is None:
+                return None
+            col_letters.append(found_col)
+        return col_letters
+
+    def _get_stock_col(self, p: str, periods: list[str]) -> str:
+        """Return the column letter to use for balance sheet / stock variables for period p.
+        
+        If p is a 4Q column (e.g. "4Q25"), returns the column letter of the corresponding
+        annual period ("2025") if present in `periods`. Otherwise returns the column of p itself.
+        """
+        c_idx_self = 3 + periods.index(p)
+        col_self = xlsxwriter.utility.xl_col_to_name(c_idx_self)
+        
+        parsed = _parse_quarter(p)
+        if parsed is not None:
+            year, q = parsed
+            if q == 4:
+                # Look for annual column for this year
+                for c_idx, p_lbl in enumerate(periods, start=3):
+                    if _is_annual_period(p_lbl) and str(p_lbl).strip() == str(year):
+                        return xlsxwriter.utility.xl_col_to_name(c_idx)
+        return col_self
 
     def _resolve_mapping_source(
         self,
@@ -1620,7 +1702,7 @@ class ExcelExporter:
                     cond_check = "OR(" + ",".join(f"ISNUMBER({ref})" for ref in opt_refs) + ")"
 
                 sum_expression = "SUM(" + ",".join(all_refs) + ")"
-                formula = f'=IF({cond_check},{sum_expression},"-")'
+                formula = f'=IF({cond_check},{sum_expression},"")'
                 if not resolved_formula:
                     resolved_formula = formula
                 ws.write_formula(row, c_idx, formula, cell_fmt)
@@ -1640,32 +1722,21 @@ class ExcelExporter:
             )
             return all_reqs_in_model, warnings
 
-        source_resolutions = [
-            (source, *self._resolve_mapping_source(source))
-            for source in entry.sources
-        ]
-        effective_resolutions = (
-            source_resolutions[:1] if entry.operation == "direct" else source_resolutions
-        )
-        row_resolved = bool(effective_resolutions) and all(
-            raw_row is not None for _, raw_row, _ in effective_resolutions
-        )
+        # Lazy initialization of ModelResolver helper properties
+        if not hasattr(self, "_overrides"):
+            from src.financials.resolver import ModelResolver
+            resolver = ModelResolver(self.engine)
+            self._overrides = resolver.get_overrides(self.info.get("cd_cvm", 0)) if self.engine else {}
+            self._aliases = resolver.get_aliases() if self.engine else []
+
+        row_resolved = bool(entry.sources)
         warnings: list[str] = []
         if entry.operation not in VALID_MAPPING_OPERATIONS:
             warnings.append(f"invalid operation: {entry.operation}")
-        if not source_resolutions:
+        if not entry.sources:
             warnings.append("no source lines mapped")
-        if entry.operation == "direct" and len(source_resolutions) > 1:
+        if entry.operation == "direct" and len(entry.sources) > 1:
             warnings.append("direct operation uses first source only")
-        for source, raw_row, method in source_resolutions:
-            if raw_row is None:
-                warnings.append(
-                    f"missing source {source.statement_type}:{source.line_id_base}"
-                )
-            elif method != "line_id_base":
-                warnings.append(
-                    f"{source.statement_type}:{source.line_id_base} resolved by {method}"
-                )
 
         resolved_formula = ""
         for c_idx, p in enumerate(periods, start=3):
@@ -1678,29 +1749,40 @@ class ExcelExporter:
                 ws.write_blank(row, c_idx, None, cell_fmt)
                 continue
 
-            terms: list[str] = []
-            period_missing = False
-            for source, raw_row, _method in effective_resolutions:
-                idx = self._raw_index.get(source.statement_type)
-                raw_col = idx["period_to_col"].get(p) if idx else None
-                if raw_col is None or raw_row is None:
-                    period_missing = True
-                    break
-                cell_ref = xlsxwriter.utility.xl_rowcol_to_cell(raw_row - 1, raw_col)
-                safe_sheet = str(idx["sheet_name"]).replace("'", "''")
-                term = f"'{safe_sheet}'!{cell_ref}/{_MODEL_SCALE_DIVISOR:.0f}"
-                if entry.operation == "sum_with_sign" and source.sign < 0:
-                    term = f"-{term}"
-                elif terms:
-                    term = f"+{term}"
-                terms.append(term)
+            active_resolutions_for_p = []
+            sources_to_resolve = entry.sources[:1] if entry.operation == "direct" else entry.sources
+            for source in sources_to_resolve:
+                # Find matching override or preset source
+                raw_row = self._resolve_raw_row_for_p(source.statement_type, source.line_id_base, p)
+                if raw_row is not None:
+                    s_idx = self._raw_index.get(source.statement_type)
+                    raw_col = s_idx["period_to_col"].get(p) if s_idx else None
+                    if raw_col is not None:
+                        active_resolutions_for_p.append((source, raw_row, raw_col, s_idx))
 
-            if period_missing or not terms:
+            if not active_resolutions_for_p:
                 ws.write_blank(row, c_idx, None, cell_fmt)
                 continue
 
-            expression = "".join(terms)
-            formula = f'=IFERROR({expression},"-")'
+            cond_terms = []
+            math_terms = []
+            for source, raw_row, raw_col, s_idx in active_resolutions_for_p:
+                cell_ref = xlsxwriter.utility.xl_rowcol_to_cell(raw_row - 1, raw_col)
+                safe_sheet = str(s_idx["sheet_name"]).replace("'", "''")
+                cond_terms.append(f"'{safe_sheet}'!{cell_ref}<>\"\"")
+                
+                term = f"'{safe_sheet}'!{cell_ref}/{_MODEL_SCALE_DIVISOR:.0f}"
+                if entry.operation == "sum_with_sign" and source.sign < 0:
+                    term = f"-{term}"
+                elif math_terms:
+                    term = f"+{term}"
+                math_terms.append(term)
+
+            cond_expr = "OR(" + ",".join(cond_terms) + ")"
+            if len(cond_terms) == 1:
+                cond_expr = cond_terms[0]
+            math_expr = "".join(math_terms)
+            formula = f"=IF({cond_expr},{math_expr},\"\")"
             if not resolved_formula:
                 resolved_formula = formula
             ws.write_formula(row, c_idx, formula, cell_fmt)
@@ -1914,42 +1996,102 @@ class ExcelExporter:
         if idx is None:
             return start_row
         f = self._fmt
-        # Find first 6.01.01.* row containing "depreci" in DS_CONTA.
         dfc_df = self.stmts.get("DFC")
         if dfc_df is None or dfc_df.empty:
             return start_row
-        da_row_in_raw = None
-        for r_pos, (_, row_data) in enumerate(dfc_df.iterrows(), start=1):
-            cd = str(row_data.get("CD_CONTA", "")).strip()
-            ds = str(row_data.get("DS_CONTA", "") or "").lower()
-            if cd.startswith("6.01.01") and "depreci" in ds:
-                da_row_in_raw = r_pos + 1  # 1-indexed Excel row
-                self._da_resolved = True
-                self._da_cd_conta = cd
-                break
 
-        sheet = idx["sheet_name"]
-        period_to_col = idx["period_to_col"]
-        safe_sheet = sheet.replace("'", "''")
+        # Collect mapped D&A raw rows from mapping
+        da_sources = []
+        for entry in self.model_mapping.entries:
+            if entry.target_id in ("DFC:6.01.01.02", "DFC:6.01.01.03") or "depreci" in entry.target_label.lower():
+                for source in entry.sources:
+                    raw_row, method = self._resolve_mapping_source(source)
+                    if raw_row is not None:
+                        da_sources.append((source, raw_row, method, True))
+
+        # Fallback to description matching if no mapped sources resolved
+        if not da_sources:
+            for r_pos, (_, row_data) in enumerate(dfc_df.iterrows(), start=1):
+                cd = str(row_data.get("CD_CONTA", "")).strip()
+                ds = str(row_data.get("DS_CONTA", "") or "").lower()
+                if cd.startswith("6.01.01") and "depreci" in ds:
+                    source = ModelMappingSource(
+                        statement_type="DFC",
+                        line_id_base=cd,
+                        cd_conta=cd,
+                        label_snapshot=row_data.get("DS_CONTA")
+                    )
+                    da_sources.append((source, r_pos + 1, "description_fallback", False))
 
         # Write D&A row
         row = start_row
         ws.set_row(row, 14)
         ws.write(row, 1, "    Depreciation & Amortization (D&A)",
                  f["label_body"])
+
+        any_resolved = False
         for c_idx, p in enumerate(periods, start=3):
             is_y = _is_annual_period(p)
             cell_fmt = f["num_linked_y"] if is_y else f["num_linked"]
-            raw_col = period_to_col.get(p)
-            if da_row_in_raw is None or raw_col is None:
+
+            # Filter for active sources in this period
+            active_sources_for_p = []
+            for source, _, method, is_mapped in da_sources:
+                raw_row = self._resolve_raw_row_for_p(source.statement_type, source.line_id_base, p)
+                if raw_row is not None:
+                    s_idx = self._raw_index.get(source.statement_type)
+                    raw_col = s_idx["period_to_col"].get(p) if s_idx else None
+                    if raw_col is not None:
+                        try:
+                            val = dfc_df.iloc[raw_row - 2][p]
+                            if _is_safe_number(val):
+                                active_sources_for_p.append((source, raw_row, raw_col, s_idx, is_mapped))
+                        except Exception:
+                            pass
+
+            # Check ambiguity for description-matched sources
+            if active_sources_for_p:
+                unmapped_actives = [item for item in active_sources_for_p if not item[4]]
+                if len(unmapped_actives) > 1:
+                    distinct_codes = {item[0].line_id_base for item in unmapped_actives}
+                    if len(distinct_codes) > 1:
+                        self._mapping_validation_issues.append(
+                            MappingValidationIssue(
+                                severity="warning",
+                                code="ambiguous_da_sources",
+                                message=f"Ambiguous D&A fallback candidates for period {p}: {', '.join(distinct_codes)}. Cell left blank.",
+                            )
+                        )
+                        active_sources_for_p = []
+
+            if not active_sources_for_p:
                 ws.write_blank(row, c_idx, None, cell_fmt)
                 continue
-            cell_ref = xlsxwriter.utility.xl_rowcol_to_cell(da_row_in_raw - 1, raw_col)
-            formula = (
-                f"=IFERROR('{safe_sheet}'!{cell_ref}/{_MODEL_SCALE_DIVISOR:.0f}"
-                f',"-")'
-            )
+
+            any_resolved = True
+            if len(active_sources_for_p) == 1:
+                self._da_cd_conta = active_sources_for_p[0][0].cd_conta or active_sources_for_p[0][0].line_id_base
+
+            cond_terms = []
+            math_terms = []
+            for source, raw_row, raw_col, s_idx, is_mapped in active_sources_for_p:
+                cell_ref = xlsxwriter.utility.xl_rowcol_to_cell(raw_row - 1, raw_col)
+                safe_sheet = str(s_idx["sheet_name"]).replace("'", "''")
+                cond_terms.append(f"'{safe_sheet}'!{cell_ref}<>\"\"")
+                
+                term = f"'{safe_sheet}'!{cell_ref}/{_MODEL_SCALE_DIVISOR:.0f}"
+                if math_terms:
+                    term = f"+{term}"
+                math_terms.append(term)
+
+            cond_expr = "OR(" + ",".join(cond_terms) + ")"
+            if len(cond_terms) == 1:
+                cond_expr = cond_terms[0]
+            math_expr = "".join(math_terms)
+            formula = f"=IF({cond_expr},{math_expr},\"\")"
             ws.write_formula(row, c_idx, formula, cell_fmt)
+
+        self._da_resolved = any_resolved
         self._model_rows["COMP:DA"] = row + 1
         row += 1
 
@@ -1960,13 +2102,14 @@ class ExcelExporter:
         for c_idx, p in enumerate(periods, start=3):
             is_y = _is_annual_period(p)
             cell_fmt = f["num_subtotal_y"] if is_y else f["num_subtotal"]
-            if ebit_model_row is None or da_row_in_raw is None:
+            da_model_row = self._model_rows.get("COMP:DA")
+            if ebit_model_row is None or da_model_row is None:
                 ws.write_blank(row, c_idx, None, cell_fmt)
                 continue
             col_letter = xlsxwriter.utility.xl_col_to_name(c_idx)
             ebit_ref = f"{col_letter}{ebit_model_row}"
-            da_ref = f"{col_letter}{self._model_rows['COMP:DA']}"
-            formula = f'=IFERROR({ebit_ref}+{da_ref},"-")'
+            da_ref = f"{col_letter}{da_model_row}"
+            formula = f'=IF(AND(ISNUMBER({ebit_ref}),ISNUMBER({da_ref})),{ebit_ref}+{da_ref},"")'
             ws.write_formula(row, c_idx, formula, cell_fmt)
         self._model_rows["COMP:EBITDA"] = row + 1
         return row + 2
@@ -1987,7 +2130,7 @@ class ExcelExporter:
             cfo_ref = f"{col_letter}{cfo_row}"
             capex_ref = f"{col_letter}{capex_row}"
             # Capex is negative in CVM convention so additive.
-            formula = f'=IFERROR({cfo_ref}+{capex_ref},"-")'
+            formula = f'=IF(AND(ISNUMBER({cfo_ref}),ISNUMBER({capex_ref})),{cfo_ref}+{capex_ref},"")'
             ws.write_formula(row, c_idx, formula, cell_fmt)
         self._model_rows["COMP:FCF"] = row + 1
         return row + 2
@@ -2012,6 +2155,7 @@ class ExcelExporter:
                   or self._model_rows.get("DRE:3.09"))
             # Cash is BPA:1.01 for financial firms (not a sub-item of current assets)
             cash = self._model_rows.get("BPA:1.01")
+            fin_inv = None
             # Equity is BPP:2.08 for financial firms
             eq = self._model_rows.get("BPP:2.08")
             ca = None
@@ -2021,14 +2165,12 @@ class ExcelExporter:
         else:
             ni = self._model_rows.get("DRE:3.11")
             cash = self._model_rows.get("BPA:1.01.01")
+            fin_inv = self._model_rows.get("BPA:1.01.02")
             ca = self._model_rows.get("BPA:1.01")
             cl = self._model_rows.get("BPP:2.01")
             st_debt = self._model_rows.get("BPP:2.01.04")
             lt_debt = self._model_rows.get("BPP:2.02.01")
             eq = self._model_rows.get("BPP:2.03")
-
-        def cell(letter, mrow):
-            return f"{letter}{mrow}" if mrow else '"-"'
 
         def write_kpi(label, formula_fn, fmt_pct=True):
             nonlocal row
@@ -2048,48 +2190,170 @@ class ExcelExporter:
                     ws.write_formula(row, c_idx, expr, cell_fmt)
             row += 1
 
-        # Revenue Growth YoY — reference current vs previous column
+        # Revenue Growth YoY
         def rev_growth(col_letter, c_idx):
-            if rev is None or c_idx <= 3:
+            if rev is None:
                 return None
-            prev_letter = xlsxwriter.utility.xl_col_to_name(c_idx - 1)
-            cur_ref = f"{col_letter}{rev}"
-            prev_ref = f"{prev_letter}{rev}"
-            return f'=IFERROR({cur_ref}/{prev_ref}-1,"-")'
+            p = periods[c_idx - 3]
+            if _is_annual_period(p):
+                # Annual growth: compare with previous year's annual column
+                try:
+                    prev_year = str(int(p) - 1)
+                    if prev_year in periods:
+                        prev_col_idx = 3 + periods.index(prev_year)
+                        prev_col = xlsxwriter.utility.xl_col_to_name(prev_col_idx)
+                        cur_ref = f"{col_letter}{rev}"
+                        prev_ref = f"{prev_col}{rev}"
+                        return f'=IF(AND(ISNUMBER({cur_ref}),ISNUMBER({prev_ref}),{prev_ref}<>0),{cur_ref}/{prev_ref}-1,"")'
+                except ValueError:
+                    pass
+                return None
+            else:
+                # Quarterly growth: LTM YoY growth
+                parsed = _parse_quarter(p)
+                if parsed is None:
+                    return None
+                year, q = parsed
+                
+                # Find the period label that matches (year - 1, q)
+                prior_p = None
+                for p_lbl in periods:
+                    p_parsed = _parse_quarter(p_lbl)
+                    if p_parsed == (year - 1, q):
+                        prior_p = p_lbl
+                        break
+                if prior_p is None:
+                    return None
+                
+                current_ltm_cols = self._get_ltm_quarters(p, periods)
+                prior_ltm_cols = self._get_ltm_quarters(prior_p, periods)
+                if not current_ltm_cols or not prior_ltm_cols:
+                    return None
+                
+                cur_refs = [f"{c}{rev}" for c in current_ltm_cols]
+                prior_refs = [f"{c}{rev}" for c in prior_ltm_cols]
+                
+                cond_cur = ",".join(f"ISNUMBER({r})" for r in cur_refs)
+                cond_prior = ",".join(f"ISNUMBER({r})" for r in prior_refs)
+                
+                cur_sum = "SUM(" + ",".join(cur_refs) + ")"
+                prior_sum = "SUM(" + ",".join(prior_refs) + ")"
+                
+                return f'=IF(AND({cond_cur},{cond_prior},{prior_sum}<>0),{cur_sum}/{prior_sum}-1,"")'
 
-        write_kpi("Revenue Growth (period-on-period)", rev_growth, True)
+        write_kpi("Revenue Growth", rev_growth, True)
+
+        def simple_ratio(num_row, den_row):
+            def ratio_fn(col_letter, c_idx):
+                if num_row is None or den_row is None:
+                    return None
+                num_ref = f"{col_letter}{num_row}"
+                den_ref = f"{col_letter}{den_row}"
+                return f'=IF(AND(ISNUMBER({num_ref}),ISNUMBER({den_ref}),{den_ref}<>0),{num_ref}/{den_ref},"")'
+            return ratio_fn
 
         if is_fin:
             # NII = 3.03 for financial firms; replaces Gross Margin / EBIT
-            write_kpi("NII Margin (NII / Revenue)",
-                      lambda L, _: f'=IFERROR({cell(L,gp)}/{cell(L,rev)},"-")', True)
+            write_kpi("NII Margin (NII / Revenue)", simple_ratio(gp, rev), True)
         else:
-            write_kpi("Gross Margin",
-                      lambda L, _: f'=IFERROR({cell(L,gp)}/{cell(L,rev)},"-")', True)
-            write_kpi("EBITDA Margin",
-                      lambda L, _: f'=IFERROR({cell(L,ebitda)}/{cell(L,rev)},"-")', True)
-            write_kpi("EBIT Margin",
-                      lambda L, _: f'=IFERROR({cell(L,ebit)}/{cell(L,rev)},"-")', True)
+            write_kpi("Gross Margin", simple_ratio(gp, rev), True)
+            write_kpi("EBITDA Margin", simple_ratio(ebitda, rev), True)
+            write_kpi("EBIT Margin", simple_ratio(ebit, rev), True)
 
-        write_kpi("Net Margin",
-                  lambda L, _: f'=IFERROR({cell(L,ni)}/{cell(L,rev)},"-")', True)
-        write_kpi("Return on Equity (ROE)",
-                  lambda L, _: f'=IFERROR({cell(L,ni)}/{cell(L,eq)},"-")', True)
-        write_kpi("Return on Assets (ROA)",
-                  lambda L, _: f'=IFERROR({cell(L,ni)}/{cell(L,ta)},"-")', True)
+        write_kpi("Net Margin", simple_ratio(ni, rev), True)
+
+        def return_on_equity(col_letter, c_idx):
+            if ni is None or eq is None:
+                return None
+            p = periods[c_idx - 3]
+            stock_col = self._get_stock_col(p, periods)
+            if _is_annual_period(p):
+                ni_ref = f"{col_letter}{ni}"
+                eq_ref = f"{stock_col}{eq}"
+                return f'=IF(AND(ISNUMBER({ni_ref}),ISNUMBER({eq_ref}),{eq_ref}<>0),{ni_ref}/{eq_ref},"")'
+            else:
+                ltm_cols = self._get_ltm_quarters(p, periods)
+                if not ltm_cols:
+                    return None
+                ni_refs = [f"{c}{ni}" for c in ltm_cols]
+                eq_ref = f"{stock_col}{eq}"
+                cond = "AND(" + ",".join(f"ISNUMBER({r})" for r in ni_refs) + f",ISNUMBER({eq_ref}),{eq_ref}<>0)"
+                ni_sum = "SUM(" + ",".join(ni_refs) + ")"
+                return f'=IF({cond},{ni_sum}/{eq_ref},"")'
+
+        write_kpi("Return on Equity (ROE)", return_on_equity, True)
+
+        def return_on_assets(col_letter, c_idx):
+            if ni is None or ta is None:
+                return None
+            p = periods[c_idx - 3]
+            stock_col = self._get_stock_col(p, periods)
+            if _is_annual_period(p):
+                ni_ref = f"{col_letter}{ni}"
+                ta_ref = f"{stock_col}{ta}"
+                return f'=IF(AND(ISNUMBER({ni_ref}),ISNUMBER({ta_ref}),{ta_ref}<>0),{ni_ref}/{ta_ref},"")'
+            else:
+                ltm_cols = self._get_ltm_quarters(p, periods)
+                if not ltm_cols:
+                    return None
+                ni_refs = [f"{c}{ni}" for c in ltm_cols]
+                ta_ref = f"{stock_col}{ta}"
+                cond = "AND(" + ",".join(f"ISNUMBER({r})" for r in ni_refs) + f",ISNUMBER({ta_ref}),{ta_ref}<>0)"
+                ni_sum = "SUM(" + ",".join(ni_refs) + ")"
+                return f'=IF({cond},{ni_sum}/{ta_ref},"")'
+
+        write_kpi("Return on Assets (ROA)", return_on_assets, True)
 
         if not is_fin:
-            write_kpi("Net Debt / EBITDA",
-                      lambda L, _: f'=IFERROR(({cell(L,st_debt)}+{cell(L,lt_debt)}-{cell(L,cash)})/{cell(L,ebitda)},"-")', False)
-            write_kpi("Current Ratio",
-                      lambda L, _: f'=IFERROR({cell(L,ca)}/{cell(L,cl)},"-")', False)
+            def net_debt_to_ebitda(col_letter, c_idx):
+                if (st_debt is None or lt_debt is None or cash is None or
+                        fin_inv is None or ebitda is None):
+                    return None
+                p = periods[c_idx - 3]
+                stock_col = self._get_stock_col(p, periods)
+                st_ref = f"{stock_col}{st_debt}"
+                lt_ref = f"{stock_col}{lt_debt}"
+                cash_ref = f"{stock_col}{cash}"
+                fin_ref = f"{stock_col}{fin_inv}"
+                
+                if _is_annual_period(p):
+                    eb_ref = f"{col_letter}{ebitda}"
+                    cond = f"AND(ISNUMBER({cash_ref}),ISNUMBER({eb_ref}),{eb_ref}<>0)"
+                    return f'=IF({cond},(SUM({st_ref},{lt_ref})-SUM({cash_ref},{fin_ref}))/{eb_ref},"")'
+                else:
+                    eb_cols = self._get_ltm_quarters(p, periods)
+                    if not eb_cols:
+                        return None
+                    eb_refs = [f"{c}{ebitda}" for c in eb_cols]
+                    eb_cond = ",".join(f"ISNUMBER({r})" for r in eb_refs)
+                    eb_sum = "SUM(" + ",".join(eb_refs) + ")"
+                    cond = f"AND(ISNUMBER({cash_ref}),{eb_cond},{eb_sum}<>0)"
+                    return f'=IF({cond},(SUM({st_ref},{lt_ref})-SUM({cash_ref},{fin_ref}))/{eb_sum},"")'
 
-        write_kpi("CFO / Revenue",
-                  lambda L, _: f'=IFERROR({cell(L,cfo)}/{cell(L,rev)},"-")', True)
-        write_kpi("FCF / Revenue",
-                  lambda L, _: f'=IFERROR({cell(L,fcf)}/{cell(L,rev)},"-")', True)
-        write_kpi("Capex / Revenue",
-                  lambda L, _: f'=IFERROR(-{cell(L,capex)}/{cell(L,rev)},"-")', True)
+            write_kpi("Net Debt / EBITDA", net_debt_to_ebitda, False)
+
+            def current_ratio(col_letter, c_idx):
+                if ca is None or cl is None:
+                    return None
+                p = periods[c_idx - 3]
+                stock_col = self._get_stock_col(p, periods)
+                ca_ref = f"{stock_col}{ca}"
+                cl_ref = f"{stock_col}{cl}"
+                return f'=IF(AND(ISNUMBER({ca_ref}),ISNUMBER({cl_ref}),{cl_ref}<>0),{ca_ref}/{cl_ref},"")'
+
+            write_kpi("Current Ratio", current_ratio, False)
+
+        write_kpi("CFO / Revenue", simple_ratio(cfo, rev), True)
+        write_kpi("FCF / Revenue", simple_ratio(fcf, rev), True)
+
+        def capex_ratio(col_letter, c_idx):
+            if capex is None or rev is None:
+                return None
+            capex_ref = f"{col_letter}{capex}"
+            rev_ref = f"{col_letter}{rev}"
+            return f'=IF(AND(ISNUMBER({capex_ref}),ISNUMBER({rev_ref}),{rev_ref}<>0),-{capex_ref}/{rev_ref},"")'
+
+        write_kpi("Capex / Revenue", capex_ratio, True)
 
         return row + 1
 

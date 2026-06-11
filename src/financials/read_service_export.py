@@ -220,7 +220,7 @@ class ReadServiceExportMixin:
         mapping = self.resolve_excel_model_mapping(cd_cvm, active_preset_id)
         scope = self.resolve_excel_export_scope(cd_cvm, period_scope)
         raw_statements = self._load_export_statement_frames(cd_cvm, period_scope)
-        issues = self.validate_excel_model_mapping(mapping, raw_statements)
+        issues = self.validate_excel_model_mapping(mapping, raw_statements, company_id=cd_cvm, engine=self.engine)
         preview_periods = self._mapping_preview_periods(
             raw_statements,
             period_window=scope["period_window"],
@@ -233,7 +233,39 @@ class ReadServiceExportMixin:
             preview_periods,
             issues,
             is_financial,
+            engine=self.engine,
+            company_id=cd_cvm,
+            company_sector=company_info.get("setor_analitico"),
         )
+
+        # Compute period resolutions DTO
+        raw_rows_dict = []
+        for stmt_type, df in raw_statements.items():
+            if df is not None and not df.empty:
+                df_copied = df.copy()
+                df_copied["STATEMENT_TYPE"] = stmt_type
+                raw_rows_dict.extend(df_copied.to_dict("records"))
+
+        from src.financials.resolver import ModelResolver
+        resolver = ModelResolver(self.engine)
+        overrides = resolver.get_overrides(cd_cvm) if self.engine else {}
+        aliases = resolver.get_aliases() if self.engine else []
+        is_user_preset = mapping.origin == "user"
+
+        resolutions_dto = []
+        for entry in mapping.entries:
+            for period in preview_periods:
+                res = resolver.resolve_entry_for_period(
+                    company_id=cd_cvm,
+                    entry=entry,
+                    period=period,
+                    raw_statement_rows=raw_rows_dict,
+                    overrides=overrides,
+                    aliases=aliases,
+                    company_sector=company_info.get("setor_analitico"),
+                    restrict_to_sources=is_user_preset,
+                )
+                resolutions_dto.append(res)
 
         return {
             "ok": True,
@@ -249,6 +281,7 @@ class ReadServiceExportMixin:
             "is_financial": is_financial,
             "preview_periods": preview_periods,
             "model_preview_rows": preview_rows,
+            "resolutions": resolutions_dto,
             "raw_lines": self._raw_mapping_lines(
                 raw_statements,
                 preview_periods=preview_periods,
@@ -279,14 +312,54 @@ class ReadServiceExportMixin:
             "preset_id": preset_id,
         }
 
+    def save_excel_mapping_override(
+        self,
+        company_id: int,
+        target_id: str,
+        period_label: str,
+        source_code: str,
+        source_desc: Optional[str] = None,
+        sign: int = 1,
+    ) -> dict[str, Any]:
+        from src.financials.resolver import ModelResolver
+        resolver = ModelResolver(self.engine)
+        resolver.save_override(
+            company_id=company_id,
+            target_id=target_id,
+            period_label=period_label,
+            source_code=source_code,
+            source_desc=source_desc,
+            sign=sign,
+        )
+        return {"ok": True}
+
+    def delete_excel_mapping_override(
+        self,
+        company_id: int,
+        target_id: str,
+        period_label: str,
+    ) -> dict[str, Any]:
+        from src.financials.resolver import ModelResolver
+        resolver = ModelResolver(self.engine)
+        resolver.delete_override(
+            company_id=company_id,
+            target_id=target_id,
+            period_label=period_label,
+        )
+        return {"ok": True}
+
     def validate_excel_model_mapping(
         self,
         mapping: ModelMappingDefinition,
         statements: dict[str, pd.DataFrame],
+        company_id: int = 0,
+        engine: Optional[Any] = None,
     ) -> list[MappingValidationIssue]:
         issues: list[MappingValidationIssue] = []
         raw_keys: set[tuple[str, str]] = set()
         raw_by_stmt: dict[str, set[str]] = {}
+        periods: set[str] = set()
+        meta_cols = {"CD_CONTA", "DS_CONTA", "STANDARD_NAME", "LINE_ID_BASE"}
         for stmt_type, df in statements.items():
             if df is None or df.empty or "LINE_ID_BASE" not in df.columns:
                 raw_by_stmt[stmt_type] = set()
@@ -298,6 +371,7 @@ class ReadServiceExportMixin:
             }
             raw_by_stmt[stmt_type] = ids
             raw_keys.update((stmt_type, line_id) for line_id in ids)
+            periods.update(str(col) for col in df.columns if col not in meta_cols)
 
         source_usage: dict[tuple[str, str], list[str]] = {}
         mapped_raw_keys: set[tuple[str, str]] = set()
@@ -360,6 +434,65 @@ class ReadServiceExportMixin:
                     "raw_lines_unmapped",
                     f"{unused_count} raw {stmt_type} line(s) are not used by the active mapping.",
                 ))
+
+        # Perform period-level validation using ModelResolver
+        if engine and company_id:
+            from src.financials.resolver import ModelResolver
+            resolver = ModelResolver(engine)
+            overrides = resolver.get_overrides(company_id)
+            aliases = resolver.get_aliases()
+            
+            raw_rows_dict = []
+            for stmt_type, df in statements.items():
+                if df is not None and not df.empty:
+                    df_copied = df.copy()
+                    df_copied["STATEMENT_TYPE"] = stmt_type
+                    raw_rows_dict.extend(df_copied.to_dict("records"))
+            
+            is_user_preset = mapping.origin == "user"
+            for entry in mapping.entries:
+                for period in sorted(periods):
+                    res = resolver.resolve_entry_for_period(
+                        company_id=company_id,
+                        entry=entry,
+                        period=period,
+                        raw_statement_rows=raw_rows_dict,
+                        overrides=overrides,
+                        aliases=aliases,
+                        restrict_to_sources=is_user_preset,
+                    )
+                    status = res.get("status")
+                    if status == "ambiguous":
+                        issues.append(MappingValidationIssue(
+                            "warning",
+                            "ambiguous_mapping",
+                            f"Ambiguous mapping for {entry.target_label} in period {period}: {res.get('selected_source_label')}. "
+                            f"{'; '.join(res.get('warnings', []))}",
+                            target_id=entry.target_id,
+                            source_id=res.get("selected_source_id"),
+                        ))
+                    elif status == "conflict":
+                        issues.append(MappingValidationIssue(
+                            "error",
+                            "conflict_mapping",
+                            f"Mapping conflict for {entry.target_label} in period {period}: {res.get('selected_source_label')}. "
+                            f"{'; '.join(res.get('warnings', []))}",
+                            target_id=entry.target_id,
+                            source_id=res.get("selected_source_id"),
+                        ))
+                    elif status == "unresolved" and entry.required:
+                        stmt_has_data = False
+                        stmt_df = statements.get(entry.statement_type)
+                        if stmt_df is not None and not stmt_df.empty and period in stmt_df.columns:
+                            if stmt_df[period].notna().any():
+                                stmt_has_data = True
+                        if stmt_has_data:
+                            issues.append(MappingValidationIssue(
+                                "error",
+                                "unresolved_required_mapping",
+                                f"Required model line {entry.target_label} is unresolved for period {period}.",
+                                target_id=entry.target_id,
+                            ))
 
         return issues
 
@@ -496,15 +629,39 @@ class ReadServiceExportMixin:
         preview_periods: list[str],
         issues: list[MappingValidationIssue],
         is_financial: bool = False,
+        engine: Optional[Any] = None,
+        company_id: int = 0,
+        company_sector: Optional[str] = None,
     ) -> list[dict[str, Any]]:
-        indexes = ReadServiceExportMixin._statement_indexes(statements)
-        
-        # 1. Initialize with direct/mapped preview values
+        # Convert statements DataFrames to dict records for database-free resolution
+        raw_rows_dict = []
+        for stmt_type, df in statements.items():
+            if df is not None and not df.empty:
+                df_copied = df.copy()
+                df_copied["STATEMENT_TYPE"] = stmt_type
+                raw_rows_dict.extend(df_copied.to_dict("records"))
+
+        from src.financials.resolver import ModelResolver
+        resolver = ModelResolver(engine)
+        overrides = resolver.get_overrides(company_id) if (engine and company_id) else {}
+        aliases = resolver.get_aliases() if engine else []
+        is_user_preset = mapping.origin == "user"
+
         values_by_target_period: dict[str, dict[str, float | None]] = {}
         for entry in mapping.entries:
             values_by_target_period[entry.target_id] = {}
             for period in preview_periods:
-                values_by_target_period[entry.target_id][period] = ReadServiceExportMixin._model_preview_value(entry, period, indexes)
+                res = resolver.resolve_entry_for_period(
+                    company_id=company_id,
+                    entry=entry,
+                    period=period,
+                    raw_statement_rows=raw_rows_dict,
+                    overrides=overrides,
+                    aliases=aliases,
+                    company_sector=company_sector,
+                    restrict_to_sources=is_user_preset,
+                )
+                values_by_target_period[entry.target_id][period] = res["resolved_value"]
 
         # 2. Evaluate formulas dynamically
         from src.financials.formulas import evaluate_formulas
@@ -678,6 +835,8 @@ class ReadServiceExportMixin:
             mapping_issues = self.validate_excel_model_mapping(
                 model_mapping,
                 exportable_statements,
+                company_id=cd_cvm,
+                engine=self.engine,
             )
             blocking = [issue for issue in mapping_issues if issue.severity == "error"]
             if blocking:
@@ -695,6 +854,7 @@ class ReadServiceExportMixin:
             itr_only_years=itr_only_years,
             model_mapping=model_mapping,
             mapping_validation_issues=mapping_issues,
+            engine=self.engine,
         )
         return (
             build_excel_filename(company_info, statement_type=statement_type),

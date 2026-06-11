@@ -133,7 +133,7 @@ def test_custom_mapping_generates_signed_raw_sheet_formula_and_audit_sheet():
     ws = wb["Model"]
     revenue_row = _find_model_row(ws, "Revenue (=)")
     formula = str(ws.cell(row=revenue_row, column=4).value)
-    assert formula.startswith("=IFERROR(")
+    assert formula.startswith("=IF(")
     assert "'raw_DRE'!" in formula
     assert "/1000" in formula
     assert "-'raw_DRE'!" in formula

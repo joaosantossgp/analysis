@@ -263,6 +263,51 @@ def ensure_excel_mapping_tables_for_connection(conn: Any) -> None:
             """
         )
     )
+    conn.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS excel_mapping_overrides (
+                company_id INTEGER NOT NULL,
+                target_id TEXT NOT NULL,
+                period_label TEXT NOT NULL,
+                source_code TEXT NOT NULL,
+                source_desc TEXT,
+                sign INTEGER NOT NULL DEFAULT 1,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (company_id, target_id, period_label)
+            )
+            """
+        )
+    )
+    conn.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS excel_mapping_aliases (
+                target_id TEXT NOT NULL,
+                normalized_phrase TEXT NOT NULL,
+                match_type TEXT NOT NULL,
+                scope TEXT NOT NULL DEFAULT 'global',
+                PRIMARY KEY (target_id, normalized_phrase)
+            )
+            """
+        )
+    )
+    conn.execute(
+        text(
+            """
+            CREATE INDEX IF NOT EXISTS idx_excel_mapping_overrides_company
+            ON excel_mapping_overrides(company_id)
+            """
+        )
+    )
+    conn.execute(
+        text(
+            """
+            CREATE INDEX IF NOT EXISTS idx_excel_mapping_aliases_target
+            ON excel_mapping_aliases(target_id)
+            """
+        )
+    )
 
 
 def system_default_preset_summary(

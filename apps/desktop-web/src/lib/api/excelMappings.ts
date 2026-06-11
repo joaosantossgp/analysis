@@ -63,3 +63,47 @@ export async function setCompanyExcelMappingDefault(
   }
   return result;
 }
+
+export async function saveExcelMappingOverride(
+  companyId: number,
+  targetId: string,
+  periodLabel: string,
+  sourceCode: string,
+  sourceDesc?: string | null,
+  sign = 1,
+): Promise<{ ok: boolean }> {
+  if (getBridgeMode() === "browser") {
+    throw new Error(BROWSER_REASON);
+  }
+  const result = (await callBridge("save_excel_mapping_override", {
+    company_id: companyId,
+    target_id: targetId,
+    period_label: periodLabel,
+    source_code: sourceCode,
+    source_desc: sourceDesc,
+    sign,
+  })) as { ok: boolean; error?: string };
+  if (!result.ok) {
+    throw new Error(result.error ?? "Could not save mapping override.");
+  }
+  return result;
+}
+
+export async function deleteExcelMappingOverride(
+  companyId: number,
+  targetId: string,
+  periodLabel: string,
+): Promise<{ ok: boolean }> {
+  if (getBridgeMode() === "browser") {
+    throw new Error(BROWSER_REASON);
+  }
+  const result = (await callBridge("delete_excel_mapping_override", {
+    company_id: companyId,
+    target_id: targetId,
+    period_label: periodLabel,
+  })) as { ok: boolean; error?: string };
+  if (!result.ok) {
+    throw new Error(result.error ?? "Could not delete mapping override.");
+  }
+  return result;
+}

@@ -694,6 +694,19 @@ export type ExcelMappingValidationIssue = {
   source_id: string | null;
 };
 
+export type ExcelMappingResolution = {
+  target_id: string;
+  period: string;
+  selected_source_id: string | null;
+  selected_source_label: string | null;
+  status: "auto_accepted" | "suggested" | "ambiguous" | "conflict" | "unresolved" | "manually_confirmed" | string;
+  score: number;
+  confidence_margin: number;
+  resolved_value: number | null;
+  evidence: string[];
+  warnings: string[];
+};
+
 export type ExcelMappingWorkspace = {
   ok: boolean;
   company: CompanyInfo;
@@ -705,6 +718,7 @@ export type ExcelMappingWorkspace = {
   preview_periods: string[];
   model_preview_rows: ExcelMappingPreviewRow[];
   raw_lines: ExcelMappingRawLine[];
+  resolutions?: ExcelMappingResolution[];
   validation: ExcelMappingValidationIssue[];
   formula_definitions?: Record<string, {
     dependencies: string[];
@@ -1090,6 +1104,8 @@ export interface BridgeApi {
   set_company_excel_mapping_default(
     params: Record<string, unknown>,
   ): Promise<SetCompanyExcelMappingDefaultResult>;
+  save_excel_mapping_override(params: Record<string, unknown>): Promise<{ ok: boolean; error?: string }>;
+  delete_excel_mapping_override(params: Record<string, unknown>): Promise<{ ok: boolean; error?: string }>;
   get_sub_sector_detail(params: Record<string, unknown>): Promise<SectorDetailResponse>;
   check_update(params?: Record<string, unknown>): Promise<{ available: boolean; version?: string; zip_url?: string; error?: string }>;
   apply_update(params?: Record<string, unknown>): Promise<{ started: boolean; error?: string }>;

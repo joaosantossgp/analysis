@@ -272,7 +272,7 @@ def test_model_sheet_contains_required_sections():
     assert "EBITDA (=)" in body
     assert "Free Cash Flow (FCF) (=)" in body
 
-def test_model_sheet_kpi_formulas_use_iferror():
+def test_model_sheet_kpi_formulas_use_blank_safety():
     exporter = ExcelExporter(
         company_info=_sample_company(),
         statements=_wide_statements(),
@@ -289,13 +289,13 @@ def test_model_sheet_kpi_formulas_use_iferror():
             target_row = r
             break
     assert target_row is not None
-    found_iferror = False
+    found_blank_safe = False
     for c_idx in range(4, 30):
         cell_val = ws.cell(row=target_row, column=c_idx).value
-        if isinstance(cell_val, str) and cell_val.startswith("=IFERROR("):
-            found_iferror = True
+        if isinstance(cell_val, str) and cell_val.startswith("=IF(") and "ISNUMBER(" in cell_val:
+            found_blank_safe = True
             break
-    assert found_iferror, "EBITDA Margin row has no IFERROR formula"
+    assert found_blank_safe, "EBITDA Margin row has no blank-safe formula"
 
 
 def test_model_company_info_block_hidden_by_default():
@@ -894,3 +894,114 @@ def test_scoped_statement_export_unchanged():
     assert "raw_DRE" in wb.sheetnames
     assert "metadata" in wb.sheetnames
     assert "Model" not in wb.sheetnames
+
+
+def test_kpi_formulas_correctness():
+    """Verify that quarterly/annual KPIs use period-aware, blank-safe formulas and stock redirection."""
+    exporter = ExcelExporter(
+        company_info=_sample_company(),
+        statements=_wide_statements(),
+        kpis_df=_minimal_kpis(),
+    )
+    payload = exporter.export()
+    wb = openpyxl.load_workbook(io.BytesIO(payload), data_only=False)
+    ws = wb["Model"]
+
+    # Let's find rows for critical items
+    row_map = {}
+    for r in range(1, ws.max_row + 1):
+        lbl = str(ws.cell(row=r, column=2).value or "").strip()
+        if not lbl:
+            continue
+        if lbl == "Net Income (=)":
+            row_map["ni"] = r
+        elif lbl == "Equity (=)":
+            row_map["eq"] = r
+        elif lbl == "Revenue (=)":
+            row_map["rev"] = r
+        elif lbl == "Total Assets (=)":
+            row_map["ta"] = r
+        elif lbl == "Short-term Debt":
+            row_map["st_debt"] = r
+        elif lbl == "Long-term Debt":
+            row_map["lt_debt"] = r
+        elif lbl == "Cash and Equivalents":
+            row_map["cash"] = r
+        elif lbl == "EBITDA (=)":
+            row_map["ebitda"] = r
+        elif lbl == "Free Cash Flow (FCF) (=)":
+            row_map["fcf"] = r
+        # KPIs
+        elif lbl == "Revenue Growth":
+            row_map["kpi_rev_growth"] = r
+        elif lbl == "Return on Equity (ROE)":
+            row_map["kpi_roe"] = r
+        elif lbl == "Return on Assets (ROA)":
+            row_map["kpi_roa"] = r
+        elif lbl == "Net Debt / EBITDA":
+            row_map["kpi_net_debt_ebitda"] = r
+        elif lbl == "Current Ratio":
+            row_map["kpi_current_ratio"] = r
+
+    # Let's verify we found everything
+    assert "ni" in row_map
+    assert "eq" in row_map
+    assert "rev" in row_map
+    assert "ta" in row_map
+    assert "st_debt" in row_map
+    assert "lt_debt" in row_map
+    assert "cash" in row_map
+    assert "ebitda" in row_map
+    assert "fcf" in row_map
+    assert "kpi_rev_growth" in row_map
+    assert "kpi_roe" in row_map
+    assert "kpi_roa" in row_map
+    assert "kpi_net_debt_ebitda" in row_map
+    assert "kpi_current_ratio" in row_map
+
+    # Columns mapping:
+    # 1Q21=D (col 4), 2Q21=E, 3Q21=F, 4Q21=G, 2021=H
+    # 1Q22=I (col 9), 2Q22=J, 3Q22=K, 4Q22=L (col 12), 2022=M (col 13)
+    # 1Q23=N (col 14), 2Q23=O, 3Q23=P, 4Q23=Q, 2023=R
+
+    ni_row = row_map["ni"]
+    eq_row = row_map["eq"]
+    rev_row = row_map["rev"]
+    ta_row = row_map["ta"]
+    st_row = row_map["st_debt"]
+    lt_row = row_map["lt_debt"]
+    cash_row = row_map["cash"]
+    eb_row = row_map["ebitda"]
+
+    # 1. 1Q22 ROE formula (Column I, which is col 9)
+    # LTM Net Income (I, G, F, E) / Equity (I)
+    roe_1q22 = ws.cell(row=row_map["kpi_roe"], column=9).value
+    assert isinstance(roe_1q22, str)
+    assert f"SUM(I{ni_row},G{ni_row},F{ni_row},E{ni_row})" in roe_1q22
+    assert f"I{eq_row}" in roe_1q22
+
+    # 2. 4Q22 ROE formula (Column L, which is col 12)
+    # LTM Net Income (L, K, J, I) / Equity (M) [M is annual 2022 column redirected]
+    roe_4q22 = ws.cell(row=row_map["kpi_roe"], column=12).value
+    assert isinstance(roe_4q22, str)
+    assert f"SUM(L{ni_row},K{ni_row},J{ni_row},I{ni_row})" in roe_4q22
+    assert f"M{eq_row}" in roe_4q22
+
+    # 3. 2022 ROE formula (Column M, which is col 13)
+    # Annual Net Income (M) / Equity (M)
+    roe_2022 = ws.cell(row=row_map["kpi_roe"], column=13).value
+    assert isinstance(roe_2022, str)
+    assert f"M{ni_row}/M{eq_row}" in roe_2022
+
+    # 4. 4Q22 Net Debt / EBITDA (Column L, which is col 12)
+    # Net Debt at Column M (annual 2022) / EBITDA LTM (L, K, J, I)
+    nd_4q22 = ws.cell(row=row_map["kpi_net_debt_ebitda"], column=12).value
+    assert isinstance(nd_4q22, str)
+    assert f"SUM(M{st_row},M{lt_row})" in nd_4q22
+    assert f"SUM(L{eb_row},K{eb_row},J{eb_row},I{eb_row})" in nd_4q22
+
+    # 5. 1Q23 Revenue Growth (Column N, which is col 14)
+    # LTM Revenue 1Q23 (N, L, K, J) / LTM Revenue 1Q22 (I, G, F, E) - 1
+    rev_1q23 = ws.cell(row=row_map["kpi_rev_growth"], column=14).value
+    assert isinstance(rev_1q23, str)
+    assert f"SUM(N{rev_row},L{rev_row},K{rev_row},J{rev_row})/SUM(I{rev_row},G{rev_row},F{rev_row},E{rev_row})" in rev_1q23

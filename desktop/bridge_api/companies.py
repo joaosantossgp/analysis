@@ -533,6 +533,50 @@ class CompanyBridgeMixin:
         except Exception as exc:
             return self._sanitize_for_json({"ok": False, "error": str(exc)})
 
+    def save_excel_mapping_override(self, params=None) -> dict:
+        if not self._is_write_allowed():
+            return self._sanitize_for_json(self._write_blocked_response("save_excel_mapping_override"))
+        p = params or {}
+        try:
+            company_id = int(p.get("company_id", 0))
+            target_id = str(p.get("target_id") or "").strip()
+            period_label = str(p.get("period_label") or "").strip()
+            source_code = str(p.get("source_code") or "").strip()
+            source_desc = p.get("source_desc")
+            if source_desc is not None:
+                source_desc = str(source_desc).strip()
+            sign = int(p.get("sign", 1))
+            
+            result = self._svc().save_excel_mapping_override(
+                company_id=company_id,
+                target_id=target_id,
+                period_label=period_label,
+                source_code=source_code,
+                source_desc=source_desc,
+                sign=sign,
+            )
+            return self._sanitize_for_json(result)
+        except Exception as exc:
+            return self._sanitize_for_json({"ok": False, "error": str(exc)})
+
+    def delete_excel_mapping_override(self, params=None) -> dict:
+        if not self._is_write_allowed():
+            return self._sanitize_for_json(self._write_blocked_response("delete_excel_mapping_override"))
+        p = params or {}
+        try:
+            company_id = int(p.get("company_id", 0))
+            target_id = str(p.get("target_id") or "").strip()
+            period_label = str(p.get("period_label") or "").strip()
+            
+            result = self._svc().delete_excel_mapping_override(
+                company_id=company_id,
+                target_id=target_id,
+                period_label=period_label,
+            )
+            return self._sanitize_for_json(result)
+        except Exception as exc:
+            return self._sanitize_for_json({"ok": False, "error": str(exc)})
+
     def get_output_dir(self, params=None) -> dict:
         """Return the absolute path of the persistent output folder so the
         Vite UI can show users where exports will land."""

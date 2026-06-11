@@ -13,6 +13,8 @@ import {
   fetchExcelMappingWorkspace,
   saveExcelMappingPreset,
   setCompanyExcelMappingDefault,
+  saveExcelMappingOverride,
+  deleteExcelMappingOverride,
   type ExcelMappingWorkspaceResult,
 } from "@/lib/api/excelMappings";
 import { whenBridgeReady } from "@/lib/bridge/adapter";
@@ -234,6 +236,22 @@ export function CompanyModelMappingPage() {
     },
   });
 
+  const overrideSaveMutation = useMutation({
+    mutationFn: (args: { period: string; sourceCode: string }) =>
+      saveExcelMappingOverride(cdCvm, selectedTargetId!, args.period, args.sourceCode, null, 1),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["excel-mapping-workspace", cdCvm] });
+    },
+  });
+
+  const overrideDeleteMutation = useMutation({
+    mutationFn: (args: { period: string }) =>
+      deleteExcelMappingOverride(cdCvm, selectedTargetId!, args.period),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["excel-mapping-workspace", cdCvm] });
+    },
+  });
+
   function updateEntry(targetId: string, updater: (entry: ExcelMappingEntry) => ExcelMappingEntry) {
     setDraft((current) => {
       if (!current) return current;
@@ -434,6 +452,12 @@ export function CompanyModelMappingPage() {
           }}
           onRemoveSource={removeSource}
           onSourceSignChange={setSourceSign}
+          onSaveOverride={(period, sourceCode) => {
+            overrideSaveMutation.mutate({ period, sourceCode });
+          }}
+          onDeleteOverride={(period) => {
+            overrideDeleteMutation.mutate({ period });
+          }}
         />
       </div>
       {pickerOpen ? (
@@ -855,6 +879,8 @@ function RowInspector({
   onOperationChange,
   onRemoveSource,
   onSourceSignChange,
+  onSaveOverride,
+  onDeleteOverride,
 }: {
   entry: ExcelMappingEntry | null;
   previewRow: PreviewRow | null;
@@ -867,6 +893,8 @@ function RowInspector({
   onOperationChange: (operation: string) => void;
   onRemoveSource: (index: number) => void;
   onSourceSignChange: (index: number, sign: number) => void;
+  onSaveOverride: (period: string, sourceCode: string) => void;
+  onDeleteOverride: (period: string) => void;
 }) {
   const entryIssues = entry
     ? validation.filter((issue) => issue.target_id === entry.target_id)
@@ -1023,6 +1051,108 @@ function RowInspector({
                         <strong className="block text-3xs text-secondary">{period}</strong>
                         <span style={{ color: "var(--color-text-secondary)" }}>{detail}</span>
                       </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {!isFormula && workspace?.resolutions && (
+            <div className="space-y-2">
+              <div style={{ color: "var(--color-text-primary)", fontSize: "var(--text-sm)", fontWeight: 650 }}>
+                Period Resolution & Confidences
+              </div>
+              <div className="space-y-1">
+                {periods.map((period) => {
+                  const res = workspace.resolutions?.find(r => r.target_id === entry.target_id && r.period === period);
+                  if (!res) return null;
+                  
+                  let badgeColor = "var(--color-text-tertiary)";
+                  let badgeText = "Unresolved";
+                  if (res.status === "manually_confirmed") {
+                    badgeColor = "#10b981";
+                    badgeText = "Override";
+                  } else if (res.status === "auto_accepted") {
+                    badgeColor = "#3b82f6";
+                    badgeText = "Auto";
+                  } else if (res.status === "suggested") {
+                    badgeColor = "#f59e0b";
+                    badgeText = "Suggested";
+                  } else if (res.status === "ambiguous") {
+                    badgeColor = "#f97316";
+                    badgeText = "Ambiguous";
+                  } else if (res.status === "conflict") {
+                    badgeColor = "#ef4444";
+                    badgeText = "Conflict";
+                  }
+                  
+                  return (
+                    <div key={period} className="flex flex-col gap-1 text-xs border border-dashed p-2 rounded" style={{ borderColor: "var(--color-border-subtle)", background: "var(--color-surface-1)" }}>
+                      <div className="flex items-center gap-2">
+                        <span style={{
+                          background: badgeColor,
+                          color: "#fff",
+                          padding: "1px 6px",
+                          borderRadius: 4,
+                          fontSize: "9px",
+                          fontWeight: 600,
+                          textTransform: "uppercase"
+                        }}>
+                          {badgeText}
+                        </span>
+                        <strong className="text-secondary">{period}</strong>
+                        {res.score > 0 && <span className="text-3xs text-tertiary ml-auto">Score: {res.score.toFixed(0)}</span>}
+                      </div>
+                      
+                      {res.selected_source_id ? (
+                        <div className="mt-1 space-y-1">
+                          <div style={{ color: "var(--color-text-secondary)" }}>
+                            Selected: <strong className="text-primary">{res.selected_source_id}</strong> - {res.selected_source_label}
+                          </div>
+                          {res.evidence.length > 0 && (
+                            <div className="text-3xs text-tertiary italic">
+                              Evidence: {res.evidence.join(", ")}
+                            </div>
+                          )}
+                          {res.warnings.length > 0 && (
+                            <div className="text-3xs text-red-500 font-semibold">
+                              Warnings: {res.warnings.join("; ")}
+                            </div>
+                          )}
+                          
+                          <div className="mt-1 flex items-center gap-2">
+                            {res.status === "manually_confirmed" ? (
+                              <Button size="xs" variant="ghost" onClick={() => onDeleteOverride(period)}>
+                                Clear Override
+                              </Button>
+                            ) : (
+                              <select
+                                onChange={(e) => {
+                                  const code = e.target.value;
+                                  if (code) {
+                                    onSaveOverride(period, code);
+                                  }
+                                }}
+                                className="text-3xs p-0.5 rounded border bg-transparent text-secondary"
+                                style={{ borderColor: "var(--color-border-subtle)" }}
+                                defaultValue=""
+                              >
+                                <option value="" disabled>Override this period...</option>
+                                {entry.sources.map((s) => (
+                                  <option key={s.line_id_base} value={s.line_id_base}>
+                                    {s.line_id_base} - {s.label_snapshot || s.line_id_base}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ color: "var(--color-text-tertiary)" }}>
+                          No source resolved in this period.
+                        </div>
+                      )}
                     </div>
                   );
                 })}
