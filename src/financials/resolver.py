@@ -429,3 +429,284 @@ class ModelResolver:
             "evidence": selected_cand["evidence"],
             "warnings": warnings,
         }
+
+    def create_resolution_context(
+        self,
+        company_id: int,
+        raw_statement_rows: list[dict[str, Any]],
+        overrides: dict[str, dict[str, Any]],
+        aliases: list[dict[str, Any]],
+        company_sector: Optional[str] = None,
+    ) -> ResolutionContext:
+        return ResolutionContext(
+            self,
+            company_id=company_id,
+            raw_statement_rows=raw_statement_rows,
+            overrides=overrides,
+            aliases=aliases,
+            company_sector=company_sector,
+        )
+
+
+class ResolutionContext:
+    def __init__(
+        self,
+        resolver: ModelResolver,
+        company_id: int,
+        raw_statement_rows: list[dict[str, Any]],
+        overrides: dict[str, dict[str, Any]],
+        aliases: list[dict[str, Any]],
+        company_sector: Optional[str] = None,
+    ):
+        self.resolver = resolver
+        self.company_id = company_id
+        self.overrides = overrides
+        self.company_sector = company_sector
+
+        # Index aliases by target_id
+        self.aliases_by_target: dict[str, list[dict[str, Any]]] = {}
+        for alias in aliases:
+            self.aliases_by_target.setdefault(alias["target_id"], []).append(alias)
+
+        # Index raw rows by statement type
+        self.rows_by_statement: dict[str, list[dict[str, Any]]] = {}
+        # Index raw rows by (statement_type, code) for fast override lookup
+        # where code is CD_CONTA or LINE_ID_BASE
+        self.row_by_code: dict[tuple[str, str], dict[str, Any]] = {}
+
+        for row in raw_statement_rows:
+            stmt_type = str(row.get("STATEMENT_TYPE") or "").upper()
+            if not stmt_type:
+                continue
+            self.rows_by_statement.setdefault(stmt_type, []).append(row)
+            
+            cd_conta = str(row.get("CD_CONTA") or "").strip()
+            line_id = str(row.get("LINE_ID_BASE") or "").strip()
+            if cd_conta:
+                self.row_by_code[(stmt_type, cd_conta)] = row
+            if line_id:
+                self.row_by_code[(stmt_type, line_id)] = row
+
+        # Cache scored candidates per entry: (target_id, restrict_to_sources) -> list of candidates
+        self.scored_candidates_cache: dict[tuple[str, bool], list[dict[str, Any]]] = {}
+
+    def get_ranked_candidates(self, entry: ModelMappingEntry, restrict_to_sources: bool) -> list[dict[str, Any]]:
+        target_id = entry.target_id
+        cache_key = (target_id, restrict_to_sources)
+        if cache_key in self.scored_candidates_cache:
+            return self.scored_candidates_cache[cache_key]
+
+        stmt_type = entry.statement_type
+        rows = self.rows_by_statement.get(stmt_type, [])
+        
+        # If restrict_to_sources is True, we filter rows by matching entry.sources
+        if restrict_to_sources and entry.sources:
+            # Let's index sources for fast matching
+            source_codes = set()
+            source_labels = set()
+            for s in entry.sources:
+                if s.line_id_base:
+                    source_codes.add(s.line_id_base)
+                if s.cd_conta:
+                    source_codes.add(s.cd_conta)
+                if s.label_snapshot:
+                    source_labels.add(s.label_snapshot)
+
+            filtered_rows = []
+            for row in rows:
+                cd_val = str(row.get("CD_CONTA") or "").strip()
+                line_val = str(row.get("LINE_ID_BASE") or "").strip()
+                ds_val = str(row.get("DS_CONTA") or "").strip()
+                std_val = str(row.get("STANDARD_NAME") or "").strip()
+                
+                matched = False
+                if cd_val in source_codes or line_val in source_codes:
+                    matched = True
+                elif ds_val in source_labels or std_val in source_labels:
+                    matched = True
+                
+                if matched:
+                    filtered_rows.append(row)
+            rows = filtered_rows
+
+        candidates = []
+        aliases_for_target = self.aliases_by_target.get(target_id, [])
+        
+        for row in rows:
+            score, evidence, warnings = self.resolver.score_candidate(
+                row,
+                target_id,
+                entry.target_label,
+                aliases_for_target,
+                self.company_sector,
+                mapped_sources=entry.sources if entry.sources else None,
+            )
+            if score > 0:
+                candidates.append({
+                    "row": row,
+                    "score": score,
+                    "evidence": evidence,
+                    "warnings": warnings,
+                })
+
+        candidates.sort(key=lambda x: x["score"], reverse=True)
+        self.scored_candidates_cache[cache_key] = candidates
+        return candidates
+
+    def resolve_entry_for_period(
+        self,
+        entry: ModelMappingEntry,
+        period: str,
+        restrict_to_sources: bool = False,
+    ) -> dict[str, Any]:
+        target_id = entry.target_id
+        
+        # 1. Evaluate overrides
+        target_overrides = self.overrides.get(target_id, {})
+        period_override = target_overrides.get(period) or target_overrides.get("GLOBAL")
+        
+        if period_override:
+            source_code = period_override["source_code"]
+            # Locate matching raw row
+            matching_row = self.row_by_code.get((entry.statement_type, source_code))
+            
+            if matching_row:
+                val = matching_row.get(period)
+                resolved_val = float(val) / 1000.0 if val is not None and not pd.isna(val) else None
+                return {
+                    "target_id": target_id,
+                    "period": period,
+                    "selected_source_id": f"{entry.statement_type}:{source_code}",
+                    "selected_source_label": period_override["source_desc"] or matching_row.get("DS_CONTA"),
+                    "status": "manually_confirmed",
+                    "score": 100.0,
+                    "confidence_margin": 100.0,
+                    "resolved_value": resolved_val,
+                    "evidence": ["Manual user mapping override applied"],
+                    "warnings": [],
+                }
+
+        # 2. Get ranked candidates
+        candidates = self.get_ranked_candidates(entry, restrict_to_sources)
+
+        if not candidates:
+            return {
+                "target_id": target_id,
+                "period": period,
+                "selected_source_id": None,
+                "selected_source_label": None,
+                "status": "unresolved",
+                "score": 0.0,
+                "confidence_margin": 0.0,
+                "resolved_value": None,
+                "evidence": ["No matching candidates found"],
+                "warnings": [],
+            }
+
+        # 3. Resolve best candidate with value present
+        if entry.operation in ("sum", "sum_with_sign"):
+            active_cands = []
+            total_val = 0.0
+            any_val = False
+            for cand in candidates:
+                val = cand["row"].get(period)
+                if val is not None and not pd.isna(val):
+                    active_cands.append(cand)
+                    source_sign = 1
+                    if entry.operation == "sum_with_sign" and entry.sources:
+                        cd_val = str(cand["row"].get("CD_CONTA") or "").strip()
+                        line_val = str(cand["row"].get("LINE_ID_BASE") or "").strip()
+                        for s in entry.sources:
+                            s_cd = s.cd_conta or s.line_id_base
+                            if line_val == s.line_id_base or cd_val == s_cd:
+                                source_sign = s.sign
+                                break
+                    total_val += (float(val) / 1000.0) * source_sign
+                    any_val = True
+
+            if not any_val:
+                return {
+                    "target_id": target_id,
+                    "period": period,
+                    "selected_source_id": None,
+                    "selected_source_label": None,
+                    "status": "unresolved",
+                    "score": 0.0,
+                    "confidence_margin": 0.0,
+                    "resolved_value": None,
+                    "evidence": ["No active sum candidates found"],
+                    "warnings": [],
+                }
+
+            labels = [str(c["row"].get("DS_CONTA")) for c in active_cands]
+            return {
+                "target_id": target_id,
+                "period": period,
+                "selected_source_id": f"sum({len(active_cands)})",
+                "selected_source_label": " + ".join(labels),
+                "status": "auto_accepted",
+                "score": 98.0,
+                "confidence_margin": 100.0,
+                "resolved_value": total_val,
+                "evidence": [f"Summed {len(active_cands)} lines"],
+                "warnings": [],
+            }
+
+        selected_cand = None
+        alternatives = []
+        for cand in candidates:
+            val = cand["row"].get(period)
+            if val is not None and not pd.isna(val):
+                if not selected_cand:
+                    selected_cand = cand
+                else:
+                    alternatives.append(cand)
+
+        if not selected_cand:
+            # Try to return the highest scoring candidate even if it has no value for this period
+            best_cand = candidates[0]
+            source_code = best_cand["row"].get("LINE_ID_BASE") or best_cand["row"].get("CD_CONTA")
+            return {
+                "target_id": target_id,
+                "period": period,
+                "selected_source_id": f"{entry.statement_type}:{source_code}",
+                "selected_source_label": best_cand["row"].get("DS_CONTA"),
+                "status": "unresolved",
+                "score": best_cand["score"],
+                "confidence_margin": 0.0,
+                "resolved_value": None,
+                "evidence": best_cand["evidence"] + ["Candidate found but contains no value in this period"],
+                "warnings": best_cand["warnings"],
+            }
+
+        # 4. Status determination & margin computation
+        status = "auto_accepted" if selected_cand["score"] >= 70.0 else "suggested"
+        margin = 100.0
+        warnings = list(selected_cand["warnings"])
+
+        if alternatives:
+            next_best = alternatives[0]
+            margin = selected_cand["score"] - next_best["score"]
+            if margin < 15.0 and selected_cand["score"] < 90.0:
+                status = "ambiguous"
+                warnings.append(
+                    f"Ambiguous match. Next best candidate is '{next_best['row'].get('DS_CONTA')}' with score {next_best['score']:.1f}"
+                )
+
+        source_code = selected_cand["row"].get("LINE_ID_BASE") or selected_cand["row"].get("CD_CONTA")
+        val = selected_cand["row"].get(period)
+        resolved_val = float(val) / 1000.0 if val is not None else None
+
+        return {
+            "target_id": target_id,
+            "period": period,
+            "selected_source_id": f"{entry.statement_type}:{source_code}",
+            "selected_source_label": selected_cand["row"].get("DS_CONTA"),
+            "status": status,
+            "score": selected_cand["score"],
+            "confidence_margin": margin,
+            "resolved_value": resolved_val,
+            "evidence": selected_cand["evidence"],
+            "warnings": warnings,
+        }
+

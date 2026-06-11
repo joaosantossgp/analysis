@@ -215,18 +215,72 @@ class ReadServiceExportMixin:
         is_financial = is_financial_company_info(company_info)
         from src.financials.formulas import get_formula_definitions
         formula_defs = get_formula_definitions(is_financial)
-
         active_preset_id = preset_id or company_default_preset_id
         mapping = self.resolve_excel_model_mapping(cd_cvm, active_preset_id)
         scope = self.resolve_excel_export_scope(cd_cvm, period_scope)
         raw_statements = self._load_export_statement_frames(cd_cvm, period_scope)
-        issues = self.validate_excel_model_mapping(mapping, raw_statements, company_id=cd_cvm, engine=self.engine)
+
+        # 1. Build raw rows dict once
+        raw_rows_dict = []
+        for stmt_type, df in raw_statements.items():
+            if df is not None and not df.empty:
+                df_copied = df.copy()
+                df_copied["STATEMENT_TYPE"] = stmt_type
+                raw_rows_dict.extend(df_copied.to_dict("records"))
+
+        # 2. Initialize resolver & pre-load DB assets once
+        from src.financials.resolver import ModelResolver
+        resolver = ModelResolver(self.engine)
+        overrides = resolver.get_overrides(cd_cvm) if self.engine else {}
+        aliases = resolver.get_aliases() if self.engine else []
+        is_user_preset = mapping.origin == "user"
+
+        # 3. Create ResolutionContext to cache scored candidates
+        context = resolver.create_resolution_context(
+            company_id=cd_cvm,
+            raw_statement_rows=raw_rows_dict,
+            overrides=overrides,
+            aliases=aliases,
+            company_sector=company_info.get("setor_analitico"),
+        )
         preview_periods = self._mapping_preview_periods(
             raw_statements,
             period_window=scope["period_window"],
         )
+
+        # 4. Extract all periods (both preview and other periods present in statements)
+        # to pre-compute resolutions for all of them
+        all_periods: set[str] = set()
+        meta_cols = {"CD_CONTA", "DS_CONTA", "STANDARD_NAME", "LINE_ID_BASE"}
+        for df in raw_statements.values():
+            if df is None or df.empty:
+                continue
+            all_periods.update(str(col) for col in df.columns if col not in meta_cols)
+        all_periods_list = sorted(all_periods)
+
+        # 5. Pre-compute resolutions for all entries and periods
+        resolutions_by_key: dict[tuple[str, str], dict[str, Any]] = {}
+        for entry in mapping.entries:
+            for period in all_periods_list:
+                res = context.resolve_entry_for_period(
+                    entry=entry,
+                    period=period,
+                    restrict_to_sources=is_user_preset,
+                )
+                resolutions_by_key[(entry.target_id, period)] = res
+
+        # 6. Pass pre-computed resolutions to validation
+        issues = self.validate_excel_model_mapping(
+            mapping,
+            raw_statements,
+            company_id=cd_cvm,
+            engine=self.engine,
+            resolutions=resolutions_by_key,
+        )
+
         mapped_targets = self._mapping_source_targets(mapping)
 
+        # 7. Pass pre-computed resolutions to model preview
         preview_rows = self._model_preview_rows(
             mapping,
             raw_statements,
@@ -236,36 +290,22 @@ class ReadServiceExportMixin:
             engine=self.engine,
             company_id=cd_cvm,
             company_sector=company_info.get("setor_analitico"),
+            resolutions=resolutions_by_key,
         )
 
-        # Compute period resolutions DTO
-        raw_rows_dict = []
-        for stmt_type, df in raw_statements.items():
-            if df is not None and not df.empty:
-                df_copied = df.copy()
-                df_copied["STATEMENT_TYPE"] = stmt_type
-                raw_rows_dict.extend(df_copied.to_dict("records"))
-
-        from src.financials.resolver import ModelResolver
-        resolver = ModelResolver(self.engine)
-        overrides = resolver.get_overrides(cd_cvm) if self.engine else {}
-        aliases = resolver.get_aliases() if self.engine else []
-        is_user_preset = mapping.origin == "user"
-
+        # 8. Filter resolutions_dto for preview_periods
         resolutions_dto = []
         for entry in mapping.entries:
             for period in preview_periods:
-                res = resolver.resolve_entry_for_period(
-                    company_id=cd_cvm,
-                    entry=entry,
-                    period=period,
-                    raw_statement_rows=raw_rows_dict,
-                    overrides=overrides,
-                    aliases=aliases,
-                    company_sector=company_info.get("setor_analitico"),
-                    restrict_to_sources=is_user_preset,
-                )
-                resolutions_dto.append(res)
+                res = resolutions_by_key.get((entry.target_id, period))
+                if res is not None:
+                    resolutions_dto.append(res)
+
+        raw_lines = self._raw_mapping_lines(
+            raw_statements,
+            preview_periods=preview_periods,
+            mapped_targets=mapped_targets,
+        )
 
         return {
             "ok": True,
@@ -282,11 +322,7 @@ class ReadServiceExportMixin:
             "preview_periods": preview_periods,
             "model_preview_rows": preview_rows,
             "resolutions": resolutions_dto,
-            "raw_lines": self._raw_mapping_lines(
-                raw_statements,
-                preview_periods=preview_periods,
-                mapped_targets=mapped_targets,
-            ),
+            "raw_lines": raw_lines,
             "validation": [issue.to_dict() for issue in issues],
         }
 
@@ -354,6 +390,7 @@ class ReadServiceExportMixin:
         statements: dict[str, pd.DataFrame],
         company_id: int = 0,
         engine: Optional[Any] = None,
+        resolutions: Optional[dict[tuple[str, str], dict[str, Any]]] = None,
     ) -> list[MappingValidationIssue]:
         issues: list[MappingValidationIssue] = []
         raw_keys: set[tuple[str, str]] = set()
@@ -439,8 +476,6 @@ class ReadServiceExportMixin:
         if engine and company_id:
             from src.financials.resolver import ModelResolver
             resolver = ModelResolver(engine)
-            overrides = resolver.get_overrides(company_id)
-            aliases = resolver.get_aliases()
             
             raw_rows_dict = []
             for stmt_type, df in statements.items():
@@ -450,17 +485,39 @@ class ReadServiceExportMixin:
                     raw_rows_dict.extend(df_copied.to_dict("records"))
             
             is_user_preset = mapping.origin == "user"
+
+            if resolutions is None:
+                overrides = resolver.get_overrides(company_id)
+                aliases = resolver.get_aliases()
+                context = resolver.create_resolution_context(
+                    company_id=company_id,
+                    raw_statement_rows=raw_rows_dict,
+                    overrides=overrides,
+                    aliases=aliases,
+                )
+                resolutions = {}
+                for entry in mapping.entries:
+                    for period in sorted(periods):
+                        resolutions[(entry.target_id, period)] = context.resolve_entry_for_period(
+                            entry, period, restrict_to_sources=is_user_preset
+                        )
+
             for entry in mapping.entries:
                 for period in sorted(periods):
-                    res = resolver.resolve_entry_for_period(
-                        company_id=company_id,
-                        entry=entry,
-                        period=period,
-                        raw_statement_rows=raw_rows_dict,
-                        overrides=overrides,
-                        aliases=aliases,
-                        restrict_to_sources=is_user_preset,
-                    )
+                    res = resolutions.get((entry.target_id, period))
+                    if res is None:
+                        # Fallback
+                        overrides = resolver.get_overrides(company_id)
+                        aliases = resolver.get_aliases()
+                        res = resolver.resolve_entry_for_period(
+                            company_id=company_id,
+                            entry=entry,
+                            period=period,
+                            raw_statement_rows=raw_rows_dict,
+                            overrides=overrides,
+                            aliases=aliases,
+                            restrict_to_sources=is_user_preset,
+                        )
                     status = res.get("status")
                     if status == "ambiguous":
                         issues.append(MappingValidationIssue(
@@ -632,6 +689,7 @@ class ReadServiceExportMixin:
         engine: Optional[Any] = None,
         company_id: int = 0,
         company_sector: Optional[str] = None,
+        resolutions: Optional[dict[tuple[str, str], dict[str, Any]]] = None,
     ) -> list[dict[str, Any]]:
         # Convert statements DataFrames to dict records for database-free resolution
         raw_rows_dict = []
@@ -651,16 +709,20 @@ class ReadServiceExportMixin:
         for entry in mapping.entries:
             values_by_target_period[entry.target_id] = {}
             for period in preview_periods:
-                res = resolver.resolve_entry_for_period(
-                    company_id=company_id,
-                    entry=entry,
-                    period=period,
-                    raw_statement_rows=raw_rows_dict,
-                    overrides=overrides,
-                    aliases=aliases,
-                    company_sector=company_sector,
-                    restrict_to_sources=is_user_preset,
-                )
+                res = None
+                if resolutions is not None:
+                    res = resolutions.get((entry.target_id, period))
+                if res is None:
+                    res = resolver.resolve_entry_for_period(
+                        company_id=company_id,
+                        entry=entry,
+                        period=period,
+                        raw_statement_rows=raw_rows_dict,
+                        overrides=overrides,
+                        aliases=aliases,
+                        company_sector=company_sector,
+                        restrict_to_sources=is_user_preset,
+                    )
                 values_by_target_period[entry.target_id][period] = res["resolved_value"]
 
         # 2. Evaluate formulas dynamically

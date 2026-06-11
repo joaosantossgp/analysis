@@ -26,6 +26,7 @@ import type {
   ExcelMappingSource,
   ExcelMappingValidationIssue,
   ExcelMappingWorkspace,
+  ExcelMappingResolution,
 } from "@/lib/bridge/types";
 
 const SYSTEM_DEFAULT_PRESET_ID = "system:default";
@@ -117,7 +118,14 @@ export function CompanyModelMappingPage() {
     if (!workspace?.mapping) return;
     const shouldPreserveDraft =
       touched && draft?.preset_id === workspace.mapping.preset_id;
-    setSelectedPresetId(workspace.active_preset_id);
+    if (selectedPresetId !== workspace.active_preset_id) {
+      const resolvedId = workspace.active_preset_id;
+      queryClient.setQueryData(
+        ["excel-mapping-workspace", cdCvm, resolvedId, periodScope],
+        workspaceQuery.data
+      );
+      setSelectedPresetId(resolvedId);
+    }
     if (shouldPreserveDraft) return;
     setDraft(workspace.mapping);
     setSelectedTargetId((current) => (
@@ -128,10 +136,26 @@ export function CompanyModelMappingPage() {
     setPresetName(workspace.mapping.origin === "system" ? "" : workspace.mapping.name);
     setPresetDescription(workspace.mapping.description ?? "");
     setTouched(false);
-  }, [draft?.preset_id, touched, workspace]);
+  }, [cdCvm, selectedPresetId, periodScope, workspace, workspaceQuery.data, queryClient, touched, draft?.preset_id]);
 
   const formulaEvaluation = useMemo(() => {
     if (!draft || !workspace) return { values: {}, checkStatuses: {}, issues: [] };
+    
+    // If the draft is unchanged from the workspace, reuse the backend evaluation results
+    const isUnchanged = !touched || draft === workspace.mapping;
+    if (isUnchanged) {
+      const values: Record<string, Record<string, number | null>> = {};
+      const checkStatuses: Record<string, Record<string, any>> = {};
+      
+      for (const row of workspace.model_preview_rows) {
+        values[row.target_id] = row.values_by_period;
+        checkStatuses[row.target_id] = row.check_status ?? {};
+      }
+      
+      const issues = workspace.validation.filter((issue) => issue.code === "calculated_mismatch");
+      
+      return { values, checkStatuses, issues };
+    }
     
     const initialValues: Record<string, Record<string, number | null>> = {};
     const fallbackById = new Map(workspace.model_preview_rows.map((row) => [row.target_id, row]));
@@ -148,7 +172,17 @@ export function CompanyModelMappingPage() {
     }
     
     return evaluateFormulasJS(draft, workspace, initialValues);
-  }, [draft, workspace]);
+  }, [draft, workspace, touched]);
+
+  const resolutionsMap = useMemo(() => {
+    const map = new Map<string, ExcelMappingResolution>();
+    if (workspace?.resolutions) {
+      for (const res of workspace.resolutions) {
+        map.set(`${res.target_id}:${res.period}`, res);
+      }
+    }
+    return map;
+  }, [workspace?.resolutions]);
 
   const validation = useMemo(() => {
     const baseIssues = mergeValidationIssues(
@@ -445,6 +479,7 @@ export function CompanyModelMappingPage() {
           touched={touched}
           workspace={workspace}
           rows={previewRows}
+          resolutionsMap={resolutionsMap}
           onOpenPicker={() => setPickerOpen(true)}
           onOperationChange={(operation) => {
             if (!selectedEntry) return;
@@ -875,6 +910,7 @@ function RowInspector({
   touched,
   workspace,
   rows,
+  resolutionsMap,
   onOpenPicker,
   onOperationChange,
   onRemoveSource,
@@ -889,6 +925,7 @@ function RowInspector({
   touched: boolean;
   workspace: ExcelMappingWorkspace | null;
   rows: PreviewRow[];
+  resolutionsMap: Map<string, ExcelMappingResolution>;
   onOpenPicker: () => void;
   onOperationChange: (operation: string) => void;
   onRemoveSource: (index: number) => void;
@@ -1065,7 +1102,7 @@ function RowInspector({
               </div>
               <div className="space-y-1">
                 {periods.map((period) => {
-                  const res = workspace.resolutions?.find(r => r.target_id === entry.target_id && r.period === period);
+                  const res = resolutionsMap.get(`${entry.target_id}:${period}`);
                   if (!res) return null;
                   
                   let badgeColor = "var(--color-text-tertiary)";

@@ -2,12 +2,16 @@
 
 This directory holds per-version release notes for the CVMAnalytics desktop product.
 
-The **current release is `v0.21.0`** (Data Operations UX). The packaged Windows desktop EXE distributed via [GitHub Releases](https://github.com/joaosantossgp/analisys/releases) is the authoritative distribution channel — this directory is a **partial** local copy of the per-version notes, not the source of truth.
+The **current release is `v0.27.3`** (Model Mapping performance optimization). The packaged Windows desktop EXE distributed via [GitHub Releases](https://github.com/joaosantossgp/analisys/releases) is the authoritative distribution channel — this directory is a **partial** local copy of the per-version notes, not the source of truth.
 
 ## Current
 
 | Version | Notes |
 |---|---|
+| `v0.27.3` | [v0.27.3.md](v0.27.3.md) — Model Mapping performance optimization (95%+ load time reduction) |
+| `v0.27.2` | [v0.27.2.md](v0.27.2.md) — Automatic Model Mapping engine with override capabilities |
+| `v0.27.1` | [v0.27.1.md](v0.27.1.md) — Company Overview chart refinement and shared period selector |
+| `v0.27.0` | [v0.27.0.md](v0.27.0.md) — Python package layout reorganization |
 | `v0.21.0` | [v0.21.0.md](v0.21.0.md) — Data Operations UX (Data Coverage page, virtualized table, real-time updates, bulk ignore) |
 | `v0.20.1` | [v0.20.1.md](v0.20.1.md) — company universe entry point |
 | `v0.20.0` | [v0.20.0.md](v0.20.0.md) — first-run company universe setup |
