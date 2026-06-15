@@ -46,6 +46,8 @@ type Props = {
   yearsAvailable?: number | null;
   lastModelUpdatedAt?: string | null;
   className?: string;
+  hideExport?: boolean;
+  flat?: boolean;
 };
 
 export function CompanyCommandBar({
@@ -55,6 +57,8 @@ export function CompanyCommandBar({
   yearsAvailable,
   lastModelUpdatedAt,
   className,
+  hideExport = false,
+  flat = false,
 }: Props) {
   const [localBridgeReady, setLocalBridgeReady] = useState(false);
   const bridgeReady = bridgeReadyProp ?? localBridgeReady;
@@ -221,7 +225,7 @@ export function CompanyCommandBar({
   }
 
   return (
-    <section className={className} aria-label="Company command bar" style={barStyle(needsAttention)}>
+    <section className={className} aria-label="Company command bar" style={barStyle(needsAttention, flat)}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <StatusDot tone={hasRefreshError ? "error" : needsAttention ? "warn" : "ok"} />
@@ -277,25 +281,29 @@ export function CompanyCommandBar({
               ))}
             </Select>
           </label>
-          <Button
-            variant="primary"
-            size="xs"
-            disabled={!exportAction.isDesktop || exportAction.isRunning}
-            loading={exportAction.isRunning}
-            onClick={() => exportAction.run()}
-          >
-            {exportAction.isRunning ? "Exporting" : "Export Excel"}
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="xs"
-            aria-expanded={showExportDetails}
-            aria-controls={exportDetailsId}
-            onClick={() => setShowExportDetails((value) => !value)}
-          >
-            Export details
-          </Button>
+          {!hideExport && (
+            <>
+              <Button
+                variant="primary"
+                size="xs"
+                disabled={!exportAction.isDesktop || exportAction.isRunning}
+                loading={exportAction.isRunning}
+                onClick={() => exportAction.run()}
+              >
+                {exportAction.isRunning ? "Exporting" : "Export Excel"}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                aria-expanded={showExportDetails}
+                aria-controls={exportDetailsId}
+                onClick={() => setShowExportDetails((value) => !value)}
+              >
+                Export details
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -374,7 +382,7 @@ export function CompanyCommandBar({
         </div>
       ) : null}
 
-      {showExportDetails ? (
+      {!hideExport && showExportDetails ? (
         <div id={exportDetailsId} className="mt-2" style={disclosureStyle}>
           <ExportStatusLine
             status={exportAction.status}
@@ -385,7 +393,7 @@ export function CompanyCommandBar({
             timestamp={exportAction.lastRunAt}
           />
         </div>
-      ) : exportAction.status === "success" || exportAction.status === "error" ? (
+      ) : !hideExport && (exportAction.status === "success" || exportAction.status === "error") ? (
         <div className="mt-2">
           <Notice tone={exportAction.status === "success" ? "success" : "error"} role={exportAction.status === "success" ? "status" : "alert"}>
             {exportAction.status === "success"
@@ -600,7 +608,15 @@ function exportStatusMessage(status: string, errorMessage: string | null | undef
   return undefined;
 }
 
-function barStyle(needsAttention: boolean): CSSProperties {
+function barStyle(needsAttention: boolean, flat: boolean): CSSProperties {
+  if (flat) {
+    return {
+      background: "transparent",
+      border: "none",
+      borderRadius: 0,
+      padding: 0,
+    };
+  }
   return {
     background: "var(--color-surface-2)",
     border: `1px solid ${needsAttention ? "var(--color-state-warn)" : "var(--color-border-subtle)"}`,

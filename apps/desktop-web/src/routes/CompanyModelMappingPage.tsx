@@ -399,53 +399,62 @@ export function CompanyModelMappingPage() {
   return (
     <section className="space-y-4">
       <EntityHeader cdCvm={cdCvm} activeTab="mapping" />
-      <CompanyCommandBar
-        cdCvm={cdCvm}
-        bridgeReady={bridgeReady}
-        latestPeriod={workspace.company.latest_financial_period_display}
-      />
-      <BuilderCommandBar
-        companyName={workspace.company.company_name}
-        ticker={workspace.company.ticker_b3}
-        cdCvm={cdCvm}
-        draft={draft}
-        presets={workspace.presets}
-        selectedPresetId={workspace.active_preset_id}
-        periodScope={periodScope}
-        presetName={presetName}
-        presetDescription={presetDescription}
-        touched={touched}
-        blockingCount={blockingCount}
-        warningCount={warningCount}
-        latestPeriod={workspace.company.latest_financial_period_display}
-        periodScopeLabel={workspace.period_scope_label ?? null}
-        exportStatus={exportAction.status}
-        exportError={exportAction.errorMessage}
-        exportFile={exportAction.result?.file_name ?? null}
-        onPresetChange={(presetId) => {
-          setSelectedPresetId(presetId);
-          setTouched(false);
-          setPickerOpen(false);
-        }}
-        onPeriodScopeChange={setPeriodScope}
-        onNameChange={(value) => {
-          setPresetName(value);
-          setTouched(true);
-        }}
-        onDescriptionChange={(value) => {
-          setPresetDescription(value);
-          setTouched(true);
-        }}
-        onSave={() => saveDraft()}
-        onSaveAs={() => saveDraft({ asNew: true })}
-        onReset={resetToDefault}
-        onSetCompanyDefault={() => defaultMutation.mutate(draft.preset_id)}
-        onExport={() => exportAction.run()}
-        saving={saveMutation.isPending}
-        settingDefault={defaultMutation.isPending}
-        exporting={exportAction.isRunning}
-        exportDisabled={!exportAction.isDesktop || exportAction.isRunning}
-      />
+      <Panel
+        dense
+        title="Model Export Builder"
+        subtitle="Preview the Excel Model sheet, audit source lines, then export a saved mapping."
+      >
+        <CompanyCommandBar
+          cdCvm={cdCvm}
+          bridgeReady={bridgeReady}
+          latestPeriod={workspace.company.latest_financial_period_display}
+          hideExport
+          flat
+        />
+        <hr className="my-3 border-t border-[var(--color-border-subtle)]" />
+        <BuilderCommandBar
+          companyName={workspace.company.company_name}
+          ticker={workspace.company.ticker_b3}
+          cdCvm={cdCvm}
+          draft={draft}
+          presets={workspace.presets}
+          selectedPresetId={workspace.active_preset_id}
+          periodScope={periodScope}
+          presetName={presetName}
+          presetDescription={presetDescription}
+          touched={touched}
+          blockingCount={blockingCount}
+          warningCount={warningCount}
+          latestPeriod={workspace.company.latest_financial_period_display}
+          periodScopeLabel={workspace.period_scope_label ?? null}
+          exportStatus={exportAction.status}
+          exportError={exportAction.errorMessage}
+          exportFile={exportAction.result?.file_name ?? null}
+          onPresetChange={(presetId) => {
+            setSelectedPresetId(presetId);
+            setTouched(false);
+            setPickerOpen(false);
+          }}
+          onPeriodScopeChange={setPeriodScope}
+          onNameChange={(value) => {
+            setPresetName(value);
+            setTouched(true);
+          }}
+          onDescriptionChange={(value) => {
+            setPresetDescription(value);
+            setTouched(true);
+          }}
+          onSave={() => saveDraft()}
+          onSaveAs={() => saveDraft({ asNew: true })}
+          onReset={resetToDefault}
+          onSetCompanyDefault={() => defaultMutation.mutate(draft.preset_id)}
+          onExport={() => exportAction.run()}
+          saving={saveMutation.isPending}
+          settingDefault={defaultMutation.isPending}
+          exporting={exportAction.isRunning}
+          exportDisabled={!exportAction.isDesktop || exportAction.isRunning}
+        />
+      </Panel>
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0 space-y-3">
           <StatementMappingSelector
@@ -659,12 +668,8 @@ function BuilderCommandBar({
     (preset) => preset.preset_id === selectedPresetId && preset.company_default,
   );
   return (
-    <Panel
-      dense
-      title="Model Export Builder"
-      subtitle="Preview the Excel Model sheet, audit source lines, then export a saved mapping."
-    >
-      <div className="grid gap-3 xl:grid-cols-[minmax(240px,0.8fr)_minmax(360px,1.2fr)_auto]">
+    <>
+      <div className="grid gap-3 items-start xl:grid-cols-[minmax(240px,0.8fr)_minmax(600px,2.2fr)]">
         <div className="min-w-0">
           <div style={{ color: "var(--color-text-primary)", fontSize: "var(--text-md)", fontWeight: 650 }}>
             {ticker ?? `CVM ${cdCvm}`}
@@ -686,76 +691,78 @@ function BuilderCommandBar({
             {periodScopeLabel ? <StatusChip tone="muted">{periodScopeLabel}</StatusChip> : null}
           </div>
         </div>
-        <div className="grid gap-2 md:grid-cols-[minmax(150px,0.7fr)_minmax(180px,1fr)_minmax(180px,1fr)]">
-          <label style={labelStyle}>
-            Active preset
-            <Select
-              value={selectedPresetId}
-              onChange={(event) => onPresetChange(event.target.value)}
-              style={controlStyle}
+        <div className="flex flex-wrap items-end justify-between gap-3 w-full">
+          <div className="grid gap-2 grid-cols-2 md:grid-cols-4 flex-1 min-w-[360px]">
+            <label style={labelStyle}>
+              Active preset
+              <Select
+                value={selectedPresetId}
+                onChange={(event) => onPresetChange(event.target.value)}
+                style={controlStyle}
+              >
+                {presets.map((preset) => (
+                  <option key={preset.preset_id} value={preset.preset_id}>
+                    {preset.name}{preset.company_default ? " (company default)" : ""}
+                  </option>
+                ))}
+              </Select>
+            </label>
+            <label style={labelStyle}>
+              Save as name
+              <input
+                value={presetName}
+                onChange={(event) => onNameChange(event.target.value)}
+                placeholder="Distribution"
+                style={inputStyle}
+              />
+            </label>
+            <label style={labelStyle}>
+              Notes
+              <input
+                value={presetDescription}
+                onChange={(event) => onDescriptionChange(event.target.value)}
+                placeholder="Preset notes"
+                style={inputStyle}
+              />
+            </label>
+            <label style={{ ...labelStyle, minWidth: 100 }}>
+              Period scope
+              <Select
+                value={periodScope}
+                onChange={(event) => onPeriodScopeChange(event.target.value)}
+                style={controlStyle}
+              >
+                {PERIOD_SCOPE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </Select>
+            </label>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 pb-[1px]">
+            <Button size="xs" variant="secondary" onClick={onSave} disabled={blockingCount > 0 || saving} loading={saving}>
+              Save
+            </Button>
+            <Button size="xs" variant="secondary" onClick={onSaveAs} disabled={blockingCount > 0 || saving}>
+              Save As
+            </Button>
+            <Button size="xs" variant="ghost" onClick={onReset}>
+              Reset
+            </Button>
+            <Button
+              size="xs"
+              variant="ghost"
+              onClick={onSetCompanyDefault}
+              disabled={isSystem || touched || settingDefault}
+              loading={settingDefault}
             >
-              {presets.map((preset) => (
-                <option key={preset.preset_id} value={preset.preset_id}>
-                  {preset.name}{preset.company_default ? " (company default)" : ""}
-                </option>
-              ))}
-            </Select>
-          </label>
-          <label style={labelStyle}>
-            Save as name
-            <input
-              value={presetName}
-              onChange={(event) => onNameChange(event.target.value)}
-              placeholder="Distribution"
-              style={inputStyle}
-            />
-          </label>
-          <label style={labelStyle}>
-            Notes
-            <input
-              value={presetDescription}
-              onChange={(event) => onDescriptionChange(event.target.value)}
-              placeholder="Preset notes"
-              style={inputStyle}
-            />
-          </label>
-        </div>
-        <div className="flex min-w-[280px] flex-wrap items-end justify-end gap-2">
-          <label style={{ ...labelStyle, minWidth: 130 }}>
-            Period scope
-            <Select
-              value={periodScope}
-              onChange={(event) => onPeriodScopeChange(event.target.value)}
-              style={controlStyle}
-            >
-              {PERIOD_SCOPE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </Select>
-          </label>
-          <Button size="xs" variant="secondary" onClick={onSave} disabled={blockingCount > 0 || saving} loading={saving}>
-            Save
-          </Button>
-          <Button size="xs" variant="secondary" onClick={onSaveAs} disabled={blockingCount > 0 || saving}>
-            Save As
-          </Button>
-          <Button size="xs" variant="ghost" onClick={onReset}>
-            Reset
-          </Button>
-          <Button
-            size="xs"
-            variant="ghost"
-            onClick={onSetCompanyDefault}
-            disabled={isSystem || touched || settingDefault}
-            loading={settingDefault}
-          >
-            Set Default
-          </Button>
-          <Button variant="primary" size="xs" onClick={onExport} disabled={exportDisabled} loading={exporting}>
-            {exporting ? "Exporting" : "Export Excel"}
-          </Button>
+              Set Default
+            </Button>
+            <Button variant="primary" size="xs" onClick={onExport} disabled={exportDisabled} loading={exporting}>
+              {exporting ? "Exporting" : "Export Excel"}
+            </Button>
+          </div>
         </div>
       </div>
       <div className="mt-3" style={{ color: exportStatusColor(exportStatus), fontSize: "var(--text-xs)" }}>
@@ -763,7 +770,7 @@ function BuilderCommandBar({
           ? "Unsaved draft changes are visible here but will not be included in export until you save the preset."
           : exportStatusMessage(exportStatus, exportError, exportFile)}
       </div>
-    </Panel>
+    </>
   );
 }
 
