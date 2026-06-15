@@ -1,6 +1,19 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import type { ReactNode } from "react";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
+
+import { IndicatorChart } from "@/components/indicators/IndicatorChart";
+import { IndicatorControls } from "@/components/indicators/IndicatorControls";
+import { IndicatorLegend } from "@/components/indicators/IndicatorLegend";
+import type {
+  AxisSide,
+  ChartAesthetics,
+  ChartType,
+  IndicatorDef,
+  IndicatorSelection,
+  IndicatorUnit,
+  ResolvedSeries,
+} from "@/lib/indicators/types";
 
 import { StateBanner } from "@/components/feedback/StateBanner";
 import { Button } from "@/components/ui/Button";
@@ -1378,30 +1391,11 @@ const TREND_METRICS: Record<DistributionTab, TrendMetric[]> = {
   ],
 };
 
-function getMetricCoverage(series: DistributionSeriesEntry[], metric: TrendMetric): { start: string; end: string } | null {
-  const validPeriods = series
-    .filter((row) => {
-      const val = metric.value(row);
-      return val !== null && Number.isFinite(val);
-    })
-    .map((row) => row.period);
-  if (validPeriods.length === 0) return null;
-  validPeriods.sort();
-  return { start: validPeriods[0], end: validPeriods[validPeriods.length - 1] };
-}
-
-function formatCompact(value: number) {
-  const abs = Math.abs(value);
-  if (abs >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)}B`;
-  if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
-  if (abs >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
-  if (abs > 0 && abs < 1) return value.toFixed(2);
-  return value.toFixed(0);
-}
-
-function formatTooltipValue(value: number, unit: string) {
-  if (unit === "%") return `${(value * 100).toLocaleString("en-US", { maximumFractionDigits: 2 })}%`;
-  return `${value.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${unit}`;
+function mapMetricUnit(unit: string): IndicatorUnit {
+  if (unit === "%") return "pct";
+  if (unit === "BRL" || unit === "R$") return "brl";
+  if (unit === "MWh" || unit === "kW") return "volume";
+  return "number";
 }
 
 function DistributionTrendPanel({
@@ -1423,177 +1417,164 @@ function DistributionTrendPanel({
     );
   }
 
-  const width = 520;
-  const height = 170;
-  const pad = { top: 14, right: 48, bottom: 28, left: 48 };
-  const plotW = width - pad.left - pad.right;
-  const plotH = height - pad.top - pad.bottom;
-
-  // Scale groups and bounds calculation
-  const scaleGroups = Array.from(new Set(metrics.map((m) => m.scaleGroup)));
-  const groupBounds: Record<
-    string,
-    { min: number; max: number; yMin: number; yMax: number; span: number; isPercentage: boolean }
-  > = {};
-
-  scaleGroups.forEach((groupName) => {
-    const groupMetrics = metrics.filter((m) => m.scaleGroup === groupName);
-    const isPercentage = groupMetrics.some((m) => m.isPercentage);
-    const groupValues = groupMetrics.flatMap((metric) =>
-      ordered
-        .map((row) => metric.value(row))
-        .filter((value): value is number => value !== null && Number.isFinite(value)),
-    );
-    if (groupValues.length === 0) return;
-    const min = Math.min(...groupValues);
-    const max = Math.max(...groupValues);
-    const span = max === min ? Math.max(Math.abs(max), 1) : max - min;
-    const yMin = max === min ? min - span * 0.1 : min;
-    const yMax = max === min ? max + span * 0.1 : max;
-    groupBounds[groupName] = { min, max, yMin, yMax, span, isPercentage };
+  // State
+  const [selected, setSelected] = useState<IndicatorSelection[]>([]);
+  const [chart, setChart] = useState<ChartAesthetics>({
+    type: "line",
+    smooth: true,
+    markers: true,
+    legend: true,
+    grid: true,
+    dataLabels: false,
+    indexMode: false,
   });
 
-  const xFor = (idx: number) => pad.left + (ordered.length === 1 ? plotW / 2 : (idx / (ordered.length - 1)) * plotW);
-  const yFor = (value: number, groupName: string) => {
-    const bounds = groupBounds[groupName];
-    if (!bounds) return pad.top + plotH / 2;
-    const { yMin, yMax } = bounds;
-    return pad.top + (1 - (value - yMin) / (yMax - yMin || 1)) * plotH;
-  };
+  useEffect(() => {
+    setSelected(
+      metrics.map((m) => ({
+        id: m.key,
+        axis: "auto",
+        type: "auto",
+      }))
+    );
+  }, [activeTab, metrics]);
 
-  const segmentsFor = (metric: TrendMetric) => {
-    const segments: string[] = [];
-    let current: string[] = [];
-    ordered.forEach((row, idx) => {
-      const value = metric.value(row);
-      if (value === null || !Number.isFinite(value)) {
-        if (current.length > 1) segments.push(current.join(" "));
-        current = [];
-        return;
+  const toggle = useCallback((id: string) => {
+    setSelected((prev) => {
+      const exists = prev.some((s) => s.id === id);
+      if (exists) {
+        return prev.filter((s) => s.id !== id);
+      } else {
+        return [...prev, { id, axis: "auto", type: "auto" }];
       }
-      current.push(`${current.length ? "L" : "M"} ${xFor(idx).toFixed(1)} ${yFor(value, metric.scaleGroup).toFixed(1)}`);
     });
-    if (current.length > 1) segments.push(current.join(" "));
-    return segments;
-  };
+  }, []);
 
-  const pointsFor = (metric: TrendMetric) =>
-    ordered.flatMap((row, idx) => {
-      const value = metric.value(row);
-      if (value === null || !Number.isFinite(value)) return [];
-      return [{
-        period: row.period,
-        label: metric.label,
-        unit: metric.unit,
-        value,
-        x: xFor(idx),
-        y: yFor(value, metric.scaleGroup),
-      }];
-    });
+  const setAxis = useCallback((id: string, axis: "auto" | AxisSide) => {
+    setSelected((prev) => prev.map((s) => (s.id === id ? { ...s, axis } : s)));
+  }, []);
 
-  const firstPeriod = ordered[0]?.period ?? "";
-  const lastPeriod = ordered[ordered.length - 1]?.period ?? "";
+  const setType = useCallback((id: string, type: "auto" | ChartType) => {
+    setSelected((prev) => prev.map((s) => (s.id === id ? { ...s, type } : s)));
+  }, []);
 
-  function formatYAxisLabel(val: number, isPct: boolean) {
-    if (isPct) {
-      return `${(val * 100).toFixed(1)}%`;
-    }
-    return formatCompact(val);
-  }
+  const selectionById = useMemo(
+    () => new Map(selected.map((s) => [s.id, s])),
+    [selected]
+  );
+
+  const defs: IndicatorDef[] = useMemo(
+    () =>
+      metrics.map((m) => ({
+        id: m.key,
+        label: m.label,
+        category: "Distribution",
+        unit: mapMetricUnit(m.unit),
+        isPlaceholder: false,
+        available: true,
+      })),
+    [metrics]
+  );
+
+  const { series: resolvedSeries, periods } = useMemo(() => {
+    const sorted = [...series].sort((a, b) => a.period.localeCompare(b.period));
+    const periods = sorted.map((row) => row.period);
+
+    const resolved: ResolvedSeries[] = selected
+      .map((sel) => {
+        const metric = metrics.find((m) => m.key === sel.id);
+        if (!metric) return null;
+
+        let points = sorted.map((row) => metric.value(row));
+
+        if (chart.indexMode) {
+          const first = points.find((v): v is number => v !== null);
+          if (first != null && first !== 0) {
+            points = points.map((v) => (v !== null ? v / Math.abs(first) : null));
+          }
+        }
+
+        const finite = points.filter((v): v is number => v !== null);
+
+        const resolvedType: ChartType =
+          sel.type === "auto" ? chart.type : sel.type;
+
+        const resolvedAxis: AxisSide =
+          sel.axis === "auto" ? "left" : sel.axis;
+
+        return {
+          id: metric.key as string,
+          label: metric.label,
+          unit: chart.indexMode ? "number" as const : mapMetricUnit(metric.unit),
+          color: metric.color,
+          type: resolvedType,
+          axis: resolvedAxis,
+          points,
+          latest: finite.length > 0 ? finite[finite.length - 1] : null,
+        } satisfies ResolvedSeries;
+      })
+      .filter((s): s is ResolvedSeries => s !== null);
+
+    return { series: resolved, periods };
+  }, [series, selected, chart.indexMode, chart.type, metrics]);
+
+  const showAxisControls = useMemo(
+    () => new Set(resolvedSeries.map((s) => s.unit)).size > 1,
+    [resolvedSeries]
+  );
+
+  const onChartChange = useCallback((patch: Partial<ChartAesthetics>) => {
+    setChart((prev) => ({ ...prev, ...patch }));
+  }, []);
 
   return (
-    <div className="space-y-2 rounded border border-zinc-800 bg-zinc-950/40 p-3">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+    <div className="space-y-3 rounded border border-zinc-800 bg-zinc-950/40 p-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800/60 pb-3">
         <div>
           <div className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
             Historical chart
           </div>
           <div className="text-[10px] font-mono text-zinc-600">
-            {firstPeriod} to {lastPeriod}
+            {periods[0] ?? ""} to {periods[periods.length - 1] ?? ""}
           </div>
         </div>
-        <div className="flex flex-wrap gap-x-4 gap-y-2 justify-start sm:justify-end">
-          {metrics.map((metric) => {
-            const cov = getMetricCoverage(ordered, metric);
-            return (
-              <div key={metric.key} className="inline-flex flex-col items-start text-[10px] text-zinc-400">
-                <span className="inline-flex items-center gap-1.5 font-medium">
-                  <span className="h-1.5 w-3 rounded-sm" style={{ backgroundColor: metric.color }} />
-                  {metric.label} ({metric.unit})
-                </span>
-                {cov && (
-                  <span className="text-[9px] text-zinc-500 ml-4 font-mono">
-                    {cov.start} to {cov.end}
-                  </span>
-                )}
-              </div>
-            );
-          })}
-        </div>
       </div>
-      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Distribution historical chart" className="h-[170px] w-full">
-        <line x1={pad.left} y1={pad.top} x2={pad.left} y2={height - pad.bottom} stroke="rgba(255,255,255,0.12)" />
-        <line x1={pad.left} y1={height - pad.bottom} x2={width - pad.right} y2={height - pad.bottom} stroke="rgba(255,255,255,0.12)" />
-        <line x1={width - pad.right} y1={pad.top} x2={width - pad.right} y2={height - pad.bottom} stroke="rgba(255,255,255,0.12)" />
 
-        {/* Y-axis labels for Scale Group 0 (Left) */}
-        {scaleGroups[0] && groupBounds[scaleGroups[0]] && [0, 0.5, 1].map((ratio) => {
-          const y = pad.top + ratio * plotH;
-          const bounds = groupBounds[scaleGroups[0]];
-          const value = bounds.yMax - ratio * (bounds.yMax - bounds.yMin);
-          return (
-            <g key={`left-${ratio}`}>
-              <line x1={pad.left} y1={y} x2={width - pad.right} y2={y} stroke="rgba(255,255,255,0.06)" />
-              <text x={pad.left - 8} y={y + 3} textAnchor="end" className="fill-zinc-500 text-[10px]">
-                {formatYAxisLabel(value, bounds.isPercentage)}
-              </text>
-            </g>
-          );
-        })}
+      <IndicatorControls
+        frequency="annual"
+        quarterlyAvailable={false}
+        onFrequencyChange={() => undefined}
+        showFrequency={false}
+        itemNoun="Metrics"
+        defs={defs}
+        selectedIds={selected.map((s) => s.id)}
+        onToggleIndicator={toggle}
+        maxSelected={6}
+        chart={chart}
+        onChartChange={onChartChange}
+      />
 
-        {/* Y-axis labels for Scale Group 1 (Right, if exists) */}
-        {scaleGroups[1] && groupBounds[scaleGroups[1]] && [0, 0.5, 1].map((ratio) => {
-          const y = pad.top + ratio * plotH;
-          const bounds = groupBounds[scaleGroups[1]];
-          const value = bounds.yMax - ratio * (bounds.yMax - bounds.yMin);
-          return (
-            <g key={`right-${ratio}`}>
-              <text x={width - pad.right + 8} y={y + 3} textAnchor="start" className="fill-zinc-500 text-[10px]">
-                {formatYAxisLabel(value, bounds.isPercentage)}
-              </text>
-            </g>
-          );
-        })}
+      {resolvedSeries.length === 0 || periods.length === 0 ? (
+        <StateBanner
+          variant="empty"
+          title="Nothing to plot"
+          message="Select at least one metric to visualize."
+        />
+      ) : (
+        <IndicatorChart series={resolvedSeries} periods={periods} config={chart} height={180} />
+      )}
 
-        {metrics.map((metric) =>
-          segmentsFor(metric).map((path, idx) => (
-            <path key={`${metric.key}-${idx}`} d={path} fill="none" stroke={metric.color} strokeWidth="2" strokeLinecap="round" />
-          )),
-        )}
-        {metrics.map((metric) =>
-          pointsFor(metric).map((point) => (
-            <circle
-              key={`${metric.key}-${point.period}`}
-              cx={point.x}
-              cy={point.y}
-              r="3"
-              fill={metric.color}
-              stroke="#101216"
-              strokeWidth="1.5"
-            >
-              <title>{`${point.period} · ${point.label}: ${formatTooltipValue(point.value, point.unit)}`}</title>
-            </circle>
-          )),
-        )}
-        {ordered.map((row, idx) => {
-          if (idx !== 0 && idx !== ordered.length - 1 && idx % Math.ceil(ordered.length / 4) !== 0) return null;
-          return (
-            <text key={row.period} x={xFor(idx)} y={height - 9} textAnchor="middle" className="fill-zinc-500 text-[10px]">
-              {row.period}
-            </text>
-          );
-        })}
-      </svg>
+      {chart.legend && resolvedSeries.length > 0 && (
+        <IndicatorLegend
+          series={resolvedSeries}
+          selectionById={selectionById}
+          indexMode={chart.indexMode}
+          showAxisControls={showAxisControls}
+          onSetAxis={setAxis}
+          onSetType={setType}
+          onRemove={toggle}
+        />
+      )}
     </div>
   );
 }
