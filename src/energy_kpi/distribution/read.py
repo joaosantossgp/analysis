@@ -56,7 +56,7 @@ class DistributionReadService:
               ON h.economic_group_id = g.economic_group_id
             LEFT JOIN distribution_listed_companies c
               ON h.cd_cvm = c.cd_cvm
-            WHERE 1=1
+            WHERE d.classification = 'distributor'
         """
         
         params: dict[str, Any] = {"today": today}
@@ -81,9 +81,6 @@ class DistributionReadService:
             params["uf"] = uf
 
         query += " ORDER BY d.canonical_name"
-
-        print("EXECUTING QUERY:", query)
-        print("WITH PARAMS:", params)
 
         with self._engine().connect() as conn:
             rows = conn.execute(text(query), params).fetchall()
@@ -224,7 +221,7 @@ class DistributionReadService:
                             WHERE t.distributor_id = m.distributor_id
                               AND t.subgroup = 'B1'
                               AND t.consumer_class = 'Residencial'
-                              AND t.unit = 'R$/MWh'
+                              AND t.unit = 'MWh'
                               AND t.valid_from <= m.reference_month || '-01'
                               AND t.valid_to >= m.reference_month || '-01'
                             ORDER BY t.valid_from DESC LIMIT 1
@@ -235,7 +232,7 @@ class DistributionReadService:
                             WHERE t.distributor_id = m.distributor_id
                               AND t.subgroup = 'B1'
                               AND t.consumer_class = 'Residencial'
-                              AND t.unit = 'R$/MWh'
+                              AND t.unit = 'MWh'
                               AND t.valid_from <= m.reference_month || '-01'
                               AND t.valid_to >= m.reference_month || '-01'
                             ORDER BY t.valid_from DESC LIMIT 1
@@ -292,44 +289,59 @@ class DistributionReadService:
             # This respects validity ranges of the ownership.
             if frequency == "monthly":
                 group_query = """
+                    WITH group_monthly AS (
+                        SELECT m.*
+                        FROM distribution_monthly_aggregates m
+                        JOIN distribution_ownership_history h
+                          ON m.distributor_id = h.distributor_id
+                         AND h.valid_from <= m.reference_month || '-28'
+                         AND h.valid_to >= m.reference_month || '-01'
+                         AND h.operational_consolidation_flag = 1
+                        WHERE h.economic_group_id = :group_id
+                    ),
+                    continuity_weights AS (
+                        SELECT cf.distributor_id, cf.reference_month, SUM(cf.actual_value) AS consumers
+                        FROM distribution_continuity_facts cf
+                        JOIN (
+                            SELECT DISTINCT distributor_id, reference_month
+                            FROM group_monthly
+                        ) gm
+                          ON cf.distributor_id = gm.distributor_id
+                         AND cf.reference_month = gm.reference_month
+                        WHERE cf.indicator_code = 'NumCon'
+                        GROUP BY cf.distributor_id, cf.reference_month
+                    )
                     SELECT
-                        m.reference_month,
-                        SUM(m.billed_energy_mwh) AS billed_energy_mwh,
-                        SUM(m.revenue_brl) AS revenue_brl,
-                        SUM(m.measured_energy_mwh) AS measured_energy_mwh,
-                        SUM(m.injected_energy_mwh) AS injected_energy_mwh,
-                        SUM(m.losses_mwh) AS losses_mwh,
+                        gm.reference_month,
+                        SUM(gm.billed_energy_mwh) AS billed_energy_mwh,
+                        SUM(gm.revenue_brl) AS revenue_brl,
+                        SUM(gm.measured_energy_mwh) AS measured_energy_mwh,
+                        SUM(gm.injected_energy_mwh) AS injected_energy_mwh,
+                        SUM(gm.losses_mwh) AS losses_mwh,
                         CASE 
-                            WHEN SUM(m.injected_energy_mwh) > 0 THEN SUM(m.losses_mwh) / SUM(m.injected_energy_mwh)
+                            WHEN SUM(gm.injected_energy_mwh) > 0 THEN SUM(gm.losses_mwh) / SUM(gm.injected_energy_mwh)
                             ELSE NULL 
                         END AS losses_pct,
-                        SUM(m.dec_actual * COALESCE(w.consumers, 0)) / NULLIF(SUM(CASE WHEN m.dec_actual IS NOT NULL THEN COALESCE(w.consumers, 0) ELSE 0 END), 0) AS dec_actual,
-                        SUM(m.fec_actual * COALESCE(w.consumers, 0)) / NULLIF(SUM(CASE WHEN m.fec_actual IS NOT NULL THEN COALESCE(w.consumers, 0) ELSE 0 END), 0) AS fec_actual,
-                        SUM(m.dec_limit * COALESCE(w.consumers, 0)) / NULLIF(SUM(CASE WHEN m.dec_limit IS NOT NULL THEN COALESCE(w.consumers, 0) ELSE 0 END), 0) AS dec_limit,
-                        SUM(m.fec_limit * COALESCE(w.consumers, 0)) / NULLIF(SUM(CASE WHEN m.fec_limit IS NOT NULL THEN COALESCE(w.consumers, 0) ELSE 0 END), 0) AS fec_limit,
-                        SUM(m.compensation_count) AS compensation_count,
-                        SUM(m.compensation_value) AS compensation_value,
+                        SUM(gm.dec_actual * COALESCE(w.consumers, 0)) / NULLIF(SUM(CASE WHEN gm.dec_actual IS NOT NULL THEN COALESCE(w.consumers, 0) ELSE 0 END), 0) AS dec_actual,
+                        SUM(gm.fec_actual * COALESCE(w.consumers, 0)) / NULLIF(SUM(CASE WHEN gm.fec_actual IS NOT NULL THEN COALESCE(w.consumers, 0) ELSE 0 END), 0) AS fec_actual,
+                        SUM(gm.dec_limit * COALESCE(w.consumers, 0)) / NULLIF(SUM(CASE WHEN gm.dec_limit IS NOT NULL THEN COALESCE(w.consumers, 0) ELSE 0 END), 0) AS dec_limit,
+                        SUM(gm.fec_limit * COALESCE(w.consumers, 0)) / NULLIF(SUM(CASE WHEN gm.fec_limit IS NOT NULL THEN COALESCE(w.consumers, 0) ELSE 0 END), 0) AS fec_limit,
+                        SUM(gm.compensation_count) AS compensation_count,
+                        SUM(gm.compensation_value) AS compensation_value,
                         CASE
-                            WHEN SUM(m.revenue_brl) > 0 THEN SUM(m.delinquency_pct * m.revenue_brl) / SUM(m.revenue_brl)
+                            WHEN SUM(gm.revenue_brl) > 0 THEN SUM(gm.delinquency_pct * gm.revenue_brl) / SUM(gm.revenue_brl)
                             ELSE NULL
                         END AS delinquency_pct,
-                        SUM(m.mmgd_projects_count) AS mmgd_projects_count,
-                        SUM(m.mmgd_capacity_kw) AS mmgd_capacity_kw
-                    FROM distribution_monthly_aggregates m
-                    JOIN distribution_ownership_history h
-                      ON m.distributor_id = h.distributor_id
-                     AND h.valid_from <= m.reference_month || '-28'
-                     AND h.valid_to >= m.reference_month || '-01'
-                     AND h.operational_consolidation_flag = 1
-                    LEFT JOIN (
-                        SELECT distributor_id, reference_month, SUM(actual_value) AS consumers
-                        FROM distribution_continuity_facts
-                        WHERE indicator_code = 'NumCon'
-                        GROUP BY distributor_id, reference_month
-                    ) w ON m.distributor_id = w.distributor_id AND m.reference_month = w.reference_month
-                    WHERE h.economic_group_id = :group_id
-                    GROUP BY m.reference_month
-                    ORDER BY m.reference_month ASC
+                        SUM(gm.mmgd_projects_count) AS mmgd_projects_count,
+                        SUM(gm.mmgd_capacity_kw) AS mmgd_capacity_kw,
+                        NULL AS te_homologated,
+                        NULL AS tusd_homologated
+                    FROM group_monthly gm
+                    LEFT JOIN continuity_weights w
+                      ON gm.distributor_id = w.distributor_id
+                     AND gm.reference_month = w.reference_month
+                    GROUP BY gm.reference_month
+                    ORDER BY gm.reference_month ASC
                 """
             else:
                 group_query = """
@@ -355,7 +367,9 @@ class DistributionReadService:
                             ELSE NULL
                         END AS delinquency_pct,
                         SUM(m.mmgd_projects_count) AS mmgd_projects_count,
-                        SUM(m.mmgd_capacity_kw) AS mmgd_capacity_kw
+                        SUM(m.mmgd_capacity_kw) AS mmgd_capacity_kw,
+                        NULL AS te_homologated,
+                        NULL AS tusd_homologated
                     FROM distribution_annual_aggregates m
                     JOIN distribution_ownership_history h
                       ON m.distributor_id = h.distributor_id
@@ -380,8 +394,8 @@ class DistributionReadService:
             
             with self._engine().connect() as conn:
                 rows = conn.execute(text(group_query), params).fetchall()
-                
-            return [
+
+            series = [
                 {
                     "period": str(r[0]),
                     "billed_energy_mwh": r[1],
@@ -398,12 +412,73 @@ class DistributionReadService:
                     "compensation_value": r[12],
                     "delinquency_pct": r[13],
                     "mmgd_projects_count": r[14],
-                    "mmgd_capacity_kw": r[15]
+                    "mmgd_capacity_kw": r[15],
+                    "te_homologated": r[16],
+                    "tusd_homologated": r[17]
                 }
                 for r in rows
             ]
+            if frequency == "monthly":
+                self._apply_group_tariffs(entity_id, series)
+            return series
             
         return []
+
+    def _apply_group_tariffs(self, group_id: str, series: list[dict[str, Any]]) -> None:
+        if not series:
+            return
+
+        periods = [row["period"] for row in series]
+        min_date = f"{min(periods)}-01"
+        max_date = f"{max(periods)}-28"
+        query = """
+            SELECT
+                h.distributor_id,
+                h.valid_from AS ownership_from,
+                h.valid_to AS ownership_to,
+                t.valid_from AS tariff_from,
+                t.valid_to AS tariff_to,
+                t.te_value,
+                t.tusd_value
+            FROM distribution_ownership_history h
+            JOIN distribution_tariff_facts t
+              ON t.distributor_id = h.distributor_id
+             AND t.subgroup = 'B1'
+             AND t.consumer_class = 'Residencial'
+             AND t.unit = 'MWh'
+             AND t.valid_to >= :min_date
+             AND t.valid_from <= :max_date
+            WHERE h.economic_group_id = :group_id
+              AND h.operational_consolidation_flag = 1
+              AND h.valid_to >= :min_date
+              AND h.valid_from <= :max_date
+            ORDER BY h.distributor_id, t.valid_from
+        """
+        with self._engine().connect() as conn:
+            tariff_rows = conn.execute(
+                text(query),
+                {"group_id": group_id, "min_date": min_date, "max_date": max_date},
+            ).fetchall()
+
+        for point in series:
+            period = point["period"]
+            period_start = f"{period}-01"
+            period_end = f"{period}-28"
+            latest_by_distributor: dict[str, tuple[str, Any, Any]] = {}
+            for row in tariff_rows:
+                distributor_id = row[0]
+                if row[1] > period_end or row[2] < period_start:
+                    continue
+                if row[3] > period_start or row[4] < period_start:
+                    continue
+                previous = latest_by_distributor.get(distributor_id)
+                if previous is None or row[3] > previous[0]:
+                    latest_by_distributor[distributor_id] = (row[3], row[5], row[6])
+
+            te_values = [value[1] for value in latest_by_distributor.values() if value[1] is not None]
+            tusd_values = [value[2] for value in latest_by_distributor.values() if value[2] is not None]
+            point["te_homologated"] = sum(te_values) / len(te_values) if te_values else None
+            point["tusd_homologated"] = sum(tusd_values) / len(tusd_values) if tusd_values else None
 
     def get_groups(self) -> list[dict[str, Any]]:
         """Query the list of economic groups with their linked listed company details."""
@@ -546,9 +621,23 @@ class DistributionReadService:
             FROM source_snapshots
             ORDER BY fetched_at DESC
         """
+        # 3. Refresh logs
+        query_logs = """
+            SELECT
+                refresh_id, source_id, dataset_name, started_at, finished_at, status,
+                rows_inserted, rows_updated, rows_unchanged, error_message, warning_message,
+                source_rows, parsed_rows, canonical_rows, final_published_rows,
+                elapsed_download_ms, elapsed_parse_ms, elapsed_publish_ms, elapsed_aggregate_ms,
+                elapsed_lock_wait_ms, peak_rss_mb, cpu_time_ms,
+                unresolved_identity_rows, conflict_rows, rejected_rows, snapshot_id
+            FROM energy_source_refresh_log
+            ORDER BY started_at DESC
+            LIMIT 50
+        """
         with self._engine().connect() as conn:
             counts = conn.execute(text(query_counts)).fetchone()
             snapshots = conn.execute(text(query_snapshots)).fetchall()
+            logs = conn.execute(text(query_logs)).fetchall()
             
         return {
             "counts": {
@@ -569,7 +658,36 @@ class DistributionReadService:
                     "status": s[5],
                 }
                 for s in snapshots
+            ],
+            "refresh_logs": [
+                {
+                    "refresh_id": row[0],
+                    "source_id": row[1],
+                    "dataset_name": row[2],
+                    "started_at": row[3],
+                    "finished_at": row[4],
+                    "status": row[5],
+                    "rows_inserted": row[6],
+                    "rows_updated": row[7],
+                    "rows_unchanged": row[8],
+                    "error_message": row[9],
+                    "warning_message": row[10],
+                    "source_rows": row[11],
+                    "parsed_rows": row[12],
+                    "canonical_rows": row[13],
+                    "final_published_rows": row[14],
+                    "elapsed_download_ms": row[15],
+                    "elapsed_parse_ms": row[16],
+                    "elapsed_publish_ms": row[17],
+                    "elapsed_aggregate_ms": row[18],
+                    "elapsed_lock_wait_ms": row[19],
+                    "peak_rss_mb": row[20],
+                    "cpu_time_ms": row[21],
+                    "unresolved_identity_rows": row[22],
+                    "conflict_rows": row[23],
+                    "rejected_rows": row[24],
+                    "snapshot_id": row[25],
+                }
+                for row in logs
             ]
         }
-
-

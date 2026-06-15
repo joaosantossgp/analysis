@@ -94,6 +94,68 @@ def _read_distribution_csv(file_path: Path, **kwargs) -> pl.DataFrame:
     raise last_exc
 
 
+def classify_distribution_entity(name: str | None, cnpj: str | None) -> str:
+    """Classify an unmapped entity into a specific non-distributor or distributor category."""
+    if not name:
+        return "unknown"
+    name_upper = name.upper()
+
+    # 1. Total/Synthetic records
+    if any(k in name_upper for k in ["TOTAL", "SUBTOTAL", "SUM", "RESUMO"]):
+        return "source_total"
+
+    # 2. Malformed
+    if name_upper in ("MALFORMED", "UNKNOWN"):
+        return "malformed"
+
+    # 3. Generators
+    generator_keywords = [
+        "GERACAO", "GERAÇAO", "GERAÇÃO", "GERADORA", "ENERGETICA", "ENERGÉTICA", "CONSORCIO", "CONSORCIO",
+        "EOLICA", "EÓLICA", "UHE", "PCH", "SOLAR", "BIOMASSA", "TERMOELETRICA", "TERMELÉTRICA", "CESP",
+        "FURNAS", "ELETRONORTE", "CHESF", "ELETROSUL", "TRACTEBEL", "ENGIE", "LIGHT ENERGIA", "CEB GERAÇÃO",
+        "CEB GERAÇAO", "AES TIETE", "AES TIETÊ", "ROSAL", "ENERGEST", "VP ENERGIA", "HYDRO", "CENTRAL ELETRICA",
+        "CENTRAIS ELETRICAS", "CENTRAIS ELÉTRICAS", "COMPANHIA DE GERAÇÃO", "COMPANHIA DE GERAÇAO",
+        "SAO SIMAO", "SÃO SIMÃO", "SANTA CRUZ GERAÇÃO", "CLFSC-GER", "QUATIARA"
+    ]
+    if any(k in name_upper for k in generator_keywords):
+        return "generator"
+
+    # 4. Suppliers / Traders
+    supplier_keywords = [
+        "COMERCIALIZADORA", "COMERCIALIZACAO", "COMERCIALIZAÇAO", "COMERCIALIZAÇÃO", "TRADING",
+        "GESTAO DE ENERGIA", "GESTÃO DE ENERGIA", "COMERCIAL", "MARKET", "VENDAS"
+    ]
+    if any(k in name_upper for k in supplier_keywords):
+        return "supplier"
+
+    # 5. Accessing Agents / Consumers / others
+    accessing_keywords = [
+        "CONSUMIDOR", "AUTOPRODUTOR", "ACESSANTE", "LIVRE", "COMPANHIA SIDERURGICA", "SIDERURGICA",
+        "VALE S.A.", "PETROBRAS", "CSN", "GERDAU"
+    ]
+    if any(k in name_upper for k in accessing_keywords):
+        return "accessing_agent"
+
+    # 6. Cooperatives/Permissionaires - they are legal entities but not our target concessionaires
+    coop_keywords = [
+        "COOPERATIVA", "COOP ", "COOP.", "CERRP", "COOPERALIANÇA", "COOPERALIANCA", "COOPERCOCAL",
+        "CRELUZ", "CEPRAG", "CERBRANORTE", "COOPERNORTE", "CERPALO", "CERAÇ", "CERAC", "CERGRAL",
+        "COOPERSUL", "CERIS", "CERMC", "CERIPA", "CERMOFUL", "CERTAJA", "CASTRO - DIS", "CODESEL",
+        "CERFOX", "CERAL", "CERPRO", "CERVIM", "CERIPA", "CEDRAP"
+    ]
+    if any(k in name_upper for k in coop_keywords):
+        return "legal_entity_non_distributor"
+
+    # 7. Renamed / Extinguished Distributors
+    historical_keywords = [
+        "CEEE-D", "CELG-D", "SULGIPE", "EFLUL", "DME ", "DEMEI", "ELETROCAR", "CEB DIS", "CEBDIS"
+    ]
+    if any(k in name_upper for k in historical_keywords):
+        return "extinguished_merged_distributor"
+
+    return "unknown"
+
+
 def _sha256_text(value: str | None) -> str:
     return hashlib.sha256((value or "").encode("utf-8")).hexdigest()
 
@@ -109,6 +171,49 @@ def _hash_columns(df: pl.DataFrame, columns: list[str], alias: str) -> pl.DataFr
 def _unresolved_source_entity_id(prefix: str, raw_name: str | None, cnpj: str | None = None) -> str:
     raw_key = f"{cnpj or ''}|{raw_name or ''}".strip()
     return f"unresolved_{prefix}_{_sha256_text(raw_key)[:16]}"
+
+
+def _register_distributor_if_missing(conn, cnpj: str, raw_name: str | None, default_status: str = 'active') -> str:
+    """Helper to dynamically register a distributor if its CNPJ is not mapped yet."""
+    # 1. Check if already exists in DB
+    existing = conn.execute(
+        text("SELECT distributor_id FROM distribution_distributors WHERE normalized_cnpj = :cnpj"),
+        {"cnpj": cnpj}
+    ).fetchone()
+    if existing:
+        return existing[0]
+    existing_alias = conn.execute(
+        text("SELECT distributor_id FROM distribution_distributor_aliases WHERE source_cnpj = :cnpj"),
+        {"cnpj": cnpj}
+    ).fetchone()
+    if existing_alias:
+        return existing_alias[0]
+
+    # 2. Register it dynamically
+    dist_id = f"unmapped_{cnpj}"
+    name = raw_name or f"Distribuidores CNPJ {cnpj}"
+    sigla = raw_name[:15] if raw_name else f"CNPJ_{cnpj[:4]}"
+    category = classify_distribution_entity(name, cnpj)
+    status = default_status if category in ('distributor', 'unknown') else 'unresolved_source_entity'
+
+    conn.execute(
+        text("""
+            INSERT OR IGNORE INTO distribution_distributors
+                (distributor_id, canonical_name, trade_name, normalized_cnpj, status, classification)
+            VALUES
+                (:id, :name, :trade, :cnpj, :status, :classification)
+        """),
+        {
+            "id": dist_id,
+            "name": name,
+            "trade": sigla,
+            "cnpj": cnpj,
+            "status": status,
+            "classification": category,
+        }
+    )
+    logger.info("Dynamically registered unmapped agent: %s (%s) as %s (status: %s)", name, dist_id, category, status)
+    return dist_id
 
 
 def _reconcile_frame(df: pl.DataFrame, key_cols: list[str], value_cols: list[str] | None = None) -> dict:
@@ -143,6 +248,12 @@ def _reconcile_frame(df: pl.DataFrame, key_cols: list[str], value_cols: list[str
         "conflicting_duplicate_key_groups": conflicting_duplicate_groups,
         "exact_duplicate_rows": df.height - df.unique().height,
     }
+
+
+def _dict_batches(df: pl.DataFrame, chunk_size: int):
+    """Yield bounded Python-record batches from a Polars frame."""
+    for offset in range(0, df.height, chunk_size):
+        yield df.slice(offset, chunk_size).to_dicts()
 
 
 @dataclass(frozen=True)
@@ -540,27 +651,11 @@ def upsert_samp_mercado_facts(conn, df: pl.DataFrame, snapshot_id: str) -> int:
     # 2. Identify and register new unmapped distributors dynamically
     unique_agentes = df.filter(pl.col("normalized_cnpj").is_not_null()).select(["normalized_cnpj", "raw_name", "raw_sigla"]).unique(subset=["normalized_cnpj"])
     
-    new_dists = []
     for row in unique_agentes.iter_rows(named=True):
         cnpj = row["normalized_cnpj"]
         if cnpj not in dist_map:
-            dist_id = f"unmapped_{cnpj}"
-            name = row["raw_name"] or f"Distribuidores CNPJ {cnpj}"
-            sigla = row["raw_sigla"] or f"CNPJ_{cnpj[:4]}"
-            
-            # Dynamic insert into distributors
-            conn.execute(
-                text("""
-                    INSERT OR IGNORE INTO distribution_distributors
-                        (distributor_id, canonical_name, trade_name, normalized_cnpj, status)
-                    VALUES
-                        (:id, :name, :trade, :cnpj, 'active')
-                """),
-                {"id": dist_id, "name": name, "trade": sigla, "cnpj": cnpj}
-            )
+            dist_id = _register_distributor_if_missing(conn, cnpj, row["raw_name"])
             dist_map[cnpj] = dist_id
-            new_dists.append(dist_id)
-            logger.info("Dynamically registered unmapped distributor: %s (%s)", name, dist_id)
 
     # 3. Add distributor_id to DataFrame
     # Convert mapping to Polars join or replace
@@ -581,8 +676,6 @@ def upsert_samp_mercado_facts(conn, df: pl.DataFrame, snapshot_id: str) -> int:
         )
 
     # 4. Bulk insert into facts table
-    records = df_with_dist.to_dicts()
-    
     # Insert OR REPLACE in chunks to avoid SQLite variable limit
     chunk_size = 5000
     total_inserted = 0
@@ -604,8 +697,7 @@ def upsert_samp_mercado_facts(conn, df: pl.DataFrame, snapshot_id: str) -> int:
         )
     """
 
-    for i in range(0, len(records), chunk_size):
-        chunk = records[i : i + chunk_size]
+    for chunk in _dict_batches(df_with_dist, chunk_size):
         payload = []
         for r in chunk:
             payload.append({
@@ -629,13 +721,20 @@ def upsert_samp_mercado_facts(conn, df: pl.DataFrame, snapshot_id: str) -> int:
                 "normalized_unit": r["normalized_unit"],
                 "source_row_hash": r["source_row_hash"],
                 "snapshot_id": snapshot_id
-            })
+        })
         
         conn.execute(text(query), payload)
         total_inserted += len(chunk)
 
     logger.info("Upserted %d facts into distribution_market_facts", total_inserted)
-    return total_inserted
+    stats = {
+        "source_rows": df_with_dist.height,
+        "parsed_rows": df_with_dist.height,
+        "canonical_rows": df_with_dist.height,
+        "unresolved_identity_rows": unresolved_count,
+        "final_published_rows": total_inserted,
+    }
+    return IngestionResult(total_inserted, stats)
 
 
 def parse_samp_balanco(file_path: Path, format_type: str = "parquet") -> pl.DataFrame:
@@ -784,21 +883,8 @@ def upsert_samp_balanco_facts(conn, df: pl.DataFrame, snapshot_id: str) -> int:
     for row in unique_agentes.iter_rows(named=True):
         cnpj = row["normalized_cnpj"]
         if cnpj not in dist_map:
-            dist_id = f"unmapped_{cnpj}"
-            name = row["raw_name"] or f"Distribuidores CNPJ {cnpj}"
-            sigla = f"CNPJ_{cnpj[:4]}"
-            
-            conn.execute(
-                text("""
-                    INSERT OR IGNORE INTO distribution_distributors
-                        (distributor_id, canonical_name, trade_name, normalized_cnpj, status)
-                    VALUES
-                        (:id, :name, :trade, :cnpj, 'active')
-                """),
-                {"id": dist_id, "name": name, "trade": sigla, "cnpj": cnpj}
-            )
+            dist_id = _register_distributor_if_missing(conn, cnpj, row["raw_name"])
             dist_map[cnpj] = dist_id
-            logger.info("Dynamically registered unmapped distributor from balance facts: %s (%s)", name, dist_id)
 
     # 3. Add distributor_id to DataFrame
     mapping_df = pl.DataFrame({
@@ -821,18 +907,20 @@ def upsert_samp_balanco_facts(conn, df: pl.DataFrame, snapshot_id: str) -> int:
             raw_name = entity.get("raw_name")
             cnpj = entity.get("normalized_cnpj")
             entity_id = _unresolved_source_entity_id("balance", raw_name, cnpj)
+            category = classify_distribution_entity(raw_name, cnpj)
             conn.execute(
                 text("""
                     INSERT OR IGNORE INTO distribution_distributors
-                        (distributor_id, canonical_name, trade_name, normalized_cnpj, status)
+                        (distributor_id, canonical_name, trade_name, normalized_cnpj, status, classification)
                     VALUES
-                        (:id, :name, :trade, :cnpj, 'unresolved_source_entity')
+                        (:id, :name, :trade, :cnpj, 'unresolved_source_entity', :classification)
                 """),
                 {
                     "id": entity_id,
                     "name": raw_name or f"Unresolved balance source {entity_id[-8:]}",
                     "trade": raw_name,
                     "cnpj": cnpj,
+                    "classification": category,
                 },
             )
         df_with_dist = df_with_dist.with_columns(
@@ -868,8 +956,7 @@ def upsert_samp_balanco_facts(conn, df: pl.DataFrame, snapshot_id: str) -> int:
         )
     """
 
-    for i in range(0, df_with_dist.height, chunk_size):
-        chunk = df_with_dist.slice(i, chunk_size).to_dicts()
+    for chunk in _dict_batches(df_with_dist, chunk_size):
         payload = []
         for r in chunk:
             payload.append({
@@ -892,7 +979,14 @@ def upsert_samp_balanco_facts(conn, df: pl.DataFrame, snapshot_id: str) -> int:
         total_inserted += len(chunk)
 
     logger.info("Upserted %d facts into distribution_energy_balance_facts", total_inserted)
-    return total_inserted
+    stats = {
+        "source_rows": df_with_dist.height,
+        "parsed_rows": df_with_dist.height,
+        "canonical_rows": df_with_dist.height,
+        "unresolved_identity_rows": unresolved_count,
+        "final_published_rows": total_inserted,
+    }
+    return IngestionResult(total_inserted, stats)
 
 
 def parse_continuity_actuals(file_path: Path, format_type: str = "parquet") -> pl.DataFrame:
@@ -1029,21 +1123,8 @@ def upsert_continuity_actuals_facts(conn, df: pl.DataFrame, snapshot_id: str) ->
     for row in unique_agentes.iter_rows(named=True):
         cnpj = row["normalized_cnpj"]
         if cnpj not in dist_map:
-            dist_id = f"unmapped_{cnpj}"
-            name = row["raw_name"] or f"Distribuidores CNPJ {cnpj}"
-            sigla = f"CNPJ_{cnpj[:4]}"
-            
-            conn.execute(
-                text("""
-                    INSERT OR IGNORE INTO distribution_distributors
-                        (distributor_id, canonical_name, trade_name, normalized_cnpj, status)
-                    VALUES
-                        (:id, :name, :trade, :cnpj, 'active')
-                """),
-                {"id": dist_id, "name": name, "trade": sigla, "cnpj": cnpj}
-            )
+            dist_id = _register_distributor_if_missing(conn, cnpj, row["raw_name"])
             dist_map[cnpj] = dist_id
-            logger.info("Dynamically registered unmapped distributor from actuals facts: %s (%s)", name, dist_id)
 
     mapping_df = pl.DataFrame({
         "normalized_cnpj": list(dist_map.keys()),
@@ -1058,7 +1139,6 @@ def upsert_continuity_actuals_facts(conn, df: pl.DataFrame, snapshot_id: str) ->
             pl.col("distributor_id").fill_null("unresolved")
         )
 
-    records = df_with_dist.to_dicts()
     chunk_size = 5000
     total_inserted = 0
     
@@ -1073,8 +1153,7 @@ def upsert_continuity_actuals_facts(conn, df: pl.DataFrame, snapshot_id: str) ->
         )
     """
 
-    for i in range(0, len(records), chunk_size):
-        chunk = records[i : i + chunk_size]
+    for chunk in _dict_batches(df_with_dist, chunk_size):
         payload = []
         for r in chunk:
             payload.append({
@@ -1093,7 +1172,14 @@ def upsert_continuity_actuals_facts(conn, df: pl.DataFrame, snapshot_id: str) ->
         total_inserted += len(chunk)
 
     logger.info("Upserted %d facts into distribution_continuity_facts", total_inserted)
-    return total_inserted
+    stats = {
+        "source_rows": df_with_dist.height,
+        "parsed_rows": df_with_dist.height,
+        "canonical_rows": df_with_dist.height,
+        "unresolved_identity_rows": unresolved_count,
+        "final_published_rows": total_inserted,
+    }
+    return IngestionResult(total_inserted, stats)
 
 
 def parse_continuity_limits(file_path: Path, format_type: str = "csv") -> pl.DataFrame:
@@ -1212,21 +1298,8 @@ def upsert_continuity_limits_facts(conn, df: pl.DataFrame, snapshot_id: str) -> 
     for row in unique_agentes.iter_rows(named=True):
         cnpj = row["normalized_cnpj"]
         if cnpj not in dist_map:
-            dist_id = f"unmapped_{cnpj}"
-            name = row["raw_name"] or f"Distribuidores CNPJ {cnpj}"
-            sigla = f"CNPJ_{cnpj[:4]}"
-            
-            conn.execute(
-                text("""
-                    INSERT OR IGNORE INTO distribution_distributors
-                        (distributor_id, canonical_name, trade_name, normalized_cnpj, status)
-                    VALUES
-                        (:id, :name, :trade, :cnpj, 'active')
-                """),
-                {"id": dist_id, "name": name, "trade": sigla, "cnpj": cnpj}
-            )
+            dist_id = _register_distributor_if_missing(conn, cnpj, row["raw_name"])
             dist_map[cnpj] = dist_id
-            logger.info("Dynamically registered unmapped distributor from limit facts: %s (%s)", name, dist_id)
 
     mapping_df = pl.DataFrame({
         "normalized_cnpj": list(dist_map.keys()),
@@ -1241,7 +1314,6 @@ def upsert_continuity_limits_facts(conn, df: pl.DataFrame, snapshot_id: str) -> 
             pl.col("distributor_id").fill_null("unresolved")
         )
 
-    records = df_with_dist.to_dicts()
     chunk_size = 5000
     total_inserted = 0
     
@@ -1256,8 +1328,7 @@ def upsert_continuity_limits_facts(conn, df: pl.DataFrame, snapshot_id: str) -> 
         )
     """
 
-    for i in range(0, len(records), chunk_size):
-        chunk = records[i : i + chunk_size]
+    for chunk in _dict_batches(df_with_dist, chunk_size):
         payload = []
         for r in chunk:
             payload.append({
@@ -1276,7 +1347,14 @@ def upsert_continuity_limits_facts(conn, df: pl.DataFrame, snapshot_id: str) -> 
         total_inserted += len(chunk)
 
     logger.info("Upserted %d limits into distribution_continuity_limits", total_inserted)
-    return total_inserted
+    stats = {
+        "source_rows": df_with_dist.height,
+        "parsed_rows": df_with_dist.height,
+        "canonical_rows": df_with_dist.height,
+        "unresolved_identity_rows": unresolved_count,
+        "final_published_rows": total_inserted,
+    }
+    return IngestionResult(total_inserted, stats)
 
 
 def parse_continuity_compensations(file_path: Path, format_type: str = "parquet") -> pl.DataFrame:
@@ -1407,21 +1485,8 @@ def upsert_continuity_compensations_facts(conn, df: pl.DataFrame, snapshot_id: s
     for row in unique_agentes.iter_rows(named=True):
         cnpj = row["normalized_cnpj"]
         if cnpj not in dist_map:
-            dist_id = f"unmapped_{cnpj}"
-            name = row["raw_name"] or f"Distribuidores CNPJ {cnpj}"
-            sigla = f"CNPJ_{cnpj[:4]}"
-            
-            conn.execute(
-                text("""
-                    INSERT OR IGNORE INTO distribution_distributors
-                        (distributor_id, canonical_name, trade_name, normalized_cnpj, status)
-                    VALUES
-                        (:id, :name, :trade, :cnpj, 'active')
-                """),
-                {"id": dist_id, "name": name, "trade": sigla, "cnpj": cnpj}
-            )
+            dist_id = _register_distributor_if_missing(conn, cnpj, row["raw_name"])
             dist_map[cnpj] = dist_id
-            logger.info("Dynamically registered unmapped distributor from compensation facts: %s (%s)", name, dist_id)
 
     mapping_df = pl.DataFrame({
         "normalized_cnpj": list(dist_map.keys()),
@@ -1436,7 +1501,6 @@ def upsert_continuity_compensations_facts(conn, df: pl.DataFrame, snapshot_id: s
             pl.col("distributor_id").fill_null("unresolved")
         )
 
-    records = df_with_dist.to_dicts()
     chunk_size = 5000
     total_inserted = 0
     
@@ -1451,8 +1515,7 @@ def upsert_continuity_compensations_facts(conn, df: pl.DataFrame, snapshot_id: s
         )
     """
 
-    for i in range(0, len(records), chunk_size):
-        chunk = records[i : i + chunk_size]
+    for chunk in _dict_batches(df_with_dist, chunk_size):
         payload = []
         for r in chunk:
             payload.append({
@@ -1471,7 +1534,14 @@ def upsert_continuity_compensations_facts(conn, df: pl.DataFrame, snapshot_id: s
         total_inserted += len(chunk)
 
     logger.info("Upserted %d compensations into distribution_continuity_compensations", total_inserted)
-    return total_inserted
+    stats = {
+        "source_rows": df_with_dist.height,
+        "parsed_rows": df_with_dist.height,
+        "canonical_rows": df_with_dist.height,
+        "unresolved_identity_rows": unresolved_count,
+        "final_published_rows": total_inserted,
+    }
+    return IngestionResult(total_inserted, stats)
 
 
 def parse_tariffs(file_path: Path, format_type: str = "csv") -> pl.DataFrame:
@@ -1637,13 +1707,17 @@ def parse_tariffs(file_path: Path, format_type: str = "csv") -> pl.DataFrame:
 def upsert_tariffs_facts(conn, df: pl.DataFrame, snapshot_id: str) -> int:
     """Upsert parsed tariff facts into distribution_tariff_facts, resolving distributor identities."""
     if df.height == 0:
-        return 0
+        return IngestionResult(0, {"source_rows": 0, "parsed_rows": 0, "final_published_rows": 0})
 
     if "business_key_hash" not in df.columns:
         raise DistributionSchemaError(
             "Tarifas de Aplicacao publication failed: missing business_key_hash. "
             f"Available columns: {df.columns}. Parser: {PARSER_VERSION}."
         )
+
+    total_parsed = df.height
+    conflicting_logical_keys = 0
+    conflict_rows_count = 0
 
     conflicts = (
         df.group_by("business_key_hash")
@@ -1654,12 +1728,14 @@ def upsert_tariffs_facts(conn, df: pl.DataFrame, snapshot_id: str) -> int:
         .filter((pl.col("tusd_values") > 1) | (pl.col("te_values") > 1))
     )
     if conflicts.height:
+        conflicting_logical_keys = conflicts.height
+        conflict_rows = df.join(conflicts.select("business_key_hash"), on="business_key_hash", how="inner")
+        conflict_rows_count = conflict_rows.height
         logger.warning(
             "Quarantining %d tariff logical keys with conflicting TE/TUSD values in snapshot %s",
             conflicts.height,
             snapshot_id,
         )
-        conflict_rows = df.join(conflicts.select("business_key_hash"), on="business_key_hash", how="inner")
         conflict_query = """
             INSERT OR REPLACE INTO distribution_tariff_conflicts (
                 conflict_row_id, business_key_hash, normalized_cnpj, raw_name,
@@ -1690,7 +1766,15 @@ def upsert_tariffs_facts(conn, df: pl.DataFrame, snapshot_id: str) -> int:
         )
         df = df.join(conflicts.select("business_key_hash"), on="business_key_hash", how="anti")
         if df.height == 0:
-            return 0
+            stats = {
+                "source_rows": total_parsed,
+                "parsed_rows": total_parsed,
+                "conflicting_logical_keys": conflicting_logical_keys,
+                "conflict_rows": conflict_rows_count,
+                "quarantined_rows": conflict_rows_count,
+                "final_published_rows": 0,
+            }
+            return IngestionResult(0, stats)
 
     dist_map = {}
     for r in conn.execute(text("SELECT distributor_id, normalized_cnpj FROM distribution_distributors")).fetchall():
@@ -1705,21 +1789,8 @@ def upsert_tariffs_facts(conn, df: pl.DataFrame, snapshot_id: str) -> int:
     for row in unique_agentes.iter_rows(named=True):
         cnpj = row["normalized_cnpj"]
         if cnpj not in dist_map:
-            dist_id = f"unmapped_{cnpj}"
-            name = row["raw_name"] or f"Distribuidores CNPJ {cnpj}"
-            sigla = f"CNPJ_{cnpj[:4]}"
-            
-            conn.execute(
-                text("""
-                    INSERT OR IGNORE INTO distribution_distributors
-                        (distributor_id, canonical_name, trade_name, normalized_cnpj, status)
-                    VALUES
-                        (:id, :name, :trade, :cnpj, 'active')
-                """),
-                {"id": dist_id, "name": name, "trade": sigla, "cnpj": cnpj}
-            )
+            dist_id = _register_distributor_if_missing(conn, cnpj, row["raw_name"])
             dist_map[cnpj] = dist_id
-            logger.info("Dynamically registered unmapped distributor from tariff facts: %s (%s)", name, dist_id)
 
     mapping_df = pl.DataFrame({
         "normalized_cnpj": list(dist_map.keys()),
@@ -1734,7 +1805,6 @@ def upsert_tariffs_facts(conn, df: pl.DataFrame, snapshot_id: str) -> int:
             pl.col("distributor_id").fill_null("unresolved")
         )
 
-    records = df_with_dist.to_dicts()
     chunk_size = 5000
     total_inserted = 0
     
@@ -1753,8 +1823,7 @@ def upsert_tariffs_facts(conn, df: pl.DataFrame, snapshot_id: str) -> int:
         )
     """
 
-    for i in range(0, len(records), chunk_size):
-        chunk = records[i : i + chunk_size]
+    for chunk in _dict_batches(df_with_dist, chunk_size):
         payload = []
         for r in chunk:
             payload.append({
@@ -1782,7 +1851,17 @@ def upsert_tariffs_facts(conn, df: pl.DataFrame, snapshot_id: str) -> int:
         total_inserted += len(chunk)
 
     logger.info("Upserted %d facts into distribution_tariff_facts", total_inserted)
-    return total_inserted
+    stats = {
+        "source_rows": total_parsed,
+        "parsed_rows": total_parsed,
+        "canonical_rows": df_with_dist.height,
+        "unresolved_identity_rows": unresolved_count,
+        "conflicting_logical_keys": conflicting_logical_keys,
+        "conflict_rows": conflict_rows_count,
+        "quarantined_rows": conflict_rows_count,
+        "final_published_rows": total_inserted,
+    }
+    return IngestionResult(total_inserted, stats)
 
 
 def parse_delinquency(file_path: Path, format_type: str = "csv") -> pl.DataFrame:
@@ -1914,21 +1993,8 @@ def upsert_delinquency_facts(conn, df: pl.DataFrame, snapshot_id: str) -> int:
     for row in unique_agentes.iter_rows(named=True):
         cnpj = row["normalized_cnpj"]
         if cnpj not in dist_map:
-            dist_id = f"unmapped_{cnpj}"
-            name = row["raw_name"] or f"Distribuidores CNPJ {cnpj}"
-            sigla = f"CNPJ_{cnpj[:4]}"
-            
-            conn.execute(
-                text("""
-                    INSERT OR IGNORE INTO distribution_distributors
-                        (distributor_id, canonical_name, trade_name, normalized_cnpj, status)
-                    VALUES
-                        (:id, :name, :trade, :cnpj, 'active')
-                """),
-                {"id": dist_id, "name": name, "trade": sigla, "cnpj": cnpj}
-            )
+            dist_id = _register_distributor_if_missing(conn, cnpj, row["raw_name"])
             dist_map[cnpj] = dist_id
-            logger.info("Dynamically registered unmapped distributor from delinquency facts: %s (%s)", name, dist_id)
 
     mapping_df = pl.DataFrame({
         "normalized_cnpj": list(dist_map.keys()),
@@ -1950,18 +2016,20 @@ def upsert_delinquency_facts(conn, df: pl.DataFrame, snapshot_id: str) -> int:
             raw_name = entity.get("raw_name")
             cnpj = entity.get("normalized_cnpj")
             entity_id = _unresolved_source_entity_id("delinquency", raw_name, cnpj)
+            category = classify_distribution_entity(raw_name, cnpj)
             conn.execute(
                 text("""
                     INSERT OR IGNORE INTO distribution_distributors
-                        (distributor_id, canonical_name, trade_name, normalized_cnpj, status)
+                        (distributor_id, canonical_name, trade_name, normalized_cnpj, status, classification)
                     VALUES
-                        (:id, :name, :trade, :cnpj, 'unresolved_source_entity')
+                        (:id, :name, :trade, :cnpj, 'unresolved_source_entity', :classification)
                 """),
                 {
                     "id": entity_id,
                     "name": raw_name or f"Unresolved delinquency source {entity_id[-8:]}",
                     "trade": raw_name,
                     "cnpj": cnpj,
+                    "classification": category,
                 },
             )
         df_with_dist = df_with_dist.with_columns(
@@ -1981,7 +2049,6 @@ def upsert_delinquency_facts(conn, df: pl.DataFrame, snapshot_id: str) -> int:
         )
 
     # 3. Bulk insert into facts table
-    records = df_with_dist.to_dicts()
     chunk_size = 5000
     total_inserted = 0
     
@@ -1996,8 +2063,7 @@ def upsert_delinquency_facts(conn, df: pl.DataFrame, snapshot_id: str) -> int:
         )
     """
 
-    for i in range(0, len(records), chunk_size):
-        chunk = records[i : i + chunk_size]
+    for chunk in _dict_batches(df_with_dist, chunk_size):
         payload = []
         for r in chunk:
             payload.append({
@@ -2014,7 +2080,16 @@ def upsert_delinquency_facts(conn, df: pl.DataFrame, snapshot_id: str) -> int:
         total_inserted += len(chunk)
 
     logger.info("Upserted %d facts into distribution_delinquency_facts", total_inserted)
-    return total_inserted
+    stats = {
+        "source_rows": df_with_dist.height,
+        "parsed_rows": df_with_dist.height,
+        "canonical_rows": df_with_dist.height,
+        "unresolved_identity_rows": unresolved_count,
+        "lead_kpi_rows": df_with_dist.filter(pl.col("indicator_code") == "ITot1").height,
+        "supporting_detail_rows": df_with_dist.filter(pl.col("indicator_code") != "ITot1").height,
+        "final_published_rows": total_inserted,
+    }
+    return IngestionResult(total_inserted, stats)
 
 
 def parse_mmgd(file_path: Path, format_type: str = "parquet") -> pl.DataFrame:
@@ -2244,10 +2319,17 @@ def parse_mmgd(file_path: Path, format_type: str = "parquet") -> pl.DataFrame:
     ])
 
 
-def upsert_mmgd_facts(conn, df: pl.DataFrame, snapshot_id: str) -> int:
+class IngestionResult(int):
+    def __new__(cls, val, stats=None):
+        obj = super().__new__(cls, val)
+        obj.stats = stats or {}
+        return obj
+
+
+def upsert_mmgd_facts(conn, df: pl.DataFrame, snapshot_id: str, is_full_snapshot: bool = True) -> int:
     """Upsert parsed MMGD projects and snapshots, resolving distributor identities."""
     if df.height == 0:
-        return 0
+        return IngestionResult(0, {"source_rows": 0, "parsed_rows": 0, "final_published_rows": 0})
 
     # 1. Resolve distributor mapping
     dist_map = {}
@@ -2263,21 +2345,8 @@ def upsert_mmgd_facts(conn, df: pl.DataFrame, snapshot_id: str) -> int:
     for row in unique_agentes.iter_rows(named=True):
         cnpj = row["normalized_cnpj"]
         if cnpj not in dist_map:
-            dist_id = f"unmapped_{cnpj}"
-            name = row["raw_name"] or f"Distribuidores CNPJ {cnpj}"
-            sigla = f"CNPJ_{cnpj[:4]}"
-            
-            conn.execute(
-                text("""
-                    INSERT OR IGNORE INTO distribution_distributors
-                        (distributor_id, canonical_name, trade_name, normalized_cnpj, status)
-                    VALUES
-                        (:id, :name, :trade, :cnpj, 'active')
-                """),
-                {"id": dist_id, "name": name, "trade": sigla, "cnpj": cnpj}
-            )
+            dist_id = _register_distributor_if_missing(conn, cnpj, row["raw_name"])
             dist_map[cnpj] = dist_id
-            logger.info("Dynamically registered unmapped distributor from MMGD facts: %s (%s)", name, dist_id)
 
     mapping_df = pl.DataFrame({
         "normalized_cnpj": list(dist_map.keys()),
@@ -2292,30 +2361,92 @@ def upsert_mmgd_facts(conn, df: pl.DataFrame, snapshot_id: str) -> int:
             pl.col("distributor_id").fill_null("unresolved")
         )
 
-    records = df_with_dist.to_dicts()
-    chunk_size = 5000
-    total_inserted = 0
+    # Count exact duplicates in input before deduplication
+    total_input_rows = df_with_dist.height
+    df_deduped = df_with_dist.unique(subset=["project_id"], keep="first")
+    exact_duplicates = total_input_rows - df_deduped.height
 
-    # We do the upsert in two stages:
-    # A. Upsert into distribution_mmgd_projects
-    # B. Upsert into distribution_mmgd_project_snapshots
+    # Load existing project IDs and hashes from database
+    df_existing = pl.read_database(
+        "SELECT project_id, source_row_hash, status FROM distribution_mmgd_projects",
+        conn
+    )
 
-    # A. Projects
-    projects_query = """
-        INSERT OR REPLACE INTO distribution_mmgd_projects (
+    if df_existing.height > 0:
+        df_existing = df_existing.rename({
+            "source_row_hash": "existing_hash",
+            "status": "existing_status"
+        })
+    else:
+        df_existing = pl.DataFrame({
+            "project_id": pl.Series([], dtype=pl.String),
+            "existing_hash": pl.Series([], dtype=pl.String),
+            "existing_status": pl.Series([], dtype=pl.String)
+        })
+
+    # Join incoming with existing
+    df_joined = df_deduped.join(df_existing, on="project_id", how="left")
+
+    # A. New projects: not in existing database
+    df_new = df_joined.filter(pl.col("existing_hash").is_null())
+
+    # B. Changed projects: exists in database but has different hash or was inactive
+    df_changed = df_joined.filter(
+        pl.col("existing_hash").is_not_null() & (
+            (pl.col("source_row_hash") != pl.col("existing_hash")) |
+            (pl.col("existing_status") == "inactive")
+        )
+    )
+
+    # C. Removals/deactivations (only if is_full_snapshot is True)
+    df_removed = pl.DataFrame()
+    if is_full_snapshot and df_existing.height > 0:
+        df_removed = df_existing.filter(
+            (pl.col("existing_status") == "active") &
+            (~pl.col("project_id").is_in(df_deduped["project_id"].to_list()))
+        )
+
+    # D. Unchanged projects
+    df_unchanged = df_joined.filter(
+        pl.col("existing_hash").is_not_null() &
+        (pl.col("source_row_hash") == pl.col("existing_hash")) &
+        (pl.col("existing_status") == "active")
+    )
+
+    # Queries
+    insert_projects_query = """
+        INSERT INTO distribution_mmgd_projects (
             project_id, distributor_id, municipality, uf,
             generation_type, generation_source, size_category,
-            latitude, longitude, connection_date
+            latitude, longitude, connection_date, status, source_row_hash
         )
         VALUES (
             :project_id, :distributor_id, :municipality, :uf,
             :generation_type, :generation_source, :size_category,
-            :latitude, :longitude, :connection_date
+            :latitude, :longitude, :connection_date, 'active', :source_row_hash
         )
     """
 
-    # B. Snapshots
-    snapshots_query = """
+    update_projects_query = """
+        UPDATE distribution_mmgd_projects
+        SET distributor_id = :distributor_id,
+            municipality = :municipality,
+            uf = :uf,
+            generation_type = :generation_type,
+            generation_source = :generation_source,
+            size_category = :size_category,
+            latitude = :latitude,
+            longitude = :longitude,
+            connection_date = :connection_date,
+            status = 'active',
+            deactivated_at_month = NULL,
+            deactivation_reason = NULL,
+            deactivation_snapshot_id = NULL,
+            source_row_hash = :source_row_hash
+        WHERE project_id = :project_id
+    """
+
+    insert_snapshots_query = """
         INSERT OR REPLACE INTO distribution_mmgd_project_snapshots (
             snapshot_row_id, project_id, reference_month,
             installed_capacity_kw, beneficiary_units_count,
@@ -2328,49 +2459,95 @@ def upsert_mmgd_facts(conn, df: pl.DataFrame, snapshot_id: str) -> int:
         )
     """
 
-    for i in range(0, len(records), chunk_size):
-        chunk = records[i : i + chunk_size]
-        
-        # Deduplicate projects in the chunk
-        unique_projects_chunk = {}
-        for r in chunk:
-            pid = r["project_id"]
-            if not pid:
-                continue
-            unique_projects_chunk[pid] = {
-                "project_id": pid,
-                "distributor_id": r["distributor_id"],
-                "municipality": r.get("municipality"),
-                "uf": r.get("uf"),
-                "generation_type": r.get("generation_type"),
-                "generation_source": r.get("generation_source"),
-                "size_category": r.get("size_category"),
-                "latitude": r["latitude"],
-                "longitude": r["longitude"],
-                "connection_date": r.get("connection_date")
-            }
-        
-        if unique_projects_chunk:
-            conn.execute(text(projects_query), list(unique_projects_chunk.values()))
+    deactivate_projects_query = """
+        UPDATE distribution_mmgd_projects
+        SET status = 'inactive',
+            deactivated_at_month = :deactivated_at_month,
+            deactivation_reason = :deactivation_reason,
+            deactivation_snapshot_id = :deactivation_snapshot_id
+        WHERE project_id = :project_id
+    """
 
-        # Snapshots
-        snapshots_payload = []
-        for r in chunk:
-            if not r["project_id"] or not r["reference_month"]:
-                continue
-            snapshots_payload.append({
+    # Extract reference month from data if possible
+    ref_month = None
+    if "reference_month" in df_deduped.columns:
+        ref_month = df_deduped["reference_month"].drop_nulls().first()
+    if not ref_month:
+        from datetime import datetime
+        ref_month = datetime.now().strftime("%Y-%m")
+
+    chunk_size = 5000
+    total_new_inserted = 0
+    total_changed_updated = 0
+    total_snapshots_inserted = 0
+
+    # 1. Insert new projects & snapshots
+    if df_new.height > 0:
+        for chunk in _dict_batches(df_new, chunk_size):
+            conn.execute(text(insert_projects_query), chunk)
+            
+            snapshots_payload = [{
                 "snapshot_row_id": f"{r['project_id']}_{r['source_row_hash']}",
                 "project_id": r["project_id"],
-                "reference_month": r["reference_month"],
+                "reference_month": r["reference_month"] or ref_month,
                 "installed_capacity_kw": r["installed_capacity_kw"],
                 "beneficiary_units_count": r["beneficiary_units_count"],
                 "source_row_hash": r["source_row_hash"],
                 "snapshot_id": snapshot_id
-            })
-        
-        if snapshots_payload:
-            conn.execute(text(snapshots_query), snapshots_payload)
-            total_inserted += len(snapshots_payload)
+            } for r in chunk]
+            conn.execute(text(insert_snapshots_query), snapshots_payload)
+            total_new_inserted += len(chunk)
+            total_snapshots_inserted += len(snapshots_payload)
 
-    logger.info("Upserted %d facts into distribution_mmgd_projects and snapshots", total_inserted)
-    return total_inserted
+    # 2. Update changed projects & insert snapshots
+    if df_changed.height > 0:
+        for chunk in _dict_batches(df_changed, chunk_size):
+            conn.execute(text(update_projects_query), chunk)
+            
+            snapshots_payload = [{
+                "snapshot_row_id": f"{r['project_id']}_{r['source_row_hash']}",
+                "project_id": r["project_id"],
+                "reference_month": r["reference_month"] or ref_month,
+                "installed_capacity_kw": r["installed_capacity_kw"],
+                "beneficiary_units_count": r["beneficiary_units_count"],
+                "source_row_hash": r["source_row_hash"],
+                "snapshot_id": snapshot_id
+            } for r in chunk]
+            conn.execute(text(insert_snapshots_query), snapshots_payload)
+            total_changed_updated += len(chunk)
+            total_snapshots_inserted += len(snapshots_payload)
+
+    # 3. Deactivate removed projects
+    total_removed = 0
+    if df_removed.height > 0:
+        for chunk in _dict_batches(df_removed, chunk_size):
+            conn.execute(
+                text(deactivate_projects_query),
+                [{
+                    "project_id": r["project_id"],
+                    "deactivated_at_month": ref_month,
+                    "deactivation_reason": "removed_from_snapshot",
+                    "deactivation_snapshot_id": snapshot_id
+                } for r in chunk]
+            )
+            total_removed += len(chunk)
+
+    logger.info(
+        "MMGD facts: inserted %d new projects, updated %d changed projects, "
+        "deactivated %d removed projects, inserted %d snapshots",
+        total_new_inserted, total_changed_updated, total_removed, total_snapshots_inserted
+    )
+
+    stats = {
+        "source_rows": total_input_rows,
+        "parsed_rows": total_input_rows,
+        "canonical_rows": df_deduped.height,
+        "exact_duplicate_rows": exact_duplicates,
+        "rows_inserted": total_new_inserted,
+        "rows_updated": total_changed_updated,
+        "rows_unchanged": df_unchanged.height,
+        "rows_removed_deactivated": total_removed,
+        "final_published_rows": total_snapshots_inserted,
+    }
+    
+    return IngestionResult(total_snapshots_inserted, stats)

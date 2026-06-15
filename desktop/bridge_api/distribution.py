@@ -94,13 +94,266 @@ class DistributionBridgeMixin:
             logger.error("Error in get_distribution_series: %s", exc, exc_info=True)
             return {"error": str(exc), "series": [], "count": 0}
 
+    def _log_resource_refresh(
+        self,
+        conn,
+        source_id: str,
+        started_at: str,
+        finished_at: str,
+        status: str,
+        snap_record,  # DistributionSnapshotRecord
+        elapsed_download_ms: int,
+        elapsed_parse_ms: int,
+        elapsed_publish_ms: int,
+        stats: dict = None,
+        error_msg: str = None
+    ):
+        import uuid
+        from sqlalchemy import text
+        from src.energy_kpi.distribution.ingest import PARSER_VERSION
+
+        refresh_id = str(uuid.uuid4())
+        stats = stats or {}
+
+        query = """
+            INSERT INTO energy_source_refresh_log (
+                refresh_id, source_id, requested_by, started_at, finished_at, status,
+                rows_downloaded, rows_inserted, rows_updated, error_message, local_file_path, checksum,
+                downloaded_bytes, source_rows, parsed_rows, normalized_rows, file_size_bytes, file_type,
+                canonical_rows, valid_domain_rows, missing_key_rows, invalid_value_rows,
+                unresolved_identity_rows, non_distributor_entity_rows, exact_duplicate_rows,
+                duplicate_groups, conflicting_logical_keys, conflict_rows, quarantined_rows,
+                lead_kpi_rows, supporting_detail_rows, intentionally_excluded_rows, rejected_rows,
+                rows_unchanged, rows_removed_deactivated, final_published_rows,
+                elapsed_download_ms, elapsed_parse_ms, elapsed_publish_ms,
+                elapsed_lock_wait_ms, peak_rss_mb, cpu_time_ms,
+                parser_version, snapshot_id, final_source_status, elapsed_aggregate_ms
+            ) VALUES (
+                :refresh_id, :source_id, 'user', :started_at, :finished_at, :status,
+                :rows_downloaded, :rows_inserted, :rows_updated, :error_message, :local_file_path, :checksum,
+                :downloaded_bytes, :source_rows, :parsed_rows, :normalized_rows, :file_size_bytes, :file_type,
+                :canonical_rows, :valid_domain_rows, :missing_key_rows, :invalid_value_rows,
+                :unresolved_identity_rows, :non_distributor_entity_rows, :exact_duplicate_rows,
+                :duplicate_groups, :conflicting_logical_keys, :conflict_rows, :quarantined_rows,
+                :lead_kpi_rows, :supporting_detail_rows, :intentionally_excluded_rows, :rejected_rows,
+                :rows_unchanged, :rows_removed_deactivated, :final_published_rows,
+                :elapsed_download_ms, :elapsed_parse_ms, :elapsed_publish_ms,
+                :elapsed_lock_wait_ms, :peak_rss_mb, :cpu_time_ms,
+                :parser_version, :snapshot_id, :final_source_status, :elapsed_aggregate_ms
+            )
+        """
+
+        local_path = str(snap_record.file_path) if snap_record else None
+        checksum = snap_record.sha256 if snap_record else None
+        snap_id = snap_record.snapshot_id if snap_record else None
+
+        # Get file size if path exists
+        file_size = None
+        if snap_record and snap_record.file_path.exists():
+            file_size = snap_record.file_path.stat().st_size
+
+        conn.execute(
+            text(query),
+            {
+                "refresh_id": refresh_id,
+                "source_id": source_id,
+                "started_at": started_at,
+                "finished_at": finished_at,
+                "status": status,
+                "rows_downloaded": snap_record.row_count if snap_record else None,
+                "rows_inserted": stats.get("rows_inserted"),
+                "rows_updated": stats.get("rows_updated"),
+                "error_message": error_msg,
+                "local_file_path": local_path,
+                "checksum": checksum,
+                "downloaded_bytes": file_size,
+                "source_rows": stats.get("source_rows", snap_record.row_count if snap_record else None),
+                "parsed_rows": stats.get("parsed_rows"),
+                "normalized_rows": stats.get("final_published_rows"),
+                "file_size_bytes": file_size,
+                "file_type": snap_record.file_path.suffix.lstrip(".") if snap_record else None,
+                "canonical_rows": stats.get("canonical_rows"),
+                "valid_domain_rows": stats.get("valid_domain_rows"),
+                "missing_key_rows": stats.get("missing_key_rows"),
+                "invalid_value_rows": stats.get("invalid_value_rows"),
+                "unresolved_identity_rows": stats.get("unresolved_identity_rows"),
+                "non_distributor_entity_rows": stats.get("non_distributor_entity_rows"),
+                "exact_duplicate_rows": stats.get("exact_duplicate_rows"),
+                "duplicate_groups": stats.get("duplicate_groups"),
+                "conflicting_logical_keys": stats.get("conflicting_logical_keys"),
+                "conflict_rows": stats.get("conflict_rows"),
+                "quarantined_rows": stats.get("quarantined_rows"),
+                "lead_kpi_rows": stats.get("lead_kpi_rows"),
+                "supporting_detail_rows": stats.get("supporting_detail_rows"),
+                "intentionally_excluded_rows": stats.get("intentionally_excluded_rows"),
+                "rejected_rows": stats.get("rejected_rows"),
+                "rows_unchanged": stats.get("rows_unchanged"),
+                "rows_removed_deactivated": stats.get("rows_removed_deactivated"),
+                "final_published_rows": stats.get("final_published_rows"),
+                "elapsed_download_ms": elapsed_download_ms,
+                "elapsed_parse_ms": elapsed_parse_ms,
+                "elapsed_publish_ms": elapsed_publish_ms,
+                "elapsed_lock_wait_ms": stats.get("elapsed_lock_wait_ms"),
+                "peak_rss_mb": stats.get("peak_rss_mb"),
+                "cpu_time_ms": stats.get("cpu_time_ms"),
+                "parser_version": PARSER_VERSION,
+                "snapshot_id": snap_id,
+                "final_source_status": status,
+                "elapsed_aggregate_ms": stats.get("elapsed_aggregate_ms"),
+            }
+        )
+
+    def _run_and_log_step(
+        self,
+        engine,
+        settings,
+        source_id: str,
+        domain: str,
+        resource_key,
+        parse_fn,
+        upsert_fn,
+        force: bool
+    ) -> int:
+        import gc
+        import time
+        from datetime import datetime, timezone
+        from src.energy_kpi.distribution.ingest import fetch_distribution_resource
+
+        started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        
+        snap = None
+        stats = {}
+        status = "success"
+        error_msg = None
+        elapsed_download_ms = 0
+        elapsed_parse_ms = 0
+        elapsed_publish_ms = 0
+        elapsed_lock_wait_ms = 0
+        rss_samples = [self._current_process_rss_mb()]
+        cpu_start = time.process_time()
+        
+        try:
+            # A. Download
+            t0 = time.time()
+            lock_start = time.time()
+            with engine.begin() as conn:
+                elapsed_lock_wait_ms += int((time.time() - lock_start) * 1000)
+                snap = fetch_distribution_resource(
+                    settings.paths, conn, domain, resource_key, force=force
+                )
+            elapsed_download_ms = int((time.time() - t0) * 1000)
+            
+            # B. Parse
+            t0 = time.time()
+            parsed_df = parse_fn(snap.file_path, format_type=snap.file_path.suffix.lstrip("."))
+            elapsed_parse_ms = int((time.time() - t0) * 1000)
+            rss_samples.append(self._current_process_rss_mb())
+            
+            # C. Publish
+            t0 = time.time()
+            lock_start = time.time()
+            with engine.begin() as conn:
+                elapsed_lock_wait_ms += int((time.time() - lock_start) * 1000)
+                result = upsert_fn(conn, parsed_df, snap.snapshot_id)
+                if hasattr(result, "stats"):
+                    stats = result.stats
+                else:
+                    stats = {
+                        "source_rows": parsed_df.height,
+                        "parsed_rows": parsed_df.height,
+                        "canonical_rows": parsed_df.height,
+                        "final_published_rows": int(result),
+                    }
+            elapsed_publish_ms = int((time.time() - t0) * 1000)
+            rss_samples.append(self._current_process_rss_mb())
+            rss_values = [value for value in rss_samples if value is not None]
+            if rss_values:
+                stats["peak_rss_mb"] = max(rss_values)
+            stats["cpu_time_ms"] = int((time.process_time() - cpu_start) * 1000)
+            stats["elapsed_lock_wait_ms"] = elapsed_lock_wait_ms
+            del parsed_df
+            gc.collect()
+            
+        except Exception as exc:
+            status = "failed"
+            error_msg = str(exc)
+            rss_samples.append(self._current_process_rss_mb())
+            rss_values = [value for value in rss_samples if value is not None]
+            if rss_values:
+                stats["peak_rss_mb"] = max(rss_values)
+            stats["cpu_time_ms"] = int((time.process_time() - cpu_start) * 1000)
+            stats["elapsed_lock_wait_ms"] = elapsed_lock_wait_ms
+            logger.exception("Failed to refresh %s (%s)", domain, resource_key)
+            raise
+        finally:
+            finished_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            with engine.begin() as conn:
+                self._log_resource_refresh(
+                    conn,
+                    source_id=source_id,
+                    started_at=started_at,
+                    finished_at=finished_at,
+                    status=status,
+                    snap_record=snap,
+                    elapsed_download_ms=elapsed_download_ms,
+                    elapsed_parse_ms=elapsed_parse_ms,
+                    elapsed_publish_ms=elapsed_publish_ms,
+                    stats=stats,
+                    error_msg=error_msg
+                )
+        return stats.get("final_published_rows", 0)
+
+    @staticmethod
+    def _current_process_rss_mb() -> float | None:
+        try:
+            import ctypes
+            import os
+            from ctypes import wintypes
+
+            class ProcessMemoryCounters(ctypes.Structure):
+                _fields_ = [
+                    ("cb", wintypes.DWORD),
+                    ("PageFaultCount", wintypes.DWORD),
+                    ("PeakWorkingSetSize", ctypes.c_size_t),
+                    ("WorkingSetSize", ctypes.c_size_t),
+                    ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                    ("PagefileUsage", ctypes.c_size_t),
+                    ("PeakPagefileUsage", ctypes.c_size_t),
+                ]
+
+            counters = ProcessMemoryCounters()
+            counters.cb = ctypes.sizeof(counters)
+            handle = ctypes.windll.kernel32.OpenProcess(0x0400 | 0x0010, False, os.getpid())
+            if not handle:
+                return None
+            try:
+                ok = ctypes.windll.psapi.GetProcessMemoryInfo(
+                    handle,
+                    ctypes.byref(counters),
+                    counters.cb,
+                )
+                if not ok:
+                    return None
+                return round(float(counters.WorkingSetSize) / (1024 * 1024), 1)
+            finally:
+                ctypes.windll.kernel32.CloseHandle(handle)
+        except Exception:
+            return None
+
     def get_distribution_refresh_status(self, params=None) -> dict:
         return self._sanitize_for_json(self._dist_refresh_status())
 
     def refresh_distribution_data(self, params=None) -> dict:
         params = params or {}
+        if not hasattr(self, "_dist_refresh_lock"):
+            self._dist_refresh_lock = threading.Lock()
         state = self._dist_refresh_status()
         if state.get("status") == "running":
+            return {"status": "already_running", "error": None}
+        if not self._dist_refresh_lock.acquire(blocking=False):
             return {"status": "already_running", "error": None}
 
         # Set running status
@@ -114,11 +367,12 @@ class DistributionBridgeMixin:
         }
 
         def _run():
+            import gc
+            import time
             try:
                 from src.platform.settings import get_settings
                 from src.energy_kpi.schema import get_energy_kpi_engine
                 from src.energy_kpi.distribution.ingest import (
-                    fetch_distribution_resource,
                     parse_samp_mercado,
                     upsert_samp_mercado_facts,
                     parse_samp_balanco,
@@ -156,188 +410,103 @@ class DistributionBridgeMixin:
                 rows_inserted = 0
                 step_idx = 0
                 
-                # 1. Download and ingest consolidated SAMP Balanco dataset
+                # 1. Consolidated SAMP Balanco
                 step_idx += 1
                 self._dist_refresh_state.update({
                     "stage": "downloading_balance",
-                    "message": "Downloading ANEEL SAMP Balanco...",
+                    "message": "Processing ANEEL SAMP Balanco...",
                     "progress_current": step_idx
                 })
-                with engine.begin() as conn:
-                    snap = fetch_distribution_resource(
-                        settings.paths, conn, "samp_balanco", force=params.get("force", False)
-                    )
-                    
-                    self._dist_refresh_state.update({
-                        "stage": "parsing_balance",
-                        "message": "Parsing and normalizing SAMP Balanco..."
-                    })
-                    parsed_df = parse_samp_balanco(snap.file_path, format_type=snap.file_path.suffix.lstrip("."))
-                    
-                    self._dist_refresh_state.update({
-                        "stage": "publishing_balance",
-                        "message": "Writing balance facts to database..."
-                    })
-                    rows_inserted += upsert_samp_balanco_facts(conn, parsed_df, snap.snapshot_id)
+                rows_inserted += self._run_and_log_step(
+                    engine, settings, "samp_balanco", "samp_balanco", None,
+                    parse_samp_balanco, upsert_samp_balanco_facts, force=params.get("force", False)
+                )
                 
-                # 2. Download and ingest annual SAMP Mercado files
+                # 2. Annual SAMP Mercado files
                 for idx, year in enumerate(years_to_refresh):
                     step_idx += 1
                     self._dist_refresh_state.update({
                         "stage": "downloading_market",
-                        "message": f"Downloading ANEEL SAMP Mercado for year {year}...",
+                        "message": f"Processing ANEEL SAMP Mercado for year {year}...",
                         "progress_current": step_idx
                     })
-                    
-                    with engine.begin() as conn:
-                        snap = fetch_distribution_resource(
-                            settings.paths, conn, "samp_mercado", year, force=params.get("force", False)
-                        )
-                        
-                        self._dist_refresh_state.update({
-                            "stage": "parsing_market",
-                            "message": f"Parsing and normalizing SAMP Mercado for year {year}..."
-                        })
-                        parsed_df = parse_samp_mercado(snap.file_path, format_type=snap.file_path.suffix.lstrip("."))
-                        
-                        self._dist_refresh_state.update({
-                            "stage": "publishing_market",
-                            "message": f"Writing market facts to database for year {year}..."
-                        })
-                        rows_inserted += upsert_samp_mercado_facts(conn, parsed_df, snap.snapshot_id)
+                    rows_inserted += self._run_and_log_step(
+                        engine, settings, f"samp_mercado_{year}", "samp_mercado", year,
+                        parse_samp_mercado, upsert_samp_mercado_facts, force=params.get("force", False)
+                    )
 
-                # 3. Download and ingest continuity limits
+                # 3. Continuity limits
                 step_idx += 1
                 self._dist_refresh_state.update({
                     "stage": "downloading_limits",
-                    "message": "Downloading ANEEL continuity limits...",
+                    "message": "Processing ANEEL continuity limits...",
                     "progress_current": step_idx
                 })
-                with engine.begin() as conn:
-                    snap = fetch_distribution_resource(
-                        settings.paths, conn, "continuity_limits", force=params.get("force", False)
-                    )
-                    self._dist_refresh_state.update({
-                        "stage": "parsing_limits",
-                        "message": "Parsing and normalizing continuity limits..."
-                    })
-                    parsed_df = parse_continuity_limits(snap.file_path, format_type=snap.file_path.suffix.lstrip("."))
-                    self._dist_refresh_state.update({
-                        "stage": "publishing_limits",
-                        "message": "Writing continuity limits to database..."
-                    })
-                    rows_inserted += upsert_continuity_limits_facts(conn, parsed_df, snap.snapshot_id)
+                rows_inserted += self._run_and_log_step(
+                    engine, settings, "continuity_limits", "continuity_limits", None,
+                    parse_continuity_limits, upsert_continuity_limits_facts, force=params.get("force", False)
+                )
 
-                # 4. Download and ingest continuity actuals (by decade)
+                # 4. Continuity actuals (by decade)
                 for key in actuals_keys:
                     step_idx += 1
                     self._dist_refresh_state.update({
                         "stage": "downloading_actuals",
-                        "message": f"Downloading ANEEL continuity actuals for decade {key}...",
+                        "message": f"Processing ANEEL continuity actuals for decade {key}...",
                         "progress_current": step_idx
                     })
-                    with engine.begin() as conn:
-                        snap = fetch_distribution_resource(
-                            settings.paths, conn, "continuity_actuals", key, force=params.get("force", False)
-                        )
-                        self._dist_refresh_state.update({
-                            "stage": "parsing_actuals",
-                            "message": f"Parsing and normalizing continuity actuals for decade {key}..."
-                        })
-                        parsed_df = parse_continuity_actuals(snap.file_path, format_type=snap.file_path.suffix.lstrip("."))
-                        self._dist_refresh_state.update({
-                            "stage": "publishing_actuals",
-                            "message": f"Writing continuity actuals to database for decade {key}..."
-                        })
-                        rows_inserted += upsert_continuity_actuals_facts(conn, parsed_df, snap.snapshot_id)
+                    rows_inserted += self._run_and_log_step(
+                        engine, settings, f"continuity_actuals_{key}", "continuity_actuals", key,
+                        parse_continuity_actuals, upsert_continuity_actuals_facts, force=params.get("force", False)
+                    )
 
-                # 5. Download and ingest continuity compensations
+                # 5. Continuity compensations
                 step_idx += 1
                 self._dist_refresh_state.update({
                     "stage": "downloading_compensations",
-                    "message": "Downloading ANEEL continuity compensations...",
+                    "message": "Processing ANEEL continuity compensations...",
                     "progress_current": step_idx
                 })
-                with engine.begin() as conn:
-                    snap = fetch_distribution_resource(
-                        settings.paths, conn, "continuity_compensation", force=params.get("force", False)
-                    )
-                    self._dist_refresh_state.update({
-                        "stage": "parsing_compensations",
-                        "message": "Parsing and normalizing continuity compensations..."
-                    })
-                    parsed_df = parse_continuity_compensations(snap.file_path, format_type=snap.file_path.suffix.lstrip("."))
-                    self._dist_refresh_state.update({
-                        "stage": "publishing_compensations",
-                        "message": "Writing continuity compensations to database..."
-                    })
-                    rows_inserted += upsert_continuity_compensations_facts(conn, parsed_df, snap.snapshot_id)
+                rows_inserted += self._run_and_log_step(
+                    engine, settings, "continuity_compensation", "continuity_compensation", None,
+                    parse_continuity_compensations, upsert_continuity_compensations_facts, force=params.get("force", False)
+                )
 
-                # 6. Download and ingest homologated tariffs
+                # 6. Homologated tariffs
                 step_idx += 1
                 self._dist_refresh_state.update({
                     "stage": "downloading_tariffs",
-                    "message": "Downloading ANEEL homologated tariffs...",
+                    "message": "Processing ANEEL homologated tariffs...",
                     "progress_current": step_idx
                 })
-                with engine.begin() as conn:
-                    snap = fetch_distribution_resource(
-                        settings.paths, conn, "tariffs", force=params.get("force", False)
-                    )
-                    self._dist_refresh_state.update({
-                        "stage": "parsing_tariffs",
-                        "message": "Parsing and normalizing tariffs..."
-                    })
-                    parsed_df = parse_tariffs(snap.file_path, format_type=snap.file_path.suffix.lstrip("."))
-                    self._dist_refresh_state.update({
-                        "stage": "publishing_tariffs",
-                        "message": "Writing tariff facts to database..."
-                    })
-                    rows_inserted += upsert_tariffs_facts(conn, parsed_df, snap.snapshot_id)
+                rows_inserted += self._run_and_log_step(
+                    engine, settings, "tariffs", "tariffs", None,
+                    parse_tariffs, upsert_tariffs_facts, force=params.get("force", False)
+                )
 
-                # 7. Download and ingest delinquency
+                # 7. Delinquency
                 step_idx += 1
                 self._dist_refresh_state.update({
                     "stage": "downloading_delinquency",
-                    "message": "Downloading ANEEL delinquency...",
+                    "message": "Processing ANEEL delinquency...",
                     "progress_current": step_idx
                 })
-                with engine.begin() as conn:
-                    snap = fetch_distribution_resource(
-                        settings.paths, conn, "delinquency", force=params.get("force", False)
-                    )
-                    self._dist_refresh_state.update({
-                        "stage": "parsing_delinquency",
-                        "message": "Parsing and normalizing delinquency..."
-                    })
-                    parsed_df = parse_delinquency(snap.file_path, format_type=snap.file_path.suffix.lstrip("."))
-                    self._dist_refresh_state.update({
-                        "stage": "publishing_delinquency",
-                        "message": "Writing delinquency facts to database..."
-                    })
-                    rows_inserted += upsert_delinquency_facts(conn, parsed_df, snap.snapshot_id)
+                rows_inserted += self._run_and_log_step(
+                    engine, settings, "delinquency", "delinquency", None,
+                    parse_delinquency, upsert_delinquency_facts, force=params.get("force", False)
+                )
                 
-                # 8. Download and ingest MMGD
+                # 8. MMGD
                 step_idx += 1
                 self._dist_refresh_state.update({
                     "stage": "downloading_mmgd",
-                    "message": "Downloading ANEEL MMGD distributed generation...",
+                    "message": "Processing ANEEL MMGD distributed generation...",
                     "progress_current": step_idx
                 })
-                with engine.begin() as conn:
-                    snap = fetch_distribution_resource(
-                        settings.paths, conn, "mmgd_projects", force=params.get("force", False)
-                    )
-                    self._dist_refresh_state.update({
-                        "stage": "parsing_mmgd",
-                        "message": "Parsing and normalizing MMGD..."
-                    })
-                    parsed_df = parse_mmgd(snap.file_path, format_type=snap.file_path.suffix.lstrip("."))
-                    self._dist_refresh_state.update({
-                        "stage": "publishing_mmgd",
-                        "message": "Writing MMGD facts to database..."
-                    })
-                    rows_inserted += upsert_mmgd_facts(conn, parsed_df, snap.snapshot_id)
+                rows_inserted += self._run_and_log_step(
+                    engine, settings, "mmgd_projects", "mmgd_projects", None,
+                    parse_mmgd, upsert_mmgd_facts, force=params.get("force", False)
+                )
                 
                 # 9. Rebuild aggregates
                 step_idx += 1
@@ -346,8 +515,35 @@ class DistributionBridgeMixin:
                     "message": "Rebuilding monthly and annual aggregates...",
                     "progress_current": step_idx
                 })
-                with engine.begin() as conn:
-                    rebuild_distribution_aggregates(conn)
+                
+                started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+                t0 = time.time()
+                try:
+                    with engine.begin() as conn:
+                        rebuild_distribution_aggregates(conn)
+                    status = "success"
+                    error_msg = None
+                except Exception as exc:
+                    status = "failed"
+                    error_msg = str(exc)
+                    raise
+                finally:
+                    elapsed_aggregate_ms = int((time.time() - t0) * 1000)
+                    finished_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+                    with engine.begin() as conn:
+                        self._log_resource_refresh(
+                            conn,
+                            source_id="rebuild_aggregates",
+                            started_at=started_at,
+                            finished_at=finished_at,
+                            status=status,
+                            snap_record=None,
+                            elapsed_download_ms=0,
+                            elapsed_parse_ms=0,
+                            elapsed_publish_ms=0,
+                            stats={"elapsed_aggregate_ms": elapsed_aggregate_ms},
+                            error_msg=error_msg
+                        )
  
                 self._dist_refresh_state = {
                     "status": "success",
@@ -367,7 +563,9 @@ class DistributionBridgeMixin:
                 }
             finally:
                 self._distribution_read_service = None
-
+                self._dist_refresh_lock.release()
+                gc.collect()
+ 
         threading.Thread(target=_run, name="distribution-refresh", daemon=True).start()
         return {"status": "started", "error": None}
 
@@ -429,6 +627,3 @@ class DistributionBridgeMixin:
         except Exception as exc:
             logger.error("Error in get_distribution_health: %s", exc, exc_info=True)
             return {"error": str(exc)}
-
-
-

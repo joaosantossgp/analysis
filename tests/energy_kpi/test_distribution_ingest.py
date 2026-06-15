@@ -781,14 +781,14 @@ def test_parse_and_upsert_mmgd(tmp_path, db_conn):
     assert inserted == 2
 
     # Check project dimension table
-    projs = db_conn.execute(text("SELECT project_id, distributor_id, size_category FROM distribution_mmgd_projects")).fetchall()
+    projs = db_conn.execute(text("SELECT project_id, distributor_id, size_category FROM distribution_mmgd_projects ORDER BY project_id")).fetchall()
     assert len(projs) == 2
     assert projs[0][0] == "GD-1"
     assert projs[0][1] == "cpfl_paulista"
     assert projs[0][2] == "Microgeração"
 
     # Check snapshots table
-    snaps = db_conn.execute(text("SELECT project_id, reference_month, installed_capacity_kw FROM distribution_mmgd_project_snapshots")).fetchall()
+    snaps = db_conn.execute(text("SELECT project_id, reference_month, installed_capacity_kw FROM distribution_mmgd_project_snapshots ORDER BY project_id")).fetchall()
     assert len(snaps) == 2
     assert snaps[0][0] == "GD-1"
     assert snaps[0][1] == "2025-01"
@@ -888,6 +888,16 @@ def test_group_series_consolidation(db_conn):
             ('weight_piratininga', 'cpfl_piratininga', 'set1', '2025-01', 'NumCon', 30000.0, 'h2', 's1')
     """))
 
+    db_conn.execute(text("""
+        INSERT INTO distribution_tariff_facts (
+            fact_id, distributor_id, valid_from, valid_to, subgroup, consumer_class,
+            unit, tusd_value, te_value, source_row_hash, snapshot_id
+        )
+        VALUES
+            ('tariff_paulista', 'cpfl_paulista', '2025-01-01', '2025-12-31', 'B1', 'Residencial', 'MWh', 40.0, 10.0, 't1', 's1'),
+            ('tariff_piratininga', 'cpfl_piratininga', '2025-01-01', '2025-12-31', 'B1', 'Residencial', 'MWh', 80.0, 30.0, 't2', 's1')
+    """))
+
     # 4. Retrieve group series using DistributionReadService
     from src.energy_kpi.distribution.read import DistributionReadService
     from unittest.mock import MagicMock
@@ -930,3 +940,73 @@ def test_group_series_consolidation(db_conn):
     # (0.02 * 100000.0 + 0.04 * 300000.0) / (100000.0 + 300000.0)
     # = (2000 + 12000) / 400000 = 14000 / 400000 = 0.035
     assert row["delinquency_pct"] == 0.035
+    assert row["te_homologated"] == 20.0
+    assert row["tusd_homologated"] == 60.0
+
+    distributor_series = read_service.get_series(
+        entity_type="distributor",
+        entity_id="cpfl_paulista",
+        frequency="monthly",
+    )
+    assert distributor_series[0]["te_homologated"] == 10.0
+    assert distributor_series[0]["tusd_homologated"] == 40.0
+
+
+def test_mmgd_incremental_and_removal_behaviors(tmp_path, db_conn):
+    seed_distribution_static_data(db_conn)
+    from src.energy_kpi.distribution import parse_mmgd, upsert_mmgd_facts
+
+    base = {
+        "NumCNPJDistribuidora": ["33050196000188"],
+        "SigAgente": ["CPFL PAULISTA"],
+        "CodEmpreendimento": ["GD-M1"],
+        "NomMunicipio": ["Campinas"],
+        "SigUF": ["SP"],
+        "SigTipoGeracao": ["Solar"],
+        "DscFonteGeracao": ["Radiação solar"],
+        "DscPorte": ["Microgeração"],
+        "NumCoordNEmpreendimento": [-22.9],
+        "NumCoordEEmpreendimento": [-47.06],
+        "DthAtualizaCadastralEmpreend": ["2025-01-15"],
+        "MdaPotenciaInstaladaKW": ["10,5"],
+        "QtdUCRecebeCredito": [1],
+    }
+
+    # 1. First snapshot: one active project GD-M1
+    f1 = tmp_path / "mmgd-f1.csv"
+    pl.DataFrame({**base, "AnmPeriodoReferencia": ["2025-01"]}).write_csv(f1, separator=";")
+    res1 = upsert_mmgd_facts(db_conn, parse_mmgd(f1, "csv"), "snap-f1", is_full_snapshot=True)
+    assert res1 == 1
+    assert getattr(res1, "stats", {}).get("rows_inserted") == 1
+
+    # Check database status
+    p1 = db_conn.execute(text("SELECT status, deactivated_at_month FROM distribution_mmgd_projects WHERE project_id = 'GD-M1'")).fetchone()
+    assert p1[0] == "active"
+    assert p1[1] is None
+
+    # 2. Second snapshot (partial): does NOT remove GD-M1 because is_full_snapshot=False
+    f2 = tmp_path / "mmgd-f2.csv"
+    pl.DataFrame({**base, "CodEmpreendimento": ["GD-M2"], "AnmPeriodoReferencia": ["2025-01"]}).write_csv(f2, separator=";")
+    res2 = upsert_mmgd_facts(db_conn, parse_mmgd(f2, "csv"), "snap-f2", is_full_snapshot=False)
+    assert res2 == 1
+
+    # GD-M1 should still be active because the snapshot was partial
+    p1 = db_conn.execute(text("SELECT status FROM distribution_mmgd_projects WHERE project_id = 'GD-M1'")).fetchone()
+    assert p1[0] == "active"
+
+    # 3. Third snapshot (full): GD-M1 is missing, so it should be deactivated
+    f3 = tmp_path / "mmgd-f3.csv"
+    pl.DataFrame({**base, "CodEmpreendimento": ["GD-M2"], "AnmPeriodoReferencia": ["2025-02"]}).write_csv(f3, separator=";")
+    res3 = upsert_mmgd_facts(db_conn, parse_mmgd(f3, "csv"), "snap-f3", is_full_snapshot=True)
+    
+    # GD-M1 should now be inactive
+    p1 = db_conn.execute(text("SELECT status, deactivated_at_month, deactivation_reason FROM distribution_mmgd_projects WHERE project_id = 'GD-M1'")).fetchone()
+    assert p1[0] == "inactive"
+    assert p1[1] == "2025-02"
+    assert p1[2] == "removed_from_snapshot"
+
+    # 4. Fourth snapshot (full): GD-M1 returns, so it should be reactivated
+    res4 = upsert_mmgd_facts(db_conn, parse_mmgd(f1, "csv"), "snap-f4", is_full_snapshot=True)
+    p1 = db_conn.execute(text("SELECT status, deactivated_at_month, deactivation_reason FROM distribution_mmgd_projects WHERE project_id = 'GD-M1'")).fetchone()
+    assert p1[0] == "active"
+    assert p1[1] is None

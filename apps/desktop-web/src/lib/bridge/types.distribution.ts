@@ -105,6 +105,35 @@ export interface EconomicGroupDetail {
   available_periods: string[];
 }
 
+export interface DistributionRefreshLogEntry {
+  refresh_id: string;
+  source_id: string;
+  dataset_name: string | null;
+  started_at: string;
+  finished_at: string | null;
+  status: string;
+  rows_inserted: number | null;
+  rows_updated: number | null;
+  rows_unchanged: number | null;
+  error_message: string | null;
+  warning_message: string | null;
+  source_rows: number | null;
+  parsed_rows: number | null;
+  canonical_rows: number | null;
+  final_published_rows: number | null;
+  elapsed_download_ms: number | null;
+  elapsed_parse_ms: number | null;
+  elapsed_publish_ms: number | null;
+  elapsed_aggregate_ms: number | null;
+  elapsed_lock_wait_ms: number | null;
+  peak_rss_mb: number | null;
+  cpu_time_ms: number | null;
+  unresolved_identity_rows: number | null;
+  conflict_rows: number | null;
+  rejected_rows: number | null;
+  snapshot_id: string | null;
+}
+
 export interface DistributionHealthResponse {
   counts: {
     market: number;
@@ -122,5 +151,6 @@ export interface DistributionHealthResponse {
     row_count: number | null;
     status: string;
   }>;
+  refresh_logs?: DistributionRefreshLogEntry[];
   error?: string;
 }

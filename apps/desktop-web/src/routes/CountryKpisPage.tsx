@@ -418,6 +418,115 @@ function DistributionHealthPanel({ bridgeReady }: { bridgeReady: boolean }) {
           </div>
         )}
       </div>
+
+      {/* Reconciliation Logs */}
+      <div>
+        <h3 className="text-sm font-semibold text-zinc-300 mb-2">
+          Reconciliation & Refresh Logs ({health.refresh_logs?.length ?? 0})
+        </h3>
+        {!health.refresh_logs || health.refresh_logs.length === 0 ? (
+          <div className="text-sm text-zinc-500 italic px-1">
+            No refresh execution logs recorded — data has not been ingested yet.
+          </div>
+        ) : (
+          <div className="rounded-md border border-zinc-800 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-zinc-800 bg-zinc-900/80">
+                    {["Source / Dataset", "Refreshed At", "Status", "Source Rows", "Published", "Conflicts", "Unresolved", "Rejected", "Duration", "RSS / CPU"].map(
+                      (h, idx) => (
+                        <th
+                          key={h}
+                          className={`px-3 py-2 font-semibold text-zinc-400 uppercase tracking-wider ${
+                            idx >= 3 ? "text-right" : "text-left"
+                          }`}
+                        >
+                          {h}
+                        </th>
+                      )
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {health.refresh_logs.map((log, i) => {
+                    const isSuccess = log.status === "success" || log.status === "ok" || log.status === "done";
+                    const hasConflicts = (log.conflict_rows ?? 0) > 0;
+                    const hasUnresolved = (log.unresolved_identity_rows ?? 0) > 0;
+                    const hasRejected = (log.rejected_rows ?? 0) > 0;
+                    
+                    const durationMs = (log.elapsed_download_ms ?? 0) + (log.elapsed_parse_ms ?? 0) + (log.elapsed_publish_ms ?? 0);
+                    const durationSec = durationMs > 0 ? `${(durationMs / 1000).toFixed(1)}s` : "—";
+                    const lockWaitSec = log.elapsed_lock_wait_ms != null ? `${(log.elapsed_lock_wait_ms / 1000).toFixed(2)}s lock` : null;
+
+                    return (
+                      <tr
+                        key={log.refresh_id}
+                        className={`border-b border-zinc-800/50 hover:bg-zinc-900/10 ${
+                          i % 2 === 0 ? "bg-zinc-950/30" : "bg-zinc-900/20"
+                        }`}
+                      >
+                        <td className="px-3 py-2 font-medium text-zinc-300">
+                          <div>{log.dataset_name || log.source_id}</div>
+                          {log.warning_message && (
+                            <div className="text-[10px] text-amber-400/85 truncate max-w-[200px] mt-0.5" title={log.warning_message}>
+                              Warning: {log.warning_message}
+                            </div>
+                          )}
+                          {log.error_message && (
+                            <div className="text-[10px] text-red-400/85 truncate max-w-[200px] mt-0.5" title={log.error_message}>
+                              Error: {log.error_message}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 font-mono text-zinc-400">
+                          {log.started_at?.slice(0, 16).replace("T", " ") ?? "—"}
+                        </td>
+                        <td className="px-3 py-2">
+                          <span
+                            className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                              isSuccess
+                                ? "bg-emerald-500/10 text-emerald-400"
+                                : log.status === "running"
+                                ? "bg-amber-500/10 text-amber-400"
+                                : "bg-red-500/10 text-red-400"
+                            }`}
+                          >
+                            {log.status}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 font-mono text-zinc-300 text-right tabular-nums">
+                          {log.source_rows != null ? log.source_rows.toLocaleString() : "—"}
+                        </td>
+                        <td className="px-3 py-2 font-mono text-zinc-300 text-right tabular-nums">
+                          {log.final_published_rows != null ? log.final_published_rows.toLocaleString() : "—"}
+                        </td>
+                        <td className={`px-3 py-2 font-mono text-right tabular-nums ${hasConflicts ? "text-amber-400 font-semibold" : "text-zinc-500"}`}>
+                          {log.conflict_rows != null ? log.conflict_rows.toLocaleString() : "0"}
+                        </td>
+                        <td className={`px-3 py-2 font-mono text-right tabular-nums ${hasUnresolved ? "text-amber-400 font-semibold" : "text-zinc-500"}`}>
+                          {log.unresolved_identity_rows != null ? log.unresolved_identity_rows.toLocaleString() : "0"}
+                        </td>
+                        <td className={`px-3 py-2 font-mono text-right tabular-nums ${hasRejected ? "text-red-400 font-semibold" : "text-zinc-500"}`}>
+                          {log.rejected_rows != null ? log.rejected_rows.toLocaleString() : "0"}
+                        </td>
+                        <td className="px-3 py-2 font-mono text-zinc-400 text-right tabular-nums">
+                          {durationSec}
+                          {lockWaitSec && <div className="text-[10px] text-zinc-500">{lockWaitSec}</div>}
+                        </td>
+                        <td className="px-3 py-2 font-mono text-zinc-400 text-right tabular-nums">
+                          {log.peak_rss_mb != null ? `${log.peak_rss_mb.toFixed(0)} MB` : "—"}
+                          {log.cpu_time_ms != null ? ` / ${(log.cpu_time_ms / 1000).toFixed(1)}s` : ""}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

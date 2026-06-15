@@ -18,6 +18,7 @@ import {
 import type {
   DistributorEntry,
   DistributorDetail,
+  DistributionSeriesEntry,
   EconomicGroupEntry,
   EconomicGroupDetail,
 } from "@/lib/bridge/types";
@@ -161,13 +162,6 @@ export function DistributorExplorer({ bridgeReady }: { bridgeReady: boolean }) {
       setExporting(false);
     }
   };
-
-  // Reset detail tab when switching views
-  useEffect(() => {
-    if (viewMode === "groups" && detailTab === "tariffs") {
-      setDetailTab("market");
-    }
-  }, [viewMode, detailTab]);
 
   // Unique UFs and groups from items for filter dropdowns
   const availableUfs = Array.from(new Set(items.map((i) => i.primary_uf).filter(Boolean) as string[])).sort();
@@ -523,6 +517,8 @@ export function DistributorExplorer({ bridgeReady }: { bridgeReady: boolean }) {
                 ))}
               </div>
 
+              <DistributionTrendPanel series={activeSeries} activeTab={detailTab} />
+
               {/* Statistics Table */}
               <div className="space-y-2">
                 <div className="flex justify-between items-center text-xs font-semibold text-zinc-400 uppercase tracking-wider">
@@ -815,7 +811,7 @@ export function DistributorExplorer({ bridgeReady }: { bridgeReady: boolean }) {
 
               {/* Tabs for different domains */}
               <div className="flex border-b border-zinc-800 overflow-x-auto text-[11px] no-scrollbar">
-                {(["market", "balance", "quality", "delinquency", "mmgd"] as const).map((tab) => (
+                {(["market", "balance", "quality", "tariffs", "delinquency", "mmgd"] as const).map((tab) => (
                   <button
                     key={tab}
                     onClick={() => setDetailTab(tab as any)}
@@ -830,6 +826,8 @@ export function DistributorExplorer({ bridgeReady }: { bridgeReady: boolean }) {
                 ))}
               </div>
 
+              <DistributionTrendPanel series={activeSeries} activeTab={detailTab} />
+
               {/* Statistics Table */}
               <div className="space-y-2">
                 <div className="flex justify-between items-center text-xs font-semibold text-zinc-400 uppercase tracking-wider">
@@ -837,6 +835,7 @@ export function DistributorExplorer({ bridgeReady }: { bridgeReady: boolean }) {
                     {detailTab === "market" && "Market Stats (Monthly)"}
                     {detailTab === "balance" && "Energy Balance & Losses"}
                     {detailTab === "quality" && "Supply Quality (DEC/FEC)"}
+                    {detailTab === "tariffs" && "Homologated Tariffs"}
                     {detailTab === "delinquency" && "Delinquency Metrics"}
                     {detailTab === "mmgd" && "Distributed Generation (MMGD)"}
                   </span>
@@ -844,6 +843,7 @@ export function DistributorExplorer({ bridgeReady }: { bridgeReady: boolean }) {
                     {detailTab === "market" && "MWh · BRL"}
                     {detailTab === "balance" && "MWh · %"}
                     {detailTab === "quality" && "Hours · Times"}
+                    {detailTab === "tariffs" && "R$/MWh"}
                     {detailTab === "delinquency" && "%"}
                     {detailTab === "mmgd" && "Projects · kW"}
                   </span>
@@ -879,6 +879,12 @@ export function DistributorExplorer({ bridgeReady }: { bridgeReady: boolean }) {
                               <Th className="py-1 px-2" align="right">FEC Lim</Th>
                               <Th className="py-1 px-2" align="right">Comp. Count</Th>
                               <Th className="py-1 px-2" align="right">Comp. Value</Th>
+                            </>
+                          )}
+                          {detailTab === "tariffs" && (
+                            <>
+                              <Th className="py-1 px-2" align="right">TE</Th>
+                              <Th className="py-1 px-2" align="right">TUSD</Th>
                             </>
                           )}
                           {detailTab === "delinquency" && (
@@ -982,6 +988,20 @@ export function DistributorExplorer({ bridgeReady }: { bridgeReady: boolean }) {
                                   </Td>
                                 </>
                               )}
+                              {detailTab === "tariffs" && (
+                                <>
+                                  <Td className="py-1 px-2" align="right" mono>
+                                    {row.te_homologated !== null
+                                      ? row.te_homologated.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                                      : "—"}
+                                  </Td>
+                                  <Td className="py-1 px-2 text-zinc-400" align="right" mono>
+                                    {row.tusd_homologated !== null
+                                      ? row.tusd_homologated.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                                      : "—"}
+                                  </Td>
+                                </>
+                              )}
                               {detailTab === "delinquency" && (
                                 <>
                                   <Td className="py-1 px-2" align="right" mono>
@@ -1042,10 +1062,13 @@ function RefreshBanner({ queryClient }: { queryClient: any }) {
   useEffect(() => {
     if (!isRunning && triggering) {
       setTriggering(false);
-      // Invalidate queries so tables reload
       void queryClient.invalidateQueries({ queryKey: ["distribution-distributors"] });
+      void queryClient.invalidateQueries({ queryKey: ["distribution-groups"] });
       void queryClient.invalidateQueries({ queryKey: ["distribution-distributor-detail"] });
+      void queryClient.invalidateQueries({ queryKey: ["distribution-group-detail"] });
       void queryClient.invalidateQueries({ queryKey: ["distribution-series"] });
+      void queryClient.invalidateQueries({ queryKey: ["distribution-group-series"] });
+      void queryClient.invalidateQueries({ queryKey: ["distribution-health"] });
     }
   }, [isRunning, triggering, queryClient]);
 
@@ -1141,6 +1164,269 @@ function RefreshBanner({ queryClient }: { queryClient: any }) {
       )}
     </div>
   );
+}
+
+type DistributionTab = "market" | "balance" | "quality" | "tariffs" | "delinquency" | "mmgd";
+
+type TrendMetric = {
+  key: keyof DistributionSeriesEntry | "avg_tariff";
+  label: string;
+  unit: string;
+  color: string;
+  value: (row: DistributionSeriesEntry) => number | null;
+};
+
+const TREND_METRICS: Record<DistributionTab, TrendMetric[]> = {
+  market: [
+    {
+      key: "billed_energy_mwh",
+      label: "Billed energy",
+      unit: "MWh",
+      color: "#38bdf8",
+      value: (row) => row.billed_energy_mwh,
+    },
+    {
+      key: "revenue_brl",
+      label: "Revenue",
+      unit: "BRL",
+      color: "#f5a524",
+      value: (row) => row.revenue_brl,
+    },
+  ],
+  balance: [
+    {
+      key: "injected_energy_mwh",
+      label: "Injected",
+      unit: "MWh",
+      color: "#22c55e",
+      value: (row) => row.injected_energy_mwh,
+    },
+    {
+      key: "losses_mwh",
+      label: "Losses",
+      unit: "MWh",
+      color: "#ef4444",
+      value: (row) => row.losses_mwh,
+    },
+  ],
+  quality: [
+    {
+      key: "dec_actual",
+      label: "DEC actual",
+      unit: "hours",
+      color: "#f5a524",
+      value: (row) => row.dec_actual,
+    },
+    {
+      key: "dec_limit",
+      label: "DEC limit",
+      unit: "hours",
+      color: "#aeb4c0",
+      value: (row) => row.dec_limit,
+    },
+  ],
+  tariffs: [
+    {
+      key: "te_homologated",
+      label: "TE",
+      unit: "R$/MWh",
+      color: "#38bdf8",
+      value: (row) => row.te_homologated,
+    },
+    {
+      key: "tusd_homologated",
+      label: "TUSD",
+      unit: "R$/MWh",
+      color: "#f5a524",
+      value: (row) => row.tusd_homologated,
+    },
+  ],
+  delinquency: [
+    {
+      key: "delinquency_pct",
+      label: "Delinquency",
+      unit: "%",
+      color: "#ef4444",
+      value: (row) => row.delinquency_pct,
+    },
+  ],
+  mmgd: [
+    {
+      key: "mmgd_projects_count",
+      label: "Projects",
+      unit: "projects",
+      color: "#38bdf8",
+      value: (row) => row.mmgd_projects_count,
+    },
+    {
+      key: "mmgd_capacity_kw",
+      label: "Capacity",
+      unit: "kW",
+      color: "#22c55e",
+      value: (row) => row.mmgd_capacity_kw,
+    },
+  ],
+};
+
+function DistributionTrendPanel({
+  series,
+  activeTab,
+}: {
+  series: DistributionSeriesEntry[];
+  activeTab: DistributionTab;
+}) {
+  const metrics = TREND_METRICS[activeTab];
+  const ordered = [...series].sort((a, b) => a.period.localeCompare(b.period));
+  const hasValues = metrics.some((metric) =>
+    ordered.some((row) => metric.value(row) !== null && Number.isFinite(metric.value(row) ?? NaN)),
+  );
+
+  if (!ordered.length) {
+    return (
+      <div className="rounded border border-zinc-800 bg-zinc-950/40 p-3 text-xs text-zinc-500">
+        No chart data available for this selection.
+      </div>
+    );
+  }
+
+  if (!hasValues) {
+    return (
+      <div className="rounded border border-zinc-800 bg-zinc-950/40 p-3 text-xs text-zinc-500">
+        Historical periods are available, but this tab has no non-null values yet.
+      </div>
+    );
+  }
+
+  const width = 520;
+  const height = 170;
+  const pad = { top: 14, right: 18, bottom: 28, left: 42 };
+  const plotW = width - pad.left - pad.right;
+  const plotH = height - pad.top - pad.bottom;
+  const allValues = metrics.flatMap((metric) =>
+    ordered
+      .map((row) => metric.value(row))
+      .filter((value): value is number => value !== null && Number.isFinite(value)),
+  );
+  const min = Math.min(...allValues);
+  const max = Math.max(...allValues);
+  const span = max === min ? Math.max(Math.abs(max), 1) : max - min;
+  const yMin = max === min ? min - span * 0.1 : min;
+  const yMax = max === min ? max + span * 0.1 : max;
+
+  const xFor = (idx: number) => pad.left + (ordered.length === 1 ? plotW / 2 : (idx / (ordered.length - 1)) * plotW);
+  const yFor = (value: number) => pad.top + (1 - (value - yMin) / (yMax - yMin || 1)) * plotH;
+  const segmentsFor = (metric: TrendMetric) => {
+    const segments: string[] = [];
+    let current: string[] = [];
+    ordered.forEach((row, idx) => {
+      const value = metric.value(row);
+      if (value === null || !Number.isFinite(value)) {
+        if (current.length > 1) segments.push(current.join(" "));
+        current = [];
+        return;
+      }
+      current.push(`${current.length ? "L" : "M"} ${xFor(idx).toFixed(1)} ${yFor(value).toFixed(1)}`);
+    });
+    if (current.length > 1) segments.push(current.join(" "));
+    return segments;
+  };
+  const pointsFor = (metric: TrendMetric) =>
+    ordered.flatMap((row, idx) => {
+      const value = metric.value(row);
+      if (value === null || !Number.isFinite(value)) return [];
+      return [{
+        period: row.period,
+        label: metric.label,
+        unit: metric.unit,
+        value,
+        x: xFor(idx),
+        y: yFor(value),
+      }];
+    });
+
+  const firstPeriod = ordered[0]?.period ?? "";
+  const lastPeriod = ordered[ordered.length - 1]?.period ?? "";
+
+  return (
+    <div className="space-y-2 rounded border border-zinc-800 bg-zinc-950/40 p-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+            Historical chart
+          </div>
+          <div className="text-[10px] font-mono text-zinc-600">
+            {firstPeriod} to {lastPeriod}
+          </div>
+        </div>
+        <div className="flex flex-wrap justify-end gap-2">
+          {metrics.map((metric) => (
+            <span key={metric.key} className="inline-flex items-center gap-1.5 text-[10px] text-zinc-400">
+              <span className="h-1.5 w-3 rounded-sm" style={{ backgroundColor: metric.color }} />
+              {metric.label} ({metric.unit})
+            </span>
+          ))}
+        </div>
+      </div>
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Distribution historical chart" className="h-[170px] w-full">
+        <line x1={pad.left} y1={pad.top} x2={pad.left} y2={height - pad.bottom} stroke="rgba(255,255,255,0.12)" />
+        <line x1={pad.left} y1={height - pad.bottom} x2={width - pad.right} y2={height - pad.bottom} stroke="rgba(255,255,255,0.12)" />
+        {[0, 0.5, 1].map((ratio) => {
+          const y = pad.top + ratio * plotH;
+          const value = yMax - ratio * (yMax - yMin);
+          return (
+            <g key={ratio}>
+              <line x1={pad.left} y1={y} x2={width - pad.right} y2={y} stroke="rgba(255,255,255,0.06)" />
+              <text x={pad.left - 8} y={y + 3} textAnchor="end" className="fill-zinc-500 text-[10px]">
+                {formatCompact(value)}
+              </text>
+            </g>
+          );
+        })}
+        {metrics.map((metric) =>
+          segmentsFor(metric).map((path, idx) => (
+            <path key={`${metric.key}-${idx}`} d={path} fill="none" stroke={metric.color} strokeWidth="2" strokeLinecap="round" />
+          )),
+        )}
+        {metrics.map((metric) =>
+          pointsFor(metric).map((point) => (
+            <circle
+              key={`${metric.key}-${point.period}`}
+              cx={point.x}
+              cy={point.y}
+              r="3"
+              fill={metric.color}
+              stroke="#101216"
+              strokeWidth="1.5"
+            >
+              <title>{`${point.period} · ${point.label}: ${formatTooltipValue(point.value, point.unit)}`}</title>
+            </circle>
+          )),
+        )}
+        {ordered.map((row, idx) => {
+          if (idx !== 0 && idx !== ordered.length - 1 && idx % Math.ceil(ordered.length / 4) !== 0) return null;
+          return (
+            <text key={row.period} x={xFor(idx)} y={height - 9} textAnchor="middle" className="fill-zinc-500 text-[10px]">
+              {row.period}
+            </text>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+function formatCompact(value: number) {
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)}B`;
+  if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (abs >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
+  if (abs > 0 && abs < 1) return value.toFixed(2);
+  return value.toFixed(0);
+}
+
+function formatTooltipValue(value: number, unit: string) {
+  if (unit === "%") return `${(value * 100).toLocaleString("en-US", { maximumFractionDigits: 2 })}%`;
+  return `${value.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${unit}`;
 }
 
 function SelectFilter({

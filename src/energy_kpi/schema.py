@@ -293,6 +293,38 @@ def ensure_energy_kpi_tables_for_connection(conn, *, enable_wal: bool = True) ->
             "file_type": "TEXT",
             "detected_period": "TEXT",
             "source_page_url": "TEXT",
+            "canonical_rows": "INTEGER",
+            "valid_domain_rows": "INTEGER",
+            "missing_key_rows": "INTEGER",
+            "invalid_value_rows": "INTEGER",
+            "unresolved_identity_rows": "INTEGER",
+            "non_distributor_entity_rows": "INTEGER",
+            "exact_duplicate_rows": "INTEGER",
+            "duplicate_groups": "INTEGER",
+            "conflicting_logical_keys": "INTEGER",
+            "conflict_rows": "INTEGER",
+            "quarantined_rows": "INTEGER",
+            "lead_kpi_rows": "INTEGER",
+            "supporting_detail_rows": "INTEGER",
+            "intentionally_excluded_rows": "INTEGER",
+            "rejected_rows": "INTEGER",
+            "rows_unchanged": "INTEGER",
+            "rows_removed_deactivated": "INTEGER",
+            "final_published_rows": "INTEGER",
+            "affected_periods": "TEXT",
+            "affected_distributors": "INTEGER",
+            "affected_non_distributors": "INTEGER",
+            "elapsed_download_ms": "INTEGER",
+            "elapsed_parse_ms": "INTEGER",
+            "elapsed_publish_ms": "INTEGER",
+            "elapsed_aggregate_ms": "INTEGER",
+            "elapsed_lock_wait_ms": "INTEGER",
+            "peak_rss_mb": "REAL",
+            "cpu_time_ms": "INTEGER",
+            "parser_version": "TEXT",
+            "schema_fingerprint": "TEXT",
+            "snapshot_id": "TEXT",
+            "final_source_status": "TEXT",
         },
     )
     conn.execute(text(
@@ -536,10 +568,18 @@ def ensure_energy_kpi_tables_for_connection(conn, *, enable_wal: bool = True) ->
             primary_uf         TEXT,
             service_area       TEXT,
             status             TEXT NOT NULL DEFAULT 'active',
+            classification     TEXT NOT NULL DEFAULT 'distributor',
             created_at         TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
         )
     """))
+    _ensure_columns(
+        conn,
+        "distribution_distributors",
+        {
+            "classification": "TEXT NOT NULL DEFAULT 'distributor'",
+        },
+    )
 
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS distribution_distributor_aliases (
@@ -693,9 +733,26 @@ def ensure_energy_kpi_tables_for_connection(conn, *, enable_wal: bool = True) ->
         conn,
         "distribution_tariff_facts",
         {
+            "consumer_class": "TEXT",
+            "consumer_subclass": "TEXT",
             "accessing_agent": "TEXT",
         },
     )
+    tariff_cols = {
+        row[1] for row in conn.execute(text("PRAGMA table_info(distribution_tariff_facts)")).fetchall()
+    }
+    if "class_name" in tariff_cols:
+        conn.execute(text(
+            "UPDATE distribution_tariff_facts "
+            "SET consumer_class = class_name "
+            "WHERE consumer_class IS NULL AND class_name IS NOT NULL"
+        ))
+    if "subclass" in tariff_cols:
+        conn.execute(text(
+            "UPDATE distribution_tariff_facts "
+            "SET consumer_subclass = subclass "
+            "WHERE consumer_subclass IS NULL AND subclass IS NOT NULL"
+        ))
 
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS distribution_tariff_conflicts (
@@ -771,9 +828,25 @@ def ensure_energy_kpi_tables_for_connection(conn, *, enable_wal: bool = True) ->
             latitude               REAL,
             longitude              REAL,
             connection_date        TEXT,
+            status                 TEXT NOT NULL DEFAULT 'active',
+            deactivated_at_month   TEXT,
+            deactivation_reason    TEXT,
+            deactivation_snapshot_id TEXT,
+            source_row_hash        TEXT,
             created_at             TEXT NOT NULL DEFAULT (datetime('now'))
         )
     """))
+    _ensure_columns(
+        conn,
+        "distribution_mmgd_projects",
+        {
+            "status": "TEXT NOT NULL DEFAULT 'active'",
+            "deactivated_at_month": "TEXT",
+            "deactivation_reason": "TEXT",
+            "deactivation_snapshot_id": "TEXT",
+            "source_row_hash": "TEXT",
+        },
+    )
 
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS distribution_mmgd_project_snapshots (
@@ -847,6 +920,10 @@ def ensure_energy_kpi_tables_for_connection(conn, *, enable_wal: bool = True) ->
         "CREATE INDEX IF NOT EXISTS idx_dist_cont_ref ON distribution_continuity_facts(distributor_id, set_id, reference_month)"
     ))
     conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_dist_cont_indicator_ref ON "
+        "distribution_continuity_facts(indicator_code, distributor_id, reference_month)"
+    ))
+    conn.execute(text(
         "CREATE INDEX IF NOT EXISTS idx_dist_mmgd_proj ON distribution_mmgd_projects(distributor_id)"
     ))
     conn.execute(text(
@@ -858,12 +935,90 @@ def ensure_energy_kpi_tables_for_connection(conn, *, enable_wal: bool = True) ->
     conn.execute(text(
         "CREATE INDEX IF NOT EXISTS idx_dist_annual_agg ON distribution_annual_aggregates(distributor_id, reference_year)"
     ))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_dist_tariff_series_lookup ON "
+        "distribution_tariff_facts(distributor_id, subgroup, consumer_class, unit, valid_from, valid_to)"
+    ))
 
+
+
+def migrate_unmapped_distributors(conn) -> None:
+    """Migrate facts associated with unmapped distributor IDs (e.g. unmapped_04895728000180)
+    into canonical IDs (e.g. equatorial_pa) if a match is found in the newly seeded
+    distributors or aliases. Also dynamically reclassifies existing unmapped/unresolved rows.
+    """
+    from src.energy_kpi.distribution.catalog import seed_distribution_static_data
+    from src.energy_kpi.distribution.ingest import classify_distribution_entity
+    seed_distribution_static_data(conn)
+
+    # Reclassify any existing unmapped or unresolved distributor rows dynamically
+    rows = conn.execute(text("""
+        SELECT distributor_id, canonical_name, normalized_cnpj, status, classification
+        FROM distribution_distributors
+        WHERE distributor_id LIKE 'unmapped_%' OR distributor_id LIKE 'unresolved_%'
+    """)).fetchall()
+    for r in rows:
+        dist_id, name, cnpj, status, classification = r
+        new_class = classify_distribution_entity(name, cnpj)
+        new_status = 'active' if new_class in ('distributor', 'unknown') else 'unresolved_source_entity'
+        if new_class != classification or new_status != status:
+            conn.execute(
+                text("UPDATE distribution_distributors SET classification = :cls, status = :status WHERE distributor_id = :id"),
+                {"cls": new_class, "status": new_status, "id": dist_id}
+            )
+
+    # Build target mapping (normalized_cnpj -> distributor_id)
+    target_map = {}
+    for r in conn.execute(text("SELECT distributor_id, normalized_cnpj FROM distribution_distributors WHERE distributor_id NOT LIKE 'unmapped_%' AND distributor_id NOT LIKE 'unresolved_%'")).fetchall():
+        if r[1]:
+            target_map[r[1]] = r[0]
+
+    for r in conn.execute(text("SELECT distributor_id, source_cnpj FROM distribution_distributor_aliases WHERE source_cnpj IS NOT NULL")).fetchall():
+        target_map[r[1]] = r[0]
+
+    # Find existing unmapped distributors
+    unmapped_rows = conn.execute(text("SELECT distributor_id, normalized_cnpj FROM distribution_distributors WHERE distributor_id LIKE 'unmapped_%'")).fetchall()
+
+    # Tables to migrate
+    tables_to_update = [
+        "distribution_market_facts",
+        "distribution_energy_balance_facts",
+        "distribution_continuity_facts",
+        "distribution_continuity_limits",
+        "distribution_continuity_compensations",
+        "distribution_tariff_facts",
+        "distribution_delinquency_facts",
+        "distribution_mmgd_projects",
+    ]
+
+    for unmapped_id, cnpj in unmapped_rows:
+        if cnpj in target_map:
+            target_id = target_map[cnpj]
+            logger.info("Migrating facts from %s to canonical ID %s (%s)", unmapped_id, target_id, cnpj)
+            for tbl in tables_to_update:
+                try:
+                    conn.execute(
+                        text(f"UPDATE OR IGNORE {tbl} SET distributor_id = :target WHERE distributor_id = :unmapped"),
+                        {"target": target_id, "unmapped": unmapped_id}
+                    )
+                    conn.execute(
+                        text(f"DELETE FROM {tbl} WHERE distributor_id = :unmapped"),
+                        {"unmapped": unmapped_id}
+                    )
+                except Exception as e:
+                    logger.warning("Failed to migrate table %s for %s: %s", tbl, unmapped_id, e)
+
+            # Finally delete the old unmapped distributor record
+            conn.execute(
+                text("DELETE FROM distribution_distributors WHERE distributor_id = :unmapped"),
+                {"unmapped": unmapped_id}
+            )
 
 
 def ensure_energy_kpi_tables(engine: Engine) -> None:
     with engine.begin() as conn:
         ensure_energy_kpi_tables_for_connection(conn)
+        migrate_unmapped_distributors(conn)
 
 
 @lru_cache(maxsize=1)

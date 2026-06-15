@@ -14,6 +14,37 @@ Reads are offline-only. Manual refresh downloads ANEEL open-data resources into
 the local raw energy cache and publishes normalized facts into the Distribution
 tables.
 
+## Refresh And Diagnostics
+
+Manual refresh is single-flight in the desktop bridge: duplicate starts return
+`already_running` while the existing job continues. The refresh path reuses the
+latest valid local snapshot unless `force` is requested, so cached reruns do not
+download the same ANEEL file again.
+
+Each source step is logged in `energy_source_refresh_log` with download, parse,
+publish, aggregate, and SQLite lock-wait durations; source, parsed, canonical,
+and published row counts; conflict and unresolved-identity counts; and optional
+process RSS/CPU diagnostics. The UI exposes these logs in the Distribution Data
+Health panel.
+
+Fact publishing uses bounded insert batches and avoids materializing whole fact
+frames as Python lists. SQLite writes are scoped to short source-level
+transactions, and aggregate rebuild runs after source publication so reads keep
+using the last valid persisted data if a later source fails.
+
+## UI Contract
+
+The Distribution panel supports distributor and economic-group modes. Both modes
+read persisted aggregate series from the bridge and render:
+
+- a historical SVG chart for Market, Balance, Quality, Tariffs, Delinquency,
+  and MMGD metrics with per-point period/value tooltips;
+- an audit table using the same aggregate rows as the chart;
+- loading, error, empty, running, success, and failed refresh states.
+
+Null aggregate values remain null through the bridge and render as gaps or
+dashes. The UI must not coerce missing values to zero.
+
 ## Parser Contract
 
 Each parser follows the same boundary contract:
