@@ -28,6 +28,26 @@ import type {
   PlantParcelChartDataResponse
 } from "./types.energy";
 
+import type {
+  DistributorEntry,
+  DistributorDetail,
+  DistributionSeriesEntry,
+  DistributionRefreshStatus,
+  EconomicGroupEntry,
+  EconomicGroupDetail,
+  DistributionHealthResponse
+} from "./types.distribution";
+
+export type {
+  DistributorEntry,
+  DistributorDetail,
+  DistributionSeriesEntry,
+  DistributionRefreshStatus,
+  EconomicGroupEntry,
+  EconomicGroupDetail,
+  DistributionHealthResponse
+};
+
 export type {
   KPICatalogEntry,
   CountryKPIValue,
@@ -1136,6 +1156,16 @@ export interface BridgeApi {
   refresh_plant_parcel_source(params: PlantParcelRefreshParams): Promise<PlantParcelRefreshResult>;
   select_plant_parcel_import_file(params: PlantParcelFilePickerParams): Promise<PlantParcelFilePickerResult>;
   import_plant_parcel_source_file(params: PlantParcelManualImportParams): Promise<PlantParcelManualImportResult>;
+  // Distribution analytics domain
+  get_distribution_distributors(params?: { search?: string; economic_group_id?: string; uf?: string }): Promise<{ items: DistributorEntry[]; count: number; error?: string }>;
+  get_distribution_distributor_detail(params: { distributor_id: string }): Promise<DistributorDetail | { error: string }>;
+  get_distribution_series(params: { entity_type: string; entity_id: string; frequency?: string }): Promise<{ series: DistributionSeriesEntry[]; count: number; error?: string }>;
+  get_distribution_refresh_status(params?: Record<string, unknown>): Promise<DistributionRefreshStatus>;
+  refresh_distribution_data(params?: { years?: number[]; force?: boolean }): Promise<{ status: string; error: string | null }>;
+  get_distribution_groups(params?: Record<string, unknown>): Promise<{ items: EconomicGroupEntry[]; count: number; error?: string }>;
+  get_distribution_group_detail(params: { group_id: string }): Promise<EconomicGroupDetail | { error: string }>;
+  export_distribution_excel(params: { entity_type: "distributor" | "group"; entity_id: string }): Promise<{ path: string | null; error: string | null }>;
+  get_distribution_health(params?: Record<string, unknown>): Promise<DistributionHealthResponse>;
 }
 
 declare global {

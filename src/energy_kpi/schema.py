@@ -502,6 +502,364 @@ def ensure_energy_kpi_tables_for_connection(conn, *, enable_wal: bool = True) ->
         "CREATE INDEX IF NOT EXISTS idx_cppe_source ON ccee_plant_parcel_hourly(generation_source)"
     ))
 
+    # ANEEL Electricity Distribution Analytics Domain Tables
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS distribution_economic_groups (
+            economic_group_id TEXT PRIMARY KEY,
+            group_name        TEXT NOT NULL,
+            created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """))
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS distribution_listed_companies (
+            cd_cvm       INTEGER PRIMARY KEY,
+            company_name TEXT NOT NULL,
+            ticker_b3    TEXT,
+            cnpj         TEXT,
+            created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """))
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS distribution_distributors (
+            distributor_id     TEXT PRIMARY KEY,
+            canonical_name     TEXT NOT NULL,
+            current_legal_name TEXT,
+            trade_name         TEXT,
+            normalized_cnpj    TEXT,
+            agent_code         TEXT,
+            distributor_code   TEXT,
+            concession_type   TEXT,
+            primary_uf         TEXT,
+            service_area       TEXT,
+            status             TEXT NOT NULL DEFAULT 'active',
+            created_at         TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """))
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS distribution_distributor_aliases (
+            alias_id       TEXT PRIMARY KEY,
+            distributor_id TEXT NOT NULL REFERENCES distribution_distributors(distributor_id) ON DELETE CASCADE,
+            source         TEXT NOT NULL,
+            source_cnpj    TEXT,
+            source_name    TEXT,
+            normalized_name TEXT,
+            match_method   TEXT,
+            match_status   TEXT NOT NULL DEFAULT 'reviewed',
+            review_notes   TEXT,
+            created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """))
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS distribution_ownership_history (
+            ownership_id                   TEXT PRIMARY KEY,
+            distributor_id                 TEXT NOT NULL REFERENCES distribution_distributors(distributor_id) ON DELETE CASCADE,
+            economic_group_id              TEXT REFERENCES distribution_economic_groups(economic_group_id) ON DELETE SET NULL,
+            cd_cvm                         INTEGER REFERENCES distribution_listed_companies(cd_cvm) ON DELETE SET NULL,
+            valid_from                     TEXT NOT NULL,
+            valid_to                       TEXT NOT NULL,
+            control_status                 TEXT,
+            ownership_percentage           REAL,
+            operational_consolidation_flag INTEGER NOT NULL DEFAULT 1,
+            mapping_source                 TEXT,
+            mapping_status                 TEXT NOT NULL DEFAULT 'reviewed',
+            review_notes                   TEXT,
+            created_at                     TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at                     TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """))
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS distribution_market_facts (
+            fact_id                     TEXT PRIMARY KEY,
+            distributor_id              TEXT NOT NULL REFERENCES distribution_distributors(distributor_id) ON DELETE CASCADE,
+            reference_month             TEXT NOT NULL,
+            market_type                 TEXT,
+            tariff_modality             TEXT,
+            tariff_subgroup             TEXT,
+            consumer_class              TEXT,
+            consumer_subclass           TEXT,
+            consumer_detail             TEXT,
+            tariff_period               TEXT,
+            energy_option               TEXT,
+            accessing_agent_cnpj        TEXT,
+            accessing_agent_name        TEXT,
+            metric_name                 TEXT NOT NULL,
+            raw_value                   REAL,
+            normalized_value            REAL,
+            original_unit               TEXT,
+            normalized_unit             TEXT,
+            source_row_hash             TEXT NOT NULL,
+            snapshot_id                 TEXT,
+            created_at                  TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """))
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS distribution_energy_balance_facts (
+            fact_id                TEXT PRIMARY KEY,
+            distributor_id         TEXT NOT NULL REFERENCES distribution_distributors(distributor_id) ON DELETE CASCADE,
+            reference_month        TEXT NOT NULL,
+            balance_modality       TEXT,
+            energy_flow            TEXT,
+            balance_characteristic TEXT,
+            balance_detail         TEXT,
+            raw_value              REAL,
+            normalized_value       REAL,
+            original_unit          TEXT,
+            normalized_unit        TEXT,
+            source_row_hash        TEXT NOT NULL,
+            snapshot_id            TEXT,
+            created_at             TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """))
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS distribution_continuity_facts (
+            fact_id                TEXT PRIMARY KEY,
+            distributor_id         TEXT NOT NULL REFERENCES distribution_distributors(distributor_id) ON DELETE CASCADE,
+            set_id                 TEXT NOT NULL,
+            set_name               TEXT,
+            indicator_code         TEXT NOT NULL,
+            reference_month        TEXT NOT NULL,
+            actual_value           REAL,
+            source_row_hash        TEXT NOT NULL,
+            snapshot_id            TEXT,
+            created_at             TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """))
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS distribution_continuity_limits (
+            limit_id               TEXT PRIMARY KEY,
+            distributor_id         TEXT NOT NULL REFERENCES distribution_distributors(distributor_id) ON DELETE CASCADE,
+            set_id                 TEXT NOT NULL,
+            set_name               TEXT,
+            indicator_code         TEXT NOT NULL,
+            validity_year          INTEGER NOT NULL,
+            limit_value            REAL,
+            source_row_hash        TEXT NOT NULL,
+            snapshot_id            TEXT,
+            created_at             TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """))
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS distribution_continuity_compensations (
+            compensation_id        TEXT PRIMARY KEY,
+            distributor_id         TEXT NOT NULL REFERENCES distribution_distributors(distributor_id) ON DELETE CASCADE,
+            set_id                 TEXT NOT NULL,
+            set_name               TEXT,
+            reference_month        TEXT NOT NULL,
+            compensation_count     INTEGER,
+            compensation_value     REAL,
+            source_row_hash        TEXT NOT NULL,
+            snapshot_id            TEXT,
+            created_at             TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """))
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS distribution_tariff_facts (
+            fact_id                TEXT PRIMARY KEY,
+            distributor_id         TEXT NOT NULL REFERENCES distribution_distributors(distributor_id) ON DELETE CASCADE,
+            resolution_title       TEXT,
+            valid_from             TEXT NOT NULL,
+            valid_to               TEXT NOT NULL,
+            tariff_base            TEXT,
+            subgroup               TEXT,
+            modality               TEXT,
+            consumer_class         TEXT,
+            consumer_subclass      TEXT,
+            consumer_detail        TEXT,
+            tariff_period          TEXT,
+            accessing_agent        TEXT,
+            unit                   TEXT NOT NULL,
+            tusd_value             REAL,
+            te_value               REAL,
+            source_row_hash        TEXT NOT NULL,
+            snapshot_id            TEXT,
+            created_at             TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """))
+    _ensure_columns(
+        conn,
+        "distribution_tariff_facts",
+        {
+            "accessing_agent": "TEXT",
+        },
+    )
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS distribution_tariff_conflicts (
+            conflict_row_id       TEXT PRIMARY KEY,
+            business_key_hash     TEXT NOT NULL,
+            normalized_cnpj       TEXT,
+            raw_name              TEXT,
+            resolution_title      TEXT,
+            valid_from            TEXT,
+            valid_to              TEXT,
+            tariff_base           TEXT,
+            subgroup              TEXT,
+            modality              TEXT,
+            consumer_class        TEXT,
+            consumer_subclass     TEXT,
+            consumer_detail       TEXT,
+            tariff_period         TEXT,
+            accessing_agent       TEXT,
+            unit                  TEXT,
+            tusd_value            REAL,
+            te_value              REAL,
+            source_row_hash       TEXT NOT NULL,
+            snapshot_id           TEXT,
+            conflict_reason       TEXT NOT NULL,
+            created_at            TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """))
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS distribution_delinquency_facts (
+            fact_id                TEXT PRIMARY KEY,
+            distributor_id         TEXT NOT NULL REFERENCES distribution_distributors(distributor_id) ON DELETE CASCADE,
+            reference_month        TEXT NOT NULL,
+            indicator_code         TEXT NOT NULL,
+            actual_value           REAL,
+            source_row_hash        TEXT NOT NULL,
+            snapshot_id            TEXT,
+            created_at             TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """))
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS distribution_delinquency_indicators (
+            indicator_code         TEXT PRIMARY KEY,
+            indicator_name         TEXT NOT NULL,
+            description            TEXT,
+            unit                   TEXT,
+            analytical_category    TEXT,
+            publication_status     TEXT,
+            is_lead_kpi            INTEGER NOT NULL DEFAULT 0
+        )
+    """))
+    _ensure_columns(
+        conn,
+        "distribution_delinquency_indicators",
+        {
+            "unit": "TEXT",
+            "analytical_category": "TEXT",
+            "publication_status": "TEXT",
+            "is_lead_kpi": "INTEGER NOT NULL DEFAULT 0",
+        },
+    )
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS distribution_mmgd_projects (
+            project_id             TEXT PRIMARY KEY,
+            distributor_id         TEXT NOT NULL REFERENCES distribution_distributors(distributor_id) ON DELETE CASCADE,
+            municipality           TEXT,
+            uf                     TEXT,
+            generation_type        TEXT,
+            generation_source      TEXT,
+            size_category          TEXT,
+            latitude               REAL,
+            longitude              REAL,
+            connection_date        TEXT,
+            created_at             TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """))
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS distribution_mmgd_project_snapshots (
+            snapshot_row_id        TEXT PRIMARY KEY,
+            project_id             TEXT NOT NULL REFERENCES distribution_mmgd_projects(project_id) ON DELETE CASCADE,
+            reference_month        TEXT NOT NULL,
+            installed_capacity_kw  REAL,
+            beneficiary_units_count INTEGER,
+            source_row_hash        TEXT NOT NULL,
+            snapshot_id            TEXT,
+            created_at             TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """))
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS distribution_monthly_aggregates (
+            aggregate_id           TEXT PRIMARY KEY,
+            distributor_id         TEXT NOT NULL REFERENCES distribution_distributors(distributor_id) ON DELETE CASCADE,
+            reference_month        TEXT NOT NULL,
+            billed_energy_mwh      REAL,
+            revenue_brl            REAL,
+            measured_energy_mwh    REAL,
+            injected_energy_mwh    REAL,
+            losses_mwh             REAL,
+            losses_pct             REAL,
+            dec_actual             REAL,
+            fec_actual             REAL,
+            dec_limit              REAL,
+            fec_limit              REAL,
+            compensation_count     INTEGER,
+            compensation_value     REAL,
+            delinquency_pct        REAL,
+            mmgd_projects_count    INTEGER,
+            mmgd_capacity_kw       REAL,
+            created_at             TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """))
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS distribution_annual_aggregates (
+            aggregate_id           TEXT PRIMARY KEY,
+            distributor_id         TEXT NOT NULL REFERENCES distribution_distributors(distributor_id) ON DELETE CASCADE,
+            reference_year         INTEGER NOT NULL,
+            billed_energy_mwh      REAL,
+            revenue_brl            REAL,
+            measured_energy_mwh    REAL,
+            injected_energy_mwh    REAL,
+            losses_mwh             REAL,
+            losses_pct             REAL,
+            dec_actual             REAL,
+            fec_actual             REAL,
+            dec_limit              REAL,
+            fec_limit              REAL,
+            compensation_count     INTEGER,
+            compensation_value     REAL,
+            delinquency_pct        REAL,
+            mmgd_projects_count    INTEGER,
+            mmgd_capacity_kw       REAL,
+            created_at             TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """))
+
+    # Indexes for distribution analytics
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_dist_market_ref ON distribution_market_facts(distributor_id, reference_month)"
+    ))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_dist_bal_ref ON distribution_energy_balance_facts(distributor_id, reference_month)"
+    ))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_dist_cont_ref ON distribution_continuity_facts(distributor_id, set_id, reference_month)"
+    ))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_dist_mmgd_proj ON distribution_mmgd_projects(distributor_id)"
+    ))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_dist_mmgd_snap ON distribution_mmgd_project_snapshots(project_id, reference_month)"
+    ))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_dist_monthly_agg ON distribution_monthly_aggregates(distributor_id, reference_month)"
+    ))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_dist_annual_agg ON distribution_annual_aggregates(distributor_id, reference_year)"
+    ))
+
+
 
 def ensure_energy_kpi_tables(engine: Engine) -> None:
     with engine.begin() as conn:

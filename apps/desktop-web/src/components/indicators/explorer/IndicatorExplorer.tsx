@@ -42,13 +42,19 @@ import { IndicatorDetailPanel } from "./IndicatorDetailPanel";
 
 type Msg = { text: string; ok: boolean } | null;
 
-export function IndicatorExplorer({ bridgeReady }: { bridgeReady: boolean }) {
+export function IndicatorExplorer({
+  bridgeReady,
+  defaultFavoritesOnly = false,
+}: {
+  bridgeReady: boolean;
+  defaultFavoritesOnly?: boolean;
+}) {
   const qc = useQueryClient();
 
   // ── Explorer view state ───────────────────────────────────────────────────
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState<ExplorerFilters>(EMPTY_FILTERS);
-  const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [favoritesOnly, setFavoritesOnly] = useState(defaultFavoritesOnly);
   const [sort, setSort] = useState<SortKey>("name");
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
