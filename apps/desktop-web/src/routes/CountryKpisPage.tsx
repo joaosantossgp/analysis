@@ -43,7 +43,7 @@ const DistributorExplorer = lazy(() =>
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type TopSection = "discover" | "energy" | "favorites" | "health";
-type EnergySub = "overview" | "distribution" | "generation" | "sin" | "companies";
+type EnergySub = "overview" | "distribution" | "generation" | "sin" | "matrix";
 
 // ── Nav config ────────────────────────────────────────────────────────────────
 const TOP_NAV: Array<{ id: TopSection; label: string; icon: string }> = [
@@ -58,7 +58,7 @@ const ENERGY_SUB_NAV: Array<{ id: EnergySub; label: string }> = [
   { id: "distribution", label: "Distribution" },
   { id: "generation", label: "Generation" },
   { id: "sin", label: "Power System" },
-  { id: "companies", label: "Companies" },
+  { id: "matrix", label: "Matrix & Trends" },
 ];
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
@@ -177,7 +177,7 @@ export function CountryKpisPage() {
       <div className="flex-1 min-w-0 p-5 overflow-auto">
         <Suspense fallback={<StateBanner variant="loading" title="Loading view…" />}>
           {section === "discover" && (
-            <IndicatorExplorer bridgeReady={bridgeReady} />
+            <SectorCompanyPanel bridgeReady={bridgeReady} />
           )}
 
           {section === "energy" && energySub === "overview" && (
@@ -196,8 +196,8 @@ export function CountryKpisPage() {
             <SINPanelWrapper bridgeReady={bridgeReady} />
           )}
 
-          {section === "energy" && energySub === "companies" && (
-            <SectorCompanyPanel bridgeReady={bridgeReady} />
+          {section === "energy" && energySub === "matrix" && (
+            <IndicatorExplorer bridgeReady={bridgeReady} />
           )}
 
           {section === "favorites" && (
@@ -224,7 +224,7 @@ function EnergyOverviewPlaceholder() {
         <p className="text-sm text-zinc-400 max-w-2xl">
           Sector-level summary for Brazilian electricity utilities. Use the sub-navigation
           to explore distribution operational data, generation plant parcels, the national
-          power system (SIN), or listed-company coverage.
+          power system (SIN), or the energy matrix and trends.
         </p>
       </div>
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 mt-4">
@@ -232,7 +232,7 @@ function EnergyOverviewPlaceholder() {
           { label: "Distribution", desc: "ANEEL distributor operational KPIs", sub: "distribution" },
           { label: "Generation", desc: "Plant-parcel CCEE generation data", sub: "generation" },
           { label: "Power System", desc: "ONS SIN balances, EAR, ENA, CMO", sub: "sin" },
-          { label: "Companies", desc: "Listed-company CVM sector coverage", sub: "companies" },
+          { label: "Matrix & Trends", desc: "Fossil, renewables, carbon and macro trends", sub: "matrix" },
         ].map((card) => (
           <div
             key={card.sub}
@@ -542,7 +542,7 @@ function parseEnergySub(raw: string | null): EnergySub {
     raw === "distribution" ||
     raw === "generation" ||
     raw === "sin" ||
-    raw === "companies"
+    raw === "matrix"
   )
     return raw;
   return "overview";
