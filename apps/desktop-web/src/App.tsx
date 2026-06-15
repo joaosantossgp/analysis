@@ -41,20 +41,8 @@ const SectorsPage = lazy(() =>
 const SubSectorDetailPage = lazy(() =>
   import("./routes/SubSectorDetailPage").then((m) => ({ default: m.SubSectorDetailPage })),
 );
-const StatusPage = lazy(() =>
-  import("./routes/StatusPage").then((m) => ({ default: m.StatusPage })),
-);
-const SettingsPage = lazy(() =>
-  import("./routes/SettingsPage").then((m) => ({ default: m.SettingsPage })),
-);
-const UserImportsPage = lazy(() =>
-  import("./routes/UserImportsPage").then((m) => ({ default: m.UserImportsPage })),
-);
-const UpdateBasePage = lazy(() =>
-  import("./routes/UpdateBasePage").then((m) => ({ default: m.UpdateBasePage })),
-);
-const DataCoveragePage = lazy(() =>
-  import("./routes/DataCoveragePage").then((m) => ({ default: m.DataCoveragePage })),
+const SettingsModule = lazy(() =>
+  import("./routes/SettingsModule").then((m) => ({ default: m.SettingsModule })),
 );
 const DevDataOpsPage = lazy(() =>
   import("./routes/DevDataOpsPage").then((m) => ({ default: m.DevDataOpsPage })),
@@ -150,11 +138,14 @@ function AppShellWithPalette() {
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/empresas" element={<CompaniesPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-            <Route path="/settings/imports" element={<UserImportsPage />} />
-            <Route path="/settings/updates" element={<UpdateBasePage />} />
-            <Route path="/settings/coverage" element={<DataCoveragePage />} />
-            <Route path="/settings/diagnostics" element={<StatusPage />} />
+            <Route path="/settings" element={<SettingsModule section="overview" />} />
+            <Route path="/settings/health" element={<SettingsModule section="health" />} />
+            <Route path="/settings/storage" element={<SettingsModule section="storage" />} />
+            <Route path="/settings/sources" element={<SettingsModule section="sources" />} />
+            <Route path="/settings/imports" element={<SettingsModule section="imports" />} />
+            <Route path="/settings/updates" element={<SettingsModule section="updates" />} />
+            <Route path="/settings/coverage" element={<SettingsModule section="coverage" />} />
+            <Route path="/settings/diagnostics" element={<SettingsModule section="diagnostics" />} />
             {/* Backwards compatibility redirects */}
             <Route path="/atualizar-base" element={<Navigate to="/settings/updates" replace />} />
             <Route path="/data-coverage" element={<Navigate to="/settings/coverage" replace />} />

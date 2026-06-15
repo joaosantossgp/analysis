@@ -172,7 +172,10 @@ python scripts/diagnostics/runtime_doctor.py --require-canonical
 python -m desktop.app --dev
 ```
 
-Dev-mode database lives at `data/db/cvm_financials.db` (repo-relative). The Documents data-root contract only applies to the packaged executable.
+Desktop dev mode defaults to the same `%USERPROFILE%\Documents\CVMAnalytics`
+data root used by the packaged app so performance and large local caches match
+real usage. Set `CVM_DATA_DIR` explicitly when you need an isolated repo-local
+or fixture database.
 
 Headless and HTTP alternatives:
 

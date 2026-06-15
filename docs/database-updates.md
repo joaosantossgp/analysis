@@ -10,15 +10,51 @@ Base page relates to Data Coverage. Active routes live in
 | Route | Page | Role |
 |-------|------|------|
 | `/` | Home | Summary only — base health snapshot, KPIs, CTA into updates |
-| `/atualizar-base` | UpdateBasePage | Primary "update the database" flow |
-| `/data-coverage` | DataCoveragePage | Audit page — per-company coverage gaps |
+| `/settings` | Settings Overview | Canonical local runtime and data-health summary |
+| `/settings/health` | Settings Data Health | Segment-level health summary |
+| `/settings/coverage` | DataCoveragePage inside Settings | Audit page — per-company coverage gaps |
+| `/settings/updates` | UpdateBasePage inside Settings | Primary "update the database" flow |
+| `/settings/sources` | UserImportsPage inside Settings | Source status and manual imports |
+| `/settings/storage` | Settings Storage | Local paths, database files, cache, logs, and outputs |
+| `/settings/diagnostics` | StatusPage inside Settings | Advanced runtime, updater, path, and diagnostic details |
+| `/atualizar-base` | Redirect | Backward-compatible redirect to `/settings/updates` |
+| `/data-coverage` | Redirect | Backward-compatible redirect to `/settings/coverage` |
+| `/status` | Redirect | Backward-compatible redirect to `/settings/diagnostics` |
 | `/company-universe` | CompanyUniversePage | Which companies are in scope (presets) |
-| `/status` | StatusPage | Diagnostics, runtime, data paths, write mode, lock |
 
-Home is read-only summary. The Update Base page is the one place that starts a
-full database update. Data Coverage is an audit/triage surface, not an update
-launcher (per-company updates are triggered from the company pages — see
+Home is a product summary. Settings is the canonical application configuration,
+local storage, data-health, source/import, update, and diagnostic module. The
+Update Base section is the one place that starts a full database update. Data
+Coverage is an audit/triage surface, not a bulk update launcher (per-company
+updates are triggered from the company pages — see
 [company-on-demand-updates.md](company-on-demand-updates.md)).
+
+## Settings health summary
+
+`get_settings_health_summary` is an additive, read-only bridge method used by
+the initial Settings overview. It returns:
+
+- `overall_status`: `healthy`, `degraded`, `critical`, `updating`, `empty`,
+  `unavailable`, or `unknown`;
+- `segments`: required and optional data domains with status, reason, owner,
+  provider, latest reference, update timestamps, and action route;
+- runtime write mode and lock status;
+- local storage paths;
+- active update/import jobs;
+- metric provenance and performance notes.
+
+Initial Settings load intentionally avoids expensive detail contracts:
+
+- it does not call `get_data_coverage`;
+- it does not call `get_distribution_health`;
+- it does not trigger updates, imports, integrity checks, or network calls;
+- distribution row counts and CVM coverage rows are loaded only after opening
+  their detail sections.
+
+Required segments are the CVM company registry and CVM financial statements.
+Optional segments include market data, energy macro KPIs, SIN, plant/CCEE
+sources, distribution/ANEEL, and manual imports. Missing optional evidence is
+shown as `unknown` or `unavailable`, not as `critical`.
 
 ## Update flow
 

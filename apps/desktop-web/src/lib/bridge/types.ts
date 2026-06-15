@@ -885,6 +885,264 @@ export type AppStatusPayload = {
   error?: string;
 };
 
+export type SettingsHealthStatus =
+  | "healthy"
+  | "degraded"
+  | "critical"
+  | "updating"
+  | "empty"
+  | "unavailable"
+  | "unknown";
+
+export type SettingsHealthDimensionStatus =
+  | SettingsHealthStatus
+  | "deferred";
+
+export type SettingsHealthIssue = {
+  segment_id: string;
+  severity: "info" | "warning" | "critical" | "error" | string;
+  message: string;
+  action_route?: string | null;
+};
+
+export type SettingsHealthSegment = {
+  id: string;
+  name: string;
+  required: boolean;
+  status: SettingsHealthStatus;
+  reason: string;
+  owner: string | null;
+  provider: string | null;
+  record_count: number | null;
+  latest_reference: string | null;
+  last_successful_update: string | null;
+  last_attempted_update: string | null;
+  dimensions: {
+    availability: SettingsHealthDimensionStatus;
+    freshness: SettingsHealthDimensionStatus;
+    coverage: SettingsHealthDimensionStatus;
+    integrity: SettingsHealthDimensionStatus;
+    last_refresh: SettingsHealthDimensionStatus;
+    source: SettingsHealthDimensionStatus;
+  };
+  warnings: string[];
+  errors: string[];
+  action_route: string;
+  details?: Record<string, unknown>;
+};
+
+export type SettingsHealthActiveJob = {
+  job_id: string | null;
+  segment_id: string;
+  status: string | null;
+  stage?: string | null;
+  started_at?: string | null;
+  updated_at?: string | null;
+  message?: string | null;
+};
+
+export type SettingsHealthProvenance = {
+  metric: string;
+  source: string;
+  meaning: string;
+  cost: string;
+  cache_policy: string;
+  failure_behavior: string;
+};
+
+export type SettingsHealthSummary = {
+  generated_at: string | null;
+  overall_status: SettingsHealthStatus;
+  summary: {
+    title: string;
+    message: string;
+    required_segments?: number;
+    critical_segments?: number;
+    degraded_segments?: number;
+    empty_segments?: number;
+    updating_segments?: number;
+    unknown_segments?: number;
+    initial_load_duration_ms?: number;
+    initial_bridge_calls?: number;
+    full_table_scans?: boolean;
+    deferred_detail_contracts?: string[];
+  };
+  segments: SettingsHealthSegment[];
+  active_jobs: SettingsHealthActiveJob[];
+  warnings: SettingsHealthIssue[];
+  errors: SettingsHealthIssue[];
+  storage: Partial<Record<"data" | "database" | "output" | "logs" | "cache", LocalPathInfo>>;
+  storage_inventory?: StorageInventorySummary | null;
+  runtime: AppRuntimeStatus;
+  provenance: SettingsHealthProvenance[];
+  error?: string;
+};
+
+export type StorageInventoryStatus =
+  | "healthy"
+  | "degraded"
+  | "critical"
+  | "updating"
+  | "unavailable"
+  | "unknown"
+  | "partial";
+
+export type StorageScanStatus = {
+  scan_id?: string | null;
+  status: "idle" | "running" | "succeeded" | "partial" | "failed";
+  started_at?: string | null;
+  finished_at?: string | null;
+  elapsed_ms?: number | null;
+  error?: string | null;
+};
+
+export type StorageAggregateRow = {
+  id: string;
+  label: string;
+  logical_bytes: number;
+  allocated_bytes?: number | null;
+  file_count: number;
+  directory_count?: number;
+  percentage_of_total?: number;
+  root_ids?: string[];
+  storage_types?: string[];
+  warnings?: string[];
+};
+
+export type StorageVolumeInfo = {
+  id: string;
+  path: string;
+  total_bytes?: number;
+  used_bytes?: number;
+  free_bytes?: number;
+  free_percent?: number | null;
+  status: SettingsHealthStatus;
+  error?: string;
+};
+
+export type StorageDatabaseInfo = {
+  id: string;
+  label: string;
+  path: string;
+  segment_id: string;
+  segment_label: string;
+  exists: boolean;
+  readable: boolean | null;
+  logical_bytes: number;
+  wal_bytes: number;
+  shm_bytes: number;
+  journal_bytes: number;
+  modified_at?: string | null;
+  sqlite?: {
+    page_size: number;
+    page_count: number;
+    freelist_count: number;
+    estimated_allocated_bytes: number;
+    estimated_internal_free_bytes: number;
+    journal_mode: string;
+    schema_version: number;
+    user_version: number;
+  } | null;
+  warnings: string[];
+};
+
+export type StorageRootInfo = {
+  id: string;
+  label: string;
+  path: string;
+  exists: boolean;
+  category_id: string;
+  segment_id: string;
+  logical_bytes: number;
+  file_count: number;
+  directory_count: number;
+  skipped_count: number;
+};
+
+export type StorageLargestItem = {
+  path: string;
+  name: string;
+  logical_bytes: number;
+  category_id: string;
+  category_label: string;
+  segment_id: string;
+  segment_label: string;
+  storage_type: string;
+  modified_at?: string | null;
+};
+
+export type StorageGrowthInfo = {
+  available: boolean;
+  reason?: string;
+  previous_scanned_at?: string | null;
+  change_since_previous_bytes?: number | null;
+  seven_day_change_bytes?: number | null;
+  thirty_day_change_bytes?: number | null;
+};
+
+export type StorageInventory = {
+  contract_version: number;
+  status: StorageInventoryStatus;
+  generated_at: string | null;
+  scanned_at: string | null;
+  is_cached: boolean;
+  is_stale: boolean;
+  scan_age_seconds?: number | null;
+  scan_status: StorageScanStatus;
+  logical_bytes_total: number;
+  allocated_bytes_total?: number | null;
+  file_count: number;
+  directory_count: number;
+  skipped_count: number;
+  elapsed_ms?: number | null;
+  roots: StorageRootInfo[];
+  excluded_roots: Array<{ id: string; path: string; reason: string }>;
+  volumes: StorageVolumeInfo[];
+  categories: StorageAggregateRow[];
+  segments: StorageAggregateRow[];
+  databases: StorageDatabaseInfo[];
+  largest_items: StorageLargestItem[];
+  growth: StorageGrowthInfo;
+  warnings: string[];
+  errors: string[];
+  measurement_notes: string[];
+  performance?: {
+    files_per_second?: number;
+    full_database_table_scans?: boolean;
+    content_hashing?: boolean;
+  };
+};
+
+export type StorageInventorySummary = Pick<
+  StorageInventory,
+  | "status"
+  | "generated_at"
+  | "scanned_at"
+  | "is_cached"
+  | "is_stale"
+  | "scan_age_seconds"
+  | "scan_status"
+  | "logical_bytes_total"
+  | "file_count"
+  | "directory_count"
+  | "skipped_count"
+  | "growth"
+  | "warnings"
+  | "errors"
+  | "measurement_notes"
+> & {
+  largest_category?: StorageAggregateRow | null;
+  largest_segment?: StorageAggregateRow | null;
+  main_volume?: StorageVolumeInfo | null;
+};
+
+export type StartStorageInventoryScanResult = {
+  started: boolean;
+  scan_status: StorageScanStatus;
+  inventory?: StorageInventory | null;
+  error?: string;
+};
+
 export type OpenStatusPathResult = {
   ok: boolean;
   kind: string;
@@ -1079,6 +1337,10 @@ export interface BridgeApi {
   ping(params?: Record<string, unknown>): Promise<PingResult>;
   get_health(params?: Record<string, unknown>): Promise<HealthPayload>;
   get_app_status(params?: Record<string, unknown>): Promise<AppStatusPayload>;
+  get_settings_health_summary(params?: Record<string, unknown>): Promise<SettingsHealthSummary>;
+  get_storage_inventory(params?: Record<string, unknown>): Promise<StorageInventory>;
+  start_storage_inventory_scan(params?: Record<string, unknown>): Promise<StartStorageInventoryScanResult>;
+  get_storage_inventory_scan_status(params?: Record<string, unknown>): Promise<StorageScanStatus>;
   open_status_path(params: Record<string, unknown>): Promise<OpenStatusPathResult>;
   get_companies(params: Record<string, unknown>): Promise<CompanyDirectoryPage>;
   get_company_info(params: Record<string, unknown>): Promise<CompanyInfo>;

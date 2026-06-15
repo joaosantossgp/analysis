@@ -42,6 +42,7 @@ class BaseBridgeMixin:
         self._service = None
         self._refresh_manager = None
         self._onboarding_service = None
+        self._storage_inventory_manager = None
         self._company_info_cache: dict[int, dict[str, Any]] = {}
         self._company_info_pending: set[int] = set()
         self._company_info_lock = threading.RLock()
@@ -79,6 +80,13 @@ class BaseBridgeMixin:
                 read_service=svc,
             )
         return self._onboarding_service
+
+    def _storage_inventory(self):
+        if self._storage_inventory_manager is None:
+            from desktop.storage_inventory import StorageInventoryManager  # noqa: PLC0415
+
+            self._storage_inventory_manager = StorageInventoryManager(self._svc().settings)
+        return self._storage_inventory_manager
 
     @staticmethod
     def _bounded_int(

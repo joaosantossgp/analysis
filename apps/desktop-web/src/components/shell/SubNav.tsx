@@ -10,7 +10,7 @@ import { NavLink, useLocation, useParams } from "react-router-dom";
  * tabs for a new module.
  */
 
-type Tab = { to: string; label: string; end?: boolean };
+type Tab = { to: string; label: string; end?: boolean; activeOn?: string[] };
 
 function subNavFor(pathname: string, params: Record<string, string | undefined>): Tab[] {
   // Company detail subtabs (Overview / Indicadores / Demonstrativos).
@@ -31,10 +31,11 @@ function subNavFor(pathname: string, params: Record<string, string | undefined>)
     pathname.startsWith("/atualizar-base")
   ) {
     return [
-      { to: "/settings", label: "Settings", end: true },
-      { to: "/settings/imports", label: "User Imports" },
-      { to: "/settings/updates", label: "Database Updates" },
-      { to: "/settings/coverage", label: "Data Coverage" },
+      { to: "/settings", label: "Overview", end: true },
+      { to: "/settings/health", label: "Data Health", activeOn: ["/settings/coverage"] },
+      { to: "/settings/storage", label: "Storage" },
+      { to: "/settings/sources", label: "Sources & Imports", activeOn: ["/settings/imports"] },
+      { to: "/settings/updates", label: "Updates" },
       { to: "/settings/diagnostics", label: "Diagnostics" },
     ];
   }
@@ -64,7 +65,7 @@ export function SubNav() {
 
   return (
     <nav
-      aria-label="Sub-navegação do módulo"
+      aria-label="Module navigation"
       className="flex h-full items-stretch px-4"
       style={{
         background: "var(--color-surface-1)",
@@ -77,14 +78,19 @@ export function SubNav() {
           to={t.to}
           end={t.end}
           className="flex items-center px-3 text-xs font-medium"
-          style={({ isActive }) => ({
-            color: isActive
-              ? "var(--color-text-primary)"
-              : "var(--color-text-tertiary)",
-            borderBottom: isActive
-              ? "2px solid var(--color-action-primary)"
-              : "2px solid transparent",
-          })}
+          style={({ isActive }) => {
+            const active =
+              isActive || t.activeOn?.some((prefix) => pathname.startsWith(prefix));
+
+            return {
+              color: active
+                ? "var(--color-text-primary)"
+                : "var(--color-text-tertiary)",
+              borderBottom: active
+                ? "2px solid var(--color-action-primary)"
+                : "2px solid transparent",
+            };
+          }}
         >
           {t.label}
         </NavLink>
