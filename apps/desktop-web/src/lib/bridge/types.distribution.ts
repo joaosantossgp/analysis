@@ -72,6 +72,8 @@ export interface DistributionRefreshStatus {
   message: string;
   progress_current: number;
   progress_total: number;
+  supported_years?: number[];
+  ingested_years?: number[];
 }
 
 export interface EconomicGroupEntry {

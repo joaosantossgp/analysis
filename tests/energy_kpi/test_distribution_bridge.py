@@ -473,3 +473,69 @@ def test_distribution_refresh_step_logs_lock_wait_and_resource_diagnostics(db_co
     assert log[4] is not None and log[4] >= 0
     assert log[5] is None or log[5] > 0
     assert log[6] is not None and log[6] >= 0
+
+
+def test_distribution_refresh_status_years(db_conn):
+    # Seed static master data
+    seed_distribution_static_data(db_conn)
+
+    # Insert a dummy snapshot to mock ingested years
+    db_conn.execute(text("""
+        INSERT INTO source_snapshots (snapshot_id, source, fetched_at, file_path, sha256, row_count, source_version_label, status)
+        VALUES ('snap_test_1', 'ANEEL', '2026-06-15', 'dummy/path', 'dummy_sha', 10, 'ANEEL:samp_mercado:2024', 'ok')
+    """))
+
+    mock_settings = MagicMock()
+    mock_settings.paths.energy_kpi_sqlite_url = "sqlite:///:memory:"
+
+    bridge = MockBridge(mock_settings, db_conn)
+    status = bridge.get_distribution_refresh_status()
+
+    assert "supported_years" in status
+    assert 2024 in status["supported_years"]
+    assert 2016 in status["supported_years"]
+    assert "ingested_years" in status
+    assert status["ingested_years"] == [2024]
+
+
+def test_distribution_refresh_resilience_multi_year(db_conn, tmp_path):
+    mock_settings = MagicMock()
+    mock_settings.paths.energy_kpi_raw_dir = tmp_path / "raw"
+    mock_settings.paths.energy_kpi_raw_dir.mkdir(parents=True, exist_ok=True)
+    mock_settings.paths.energy_kpi_sqlite_url = "sqlite:///:memory:"
+
+    bridge = MockBridge(mock_settings, db_conn)
+    
+    # Mock _run_and_log_step to fail on 2024 but succeed on 2025
+    original_run_step = bridge._run_and_log_step
+    
+    def mock_run_step(engine, settings, source_id, domain, resource_key, parse_fn, upsert_fn, force):
+        if resource_key == 2024:
+            raise RuntimeError("Mock download failure for 2024")
+        return 100
+
+    bridge._run_and_log_step = mock_run_step
+
+    # We mock get_distribution_refresh_status and refresh_distribution_data's thread target
+    # or patch the functions to run the loop synchronously.
+    # Instead of running thread, let's call the logic or mock the call.
+    # Wait, let's test that _run logic behaves correctly by invoking it.
+    # Since _run is a nested function in refresh_distribution_data, we can test it by running refresh_distribution_data and waiting.
+    # To run it quickly and synchronously in this test, let's patch threading.Thread:
+    with patch("threading.Thread") as mock_thread:
+        # Capture the target function
+        bridge.refresh_distribution_data({"years": [2024, 2025]})
+        assert mock_thread.called
+        target_fn = mock_thread.call_args[1]["target"]
+        
+        # Run the target function synchronously in test thread
+        with patch("src.energy_kpi.distribution.aggregates.rebuild_distribution_aggregates") as mock_rebuild:
+            target_fn()
+            assert mock_rebuild.called
+
+    status = bridge.get_distribution_refresh_status()
+    assert status["status"] == "success"
+    # Ensure it reports warning and failed years list
+    assert "Refresh completed with warnings" in status["message"]
+    assert "Failed years: 2024" in status["message"]
+

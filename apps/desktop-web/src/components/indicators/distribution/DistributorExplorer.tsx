@@ -197,6 +197,15 @@ export function DistributorExplorer({ bridgeReady }: { bridgeReady: boolean }) {
 
   const isGroup = viewMode === "groups";
   const activeSeries = isGroup ? groupSeries : series;
+  const filteredSeries = activeSeries
+    .filter((row) => {
+      const metrics = TREND_METRICS[detailTab];
+      return metrics.some((metric) => {
+        const val = metric.value(row);
+        return val !== null && Number.isFinite(val);
+      });
+    })
+    .sort((a, b) => a.period.localeCompare(b.period));
 
   return (
     <div className="space-y-4">
@@ -517,7 +526,7 @@ export function DistributorExplorer({ bridgeReady }: { bridgeReady: boolean }) {
                 ))}
               </div>
 
-              <DistributionTrendPanel series={activeSeries} activeTab={detailTab} />
+              <DistributionTrendPanel series={filteredSeries} activeTab={detailTab} />
 
               {/* Statistics Table */}
               <div className="space-y-2">
@@ -539,7 +548,7 @@ export function DistributorExplorer({ bridgeReady }: { bridgeReady: boolean }) {
                     {detailTab === "mmgd" && "Projects · kW"}
                   </span>
                 </div>
-                {activeSeries.length === 0 ? (
+                {filteredSeries.length === 0 ? (
                   <span className="text-xs text-zinc-500 italic block">No historical records available</span>
                 ) : (
                   <div className="overflow-auto rounded border border-zinc-800 max-h-[220px]">
@@ -593,7 +602,7 @@ export function DistributorExplorer({ bridgeReady }: { bridgeReady: boolean }) {
                         </tr>
                       </thead>
                       <tbody>
-                        {activeSeries.map((row, i) => {
+                        {filteredSeries.map((row, i) => {
                           const avgTariff =
                             row.revenue_brl && row.billed_energy_mwh
                               ? row.revenue_brl / row.billed_energy_mwh
@@ -826,7 +835,7 @@ export function DistributorExplorer({ bridgeReady }: { bridgeReady: boolean }) {
                 ))}
               </div>
 
-              <DistributionTrendPanel series={activeSeries} activeTab={detailTab} />
+              <DistributionTrendPanel series={filteredSeries} activeTab={detailTab} />
 
               {/* Statistics Table */}
               <div className="space-y-2">
@@ -848,7 +857,7 @@ export function DistributorExplorer({ bridgeReady }: { bridgeReady: boolean }) {
                     {detailTab === "mmgd" && "Projects · kW"}
                   </span>
                 </div>
-                {activeSeries.length === 0 ? (
+                {filteredSeries.length === 0 ? (
                   <span className="text-xs text-zinc-500 italic block">No consolidated records available</span>
                 ) : (
                   <div className="overflow-auto rounded border border-zinc-800 max-h-[220px]">
@@ -901,7 +910,7 @@ export function DistributorExplorer({ bridgeReady }: { bridgeReady: boolean }) {
                         </tr>
                       </thead>
                       <tbody>
-                        {activeSeries.map((row, i) => {
+                        {filteredSeries.map((row, i) => {
                           const avgTariff =
                             row.revenue_brl && row.billed_energy_mwh
                               ? row.revenue_brl / row.billed_energy_mwh
@@ -1044,6 +1053,7 @@ export function DistributorExplorer({ bridgeReady }: { bridgeReady: boolean }) {
 function RefreshBanner({ queryClient }: { queryClient: any }) {
   const [years, setYears] = useState<number[]>([2024, 2025, 2026]);
   const [triggering, setTriggering] = useState(false);
+  const [initialized, setInitialized] = useState(false);
 
   // Poll refresh status
   const statusQuery = useQuery({
@@ -1059,6 +1069,17 @@ function RefreshBanner({ queryClient }: { queryClient: any }) {
   const refreshState = statusQuery.data?.mode !== "browser" ? statusQuery.data?.status : null;
   const isRunning = refreshState?.status === "running";
 
+  const supportedYears = refreshState?.supported_years ?? [2024, 2025, 2026];
+  const ingestedYears = refreshState?.ingested_years ?? [];
+
+  useEffect(() => {
+    if (refreshState?.supported_years && !initialized) {
+      const defaultRecent = refreshState.supported_years.filter((y) => y >= 2024);
+      setYears(defaultRecent.length > 0 ? defaultRecent : refreshState.supported_years);
+      setInitialized(true);
+    }
+  }, [refreshState?.supported_years, initialized]);
+
   useEffect(() => {
     if (!isRunning && triggering) {
       setTriggering(false);
@@ -1069,6 +1090,7 @@ function RefreshBanner({ queryClient }: { queryClient: any }) {
       void queryClient.invalidateQueries({ queryKey: ["distribution-series"] });
       void queryClient.invalidateQueries({ queryKey: ["distribution-group-series"] });
       void queryClient.invalidateQueries({ queryKey: ["distribution-health"] });
+      void statusQuery.refetch();
     }
   }, [isRunning, triggering, queryClient]);
 
@@ -1089,56 +1111,105 @@ function RefreshBanner({ queryClient }: { queryClient: any }) {
   };
 
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900/20 p-4 space-y-3">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+    <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-4 space-y-4">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
         <div>
           <h4 className="text-sm font-semibold text-zinc-200">Manual Ingestion: ANEEL Open Data</h4>
           <p className="text-xs text-zinc-500 mt-0.5">
             Download raw Parquet datasets directly from ANEEL and normalize facts locally.
           </p>
         </div>
-        {!isRunning ? (
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              {[2024, 2025, 2026].map((yr) => (
-                <label key={yr} className="flex items-center gap-1.5 text-xs text-zinc-400 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={years.includes(yr)}
-                    onChange={() => handleYearToggle(yr)}
-                    disabled={triggering}
-                    className="accent-amber-500 rounded border-zinc-700 bg-zinc-800"
-                  />
-                  <span>{yr}</span>
-                </label>
-              ))}
-            </div>
-            <Button
-              size="xs"
-              variant="primary"
-              onClick={handleRefresh}
-              disabled={triggering || years.length === 0}
-              className="bg-amber-600 hover:bg-amber-700 text-white font-semibold"
-            >
-              {triggering ? "Starting..." : "Trigger Refresh"}
-            </Button>
-          </div>
-        ) : (
+        {!isRunning && (
+          <Button
+            size="xs"
+            variant="primary"
+            onClick={handleRefresh}
+            disabled={triggering || years.length === 0}
+            className="bg-amber-600 hover:bg-amber-700 text-white font-semibold self-end md:self-auto"
+          >
+            {triggering ? "Starting..." : "Trigger Ingestion"}
+          </Button>
+        )}
+        {isRunning && (
           <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-amber-500/10 text-amber-500 border border-amber-500/20 animate-pulse">
             Ingestion In Progress
           </span>
         )}
       </div>
 
+      {!isRunning && (
+        <div className="border-t border-zinc-900 pt-3 space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs font-semibold text-zinc-400">Select Market Years:</span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setYears(supportedYears)}
+                disabled={triggering}
+                className="text-[10px] font-semibold text-zinc-400 hover:text-zinc-200 border border-zinc-800 rounded px-2 py-0.5 bg-zinc-950/60 hover:bg-zinc-900 transition-colors"
+              >
+                Select All
+              </button>
+              <button
+                type="button"
+                onClick={() => setYears([])}
+                disabled={triggering}
+                className="text-[10px] font-semibold text-zinc-400 hover:text-zinc-200 border border-zinc-800 rounded px-2 py-0.5 bg-zinc-950/60 hover:bg-zinc-900 transition-colors"
+              >
+                Clear All
+              </button>
+              <button
+                type="button"
+                onClick={() => setYears(supportedYears.filter((y) => y >= 2024))}
+                disabled={triggering}
+                className="text-[10px] font-semibold text-zinc-400 hover:text-zinc-200 border border-zinc-800 rounded px-2 py-0.5 bg-zinc-950/60 hover:bg-zinc-900 transition-colors"
+              >
+                Select Recent
+              </button>
+            </div>
+          </div>
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
+            {supportedYears.map((yr) => {
+              const isIngested = ingestedYears.includes(yr);
+              return (
+                <label
+                  key={yr}
+                  className={`flex items-center justify-between gap-1.5 text-xs px-2 py-1.5 rounded border border-zinc-850 cursor-pointer transition-colors hover:border-zinc-700 ${
+                    years.includes(yr)
+                      ? "bg-amber-500/5 border-amber-500/30 text-amber-400 font-semibold"
+                      : "bg-zinc-900/10 text-zinc-400"
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="checkbox"
+                      checked={years.includes(yr)}
+                      onChange={() => handleYearToggle(yr)}
+                      disabled={triggering}
+                      className="accent-amber-500 rounded border-zinc-700 bg-zinc-800"
+                    />
+                    <span>{yr}</span>
+                  </div>
+                  {isIngested && (
+                    <span className="text-[9px] text-emerald-500 font-semibold font-mono" title="Already ingested/cached">
+                      ✓
+                    </span>
+                  )}
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {isRunning && refreshState && (
         <div className="bg-zinc-950/40 rounded border border-zinc-800/80 p-3 space-y-2">
           <div className="flex justify-between items-center text-xs">
             <span className="text-zinc-400 font-medium">{refreshState.message}</span>
             <span className="text-zinc-500 font-mono">
-              {refreshState.progress_current} / {refreshState.progress_total} years
+              {refreshState.progress_current} / {refreshState.progress_total} steps
             </span>
           </div>
-          {/* Progress bar */}
           <div className="w-full h-1.5 bg-zinc-850 rounded overflow-hidden">
             <div
               className="h-full bg-amber-500 transition-all duration-300"
@@ -1174,6 +1245,8 @@ type TrendMetric = {
   unit: string;
   color: string;
   value: (row: DistributionSeriesEntry) => number | null;
+  scaleGroup: string;
+  isPercentage?: boolean;
 };
 
 const TREND_METRICS: Record<DistributionTab, TrendMetric[]> = {
@@ -1184,6 +1257,7 @@ const TREND_METRICS: Record<DistributionTab, TrendMetric[]> = {
       unit: "MWh",
       color: "#38bdf8",
       value: (row) => row.billed_energy_mwh,
+      scaleGroup: "mwh",
     },
     {
       key: "revenue_brl",
@@ -1191,6 +1265,7 @@ const TREND_METRICS: Record<DistributionTab, TrendMetric[]> = {
       unit: "BRL",
       color: "#f5a524",
       value: (row) => row.revenue_brl,
+      scaleGroup: "brl",
     },
   ],
   balance: [
@@ -1200,6 +1275,7 @@ const TREND_METRICS: Record<DistributionTab, TrendMetric[]> = {
       unit: "MWh",
       color: "#22c55e",
       value: (row) => row.injected_energy_mwh,
+      scaleGroup: "mwh",
     },
     {
       key: "losses_mwh",
@@ -1207,6 +1283,16 @@ const TREND_METRICS: Record<DistributionTab, TrendMetric[]> = {
       unit: "MWh",
       color: "#ef4444",
       value: (row) => row.losses_mwh,
+      scaleGroup: "mwh",
+    },
+    {
+      key: "losses_pct",
+      label: "Losses %",
+      unit: "%",
+      color: "#a855f7",
+      value: (row) => row.losses_pct,
+      scaleGroup: "percent",
+      isPercentage: true,
     },
   ],
   quality: [
@@ -1216,6 +1302,7 @@ const TREND_METRICS: Record<DistributionTab, TrendMetric[]> = {
       unit: "hours",
       color: "#f5a524",
       value: (row) => row.dec_actual,
+      scaleGroup: "dec",
     },
     {
       key: "dec_limit",
@@ -1223,6 +1310,23 @@ const TREND_METRICS: Record<DistributionTab, TrendMetric[]> = {
       unit: "hours",
       color: "#aeb4c0",
       value: (row) => row.dec_limit,
+      scaleGroup: "dec",
+    },
+    {
+      key: "fec_actual",
+      label: "FEC actual",
+      unit: "times",
+      color: "#38bdf8",
+      value: (row) => row.fec_actual,
+      scaleGroup: "fec",
+    },
+    {
+      key: "fec_limit",
+      label: "FEC limit",
+      unit: "times",
+      color: "#64748b",
+      value: (row) => row.fec_limit,
+      scaleGroup: "fec",
     },
   ],
   tariffs: [
@@ -1232,6 +1336,7 @@ const TREND_METRICS: Record<DistributionTab, TrendMetric[]> = {
       unit: "R$/MWh",
       color: "#38bdf8",
       value: (row) => row.te_homologated,
+      scaleGroup: "tariff",
     },
     {
       key: "tusd_homologated",
@@ -1239,6 +1344,7 @@ const TREND_METRICS: Record<DistributionTab, TrendMetric[]> = {
       unit: "R$/MWh",
       color: "#f5a524",
       value: (row) => row.tusd_homologated,
+      scaleGroup: "tariff",
     },
   ],
   delinquency: [
@@ -1248,6 +1354,8 @@ const TREND_METRICS: Record<DistributionTab, TrendMetric[]> = {
       unit: "%",
       color: "#ef4444",
       value: (row) => row.delinquency_pct,
+      scaleGroup: "percent",
+      isPercentage: true,
     },
   ],
   mmgd: [
@@ -1257,6 +1365,7 @@ const TREND_METRICS: Record<DistributionTab, TrendMetric[]> = {
       unit: "projects",
       color: "#38bdf8",
       value: (row) => row.mmgd_projects_count,
+      scaleGroup: "projects",
     },
     {
       key: "mmgd_capacity_kw",
@@ -1264,9 +1373,36 @@ const TREND_METRICS: Record<DistributionTab, TrendMetric[]> = {
       unit: "kW",
       color: "#22c55e",
       value: (row) => row.mmgd_capacity_kw,
+      scaleGroup: "capacity",
     },
   ],
 };
+
+function getMetricCoverage(series: DistributionSeriesEntry[], metric: TrendMetric): { start: string; end: string } | null {
+  const validPeriods = series
+    .filter((row) => {
+      const val = metric.value(row);
+      return val !== null && Number.isFinite(val);
+    })
+    .map((row) => row.period);
+  if (validPeriods.length === 0) return null;
+  validPeriods.sort();
+  return { start: validPeriods[0], end: validPeriods[validPeriods.length - 1] };
+}
+
+function formatCompact(value: number) {
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)}B`;
+  if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (abs >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
+  if (abs > 0 && abs < 1) return value.toFixed(2);
+  return value.toFixed(0);
+}
+
+function formatTooltipValue(value: number, unit: string) {
+  if (unit === "%") return `${(value * 100).toLocaleString("en-US", { maximumFractionDigits: 2 })}%`;
+  return `${value.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${unit}`;
+}
 
 function DistributionTrendPanel({
   series,
@@ -1277,11 +1413,9 @@ function DistributionTrendPanel({
 }) {
   const metrics = TREND_METRICS[activeTab];
   const ordered = [...series].sort((a, b) => a.period.localeCompare(b.period));
-  const hasValues = metrics.some((metric) =>
-    ordered.some((row) => metric.value(row) !== null && Number.isFinite(metric.value(row) ?? NaN)),
-  );
+  const hasValues = ordered.length > 0;
 
-  if (!ordered.length) {
+  if (!hasValues) {
     return (
       <div className="rounded border border-zinc-800 bg-zinc-950/40 p-3 text-xs text-zinc-500">
         No chart data available for this selection.
@@ -1289,32 +1423,44 @@ function DistributionTrendPanel({
     );
   }
 
-  if (!hasValues) {
-    return (
-      <div className="rounded border border-zinc-800 bg-zinc-950/40 p-3 text-xs text-zinc-500">
-        Historical periods are available, but this tab has no non-null values yet.
-      </div>
-    );
-  }
-
   const width = 520;
   const height = 170;
-  const pad = { top: 14, right: 18, bottom: 28, left: 42 };
+  const pad = { top: 14, right: 48, bottom: 28, left: 48 };
   const plotW = width - pad.left - pad.right;
   const plotH = height - pad.top - pad.bottom;
-  const allValues = metrics.flatMap((metric) =>
-    ordered
-      .map((row) => metric.value(row))
-      .filter((value): value is number => value !== null && Number.isFinite(value)),
-  );
-  const min = Math.min(...allValues);
-  const max = Math.max(...allValues);
-  const span = max === min ? Math.max(Math.abs(max), 1) : max - min;
-  const yMin = max === min ? min - span * 0.1 : min;
-  const yMax = max === min ? max + span * 0.1 : max;
+
+  // Scale groups and bounds calculation
+  const scaleGroups = Array.from(new Set(metrics.map((m) => m.scaleGroup)));
+  const groupBounds: Record<
+    string,
+    { min: number; max: number; yMin: number; yMax: number; span: number; isPercentage: boolean }
+  > = {};
+
+  scaleGroups.forEach((groupName) => {
+    const groupMetrics = metrics.filter((m) => m.scaleGroup === groupName);
+    const isPercentage = groupMetrics.some((m) => m.isPercentage);
+    const groupValues = groupMetrics.flatMap((metric) =>
+      ordered
+        .map((row) => metric.value(row))
+        .filter((value): value is number => value !== null && Number.isFinite(value)),
+    );
+    if (groupValues.length === 0) return;
+    const min = Math.min(...groupValues);
+    const max = Math.max(...groupValues);
+    const span = max === min ? Math.max(Math.abs(max), 1) : max - min;
+    const yMin = max === min ? min - span * 0.1 : min;
+    const yMax = max === min ? max + span * 0.1 : max;
+    groupBounds[groupName] = { min, max, yMin, yMax, span, isPercentage };
+  });
 
   const xFor = (idx: number) => pad.left + (ordered.length === 1 ? plotW / 2 : (idx / (ordered.length - 1)) * plotW);
-  const yFor = (value: number) => pad.top + (1 - (value - yMin) / (yMax - yMin || 1)) * plotH;
+  const yFor = (value: number, groupName: string) => {
+    const bounds = groupBounds[groupName];
+    if (!bounds) return pad.top + plotH / 2;
+    const { yMin, yMax } = bounds;
+    return pad.top + (1 - (value - yMin) / (yMax - yMin || 1)) * plotH;
+  };
+
   const segmentsFor = (metric: TrendMetric) => {
     const segments: string[] = [];
     let current: string[] = [];
@@ -1325,11 +1471,12 @@ function DistributionTrendPanel({
         current = [];
         return;
       }
-      current.push(`${current.length ? "L" : "M"} ${xFor(idx).toFixed(1)} ${yFor(value).toFixed(1)}`);
+      current.push(`${current.length ? "L" : "M"} ${xFor(idx).toFixed(1)} ${yFor(value, metric.scaleGroup).toFixed(1)}`);
     });
     if (current.length > 1) segments.push(current.join(" "));
     return segments;
   };
+
   const pointsFor = (metric: TrendMetric) =>
     ordered.flatMap((row, idx) => {
       const value = metric.value(row);
@@ -1340,16 +1487,23 @@ function DistributionTrendPanel({
         unit: metric.unit,
         value,
         x: xFor(idx),
-        y: yFor(value),
+        y: yFor(value, metric.scaleGroup),
       }];
     });
 
   const firstPeriod = ordered[0]?.period ?? "";
   const lastPeriod = ordered[ordered.length - 1]?.period ?? "";
 
+  function formatYAxisLabel(val: number, isPct: boolean) {
+    if (isPct) {
+      return `${(val * 100).toFixed(1)}%`;
+    }
+    return formatCompact(val);
+  }
+
   return (
     <div className="space-y-2 rounded border border-zinc-800 bg-zinc-950/40 p-3">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <div className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
             Historical chart
@@ -1358,30 +1512,59 @@ function DistributionTrendPanel({
             {firstPeriod} to {lastPeriod}
           </div>
         </div>
-        <div className="flex flex-wrap justify-end gap-2">
-          {metrics.map((metric) => (
-            <span key={metric.key} className="inline-flex items-center gap-1.5 text-[10px] text-zinc-400">
-              <span className="h-1.5 w-3 rounded-sm" style={{ backgroundColor: metric.color }} />
-              {metric.label} ({metric.unit})
-            </span>
-          ))}
+        <div className="flex flex-wrap gap-x-4 gap-y-2 justify-start sm:justify-end">
+          {metrics.map((metric) => {
+            const cov = getMetricCoverage(ordered, metric);
+            return (
+              <div key={metric.key} className="inline-flex flex-col items-start text-[10px] text-zinc-400">
+                <span className="inline-flex items-center gap-1.5 font-medium">
+                  <span className="h-1.5 w-3 rounded-sm" style={{ backgroundColor: metric.color }} />
+                  {metric.label} ({metric.unit})
+                </span>
+                {cov && (
+                  <span className="text-[9px] text-zinc-500 ml-4 font-mono">
+                    {cov.start} to {cov.end}
+                  </span>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
       <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Distribution historical chart" className="h-[170px] w-full">
         <line x1={pad.left} y1={pad.top} x2={pad.left} y2={height - pad.bottom} stroke="rgba(255,255,255,0.12)" />
         <line x1={pad.left} y1={height - pad.bottom} x2={width - pad.right} y2={height - pad.bottom} stroke="rgba(255,255,255,0.12)" />
-        {[0, 0.5, 1].map((ratio) => {
+        <line x1={width - pad.right} y1={pad.top} x2={width - pad.right} y2={height - pad.bottom} stroke="rgba(255,255,255,0.12)" />
+
+        {/* Y-axis labels for Scale Group 0 (Left) */}
+        {scaleGroups[0] && groupBounds[scaleGroups[0]] && [0, 0.5, 1].map((ratio) => {
           const y = pad.top + ratio * plotH;
-          const value = yMax - ratio * (yMax - yMin);
+          const bounds = groupBounds[scaleGroups[0]];
+          const value = bounds.yMax - ratio * (bounds.yMax - bounds.yMin);
           return (
-            <g key={ratio}>
+            <g key={`left-${ratio}`}>
               <line x1={pad.left} y1={y} x2={width - pad.right} y2={y} stroke="rgba(255,255,255,0.06)" />
               <text x={pad.left - 8} y={y + 3} textAnchor="end" className="fill-zinc-500 text-[10px]">
-                {formatCompact(value)}
+                {formatYAxisLabel(value, bounds.isPercentage)}
               </text>
             </g>
           );
         })}
+
+        {/* Y-axis labels for Scale Group 1 (Right, if exists) */}
+        {scaleGroups[1] && groupBounds[scaleGroups[1]] && [0, 0.5, 1].map((ratio) => {
+          const y = pad.top + ratio * plotH;
+          const bounds = groupBounds[scaleGroups[1]];
+          const value = bounds.yMax - ratio * (bounds.yMax - bounds.yMin);
+          return (
+            <g key={`right-${ratio}`}>
+              <text x={width - pad.right + 8} y={y + 3} textAnchor="start" className="fill-zinc-500 text-[10px]">
+                {formatYAxisLabel(value, bounds.isPercentage)}
+              </text>
+            </g>
+          );
+        })}
+
         {metrics.map((metric) =>
           segmentsFor(metric).map((path, idx) => (
             <path key={`${metric.key}-${idx}`} d={path} fill="none" stroke={metric.color} strokeWidth="2" strokeLinecap="round" />
@@ -1413,20 +1596,6 @@ function DistributionTrendPanel({
       </svg>
     </div>
   );
-}
-
-function formatCompact(value: number) {
-  const abs = Math.abs(value);
-  if (abs >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)}B`;
-  if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
-  if (abs >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
-  if (abs > 0 && abs < 1) return value.toFixed(2);
-  return value.toFixed(0);
-}
-
-function formatTooltipValue(value: number, unit: string) {
-  if (unit === "%") return `${(value * 100).toLocaleString("en-US", { maximumFractionDigits: 2 })}%`;
-  return `${value.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${unit}`;
 }
 
 function SelectFilter({

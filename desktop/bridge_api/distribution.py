@@ -17,7 +17,32 @@ class DistributionBridgeMixin:
         return self._distribution_read_service
 
     def _dist_refresh_status(self) -> dict:
-        return getattr(self, "_dist_refresh_state", {"status": "idle", "error": None})
+        from src.energy_kpi.distribution.catalog import ANEEL_RESOURCES  # noqa: PLC0415
+        from sqlalchemy import text  # noqa: PLC0415
+
+        status = getattr(self, "_dist_refresh_state", {"status": "idle", "error": None}).copy()
+        status["supported_years"] = sorted(list(ANEEL_RESOURCES.get("samp_mercado", {}).keys()))
+
+        ingested_years = []
+        try:
+            engine = self._dist_svc()._engine()
+            with engine.connect() as conn:
+                rows = conn.execute(text("""
+                    SELECT DISTINCT source_version_label
+                    FROM source_snapshots
+                    WHERE source_version_label LIKE 'ANEEL:samp_mercado:%' AND status = 'ok'
+                """)).fetchall()
+                for r in rows:
+                    parts = r[0].split(":")
+                    if len(parts) == 3:
+                        try:
+                            ingested_years.append(int(parts[2]))
+                        except ValueError:
+                            pass
+        except Exception:
+            pass
+        status["ingested_years"] = sorted(list(set(ingested_years)))
+        return status
 
     def _retry_dist_read(self, fn, *, attempts: int = 4):
         last_exc: Exception | None = None
@@ -423,6 +448,7 @@ class DistributionBridgeMixin:
                 )
                 
                 # 2. Annual SAMP Mercado files
+                failed_years = []
                 for idx, year in enumerate(years_to_refresh):
                     step_idx += 1
                     self._dist_refresh_state.update({
@@ -430,10 +456,14 @@ class DistributionBridgeMixin:
                         "message": f"Processing ANEEL SAMP Mercado for year {year}...",
                         "progress_current": step_idx
                     })
-                    rows_inserted += self._run_and_log_step(
-                        engine, settings, f"samp_mercado_{year}", "samp_mercado", year,
-                        parse_samp_mercado, upsert_samp_mercado_facts, force=params.get("force", False)
-                    )
+                    try:
+                        rows_inserted += self._run_and_log_step(
+                            engine, settings, f"samp_mercado_{year}", "samp_mercado", year,
+                            parse_samp_mercado, upsert_samp_mercado_facts, force=params.get("force", False)
+                        )
+                    except Exception as exc:
+                        logger.error("Failed to process ANEEL SAMP Mercado for year %s: %s", year, exc, exc_info=True)
+                        failed_years.append(year)
 
                 # 3. Continuity limits
                 step_idx += 1
@@ -545,14 +575,24 @@ class DistributionBridgeMixin:
                             error_msg=error_msg
                         )
  
-                self._dist_refresh_state = {
-                    "status": "success",
-                    "error": None,
-                    "stage": "done",
-                    "message": f"Refresh completed successfully. Ingested {rows_inserted} rows.",
-                    "progress_current": step_idx,
-                    "progress_total": step_idx
-                }
+                if failed_years:
+                    self._dist_refresh_state = {
+                        "status": "success",
+                        "error": None,
+                        "stage": "done",
+                        "message": f"Refresh completed with warnings. Ingested {rows_inserted} rows. Failed years: {', '.join(map(str, failed_years))}",
+                        "progress_current": step_idx,
+                        "progress_total": step_idx
+                    }
+                else:
+                    self._dist_refresh_state = {
+                        "status": "success",
+                        "error": None,
+                        "stage": "done",
+                        "message": f"Refresh completed successfully. Ingested {rows_inserted} rows.",
+                        "progress_current": step_idx,
+                        "progress_total": step_idx
+                    }
             except Exception as exc:
                 logger.error("Error in distribution refresh run: %s", exc, exc_info=True)
                 self._dist_refresh_state = {
