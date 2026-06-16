@@ -335,16 +335,21 @@ export function DistributorExplorer({ bridgeReady }: { bridgeReady: boolean }) {
                               {row.primary_uf ?? "—"}
                             </Td>
                             <Td>
-                              {row.group_name ? (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-zinc-800 text-zinc-200 border border-zinc-700">
-                                  {row.group_name}
+                              {row.company_name || row.group_name ? (
+                                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-zinc-800 text-zinc-200 border border-zinc-700">
+                                  <span>{row.company_name || row.group_name}</span>
+                                  {row.is_custom_owner && (
+                                    <span className="px-1 py-0.2 text-[9px] font-semibold bg-zinc-900 text-zinc-400 rounded">
+                                      Non-Listed
+                                    </span>
+                                  )}
                                 </span>
                               ) : (
                                 <span className="text-zinc-500 italic">unmapped</span>
                               )}
                             </Td>
                             <Td>
-                              {row.ticker_b3 ? (
+                              {row.ticker_b3 && row.ticker_b3 !== "Non-Listed" ? (
                                 <span className="font-mono text-amber-500 text-xs font-semibold">
                                   {row.ticker_b3.replace(".SA", "")}
                                 </span>
@@ -482,6 +487,26 @@ export function DistributorExplorer({ bridgeReady }: { bridgeReady: boolean }) {
                       <span className="text-zinc-200 block whitespace-pre-wrap leading-tight text-justify">
                         {detail.identity.service_area ?? "—"}
                       </span>
+                    </div>
+                    <div className="col-span-2 border-t border-zinc-800/60 pt-2">
+                      <span className="text-zinc-500 block">Mapped Owner / Controlling Group</span>
+                      {selected.company_name || selected.group_name ? (
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-zinc-200 font-semibold">{selected.company_name || selected.group_name}</span>
+                          {selected.ticker_b3 && selected.ticker_b3 !== "Non-Listed" && (
+                            <span className="font-mono text-amber-500 text-xs font-semibold bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded">
+                              {selected.ticker_b3.replace(".SA", "")}
+                            </span>
+                          )}
+                          {selected.is_custom_owner && (
+                            <span className="px-1.5 py-0.5 text-[9px] font-semibold bg-zinc-800 text-zinc-400 rounded border border-zinc-700">
+                              Non-Listed
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-zinc-500 italic block mt-0.5">unmapped / loose</span>
+                      )}
                     </div>
                   </div>
 

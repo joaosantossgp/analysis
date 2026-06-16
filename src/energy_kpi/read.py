@@ -592,10 +592,20 @@ class EnergyKPIReadService:
 
         sql = f"""
             {self._plant_entities_cte()}
-            SELECT *
-            FROM entities
+            SELECT e.*, 
+                   m.cd_cvm AS mapped_cvm, 
+                   m.custom_owner_name AS mapped_custom_owner,
+                   lc.company_name AS mapped_cvm_company_name,
+                   lc.ticker_b3 AS mapped_cvm_ticker,
+                   m.mapping_source
+            FROM entities e
+            LEFT JOIN conglomerate_asset_mappings m
+              ON e.entity_id = m.asset_id
+             AND m.asset_type = 'plant'
+            LEFT JOIN distribution_listed_companies lc
+              ON m.cd_cvm = lc.cd_cvm
             {where}
-            ORDER BY COALESCE(plant_name, entity_id), entity_type, entity_id
+            ORDER BY COALESCE(e.plant_name, e.entity_id), e.entity_type, e.entity_id
             LIMIT :limit OFFSET :offset
         """
         count_sql = f"""
@@ -604,13 +614,34 @@ class EnergyKPIReadService:
         """
         with self._engine().connect() as conn:
             _install_sqlite_functions(conn)
-            rows = [dict(row) for row in conn.execute(text(sql), params).mappings().all()]
+            raw_rows = [dict(row) for row in conn.execute(text(sql), params).mappings().all()]
             total = int(conn.execute(text(count_sql), params).scalar() or 0)
 
-        facets = self._plant_facets(rows)
+        resolved_records = []
+        for r_dict in raw_rows:
+            m_cvm = r_dict.get("mapped_cvm")
+            m_custom = r_dict.get("mapped_custom_owner")
+            mc_name = r_dict.get("mapped_cvm_company_name")
+            mc_ticker = r_dict.get("mapped_cvm_ticker")
+            
+            if m_cvm is not None:
+                r_dict["owner_name"] = mc_name or f"CVM: {m_cvm}"
+                r_dict["owner_ticker"] = mc_ticker
+                r_dict["is_custom_owner"] = False
+            elif m_custom is not None and m_custom.strip() != "":
+                r_dict["owner_name"] = m_custom.strip()
+                r_dict["owner_ticker"] = "Non-Listed"
+                r_dict["is_custom_owner"] = True
+            else:
+                r_dict["owner_name"] = None
+                r_dict["owner_ticker"] = None
+                r_dict["is_custom_owner"] = False
+            resolved_records.append(r_dict)
+
+        facets = self._plant_facets(resolved_records)
         return {
-            "records": rows,
-            "count": len(rows),
+            "records": resolved_records,
+            "count": len(resolved_records),
             "total": total,
             "limit": bounded_limit,
             "offset": bounded_offset,
@@ -635,6 +666,36 @@ class EnergyKPIReadService:
             parcels: list[dict[str, Any]] = []
             monthly: list[dict[str, Any]] = []
             hourly: list[dict[str, Any]] = []
+
+            # Query mapping info
+            mapping_row = conn.execute(text("""
+                SELECT m.cd_cvm, m.custom_owner_name, m.mapping_source,
+                       lc.company_name, lc.ticker_b3
+                FROM conglomerate_asset_mappings m
+                LEFT JOIN distribution_listed_companies lc ON m.cd_cvm = lc.cd_cvm
+                WHERE m.asset_id = :entity_id AND m.asset_type = 'plant'
+            """), {"entity_id": entity_id}).mappings().first()
+            
+            owner_info = None
+            if mapping_row:
+                m_cvm = mapping_row["cd_cvm"]
+                m_custom = mapping_row["custom_owner_name"]
+                if m_cvm is not None:
+                    owner_info = {
+                        "cd_cvm": m_cvm,
+                        "owner_name": mapping_row["company_name"] or f"CVM: {m_cvm}",
+                        "ticker_b3": mapping_row["ticker_b3"],
+                        "is_custom": False,
+                        "source": mapping_row["mapping_source"]
+                    }
+                elif m_custom is not None and m_custom.strip() != "":
+                    owner_info = {
+                        "cd_cvm": None,
+                        "owner_name": m_custom.strip(),
+                        "ticker_b3": "Non-Listed",
+                        "is_custom": True,
+                        "source": mapping_row["mapping_source"]
+                    }
 
             if resolved_type == "ccee_plant_parcel":
                 parcel = conn.execute(text("""
@@ -729,6 +790,7 @@ class EnergyKPIReadService:
             "metrics": metrics,
             "monthly_series": list(reversed(monthly)),
             "hourly_preview": list(reversed(hourly)),
+            "owner": owner_info,
             "metadata": {
                 "caveats": [
                     "CCEE plant parcel is not always equivalent to an ANEEL CEG plant or an ONS plant/group.",

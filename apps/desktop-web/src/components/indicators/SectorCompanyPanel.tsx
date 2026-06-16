@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, Fragment } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { StateBanner } from "@/components/feedback/StateBanner";
@@ -20,8 +20,8 @@ export function SectorCompanyPanel({ bridgeReady }: { bridgeReady: boolean }) {
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   
-  // Expanded conglomerate row IDs
-  const [expandedCvmCodes, setExpandedCvmCodes] = useState<Set<number>>(new Set());
+  // Expanded conglomerate row IDs (use strings to support custom:Name format)
+  const [expandedRowIds, setExpandedRowIds] = useState<Set<string>>(new Set());
 
   // Pending updates mapping (for loading state during change)
   const [updatingAssetKeys, setUpdatingAssetKeys] = useState<Set<string>>(new Set());
@@ -48,27 +48,37 @@ export function SectorCompanyPanel({ bridgeReady }: { bridgeReady: boolean }) {
   const conglomerates = conglomeratesQuery.data?.mode === "desktop" ? conglomeratesQuery.data.items : [];
   const assets = mappingsQuery.data?.mode === "desktop" ? mappingsQuery.data.items : [];
 
+  // Extract unique custom owner names from conglomerates
+  const customOwnersList = useMemo(() => {
+    return conglomerates.filter((c) => !c.is_listed).map((c) => c.company_name);
+  }, [conglomerates]);
+
   const isLoading = conglomeratesQuery.isLoading || mappingsQuery.isLoading;
   const isError = conglomeratesQuery.isError || mappingsQuery.isError;
   const error = conglomeratesQuery.error ?? mappingsQuery.error;
 
-  const toggleExpand = (cvmCode: number) => {
-    setExpandedCvmCodes((prev) => {
+  const toggleExpand = (rowId: string) => {
+    setExpandedRowIds((prev) => {
       const next = new Set(prev);
-      if (next.has(cvmCode)) {
-        next.delete(cvmCode);
+      if (next.has(rowId)) {
+        next.delete(rowId);
       } else {
-        next.add(cvmCode);
+        next.add(rowId);
       }
       return next;
     });
   };
 
-  const handleMappingChange = async (assetId: string, assetType: "distributor" | "plant", newCvm: number | null) => {
+  const handleMappingChange = async (
+    assetId: string,
+    assetType: "distributor" | "plant",
+    newCvm: number | null,
+    customOwnerName?: string | null
+  ) => {
     const key = `${assetId}-${assetType}`;
     setUpdatingAssetKeys((prev) => new Set([...prev, key]));
     try {
-      const res = await updateAssetMapping(assetId, assetType, newCvm);
+      const res = await updateAssetMapping(assetId, assetType, newCvm, customOwnerName);
       if (res.success) {
         void queryClient.invalidateQueries({ queryKey: ["conglomerates"] });
         void queryClient.invalidateQueries({ queryKey: ["asset-mappings"] });
@@ -152,10 +162,10 @@ export function SectorCompanyPanel({ bridgeReady }: { bridgeReady: boolean }) {
   const summary = useMemo(() => {
     const activeCongs = conglomerates.filter((c) => c.distributors_count > 0 || c.plants_count > 0).length;
     const totalDists = assets.filter((a) => a.type === "distributor").length;
-    const mappedDists = assets.filter((a) => a.type === "distributor" && a.mapped_cvm).length;
+    const mappedDists = assets.filter((a) => a.type === "distributor" && (a.mapped_cvm || a.custom_owner_name)).length;
     const totalPlants = assets.filter((a) => a.type === "plant").length;
-    const mappedPlants = assets.filter((a) => a.type === "plant" && a.mapped_cvm).length;
-    const unmapped = assets.filter((a) => !a.mapped_cvm).length;
+    const mappedPlants = assets.filter((a) => a.type === "plant" && (a.mapped_cvm || a.custom_owner_name)).length;
+    const unmapped = assets.filter((a) => !a.mapped_cvm && !a.custom_owner_name).length;
 
     return {
       activeCongs,
@@ -293,15 +303,19 @@ export function SectorCompanyPanel({ bridgeReady }: { bridgeReady: boolean }) {
                 </tr>
               ) : (
                 filteredConglomerates.map((c) => {
-                  const isExpanded = expandedCvmCodes.has(c.cd_cvm);
+                  const rowId = c.is_listed ? `cvm-${c.cd_cvm}` : `custom-${c.company_name}`;
+                  const isExpanded = expandedRowIds.has(rowId);
                   const hasMappedAssets = c.distributors_count > 0 || c.plants_count > 0;
-                  const companyAssets = assets.filter((a) => a.mapped_cvm === c.cd_cvm);
+                  const companyAssets = assets.filter((a) => 
+                    c.is_listed 
+                      ? a.mapped_cvm === c.cd_cvm 
+                      : a.custom_owner_name === c.company_name
+                  );
 
                   return (
-                    <>
+                    <Fragment key={rowId}>
                       <tr
-                        key={c.cd_cvm}
-                        onClick={() => hasMappedAssets && toggleExpand(c.cd_cvm)}
+                        onClick={() => hasMappedAssets && toggleExpand(rowId)}
                         className={`hover:bg-zinc-900/30 transition-colors ${
                           hasMappedAssets ? "cursor-pointer" : "opacity-60"
                         } ${isExpanded ? "bg-zinc-900/20" : ""}`}
@@ -314,6 +328,11 @@ export function SectorCompanyPanel({ bridgeReady }: { bridgeReady: boolean }) {
                               </span>
                             )}
                             <span>{c.company_name}</span>
+                            {!c.is_listed && (
+                              <span className="px-1.5 py-0.5 text-[9px] font-semibold bg-zinc-800 text-zinc-400 rounded">
+                                Non-Listed
+                              </span>
+                            )}
                           </div>
                         </td>
                         <td className="px-3.5 py-3 font-mono text-zinc-400">{c.ticker_b3 || "—"}</td>
@@ -330,7 +349,7 @@ export function SectorCompanyPanel({ bridgeReady }: { bridgeReady: boolean }) {
                         </td>
                       </tr>
                       {isExpanded && (
-                        <tr key={`${c.cd_cvm}-details`} className="bg-zinc-950/45">
+                        <tr key={`${rowId}-details`} className="bg-zinc-950/45">
                           <td colSpan={7} className="px-8 py-2.5">
                             <div className="space-y-1.5 border-l-2 border-amber-600/30 pl-4 py-1">
                               <h4 className="text-[10px] uppercase font-semibold text-zinc-500 tracking-wider mb-2">
@@ -361,7 +380,7 @@ export function SectorCompanyPanel({ bridgeReady }: { bridgeReady: boolean }) {
                           </td>
                         </tr>
                       )}
-                    </>
+                    </Fragment>
                   );
                 })
               )}
@@ -417,22 +436,51 @@ export function SectorCompanyPanel({ bridgeReady }: { bridgeReady: boolean }) {
                         </td>
                         <td className="px-3.5 py-2.5">
                           <select
-                            value={a.mapped_cvm || ""}
+                            value={a.mapped_cvm ? `cvm:${a.mapped_cvm}` : a.custom_owner_name ? `custom:${a.custom_owner_name}` : ""}
                             disabled={isUpdating}
                             onChange={(e) => {
                               const val = e.target.value;
-                              void handleMappingChange(a.id, a.type, val ? Number(val) : null);
+                              if (val === "action:add-custom") {
+                                const name = prompt("Enter the name of the custom Non-Listed Owner/Group:");
+                                if (name && name.trim()) {
+                                  void handleMappingChange(a.id, a.type, null, name.trim());
+                                } else {
+                                  e.target.value = a.mapped_cvm ? `cvm:${a.mapped_cvm}` : a.custom_owner_name ? `custom:${a.custom_owner_name}` : "";
+                                }
+                              } else if (val.startsWith("cvm:")) {
+                                const cdCvm = Number(val.substring(4));
+                                void handleMappingChange(a.id, a.type, cdCvm, null);
+                              } else if (val.startsWith("custom:")) {
+                                const ownerName = val.substring(7);
+                                void handleMappingChange(a.id, a.type, null, ownerName);
+                              } else {
+                                void handleMappingChange(a.id, a.type, null, null);
+                              }
                             }}
                             className={`w-full max-w-[200px] h-8 rounded border bg-zinc-950 px-2 text-xs outline-none transition-colors focus:border-amber-500 ${
                               isUpdating ? "border-amber-500/40 text-amber-500" : "border-zinc-800 text-zinc-200"
                             }`}
                           >
                             <option value="">-- Unmapped / Loose --</option>
-                            {conglomerates.map((c) => (
-                              <option key={c.cd_cvm} value={c.cd_cvm}>
-                                {c.company_name} ({c.ticker_b3 || "no-ticker"})
-                              </option>
-                            ))}
+                            <option value="action:add-custom" className="text-amber-500 font-semibold">+ Add Custom Owner...</option>
+                            
+                            <optgroup label="CVM Listed Conglomerates">
+                              {conglomerates.filter(c => c.is_listed).map((c) => (
+                                <option key={c.cd_cvm} value={`cvm:${c.cd_cvm}`}>
+                                  {c.company_name} ({c.ticker_b3 || "no-ticker"})
+                                </option>
+                              ))}
+                            </optgroup>
+
+                            {customOwnersList.length > 0 && (
+                              <optgroup label="Non-Listed Custom Owners">
+                                {customOwnersList.map((o) => (
+                                  <option key={`custom-${o}`} value={`custom:${o}`}>
+                                    {o} (Non-Listed)
+                                  </option>
+                                ))}
+                              </optgroup>
+                            )}
                           </select>
                         </td>
                         <td className="px-3.5 py-2.5">

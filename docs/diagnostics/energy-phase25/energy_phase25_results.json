@@ -1,0 +1,4585 @@
+{
+  "generated_at": "2026-06-15T23:34:46Z",
+  "production_db": "C:\\Users\\jadaojoao\\Documents\\CVMAnalytics\\db\\energy_kpis.db",
+  "work_dir": "C:\\Users\\jadaojoao\\AppData\\Local\\Temp\\cvma_energy_phase25_s5torqez",
+  "production_before": {
+    "size": 36483608576,
+    "mtime_ns": 1781559902717076100,
+    "sidecars": {
+      "-wal": {
+        "exists": true,
+        "size": 90672,
+        "mtime_ns": 1781560090586036600
+      },
+      "-shm": {
+        "exists": true,
+        "size": 32768,
+        "mtime_ns": 1781560090282410200
+      },
+      "-journal": {
+        "exists": false,
+        "size": 0,
+        "mtime_ns": null
+      }
+    }
+  },
+  "production_after": {
+    "size": 36483608576,
+    "mtime_ns": 1781559902717076100,
+    "sidecars": {
+      "-wal": {
+        "exists": true,
+        "size": 206032,
+        "mtime_ns": 1781565905595469800
+      },
+      "-shm": {
+        "exists": true,
+        "size": 32768,
+        "mtime_ns": 1781564673006446700
+      },
+      "-journal": {
+        "exists": false,
+        "size": 0,
+        "mtime_ns": null
+      }
+    }
+  },
+  "production_unchanged": false,
+  "production_checks": {
+    "schema_version": 128,
+    "page_count": 8907131,
+    "hourly_rows": 66719664,
+    "sample_months": [
+      {
+        "reference_month": "2024-03",
+        "rows": 2310864
+      },
+      {
+        "reference_month": "2024-04",
+        "rows": 2245680
+      },
+      {
+        "reference_month": "2024-05",
+        "rows": 2335416
+      },
+      {
+        "reference_month": "2024-06",
+        "rows": 2282400
+      },
+      {
+        "reference_month": "2024-07",
+        "rows": 2386752
+      },
+      {
+        "reference_month": "2024-08",
+        "rows": 2440320
+      },
+      {
+        "reference_month": "2024-09",
+        "rows": 2386800
+      },
+      {
+        "reference_month": "2024-10",
+        "rows": 2495376
+      },
+      {
+        "reference_month": "2024-11",
+        "rows": 2432160
+      },
+      {
+        "reference_month": "2024-12",
+        "rows": 2528112
+      },
+      {
+        "reference_month": "2025-01",
+        "rows": 2558616
+      },
+      {
+        "reference_month": "2025-02",
+        "rows": 2321088
+      },
+      {
+        "reference_month": "2025-03",
+        "rows": 2581680
+      },
+      {
+        "reference_month": "2025-04",
+        "rows": 2524320
+      },
+      {
+        "reference_month": "2025-05",
+        "rows": 2642688
+      },
+      {
+        "reference_month": "2025-06",
+        "rows": 2596320
+      },
+      {
+        "reference_month": "2025-07",
+        "rows": 2714856
+      },
+      {
+        "reference_month": "2025-08",
+        "rows": 2746104
+      },
+      {
+        "reference_month": "2025-09",
+        "rows": 2666880
+      },
+      {
+        "reference_month": "2025-10",
+        "rows": 2775864
+      },
+      {
+        "reference_month": "2025-11",
+        "rows": 2730960
+      },
+      {
+        "reference_month": "2025-12",
+        "rows": 2839104
+      },
+      {
+        "reference_month": "2026-01",
+        "rows": 2853984
+      },
+      {
+        "reference_month": "2026-02",
+        "rows": 2590560
+      },
+      {
+        "reference_month": "2026-03",
+        "rows": 2905320
+      },
+      {
+        "reference_month": "2026-04",
+        "rows": 2827440
+      }
+    ]
+  },
+  "attribution": {
+    "dbstat_tool": "C:\\Users\\jadaojoao\\AppData\\Local\\Temp\\cvma_sqlite_tools_3530200\\sqlite3.exe",
+    "database_size": 36483608576,
+    "tables": [
+      {
+        "name": "ccee_plant_parcel_hourly",
+        "kind": "historical_fact",
+        "row_count": 66719664,
+        "table_bytes": 19384414208,
+        "index_bytes": 12111360000,
+        "total_bytes": 31495774208,
+        "table_pct": 0.5313184458609624,
+        "total_pct": 0.8632856079022527,
+        "avg_table_bytes_per_row": 290.5352492182814,
+        "avg_total_bytes_per_row": 472.06134323458224,
+        "leaf_pages": 4719302,
+        "internal_pages": 13221,
+        "overflow_pages": 0,
+        "total_pages": 4732523,
+        "column_count": 30,
+        "indexes": [
+          "idx_cppe_source",
+          "idx_cppe_submarket",
+          "idx_cppe_ref_month",
+          "idx_cppe_ref",
+          "idx_cppe_parcel_ref",
+          "sqlite_autoindex_ccee_plant_parcel_hourly_1"
+        ],
+        "earliest_period": "2024-03",
+        "latest_period": "2026-04"
+      },
+      {
+        "name": "distribution_market_facts",
+        "kind": "historical_fact",
+        "row_count": 1602847,
+        "table_bytes": 831692800,
+        "index_bytes": 165064704,
+        "total_bytes": 996757504,
+        "table_pct": 0.022796341493125004,
+        "total_pct": 0.027320693947355215,
+        "avg_table_bytes_per_row": 518.8847095199978,
+        "avg_total_bytes_per_row": 621.8669055748927,
+        "leaf_pages": 202266,
+        "internal_pages": 784,
+        "overflow_pages": 0,
+        "total_pages": 203050,
+        "column_count": 21,
+        "indexes": [
+          "idx_dist_market_ref",
+          "sqlite_autoindex_distribution_market_facts_1"
+        ],
+        "earliest_period": "2024-01",
+        "latest_period": "2026-04"
+      },
+      {
+        "name": "distribution_mmgd_project_snapshots",
+        "kind": "snapshot",
+        "row_count": 3923184,
+        "table_bytes": 621105152,
+        "index_bytes": 352116736,
+        "total_bytes": 973221888,
+        "table_pct": 0.01702422474756462,
+        "total_pct": 0.026675592848022556,
+        "avg_table_bytes_per_row": 158.31659998613372,
+        "avg_total_bytes_per_row": 248.06939669411375,
+        "leaf_pages": 151236,
+        "internal_pages": 401,
+        "overflow_pages": 0,
+        "total_pages": 151637,
+        "column_count": 8,
+        "indexes": [
+          "idx_dist_mmgd_snap",
+          "sqlite_autoindex_distribution_mmgd_project_snapshots_1"
+        ],
+        "earliest_period": "2026-06",
+        "latest_period": "2026-06"
+      },
+      {
+        "name": "distribution_mmgd_projects",
+        "kind": "metadata",
+        "row_count": 3923184,
+        "table_bytes": 678322176,
+        "index_bytes": 211353600,
+        "total_bytes": 889675776,
+        "table_pct": 0.018592518735830874,
+        "total_pct": 0.02438562989586658,
+        "avg_table_bytes_per_row": 172.90093352746138,
+        "avg_total_bytes_per_row": 226.7739101709224,
+        "leaf_pages": 165166,
+        "internal_pages": 440,
+        "overflow_pages": 0,
+        "total_pages": 165606,
+        "column_count": 16,
+        "indexes": [
+          "idx_dist_mmgd_proj",
+          "sqlite_autoindex_distribution_mmgd_projects_1"
+        ],
+        "earliest_period": null,
+        "latest_period": null
+      },
+      {
+        "name": "distribution_delinquency_facts",
+        "kind": "historical_fact",
+        "row_count": 1112622,
+        "table_bytes": 303476736,
+        "index_bytes": 121868288,
+        "total_bytes": 425345024,
+        "table_pct": 0.008318166646476851,
+        "total_pct": 0.011658523939975735,
+        "avg_table_bytes_per_row": 272.7581658460825,
+        "avg_total_bytes_per_row": 382.2906827296243,
+        "leaf_pages": 73883,
+        "internal_pages": 208,
+        "overflow_pages": 0,
+        "total_pages": 74091,
+        "column_count": 8,
+        "indexes": [
+          "sqlite_autoindex_distribution_delinquency_facts_1"
+        ],
+        "earliest_period": "2012-01",
+        "latest_period": "2026-05"
+      },
+      {
+        "name": "distribution_continuity_facts",
+        "kind": "historical_fact",
+        "row_count": 1200360,
+        "table_bytes": 260747264,
+        "index_bytes": 157351936,
+        "total_bytes": 418099200,
+        "table_pct": 0.00714697021970374,
+        "total_pct": 0.011459919024431098,
+        "avg_table_bytes_per_row": 217.2242194008464,
+        "avg_total_bytes_per_row": 348.3115065480356,
+        "leaf_pages": 63484,
+        "internal_pages": 175,
+        "overflow_pages": 0,
+        "total_pages": 63659,
+        "column_count": 10,
+        "indexes": [
+          "idx_dist_cont_indicator_ref",
+          "idx_dist_cont_ref",
+          "sqlite_autoindex_distribution_continuity_facts_1"
+        ],
+        "earliest_period": "2020-01",
+        "latest_period": "2026-05"
+      },
+      {
+        "name": "subsystem_kpi_values",
+        "kind": "historical_fact",
+        "row_count": 656184,
+        "table_bytes": 221843456,
+        "index_bytes": 146866176,
+        "total_bytes": 368709632,
+        "table_pct": 0.006080633595711122,
+        "total_pct": 0.01010617223435919,
+        "avg_table_bytes_per_row": 338.0811723540958,
+        "avg_total_bytes_per_row": 561.8997598234641,
+        "leaf_pages": 54024,
+        "internal_pages": 137,
+        "overflow_pages": 0,
+        "total_pages": 54161,
+        "column_count": 15,
+        "indexes": [
+          "idx_skv_snapshot",
+          "idx_skv_dataset_ref",
+          "idx_skv_subsystem_ref",
+          "sqlite_autoindex_subsystem_kpi_values_1"
+        ],
+        "earliest_period": "2025-01-01T00:00:00",
+        "latest_period": "2026-06-02T23:30:00"
+      },
+      {
+        "name": "distribution_energy_balance_facts",
+        "kind": "historical_fact",
+        "row_count": 982166,
+        "table_bytes": 268144640,
+        "index_bytes": 92884992,
+        "total_bytes": 361029632,
+        "table_pct": 0.00734972911030499,
+        "total_pct": 0.009895666741625333,
+        "avg_table_bytes_per_row": 273.01356389856704,
+        "avg_total_bytes_per_row": 367.58514548457185,
+        "leaf_pages": 65273,
+        "internal_pages": 192,
+        "overflow_pages": 0,
+        "total_pages": 65465,
+        "column_count": 14,
+        "indexes": [
+          "idx_dist_bal_ref",
+          "sqlite_autoindex_distribution_energy_balance_facts_1"
+        ],
+        "earliest_period": "2003-01",
+        "latest_period": "2023-03"
+      },
+      {
+        "name": "distribution_tariff_facts",
+        "kind": "historical_fact",
+        "row_count": 317309,
+        "table_bytes": 148381696,
+        "index_bytes": 57487360,
+        "total_bytes": 205869056,
+        "table_pct": 0.004067078389214215,
+        "total_pct": 0.005642782170824702,
+        "avg_table_bytes_per_row": 467.6252359687245,
+        "avg_total_bytes_per_row": 648.7967753829863,
+        "leaf_pages": 36133,
+        "internal_pages": 93,
+        "overflow_pages": 0,
+        "total_pages": 36226,
+        "column_count": 19,
+        "indexes": [
+          "idx_dist_tariff_series_lookup",
+          "sqlite_autoindex_distribution_tariff_facts_1"
+        ],
+        "earliest_period": null,
+        "latest_period": null
+      },
+      {
+        "name": "distribution_continuity_compensations",
+        "kind": "metadata",
+        "row_count": 544725,
+        "table_bytes": 121786368,
+        "index_bytes": 28749824,
+        "total_bytes": 150536192,
+        "table_pct": 0.0033381119015763886,
+        "total_pct": 0.004126132196775819,
+        "avg_table_bytes_per_row": 223.57403827619441,
+        "avg_total_bytes_per_row": 276.3526403230988,
+        "leaf_pages": 29657,
+        "internal_pages": 76,
+        "overflow_pages": 0,
+        "total_pages": 29733,
+        "column_count": 10,
+        "indexes": [
+          "sqlite_autoindex_distribution_continuity_compensations_1"
+        ],
+        "earliest_period": "2011-01",
+        "latest_period": "2019-12"
+      },
+      {
+        "name": "distribution_continuity_limits",
+        "kind": "metadata",
+        "row_count": 435859,
+        "table_bytes": 92450816,
+        "index_bytes": 23150592,
+        "total_bytes": 115601408,
+        "table_pct": 0.0025340370541311226,
+        "total_pct": 0.003168584811428057,
+        "avg_table_bytes_per_row": 212.11175173622664,
+        "avg_total_bytes_per_row": 265.2266168646282,
+        "leaf_pages": 22512,
+        "internal_pages": 59,
+        "overflow_pages": 0,
+        "total_pages": 22571,
+        "column_count": 10,
+        "indexes": [
+          "sqlite_autoindex_distribution_continuity_limits_1"
+        ],
+        "earliest_period": 1990,
+        "latest_period": 2032
+      },
+      {
+        "name": "ccee_plant_parcel_monthly",
+        "kind": "historical_fact",
+        "row_count": 82458,
+        "table_bytes": 43757568,
+        "index_bytes": 12066816,
+        "total_bytes": 55824384,
+        "table_pct": 0.0011993760954004157,
+        "total_pct": 0.0015301223255838497,
+        "avg_table_bytes_per_row": 530.6649203230736,
+        "avg_total_bytes_per_row": 677.0038565087681,
+        "leaf_pages": 10656,
+        "internal_pages": 27,
+        "overflow_pages": 0,
+        "total_pages": 10683,
+        "column_count": 36,
+        "indexes": [
+          "idx_cppm_source",
+          "idx_cppm_submarket",
+          "idx_cppm_ref",
+          "idx_cppm_parcel_ref",
+          "idx_cppm_ceg",
+          "sqlite_autoindex_ccee_plant_parcel_monthly_1"
+        ],
+        "earliest_period": "2024-06",
+        "latest_period": "2026-04"
+      },
+      {
+        "name": "aneel_siga_plants",
+        "kind": "current_state",
+        "row_count": 25250,
+        "table_bytes": 8810496,
+        "index_bytes": 1863680,
+        "total_bytes": 10674176,
+        "table_pct": 0.00024149190126427915,
+        "total_pct": 0.0002925745675010281,
+        "avg_table_bytes_per_row": 348.9305346534654,
+        "avg_total_bytes_per_row": 422.7396435643564,
+        "leaf_pages": 2144,
+        "internal_pages": 7,
+        "overflow_pages": 0,
+        "total_pages": 2151,
+        "column_count": 18,
+        "indexes": [
+          "idx_aneel_siga_source",
+          "idx_aneel_siga_uf",
+          "sqlite_autoindex_aneel_siga_plants_1"
+        ],
+        "earliest_period": null,
+        "latest_period": null
+      },
+      {
+        "name": "distribution_monthly_aggregates",
+        "kind": "metadata",
+        "row_count": 29466,
+        "table_bytes": 4608000,
+        "index_bytes": 2334720,
+        "total_bytes": 6942720,
+        "table_pct": 0.00012630329564031336,
+        "total_pct": 0.00019029696543140546,
+        "avg_table_bytes_per_row": 156.3836285888821,
+        "avg_total_bytes_per_row": 235.61800040724904,
+        "leaf_pages": 1121,
+        "internal_pages": 4,
+        "overflow_pages": 0,
+        "total_pages": 1125,
+        "column_count": 19,
+        "indexes": [
+          "idx_dist_monthly_agg",
+          "sqlite_autoindex_distribution_monthly_aggregates_1"
+        ],
+        "earliest_period": "2003-01",
+        "latest_period": "2026-06"
+      },
+      {
+        "name": "country_kpi_values",
+        "kind": "historical_fact",
+        "row_count": 11645,
+        "table_bytes": 2023424,
+        "index_bytes": 2387968,
+        "total_bytes": 4411392,
+        "table_pct": 5.546118048561316e-05,
+        "total_pct": 0.00012091435502632666,
+        "avg_table_bytes_per_row": 173.75903821382568,
+        "avg_total_bytes_per_row": 378.8228424216402,
+        "leaf_pages": 491,
+        "internal_pages": 3,
+        "overflow_pages": 0,
+        "total_pages": 494,
+        "column_count": 15,
+        "indexes": [
+          "idx_ckv_snapshot",
+          "idx_ckv_iso_period",
+          "idx_ckv_kpi_iso",
+          "sqlite_autoindex_country_kpi_values_1"
+        ],
+        "earliest_period": 1900,
+        "latest_period": 2025
+      },
+      {
+        "name": "ccee_plant_parcels",
+        "kind": "current_state",
+        "row_count": 4036,
+        "table_bytes": 1982464,
+        "index_bytes": 462848,
+        "total_bytes": 2445312,
+        "table_pct": 5.433848452436593e-05,
+        "total_pct": 6.702494888645963e-05,
+        "avg_table_bytes_per_row": 491.195242814668,
+        "avg_total_bytes_per_row": 605.8751238850347,
+        "leaf_pages": 483,
+        "internal_pages": 1,
+        "overflow_pages": 0,
+        "total_pages": 484,
+        "column_count": 23,
+        "indexes": [
+          "idx_cpp_ref_month",
+          "idx_cpp_source",
+          "idx_cpp_submarket",
+          "idx_cpp_ceg",
+          "sqlite_autoindex_ccee_plant_parcels_1"
+        ],
+        "earliest_period": null,
+        "latest_period": null
+      },
+      {
+        "name": "distribution_tariff_conflicts",
+        "kind": "quality",
+        "row_count": 2056,
+        "table_bytes": 1343488,
+        "index_bytes": 405504,
+        "total_bytes": 1748992,
+        "table_pct": 3.682442752890914e-05,
+        "total_pct": 4.7939117545256714e-05,
+        "avg_table_bytes_per_row": 653.4474708171206,
+        "avg_total_bytes_per_row": 850.6770428015565,
+        "leaf_pages": 327,
+        "internal_pages": 1,
+        "overflow_pages": 0,
+        "total_pages": 328,
+        "column_count": 22,
+        "indexes": [
+          "sqlite_autoindex_distribution_tariff_conflicts_1"
+        ],
+        "earliest_period": null,
+        "latest_period": null
+      },
+      {
+        "name": "distribution_annual_aggregates",
+        "kind": "metadata",
+        "row_count": 2583,
+        "table_bytes": 372736,
+        "index_bytes": 192512,
+        "total_bytes": 565248,
+        "table_pct": 1.0216533247349792e-05,
+        "total_pct": 1.5493204265211772e-05,
+        "avg_table_bytes_per_row": 144.30352303523034,
+        "avg_total_bytes_per_row": 218.83391405342624,
+        "leaf_pages": 90,
+        "internal_pages": 1,
+        "overflow_pages": 0,
+        "total_pages": 91,
+        "column_count": 19,
+        "indexes": [
+          "idx_dist_annual_agg",
+          "sqlite_autoindex_distribution_annual_aggregates_1"
+        ],
+        "earliest_period": null,
+        "latest_period": null
+      },
+      {
+        "name": "energy_source_refresh_log",
+        "kind": "log",
+        "row_count": 73,
+        "table_bytes": 53248,
+        "index_bytes": 8192,
+        "total_bytes": 61440,
+        "table_pct": 1.4595047496213988e-06,
+        "total_pct": 1.6840439418708449e-06,
+        "avg_table_bytes_per_row": 729.4246575342465,
+        "avg_total_bytes_per_row": 841.6438356164383,
+        "leaf_pages": 12,
+        "internal_pages": 1,
+        "overflow_pages": 0,
+        "total_pages": 13,
+        "column_count": 64,
+        "indexes": [
+          "idx_esrl_source_started",
+          "sqlite_autoindex_energy_source_refresh_log_1"
+        ],
+        "earliest_period": null,
+        "latest_period": null
+      },
+      {
+        "name": "distribution_distributors",
+        "kind": "metadata",
+        "row_count": 179,
+        "table_bytes": 45056,
+        "index_bytes": 12288,
+        "total_bytes": 57344,
+        "table_pct": 1.2349655573719528e-06,
+        "total_pct": 1.5717743457461218e-06,
+        "avg_table_bytes_per_row": 251.7094972067039,
+        "avg_total_bytes_per_row": 320.35754189944134,
+        "leaf_pages": 10,
+        "internal_pages": 1,
+        "overflow_pages": 0,
+        "total_pages": 11,
+        "column_count": 14,
+        "indexes": [
+          "sqlite_autoindex_distribution_distributors_1"
+        ],
+        "earliest_period": null,
+        "latest_period": null
+      },
+      {
+        "name": "source_snapshots",
+        "kind": "snapshot",
+        "row_count": 63,
+        "table_bytes": 28672,
+        "index_bytes": 4096,
+        "total_bytes": 32768,
+        "table_pct": 7.858871728730609e-07,
+        "total_pct": 8.981567689977839e-07,
+        "avg_table_bytes_per_row": 455.1111111111111,
+        "avg_total_bytes_per_row": 520.1269841269841,
+        "leaf_pages": 6,
+        "internal_pages": 1,
+        "overflow_pages": 0,
+        "total_pages": 7,
+        "column_count": 8,
+        "indexes": [
+          "sqlite_autoindex_source_snapshots_1"
+        ],
+        "earliest_period": null,
+        "latest_period": null
+      },
+      {
+        "name": "kpi_catalog",
+        "kind": "metadata",
+        "row_count": 40,
+        "table_bytes": 24576,
+        "index_bytes": 4096,
+        "total_bytes": 28672,
+        "table_pct": 6.73617576748338e-07,
+        "total_pct": 7.858871728730609e-07,
+        "avg_table_bytes_per_row": 614.4,
+        "avg_total_bytes_per_row": 716.8,
+        "leaf_pages": 5,
+        "internal_pages": 1,
+        "overflow_pages": 0,
+        "total_pages": 6,
+        "column_count": 27,
+        "indexes": [
+          "sqlite_autoindex_kpi_catalog_1"
+        ],
+        "earliest_period": null,
+        "latest_period": null
+      },
+      {
+        "name": "distribution_delinquency_indicators",
+        "kind": "metadata",
+        "row_count": 80,
+        "table_bytes": 20480,
+        "index_bytes": 4096,
+        "total_bytes": 24576,
+        "table_pct": 5.61347980623615e-07,
+        "total_pct": 6.73617576748338e-07,
+        "avg_table_bytes_per_row": 256.0,
+        "avg_total_bytes_per_row": 307.2,
+        "leaf_pages": 4,
+        "internal_pages": 1,
+        "overflow_pages": 0,
+        "total_pages": 5,
+        "column_count": 7,
+        "indexes": [
+          "sqlite_autoindex_distribution_delinquency_indicators_1"
+        ],
+        "earliest_period": null,
+        "latest_period": null
+      },
+      {
+        "name": "data_quality_checks",
+        "kind": "quality",
+        "row_count": 28,
+        "table_bytes": 12288,
+        "index_bytes": 8192,
+        "total_bytes": 20480,
+        "table_pct": 3.36808788374169e-07,
+        "total_pct": 5.61347980623615e-07,
+        "avg_table_bytes_per_row": 438.85714285714283,
+        "avg_total_bytes_per_row": 731.4285714285714,
+        "leaf_pages": 2,
+        "internal_pages": 1,
+        "overflow_pages": 0,
+        "total_pages": 3,
+        "column_count": 7,
+        "indexes": [
+          "idx_dqc_run",
+          "sqlite_autoindex_data_quality_checks_1"
+        ],
+        "earliest_period": null,
+        "latest_period": null
+      },
+      {
+        "name": "distribution_ownership_history",
+        "kind": "metadata",
+        "row_count": 32,
+        "table_bytes": 12288,
+        "index_bytes": 4096,
+        "total_bytes": 16384,
+        "table_pct": 3.36808788374169e-07,
+        "total_pct": 4.4907838449889193e-07,
+        "avg_table_bytes_per_row": 384.0,
+        "avg_total_bytes_per_row": 512.0,
+        "leaf_pages": 2,
+        "internal_pages": 1,
+        "overflow_pages": 0,
+        "total_pages": 3,
+        "column_count": 14,
+        "indexes": [
+          "sqlite_autoindex_distribution_ownership_history_1"
+        ],
+        "earliest_period": null,
+        "latest_period": null
+      },
+      {
+        "name": "ccee_discovered_resources",
+        "kind": "metadata",
+        "row_count": 0,
+        "table_bytes": 4096,
+        "index_bytes": 8192,
+        "total_bytes": 12288,
+        "table_pct": 1.1226959612472298e-07,
+        "total_pct": 3.36808788374169e-07,
+        "avg_table_bytes_per_row": null,
+        "avg_total_bytes_per_row": null,
+        "leaf_pages": 1,
+        "internal_pages": 0,
+        "overflow_pages": 0,
+        "total_pages": 1,
+        "column_count": 12,
+        "indexes": [
+          "idx_cdr_dataset_period",
+          "sqlite_autoindex_ccee_discovered_resources_1"
+        ],
+        "earliest_period": null,
+        "latest_period": null
+      },
+      {
+        "name": "country_dimension",
+        "kind": "metadata",
+        "row_count": 6,
+        "table_bytes": 4096,
+        "index_bytes": 4096,
+        "total_bytes": 8192,
+        "table_pct": 1.1226959612472298e-07,
+        "total_pct": 2.2453919224944597e-07,
+        "avg_table_bytes_per_row": 682.6666666666666,
+        "avg_total_bytes_per_row": 1365.3333333333333,
+        "leaf_pages": 1,
+        "internal_pages": 0,
+        "overflow_pages": 0,
+        "total_pages": 1,
+        "column_count": 4,
+        "indexes": [
+          "sqlite_autoindex_country_dimension_1"
+        ],
+        "earliest_period": null,
+        "latest_period": null
+      },
+      {
+        "name": "distribution_distributor_aliases",
+        "kind": "metadata",
+        "row_count": 23,
+        "table_bytes": 4096,
+        "index_bytes": 4096,
+        "total_bytes": 8192,
+        "table_pct": 1.1226959612472298e-07,
+        "total_pct": 2.2453919224944597e-07,
+        "avg_table_bytes_per_row": 178.08695652173913,
+        "avg_total_bytes_per_row": 356.17391304347825,
+        "leaf_pages": 1,
+        "internal_pages": 0,
+        "overflow_pages": 0,
+        "total_pages": 1,
+        "column_count": 11,
+        "indexes": [
+          "sqlite_autoindex_distribution_distributor_aliases_1"
+        ],
+        "earliest_period": null,
+        "latest_period": null
+      },
+      {
+        "name": "distribution_economic_groups",
+        "kind": "metadata",
+        "row_count": 10,
+        "table_bytes": 4096,
+        "index_bytes": 4096,
+        "total_bytes": 8192,
+        "table_pct": 1.1226959612472298e-07,
+        "total_pct": 2.2453919224944597e-07,
+        "avg_table_bytes_per_row": 409.6,
+        "avg_total_bytes_per_row": 819.2,
+        "leaf_pages": 1,
+        "internal_pages": 0,
+        "overflow_pages": 0,
+        "total_pages": 1,
+        "column_count": 4,
+        "indexes": [
+          "sqlite_autoindex_distribution_economic_groups_1"
+        ],
+        "earliest_period": null,
+        "latest_period": null
+      },
+      {
+        "name": "energy_sources",
+        "kind": "dimension",
+        "row_count": 3,
+        "table_bytes": 4096,
+        "index_bytes": 4096,
+        "total_bytes": 8192,
+        "table_pct": 1.1226959612472298e-07,
+        "total_pct": 2.2453919224944597e-07,
+        "avg_table_bytes_per_row": 1365.3333333333333,
+        "avg_total_bytes_per_row": 2730.6666666666665,
+        "leaf_pages": 1,
+        "internal_pages": 0,
+        "overflow_pages": 0,
+        "total_pages": 1,
+        "column_count": 11,
+        "indexes": [
+          "sqlite_autoindex_energy_sources_1"
+        ],
+        "earliest_period": null,
+        "latest_period": null
+      },
+      {
+        "name": "kpi_refresh_log",
+        "kind": "log",
+        "row_count": 5,
+        "table_bytes": 4096,
+        "index_bytes": 4096,
+        "total_bytes": 8192,
+        "table_pct": 1.1226959612472298e-07,
+        "total_pct": 2.2453919224944597e-07,
+        "avg_table_bytes_per_row": 819.2,
+        "avg_total_bytes_per_row": 1638.4,
+        "leaf_pages": 1,
+        "internal_pages": 0,
+        "overflow_pages": 0,
+        "total_pages": 1,
+        "column_count": 9,
+        "indexes": [
+          "sqlite_autoindex_kpi_refresh_log_1"
+        ],
+        "earliest_period": null,
+        "latest_period": null
+      },
+      {
+        "name": "kpi_sources",
+        "kind": "dimension",
+        "row_count": 6,
+        "table_bytes": 4096,
+        "index_bytes": 4096,
+        "total_bytes": 8192,
+        "table_pct": 1.1226959612472298e-07,
+        "total_pct": 2.2453919224944597e-07,
+        "avg_table_bytes_per_row": 682.6666666666666,
+        "avg_total_bytes_per_row": 1365.3333333333333,
+        "leaf_pages": 1,
+        "internal_pages": 0,
+        "overflow_pages": 0,
+        "total_pages": 1,
+        "column_count": 10,
+        "indexes": [
+          "sqlite_autoindex_kpi_sources_1"
+        ],
+        "earliest_period": null,
+        "latest_period": null
+      },
+      {
+        "name": "subsystem_dimension",
+        "kind": "metadata",
+        "row_count": 4,
+        "table_bytes": 4096,
+        "index_bytes": 4096,
+        "total_bytes": 8192,
+        "table_pct": 1.1226959612472298e-07,
+        "total_pct": 2.2453919224944597e-07,
+        "avg_table_bytes_per_row": 1024.0,
+        "avg_total_bytes_per_row": 2048.0,
+        "leaf_pages": 1,
+        "internal_pages": 0,
+        "overflow_pages": 0,
+        "total_pages": 1,
+        "column_count": 4,
+        "indexes": [
+          "sqlite_autoindex_subsystem_dimension_1"
+        ],
+        "earliest_period": null,
+        "latest_period": null
+      },
+      {
+        "name": "distribution_listed_companies",
+        "kind": "metadata",
+        "row_count": 8,
+        "table_bytes": 4096,
+        "index_bytes": 0,
+        "total_bytes": 4096,
+        "table_pct": 1.1226959612472298e-07,
+        "total_pct": 1.1226959612472298e-07,
+        "avg_table_bytes_per_row": 512.0,
+        "avg_total_bytes_per_row": 512.0,
+        "leaf_pages": 1,
+        "internal_pages": 0,
+        "overflow_pages": 0,
+        "total_pages": 1,
+        "column_count": 6,
+        "indexes": [],
+        "earliest_period": null,
+        "latest_period": null
+      }
+    ],
+    "indexes": [
+      {
+        "name": "sqlite_autoindex_ccee_plant_parcel_hourly_1",
+        "table": "ccee_plant_parcel_hourly",
+        "columns": [
+          "reference_datetime",
+          "commercialization_period",
+          "plant_parcel_code"
+        ],
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "bytes": 2938433536,
+        "pages": 717391,
+        "pct_database": 0.08054119783351114,
+        "pct_table_total": 0.09329612019042323
+      },
+      {
+        "name": "idx_cppe_parcel_ref",
+        "table": "ccee_plant_parcel_hourly",
+        "columns": [
+          "plant_parcel_code",
+          "reference_datetime"
+        ],
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "bytes": 2650116096,
+        "pages": 647001,
+        "pct_database": 0.0726385409622919,
+        "pct_table_total": 0.0841419575368579
+      },
+      {
+        "name": "idx_cppe_ref",
+        "table": "ccee_plant_parcel_hourly",
+        "columns": [
+          "reference_datetime"
+        ],
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "bytes": 2221072384,
+        "pages": 542254,
+        "pct_database": 0.06087863757701554,
+        "pct_table_total": 0.07051969477974739
+      },
+      {
+        "name": "idx_cppe_source",
+        "table": "ccee_plant_parcel_hourly",
+        "columns": [
+          "generation_source"
+        ],
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "bytes": 1740898304,
+        "pages": 425024,
+        "pct_database": 0.04771727282331426,
+        "pct_table_total": 0.05527402795381381
+      },
+      {
+        "name": "idx_cppe_ref_month",
+        "table": "ccee_plant_parcel_hourly",
+        "columns": [
+          "reference_month"
+        ],
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "bytes": 1299099648,
+        "pages": 317163,
+        "pct_database": 0.03560776191570552,
+        "pct_table_total": 0.04124679201154629
+      },
+      {
+        "name": "idx_cppe_submarket",
+        "table": "ccee_plant_parcel_hourly",
+        "columns": [
+          "submarket"
+        ],
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "bytes": 1261740032,
+        "pages": 308042,
+        "pct_database": 0.03458375092945192,
+        "pct_table_total": 0.0400606133275973
+      },
+      {
+        "name": "sqlite_autoindex_distribution_mmgd_project_snapshots_1",
+        "table": "distribution_mmgd_project_snapshots",
+        "columns": [
+          "snapshot_row_id"
+        ],
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "bytes": 203587584,
+        "pages": 49704,
+        "pct_database": 0.005580248005783232,
+        "pct_table_total": 0.20918927791315767
+      },
+      {
+        "name": "idx_dist_mmgd_snap",
+        "table": "distribution_mmgd_project_snapshots",
+        "columns": [
+          "project_id",
+          "reference_month"
+        ],
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "bytes": 148529152,
+        "pages": 36262,
+        "pct_database": 0.004071120094674705,
+        "pct_table_total": 0.15261591814918163
+      },
+      {
+        "name": "sqlite_autoindex_distribution_delinquency_facts_1",
+        "table": "distribution_delinquency_facts",
+        "columns": [
+          "fact_id"
+        ],
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "bytes": 121868288,
+        "pages": 29753,
+        "pct_database": 0.003340357293498883,
+        "pct_table_total": 0.2865163129309349
+      },
+      {
+        "name": "sqlite_autoindex_distribution_mmgd_projects_1",
+        "table": "distribution_mmgd_projects",
+        "columns": [
+          "project_id"
+        ],
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "bytes": 113209344,
+        "pages": 27639,
+        "pct_database": 0.0031030193672912185,
+        "pct_table_total": 0.1272478660810475
+      },
+      {
+        "name": "idx_dist_mmgd_proj",
+        "table": "distribution_mmgd_projects",
+        "columns": [
+          "distributor_id"
+        ],
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "bytes": 98144256,
+        "pages": 23961,
+        "pct_database": 0.0026900917927444876,
+        "pct_table_total": 0.11031463219248087
+      },
+      {
+        "name": "sqlite_autoindex_distribution_market_facts_1",
+        "table": "distribution_market_facts",
+        "columns": [
+          "fact_id"
+        ],
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "bytes": 88428544,
+        "pages": 21589,
+        "pct_database": 0.002423788310736645,
+        "pct_table_total": 0.08871620594290505
+      },
+      {
+        "name": "idx_dist_market_ref",
+        "table": "distribution_market_facts",
+        "columns": [
+          "distributor_id",
+          "reference_month"
+        ],
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "bytes": 76636160,
+        "pages": 18710,
+        "pct_database": 0.002100564143493567,
+        "pct_table_total": 0.07688546079909923
+      },
+      {
+        "name": "sqlite_autoindex_distribution_continuity_facts_1",
+        "table": "distribution_continuity_facts",
+        "columns": [
+          "fact_id"
+        ],
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "bytes": 63643648,
+        "pages": 15538,
+        "pct_database": 0.0017444449845859457,
+        "pct_table_total": 0.15222140582904728
+      },
+      {
+        "name": "sqlite_autoindex_distribution_energy_balance_facts_1",
+        "table": "distribution_energy_balance_facts",
+        "columns": [
+          "fact_id"
+        ],
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "bytes": 55033856,
+        "pages": 13436,
+        "pct_database": 0.001508454293531778,
+        "pct_table_total": 0.15243584216378117
+      },
+      {
+        "name": "sqlite_autoindex_subsystem_kpi_values_1",
+        "table": "subsystem_kpi_values",
+        "columns": [
+          "kpi_id",
+          "reference_datetime",
+          "subsystem_code"
+        ],
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "bytes": 51183616,
+        "pages": 12496,
+        "pct_database": 0.0014029208731745385,
+        "pct_table_total": 0.13881822322450205
+      },
+      {
+        "name": "idx_dist_cont_ref",
+        "table": "distribution_continuity_facts",
+        "columns": [
+          "distributor_id",
+          "set_id",
+          "reference_month"
+        ],
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "bytes": 48955392,
+        "pages": 11952,
+        "pct_database": 0.0013418462128826892,
+        "pct_table_total": 0.1170903747244673
+      },
+      {
+        "name": "idx_dist_cont_indicator_ref",
+        "table": "distribution_continuity_facts",
+        "columns": [
+          "indicator_code",
+          "distributor_id",
+          "reference_month"
+        ],
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "bytes": 44752896,
+        "pages": 10926,
+        "pct_database": 0.0012266576072587235,
+        "pct_table_total": 0.10703894195444526
+      },
+      {
+        "name": "idx_skv_dataset_ref",
+        "table": "subsystem_kpi_values",
+        "columns": [
+          "source_dataset",
+          "reference_datetime"
+        ],
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "bytes": 39112704,
+        "pages": 9549,
+        "pct_database": 0.0010720623733949798,
+        "pct_table_total": 0.10607996267371719
+      },
+      {
+        "name": "idx_dist_bal_ref",
+        "table": "distribution_energy_balance_facts",
+        "columns": [
+          "distributor_id",
+          "reference_month"
+        ],
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "bytes": 37851136,
+        "pages": 9241,
+        "pct_database": 0.0010374833377885652,
+        "pct_table_total": 0.10484218647182955
+      },
+      {
+        "name": "sqlite_autoindex_distribution_tariff_facts_1",
+        "table": "distribution_tariff_facts",
+        "columns": [
+          "fact_id"
+        ],
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "bytes": 34275328,
+        "pages": 8368,
+        "pct_database": 0.0009394719803716819,
+        "pct_table_total": 0.166490917411114
+      },
+      {
+        "name": "idx_skv_snapshot",
+        "table": "subsystem_kpi_values",
+        "columns": [
+          "snapshot_id"
+        ],
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "bytes": 34058240,
+        "pages": 8315,
+        "pct_database": 0.0009335216917770717,
+        "pct_table_total": 0.09237144095004277
+      },
+      {
+        "name": "sqlite_autoindex_distribution_continuity_compensations_1",
+        "table": "distribution_continuity_compensations",
+        "columns": [
+          "compensation_id"
+        ],
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "bytes": 28749824,
+        "pages": 7019,
+        "pct_database": 0.0007880202951994306,
+        "pct_table_total": 0.19098280365694384
+      },
+      {
+        "name": "idx_dist_tariff_series_lookup",
+        "table": "distribution_tariff_facts",
+        "columns": [
+          "distributor_id",
+          "subgroup",
+          "consumer_class",
+          "unit",
+          "valid_from",
+          "valid_to"
+        ],
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "bytes": 23212032,
+        "pages": 5667,
+        "pct_database": 0.0006362318012388051,
+        "pct_table_total": 0.11275143749626948
+      },
+      {
+        "name": "sqlite_autoindex_distribution_continuity_limits_1",
+        "table": "distribution_continuity_limits",
+        "columns": [
+          "limit_id"
+        ],
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "bytes": 23150592,
+        "pages": 5652,
+        "pct_database": 0.0006345477572969343,
+        "pct_table_total": 0.20026219749849414
+      },
+      {
+        "name": "idx_skv_subsystem_ref",
+        "table": "subsystem_kpi_values",
+        "columns": [
+          "subsystem_code",
+          "reference_datetime"
+        ],
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "bytes": 22511616,
+        "pages": 5496,
+        "pct_database": 0.0006170337003014775,
+        "pct_table_total": 0.06105513403023873
+      },
+      {
+        "name": "idx_cppm_ceg",
+        "table": "ccee_plant_parcel_monthly",
+        "columns": [
+          "ceg"
+        ],
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "bytes": 2695168,
+        "pages": 658,
+        "pct_database": 7.387339425006772e-05,
+        "pct_table_total": 0.048279404211607604
+      },
+      {
+        "name": "sqlite_autoindex_ccee_plant_parcel_monthly_1",
+        "table": "ccee_plant_parcel_monthly",
+        "columns": [
+          "reference_month",
+          "plant_parcel_code"
+        ],
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "bytes": 2265088,
+        "pages": 553,
+        "pct_database": 6.208508665697181e-05,
+        "pct_table_total": 0.040575243965074476
+      },
+      {
+        "name": "idx_cppm_parcel_ref",
+        "table": "ccee_plant_parcel_monthly",
+        "columns": [
+          "plant_parcel_code",
+          "reference_month"
+        ],
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "bytes": 2039808,
+        "pages": 498,
+        "pct_database": 5.591025887011205e-05,
+        "pct_table_total": 0.036539731454985694
+      },
+      {
+        "name": "idx_cppm_source",
+        "table": "ccee_plant_parcel_monthly",
+        "columns": [
+          "generation_source"
+        ],
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "bytes": 2035712,
+        "pages": 497,
+        "pct_database": 5.579798927398733e-05,
+        "pct_table_total": 0.036466358500256806
+      },
+      {
+        "name": "idx_cppm_ref",
+        "table": "ccee_plant_parcel_monthly",
+        "columns": [
+          "reference_month"
+        ],
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "bytes": 1597440,
+        "pages": 390,
+        "pct_database": 4.378514248864197e-05,
+        "pct_table_total": 0.028615452344265904
+      },
+      {
+        "name": "idx_cppm_submarket",
+        "table": "ccee_plant_parcel_monthly",
+        "columns": [
+          "submarket"
+        ],
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "bytes": 1433600,
+        "pages": 350,
+        "pct_database": 3.9294358643653045e-05,
+        "pct_table_total": 0.025680534155110426
+      },
+      {
+        "name": "idx_dist_monthly_agg",
+        "table": "distribution_monthly_aggregates",
+        "columns": [
+          "distributor_id",
+          "reference_month"
+        ],
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "bytes": 1167360,
+        "pages": 285,
+        "pct_database": 3.199683489554605e-05,
+        "pct_table_total": 0.168141592920354
+      },
+      {
+        "name": "sqlite_autoindex_distribution_monthly_aggregates_1",
+        "table": "distribution_monthly_aggregates",
+        "columns": [
+          "aggregate_id"
+        ],
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "bytes": 1167360,
+        "pages": 285,
+        "pct_database": 3.199683489554605e-05,
+        "pct_table_total": 0.168141592920354
+      },
+      {
+        "name": "sqlite_autoindex_aneel_siga_plants_1",
+        "table": "aneel_siga_plants",
+        "columns": [
+          "ceg"
+        ],
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "bytes": 819200,
+        "pages": 200,
+        "pct_database": 2.24539192249446e-05,
+        "pct_table_total": 0.07674597083653108
+      },
+      {
+        "name": "idx_ckv_kpi_iso",
+        "table": "country_kpi_values",
+        "columns": [
+          "kpi_id",
+          "iso_code"
+        ],
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "bytes": 806912,
+        "pages": 197,
+        "pct_database": 2.211711043657043e-05,
+        "pct_table_total": 0.1829155060352832
+      },
+      {
+        "name": "sqlite_autoindex_country_kpi_values_1",
+        "table": "country_kpi_values",
+        "columns": [
+          "kpi_id",
+          "iso_code",
+          "period"
+        ],
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "bytes": 798720,
+        "pages": 195,
+        "pct_database": 2.1892571244320984e-05,
+        "pct_table_total": 0.181058495821727
+      },
+      {
+        "name": "idx_aneel_siga_source",
+        "table": "aneel_siga_plants",
+        "columns": [
+          "generation_source"
+        ],
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "bytes": 724992,
+        "pages": 177,
+        "pct_database": 1.987171851407597e-05,
+        "pct_table_total": 0.06792018419033001
+      },
+      {
+        "name": "idx_ckv_snapshot",
+        "table": "country_kpi_values",
+        "columns": [
+          "snapshot_id"
+        ],
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "bytes": 598016,
+        "pages": 146,
+        "pct_database": 1.6391361034209557e-05,
+        "pct_table_total": 0.13556174558960074
+      },
+      {
+        "name": "sqlite_autoindex_distribution_tariff_conflicts_1",
+        "table": "distribution_tariff_conflicts",
+        "columns": [
+          "conflict_row_id"
+        ],
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "bytes": 405504,
+        "pages": 99,
+        "pct_database": 1.1114690016347576e-05,
+        "pct_table_total": 0.23185011709601874
+      },
+      {
+        "name": "idx_aneel_siga_uf",
+        "table": "aneel_siga_plants",
+        "columns": [
+          "uf"
+        ],
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "bytes": 319488,
+        "pages": 78,
+        "pct_database": 8.757028497728394e-06,
+        "pct_table_total": 0.029930928626247123
+      },
+      {
+        "name": "idx_ckv_iso_period",
+        "table": "country_kpi_values",
+        "columns": [
+          "iso_code",
+          "period"
+        ],
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "bytes": 184320,
+        "pages": 45,
+        "pct_database": 5.0521318256125344e-06,
+        "pct_table_total": 0.04178272980501393
+      },
+      {
+        "name": "idx_cpp_ceg",
+        "table": "ccee_plant_parcels",
+        "columns": [
+          "ceg"
+        ],
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "bytes": 135168,
+        "pages": 33,
+        "pct_database": 3.7048966721158585e-06,
+        "pct_table_total": 0.05527638190954774
+      },
+      {
+        "name": "idx_cpp_source",
+        "table": "ccee_plant_parcels",
+        "columns": [
+          "generation_source"
+        ],
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "bytes": 110592,
+        "pages": 27,
+        "pct_database": 3.0312790953675206e-06,
+        "pct_table_total": 0.04522613065326633
+      },
+      {
+        "name": "sqlite_autoindex_distribution_annual_aggregates_1",
+        "table": "distribution_annual_aggregates",
+        "columns": [
+          "aggregate_id"
+        ],
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "bytes": 98304,
+        "pages": 24,
+        "pct_database": 2.694470306993352e-06,
+        "pct_table_total": 0.17391304347826086
+      },
+      {
+        "name": "idx_dist_annual_agg",
+        "table": "distribution_annual_aggregates",
+        "columns": [
+          "distributor_id",
+          "reference_year"
+        ],
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "bytes": 94208,
+        "pages": 23,
+        "pct_database": 2.5822007108686287e-06,
+        "pct_table_total": 0.16666666666666666
+      },
+      {
+        "name": "idx_cpp_submarket",
+        "table": "ccee_plant_parcels",
+        "columns": [
+          "submarket"
+        ],
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "bytes": 77824,
+        "pages": 19,
+        "pct_database": 2.133122326369737e-06,
+        "pct_table_total": 0.031825795644891124
+      },
+      {
+        "name": "idx_cpp_ref_month",
+        "table": "ccee_plant_parcels",
+        "columns": [
+          "source_reference_month"
+        ],
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "bytes": 69632,
+        "pages": 17,
+        "pct_database": 1.908583134120291e-06,
+        "pct_table_total": 0.02847571189279732
+      },
+      {
+        "name": "sqlite_autoindex_ccee_plant_parcels_1",
+        "table": "ccee_plant_parcels",
+        "columns": [
+          "plant_parcel_code"
+        ],
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "bytes": 69632,
+        "pages": 17,
+        "pct_database": 1.908583134120291e-06,
+        "pct_table_total": 0.02847571189279732
+      },
+      {
+        "name": "sqlite_autoindex_distribution_distributors_1",
+        "table": "distribution_distributors",
+        "columns": [
+          "distributor_id"
+        ],
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "bytes": 12288,
+        "pages": 3,
+        "pct_database": 3.36808788374169e-07,
+        "pct_table_total": 0.21428571428571427
+      },
+      {
+        "name": "idx_cdr_dataset_period",
+        "table": "ccee_discovered_resources",
+        "columns": [
+          "dataset_id",
+          "year",
+          "month"
+        ],
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "bytes": 4096,
+        "pages": 1,
+        "pct_database": 1.1226959612472298e-07,
+        "pct_table_total": 0.3333333333333333
+      },
+      {
+        "name": "sqlite_autoindex_ccee_discovered_resources_1",
+        "table": "ccee_discovered_resources",
+        "columns": [
+          "dataset_id",
+          "resource_name"
+        ],
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "bytes": 4096,
+        "pages": 1,
+        "pct_database": 1.1226959612472298e-07,
+        "pct_table_total": 0.3333333333333333
+      },
+      {
+        "name": "sqlite_autoindex_country_dimension_1",
+        "table": "country_dimension",
+        "columns": [
+          "iso_code"
+        ],
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "bytes": 4096,
+        "pages": 1,
+        "pct_database": 1.1226959612472298e-07,
+        "pct_table_total": 0.5
+      },
+      {
+        "name": "idx_dqc_run",
+        "table": "data_quality_checks",
+        "columns": [
+          "run_id"
+        ],
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "bytes": 4096,
+        "pages": 1,
+        "pct_database": 1.1226959612472298e-07,
+        "pct_table_total": 0.2
+      },
+      {
+        "name": "sqlite_autoindex_data_quality_checks_1",
+        "table": "data_quality_checks",
+        "columns": [
+          "check_id"
+        ],
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "bytes": 4096,
+        "pages": 1,
+        "pct_database": 1.1226959612472298e-07,
+        "pct_table_total": 0.2
+      },
+      {
+        "name": "sqlite_autoindex_distribution_delinquency_indicators_1",
+        "table": "distribution_delinquency_indicators",
+        "columns": [
+          "indicator_code"
+        ],
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "bytes": 4096,
+        "pages": 1,
+        "pct_database": 1.1226959612472298e-07,
+        "pct_table_total": 0.16666666666666666
+      },
+      {
+        "name": "sqlite_autoindex_distribution_distributor_aliases_1",
+        "table": "distribution_distributor_aliases",
+        "columns": [
+          "alias_id"
+        ],
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "bytes": 4096,
+        "pages": 1,
+        "pct_database": 1.1226959612472298e-07,
+        "pct_table_total": 0.5
+      },
+      {
+        "name": "sqlite_autoindex_distribution_economic_groups_1",
+        "table": "distribution_economic_groups",
+        "columns": [
+          "economic_group_id"
+        ],
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "bytes": 4096,
+        "pages": 1,
+        "pct_database": 1.1226959612472298e-07,
+        "pct_table_total": 0.5
+      },
+      {
+        "name": "sqlite_autoindex_distribution_ownership_history_1",
+        "table": "distribution_ownership_history",
+        "columns": [
+          "ownership_id"
+        ],
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "bytes": 4096,
+        "pages": 1,
+        "pct_database": 1.1226959612472298e-07,
+        "pct_table_total": 0.25
+      },
+      {
+        "name": "idx_esrl_source_started",
+        "table": "energy_source_refresh_log",
+        "columns": [
+          "source_id",
+          "started_at"
+        ],
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "bytes": 4096,
+        "pages": 1,
+        "pct_database": 1.1226959612472298e-07,
+        "pct_table_total": 0.06666666666666667
+      },
+      {
+        "name": "sqlite_autoindex_energy_source_refresh_log_1",
+        "table": "energy_source_refresh_log",
+        "columns": [
+          "refresh_id"
+        ],
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "bytes": 4096,
+        "pages": 1,
+        "pct_database": 1.1226959612472298e-07,
+        "pct_table_total": 0.06666666666666667
+      },
+      {
+        "name": "sqlite_autoindex_energy_sources_1",
+        "table": "energy_sources",
+        "columns": [
+          "source_id"
+        ],
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "bytes": 4096,
+        "pages": 1,
+        "pct_database": 1.1226959612472298e-07,
+        "pct_table_total": 0.5
+      },
+      {
+        "name": "sqlite_autoindex_kpi_catalog_1",
+        "table": "kpi_catalog",
+        "columns": [
+          "kpi_id"
+        ],
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "bytes": 4096,
+        "pages": 1,
+        "pct_database": 1.1226959612472298e-07,
+        "pct_table_total": 0.14285714285714285
+      },
+      {
+        "name": "sqlite_autoindex_kpi_refresh_log_1",
+        "table": "kpi_refresh_log",
+        "columns": [
+          "run_id"
+        ],
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "bytes": 4096,
+        "pages": 1,
+        "pct_database": 1.1226959612472298e-07,
+        "pct_table_total": 0.5
+      },
+      {
+        "name": "sqlite_autoindex_kpi_sources_1",
+        "table": "kpi_sources",
+        "columns": [
+          "source"
+        ],
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "bytes": 4096,
+        "pages": 1,
+        "pct_database": 1.1226959612472298e-07,
+        "pct_table_total": 0.5
+      },
+      {
+        "name": "sqlite_autoindex_source_snapshots_1",
+        "table": "source_snapshots",
+        "columns": [
+          "snapshot_id"
+        ],
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "bytes": 4096,
+        "pages": 1,
+        "pct_database": 1.1226959612472298e-07,
+        "pct_table_total": 0.125
+      },
+      {
+        "name": "sqlite_autoindex_subsystem_dimension_1",
+        "table": "subsystem_dimension",
+        "columns": [
+          "subsystem_code"
+        ],
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "bytes": 4096,
+        "pages": 1,
+        "pct_database": 1.1226959612472298e-07,
+        "pct_table_total": 0.5
+      }
+    ],
+    "raw_dbstat": {
+      "page_breakdown": [
+        {
+          "name": "aneel_siga_plants",
+          "pagetype": "internal",
+          "pages": "7",
+          "bytes": "28672"
+        },
+        {
+          "name": "aneel_siga_plants",
+          "pagetype": "leaf",
+          "pages": "2144",
+          "bytes": "8781824"
+        },
+        {
+          "name": "ccee_discovered_resources",
+          "pagetype": "leaf",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "ccee_plant_parcel_hourly",
+          "pagetype": "internal",
+          "pages": "13221",
+          "bytes": "54153216"
+        },
+        {
+          "name": "ccee_plant_parcel_hourly",
+          "pagetype": "leaf",
+          "pages": "4719302",
+          "bytes": "19330260992"
+        },
+        {
+          "name": "ccee_plant_parcel_monthly",
+          "pagetype": "internal",
+          "pages": "27",
+          "bytes": "110592"
+        },
+        {
+          "name": "ccee_plant_parcel_monthly",
+          "pagetype": "leaf",
+          "pages": "10656",
+          "bytes": "43646976"
+        },
+        {
+          "name": "ccee_plant_parcels",
+          "pagetype": "internal",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "ccee_plant_parcels",
+          "pagetype": "leaf",
+          "pages": "483",
+          "bytes": "1978368"
+        },
+        {
+          "name": "country_dimension",
+          "pagetype": "leaf",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "country_kpi_values",
+          "pagetype": "internal",
+          "pages": "3",
+          "bytes": "12288"
+        },
+        {
+          "name": "country_kpi_values",
+          "pagetype": "leaf",
+          "pages": "491",
+          "bytes": "2011136"
+        },
+        {
+          "name": "data_quality_checks",
+          "pagetype": "internal",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "data_quality_checks",
+          "pagetype": "leaf",
+          "pages": "2",
+          "bytes": "8192"
+        },
+        {
+          "name": "distribution_annual_aggregates",
+          "pagetype": "internal",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "distribution_annual_aggregates",
+          "pagetype": "leaf",
+          "pages": "90",
+          "bytes": "368640"
+        },
+        {
+          "name": "distribution_continuity_compensations",
+          "pagetype": "internal",
+          "pages": "76",
+          "bytes": "311296"
+        },
+        {
+          "name": "distribution_continuity_compensations",
+          "pagetype": "leaf",
+          "pages": "29657",
+          "bytes": "121475072"
+        },
+        {
+          "name": "distribution_continuity_facts",
+          "pagetype": "internal",
+          "pages": "175",
+          "bytes": "716800"
+        },
+        {
+          "name": "distribution_continuity_facts",
+          "pagetype": "leaf",
+          "pages": "63484",
+          "bytes": "260030464"
+        },
+        {
+          "name": "distribution_continuity_limits",
+          "pagetype": "internal",
+          "pages": "59",
+          "bytes": "241664"
+        },
+        {
+          "name": "distribution_continuity_limits",
+          "pagetype": "leaf",
+          "pages": "22512",
+          "bytes": "92209152"
+        },
+        {
+          "name": "distribution_delinquency_facts",
+          "pagetype": "internal",
+          "pages": "208",
+          "bytes": "851968"
+        },
+        {
+          "name": "distribution_delinquency_facts",
+          "pagetype": "leaf",
+          "pages": "73883",
+          "bytes": "302624768"
+        },
+        {
+          "name": "distribution_delinquency_indicators",
+          "pagetype": "internal",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "distribution_delinquency_indicators",
+          "pagetype": "leaf",
+          "pages": "4",
+          "bytes": "16384"
+        },
+        {
+          "name": "distribution_distributor_aliases",
+          "pagetype": "leaf",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "distribution_distributors",
+          "pagetype": "internal",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "distribution_distributors",
+          "pagetype": "leaf",
+          "pages": "10",
+          "bytes": "40960"
+        },
+        {
+          "name": "distribution_economic_groups",
+          "pagetype": "leaf",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "distribution_energy_balance_facts",
+          "pagetype": "internal",
+          "pages": "192",
+          "bytes": "786432"
+        },
+        {
+          "name": "distribution_energy_balance_facts",
+          "pagetype": "leaf",
+          "pages": "65273",
+          "bytes": "267358208"
+        },
+        {
+          "name": "distribution_listed_companies",
+          "pagetype": "leaf",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "distribution_market_facts",
+          "pagetype": "internal",
+          "pages": "784",
+          "bytes": "3211264"
+        },
+        {
+          "name": "distribution_market_facts",
+          "pagetype": "leaf",
+          "pages": "202266",
+          "bytes": "828481536"
+        },
+        {
+          "name": "distribution_mmgd_project_snapshots",
+          "pagetype": "internal",
+          "pages": "401",
+          "bytes": "1642496"
+        },
+        {
+          "name": "distribution_mmgd_project_snapshots",
+          "pagetype": "leaf",
+          "pages": "151236",
+          "bytes": "619462656"
+        },
+        {
+          "name": "distribution_mmgd_projects",
+          "pagetype": "internal",
+          "pages": "440",
+          "bytes": "1802240"
+        },
+        {
+          "name": "distribution_mmgd_projects",
+          "pagetype": "leaf",
+          "pages": "165166",
+          "bytes": "676519936"
+        },
+        {
+          "name": "distribution_monthly_aggregates",
+          "pagetype": "internal",
+          "pages": "4",
+          "bytes": "16384"
+        },
+        {
+          "name": "distribution_monthly_aggregates",
+          "pagetype": "leaf",
+          "pages": "1121",
+          "bytes": "4591616"
+        },
+        {
+          "name": "distribution_ownership_history",
+          "pagetype": "internal",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "distribution_ownership_history",
+          "pagetype": "leaf",
+          "pages": "2",
+          "bytes": "8192"
+        },
+        {
+          "name": "distribution_tariff_conflicts",
+          "pagetype": "internal",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "distribution_tariff_conflicts",
+          "pagetype": "leaf",
+          "pages": "327",
+          "bytes": "1339392"
+        },
+        {
+          "name": "distribution_tariff_facts",
+          "pagetype": "internal",
+          "pages": "93",
+          "bytes": "380928"
+        },
+        {
+          "name": "distribution_tariff_facts",
+          "pagetype": "leaf",
+          "pages": "36133",
+          "bytes": "148000768"
+        },
+        {
+          "name": "energy_source_refresh_log",
+          "pagetype": "internal",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "energy_source_refresh_log",
+          "pagetype": "leaf",
+          "pages": "12",
+          "bytes": "49152"
+        },
+        {
+          "name": "energy_sources",
+          "pagetype": "leaf",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "idx_aneel_siga_source",
+          "pagetype": "internal",
+          "pages": "3",
+          "bytes": "12288"
+        },
+        {
+          "name": "idx_aneel_siga_source",
+          "pagetype": "leaf",
+          "pages": "174",
+          "bytes": "712704"
+        },
+        {
+          "name": "idx_aneel_siga_uf",
+          "pagetype": "internal",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "idx_aneel_siga_uf",
+          "pagetype": "leaf",
+          "pages": "77",
+          "bytes": "315392"
+        },
+        {
+          "name": "idx_cdr_dataset_period",
+          "pagetype": "leaf",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "idx_ckv_iso_period",
+          "pagetype": "internal",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "idx_ckv_iso_period",
+          "pagetype": "leaf",
+          "pages": "44",
+          "bytes": "180224"
+        },
+        {
+          "name": "idx_ckv_kpi_iso",
+          "pagetype": "internal",
+          "pages": "4",
+          "bytes": "16384"
+        },
+        {
+          "name": "idx_ckv_kpi_iso",
+          "pagetype": "leaf",
+          "pages": "193",
+          "bytes": "790528"
+        },
+        {
+          "name": "idx_ckv_snapshot",
+          "pagetype": "internal",
+          "pages": "3",
+          "bytes": "12288"
+        },
+        {
+          "name": "idx_ckv_snapshot",
+          "pagetype": "leaf",
+          "pages": "143",
+          "bytes": "585728"
+        },
+        {
+          "name": "idx_cpp_ceg",
+          "pagetype": "internal",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "idx_cpp_ceg",
+          "pagetype": "leaf",
+          "pages": "32",
+          "bytes": "131072"
+        },
+        {
+          "name": "idx_cpp_ref_month",
+          "pagetype": "internal",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "idx_cpp_ref_month",
+          "pagetype": "leaf",
+          "pages": "16",
+          "bytes": "65536"
+        },
+        {
+          "name": "idx_cpp_source",
+          "pagetype": "internal",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "idx_cpp_source",
+          "pagetype": "leaf",
+          "pages": "26",
+          "bytes": "106496"
+        },
+        {
+          "name": "idx_cpp_submarket",
+          "pagetype": "internal",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "idx_cpp_submarket",
+          "pagetype": "leaf",
+          "pages": "18",
+          "bytes": "73728"
+        },
+        {
+          "name": "idx_cppe_parcel_ref",
+          "pagetype": "internal",
+          "pages": "7020",
+          "bytes": "28753920"
+        },
+        {
+          "name": "idx_cppe_parcel_ref",
+          "pagetype": "leaf",
+          "pages": "639981",
+          "bytes": "2621362176"
+        },
+        {
+          "name": "idx_cppe_ref",
+          "pagetype": "internal",
+          "pages": "5007",
+          "bytes": "20508672"
+        },
+        {
+          "name": "idx_cppe_ref",
+          "pagetype": "leaf",
+          "pages": "537247",
+          "bytes": "2200563712"
+        },
+        {
+          "name": "idx_cppe_ref_month",
+          "pagetype": "internal",
+          "pages": "1853",
+          "bytes": "7589888"
+        },
+        {
+          "name": "idx_cppe_ref_month",
+          "pagetype": "leaf",
+          "pages": "315310",
+          "bytes": "1291509760"
+        },
+        {
+          "name": "idx_cppe_source",
+          "pagetype": "internal",
+          "pages": "3338",
+          "bytes": "13672448"
+        },
+        {
+          "name": "idx_cppe_source",
+          "pagetype": "leaf",
+          "pages": "421686",
+          "bytes": "1727225856"
+        },
+        {
+          "name": "idx_cppe_submarket",
+          "pagetype": "internal",
+          "pages": "1785",
+          "bytes": "7311360"
+        },
+        {
+          "name": "idx_cppe_submarket",
+          "pagetype": "leaf",
+          "pages": "306257",
+          "bytes": "1254428672"
+        },
+        {
+          "name": "idx_cppm_ceg",
+          "pagetype": "internal",
+          "pages": "7",
+          "bytes": "28672"
+        },
+        {
+          "name": "idx_cppm_ceg",
+          "pagetype": "leaf",
+          "pages": "651",
+          "bytes": "2666496"
+        },
+        {
+          "name": "idx_cppm_parcel_ref",
+          "pagetype": "internal",
+          "pages": "5",
+          "bytes": "20480"
+        },
+        {
+          "name": "idx_cppm_parcel_ref",
+          "pagetype": "leaf",
+          "pages": "493",
+          "bytes": "2019328"
+        },
+        {
+          "name": "idx_cppm_ref",
+          "pagetype": "internal",
+          "pages": "3",
+          "bytes": "12288"
+        },
+        {
+          "name": "idx_cppm_ref",
+          "pagetype": "leaf",
+          "pages": "387",
+          "bytes": "1585152"
+        },
+        {
+          "name": "idx_cppm_source",
+          "pagetype": "internal",
+          "pages": "5",
+          "bytes": "20480"
+        },
+        {
+          "name": "idx_cppm_source",
+          "pagetype": "leaf",
+          "pages": "492",
+          "bytes": "2015232"
+        },
+        {
+          "name": "idx_cppm_submarket",
+          "pagetype": "internal",
+          "pages": "3",
+          "bytes": "12288"
+        },
+        {
+          "name": "idx_cppm_submarket",
+          "pagetype": "leaf",
+          "pages": "347",
+          "bytes": "1421312"
+        },
+        {
+          "name": "idx_dist_annual_agg",
+          "pagetype": "internal",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "idx_dist_annual_agg",
+          "pagetype": "leaf",
+          "pages": "22",
+          "bytes": "90112"
+        },
+        {
+          "name": "idx_dist_bal_ref",
+          "pagetype": "internal",
+          "pages": "113",
+          "bytes": "462848"
+        },
+        {
+          "name": "idx_dist_bal_ref",
+          "pagetype": "leaf",
+          "pages": "9128",
+          "bytes": "37388288"
+        },
+        {
+          "name": "idx_dist_cont_indicator_ref",
+          "pagetype": "internal",
+          "pages": "123",
+          "bytes": "503808"
+        },
+        {
+          "name": "idx_dist_cont_indicator_ref",
+          "pagetype": "leaf",
+          "pages": "10803",
+          "bytes": "44249088"
+        },
+        {
+          "name": "idx_dist_cont_ref",
+          "pagetype": "internal",
+          "pages": "143",
+          "bytes": "585728"
+        },
+        {
+          "name": "idx_dist_cont_ref",
+          "pagetype": "leaf",
+          "pages": "11809",
+          "bytes": "48369664"
+        },
+        {
+          "name": "idx_dist_market_ref",
+          "pagetype": "internal",
+          "pages": "210",
+          "bytes": "860160"
+        },
+        {
+          "name": "idx_dist_market_ref",
+          "pagetype": "leaf",
+          "pages": "18500",
+          "bytes": "75776000"
+        },
+        {
+          "name": "idx_dist_mmgd_proj",
+          "pagetype": "internal",
+          "pages": "192",
+          "bytes": "786432"
+        },
+        {
+          "name": "idx_dist_mmgd_proj",
+          "pagetype": "leaf",
+          "pages": "23769",
+          "bytes": "97357824"
+        },
+        {
+          "name": "idx_dist_mmgd_snap",
+          "pagetype": "internal",
+          "pages": "363",
+          "bytes": "1486848"
+        },
+        {
+          "name": "idx_dist_mmgd_snap",
+          "pagetype": "leaf",
+          "pages": "35899",
+          "bytes": "147042304"
+        },
+        {
+          "name": "idx_dist_monthly_agg",
+          "pagetype": "internal",
+          "pages": "4",
+          "bytes": "16384"
+        },
+        {
+          "name": "idx_dist_monthly_agg",
+          "pagetype": "leaf",
+          "pages": "281",
+          "bytes": "1150976"
+        },
+        {
+          "name": "idx_dist_tariff_series_lookup",
+          "pagetype": "internal",
+          "pages": "120",
+          "bytes": "491520"
+        },
+        {
+          "name": "idx_dist_tariff_series_lookup",
+          "pagetype": "leaf",
+          "pages": "5547",
+          "bytes": "22720512"
+        },
+        {
+          "name": "idx_dqc_run",
+          "pagetype": "leaf",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "idx_esrl_source_started",
+          "pagetype": "leaf",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "idx_skv_dataset_ref",
+          "pagetype": "internal",
+          "pages": "149",
+          "bytes": "610304"
+        },
+        {
+          "name": "idx_skv_dataset_ref",
+          "pagetype": "leaf",
+          "pages": "9400",
+          "bytes": "38502400"
+        },
+        {
+          "name": "idx_skv_snapshot",
+          "pagetype": "internal",
+          "pages": "113",
+          "bytes": "462848"
+        },
+        {
+          "name": "idx_skv_snapshot",
+          "pagetype": "leaf",
+          "pages": "8202",
+          "bytes": "33595392"
+        },
+        {
+          "name": "idx_skv_subsystem_ref",
+          "pagetype": "internal",
+          "pages": "53",
+          "bytes": "217088"
+        },
+        {
+          "name": "idx_skv_subsystem_ref",
+          "pagetype": "leaf",
+          "pages": "5443",
+          "bytes": "22294528"
+        },
+        {
+          "name": "kpi_catalog",
+          "pagetype": "internal",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "kpi_catalog",
+          "pagetype": "leaf",
+          "pages": "5",
+          "bytes": "20480"
+        },
+        {
+          "name": "kpi_refresh_log",
+          "pagetype": "leaf",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "kpi_sources",
+          "pagetype": "leaf",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "source_snapshots",
+          "pagetype": "internal",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "source_snapshots",
+          "pagetype": "leaf",
+          "pages": "6",
+          "bytes": "24576"
+        },
+        {
+          "name": "sqlite_autoindex_aneel_siga_plants_1",
+          "pagetype": "internal",
+          "pages": "3",
+          "bytes": "12288"
+        },
+        {
+          "name": "sqlite_autoindex_aneel_siga_plants_1",
+          "pagetype": "leaf",
+          "pages": "197",
+          "bytes": "806912"
+        },
+        {
+          "name": "sqlite_autoindex_ccee_discovered_resources_1",
+          "pagetype": "leaf",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "sqlite_autoindex_ccee_plant_parcel_hourly_1",
+          "pagetype": "internal",
+          "pages": "8337",
+          "bytes": "34148352"
+        },
+        {
+          "name": "sqlite_autoindex_ccee_plant_parcel_hourly_1",
+          "pagetype": "leaf",
+          "pages": "709054",
+          "bytes": "2904285184"
+        },
+        {
+          "name": "sqlite_autoindex_ccee_plant_parcel_monthly_1",
+          "pagetype": "internal",
+          "pages": "5",
+          "bytes": "20480"
+        },
+        {
+          "name": "sqlite_autoindex_ccee_plant_parcel_monthly_1",
+          "pagetype": "leaf",
+          "pages": "548",
+          "bytes": "2244608"
+        },
+        {
+          "name": "sqlite_autoindex_ccee_plant_parcels_1",
+          "pagetype": "internal",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "sqlite_autoindex_ccee_plant_parcels_1",
+          "pagetype": "leaf",
+          "pages": "16",
+          "bytes": "65536"
+        },
+        {
+          "name": "sqlite_autoindex_country_dimension_1",
+          "pagetype": "leaf",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "sqlite_autoindex_country_kpi_values_1",
+          "pagetype": "internal",
+          "pages": "4",
+          "bytes": "16384"
+        },
+        {
+          "name": "sqlite_autoindex_country_kpi_values_1",
+          "pagetype": "leaf",
+          "pages": "191",
+          "bytes": "782336"
+        },
+        {
+          "name": "sqlite_autoindex_data_quality_checks_1",
+          "pagetype": "leaf",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_annual_aggregates_1",
+          "pagetype": "internal",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_annual_aggregates_1",
+          "pagetype": "leaf",
+          "pages": "23",
+          "bytes": "94208"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_continuity_compensations_1",
+          "pagetype": "internal",
+          "pages": "101",
+          "bytes": "413696"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_continuity_compensations_1",
+          "pagetype": "leaf",
+          "pages": "6918",
+          "bytes": "28336128"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_continuity_facts_1",
+          "pagetype": "internal",
+          "pages": "222",
+          "bytes": "909312"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_continuity_facts_1",
+          "pagetype": "leaf",
+          "pages": "15316",
+          "bytes": "62734336"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_continuity_limits_1",
+          "pagetype": "internal",
+          "pages": "83",
+          "bytes": "339968"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_continuity_limits_1",
+          "pagetype": "leaf",
+          "pages": "5569",
+          "bytes": "22810624"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_delinquency_facts_1",
+          "pagetype": "internal",
+          "pages": "795",
+          "bytes": "3256320"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_delinquency_facts_1",
+          "pagetype": "leaf",
+          "pages": "28958",
+          "bytes": "118611968"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_delinquency_indicators_1",
+          "pagetype": "leaf",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_distributor_aliases_1",
+          "pagetype": "leaf",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_distributors_1",
+          "pagetype": "internal",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_distributors_1",
+          "pagetype": "leaf",
+          "pages": "2",
+          "bytes": "8192"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_economic_groups_1",
+          "pagetype": "leaf",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_energy_balance_facts_1",
+          "pagetype": "internal",
+          "pages": "223",
+          "bytes": "913408"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_energy_balance_facts_1",
+          "pagetype": "leaf",
+          "pages": "13213",
+          "bytes": "54120448"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_market_facts_1",
+          "pagetype": "internal",
+          "pages": "324",
+          "bytes": "1327104"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_market_facts_1",
+          "pagetype": "leaf",
+          "pages": "21265",
+          "bytes": "87101440"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_mmgd_project_snapshots_1",
+          "pagetype": "internal",
+          "pages": "677",
+          "bytes": "2772992"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_mmgd_project_snapshots_1",
+          "pagetype": "leaf",
+          "pages": "49027",
+          "bytes": "200814592"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_mmgd_projects_1",
+          "pagetype": "internal",
+          "pages": "227",
+          "bytes": "929792"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_mmgd_projects_1",
+          "pagetype": "leaf",
+          "pages": "27412",
+          "bytes": "112279552"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_monthly_aggregates_1",
+          "pagetype": "internal",
+          "pages": "4",
+          "bytes": "16384"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_monthly_aggregates_1",
+          "pagetype": "leaf",
+          "pages": "281",
+          "bytes": "1150976"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_ownership_history_1",
+          "pagetype": "leaf",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_tariff_conflicts_1",
+          "pagetype": "internal",
+          "pages": "6",
+          "bytes": "24576"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_tariff_conflicts_1",
+          "pagetype": "leaf",
+          "pages": "93",
+          "bytes": "380928"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_tariff_facts_1",
+          "pagetype": "internal",
+          "pages": "226",
+          "bytes": "925696"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_tariff_facts_1",
+          "pagetype": "leaf",
+          "pages": "8142",
+          "bytes": "33349632"
+        },
+        {
+          "name": "sqlite_autoindex_energy_source_refresh_log_1",
+          "pagetype": "leaf",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "sqlite_autoindex_energy_sources_1",
+          "pagetype": "leaf",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "sqlite_autoindex_kpi_catalog_1",
+          "pagetype": "leaf",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "sqlite_autoindex_kpi_refresh_log_1",
+          "pagetype": "leaf",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "sqlite_autoindex_kpi_sources_1",
+          "pagetype": "leaf",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "sqlite_autoindex_source_snapshots_1",
+          "pagetype": "leaf",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "sqlite_autoindex_subsystem_dimension_1",
+          "pagetype": "leaf",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "sqlite_autoindex_subsystem_kpi_values_1",
+          "pagetype": "internal",
+          "pages": "262",
+          "bytes": "1073152"
+        },
+        {
+          "name": "sqlite_autoindex_subsystem_kpi_values_1",
+          "pagetype": "leaf",
+          "pages": "12234",
+          "bytes": "50110464"
+        },
+        {
+          "name": "sqlite_schema",
+          "pagetype": "internal",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "sqlite_schema",
+          "pagetype": "leaf",
+          "pages": "11",
+          "bytes": "45056"
+        },
+        {
+          "name": "subsystem_dimension",
+          "pagetype": "leaf",
+          "pages": "1",
+          "bytes": "4096"
+        },
+        {
+          "name": "subsystem_kpi_values",
+          "pagetype": "internal",
+          "pages": "137",
+          "bytes": "561152"
+        },
+        {
+          "name": "subsystem_kpi_values",
+          "pagetype": "leaf",
+          "pages": "54024",
+          "bytes": "221282304"
+        }
+      ],
+      "objects": [
+        {
+          "name": "ccee_plant_parcel_hourly",
+          "pages": "4732523",
+          "bytes": "19384414208",
+          "leaf_pages": "4719302",
+          "internal_pages": "13221",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "sqlite_autoindex_ccee_plant_parcel_hourly_1",
+          "pages": "717391",
+          "bytes": "2938433536",
+          "leaf_pages": "709054",
+          "internal_pages": "8337",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "idx_cppe_parcel_ref",
+          "pages": "647001",
+          "bytes": "2650116096",
+          "leaf_pages": "639981",
+          "internal_pages": "7020",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "idx_cppe_ref",
+          "pages": "542254",
+          "bytes": "2221072384",
+          "leaf_pages": "537247",
+          "internal_pages": "5007",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "idx_cppe_source",
+          "pages": "425024",
+          "bytes": "1740898304",
+          "leaf_pages": "421686",
+          "internal_pages": "3338",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "idx_cppe_ref_month",
+          "pages": "317163",
+          "bytes": "1299099648",
+          "leaf_pages": "315310",
+          "internal_pages": "1853",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "idx_cppe_submarket",
+          "pages": "308042",
+          "bytes": "1261740032",
+          "leaf_pages": "306257",
+          "internal_pages": "1785",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "distribution_market_facts",
+          "pages": "203050",
+          "bytes": "831692800",
+          "leaf_pages": "202266",
+          "internal_pages": "784",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "distribution_mmgd_projects",
+          "pages": "165606",
+          "bytes": "678322176",
+          "leaf_pages": "165166",
+          "internal_pages": "440",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "distribution_mmgd_project_snapshots",
+          "pages": "151637",
+          "bytes": "621105152",
+          "leaf_pages": "151236",
+          "internal_pages": "401",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "distribution_delinquency_facts",
+          "pages": "74091",
+          "bytes": "303476736",
+          "leaf_pages": "73883",
+          "internal_pages": "208",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "distribution_energy_balance_facts",
+          "pages": "65465",
+          "bytes": "268144640",
+          "leaf_pages": "65273",
+          "internal_pages": "192",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "distribution_continuity_facts",
+          "pages": "63659",
+          "bytes": "260747264",
+          "leaf_pages": "63484",
+          "internal_pages": "175",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "subsystem_kpi_values",
+          "pages": "54161",
+          "bytes": "221843456",
+          "leaf_pages": "54024",
+          "internal_pages": "137",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_mmgd_project_snapshots_1",
+          "pages": "49704",
+          "bytes": "203587584",
+          "leaf_pages": "49027",
+          "internal_pages": "677",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "idx_dist_mmgd_snap",
+          "pages": "36262",
+          "bytes": "148529152",
+          "leaf_pages": "35899",
+          "internal_pages": "363",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "distribution_tariff_facts",
+          "pages": "36226",
+          "bytes": "148381696",
+          "leaf_pages": "36133",
+          "internal_pages": "93",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_delinquency_facts_1",
+          "pages": "29753",
+          "bytes": "121868288",
+          "leaf_pages": "28958",
+          "internal_pages": "795",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "distribution_continuity_compensations",
+          "pages": "29733",
+          "bytes": "121786368",
+          "leaf_pages": "29657",
+          "internal_pages": "76",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_mmgd_projects_1",
+          "pages": "27639",
+          "bytes": "113209344",
+          "leaf_pages": "27412",
+          "internal_pages": "227",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "idx_dist_mmgd_proj",
+          "pages": "23961",
+          "bytes": "98144256",
+          "leaf_pages": "23769",
+          "internal_pages": "192",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "distribution_continuity_limits",
+          "pages": "22571",
+          "bytes": "92450816",
+          "leaf_pages": "22512",
+          "internal_pages": "59",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_market_facts_1",
+          "pages": "21589",
+          "bytes": "88428544",
+          "leaf_pages": "21265",
+          "internal_pages": "324",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "idx_dist_market_ref",
+          "pages": "18710",
+          "bytes": "76636160",
+          "leaf_pages": "18500",
+          "internal_pages": "210",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_continuity_facts_1",
+          "pages": "15538",
+          "bytes": "63643648",
+          "leaf_pages": "15316",
+          "internal_pages": "222",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_energy_balance_facts_1",
+          "pages": "13436",
+          "bytes": "55033856",
+          "leaf_pages": "13213",
+          "internal_pages": "223",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "sqlite_autoindex_subsystem_kpi_values_1",
+          "pages": "12496",
+          "bytes": "51183616",
+          "leaf_pages": "12234",
+          "internal_pages": "262",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "idx_dist_cont_ref",
+          "pages": "11952",
+          "bytes": "48955392",
+          "leaf_pages": "11809",
+          "internal_pages": "143",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "idx_dist_cont_indicator_ref",
+          "pages": "10926",
+          "bytes": "44752896",
+          "leaf_pages": "10803",
+          "internal_pages": "123",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "ccee_plant_parcel_monthly",
+          "pages": "10683",
+          "bytes": "43757568",
+          "leaf_pages": "10656",
+          "internal_pages": "27",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "idx_skv_dataset_ref",
+          "pages": "9549",
+          "bytes": "39112704",
+          "leaf_pages": "9400",
+          "internal_pages": "149",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "idx_dist_bal_ref",
+          "pages": "9241",
+          "bytes": "37851136",
+          "leaf_pages": "9128",
+          "internal_pages": "113",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_tariff_facts_1",
+          "pages": "8368",
+          "bytes": "34275328",
+          "leaf_pages": "8142",
+          "internal_pages": "226",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "idx_skv_snapshot",
+          "pages": "8315",
+          "bytes": "34058240",
+          "leaf_pages": "8202",
+          "internal_pages": "113",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_continuity_compensations_1",
+          "pages": "7019",
+          "bytes": "28749824",
+          "leaf_pages": "6918",
+          "internal_pages": "101",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "idx_dist_tariff_series_lookup",
+          "pages": "5667",
+          "bytes": "23212032",
+          "leaf_pages": "5547",
+          "internal_pages": "120",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_continuity_limits_1",
+          "pages": "5652",
+          "bytes": "23150592",
+          "leaf_pages": "5569",
+          "internal_pages": "83",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "idx_skv_subsystem_ref",
+          "pages": "5496",
+          "bytes": "22511616",
+          "leaf_pages": "5443",
+          "internal_pages": "53",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "aneel_siga_plants",
+          "pages": "2151",
+          "bytes": "8810496",
+          "leaf_pages": "2144",
+          "internal_pages": "7",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "distribution_monthly_aggregates",
+          "pages": "1125",
+          "bytes": "4608000",
+          "leaf_pages": "1121",
+          "internal_pages": "4",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "idx_cppm_ceg",
+          "pages": "658",
+          "bytes": "2695168",
+          "leaf_pages": "651",
+          "internal_pages": "7",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "sqlite_autoindex_ccee_plant_parcel_monthly_1",
+          "pages": "553",
+          "bytes": "2265088",
+          "leaf_pages": "548",
+          "internal_pages": "5",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "idx_cppm_parcel_ref",
+          "pages": "498",
+          "bytes": "2039808",
+          "leaf_pages": "493",
+          "internal_pages": "5",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "idx_cppm_source",
+          "pages": "497",
+          "bytes": "2035712",
+          "leaf_pages": "492",
+          "internal_pages": "5",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "country_kpi_values",
+          "pages": "494",
+          "bytes": "2023424",
+          "leaf_pages": "491",
+          "internal_pages": "3",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "ccee_plant_parcels",
+          "pages": "484",
+          "bytes": "1982464",
+          "leaf_pages": "483",
+          "internal_pages": "1",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "idx_cppm_ref",
+          "pages": "390",
+          "bytes": "1597440",
+          "leaf_pages": "387",
+          "internal_pages": "3",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "idx_cppm_submarket",
+          "pages": "350",
+          "bytes": "1433600",
+          "leaf_pages": "347",
+          "internal_pages": "3",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "distribution_tariff_conflicts",
+          "pages": "328",
+          "bytes": "1343488",
+          "leaf_pages": "327",
+          "internal_pages": "1",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_monthly_aggregates_1",
+          "pages": "285",
+          "bytes": "1167360",
+          "leaf_pages": "281",
+          "internal_pages": "4",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "idx_dist_monthly_agg",
+          "pages": "285",
+          "bytes": "1167360",
+          "leaf_pages": "281",
+          "internal_pages": "4",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "sqlite_autoindex_aneel_siga_plants_1",
+          "pages": "200",
+          "bytes": "819200",
+          "leaf_pages": "197",
+          "internal_pages": "3",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "idx_ckv_kpi_iso",
+          "pages": "197",
+          "bytes": "806912",
+          "leaf_pages": "193",
+          "internal_pages": "4",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "sqlite_autoindex_country_kpi_values_1",
+          "pages": "195",
+          "bytes": "798720",
+          "leaf_pages": "191",
+          "internal_pages": "4",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "idx_aneel_siga_source",
+          "pages": "177",
+          "bytes": "724992",
+          "leaf_pages": "174",
+          "internal_pages": "3",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "idx_ckv_snapshot",
+          "pages": "146",
+          "bytes": "598016",
+          "leaf_pages": "143",
+          "internal_pages": "3",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_tariff_conflicts_1",
+          "pages": "99",
+          "bytes": "405504",
+          "leaf_pages": "93",
+          "internal_pages": "6",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "distribution_annual_aggregates",
+          "pages": "91",
+          "bytes": "372736",
+          "leaf_pages": "90",
+          "internal_pages": "1",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "idx_aneel_siga_uf",
+          "pages": "78",
+          "bytes": "319488",
+          "leaf_pages": "77",
+          "internal_pages": "1",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "idx_ckv_iso_period",
+          "pages": "45",
+          "bytes": "184320",
+          "leaf_pages": "44",
+          "internal_pages": "1",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "idx_cpp_ceg",
+          "pages": "33",
+          "bytes": "135168",
+          "leaf_pages": "32",
+          "internal_pages": "1",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "idx_cpp_source",
+          "pages": "27",
+          "bytes": "110592",
+          "leaf_pages": "26",
+          "internal_pages": "1",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_annual_aggregates_1",
+          "pages": "24",
+          "bytes": "98304",
+          "leaf_pages": "23",
+          "internal_pages": "1",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "idx_dist_annual_agg",
+          "pages": "23",
+          "bytes": "94208",
+          "leaf_pages": "22",
+          "internal_pages": "1",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "idx_cpp_submarket",
+          "pages": "19",
+          "bytes": "77824",
+          "leaf_pages": "18",
+          "internal_pages": "1",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "sqlite_autoindex_ccee_plant_parcels_1",
+          "pages": "17",
+          "bytes": "69632",
+          "leaf_pages": "16",
+          "internal_pages": "1",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "idx_cpp_ref_month",
+          "pages": "17",
+          "bytes": "69632",
+          "leaf_pages": "16",
+          "internal_pages": "1",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "energy_source_refresh_log",
+          "pages": "13",
+          "bytes": "53248",
+          "leaf_pages": "12",
+          "internal_pages": "1",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "sqlite_schema",
+          "pages": "12",
+          "bytes": "49152",
+          "leaf_pages": "11",
+          "internal_pages": "1",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "distribution_distributors",
+          "pages": "11",
+          "bytes": "45056",
+          "leaf_pages": "10",
+          "internal_pages": "1",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "source_snapshots",
+          "pages": "7",
+          "bytes": "28672",
+          "leaf_pages": "6",
+          "internal_pages": "1",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "kpi_catalog",
+          "pages": "6",
+          "bytes": "24576",
+          "leaf_pages": "5",
+          "internal_pages": "1",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "distribution_delinquency_indicators",
+          "pages": "5",
+          "bytes": "20480",
+          "leaf_pages": "4",
+          "internal_pages": "1",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_distributors_1",
+          "pages": "3",
+          "bytes": "12288",
+          "leaf_pages": "2",
+          "internal_pages": "1",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "distribution_ownership_history",
+          "pages": "3",
+          "bytes": "12288",
+          "leaf_pages": "2",
+          "internal_pages": "1",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "data_quality_checks",
+          "pages": "3",
+          "bytes": "12288",
+          "leaf_pages": "2",
+          "internal_pages": "1",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "subsystem_dimension",
+          "pages": "1",
+          "bytes": "4096",
+          "leaf_pages": "1",
+          "internal_pages": "0",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "sqlite_autoindex_subsystem_dimension_1",
+          "pages": "1",
+          "bytes": "4096",
+          "leaf_pages": "1",
+          "internal_pages": "0",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "sqlite_autoindex_source_snapshots_1",
+          "pages": "1",
+          "bytes": "4096",
+          "leaf_pages": "1",
+          "internal_pages": "0",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "sqlite_autoindex_kpi_sources_1",
+          "pages": "1",
+          "bytes": "4096",
+          "leaf_pages": "1",
+          "internal_pages": "0",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "sqlite_autoindex_kpi_refresh_log_1",
+          "pages": "1",
+          "bytes": "4096",
+          "leaf_pages": "1",
+          "internal_pages": "0",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "sqlite_autoindex_kpi_catalog_1",
+          "pages": "1",
+          "bytes": "4096",
+          "leaf_pages": "1",
+          "internal_pages": "0",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "sqlite_autoindex_energy_sources_1",
+          "pages": "1",
+          "bytes": "4096",
+          "leaf_pages": "1",
+          "internal_pages": "0",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "sqlite_autoindex_energy_source_refresh_log_1",
+          "pages": "1",
+          "bytes": "4096",
+          "leaf_pages": "1",
+          "internal_pages": "0",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_ownership_history_1",
+          "pages": "1",
+          "bytes": "4096",
+          "leaf_pages": "1",
+          "internal_pages": "0",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_economic_groups_1",
+          "pages": "1",
+          "bytes": "4096",
+          "leaf_pages": "1",
+          "internal_pages": "0",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_distributor_aliases_1",
+          "pages": "1",
+          "bytes": "4096",
+          "leaf_pages": "1",
+          "internal_pages": "0",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "sqlite_autoindex_distribution_delinquency_indicators_1",
+          "pages": "1",
+          "bytes": "4096",
+          "leaf_pages": "1",
+          "internal_pages": "0",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "sqlite_autoindex_data_quality_checks_1",
+          "pages": "1",
+          "bytes": "4096",
+          "leaf_pages": "1",
+          "internal_pages": "0",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "sqlite_autoindex_country_dimension_1",
+          "pages": "1",
+          "bytes": "4096",
+          "leaf_pages": "1",
+          "internal_pages": "0",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "sqlite_autoindex_ccee_discovered_resources_1",
+          "pages": "1",
+          "bytes": "4096",
+          "leaf_pages": "1",
+          "internal_pages": "0",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "kpi_sources",
+          "pages": "1",
+          "bytes": "4096",
+          "leaf_pages": "1",
+          "internal_pages": "0",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "kpi_refresh_log",
+          "pages": "1",
+          "bytes": "4096",
+          "leaf_pages": "1",
+          "internal_pages": "0",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "idx_esrl_source_started",
+          "pages": "1",
+          "bytes": "4096",
+          "leaf_pages": "1",
+          "internal_pages": "0",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "idx_dqc_run",
+          "pages": "1",
+          "bytes": "4096",
+          "leaf_pages": "1",
+          "internal_pages": "0",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "idx_cdr_dataset_period",
+          "pages": "1",
+          "bytes": "4096",
+          "leaf_pages": "1",
+          "internal_pages": "0",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "energy_sources",
+          "pages": "1",
+          "bytes": "4096",
+          "leaf_pages": "1",
+          "internal_pages": "0",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "distribution_listed_companies",
+          "pages": "1",
+          "bytes": "4096",
+          "leaf_pages": "1",
+          "internal_pages": "0",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "distribution_economic_groups",
+          "pages": "1",
+          "bytes": "4096",
+          "leaf_pages": "1",
+          "internal_pages": "0",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "distribution_distributor_aliases",
+          "pages": "1",
+          "bytes": "4096",
+          "leaf_pages": "1",
+          "internal_pages": "0",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "country_dimension",
+          "pages": "1",
+          "bytes": "4096",
+          "leaf_pages": "1",
+          "internal_pages": "0",
+          "overflow_pages": "0"
+        },
+        {
+          "name": "ccee_discovered_resources",
+          "pages": "1",
+          "bytes": "4096",
+          "leaf_pages": "1",
+          "internal_pages": "0",
+          "overflow_pages": "0"
+        }
+      ]
+    }
+  },
+  "sample": {
+    "sample_db": "C:\\Users\\jadaojoao\\AppData\\Local\\Temp\\cvma_energy_phase25_s5torqez\\energy_hourly_sample.db",
+    "row_count": 119400,
+    "scope": {
+      "months": [
+        "2024-03",
+        "2025-04",
+        "2026-04"
+      ],
+      "parcels": [
+        {
+          "plant_parcel_code": "20010",
+          "generation_source": "Eólica",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "20011",
+          "generation_source": "Eólica",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "20012",
+          "generation_source": "Eólica",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "20013",
+          "generation_source": "Eólica",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "20008",
+          "generation_source": "Hidráulica",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "201",
+          "generation_source": "Hidráulica",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "202",
+          "generation_source": "Hidráulica",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "203",
+          "generation_source": "Hidráulica",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "20001",
+          "generation_source": "Hidráulica CGH",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "20069",
+          "generation_source": "Hidráulica CGH",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "20070",
+          "generation_source": "Hidráulica CGH",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "20071",
+          "generation_source": "Hidráulica CGH",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "20006",
+          "generation_source": "Hidráulica PCH",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "20074",
+          "generation_source": "Hidráulica PCH",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "254",
+          "generation_source": "Hidráulica PCH",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "255",
+          "generation_source": "Hidráulica PCH",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "8312",
+          "generation_source": "Resíduo Sólido Urbano",
+          "rows_in_scope": 720
+        },
+        {
+          "plant_parcel_code": "8812",
+          "generation_source": "Resíduo Sólido Urbano",
+          "rows_in_scope": 720
+        },
+        {
+          "plant_parcel_code": "890957",
+          "generation_source": "Resíduo Sólido Urbano",
+          "rows_in_scope": 720
+        },
+        {
+          "plant_parcel_code": "892942",
+          "generation_source": "Resíduo Sólido Urbano",
+          "rows_in_scope": 720
+        },
+        {
+          "plant_parcel_code": "8858",
+          "generation_source": "Solar Fotovoltaica",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "888923",
+          "generation_source": "Solar Fotovoltaica",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "892971",
+          "generation_source": "Solar Fotovoltaica",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "893504",
+          "generation_source": "Solar Fotovoltaica",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "8103",
+          "generation_source": "Térmica - Outros",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "8534",
+          "generation_source": "Térmica - Outros",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "8613",
+          "generation_source": "Térmica - Outros",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "918192",
+          "generation_source": "Térmica - Outros",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "417",
+          "generation_source": "Térmica Nuclear",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "418",
+          "generation_source": "Térmica Nuclear",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "889659",
+          "generation_source": "Térmica Reação Exotérmica",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "20003",
+          "generation_source": "Térmica a Biomassa",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "20004",
+          "generation_source": "Térmica a Biomassa",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "20009",
+          "generation_source": "Térmica a Biomassa",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "20068",
+          "generation_source": "Térmica a Biomassa",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "252",
+          "generation_source": "Térmica a Carvão Mineral",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "363",
+          "generation_source": "Térmica a Carvão Mineral",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "364",
+          "generation_source": "Térmica a Carvão Mineral",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "8581",
+          "generation_source": "Térmica a Carvão Mineral",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "8063",
+          "generation_source": "Térmica a GNL",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "8773",
+          "generation_source": "Térmica a GNL",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "912534",
+          "generation_source": "Térmica a GNL",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "951966",
+          "generation_source": "Térmica a GNL",
+          "rows_in_scope": 1464
+        },
+        {
+          "plant_parcel_code": "281",
+          "generation_source": "Térmica a Gás",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "312",
+          "generation_source": "Térmica a Gás",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "346",
+          "generation_source": "Térmica a Gás",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "399",
+          "generation_source": "Térmica a Gás",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "8229",
+          "generation_source": "Térmica a Óleo",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "8277",
+          "generation_source": "Térmica a Óleo",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "8300",
+          "generation_source": "Térmica a Óleo",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "8302",
+          "generation_source": "Térmica a Óleo",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "210",
+          "generation_source": "Térmica bi-Combustível - gás/óleo",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "367",
+          "generation_source": "Térmica bi-Combustível - gás/óleo",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "571",
+          "generation_source": "Térmica bi-Combustível - gás/óleo",
+          "rows_in_scope": 2184
+        },
+        {
+          "plant_parcel_code": "8057",
+          "generation_source": "Térmica bi-Combustível - gás/óleo",
+          "rows_in_scope": 2184
+        }
+      ]
+    },
+    "size": 53440512
+  },
+  "sqlite_experiments": {
+    "results": [
+      {
+        "config": "current",
+        "db_size": 53440512,
+        "index_build_ms": 0.0,
+        "benchmarks": [
+          {
+            "id": "one_parcel_one_month",
+            "params_shape": [
+              "str",
+              "str"
+            ],
+            "returned_rows": 720,
+            "plan": [
+              "SEARCH ccee_plant_parcel_hourly USING INDEX idx_sample_hourly_pk (plant_parcel_code=?)"
+            ],
+            "median_ms": 7.8003999988141,
+            "p95_ms": 26.046599999972386,
+            "runs": 5
+          },
+          {
+            "id": "one_parcel_multi_month",
+            "params_shape": [
+              "str",
+              "str",
+              "str"
+            ],
+            "returned_rows": 2184,
+            "plan": [
+              "SEARCH ccee_plant_parcel_hourly USING INDEX idx_sample_hourly_pk (plant_parcel_code=?)"
+            ],
+            "median_ms": 7.595200000650948,
+            "p95_ms": 7.9609999993408564,
+            "runs": 5
+          },
+          {
+            "id": "several_parcels_one_month",
+            "params_shape": [
+              "str"
+            ],
+            "returned_rows": 7200,
+            "plan": [
+              "SEARCH ccee_plant_parcel_hourly USING INDEX idx_cppe_ref_month (reference_month=?)",
+              "LIST SUBQUERY 1",
+              "SCAN ccee_plant_parcel_hourly USING COVERING INDEX idx_cppe_parcel_ref",
+              "USE TEMP B-TREE FOR ORDER BY",
+              "USE TEMP B-TREE FOR ORDER BY"
+            ],
+            "median_ms": 26.623199999448843,
+            "p95_ms": 49.082900000939844,
+            "runs": 5
+          },
+          {
+            "id": "aggregate_by_month",
+            "params_shape": [],
+            "returned_rows": 43,
+            "plan": [
+              "SCAN ccee_plant_parcel_hourly USING INDEX idx_cppe_ref_month",
+              "USE TEMP B-TREE FOR GROUP BY"
+            ],
+            "median_ms": 108.72219999873778,
+            "p95_ms": 113.20939999859547,
+            "runs": 5
+          },
+          {
+            "id": "latest_reference",
+            "params_shape": [],
+            "returned_rows": 1,
+            "plan": [
+              "SEARCH ccee_plant_parcel_hourly USING COVERING INDEX idx_cppe_ref"
+            ],
+            "median_ms": 0.02970000059576705,
+            "p95_ms": 0.11819999781437218,
+            "runs": 5
+          },
+          {
+            "id": "available_periods",
+            "params_shape": [],
+            "returned_rows": 3,
+            "plan": [
+              "SCAN ccee_plant_parcel_hourly USING COVERING INDEX idx_cppe_ref_month"
+            ],
+            "median_ms": 4.752500000904547,
+            "p95_ms": 5.887999999686144,
+            "runs": 5
+          }
+        ]
+      },
+      {
+        "config": "candidate_composite",
+        "db_size": 58728448,
+        "index_build_ms": 990.98690000028,
+        "benchmarks": [
+          {
+            "id": "one_parcel_one_month",
+            "params_shape": [
+              "str",
+              "str"
+            ],
+            "returned_rows": 720,
+            "plan": [
+              "SEARCH ccee_plant_parcel_hourly USING INDEX idx_exp_parcel_month_time (plant_parcel_code=? AND reference_month=?)"
+            ],
+            "median_ms": 3.6812999969697557,
+            "p95_ms": 4.027799997857073,
+            "runs": 5
+          },
+          {
+            "id": "one_parcel_multi_month",
+            "params_shape": [
+              "str",
+              "str",
+              "str"
+            ],
+            "returned_rows": 2184,
+            "plan": [
+              "SEARCH ccee_plant_parcel_hourly USING INDEX idx_exp_parcel_month_time (plant_parcel_code=? AND reference_month>? AND reference_month<?)",
+              "USE TEMP B-TREE FOR ORDER BY"
+            ],
+            "median_ms": 8.176999999705004,
+            "p95_ms": 11.574399999517482,
+            "runs": 5
+          },
+          {
+            "id": "several_parcels_one_month",
+            "params_shape": [
+              "str"
+            ],
+            "returned_rows": 7200,
+            "plan": [
+              "SEARCH ccee_plant_parcel_hourly USING INDEX idx_exp_parcel_month_time (plant_parcel_code=? AND reference_month=?)",
+              "LIST SUBQUERY 1",
+              "SCAN ccee_plant_parcel_hourly USING COVERING INDEX idx_exp_parcel_month_time",
+              "USE TEMP B-TREE FOR ORDER BY"
+            ],
+            "median_ms": 34.643299997696886,
+            "p95_ms": 37.96900000088499,
+            "runs": 5
+          },
+          {
+            "id": "aggregate_by_month",
+            "params_shape": [],
+            "returned_rows": 43,
+            "plan": [
+              "SCAN ccee_plant_parcel_hourly USING INDEX idx_cppe_ref_month",
+              "USE TEMP B-TREE FOR GROUP BY"
+            ],
+            "median_ms": 106.77450000002864,
+            "p95_ms": 108.05450000043493,
+            "runs": 5
+          },
+          {
+            "id": "latest_reference",
+            "params_shape": [],
+            "returned_rows": 1,
+            "plan": [
+              "SEARCH ccee_plant_parcel_hourly USING COVERING INDEX idx_cppe_ref"
+            ],
+            "median_ms": 0.031199997465591878,
+            "p95_ms": 0.10309999925084412,
+            "runs": 5
+          },
+          {
+            "id": "available_periods",
+            "params_shape": [],
+            "returned_rows": 3,
+            "plan": [
+              "SCAN ccee_plant_parcel_hourly USING COVERING INDEX idx_cppe_ref_month"
+            ],
+            "median_ms": 4.802200000995072,
+            "p95_ms": 6.441699999413686,
+            "runs": 5
+          }
+        ]
+      },
+      {
+        "config": "candidate_drop_overlap",
+        "db_size": 54747136,
+        "index_build_ms": 698.1498000022839,
+        "benchmarks": [
+          {
+            "id": "one_parcel_one_month",
+            "params_shape": [
+              "str",
+              "str"
+            ],
+            "returned_rows": 720,
+            "plan": [
+              "SEARCH ccee_plant_parcel_hourly USING INDEX idx_exp_parcel_month_time (plant_parcel_code=? AND reference_month=?)"
+            ],
+            "median_ms": 3.4297999991395045,
+            "p95_ms": 3.844900002150098,
+            "runs": 5
+          },
+          {
+            "id": "one_parcel_multi_month",
+            "params_shape": [
+              "str",
+              "str",
+              "str"
+            ],
+            "returned_rows": 2184,
+            "plan": [
+              "SEARCH ccee_plant_parcel_hourly USING INDEX idx_exp_parcel_month_time (plant_parcel_code=? AND reference_month>? AND reference_month<?)",
+              "USE TEMP B-TREE FOR ORDER BY"
+            ],
+            "median_ms": 7.431999998516403,
+            "p95_ms": 8.063999997830251,
+            "runs": 5
+          },
+          {
+            "id": "several_parcels_one_month",
+            "params_shape": [
+              "str"
+            ],
+            "returned_rows": 7200,
+            "plan": [
+              "SEARCH ccee_plant_parcel_hourly USING INDEX idx_exp_parcel_month_time (plant_parcel_code=? AND reference_month=?)",
+              "LIST SUBQUERY 1",
+              "SCAN ccee_plant_parcel_hourly USING COVERING INDEX idx_exp_parcel_month_time",
+              "USE TEMP B-TREE FOR ORDER BY"
+            ],
+            "median_ms": 35.36130000065896,
+            "p95_ms": 35.474799999065,
+            "runs": 5
+          },
+          {
+            "id": "aggregate_by_month",
+            "params_shape": [],
+            "returned_rows": 43,
+            "plan": [
+              "SCAN ccee_plant_parcel_hourly USING INDEX idx_cppe_ref_month",
+              "USE TEMP B-TREE FOR GROUP BY"
+            ],
+            "median_ms": 115.49179999929038,
+            "p95_ms": 128.2059000004665,
+            "runs": 5
+          },
+          {
+            "id": "latest_reference",
+            "params_shape": [],
+            "returned_rows": 1,
+            "plan": [
+              "SEARCH ccee_plant_parcel_hourly USING COVERING INDEX idx_cppe_ref"
+            ],
+            "median_ms": 0.030300001526484266,
+            "p95_ms": 0.10379999730503187,
+            "runs": 5
+          },
+          {
+            "id": "available_periods",
+            "params_shape": [],
+            "returned_rows": 3,
+            "plan": [
+              "SCAN ccee_plant_parcel_hourly USING COVERING INDEX idx_cppe_ref_month"
+            ],
+            "median_ms": 4.803700001502875,
+            "p95_ms": 5.9342000022297725,
+            "runs": 5
+          }
+        ]
+      }
+    ]
+  },
+  "parquet_experiments": {
+    "input_rows": 119400,
+    "results": [
+      {
+        "strategy": "year_month",
+        "compression": "snappy",
+        "partition_columns": [
+          "year",
+          "month"
+        ],
+        "write_ms": 96.23799999826588,
+        "file_count": 3,
+        "total_size": 8857455,
+        "queries": [
+          {
+            "id": "one_parcel_one_month",
+            "rows": 720,
+            "median_ms": 1.7149999985122122,
+            "p95_ms": 26.797699996677693
+          },
+          {
+            "id": "one_parcel_multi_month",
+            "rows": 2184,
+            "median_ms": 1.7428000028303359,
+            "p95_ms": 1.9264000002294779
+          },
+          {
+            "id": "available_periods",
+            "rows": 119400,
+            "median_ms": 0.27380000028642826,
+            "p95_ms": 0.35149999894201756
+          }
+        ]
+      },
+      {
+        "strategy": "year_month",
+        "compression": "zstd",
+        "partition_columns": [
+          "year",
+          "month"
+        ],
+        "write_ms": 71.86260000162292,
+        "file_count": 3,
+        "total_size": 4958731,
+        "queries": [
+          {
+            "id": "one_parcel_one_month",
+            "rows": 720,
+            "median_ms": 1.6690000011294615,
+            "p95_ms": 17.652299997280352
+          },
+          {
+            "id": "one_parcel_multi_month",
+            "rows": 2184,
+            "median_ms": 1.795000000129221,
+            "p95_ms": 2.0889999977953266
+          },
+          {
+            "id": "available_periods",
+            "rows": 119400,
+            "median_ms": 0.27070000214735046,
+            "p95_ms": 0.3440000000409782
+          }
+        ]
+      },
+      {
+        "strategy": "reference_month",
+        "compression": "snappy",
+        "partition_columns": [
+          "reference_month"
+        ],
+        "write_ms": 59.25080000088201,
+        "file_count": 3,
+        "total_size": 8858568,
+        "queries": [
+          {
+            "id": "one_parcel_one_month",
+            "rows": 720,
+            "median_ms": 1.3336000010895077,
+            "p95_ms": 11.888600001839222
+          },
+          {
+            "id": "one_parcel_multi_month",
+            "rows": 2184,
+            "median_ms": 2.0402000009198673,
+            "p95_ms": 10.124500000529224
+          },
+          {
+            "id": "available_periods",
+            "rows": 119400,
+            "median_ms": 0.26759999673231505,
+            "p95_ms": 0.34729999970295466
+          }
+        ]
+      },
+      {
+        "strategy": "reference_month",
+        "compression": "zstd",
+        "partition_columns": [
+          "reference_month"
+        ],
+        "write_ms": 72.11769999776152,
+        "file_count": 3,
+        "total_size": 4959945,
+        "queries": [
+          {
+            "id": "one_parcel_one_month",
+            "rows": 720,
+            "median_ms": 1.244400002178736,
+            "p95_ms": 31.60810000190395
+          },
+          {
+            "id": "one_parcel_multi_month",
+            "rows": 2184,
+            "median_ms": 1.775099997757934,
+            "p95_ms": 48.03220000030706
+          },
+          {
+            "id": "available_periods",
+            "rows": 119400,
+            "median_ms": 0.24169999960577115,
+            "p95_ms": 0.27179999960935675
+          }
+        ]
+      },
+      {
+        "strategy": "reference_month_source_dataset",
+        "compression": "snappy",
+        "partition_columns": [
+          "reference_month",
+          "source_dataset"
+        ],
+        "write_ms": 58.48150000019814,
+        "file_count": 3,
+        "total_size": 8856440,
+        "queries": [
+          {
+            "id": "one_parcel_one_month",
+            "rows": 720,
+            "median_ms": 1.2386000016704202,
+            "p95_ms": 9.725399999297224
+          },
+          {
+            "id": "one_parcel_multi_month",
+            "rows": 2184,
+            "median_ms": 1.9307999973534606,
+            "p95_ms": 8.960000002844026
+          },
+          {
+            "id": "available_periods",
+            "rows": 119400,
+            "median_ms": 0.26449999859323725,
+            "p95_ms": 0.28540000130306
+          }
+        ]
+      },
+      {
+        "strategy": "reference_month_source_dataset",
+        "compression": "zstd",
+        "partition_columns": [
+          "reference_month",
+          "source_dataset"
+        ],
+        "write_ms": 65.7549999996263,
+        "file_count": 3,
+        "total_size": 4957714,
+        "queries": [
+          {
+            "id": "one_parcel_one_month",
+            "rows": 720,
+            "median_ms": 1.2623000002349727,
+            "p95_ms": 7.96980000086478
+          },
+          {
+            "id": "one_parcel_multi_month",
+            "rows": 2184,
+            "median_ms": 1.7054999989341013,
+            "p95_ms": 9.088499999052146
+          },
+          {
+            "id": "available_periods",
+            "rows": 119400,
+            "median_ms": 0.26480000087758526,
+            "p95_ms": 0.2888999988499563
+          }
+        ]
+      }
+    ]
+  },
+  "hot_cold_manifest": {
+    "hot_windows": {
+      "6": {
+        "hot_rows": 119400,
+        "cold_rows": 0
+      },
+      "12": {
+        "hot_rows": 119400,
+        "cold_rows": 0
+      },
+      "18": {
+        "hot_rows": 119400,
+        "cold_rows": 0
+      },
+      "24": {
+        "hot_rows": 119400,
+        "cold_rows": 0
+      }
+    },
+    "manifest_db": "C:\\Users\\jadaojoao\\AppData\\Local\\Temp\\cvma_energy_phase25_s5torqez\\manifest.db",
+    "partition_file": "C:\\Users\\jadaojoao\\AppData\\Local\\Temp\\cvma_energy_phase25_s5torqez\\manifest_partitions\\dataset=ccee_hourly\\reference_month=2024-03\\part-000.parquet",
+    "partition_rows": 40920,
+    "partition_size": 2102274,
+    "cross_boundary_parity": {
+      "cold_month": "2024-03",
+      "sqlite_key_count": 40920,
+      "parquet_key_count": 40920,
+      "missing_in_parquet": 0,
+      "extra_in_parquet": 0
+    }
+  },
+  "runtime": {
+    "python": "C:\\Users\\jadaojoao\\AppData\\Local\\Programs\\Python\\Python311\\python.exe",
+    "platform": "win32",
+    "sqlite3_module": "3.45.1"
+  }
+}

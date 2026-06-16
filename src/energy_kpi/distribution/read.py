@@ -45,7 +45,12 @@ class DistributionReadService:
                 g.group_name,
                 c.cd_cvm,
                 c.company_name,
-                c.ticker_b3
+                c.ticker_b3,
+                m.cd_cvm AS mapped_cvm,
+                m.custom_owner_name AS mapped_custom_owner,
+                mc.company_name AS mapped_cvm_company_name,
+                mc.ticker_b3 AS mapped_cvm_ticker,
+                m.mapping_source
             FROM distribution_distributors d
             LEFT JOIN distribution_ownership_history h
               ON d.distributor_id = h.distributor_id
@@ -56,6 +61,11 @@ class DistributionReadService:
               ON h.economic_group_id = g.economic_group_id
             LEFT JOIN distribution_listed_companies c
               ON h.cd_cvm = c.cd_cvm
+            LEFT JOIN conglomerate_asset_mappings m
+              ON d.distributor_id = m.asset_id
+             AND m.asset_type = 'distributor'
+            LEFT JOIN distribution_listed_companies mc
+              ON m.cd_cvm = mc.cd_cvm
             WHERE d.classification = 'distributor'
         """
         
@@ -85,24 +95,45 @@ class DistributionReadService:
         with self._engine().connect() as conn:
             rows = conn.execute(text(query), params).fetchall()
             
-        return [
-            {
-                "distributor_id": r[0],
-                "canonical_name": r[1],
-                "trade_name": r[2],
-                "normalized_cnpj": r[3],
-                "agent_code": r[4],
-                "concession_type": r[5],
-                "primary_uf": r[6],
-                "status": r[7],
-                "economic_group_id": r[8],
-                "group_name": r[9],
-                "cd_cvm": r[10],
-                "company_name": r[11],
-                "ticker_b3": r[12]
-            }
-            for r in rows
-        ]
+        results = []
+        for r in rows:
+            dist_id, name, trade_name, cnpj, agent_code, conc_type, uf, status, eg_id, eg_name, c_cvm, c_name, c_ticker, m_cvm, m_custom, mc_name, mc_ticker, m_source = r
+            
+            # Resolve owner override
+            if m_cvm is not None:
+                resolved_cvm = m_cvm
+                resolved_owner = mc_name or c_name or f"CVM: {m_cvm}"
+                resolved_ticker = mc_ticker or c_ticker
+                resolved_is_custom = False
+            elif m_custom is not None and m_custom.strip() != "":
+                resolved_cvm = None
+                resolved_owner = m_custom.strip()
+                resolved_ticker = "Non-Listed"
+                resolved_is_custom = True
+            else:
+                resolved_cvm = c_cvm
+                resolved_owner = eg_name or c_name
+                resolved_ticker = c_ticker
+                resolved_is_custom = False
+                
+            results.append({
+                "distributor_id": dist_id,
+                "canonical_name": name,
+                "trade_name": trade_name,
+                "normalized_cnpj": cnpj,
+                "agent_code": agent_code,
+                "concession_type": conc_type,
+                "primary_uf": uf,
+                "status": status,
+                "economic_group_id": eg_id,
+                "group_name": eg_name,
+                "cd_cvm": resolved_cvm,
+                "company_name": resolved_owner,
+                "ticker_b3": resolved_ticker,
+                "is_custom_owner": resolved_is_custom,
+                "mapping_source": m_source or "unmapped"
+            })
+        return results
 
     def get_distributor_detail(self, distributor_id: str) -> dict[str, Any] | None:
         """Query single distributor metadata, current status, and full ownership history."""

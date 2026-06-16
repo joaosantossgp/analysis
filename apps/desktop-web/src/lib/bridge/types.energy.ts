@@ -272,6 +272,10 @@ export interface PlantParcelCatalogRecord {
   latest_reference_month: string | null;
   latest_generation_mwmed: number | null;
   data_status: "cached" | "missing" | "registry_only" | string;
+  owner_name?: string | null;
+  owner_ticker?: string | null;
+  is_custom_owner?: boolean;
+  mapping_source?: string;
 }
 
 export interface PlantParcelCatalogParams {
@@ -322,6 +326,13 @@ export interface PlantParcelDetailResponse {
   metrics: PlantMetric[];
   monthly_series: Array<Record<string, unknown>>;
   hourly_preview: Array<Record<string, unknown>>;
+  owner?: {
+    cd_cvm: number | null;
+    owner_name: string;
+    ticker_b3: string | null;
+    is_custom: boolean;
+    source: string;
+  } | null;
   metadata: {
     caveats: string[];
     latest_refresh_by_source: Record<string, Record<string, unknown>>;

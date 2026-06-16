@@ -692,14 +692,17 @@ class DistributionBridgeMixin:
                     "distributors_count": 0,
                     "plants_count": 0,
                     "total_capacity_mw": 0.0,
-                    "total_generation_mwmed": 0.0
+                    "total_generation_mwmed": 0.0,
+                    "is_listed": True
                 }
                 for c in companies
             }
             
+            custom_dict = {}
+            
             with energy_engine.connect() as energy_conn:
                 mappings = energy_conn.execute(text("""
-                    SELECT asset_id, asset_type, cd_cvm FROM conglomerate_asset_mappings
+                    SELECT asset_id, asset_type, cd_cvm, custom_owner_name FROM conglomerate_asset_mappings
                 """)).fetchall()
                 
                 plants_stats = energy_conn.execute(text("""
@@ -708,8 +711,8 @@ class DistributionBridgeMixin:
                 plant_stats_dict = {p[0]: (p[1] or 0.0, p[2] or 0.0) for p in plants_stats}
                 
             for m in mappings:
-                asset_id, asset_type, cd_cvm = m
-                if cd_cvm in company_dict:
+                asset_id, asset_type, cd_cvm, custom_owner = m
+                if cd_cvm and cd_cvm in company_dict:
                     if asset_type == "distributor":
                         company_dict[cd_cvm]["distributors_count"] += 1
                     elif asset_type == "plant":
@@ -718,6 +721,30 @@ class DistributionBridgeMixin:
                             cap, gen = plant_stats_dict[asset_id]
                             company_dict[cd_cvm]["total_capacity_mw"] += cap
                             company_dict[cd_cvm]["total_generation_mwmed"] += gen
+                elif custom_owner and custom_owner.strip() != "":
+                    owner_name = custom_owner.strip()
+                    if owner_name not in custom_dict:
+                        custom_dict[owner_name] = {
+                            "cd_cvm": None,
+                            "company_name": owner_name,
+                            "ticker_b3": None,
+                            "cnpj": None,
+                            "setor_cvm": "Non-Listed Owner",
+                            "gics_sector": "Non-Listed Group",
+                            "distributors_count": 0,
+                            "plants_count": 0,
+                            "total_capacity_mw": 0.0,
+                            "total_generation_mwmed": 0.0,
+                            "is_listed": False
+                        }
+                    if asset_type == "distributor":
+                        custom_dict[owner_name]["distributors_count"] += 1
+                    elif asset_type == "plant":
+                        custom_dict[owner_name]["plants_count"] += 1
+                        if asset_id in plant_stats_dict:
+                            cap, gen = plant_stats_dict[asset_id]
+                            custom_dict[owner_name]["total_capacity_mw"] += cap
+                            custom_dict[owner_name]["total_generation_mwmed"] += gen
                             
             result_items = []
             for cd_cvm, c in company_dict.items():
@@ -730,6 +757,9 @@ class DistributionBridgeMixin:
                     
                 if has_assets or is_utility:
                     result_items.append(c)
+            
+            for owner_name, c in custom_dict.items():
+                result_items.append(c)
                     
             result_items.sort(key=lambda x: x["company_name"].upper())
             
@@ -753,9 +783,9 @@ class DistributionBridgeMixin:
             
             with energy_engine.connect() as energy_conn:
                 mappings = energy_conn.execute(text("""
-                    SELECT asset_id, asset_type, cd_cvm, mapping_source, review_notes FROM conglomerate_asset_mappings
+                    SELECT asset_id, asset_type, cd_cvm, custom_owner_name, mapping_source, review_notes FROM conglomerate_asset_mappings
                 """)).fetchall()
-                mapping_dict = {(m[0], m[1]): (m[2], m[3], m[4]) for m in mappings}
+                mapping_dict = {(m[0], m[1]): (m[2], m[3], m[4], m[5]) for m in mappings}
                 
                 dists = energy_conn.execute(text("""
                     SELECT distributor_id, canonical_name, normalized_cnpj, primary_uf FROM distribution_distributors
@@ -769,8 +799,15 @@ class DistributionBridgeMixin:
             
             for d in dists:
                 dist_id, name, cnpj, uf = d
-                mapped_cvm, source, notes = mapping_dict.get((dist_id, "distributor"), (None, "unmapped", None))
-                co_name, ticker = company_names.get(mapped_cvm, ("", "")) if mapped_cvm else ("", "")
+                mapped_cvm, custom_owner, source, notes = mapping_dict.get((dist_id, "distributor"), (None, None, "unmapped", None))
+                
+                co_name = ""
+                ticker = ""
+                if mapped_cvm:
+                    co_name, ticker = company_names.get(mapped_cvm, ("", ""))
+                elif custom_owner:
+                    co_name = custom_owner
+                    ticker = "Non-Listed"
                 
                 result_items.append({
                     "id": dist_id,
@@ -778,6 +815,7 @@ class DistributionBridgeMixin:
                     "name": name,
                     "sub_name": f"CNPJ: {cnpj or '—'} · UF: {uf or '—'}",
                     "mapped_cvm": mapped_cvm,
+                    "custom_owner_name": custom_owner,
                     "company_name": co_name,
                     "ticker": ticker,
                     "mapping_source": source,
@@ -787,8 +825,15 @@ class DistributionBridgeMixin:
                 
             for p in plants:
                 code, plant_name, agent_name, capacity, uf = p
-                mapped_cvm, source, notes = mapping_dict.get((code, "plant"), (None, "unmapped", None))
-                co_name, ticker = company_names.get(mapped_cvm, ("", "")) if mapped_cvm else ("", "")
+                mapped_cvm, custom_owner, source, notes = mapping_dict.get((code, "plant"), (None, None, "unmapped", None))
+                
+                co_name = ""
+                ticker = ""
+                if mapped_cvm:
+                    co_name, ticker = company_names.get(mapped_cvm, ("", ""))
+                elif custom_owner:
+                    co_name = custom_owner
+                    ticker = "Non-Listed"
                 
                 result_items.append({
                     "id": code,
@@ -796,6 +841,7 @@ class DistributionBridgeMixin:
                     "name": plant_name,
                     "sub_name": f"Agent: {agent_name or '—'} · UF: {uf or '—'}",
                     "mapped_cvm": mapped_cvm,
+                    "custom_owner_name": custom_owner,
                     "company_name": co_name,
                     "ticker": ticker,
                     "mapping_source": source,
@@ -818,6 +864,7 @@ class DistributionBridgeMixin:
         asset_id = params.get("asset_id")
         asset_type = params.get("asset_type")
         cd_cvm = params.get("cd_cvm")
+        custom_owner_name = params.get("custom_owner_name")
         notes = params.get("review_notes")
         
         if not asset_id or not asset_type:
@@ -831,16 +878,26 @@ class DistributionBridgeMixin:
             t0 = datetime.utcnow().isoformat()
             
             with energy_engine.begin() as conn:
-                if cd_cvm is None or cd_cvm == "" or cd_cvm == 0:
+                conn.execute(text("""
+                    DELETE FROM conglomerate_asset_mappings 
+                    WHERE asset_id = :asset_id AND asset_type = :asset_type
+                """), {"asset_id": asset_id, "asset_type": asset_type})
+                
+                if cd_cvm is not None and str(cd_cvm).strip() != "" and str(cd_cvm) != "0":
                     conn.execute(text("""
-                        INSERT OR REPLACE INTO conglomerate_asset_mappings (asset_id, asset_type, cd_cvm, mapping_source, review_notes, updated_at)
-                        VALUES (:asset_id, :asset_type, NULL, 'manual', :notes, :updated_at)
-                    """), {"asset_id": asset_id, "asset_type": asset_type, "notes": notes, "updated_at": t0})
+                        INSERT INTO conglomerate_asset_mappings (asset_id, asset_type, cd_cvm, custom_owner_name, mapping_source, review_notes, updated_at)
+                        VALUES (:asset_id, :asset_type, :cd_cvm, NULL, 'manual', :notes, :updated_at)
+                    """), {"asset_id": asset_id, "asset_type": asset_type, "cd_cvm": int(cd_cvm), "notes": notes, "updated_at": t0})
+                elif custom_owner_name is not None and str(custom_owner_name).strip() != "":
+                    conn.execute(text("""
+                        INSERT INTO conglomerate_asset_mappings (asset_id, asset_type, cd_cvm, custom_owner_name, mapping_source, review_notes, updated_at)
+                        VALUES (:asset_id, :asset_type, NULL, :custom_owner_name, 'manual', :notes, :updated_at)
+                    """), {"asset_id": asset_id, "asset_type": asset_type, "custom_owner_name": str(custom_owner_name).strip(), "notes": notes, "updated_at": t0})
                 else:
                     conn.execute(text("""
-                        INSERT OR REPLACE INTO conglomerate_asset_mappings (asset_id, asset_type, cd_cvm, mapping_source, review_notes, updated_at)
-                        VALUES (:asset_id, :asset_type, :cd_cvm, 'manual', :notes, :updated_at)
-                    """), {"asset_id": asset_id, "asset_type": asset_type, "cd_cvm": int(cd_cvm), "notes": notes, "updated_at": t0})
+                        INSERT INTO conglomerate_asset_mappings (asset_id, asset_type, cd_cvm, custom_owner_name, mapping_source, review_notes, updated_at)
+                        VALUES (:asset_id, :asset_type, NULL, NULL, 'manual', :notes, :updated_at)
+                    """), {"asset_id": asset_id, "asset_type": asset_type, "notes": notes, "updated_at": t0})
             return {"status": "success", "error": None}
         except Exception as exc:
             logger.error("Error in update_asset_mapping: %s", exc, exc_info=True)

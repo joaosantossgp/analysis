@@ -300,6 +300,7 @@ function PlantCatalogTable({
             <Th>Plant / Parcel</Th>
             <Th>CEG</Th>
             <Th>Generation source</Th>
+            <Th>Owner</Th>
             <Th>Submarket</Th>
             <Th align="right">Capacity</Th>
             <Th align="right">Latest generation</Th>
@@ -324,6 +325,22 @@ function PlantCatalogTable({
                 </Td>
                 <Td mono>{row.ceg ?? "—"}</Td>
                 <Td>{row.generation_source ?? "—"}</Td>
+                <Td>
+                  {row.owner_name ? (
+                    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium ${
+                      row.is_custom_owner 
+                        ? "bg-zinc-800/50 text-zinc-350 border border-zinc-700/80" 
+                        : "bg-amber-500/10 text-amber-400 border border-amber-500/20 font-semibold"
+                    }`}>
+                      <span>{row.owner_name}</span>
+                      {row.owner_ticker && row.owner_ticker !== "Non-Listed" && (
+                        <span className="text-[10px] text-amber-500/80 font-mono">({row.owner_ticker})</span>
+                      )}
+                    </span>
+                  ) : (
+                    <span className="text-zinc-650 italic">—</span>
+                  )}
+                </Td>
                 <Td mono>{row.submarket ?? "—"}</Td>
                 <Td align="right" mono>{formatMetric(row.capacity_mw ?? row.authorized_capacity_mw, "MW")}</Td>
                 <Td align="right" mono>{formatMetric(row.latest_generation_mwmed, "MWmed")}</Td>
@@ -630,6 +647,26 @@ function PlantDetailPanel({
         <Meta label="Generation source" value={textValue(parcel, "generation_source") ?? selected.generation_source ?? "—"} />
         <Meta label="Submarket" value={textValue(parcel, "submarket") ?? selected.submarket ?? "—"} mono />
         <Meta label="UF" value={textValue(parcel, "uf") ?? selected.uf ?? "—"} mono />
+        <div className="col-span-2 border-t border-zinc-800/60 pt-2">
+          <p className="text-[11px] uppercase tracking-wide text-zinc-600">Mapped Owner / Controlling Group</p>
+          {detail.owner ? (
+            <div className="flex items-center gap-2 mt-0.5">
+              <span className="text-xs text-zinc-200 font-semibold">{detail.owner.owner_name}</span>
+              {detail.owner.ticker_b3 && detail.owner.ticker_b3 !== "Non-Listed" && (
+                <span className="font-mono text-amber-500 text-[10.5px] font-semibold bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded">
+                  {detail.owner.ticker_b3.replace(".SA", "")}
+                </span>
+              )}
+              {detail.owner.is_custom && (
+                <span className="px-1.5 py-0.5 text-[9px] font-semibold bg-zinc-800 text-zinc-400 rounded border border-zinc-700">
+                  Non-Listed
+                </span>
+              )}
+            </div>
+          ) : (
+            <span className="text-xs text-zinc-500 italic block mt-0.5">unmapped / loose</span>
+          )}
+        </div>
       </div>
 
       <MethodologyList metrics={cceeMetrics} />

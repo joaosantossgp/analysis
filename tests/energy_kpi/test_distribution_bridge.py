@@ -651,4 +651,29 @@ def test_conglomerate_asset_mapping_endpoints(db_conn):
     assert dist_map3["mapped_cvm"] == 1002
     assert dist_map3["mapping_source"] == "manual"
 
+    # 11. Test custom non-listed owner mapping
+    update_res_custom = bridge.update_asset_mapping({
+        "asset_id": "cpfl_paulista",
+        "asset_type": "distributor",
+        "custom_owner_name": "State Grid Brazil",
+        "review_notes": "Custom owner mapping notes"
+    })
+    assert update_res_custom["status"] == "success"
+
+    # Verify custom mapping in get_asset_mappings
+    mappings_res4 = bridge.get_asset_mappings()
+    dist_map4 = next(m for m in mappings_res4["items"] if m["id"] == "cpfl_paulista")
+    assert dist_map4["mapped_cvm"] is None
+    assert dist_map4["custom_owner_name"] == "State Grid Brazil"
+    assert dist_map4["company_name"] == "State Grid Brazil"
+    assert dist_map4["ticker"] == "Non-Listed"
+    assert dist_map4["mapping_source"] == "manual"
+
+    # Verify custom mapping in get_conglomerates
+    cong_res2 = bridge.get_conglomerates()
+    state_grid = next(c for c in cong_res2["items"] if c["company_name"] == "State Grid Brazil")
+    assert state_grid["is_listed"] is False
+    assert state_grid["distributors_count"] == 1
+    assert state_grid["cd_cvm"] is None
+
 

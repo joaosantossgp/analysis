@@ -12,6 +12,8 @@ export interface DistributorEntry {
   cd_cvm: number | null;
   company_name: string | null;
   ticker_b3: string | null;
+  is_custom_owner?: boolean;
+  mapping_source?: string;
 }
 
 export interface DistributorDetail {
@@ -158,7 +160,7 @@ export interface DistributionHealthResponse {
 }
 
 export interface ConglomerateEntry {
-  cd_cvm: number;
+  cd_cvm: number | null;
   company_name: string;
   ticker_b3: string | null;
   cnpj: string | null;
@@ -168,6 +170,7 @@ export interface ConglomerateEntry {
   plants_count: number;
   total_capacity_mw: number;
   total_generation_mwmed: number;
+  is_listed: boolean;
 }
 
 export interface AssetMappingEntry {
@@ -176,6 +179,7 @@ export interface AssetMappingEntry {
   name: string;
   sub_name: string;
   mapped_cvm: number | null;
+  custom_owner_name: string | null;
   company_name: string;
   ticker: string;
   mapping_source: "auto" | "manual" | "unmapped";
