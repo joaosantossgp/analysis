@@ -1124,7 +1124,7 @@ function RefreshBanner({ queryClient }: { queryClient: any }) {
   };
 
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-4 space-y-4">
+    <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3.5 space-y-3">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
         <div>
           <h4 className="text-sm font-semibold text-zinc-200">Manual Ingestion: ANEEL Open Data</h4>
@@ -1151,7 +1151,7 @@ function RefreshBanner({ queryClient }: { queryClient: any }) {
       </div>
 
       {!isRunning && (
-        <div className="border-t border-zinc-900 pt-3 space-y-2">
+        <div className="border-t border-zinc-900 pt-3 space-y-2.5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-xs font-semibold text-zinc-400">Select Market Years:</span>
             <div className="flex items-center gap-2">
@@ -1181,34 +1181,30 @@ function RefreshBanner({ queryClient }: { queryClient: any }) {
               </button>
             </div>
           </div>
-          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
+          <div className="flex flex-wrap gap-1.5">
             {supportedYears.map((yr) => {
               const isIngested = ingestedYears.includes(yr);
+              const isSelected = years.includes(yr);
               return (
-                <label
+                <button
                   key={yr}
-                  className={`flex items-center justify-between gap-1.5 text-xs px-2 py-1.5 rounded border border-zinc-850 cursor-pointer transition-colors hover:border-zinc-700 ${
-                    years.includes(yr)
-                      ? "bg-amber-500/5 border-amber-500/30 text-amber-400 font-semibold"
-                      : "bg-zinc-900/10 text-zinc-400"
-                  }`}
+                  type="button"
+                  onClick={() => handleYearToggle(yr)}
+                  disabled={triggering}
+                  className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md border cursor-pointer transition-colors ${
+                    isSelected
+                      ? "bg-amber-500/10 border-amber-500/40 text-amber-400 font-medium"
+                      : "bg-zinc-900/30 border-zinc-800 text-zinc-400 hover:border-zinc-750 hover:bg-zinc-900/50"
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
-                  <div className="flex items-center gap-1.5">
-                    <input
-                      type="checkbox"
-                      checked={years.includes(yr)}
-                      onChange={() => handleYearToggle(yr)}
-                      disabled={triggering}
-                      className="accent-amber-500 rounded border-zinc-700 bg-zinc-800"
-                    />
-                    <span>{yr}</span>
-                  </div>
+                  <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? "bg-amber-500" : "bg-zinc-700"}`} />
+                  <span>{yr}</span>
                   {isIngested && (
-                    <span className="text-[9px] text-emerald-500 font-semibold font-mono" title="Already ingested/cached">
+                    <span className="text-[10px] text-emerald-500 font-semibold font-mono ml-0.5" title="Already ingested/cached">
                       ✓
                     </span>
                   )}
-                </label>
+                </button>
               );
             })}
           </div>
