@@ -617,6 +617,18 @@ def ensure_energy_kpi_tables_for_connection(conn, *, enable_wal: bool = True) ->
     """))
 
     conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS conglomerate_asset_mappings (
+            asset_id       TEXT NOT NULL,
+            asset_type     TEXT NOT NULL,
+            cd_cvm         INTEGER,
+            mapping_source TEXT NOT NULL DEFAULT 'auto',
+            review_notes   TEXT,
+            updated_at     TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (asset_id, asset_type)
+        )
+    """))
+
+    conn.execute(text("""
         CREATE TABLE IF NOT EXISTS distribution_market_facts (
             fact_id                     TEXT PRIMARY KEY,
             distributor_id              TEXT NOT NULL REFERENCES distribution_distributors(distributor_id) ON DELETE CASCADE,

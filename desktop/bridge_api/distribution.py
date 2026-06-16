@@ -667,3 +667,197 @@ class DistributionBridgeMixin:
         except Exception as exc:
             logger.error("Error in get_distribution_health: %s", exc, exc_info=True)
             return {"error": str(exc)}
+
+    def get_conglomerates(self, params=None) -> dict:
+        try:
+            from sqlalchemy import text  # noqa: PLC0415
+            cvm_engine = self._svc().engine
+            energy_engine = self._dist_svc()._engine()
+            
+            with cvm_engine.connect() as cvm_conn:
+                companies = cvm_conn.execute(text("""
+                    SELECT cd_cvm, company_name, ticker_b3, cnpj, setor_cvm, gics_sector 
+                    FROM companies
+                    WHERE is_active = 1
+                """)).fetchall()
+                
+            company_dict = {
+                c[0]: {
+                    "cd_cvm": c[0],
+                    "company_name": c[1],
+                    "ticker_b3": c[2],
+                    "cnpj": c[3],
+                    "setor_cvm": c[4],
+                    "gics_sector": c[5],
+                    "distributors_count": 0,
+                    "plants_count": 0,
+                    "total_capacity_mw": 0.0,
+                    "total_generation_mwmed": 0.0
+                }
+                for c in companies
+            }
+            
+            with energy_engine.connect() as energy_conn:
+                mappings = energy_conn.execute(text("""
+                    SELECT asset_id, asset_type, cd_cvm FROM conglomerate_asset_mappings
+                """)).fetchall()
+                
+                plants_stats = energy_conn.execute(text("""
+                    SELECT plant_parcel_code, capacity_mw, physical_guarantee_mwmed FROM ccee_plant_parcels
+                """)).fetchall()
+                plant_stats_dict = {p[0]: (p[1] or 0.0, p[2] or 0.0) for p in plants_stats}
+                
+            for m in mappings:
+                asset_id, asset_type, cd_cvm = m
+                if cd_cvm in company_dict:
+                    if asset_type == "distributor":
+                        company_dict[cd_cvm]["distributors_count"] += 1
+                    elif asset_type == "plant":
+                        company_dict[cd_cvm]["plants_count"] += 1
+                        if asset_id in plant_stats_dict:
+                            cap, gen = plant_stats_dict[asset_id]
+                            company_dict[cd_cvm]["total_capacity_mw"] += cap
+                            company_dict[cd_cvm]["total_generation_mwmed"] += gen
+                            
+            result_items = []
+            for cd_cvm, c in company_dict.items():
+                has_assets = c["distributors_count"] > 0 or c["plants_count"] > 0
+                is_utility = False
+                sec = (c["setor_cvm"] or "").lower()
+                gics = (c["gics_sector"] or "").lower()
+                if "energia" in sec or "utilities" in gics or "educa" in sec:
+                    is_utility = True
+                    
+                if has_assets or is_utility:
+                    result_items.append(c)
+                    
+            result_items.sort(key=lambda x: x["company_name"].upper())
+            
+            return self._sanitize_for_json({
+                "items": result_items,
+                "count": len(result_items)
+            })
+        except Exception as exc:
+            logger.error("Error in get_conglomerates: %s", exc, exc_info=True)
+            return {"error": str(exc), "items": [], "count": 0}
+
+    def get_asset_mappings(self, params=None) -> dict:
+        try:
+            from sqlalchemy import text  # noqa: PLC0415
+            cvm_engine = self._svc().engine
+            energy_engine = self._dist_svc()._engine()
+            
+            with cvm_engine.connect() as cvm_conn:
+                companies = cvm_conn.execute(text("SELECT cd_cvm, company_name, ticker_b3 FROM companies")).fetchall()
+            company_names = {c[0]: (c[1], c[2]) for c in companies}
+            
+            with energy_engine.connect() as energy_conn:
+                mappings = energy_conn.execute(text("""
+                    SELECT asset_id, asset_type, cd_cvm, mapping_source, review_notes FROM conglomerate_asset_mappings
+                """)).fetchall()
+                mapping_dict = {(m[0], m[1]): (m[2], m[3], m[4]) for m in mappings}
+                
+                dists = energy_conn.execute(text("""
+                    SELECT distributor_id, canonical_name, normalized_cnpj, primary_uf FROM distribution_distributors
+                """)).fetchall()
+                
+                plants = energy_conn.execute(text("""
+                    SELECT plant_parcel_code, plant_name, agent_name, capacity_mw, uf FROM ccee_plant_parcels
+                """)).fetchall()
+                
+            result_items = []
+            
+            for d in dists:
+                dist_id, name, cnpj, uf = d
+                mapped_cvm, source, notes = mapping_dict.get((dist_id, "distributor"), (None, "unmapped", None))
+                co_name, ticker = company_names.get(mapped_cvm, ("", "")) if mapped_cvm else ("", "")
+                
+                result_items.append({
+                    "id": dist_id,
+                    "type": "distributor",
+                    "name": name,
+                    "sub_name": f"CNPJ: {cnpj or '—'} · UF: {uf or '—'}",
+                    "mapped_cvm": mapped_cvm,
+                    "company_name": co_name,
+                    "ticker": ticker,
+                    "mapping_source": source,
+                    "review_notes": notes,
+                    "stats": "Distributor"
+                })
+                
+            for p in plants:
+                code, plant_name, agent_name, capacity, uf = p
+                mapped_cvm, source, notes = mapping_dict.get((code, "plant"), (None, "unmapped", None))
+                co_name, ticker = company_names.get(mapped_cvm, ("", "")) if mapped_cvm else ("", "")
+                
+                result_items.append({
+                    "id": code,
+                    "type": "plant",
+                    "name": plant_name,
+                    "sub_name": f"Agent: {agent_name or '—'} · UF: {uf or '—'}",
+                    "mapped_cvm": mapped_cvm,
+                    "company_name": co_name,
+                    "ticker": ticker,
+                    "mapping_source": source,
+                    "review_notes": notes,
+                    "stats": f"{capacity or 0.0:.1f} MW Capacity"
+                })
+                
+            result_items.sort(key=lambda x: x["name"].upper())
+            
+            return self._sanitize_for_json({
+                "items": result_items,
+                "count": len(result_items)
+            })
+        except Exception as exc:
+            logger.error("Error in get_asset_mappings: %s", exc, exc_info=True)
+            return {"error": str(exc), "items": [], "count": 0}
+
+    def update_asset_mapping(self, params=None) -> dict:
+        params = params or {}
+        asset_id = params.get("asset_id")
+        asset_type = params.get("asset_type")
+        cd_cvm = params.get("cd_cvm")
+        notes = params.get("review_notes")
+        
+        if not asset_id or not asset_type:
+            return {"error": "asset_id and asset_type are required"}
+        if asset_type not in ("distributor", "plant"):
+            return {"error": "asset_type must be distributor or plant"}
+            
+        try:
+            from sqlalchemy import text  # noqa: PLC0415
+            energy_engine = self._dist_svc()._engine()
+            t0 = datetime.utcnow().isoformat()
+            
+            with energy_engine.begin() as conn:
+                if cd_cvm is None or cd_cvm == "" or cd_cvm == 0:
+                    conn.execute(text("""
+                        INSERT OR REPLACE INTO conglomerate_asset_mappings (asset_id, asset_type, cd_cvm, mapping_source, review_notes, updated_at)
+                        VALUES (:asset_id, :asset_type, NULL, 'manual', :notes, :updated_at)
+                    """), {"asset_id": asset_id, "asset_type": asset_type, "notes": notes, "updated_at": t0})
+                else:
+                    conn.execute(text("""
+                        INSERT OR REPLACE INTO conglomerate_asset_mappings (asset_id, asset_type, cd_cvm, mapping_source, review_notes, updated_at)
+                        VALUES (:asset_id, :asset_type, :cd_cvm, 'manual', :notes, :updated_at)
+                    """), {"asset_id": asset_id, "asset_type": asset_type, "cd_cvm": int(cd_cvm), "notes": notes, "updated_at": t0})
+            return {"status": "success", "error": None}
+        except Exception as exc:
+            logger.error("Error in update_asset_mapping: %s", exc, exc_info=True)
+            return {"error": str(exc)}
+
+    def run_automatic_mapping(self, params=None) -> dict:
+        try:
+            cvm_engine = self._svc().engine
+            energy_engine = self._dist_svc()._engine()
+            
+            from src.energy_kpi.mappings import run_automatic_asset_mapping  # noqa: PLC0415
+            
+            with cvm_engine.connect() as cvm_conn:
+                with energy_engine.begin() as energy_conn:
+                    stats = run_automatic_asset_mapping(energy_conn, cvm_conn)
+                    
+            return self._sanitize_for_json(stats)
+        except Exception as exc:
+            logger.error("Error in run_automatic_mapping: %s", exc, exc_info=True)
+            return {"error": str(exc), "status": "error"}

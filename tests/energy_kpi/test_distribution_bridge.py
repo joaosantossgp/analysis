@@ -539,3 +539,116 @@ def test_distribution_refresh_resilience_multi_year(db_conn, tmp_path):
     assert "Refresh completed with warnings" in status["message"]
     assert "Failed years: 2024" in status["message"]
 
+
+def test_conglomerate_asset_mapping_endpoints(db_conn):
+    # 1. Create companies table
+    db_conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS companies (
+            cd_cvm INTEGER PRIMARY KEY,
+            company_name TEXT NOT NULL,
+            ticker_b3 TEXT,
+            cnpj TEXT,
+            setor_cvm TEXT,
+            gics_sector TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1
+        )
+    """))
+
+    # 2. Seed static master data for distribution
+    seed_distribution_static_data(db_conn)
+
+    # 4. Insert mock companies
+    db_conn.execute(text("""
+        INSERT OR REPLACE INTO companies (cd_cvm, company_name, ticker_b3, cnpj, setor_cvm, gics_sector, is_active)
+        VALUES 
+        (1001, 'CPFL ENERGIA S.A.', 'CPFE3', '02429144000193', 'Energia Elétrica', 'Utilities', 1),
+        (1002, 'CENTRAIS ELETRICAS BRASILEIRAS S.A. - ELETROBRAS', 'ELET3', '33013807000108', 'Energia Elétrica', 'Utilities', 1)
+    """))
+
+    # 5. Insert mock physical assets
+    db_conn.execute(text("""
+        INSERT OR REPLACE INTO distribution_distributors (distributor_id, canonical_name, trade_name, normalized_cnpj, primary_uf, status)
+        VALUES ('cpfl_paulista', 'CPFL Paulista', 'CPFL Paulista', '02429144000193', 'SP', 'active')
+    """))
+    db_conn.execute(text("""
+        INSERT OR REPLACE INTO ccee_plant_parcels (plant_parcel_code, plant_name, agent_name, capacity_mw, uf, raw_payload_hash)
+        VALUES ('PLANT_ELET', 'UHE Eletrobras Plant', 'Eletrobras Agent', 150.0, 'RJ', 'dummy_hash')
+    """))
+
+    # Mock settings
+    mock_settings = MagicMock()
+    mock_settings.paths.energy_kpi_sqlite_url = "sqlite:///:memory:"
+
+    # Initialize bridge
+    bridge = MockBridge(mock_settings, db_conn)
+    
+    class MockConnContext:
+        def __init__(self, conn):
+            self.conn = conn
+        def __enter__(self):
+            return self.conn
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            pass
+
+    # Setup CVM Engine Mock
+    svc = bridge._svc()
+    svc.engine.connect.side_effect = lambda: MockConnContext(db_conn)
+    svc.engine.begin.side_effect = lambda: MockConnContext(db_conn)
+
+    # Setup Energy KPI Engine Mock
+    energy_engine = bridge._dist_svc()._engine()
+    energy_engine.connect.side_effect = lambda: MockConnContext(db_conn)
+    energy_engine.begin.side_effect = lambda: MockConnContext(db_conn)
+
+    # 6. Test run_automatic_mapping
+    auto_res = bridge.run_automatic_mapping()
+    assert auto_res["status"] == "success"
+    assert auto_res["matched"] >= 2
+
+    # 7. Test get_conglomerates
+    cong_res = bridge.get_conglomerates()
+    assert "error" not in cong_res
+    assert cong_res["count"] > 0
+    cpfl = next(c for c in cong_res["items"] if c["cd_cvm"] == 1001)
+    assert cpfl["distributors_count"] >= 1
+    assert cpfl["plants_count"] == 0
+    
+    eletro = next(c for c in cong_res["items"] if c["cd_cvm"] == 1002)
+    assert eletro["plants_count"] >= 1
+    assert eletro["total_capacity_mw"] >= 150.0
+
+    # 8. Test get_asset_mappings
+    mappings_res = bridge.get_asset_mappings()
+    assert "error" not in mappings_res
+    assert mappings_res["count"] >= 2
+    
+    dist_map = next(m for m in mappings_res["items"] if m["id"] == "cpfl_paulista")
+    assert dist_map["mapped_cvm"] == 1001
+    assert dist_map["mapping_source"] == "auto"
+
+    # 9. Test update_asset_mapping (manual override)
+    update_res = bridge.update_asset_mapping({
+        "asset_id": "cpfl_paulista",
+        "asset_type": "distributor",
+        "cd_cvm": 1002,
+        "review_notes": "Manual override notes"
+    })
+    assert update_res["status"] == "success"
+
+    # Verify manual mapping is updated
+    mappings_res2 = bridge.get_asset_mappings()
+    dist_map2 = next(m for m in mappings_res2["items"] if m["id"] == "cpfl_paulista")
+    assert dist_map2["mapped_cvm"] == 1002
+    assert dist_map2["mapping_source"] == "manual"
+
+    # 10. Run automatic mapping again and verify that manual override is PRESERVED!
+    auto_res2 = bridge.run_automatic_mapping()
+    assert auto_res2["status"] == "success"
+    assert auto_res2["preserved_manual"] == 1
+
+    mappings_res3 = bridge.get_asset_mappings()
+    dist_map3 = next(m for m in mappings_res3["items"] if m["id"] == "cpfl_paulista")
+    assert dist_map3["mapped_cvm"] == 1002
+    assert dist_map3["mapping_source"] == "manual"
+
+

@@ -1,436 +1,483 @@
-/**
- * SectorCompanyPanel — microeconomic indicator coverage (sector snapshots +
- * company KPI availability), read from the existing CVM local database via the
- * bridge. Extracted verbatim from the former CountryKpisPage "Sector & Company"
- * tab so the Indicator Explorer can host it as a secondary view without owning
- * a new data layer. This is the UI organisation point for sector/company
- * indicators already owned by the CVM read-service / KPI engine.
- */
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { useQuery, useQueries } from "@tanstack/react-query";
+import { useState, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { IndicatorChart } from "@/components/indicators/IndicatorChart";
 import { StateBanner } from "@/components/feedback/StateBanner";
-import { fetchCompanies } from "@/lib/api/companies";
-import { fetchSectors, fetchSectorDetail } from "@/lib/api/sectors";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import {
+  fetchConglomerates,
+  fetchAssetMappings,
+  updateAssetMapping,
+  runAutomaticMapping
+} from "@/lib/api/distribution";
 
 export function SectorCompanyPanel({ bridgeReady }: { bridgeReady: boolean }) {
-  const [microViewMode, setMicroViewMode] = useState<"overview" | "trend">("overview");
-  const [microTrendKpi, setMicroTrendKpi] = useState<"roe" | "mg_ebit" | "mg_liq">("roe");
-  const [selectedSectors, setSelectedSectors] = useState<string[]>([]);
+  const [activeTab, setActiveTab] = useState<"conglomerates" | "mapping">("conglomerates");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [assetTypeFilter, setAssetTypeFilter] = useState<"all" | "distributor" | "plant">("all");
+  const [mappingSourceFilter, setMappingSourceFilter] = useState<"all" | "auto" | "manual" | "unmapped">("all");
+  
+  // Expanded conglomerate row IDs
+  const [expandedCvmCodes, setExpandedCvmCodes] = useState<Set<number>>(new Set());
 
-  const sectorsQuery = useQuery({
-    queryKey: ["micro-indicators-sectors"],
-    queryFn: () => fetchSectors("sector", { includeSnapshots: false }),
+  // Pending updates mapping (for loading state during change)
+  const [updatingAssetKeys, setUpdatingAssetKeys] = useState<Set<string>>(new Set());
+  const [runningAutoMatcher, setRunningAutoMatcher] = useState(false);
+  const [autoMatcherMessage, setAutoMatcherMessage] = useState<string | null>(null);
+
+  const queryClient = useQueryClient();
+
+  // Queries
+  const conglomeratesQuery = useQuery({
+    queryKey: ["conglomerates"],
+    queryFn: fetchConglomerates,
     enabled: bridgeReady,
-    staleTime: 60_000,
+    staleTime: 30_000,
   });
-  const companiesQuery = useQuery({
-    queryKey: ["micro-indicators-companies"],
-    queryFn: () => fetchCompanies({ page: 1, page_size: 8 }),
+
+  const mappingsQuery = useQuery({
+    queryKey: ["asset-mappings"],
+    queryFn: fetchAssetMappings,
     enabled: bridgeReady,
-    staleTime: 60_000,
+    staleTime: 30_000,
   });
 
-  const sectors = sectorsQuery.data?.mode === "desktop" ? sectorsQuery.data.items : [];
-  const sectorSnapshotsQuery = useQuery({
-    queryKey: ["micro-indicators-sector-snapshots"],
-    queryFn: () => fetchSectors("sector", { includeSnapshots: true }),
-    enabled: bridgeReady && microViewMode === "overview" && sectors.length > 0,
-    staleTime: 60_000,
-  });
-  const snapshotSectors = sectorSnapshotsQuery.data?.mode === "desktop"
-    ? sectorSnapshotsQuery.data.items
-    : sectors;
+  const conglomerates = conglomeratesQuery.data?.mode === "desktop" ? conglomeratesQuery.data.items : [];
+  const assets = mappingsQuery.data?.mode === "desktop" ? mappingsQuery.data.items : [];
 
-  // Default selection to first 3 sectors
-  useEffect(() => {
-    if (sectors.length > 0 && selectedSectors.length === 0) {
-      setSelectedSectors(sectors.slice(0, 3).map((s) => s.sector_slug));
+  const isLoading = conglomeratesQuery.isLoading || mappingsQuery.isLoading;
+  const isError = conglomeratesQuery.isError || mappingsQuery.isError;
+  const error = conglomeratesQuery.error ?? mappingsQuery.error;
+
+  const toggleExpand = (cvmCode: number) => {
+    setExpandedCvmCodes((prev) => {
+      const next = new Set(prev);
+      if (next.has(cvmCode)) {
+        next.delete(cvmCode);
+      } else {
+        next.add(cvmCode);
+      }
+      return next;
+    });
+  };
+
+  const handleMappingChange = async (assetId: string, assetType: "distributor" | "plant", newCvm: number | null) => {
+    const key = `${assetId}-${assetType}`;
+    setUpdatingAssetKeys((prev) => new Set([...prev, key]));
+    try {
+      const res = await updateAssetMapping(assetId, assetType, newCvm);
+      if (res.success) {
+        void queryClient.invalidateQueries({ queryKey: ["conglomerates"] });
+        void queryClient.invalidateQueries({ queryKey: ["asset-mappings"] });
+      } else if (res.error) {
+        alert(`Failed to update mapping: ${res.error}`);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setUpdatingAssetKeys((prev) => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
     }
-  }, [sectors, selectedSectors]);
+  };
 
-  // Fetch details in parallel using useQueries for all selected sectors
-  const sectorsDetails = useQueries({
-    queries: selectedSectors.map((slug) => ({
-      queryKey: ["micro-indicators-sector-detail", slug],
-      queryFn: () => fetchSectorDetail(slug),
-      enabled: bridgeReady && microViewMode === "trend",
-      staleTime: 60_000,
-    })),
-  });
+  const handleRunAutoMatcher = async () => {
+    setRunningAutoMatcher(true);
+    setAutoMatcherMessage(null);
+    try {
+      const res = await runAutomaticMapping();
+      if (res.success) {
+        void queryClient.invalidateQueries({ queryKey: ["conglomerates"] });
+        void queryClient.invalidateQueries({ queryKey: ["asset-mappings"] });
+        setAutoMatcherMessage("Auto-mapping complete! Checked CNPJ roots and company name keywords.");
+        setTimeout(() => setAutoMatcherMessage(null), 5000);
+      } else {
+        setAutoMatcherMessage(`Auto-mapping failed: ${res.error}`);
+      }
+    } catch (err) {
+      console.error(err);
+      setAutoMatcherMessage("An error occurred during mapping.");
+    } finally {
+      setRunningAutoMatcher(false);
+    }
+  };
 
-  if (!bridgeReady || sectorsQuery.isLoading || companiesQuery.isLoading) {
-    return <StateBanner variant="loading" title="Loading sector and company indicators..." />;
+  // Filter Conglomerates
+  const filteredConglomerates = useMemo(() => {
+    if (!searchQuery) return conglomerates;
+    const q = searchQuery.toLowerCase();
+    return conglomerates.filter(
+      (c) =>
+        c.company_name.toLowerCase().includes(q) ||
+        (c.ticker_b3 && c.ticker_b3.toLowerCase().includes(q)) ||
+        (c.setor_cvm && c.setor_cvm.toLowerCase().includes(q)) ||
+        (c.gics_sector && c.gics_sector.toLowerCase().includes(q))
+    );
+  }, [conglomerates, searchQuery]);
+
+  // Filter Assets
+  const filteredAssets = useMemo(() => {
+    return assets.filter((a) => {
+      const matchesSearch =
+        !searchQuery ||
+        a.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        a.sub_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        a.company_name.toLowerCase().includes(searchQuery.toLowerCase());
+      
+      const matchesType = assetTypeFilter === "all" || a.type === assetTypeFilter;
+      const matchesSource =
+        mappingSourceFilter === "all" ||
+        a.mapping_source === mappingSourceFilter;
+
+      return matchesSearch && matchesType && matchesSource;
+    });
+  }, [assets, searchQuery, assetTypeFilter, mappingSourceFilter]);
+
+  // Metrics summary
+  const summary = useMemo(() => {
+    const activeCongs = conglomerates.filter((c) => c.distributors_count > 0 || c.plants_count > 0).length;
+    const totalDists = assets.filter((a) => a.type === "distributor").length;
+    const mappedDists = assets.filter((a) => a.type === "distributor" && a.mapped_cvm).length;
+    const totalPlants = assets.filter((a) => a.type === "plant").length;
+    const mappedPlants = assets.filter((a) => a.type === "plant" && a.mapped_cvm).length;
+    const unmapped = assets.filter((a) => !a.mapped_cvm).length;
+
+    return {
+      activeCongs,
+      distributors: `${mappedDists} / ${totalDists}`,
+      plants: `${mappedPlants} / ${totalPlants}`,
+      unmapped
+    };
+  }, [conglomerates, assets]);
+
+  if (!bridgeReady || isLoading) {
+    return <StateBanner variant="loading" title="Loading conglomerate registry and asset mappings..." />;
   }
-  if (sectorsQuery.data?.mode === "browser") {
-    return <StateBanner variant="browser-only" message={sectorsQuery.data.reason} />;
-  }
-  if (companiesQuery.data?.mode === "browser") {
-    return <StateBanner variant="browser-only" message={companiesQuery.data.reason} />;
-  }
-  if (sectorsQuery.isError || companiesQuery.isError) {
-    const error = sectorsQuery.error ?? companiesQuery.error;
+
+  if (isError) {
     return (
       <StateBanner
         variant="error"
-        title="Could not load microeconomic indicators"
+        title="Could not load conglomerate mappings"
         message={error instanceof Error ? error.message : String(error)}
       />
     );
   }
 
-  const page = companiesQuery.data?.mode === "desktop" ? companiesQuery.data.page : null;
-  const companies = page?.items ?? [];
-  const completeCompanies = companies.filter((c) => c.data_status === "complete").length;
-  const totalCompanies = page?.pagination.total_items ?? companies.length;
-  const latestYear = Math.max(
-    0,
-    ...snapshotSectors.map((sector) => sector.latest_year ?? 0),
-    ...companies.flatMap((company) => company.anos_disponiveis ?? []),
-  );
-
-  if (sectors.length === 0 && companies.length === 0) {
-    return (
-      <StateBanner
-        variant="empty"
-        title="No sector or company indicators yet"
-        message="Run the local database update first, then return here to review sector snapshots and company KPI coverage."
-      />
-    );
-  }
-
-  // --- Trend view computing ---
-  // 1. Gather all years available across selected sector details
-  const allYears = (() => {
-    const yearsSet = new Set<number>();
-    sectorsDetails.forEach((q) => {
-      const detail = q.data?.mode === "desktop" ? q.data.detail : null;
-      if (detail?.yearly_overview) {
-        detail.yearly_overview.forEach((y) => {
-          if (y.year) yearsSet.add(y.year);
-        });
-      }
-    });
-    return [...yearsSet].sort((a, b) => a - b);
-  })();
-
-  const periods = allYears.map(String);
-
-  // 2. Build ResolvedSeries list
-  const chartSeries = selectedSectors.map((slug, idx) => {
-    const sector = sectors.find((s) => s.sector_slug === slug);
-    const label = sector?.sector_name ?? slug;
-
-    const detailQuery = sectorsDetails[idx];
-    const detail = detailQuery?.data?.mode === "desktop" ? detailQuery.data.detail : null;
-
-    const valueByYear = new Map<number, number>();
-    if (detail?.yearly_overview) {
-      detail.yearly_overview.forEach((y) => {
-        const val = y[microTrendKpi];
-        if (val !== null && val !== undefined) {
-          valueByYear.set(y.year, val);
-        }
-      });
-    }
-
-    const points = allYears.map((yr) => {
-      const v = valueByYear.get(yr);
-      // IndicatorChart expects values divided by 100 for 'pct' formatting
-      return v !== null && v !== undefined ? v / 100 : null;
-    });
-
-    const colors = ["#60A5FA", "#4ADE80", "#FBBF24", "#F87171", "#C084FC", "#F472B6", "#FB923C", "#22D3EE"];
-    const color = colors[idx % colors.length];
-
-    return {
-      id: slug,
-      label,
-      unit: "pct" as const,
-      color,
-      type: "line" as const,
-      axis: "left" as const,
-      points,
-      latest: points.length > 0 ? points[points.length - 1] : null,
-    };
-  });
-
   return (
-    <div className="min-w-0 space-y-5">
-      {/* View Toggle */}
-      <div className="flex items-center gap-4 flex-wrap border-b border-zinc-800 pb-4">
-        <div className="flex rounded border border-zinc-700 overflow-hidden" role="tablist" aria-label="View mode">
-          <ViewTab
-            label="Overview"
-            active={microViewMode === "overview"}
-            onClick={() => setMicroViewMode("overview")}
-          />
-          <ViewTab
-            label="Trend"
-            active={microViewMode === "trend"}
-            onClick={() => setMicroViewMode("trend")}
-          />
+    <div className="min-w-0 space-y-4">
+      {/* Top Header Row */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800 pb-3.5">
+        <div>
+          <h2 className="text-base font-semibold text-zinc-100">Central Asset & Conglomerate Registry</h2>
+          <p className="text-xs text-zinc-500 mt-0.5">
+            Link physical grid assets to listed entities, GICS/CVM classifications, CNPJs, and tickers.
+          </p>
         </div>
-        <p className="ml-auto text-xs text-zinc-500">
-          Source: CVM local database
-        </p>
+        <div className="flex items-center gap-2">
+          <Button
+            size="xs"
+            onClick={handleRunAutoMatcher}
+            disabled={runningAutoMatcher}
+            className="bg-amber-600 hover:bg-amber-700 text-white font-semibold flex items-center gap-1.5"
+          >
+            {runningAutoMatcher ? "Matching..." : "⚡ Run Automatic Mapping"}
+          </Button>
+        </div>
       </div>
 
-      {microViewMode === "overview" ? (
-        <div className="space-y-5">
-          <div className="grid gap-3 md:grid-cols-4">
-            <MicroSummaryCard label="Sectors" value={sectors.length.toLocaleString("en-US")} />
-            <MicroSummaryCard label="Companies" value={totalCompanies.toLocaleString("en-US")} />
-            <MicroSummaryCard label="Loaded sample" value={`${completeCompanies}/${companies.length}`} />
-            <MicroSummaryCard label="Latest year" value={latestYear > 0 ? String(latestYear) : "-"} />
-          </div>
-
-          <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-            <section className="min-w-0 rounded border border-zinc-800 bg-zinc-950/35">
-              <div className="border-b border-zinc-800 px-4 py-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <h3 className="text-sm font-medium text-zinc-100">Sector KPI Snapshot</h3>
-                    <p className="text-[11px] text-zinc-500">Microeconomic indicators grouped by sector from the local CVM database.</p>
-                  </div>
-                  {sectorSnapshotsQuery.isFetching ? (
-                    <span className="shrink-0 text-[11px] text-amber-300">Loading metrics...</span>
-                  ) : null}
-                </div>
-              </div>
-              <div className="max-w-full overflow-x-auto">
-                <table className="min-w-[620px] w-full border-collapse text-sm">
-                  <thead>
-                    <tr className="bg-zinc-900/80 text-left text-[10px] uppercase tracking-wider text-zinc-500">
-                      <th className="px-3 py-2 font-medium">Sector</th>
-                      <th className="px-3 py-2 text-right font-medium">Companies</th>
-                      <th className="px-3 py-2 text-right font-medium">Latest</th>
-                      <th className="px-3 py-2 text-right font-medium">ROE</th>
-                      <th className="px-3 py-2 text-right font-medium">EBIT Margin</th>
-                      <th className="px-3 py-2 text-right font-medium">Net Margin</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-800/80">
-                    {snapshotSectors.map((sector) => (
-                      <tr key={sector.sector_slug} className="hover:bg-zinc-900/50">
-                        <td className="px-3 py-2">
-                          <Link
-                            to={`/setores/${sector.sector_slug}`}
-                            className="text-zinc-100 hover:text-cyan-400 hover:underline"
-                          >
-                            {sector.sector_name}
-                          </Link>
-                        </td>
-                        <td className="px-3 py-2 text-right font-mono text-[11px] text-zinc-300">{sector.company_count}</td>
-                        <td className="px-3 py-2 text-right font-mono text-[11px] text-zinc-400">{sector.latest_year ?? "-"}</td>
-                        <td className="px-3 py-2 text-right font-mono text-[11px] text-zinc-300">{formatPct(sector.snapshot?.roe)}</td>
-                        <td className="px-3 py-2 text-right font-mono text-[11px] text-zinc-300">{formatPct(sector.snapshot?.mg_ebit)}</td>
-                        <td className="px-3 py-2 text-right font-mono text-[11px] text-zinc-300">{formatPct(sector.snapshot?.mg_liq)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-
-            <section className="min-w-0 rounded border border-zinc-800 bg-zinc-950/35">
-              <div className="border-b border-zinc-800 px-4 py-3">
-                <h3 className="text-sm font-medium text-zinc-100">Company KPI Coverage</h3>
-                <p className="text-[11px] text-zinc-500">Representative companies and local statement/KPI availability.</p>
-              </div>
-              <div className="divide-y divide-zinc-800/80">
-                {companies.map((company) => (
-                  <Link
-                    key={company.cd_cvm}
-                    to={`/empresas/${company.cd_cvm}`}
-                    className="grid grid-cols-[1fr_auto] gap-3 px-4 py-3 transition-colors hover:bg-zinc-900/50"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-zinc-100">{company.company_name}</p>
-                      <p className="mt-0.5 font-mono text-[10px] text-zinc-500">
-                        {company.ticker_b3 ?? "no ticker"} · CVM {company.cd_cvm} · {company.sector_name}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <span className={`rounded border px-2 py-0.5 text-[10px] ${statusClass(company.data_status)}`}>
-                        {company.data_status ?? "unknown"}
-                      </span>
-                      <p className="mt-1 font-mono text-[10px] text-zinc-500">
-                        {company.anos_disponiveis?.length ?? 0} years · {company.total_rows.toLocaleString("en-US")} rows
-                      </p>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            </section>
-          </div>
+      {autoMatcherMessage && (
+        <div className="bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs rounded p-2.5">
+          {autoMatcherMessage}
         </div>
-      ) : (
-        <div className="space-y-5">
-          {/* Controls */}
-          <div className="flex items-center gap-4 flex-wrap bg-zinc-950/20 border border-zinc-800 rounded p-4">
-            <div className="flex items-center gap-2">
-              <label className="text-xs text-zinc-400">Indicator</label>
+      )}
+
+      {/* Summary Metrics */}
+      <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
+        <SummaryTile label="Active Conglomerates" value={summary.activeCongs} />
+        <SummaryTile label="Mapped Distributors" value={summary.distributors} />
+        <SummaryTile label="Mapped Gen Plants" value={summary.plants} />
+        <SummaryTile
+          label="Unmapped Assets"
+          value={summary.unmapped}
+          highlight={summary.unmapped > 0}
+        />
+      </div>
+
+      {/* Navigation & Filters Bar */}
+      <div className="flex flex-col md:flex-row gap-3 justify-between items-start md:items-center bg-zinc-900/30 border border-zinc-850 rounded-lg p-2.5">
+        <div className="flex rounded border border-zinc-700/80 overflow-hidden" role="tablist">
+          <TabButton
+            label="Conglomerates Overview"
+            active={activeTab === "conglomerates"}
+            onClick={() => { setActiveTab("conglomerates"); setSearchQuery(""); }}
+          />
+          <TabButton
+            label="Asset Mapping Manager"
+            active={activeTab === "mapping"}
+            onClick={() => { setActiveTab("mapping"); setSearchQuery(""); }}
+          />
+        </div>
+
+        <div className="flex items-center gap-2 w-full md:w-auto">
+          <Input
+            placeholder={activeTab === "conglomerates" ? "Search conglomerate, ticker, sector..." : "Search assets, agents..."}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="h-8 max-w-xs text-xs"
+          />
+
+          {activeTab === "mapping" && (
+            <>
               <select
-                value={microTrendKpi}
-                onChange={(e) => setMicroTrendKpi(e.target.value as "roe" | "mg_ebit" | "mg_liq")}
-                className="text-sm bg-zinc-800 border border-zinc-700 rounded px-2.5 py-1.5 text-zinc-200 focus:border-cyan-600 focus:outline-none focus:ring-1 focus:ring-cyan-600"
+                value={assetTypeFilter}
+                onChange={(e: any) => setAssetTypeFilter(e.target.value)}
+                className="h-8 rounded border border-zinc-800 bg-zinc-950 px-2 text-xs text-zinc-300 outline-none focus:border-amber-500"
               >
-                <option value="roe">Return on Equity (ROE)</option>
-                <option value="mg_ebit">EBIT Margin</option>
-                <option value="mg_liq">Net Margin</option>
+                <option value="all">All Types</option>
+                <option value="distributor">Distributors</option>
+                <option value="plant">Gen Plants</option>
               </select>
-            </div>
-            <div className="flex flex-wrap gap-x-4 gap-y-2 items-center">
-              <label className="text-xs text-zinc-400">Sectors:</label>
-              {sectors.map((s) => {
-                const checked = selectedSectors.includes(s.sector_slug);
-                return (
-                  <label key={s.sector_slug} className="flex items-center gap-1.5 text-xs text-zinc-300 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => {
-                        if (checked) {
-                          setSelectedSectors(selectedSectors.filter((x) => x !== s.sector_slug));
-                        } else {
-                          setSelectedSectors([...selectedSectors, s.sector_slug]);
-                        }
-                      }}
-                      className="rounded bg-zinc-800 border-zinc-700 text-amber-500 focus:ring-amber-500 focus:ring-offset-zinc-900"
-                    />
-                    {s.sector_name}
-                  </label>
-                );
-              })}
-            </div>
-          </div>
 
-          {/* Chart */}
-          {chartSeries.length === 0 || periods.length === 0 ? (
-            <StateBanner
-              variant="empty"
-              title="Nothing to plot"
-              message="Select at least one sector to display its trend."
-            />
-          ) : (
-            <div className="rounded border border-zinc-800 bg-zinc-950/35 p-4">
-              <IndicatorChart
-                series={chartSeries}
-                periods={periods}
-                config={{
-                  type: "line",
-                  grid: true,
-                  smooth: true,
-                  markers: true,
-                  legend: true,
-                  dataLabels: false,
-                  indexMode: false,
-                }}
-                height={320}
-              />
-            </div>
+              <select
+                value={mappingSourceFilter}
+                onChange={(e: any) => setMappingSourceFilter(e.target.value)}
+                className="h-8 rounded border border-zinc-800 bg-zinc-950 px-2 text-xs text-zinc-300 outline-none focus:border-amber-500"
+              >
+                <option value="all">All Sources</option>
+                <option value="auto">Auto matched</option>
+                <option value="manual">Manual override</option>
+                <option value="unmapped">Unmapped</option>
+              </select>
+            </>
           )}
+        </div>
+      </div>
 
-          {/* Audit Table */}
-          {chartSeries.length > 0 && periods.length > 0 && (
-            <section className="min-w-0 max-w-full rounded border border-zinc-800 bg-zinc-950/35">
-              <div className="border-b border-zinc-800 px-4 py-3">
-                <h4 className="text-sm font-medium text-zinc-100">Audit Table</h4>
-                <p className="text-[11px] text-zinc-500">
-                  Historical {microTrendKpi.toUpperCase()} values by sector (%).
-                </p>
-              </div>
-              <div className="min-w-0 max-w-full overflow-x-auto">
-                <table className="min-w-[620px] w-full border-collapse text-sm">
-                  <thead>
-                    <tr className="bg-zinc-900/80 text-left text-[10px] uppercase tracking-wider text-zinc-500">
-                      <th className="px-3 py-2 font-medium">Sector</th>
-                      {periods.map((year) => (
-                        <th key={year} className="px-3 py-2 text-right font-medium">{year}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-800/80 text-zinc-200">
-                    {selectedSectors.map((slug, idx) => {
-                      const sector = sectors.find((s) => s.sector_slug === slug);
-                      const detailQuery = sectorsDetails[idx];
-                      const detail = detailQuery?.data?.mode === "desktop" ? detailQuery.data.detail : null;
+      {/* Tab 1: Conglomerates Overview */}
+      {activeTab === "conglomerates" && (
+        <div className="border border-zinc-850 rounded-lg bg-zinc-950/20 overflow-hidden">
+          <table className="w-full text-xs text-left border-collapse">
+            <thead>
+              <tr className="bg-zinc-900/50 text-[10px] uppercase font-semibold text-zinc-500 tracking-wider">
+                <th className="px-3.5 py-2.5">Company / Conglomerate</th>
+                <th className="px-3.5 py-2.5">Ticker</th>
+                <th className="px-3.5 py-2.5">CNPJ</th>
+                <th className="px-3.5 py-2.5">CVM Sector</th>
+                <th className="px-3.5 py-2.5">GICS Sector</th>
+                <th className="px-3.5 py-2.5 text-center">Distributors</th>
+                <th className="px-3.5 py-2.5 text-right">Capacity (MW)</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-900">
+              {filteredConglomerates.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-8 text-center text-zinc-500">
+                    No conglomerates found matching the search.
+                  </td>
+                </tr>
+              ) : (
+                filteredConglomerates.map((c) => {
+                  const isExpanded = expandedCvmCodes.has(c.cd_cvm);
+                  const hasMappedAssets = c.distributors_count > 0 || c.plants_count > 0;
+                  const companyAssets = assets.filter((a) => a.mapped_cvm === c.cd_cvm);
 
-                      const valueByYear = new Map<number, number>();
-                      if (detail?.yearly_overview) {
-                        detail.yearly_overview.forEach((y) => {
-                          const val = y[microTrendKpi];
-                          if (val !== null && val !== undefined) {
-                            valueByYear.set(y.year, val);
-                          }
-                        });
-                      }
-
-                      return (
-                        <tr key={slug} className="hover:bg-zinc-900/50">
-                          <td className="px-3 py-2 font-medium text-zinc-100">
-                            {sector?.sector_name ?? slug}
+                  return (
+                    <>
+                      <tr
+                        key={c.cd_cvm}
+                        onClick={() => hasMappedAssets && toggleExpand(c.cd_cvm)}
+                        className={`hover:bg-zinc-900/30 transition-colors ${
+                          hasMappedAssets ? "cursor-pointer" : "opacity-60"
+                        } ${isExpanded ? "bg-zinc-900/20" : ""}`}
+                      >
+                        <td className="px-3.5 py-3 font-medium text-zinc-200">
+                          <div className="flex items-center gap-1.5">
+                            {hasMappedAssets && (
+                              <span className="text-[10px] text-zinc-500">
+                                {isExpanded ? "▼" : "▶"}
+                              </span>
+                            )}
+                            <span>{c.company_name}</span>
+                          </div>
+                        </td>
+                        <td className="px-3.5 py-3 font-mono text-zinc-400">{c.ticker_b3 || "—"}</td>
+                        <td className="px-3.5 py-3 font-mono text-zinc-400">
+                          {c.cnpj ? c.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5") : "—"}
+                        </td>
+                        <td className="px-3.5 py-3 text-zinc-400">{c.setor_cvm || "—"}</td>
+                        <td className="px-3.5 py-3 text-zinc-400">{c.gics_sector || "—"}</td>
+                        <td className="px-3.5 py-3 text-center font-semibold text-zinc-300">
+                          {c.distributors_count}
+                        </td>
+                        <td className="px-3.5 py-3 text-right font-mono font-medium text-zinc-300">
+                          {c.total_capacity_mw > 0 ? `${c.total_capacity_mw.toLocaleString("en-US", { maximumFractionDigits: 1 })} MW` : "—"}
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr key={`${c.cd_cvm}-details`} className="bg-zinc-950/45">
+                          <td colSpan={7} className="px-8 py-2.5">
+                            <div className="space-y-1.5 border-l-2 border-amber-600/30 pl-4 py-1">
+                              <h4 className="text-[10px] uppercase font-semibold text-zinc-500 tracking-wider mb-2">
+                                Mapped physical grid assets
+                              </h4>
+                              {companyAssets.map((a) => (
+                                <div key={`${a.id}-${a.type}`} className="flex items-center justify-between text-xs py-1 border-b border-zinc-900/40 last:border-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className={`px-1.5 py-0.5 text-[9px] font-semibold rounded ${
+                                      a.type === "distributor" ? "bg-sky-500/10 text-sky-400" : "bg-emerald-500/10 text-emerald-400"
+                                    }`}>
+                                      {a.type === "distributor" ? "Dist" : "Gen"}
+                                    </span>
+                                    <span className="font-medium text-zinc-300">{a.name}</span>
+                                    <span className="text-[10px] text-zinc-500 font-mono">({a.id})</span>
+                                  </div>
+                                  <div className="flex items-center gap-4">
+                                    <span className="text-zinc-500 font-mono text-[10.5px]">{a.stats}</span>
+                                    <span className={`px-1.5 py-0.5 text-[9px] rounded-full font-medium ${
+                                      a.mapping_source === "manual" ? "bg-amber-500/10 text-amber-400 border border-amber-500/20" : "bg-zinc-800 text-zinc-500"
+                                    }`}>
+                                      {a.mapping_source === "manual" ? "Override" : "Auto"}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
                           </td>
-                          {allYears.map((yr) => {
-                            const val = valueByYear.get(yr);
-                            return (
-                              <td key={yr} className="px-3 py-2 text-right font-mono text-[11px] text-zinc-300">
-                                {formatPct(val)}
-                              </td>
-                            );
-                          })}
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          )}
+                      )}
+                    </>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Tab 2: Asset Mapping Manager */}
+      {activeTab === "mapping" && (
+        <div className="border border-zinc-850 rounded-lg bg-zinc-950/20 overflow-hidden">
+          <table className="w-full text-xs text-left border-collapse">
+            <thead>
+              <tr className="bg-zinc-900/50 text-[10px] uppercase font-semibold text-zinc-500 tracking-wider">
+                <th className="px-3.5 py-2.5">Physical Asset</th>
+                <th className="px-3.5 py-2.5">Details</th>
+                <th className="px-3.5 py-2.5">Asset Type</th>
+                <th className="px-3.5 py-2.5">Linked CVM Company</th>
+                <th className="px-3.5 py-2.5">Mapping Status</th>
+                <th className="px-3.5 py-2.5 text-right">Mapped Company CNPJ / Ticker</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-900">
+              {filteredAssets.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-8 text-center text-zinc-500">
+                    No physical assets found matching the criteria.
+                  </td>
+                </tr>
+              ) : (
+                filteredAssets.map((a) => {
+                  const key = `${a.id}-${a.type}`;
+                  const isUpdating = updatingAssetKeys.has(key);
+
+                  return (
+                    <tr key={key} className="hover:bg-zinc-900/20 transition-colors">
+                      <td className="px-3.5 py-2.5 font-medium text-zinc-200">
+                        <div>
+                          <div>{a.name}</div>
+                          <div className="text-[10px] font-mono text-zinc-600 mt-0.5">ID: {a.id}</div>
+                        </div>
+                      </td>
+                      <td className="px-3.5 py-2.5 text-zinc-400 text-[10.5px]">
+                        {a.sub_name}
+                      </td>
+                      <td className="px-3.5 py-2.5">
+                        <span className={`px-1.5 py-0.5 text-[9px] font-semibold rounded ${
+                          a.type === "distributor" ? "bg-sky-500/10 text-sky-400" : "bg-emerald-500/10 text-emerald-400"
+                        }`}>
+                          {a.type === "distributor" ? "Distributor" : "Gen Plant"}
+                        </span>
+                      </td>
+                      <td className="px-3.5 py-2.5">
+                        <select
+                          value={a.mapped_cvm || ""}
+                          disabled={isUpdating}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            void handleMappingChange(a.id, a.type, val ? Number(val) : null);
+                          }}
+                          className={`w-full max-w-[200px] h-8 rounded border bg-zinc-950 px-2 text-xs outline-none transition-colors focus:border-amber-500 ${
+                            isUpdating ? "border-amber-500/40 text-amber-500" : "border-zinc-800 text-zinc-200"
+                          }`}
+                        >
+                          <option value="">-- Unmapped / Loose --</option>
+                          {conglomerates.map((c) => (
+                            <option key={c.cd_cvm} value={c.cd_cvm}>
+                              {c.company_name} ({c.ticker_b3 || "no-ticker"})
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-3.5 py-2.5">
+                        <span className={`px-2 py-0.5 text-[9px] rounded-full font-semibold border ${
+                          a.mapping_source === "manual"
+                            ? "bg-amber-500/10 border-amber-500/20 text-amber-400"
+                            : a.mapping_source === "auto"
+                            ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                            : "bg-zinc-800 border-zinc-750 text-zinc-500"
+                        }`}>
+                          {a.mapping_source === "manual" ? "Override" : a.mapping_source === "auto" ? "Auto matched" : "Unmapped"}
+                        </span>
+                      </td>
+                      <td className="px-3.5 py-2.5 text-right font-mono text-[10.5px] text-zinc-500">
+                        {a.mapped_cvm ? (
+                          <div>
+                            <span className="text-zinc-400">{a.ticker}</span>
+                            <span className="mx-1.5 text-zinc-800">·</span>
+                            <span>CVM: {a.mapped_cvm}</span>
+                          </div>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
   );
 }
 
-function ViewTab({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+// Helper components
+function SummaryTile({ label, value, highlight = false }: { label: string; value: string | number; highlight?: boolean }) {
+  return (
+    <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3 flex flex-col justify-between min-h-[68px]">
+      <span className="text-[10px] uppercase font-semibold text-zinc-500 tracking-wider block">{label}</span>
+      <span className={`text-lg font-bold font-mono tracking-tight ${highlight ? "text-amber-500" : "text-zinc-200"}`}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function TabButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
     <button
-      type="button"
+      onClick={onClick}
       role="tab"
       aria-selected={active}
-      onClick={onClick}
-      className={`px-3 py-1.5 text-xs font-medium transition-colors ${
-        active
-          ? "bg-zinc-700 text-zinc-100"
-          : "bg-transparent text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800"
+      className={`px-3.5 py-1.5 text-xs font-semibold cursor-pointer transition-colors outline-none ${
+        active ? "bg-zinc-800 text-zinc-100" : "bg-zinc-900/15 text-zinc-500 hover:text-zinc-350 hover:bg-zinc-900/50"
       }`}
     >
       {label}
     </button>
   );
-}
-
-function MicroSummaryCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded border border-zinc-800 bg-zinc-950/40 p-3">
-      <p className="text-[10px] uppercase tracking-wider text-zinc-500">{label}</p>
-      <p className="mt-1 font-mono text-xl text-zinc-100">{value}</p>
-    </div>
-  );
-}
-
-function formatPct(value: number | null | undefined): string {
-  if (value === null || value === undefined || !Number.isFinite(value)) return "-";
-  return `${value.toLocaleString("en-US", { maximumFractionDigits: 1 })}%`;
-}
-
-function statusClass(status: string | undefined): string {
-  if (status === "complete") return "border-green-800 bg-green-950/30 text-green-300";
-  if (status === "partial") return "border-amber-800 bg-amber-950/30 text-amber-300";
-  if (status === "failed") return "border-red-800 bg-red-950/30 text-red-300";
-  return "border-zinc-700 bg-zinc-900 text-zinc-400";
 }

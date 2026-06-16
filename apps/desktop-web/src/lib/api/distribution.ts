@@ -165,3 +165,91 @@ export async function fetchDistributionHealth(): Promise<DistributionHealthResul
   if (payload.error) throw new Error(payload.error);
   return { mode, health: payload as DistributionHealthResponse };
 }
+
+export interface ConglomerateEntry {
+  cd_cvm: number;
+  company_name: string;
+  ticker_b3: string | null;
+  cnpj: string | null;
+  setor_cvm: string | null;
+  gics_sector: string | null;
+  distributors_count: number;
+  plants_count: number;
+  total_capacity_mw: number;
+  total_generation_mwmed: number;
+}
+
+export interface AssetMappingEntry {
+  id: string;
+  type: "distributor" | "plant";
+  name: string;
+  sub_name: string;
+  mapped_cvm: number | null;
+  company_name: string;
+  ticker: string;
+  mapping_source: "auto" | "manual" | "unmapped";
+  review_notes: string | null;
+  stats: string;
+}
+
+export type ConglomeratesResult =
+  | { mode: "desktop" | "mock"; items: ConglomerateEntry[]; count: number }
+  | { mode: "browser"; items: []; count: 0; reason: string };
+
+export type AssetMappingsResult =
+  | { mode: "desktop" | "mock"; items: AssetMappingEntry[]; count: number }
+  | { mode: "browser"; items: []; count: 0; reason: string };
+
+export type GenericResult =
+  | { mode: "desktop" | "mock"; success: boolean; error: string | null }
+  | { mode: "browser"; success: boolean; error: string };
+
+export async function fetchConglomerates(): Promise<ConglomeratesResult> {
+  const mode: BridgeMode = getBridgeMode();
+  if (mode === "browser") {
+    return { mode: "browser", items: [], count: 0, reason: BROWSER_REASON };
+  }
+  const payload = await callBridge("get_conglomerates", {});
+  if (payload.error) throw new Error(payload.error);
+  return { mode, items: payload.items ?? [], count: payload.count ?? 0 };
+}
+
+export async function fetchAssetMappings(): Promise<AssetMappingsResult> {
+  const mode: BridgeMode = getBridgeMode();
+  if (mode === "browser") {
+    return { mode: "browser", items: [], count: 0, reason: BROWSER_REASON };
+  }
+  const payload = await callBridge("get_asset_mappings", {});
+  if (payload.error) throw new Error(payload.error);
+  return { mode, items: payload.items ?? [], count: payload.count ?? 0 };
+}
+
+export async function updateAssetMapping(
+  assetId: string,
+  assetType: "distributor" | "plant",
+  cdCvm: number | null,
+  reviewNotes?: string
+): Promise<GenericResult> {
+  const mode: BridgeMode = getBridgeMode();
+  if (mode === "browser") {
+    return { mode: "browser", success: false, error: BROWSER_REASON };
+  }
+  const payload = await callBridge("update_asset_mapping", {
+    asset_id: assetId,
+    asset_type: assetType,
+    cd_cvm: cdCvm,
+    review_notes: reviewNotes || null,
+  });
+  if (payload.error) return { mode, success: false, error: payload.error };
+  return { mode, success: true, error: null };
+}
+
+export async function runAutomaticMapping(): Promise<GenericResult> {
+  const mode: BridgeMode = getBridgeMode();
+  if (mode === "browser") {
+    return { mode: "browser", success: false, error: BROWSER_REASON };
+  }
+  const payload = await callBridge("run_automatic_mapping", {});
+  if (payload.error) return { mode, success: false, error: payload.error };
+  return { mode, success: true, error: null };
+}

@@ -35,7 +35,9 @@ import type {
   DistributionRefreshStatus,
   EconomicGroupEntry,
   EconomicGroupDetail,
-  DistributionHealthResponse
+  DistributionHealthResponse,
+  ConglomerateEntry,
+  AssetMappingEntry
 } from "./types.distribution";
 
 export type {
@@ -45,7 +47,9 @@ export type {
   DistributionRefreshStatus,
   EconomicGroupEntry,
   EconomicGroupDetail,
-  DistributionHealthResponse
+  DistributionHealthResponse,
+  ConglomerateEntry,
+  AssetMappingEntry
 };
 
 export type {
@@ -1428,6 +1432,10 @@ export interface BridgeApi {
   get_distribution_group_detail(params: { group_id: string }): Promise<EconomicGroupDetail | { error: string }>;
   export_distribution_excel(params: { entity_type: "distributor" | "group"; entity_id: string }): Promise<{ path: string | null; error: string | null }>;
   get_distribution_health(params?: Record<string, unknown>): Promise<DistributionHealthResponse>;
+  get_conglomerates(params?: Record<string, unknown>): Promise<{ items: ConglomerateEntry[]; count: number; error?: string }>;
+  get_asset_mappings(params?: Record<string, unknown>): Promise<{ items: AssetMappingEntry[]; count: number; error?: string }>;
+  update_asset_mapping(params: { asset_id: string; asset_type: "distributor" | "plant"; cd_cvm: number | null; review_notes?: string | null }): Promise<{ status: string; error: string | null }>;
+  run_automatic_mapping(params?: Record<string, unknown>): Promise<{ status: string; matched?: number; preserved_manual?: number; error?: string }>;
 }
 
 declare global {

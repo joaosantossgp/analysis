@@ -156,3 +156,29 @@ export interface DistributionHealthResponse {
   refresh_logs?: DistributionRefreshLogEntry[];
   error?: string;
 }
+
+export interface ConglomerateEntry {
+  cd_cvm: number;
+  company_name: string;
+  ticker_b3: string | null;
+  cnpj: string | null;
+  setor_cvm: string | null;
+  gics_sector: string | null;
+  distributors_count: number;
+  plants_count: number;
+  total_capacity_mw: number;
+  total_generation_mwmed: number;
+}
+
+export interface AssetMappingEntry {
+  id: string;
+  type: "distributor" | "plant";
+  name: string;
+  sub_name: string;
+  mapped_cvm: number | null;
+  company_name: string;
+  ticker: string;
+  mapping_source: "auto" | "manual" | "unmapped";
+  review_notes: string | null;
+  stats: string;
+}
