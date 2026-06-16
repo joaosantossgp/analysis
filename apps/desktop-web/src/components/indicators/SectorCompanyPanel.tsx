@@ -17,6 +17,9 @@ export function SectorCompanyPanel({ bridgeReady }: { bridgeReady: boolean }) {
   const [assetTypeFilter, setAssetTypeFilter] = useState<"all" | "distributor" | "plant">("all");
   const [mappingSourceFilter, setMappingSourceFilter] = useState<"all" | "auto" | "manual" | "unmapped">("all");
   
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  
   // Expanded conglomerate row IDs
   const [expandedCvmCodes, setExpandedCvmCodes] = useState<Set<number>>(new Set());
 
@@ -135,6 +138,16 @@ export function SectorCompanyPanel({ bridgeReady }: { bridgeReady: boolean }) {
     });
   }, [assets, searchQuery, assetTypeFilter, mappingSourceFilter]);
 
+  // Paginated Assets
+  const pageSize = 50;
+  const totalPages = Math.max(1, Math.ceil(filteredAssets.length / pageSize));
+  const validCurrentPage = Math.min(currentPage, totalPages);
+  
+  const paginatedAssets = useMemo(() => {
+    const start = (validCurrentPage - 1) * pageSize;
+    return filteredAssets.slice(start, start + pageSize);
+  }, [filteredAssets, validCurrentPage, pageSize]);
+
   // Metrics summary
   const summary = useMemo(() => {
     const activeCongs = conglomerates.filter((c) => c.distributors_count > 0 || c.plants_count > 0).length;
@@ -212,12 +225,12 @@ export function SectorCompanyPanel({ bridgeReady }: { bridgeReady: boolean }) {
           <TabButton
             label="Conglomerates Overview"
             active={activeTab === "conglomerates"}
-            onClick={() => { setActiveTab("conglomerates"); setSearchQuery(""); }}
+            onClick={() => { setActiveTab("conglomerates"); setSearchQuery(""); setCurrentPage(1); }}
           />
           <TabButton
             label="Asset Mapping Manager"
             active={activeTab === "mapping"}
-            onClick={() => { setActiveTab("mapping"); setSearchQuery(""); }}
+            onClick={() => { setActiveTab("mapping"); setSearchQuery(""); setCurrentPage(1); }}
           />
         </div>
 
@@ -225,7 +238,7 @@ export function SectorCompanyPanel({ bridgeReady }: { bridgeReady: boolean }) {
           <Input
             placeholder={activeTab === "conglomerates" ? "Search conglomerate, ticker, sector..." : "Search assets, agents..."}
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
             className="h-8 max-w-xs text-xs"
           />
 
@@ -233,7 +246,7 @@ export function SectorCompanyPanel({ bridgeReady }: { bridgeReady: boolean }) {
             <>
               <select
                 value={assetTypeFilter}
-                onChange={(e: any) => setAssetTypeFilter(e.target.value)}
+                onChange={(e: any) => { setAssetTypeFilter(e.target.value); setCurrentPage(1); }}
                 className="h-8 rounded border border-zinc-800 bg-zinc-950 px-2 text-xs text-zinc-300 outline-none focus:border-amber-500"
               >
                 <option value="all">All Types</option>
@@ -243,7 +256,7 @@ export function SectorCompanyPanel({ bridgeReady }: { bridgeReady: boolean }) {
 
               <select
                 value={mappingSourceFilter}
-                onChange={(e: any) => setMappingSourceFilter(e.target.value)}
+                onChange={(e: any) => { setMappingSourceFilter(e.target.value); setCurrentPage(1); }}
                 className="h-8 rounded border border-zinc-800 bg-zinc-950 px-2 text-xs text-zinc-300 outline-none focus:border-amber-500"
               >
                 <option value="all">All Sources</option>
@@ -359,96 +372,142 @@ export function SectorCompanyPanel({ bridgeReady }: { bridgeReady: boolean }) {
 
       {/* Tab 2: Asset Mapping Manager */}
       {activeTab === "mapping" && (
-        <div className="border border-zinc-850 rounded-lg bg-zinc-950/20 overflow-hidden">
-          <table className="w-full text-xs text-left border-collapse">
-            <thead>
-              <tr className="bg-zinc-900/50 text-[10px] uppercase font-semibold text-zinc-500 tracking-wider">
-                <th className="px-3.5 py-2.5">Physical Asset</th>
-                <th className="px-3.5 py-2.5">Details</th>
-                <th className="px-3.5 py-2.5">Asset Type</th>
-                <th className="px-3.5 py-2.5">Linked CVM Company</th>
-                <th className="px-3.5 py-2.5">Mapping Status</th>
-                <th className="px-3.5 py-2.5 text-right">Mapped Company CNPJ / Ticker</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-900">
-              {filteredAssets.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-zinc-500">
-                    No physical assets found matching the criteria.
-                  </td>
+        <div className="space-y-3">
+          <div className="border border-zinc-850 rounded-lg bg-zinc-950/20 overflow-hidden">
+            <table className="w-full text-xs text-left border-collapse">
+              <thead>
+                <tr className="bg-zinc-900/50 text-[10px] uppercase font-semibold text-zinc-500 tracking-wider">
+                  <th className="px-3.5 py-2.5">Physical Asset</th>
+                  <th className="px-3.5 py-2.5">Details</th>
+                  <th className="px-3.5 py-2.5">Asset Type</th>
+                  <th className="px-3.5 py-2.5">Linked CVM Company</th>
+                  <th className="px-3.5 py-2.5">Mapping Status</th>
+                  <th className="px-3.5 py-2.5 text-right">Mapped Company CNPJ / Ticker</th>
                 </tr>
-              ) : (
-                filteredAssets.map((a) => {
-                  const key = `${a.id}-${a.type}`;
-                  const isUpdating = updatingAssetKeys.has(key);
+              </thead>
+              <tbody className="divide-y divide-zinc-900">
+                {paginatedAssets.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-8 text-center text-zinc-500">
+                      No physical assets found matching the criteria.
+                    </td>
+                  </tr>
+                ) : (
+                  paginatedAssets.map((a) => {
+                    const key = `${a.id}-${a.type}`;
+                    const isUpdating = updatingAssetKeys.has(key);
 
-                  return (
-                    <tr key={key} className="hover:bg-zinc-900/20 transition-colors">
-                      <td className="px-3.5 py-2.5 font-medium text-zinc-200">
-                        <div>
-                          <div>{a.name}</div>
-                          <div className="text-[10px] font-mono text-zinc-600 mt-0.5">ID: {a.id}</div>
-                        </div>
-                      </td>
-                      <td className="px-3.5 py-2.5 text-zinc-400 text-[10.5px]">
-                        {a.sub_name}
-                      </td>
-                      <td className="px-3.5 py-2.5">
-                        <span className={`px-1.5 py-0.5 text-[9px] font-semibold rounded ${
-                          a.type === "distributor" ? "bg-sky-500/10 text-sky-400" : "bg-emerald-500/10 text-emerald-400"
-                        }`}>
-                          {a.type === "distributor" ? "Distributor" : "Gen Plant"}
-                        </span>
-                      </td>
-                      <td className="px-3.5 py-2.5">
-                        <select
-                          value={a.mapped_cvm || ""}
-                          disabled={isUpdating}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            void handleMappingChange(a.id, a.type, val ? Number(val) : null);
-                          }}
-                          className={`w-full max-w-[200px] h-8 rounded border bg-zinc-950 px-2 text-xs outline-none transition-colors focus:border-amber-500 ${
-                            isUpdating ? "border-amber-500/40 text-amber-500" : "border-zinc-800 text-zinc-200"
-                          }`}
-                        >
-                          <option value="">-- Unmapped / Loose --</option>
-                          {conglomerates.map((c) => (
-                            <option key={c.cd_cvm} value={c.cd_cvm}>
-                              {c.company_name} ({c.ticker_b3 || "no-ticker"})
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="px-3.5 py-2.5">
-                        <span className={`px-2 py-0.5 text-[9px] rounded-full font-semibold border ${
-                          a.mapping_source === "manual"
-                            ? "bg-amber-500/10 border-amber-500/20 text-amber-400"
-                            : a.mapping_source === "auto"
-                            ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
-                            : "bg-zinc-800 border-zinc-750 text-zinc-500"
-                        }`}>
-                          {a.mapping_source === "manual" ? "Override" : a.mapping_source === "auto" ? "Auto matched" : "Unmapped"}
-                        </span>
-                      </td>
-                      <td className="px-3.5 py-2.5 text-right font-mono text-[10.5px] text-zinc-500">
-                        {a.mapped_cvm ? (
+                    return (
+                      <tr key={key} className="hover:bg-zinc-900/20 transition-colors">
+                        <td className="px-3.5 py-2.5 font-medium text-zinc-200">
                           <div>
-                            <span className="text-zinc-400">{a.ticker}</span>
-                            <span className="mx-1.5 text-zinc-800">·</span>
-                            <span>CVM: {a.mapped_cvm}</span>
+                            <div>{a.name}</div>
+                            <div className="text-[10px] font-mono text-zinc-600 mt-0.5">ID: {a.id}</div>
                           </div>
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+                        </td>
+                        <td className="px-3.5 py-2.5 text-zinc-400 text-[10.5px]">
+                          {a.sub_name}
+                        </td>
+                        <td className="px-3.5 py-2.5">
+                          <span className={`px-1.5 py-0.5 text-[9px] font-semibold rounded ${
+                            a.type === "distributor" ? "bg-sky-500/10 text-sky-400" : "bg-emerald-500/10 text-emerald-400"
+                          }`}>
+                            {a.type === "distributor" ? "Distributor" : "Gen Plant"}
+                          </span>
+                        </td>
+                        <td className="px-3.5 py-2.5">
+                          <select
+                            value={a.mapped_cvm || ""}
+                            disabled={isUpdating}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              void handleMappingChange(a.id, a.type, val ? Number(val) : null);
+                            }}
+                            className={`w-full max-w-[200px] h-8 rounded border bg-zinc-950 px-2 text-xs outline-none transition-colors focus:border-amber-500 ${
+                              isUpdating ? "border-amber-500/40 text-amber-500" : "border-zinc-800 text-zinc-200"
+                            }`}
+                          >
+                            <option value="">-- Unmapped / Loose --</option>
+                            {conglomerates.map((c) => (
+                              <option key={c.cd_cvm} value={c.cd_cvm}>
+                                {c.company_name} ({c.ticker_b3 || "no-ticker"})
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="px-3.5 py-2.5">
+                          <span className={`px-2 py-0.5 text-[9px] rounded-full font-semibold border ${
+                            a.mapping_source === "manual"
+                              ? "bg-amber-500/10 border-amber-500/20 text-amber-400"
+                              : a.mapping_source === "auto"
+                              ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                              : "bg-zinc-800 border-zinc-750 text-zinc-500"
+                          }`}>
+                            {a.mapping_source === "manual" ? "Override" : a.mapping_source === "auto" ? "Auto matched" : "Unmapped"}
+                          </span>
+                        </td>
+                        <td className="px-3.5 py-2.5 text-right font-mono text-[10.5px] text-zinc-500">
+                          {a.mapped_cvm ? (
+                            <div>
+                              <span className="text-zinc-400">{a.ticker}</span>
+                              <span className="mx-1.5 text-zinc-800">·</span>
+                              <span>CVM: {a.mapped_cvm}</span>
+                            </div>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Pagination Controls */}
+          {filteredAssets.length > pageSize && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-zinc-900/10 border border-zinc-850 rounded-lg p-3 text-xs text-zinc-400">
+              <div>
+                Showing <span className="font-semibold text-zinc-200">{Math.min(filteredAssets.length, (validCurrentPage - 1) * pageSize + 1)}</span> to{" "}
+                <span className="font-semibold text-zinc-200">{Math.min(filteredAssets.length, validCurrentPage * pageSize)}</span> of{" "}
+                <span className="font-semibold text-zinc-200">{filteredAssets.length}</span> assets
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Button
+                  size="xs"
+                  disabled={validCurrentPage === 1}
+                  onClick={() => setCurrentPage(1)}
+                >
+                  First
+                </Button>
+                <Button
+                  size="xs"
+                  disabled={validCurrentPage === 1}
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                >
+                  Prev
+                </Button>
+                <span className="px-2 font-mono text-[11px] text-zinc-300">
+                  Page {validCurrentPage} of {totalPages}
+                </span>
+                <Button
+                  size="xs"
+                  disabled={validCurrentPage === totalPages}
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                >
+                  Next
+                </Button>
+                <Button
+                  size="xs"
+                  disabled={validCurrentPage === totalPages}
+                  onClick={() => setCurrentPage(totalPages)}
+                >
+                  Last
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
