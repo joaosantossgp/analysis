@@ -106,6 +106,7 @@ class AppPaths:
     company_universe_snapshot_path: Path
     legacy_data_paths: tuple[Path, ...]
     energy_kpi_db_path: Path
+    news_db_path: Path
     energy_kpi_raw_dir: Path
 
     @property
@@ -115,6 +116,10 @@ class AppPaths:
     @property
     def energy_kpi_sqlite_url(self) -> str:
         return f"sqlite:///{self.energy_kpi_db_path}"
+
+    @property
+    def news_sqlite_url(self) -> str:
+        return f"sqlite:///{self.news_db_path}"
 
 
 @dataclass(frozen=True)
@@ -227,6 +232,11 @@ def build_settings(project_root: Path | None = None) -> AppSettings:
         os.getenv("CVM_ENERGY_KPI_DB"),
         db_dir / "energy_kpis.db",
     )
+    news_db_path = _resolve_path(
+        resolved_root,
+        os.getenv("CVM_NEWS_DB"),
+        db_dir / "news.db",
+    )
     energy_kpi_raw_dir = _resolve_path(
         resolved_root,
         os.getenv("CVM_ENERGY_KPI_RAW_DIR"),
@@ -264,6 +274,7 @@ def build_settings(project_root: Path | None = None) -> AppSettings:
             data_dir / "cvm_raw",
         ),
         energy_kpi_db_path=energy_kpi_db_path,
+        news_db_path=news_db_path,
         energy_kpi_raw_dir=energy_kpi_raw_dir,
     )
 

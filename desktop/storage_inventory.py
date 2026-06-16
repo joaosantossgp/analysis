@@ -381,6 +381,9 @@ class StorageInventoryManager:
             RootSpec("cvm_financials", "CVM financials", Path(p.db_path), "databases", "Databases", "cvm_financials", "CVM financial statements", "sqlite"),
             RootSpec("energy_kpis", "Energy KPIs", Path(p.energy_kpi_db_path), "databases", "Databases", "energy_macro", "Energy macro / SIN / CCEE / Distribution", "sqlite"),
         ]
+        news_db_path = getattr(p, "news_db_path", None)
+        if news_db_path is not None:
+            specs.append(RootSpec("news", "News", Path(news_db_path), "databases", "Databases", "news", "Financial news", "sqlite"))
         dedup: dict[str, RootSpec] = {}
         for spec in specs:
             dedup.setdefault(str(spec.path.resolve()).casefold(), spec)

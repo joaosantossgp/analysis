@@ -50,6 +50,15 @@ const DevDataOpsPage = lazy(() =>
 const CountryKpisPage = lazy(() =>
   import("./routes/CountryKpisPage").then((m) => ({ default: m.CountryKpisPage })),
 );
+const CoveragePage = lazy(() =>
+  import("./routes/CoveragePage").then((m) => ({ default: m.CoveragePage })),
+);
+const CompanyCoveragePage = lazy(() =>
+  import("./routes/CompanyCoveragePage").then((m) => ({ default: m.CompanyCoveragePage })),
+);
+const NewsPage = lazy(() =>
+  import("./routes/NewsPage").then((m) => ({ default: m.NewsPage })),
+);
 const CommandBar = lazy(() =>
   import("./components/command/CommandBar").then((m) => ({ default: m.CommandBar })),
 );
@@ -170,6 +179,16 @@ function AppShellWithPalette() {
               path="/empresas/:cdCvm/model-mapping"
               element={<CompanyModelMappingPage />}
             />
+            <Route
+              path="/empresas/:cdCvm/coverage"
+              element={<CompanyCoveragePage />}
+            />
+            <Route path="/coverage" element={<CoveragePage section="universes" />} />
+            <Route path="/coverage/prioritization" element={<CoveragePage section="prioritization" />} />
+            <Route path="/coverage/work-queue" element={<CoveragePage section="work-queue" />} />
+            <Route path="/coverage/capacity" element={<Navigate to="/coverage" replace />} />
+            <Route path="/news" element={<NewsPage />} />
+            <Route path="/news/latest" element={<NewsPage />} />
             <Route path="/indicators" element={<CountryKpisPage />} />
             {/* Backwards-compat: old bookmarks/deep links to the macro module. */}
             <Route path="/country-kpis" element={<Navigate to="/indicators" replace />} />

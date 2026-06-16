@@ -186,3 +186,16 @@ export interface AssetMappingEntry {
   review_notes: string | null;
   stats: string;
 }
+
+export interface CvmRegistryEntry {
+  cd_cvm: number;
+  company_name: string;
+  ticker_b3: string | null;
+  cnpj: string | null;
+  setor_cvm: string | null;
+  gics_sector: string | null;
+  has_financials: boolean;
+  mapped_distributors: number;
+  mapped_plants: number;
+  total_capacity_mw: number;
+}

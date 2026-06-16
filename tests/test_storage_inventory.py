@@ -25,6 +25,7 @@ def _settings(root: Path):
             db_dir=data / "db",
             db_path=data / "db" / "cvm_financials.db",
             energy_kpi_db_path=data / "db" / "energy_kpis.db",
+            news_db_path=data / "db" / "news.db",
             energy_kpi_raw_dir=data / "raw" / "energy",
         )
     )
@@ -64,6 +65,7 @@ def test_storage_inventory_deduplicates_nested_roots_and_counts_sidecars(tmp_pat
     assert cvm_db["shm_bytes"] == 10
     assert cvm_db["sqlite"]["page_size"] > 0
     assert cvm_db["sqlite"]["estimated_internal_free_bytes"] >= 0
+    assert any(db["id"] == "news" for db in inventory["databases"])
 
 
 def test_storage_inventory_persists_latest_snapshot_and_bounded_history(tmp_path):

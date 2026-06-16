@@ -918,3 +918,166 @@ class DistributionBridgeMixin:
         except Exception as exc:
             logger.error("Error in run_automatic_mapping: %s", exc, exc_info=True)
             return {"error": str(exc), "status": "error"}
+
+    def get_company_universe(self, params=None) -> dict:
+        """Return all active CVM companies with data-source connection flags.
+
+        Flags per company:
+          has_financials  – company has at least one row in financial_reports
+          mapped_distributors – count of distribution assets mapped to this CVM code
+          mapped_plants       – count of generation plant assets mapped to this CVM code
+          total_capacity_mw   – sum of capacity for mapped plants
+        """
+        try:
+            from sqlalchemy import text  # noqa: PLC0415
+            cvm_engine = self._svc().engine
+            energy_engine = self._dist_svc()._engine()
+
+            # 1. Fetch all active companies from CVM financials DB
+            with cvm_engine.connect() as cvm_conn:
+                companies = cvm_conn.execute(text("""
+                    SELECT cd_cvm, company_name, ticker_b3, cnpj, setor_cvm, gics_sector
+                    FROM companies
+                    WHERE is_active = 1
+                    ORDER BY company_name
+                """)).fetchall()
+
+                # 2. Which companies have financial report rows?
+                companies_with_reports = set()
+                try:
+                    rows = cvm_conn.execute(text("""
+                        SELECT DISTINCT "CD_CVM" FROM financial_reports
+                    """)).fetchall()
+                    companies_with_reports = {r[0] for r in rows}
+                except Exception:
+                    pass  # financial_reports may not exist yet
+
+            # 3. Count energy asset mappings per CVM code
+            mapped_dists: dict[int, int] = {}
+            mapped_plants: dict[int, int] = {}
+            plant_capacity: dict[int, float] = {}
+
+            try:
+                with energy_engine.connect() as energy_conn:
+                    # Asset mapping counts grouped by cd_cvm
+                    mappings = energy_conn.execute(text("""
+                        SELECT asset_id, asset_type, cd_cvm
+                        FROM conglomerate_asset_mappings
+                        WHERE cd_cvm IS NOT NULL
+                    """)).fetchall()
+
+                    # Plant capacity stats
+                    plants_stats = energy_conn.execute(text("""
+                        SELECT plant_parcel_code, capacity_mw FROM ccee_plant_parcels
+                    """)).fetchall()
+                    plant_capacity_by_id = {p[0]: (p[1] or 0.0) for p in plants_stats}
+
+                for asset_id, asset_type, cd_cvm in mappings:
+                    if cd_cvm is None:
+                        continue
+                    if asset_type == "distributor":
+                        mapped_dists[cd_cvm] = mapped_dists.get(cd_cvm, 0) + 1
+                    elif asset_type == "plant":
+                        mapped_plants[cd_cvm] = mapped_plants.get(cd_cvm, 0) + 1
+                        plant_capacity[cd_cvm] = plant_capacity.get(cd_cvm, 0.0) + plant_capacity_by_id.get(asset_id, 0.0)
+
+            except Exception:
+                pass  # energy DB may not be initialized
+
+            # 4. Build result
+            result_items = []
+            for row in companies:
+                cd_cvm, company_name, ticker_b3, cnpj, setor_cvm, gics_sector = row
+                result_items.append({
+                    "cd_cvm": cd_cvm,
+                    "company_name": company_name,
+                    "ticker_b3": ticker_b3,
+                    "cnpj": cnpj,
+                    "setor_cvm": setor_cvm,
+                    "gics_sector": gics_sector,
+                    "has_financials": cd_cvm in companies_with_reports,
+                    "mapped_distributors": mapped_dists.get(cd_cvm, 0),
+                    "mapped_plants": mapped_plants.get(cd_cvm, 0),
+                    "total_capacity_mw": round(plant_capacity.get(cd_cvm, 0.0), 2),
+                })
+
+            return self._sanitize_for_json({
+                "items": result_items,
+                "count": len(result_items),
+            })
+        except Exception as exc:
+            logger.error("Error in get_company_universe: %s", exc, exc_info=True)
+            return {"error": str(exc), "items": [], "count": 0}
+
+    def get_company_connections(self, params=None) -> dict:
+        """Return data-source connection flags for a single CVM company.
+
+        Params:
+          cd_cvm (int): the company's CVM code
+
+        Returns a dict with:
+          has_financials        – bool
+          mapped_distributors   – int
+          mapped_plants         – int
+          total_capacity_mw     – float
+        """
+        params = params or {}
+        cd_cvm = params.get("cd_cvm")
+        if not cd_cvm:
+            return {"error": "cd_cvm is required", "has_financials": False, "mapped_distributors": 0, "mapped_plants": 0, "total_capacity_mw": 0.0}
+        try:
+            from sqlalchemy import text  # noqa: PLC0415
+            cvm_engine = self._svc().engine
+            energy_engine = self._dist_svc()._engine()
+
+            # 1. has_financials
+            has_financials = False
+            try:
+                with cvm_engine.connect() as cvm_conn:
+                    row = cvm_conn.execute(text("""
+                        SELECT 1 FROM financial_reports WHERE "CD_CVM" = :cd LIMIT 1
+                    """), {"cd": int(cd_cvm)}).fetchone()
+                    has_financials = row is not None
+            except Exception:
+                pass
+
+            # 2. Energy asset mappings for this company
+            mapped_dists = 0
+            mapped_plants = 0
+            total_capacity_mw = 0.0
+            try:
+                with energy_engine.connect() as energy_conn:
+                    mappings = energy_conn.execute(text("""
+                        SELECT asset_id, asset_type FROM conglomerate_asset_mappings
+                        WHERE cd_cvm = :cd
+                    """), {"cd": int(cd_cvm)}).fetchall()
+
+                    plant_ids = [m[0] for m in mappings if m[1] == "plant"]
+                    for m in mappings:
+                        if m[1] == "distributor":
+                            mapped_dists += 1
+                        elif m[1] == "plant":
+                            mapped_plants += 1
+
+                    if plant_ids:
+                        placeholders = ",".join(f":p{i}" for i in range(len(plant_ids)))
+                        bind = {f"p{i}": pid for i, pid in enumerate(plant_ids)}
+                        row = energy_conn.execute(text(f"""
+                            SELECT COALESCE(SUM(capacity_mw), 0.0)
+                            FROM ccee_plant_parcels
+                            WHERE plant_parcel_code IN ({placeholders})
+                        """), bind).fetchone()
+                        total_capacity_mw = float(row[0]) if row else 0.0
+
+            except Exception:
+                pass
+
+            return self._sanitize_for_json({
+                "has_financials": has_financials,
+                "mapped_distributors": mapped_dists,
+                "mapped_plants": mapped_plants,
+                "total_capacity_mw": round(total_capacity_mw, 2),
+            })
+        except Exception as exc:
+            logger.error("Error in get_company_connections: %s", exc, exc_info=True)
+            return {"error": str(exc), "has_financials": False, "mapped_distributors": 0, "mapped_plants": 0, "total_capacity_mw": 0.0}

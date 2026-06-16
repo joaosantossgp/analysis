@@ -14,7 +14,8 @@ import type {
   EconomicGroupDetail,
   DistributionHealthResponse,
   ConglomerateEntry,
-  AssetMappingEntry
+  AssetMappingEntry,
+  CvmRegistryEntry
 } from "../bridge/types";
 
 const BROWSER_REASON =
@@ -232,4 +233,18 @@ export async function runAutomaticMapping(): Promise<GenericResult> {
   const payload = await callBridge("run_automatic_mapping", {});
   if (payload.error) return { mode, success: false, error: payload.error };
   return { mode, success: true, error: null };
+}
+
+export type CompanyRegistryResult =
+  | { mode: "desktop" | "mock"; items: CvmRegistryEntry[]; count: number }
+  | { mode: "browser"; items: []; count: 0; reason: string };
+
+export async function fetchCompanyUniverse(): Promise<CompanyRegistryResult> {
+  const mode: BridgeMode = getBridgeMode();
+  if (mode === "browser") {
+    return { mode: "browser", items: [], count: 0, reason: BROWSER_REASON };
+  }
+  const payload = await callBridge("get_company_universe", {});
+  if (payload.error) throw new Error(payload.error);
+  return { mode, items: payload.items ?? [], count: payload.count ?? 0 };
 }

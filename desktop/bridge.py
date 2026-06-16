@@ -10,9 +10,11 @@ import time
 from desktop.bridge_api.base import BaseBridgeMixin
 from desktop.bridge_api.companies import CompanyBridgeMixin
 from desktop.bridge_api.energy import EnergyBridgeMixin
+from desktop.bridge_api.news import NewsBridgeMixin
 from desktop.bridge_api.refresh import RefreshBridgeMixin
 from desktop.bridge_api.status import StatusBridgeMixin
 from desktop.bridge_api.distribution import DistributionBridgeMixin
+from desktop.bridge_api.coverage import CoverageBridgeMixin
 
 
 class CVMBridge(
@@ -21,6 +23,8 @@ class CVMBridge(
     RefreshBridgeMixin,
     StatusBridgeMixin,
     EnergyBridgeMixin,
+    NewsBridgeMixin,
     DistributionBridgeMixin,
+    CoverageBridgeMixin,
 ):
     pass

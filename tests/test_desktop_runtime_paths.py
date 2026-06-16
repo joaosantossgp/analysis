@@ -20,6 +20,7 @@ def test_configure_dev_data_paths_defaults_to_documents_root(
         assert Path(app.os.environ["CVM_DATA_DIR"]) == data_root
         assert Path(app.os.environ["CVM_DB_DIR"]) == data_root / "db"
         assert Path(app.os.environ["SQLITE_PATH"]) == data_root / "db" / "cvm_financials.db"
+        assert Path(app.os.environ["CVM_NEWS_DB"]) == data_root / "db" / "news.db"
         assert app.os.environ["CVMANALYTICS_USE_RELEASE_DATA"] == "1"
 
 
@@ -58,6 +59,7 @@ def test_configure_bundled_data_paths_points_sqlite_to_documents_root(
             Path(app.os.environ["SQLITE_PATH"])
             == data_root / "db" / "cvm_financials.db"
         )
+        assert Path(app.os.environ["CVM_NEWS_DB"]) == data_root / "db" / "news.db"
         assert Path(app.os.environ["CVM_OUTPUT_DIR"]) == data_root / "output"
         assert Path(app.os.environ["CVM_LOG_DIR"]) == data_root / "logs"
 

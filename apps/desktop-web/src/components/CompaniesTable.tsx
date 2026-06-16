@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { useQuery, keepPreviousData } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import type { MarketCapSortMeta } from "@/lib/bridge/types";
 
 import {
@@ -9,8 +9,17 @@ import {
   type CompaniesResult,
   type CompanyFiltersResult,
 } from "@/lib/api/companies";
+import {
+  fetchCoveragePriorityScores,
+  fetchCoverageUniverses,
+  addCompanyToCoverageUniverse,
+  removeCompanyFromCoverageUniverse,
+  saveManualScoreOverride,
+  fetchCoverageDecisionHistory,
+} from "@/lib/api/coverage";
 import { whenBridgeReady } from "@/lib/bridge/adapter";
 import { StateBanner } from "@/components/feedback/StateBanner";
+import { Button } from "@/components/ui/Button";
 
 const PAGE_SIZE = 25;
 
@@ -75,6 +84,46 @@ export function CompaniesTable() {
     enabled: bridgeReady,
     placeholderData: keepPreviousData,
   });
+
+  const activeUniverseId = useMemo(() => {
+    return localStorage.getItem("active_coverage_universe_id") || "";
+  }, []);
+
+  const [selectedCompany, setSelectedCompany] = useState<any | null>(null);
+
+  const universesQuery = useQuery({
+    queryKey: ["coverage-universes"],
+    queryFn: fetchCoverageUniverses,
+    enabled: bridgeReady,
+  });
+
+  const activeUniverseName = useMemo(() => {
+    if (!universesQuery.data || !activeUniverseId) return "Default Universe";
+    const u = universesQuery.data.find((x) => x.id === activeUniverseId);
+    return u ? u.name : "Default Universe";
+  }, [universesQuery.data, activeUniverseId]);
+
+  const coverageQuery = useQuery({
+    queryKey: ["active-coverage-scores", activeUniverseId],
+    queryFn: () => fetchCoveragePriorityScores(activeUniverseId),
+    enabled: bridgeReady && !!activeUniverseId,
+    staleTime: 30 * 1000,
+  });
+
+  const activeCoverageItem = useMemo(() => {
+    if (!selectedCompany || !coverageQuery.data) return null;
+    return coverageQuery.data.find((item: any) => item.cd_cvm === selectedCompany.cd_cvm);
+  }, [selectedCompany, coverageQuery.data]);
+
+  const coverageMap = useMemo(() => {
+    const map = new Map<number, string>();
+    if (coverageQuery.data) {
+      for (const item of coverageQuery.data) {
+        map.set(item.cd_cvm, item.tier);
+      }
+    }
+    return map;
+  }, [coverageQuery.data]);
 
   const isDesktop = query.data?.mode === "desktop";
   const page$ = query.data?.mode === "desktop" ? query.data.page : null;
@@ -173,6 +222,8 @@ export function CompaniesTable() {
         isDesktop={isDesktop}
         hasFilters={hasActiveFilters}
         onResetAll={onResetAll}
+        coverageMap={coverageMap}
+        onEditCoverage={setSelectedCompany}
       />
 
       {isDesktop && totalItems > 0 ? (
@@ -184,6 +235,16 @@ export function CompaniesTable() {
           onPage={onPage}
         />
       ) : null}
+
+      {selectedCompany && activeUniverseId && (
+        <CoverageQuickEditDrawer
+          company={selectedCompany}
+          activeUniverseId={activeUniverseId}
+          activeUniverseName={activeUniverseName}
+          activeCoverageItem={activeCoverageItem}
+          onClose={() => setSelectedCompany(null)}
+        />
+      )}
 
       <p className="mt-3 text-[11px] text-zinc-600">
         Tip: search matches company name, ticker, or CVM code. Use the sector
@@ -358,12 +419,16 @@ function Body({
   isDesktop,
   hasFilters,
   onResetAll,
+  coverageMap,
+  onEditCoverage,
 }: {
   query: ReturnType<typeof useQuery<CompaniesResult>>;
   items: NonNullable<(CompaniesResult & { mode: "desktop" })["page"]>["items"];
   isDesktop: boolean;
   hasFilters: boolean;
   onResetAll: () => void;
+  coverageMap: Map<number, string>;
+  onEditCoverage: (company: any) => void;
 }) {
   if (query.isError) {
     return (
@@ -406,13 +471,17 @@ function Body({
       />
     );
   }
-  return <CompaniesGrid items={items} />;
+  return <CompaniesGrid items={items} coverageMap={coverageMap} onEditCoverage={onEditCoverage} />;
 }
 
 function CompaniesGrid({
   items,
+  coverageMap,
+  onEditCoverage,
 }: {
   items: NonNullable<(CompaniesResult & { mode: "desktop" })["page"]>["items"];
+  coverageMap: Map<number, string>;
+  onEditCoverage: (company: any) => void;
 }) {
   return (
     <div className="overflow-hidden rounded border border-zinc-800">
@@ -432,7 +501,7 @@ function CompaniesGrid({
         </thead>
         <tbody className="divide-y divide-zinc-800/80 text-zinc-200">
           {items.map((company) => (
-            <CompanyRow key={company.cd_cvm} company={company} />
+            <CompanyRow key={company.cd_cvm} company={company} coverageMap={coverageMap} onEditCoverage={onEditCoverage} />
           ))}
         </tbody>
       </table>
@@ -442,15 +511,20 @@ function CompaniesGrid({
 
 function CompanyRow({
   company,
+  coverageMap,
+  onEditCoverage,
 }: {
   company: NonNullable<
     (CompaniesResult & { mode: "desktop" })["page"]
   >["items"][number];
+  coverageMap: Map<number, string>;
+  onEditCoverage: (company: any) => void;
 }) {
   const yearsSummary = useMemo(
     () => formatYears(company.anos_disponiveis),
     [company.anos_disponiveis],
   );
+  const tier = coverageMap.get(company.cd_cvm);
   return (
     <tr className="group hover:bg-zinc-900/50">
       <td className="px-3 py-2">
@@ -458,8 +532,33 @@ function CompanyRow({
           to={`/empresas/${company.cd_cvm}`}
           className="block focus:outline-none focus:ring-1 focus:ring-cyan-600"
         >
-          <div className="font-medium text-zinc-100 group-hover:text-cyan-300">
-            {company.company_name}
+          <div className="font-medium text-zinc-100 group-hover:text-cyan-300 flex items-center gap-2">
+            <span>{company.company_name}</span>
+            {tier ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onEditCoverage(company);
+                }}
+                className="hover:scale-105 transition-transform cursor-pointer"
+              >
+                <CoverageTierBadge tier={tier} />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onEditCoverage(company);
+                }}
+                className="opacity-0 group-hover:opacity-100 transition-all rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 cursor-pointer ml-1"
+              >
+                + Coverage
+              </button>
+            )}
           </div>
         </Link>
       </td>
@@ -487,6 +586,49 @@ function CompanyRow({
       </td>
     </tr>
   );
+}
+
+function CoverageTierBadge({ tier }: { tier: string }) {
+  switch (tier) {
+    case "must_cover":
+      return (
+        <span className="inline-flex items-center rounded border border-emerald-900/60 bg-emerald-950/40 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-emerald-400">
+          Must Cover
+        </span>
+      );
+    case "core":
+      return (
+        <span className="inline-flex items-center rounded border border-cyan-900/60 bg-cyan-950/40 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-cyan-400">
+          Core
+        </span>
+      );
+    case "watchlist":
+      return (
+        <span className="inline-flex items-center rounded border border-amber-900/60 bg-amber-950/40 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-amber-400">
+          Watchlist
+        </span>
+      );
+    case "opportunistic":
+      return (
+        <span className="inline-flex items-center rounded border border-indigo-900/60 bg-indigo-950/40 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-indigo-400">
+          Opportunistic
+        </span>
+      );
+    case "excluded":
+      return (
+        <span className="inline-flex items-center rounded border border-zinc-700 bg-zinc-800/50 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-zinc-400">
+          Excluded
+        </span>
+      );
+    case "inappropriate":
+      return (
+        <span className="inline-flex items-center rounded border border-rose-900/60 bg-rose-950/40 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-rose-400">
+          Inappropriate
+        </span>
+      );
+    default:
+      return null;
+  }
 }
 
 function Pagination({
@@ -616,5 +758,242 @@ function MarketCapBanner({ meta }: { meta: MarketCapSortMeta }) {
       <span>·</span>
       <span>Snapshot: {meta.as_of_date}</span>
     </div>
+  );
+}
+
+// --- Quick Edit Drawer for Directory Coverage Integration ---
+function CoverageQuickEditDrawer({
+  company,
+  activeUniverseId,
+  activeUniverseName,
+  activeCoverageItem,
+  onClose,
+}: {
+  company: any;
+  activeUniverseId: string;
+  activeUniverseName: string;
+  activeCoverageItem: any;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [tier, setTier] = useState<string>(activeCoverageItem?.tier || "none");
+  const [holdings, setHoldings] = useState<string>(
+    activeCoverageItem?.holding_pct != null ? String(activeCoverageItem.holding_pct) : "0"
+  );
+  const [override, setOverride] = useState<string>(
+    activeCoverageItem?.manual_score_override != null ? String(activeCoverageItem.manual_score_override) : ""
+  );
+  const [rationale, setRationale] = useState<string>("");
+
+  const historyQuery = useQuery({
+    queryKey: ["company-coverage-history-drawer", activeUniverseId, company.cd_cvm],
+    queryFn: () => fetchCoverageDecisionHistory(activeUniverseId, company.cd_cvm),
+    enabled: !!activeUniverseId && !!company.cd_cvm,
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      if (!rationale) throw new Error("Rationale is mandatory for all coverage decisions");
+      
+      const prevTier = activeCoverageItem?.tier || "none";
+      const newTier = tier;
+
+      // 1. Handle Tier and Holdings pct
+      if (newTier === "none") {
+        if (prevTier !== "none") {
+          await removeCompanyFromCoverageUniverse({
+            universe_id: activeUniverseId,
+            cd_cvm: company.cd_cvm,
+            rationale,
+          });
+        }
+      } else {
+        await addCompanyToCoverageUniverse({
+          universe_id: activeUniverseId,
+          cd_cvm: company.cd_cvm,
+          tier: newTier,
+          rationale,
+          holding_pct: holdings === "" ? 0.0 : Number(holdings),
+        });
+      }
+
+      // 2. Handle Manual Score Override
+      const prevOverride = activeCoverageItem?.manual_score_override;
+      const newOverride = override === "" ? null : Number(override);
+      
+      if (newOverride !== prevOverride && newTier !== "none") {
+        await saveManualScoreOverride({
+          universe_id: activeUniverseId,
+          cd_cvm: company.cd_cvm,
+          override: newOverride,
+          rationale,
+        });
+      }
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["active-coverage-scores", activeUniverseId] });
+      void queryClient.invalidateQueries({ queryKey: ["coverage-scores", activeUniverseId] });
+      void queryClient.invalidateQueries({ queryKey: ["coverage-capacity", activeUniverseId] });
+      void queryClient.invalidateQueries({ queryKey: ["companies"] });
+      alert("Coverage settings saved successfully!");
+      onClose();
+    },
+    onError: (err) => {
+      alert(String(err));
+    }
+  });
+
+  return (
+    <>
+      <style>{`
+        @keyframes slideIn {
+          from { transform: translateX(100%); }
+          to { transform: translateX(0); }
+        }
+        .animate-slideIn {
+          animation: slideIn 0.2s ease-out forwards;
+        }
+      `}</style>
+      
+      {/* Backdrop */}
+      <div 
+        className="fixed inset-0 z-40 bg-black/40 backdrop-blur-xs" 
+        onClick={onClose}
+      />
+      
+      {/* Drawer Container */}
+      <div className="fixed inset-y-0 right-0 z-50 w-96 bg-zinc-900 border-l border-zinc-800 shadow-2xl p-6 flex flex-col font-mono text-xs text-zinc-100 animate-slideIn">
+        {/* Header */}
+        <div className="border-b border-zinc-850 pb-3 mb-4 flex justify-between items-start">
+          <div className="max-w-[85%]">
+            <h3 className="text-sm font-bold text-[var(--color-id-ticker)] truncate">
+              {company.ticker_b3 || "N/A"} - {company.company_name}
+            </h3>
+            <span className="text-3xs text-zinc-500 block mt-0.5">
+              CVM: {company.cd_cvm} · Sector: {company.gics_sector || company.sector_name || "N/A"}
+            </span>
+            <span className="text-3xs text-zinc-400 block mt-1">
+              Universe: <span className="text-zinc-200">{activeUniverseName}</span>
+            </span>
+          </div>
+          <button 
+            type="button" 
+            onClick={onClose}
+            className="text-zinc-500 hover:text-zinc-300 text-sm focus:outline-none"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Form */}
+        <form 
+          onSubmit={(e) => {
+            e.preventDefault();
+            saveMutation.mutate();
+          }}
+          className="flex-1 overflow-y-auto space-y-4 pr-1"
+        >
+          {/* Coverage Tier */}
+          <div className="space-y-1">
+            <label className="block text-3xs text-zinc-400 uppercase font-semibold">Coverage Tier</label>
+            <select
+              value={tier}
+              onChange={(e) => setTier(e.target.value)}
+              className="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 focus:outline-none focus:border-[var(--color-action-primary)] text-xs text-zinc-200"
+            >
+              <option value="none">Not in Universe (Remove)</option>
+              <option value="must_cover">Must Cover</option>
+              <option value="core">Core Coverage</option>
+              <option value="watchlist">Watchlist</option>
+              <option value="opportunistic">Opportunistic</option>
+              <option value="excluded">Excluded</option>
+              <option value="inappropriate">Not Appropriate</option>
+            </select>
+          </div>
+
+          {tier !== "none" && (
+            <>
+              {/* Holdings % */}
+              <div className="space-y-1">
+                <label className="block text-3xs text-zinc-400 uppercase font-semibold">Analyst Holdings %</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="100"
+                  value={holdings}
+                  onChange={(e) => setHoldings(e.target.value)}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 focus:outline-none focus:border-[var(--color-action-primary)] text-xs text-zinc-200"
+                />
+              </div>
+
+              {/* Manual Score Override */}
+              <div className="space-y-1">
+                <label className="block text-3xs text-zinc-400 uppercase font-semibold">Manual Score Override (+/-)</label>
+                <input
+                  type="number"
+                  step="0.5"
+                  placeholder="e.g. 5.0 or -10"
+                  value={override}
+                  onChange={(e) => setOverride(e.target.value)}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 focus:outline-none focus:border-[var(--color-action-primary)] text-xs text-zinc-200"
+                />
+              </div>
+            </>
+          )}
+
+          {/* Decision Rationale */}
+          <div className="space-y-1">
+            <label className="block text-3xs text-zinc-400 uppercase font-semibold">Decision Rationale *</label>
+            <textarea
+              required
+              rows={3}
+              placeholder="Provide a mandatory reason for this tier, holdings, or score override change..."
+              value={rationale}
+              onChange={(e) => setRationale(e.target.value)}
+              className="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 focus:outline-none focus:border-[var(--color-action-primary)] text-xs text-zinc-200"
+            />
+          </div>
+
+          {/* Save Action */}
+          <div className="pt-2">
+            <Button 
+              type="submit" 
+              className="w-full"
+              disabled={saveMutation.isPending || !rationale}
+            >
+              {saveMutation.isPending ? "Saving..." : "Save Coverage Config"}
+            </Button>
+          </div>
+
+          {/* Decision History logs */}
+          <div className="border-t border-zinc-800 pt-3 mt-4">
+            <span className="block text-3xs text-zinc-400 uppercase font-semibold mb-2">Audit Decision History</span>
+            {historyQuery.isLoading ? (
+              <div className="text-3xs text-zinc-500 animate-pulse">Loading log history...</div>
+            ) : historyQuery.data?.length === 0 ? (
+              <div className="text-3xs text-zinc-500 italic">No historical changes logged.</div>
+            ) : (
+              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                {historyQuery.data?.map((h: any) => (
+                  <div key={h.id} className="p-2 bg-zinc-950/60 rounded border border-zinc-850 text-3xs">
+                    <div className="flex justify-between text-zinc-500 mb-1">
+                      <span className="uppercase font-bold text-[var(--color-id-ticker)]">{h.event_type.replace("_", " ")}</span>
+                      <span>{h.timestamp.slice(0, 16).replace("T", " ")}</span>
+                    </div>
+                    <div className="text-zinc-300">
+                      {h.previous_value} ➔ {h.new_value}
+                    </div>
+                    {h.rationale && (
+                      <div className="text-zinc-500 italic mt-0.5">"Rationale: {h.rationale}"</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </form>
+      </div>
+    </>
   );
 }

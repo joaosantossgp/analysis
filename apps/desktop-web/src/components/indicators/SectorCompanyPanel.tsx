@@ -4,15 +4,17 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { StateBanner } from "@/components/feedback/StateBanner";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import type { CvmRegistryEntry } from "@/lib/bridge/types";
 import {
   fetchConglomerates,
   fetchAssetMappings,
   updateAssetMapping,
-  runAutomaticMapping
+  runAutomaticMapping,
+  fetchCompanyUniverse,
 } from "@/lib/api/distribution";
 
 export function SectorCompanyPanel({ bridgeReady }: { bridgeReady: boolean }) {
-  const [activeTab, setActiveTab] = useState<"conglomerates" | "mapping">("conglomerates");
+  const [activeTab, setActiveTab] = useState<"universe" | "groups" | "links">("universe");
   const [searchQuery, setSearchQuery] = useState("");
   const [assetTypeFilter, setAssetTypeFilter] = useState<"all" | "distributor" | "plant">("all");
   const [mappingSourceFilter, setMappingSourceFilter] = useState<"all" | "auto" | "manual" | "unmapped">("all");
@@ -45,8 +47,16 @@ export function SectorCompanyPanel({ bridgeReady }: { bridgeReady: boolean }) {
     staleTime: 30_000,
   });
 
+  const universeQuery = useQuery({
+    queryKey: ["company-universe"],
+    queryFn: fetchCompanyUniverse,
+    enabled: bridgeReady,
+    staleTime: 60_000,
+  });
+
   const conglomerates = conglomeratesQuery.data?.mode === "desktop" ? conglomeratesQuery.data.items : [];
   const assets = mappingsQuery.data?.mode === "desktop" ? mappingsQuery.data.items : [];
+  const universeCompanies: CvmRegistryEntry[] = universeQuery.data?.mode === "desktop" ? universeQuery.data.items : [];
 
   // Extract unique custom owner names from conglomerates
   const customOwnersList = useMemo(() => {
@@ -56,6 +66,37 @@ export function SectorCompanyPanel({ bridgeReady }: { bridgeReady: boolean }) {
   const isLoading = conglomeratesQuery.isLoading || mappingsQuery.isLoading;
   const isError = conglomeratesQuery.isError || mappingsQuery.isError;
   const error = conglomeratesQuery.error ?? mappingsQuery.error;
+
+  // Universe pagination + filters — uses shared searchQuery from nav bar
+  const [universeConnectedOnly, setUniverseConnectedOnly] = useState(false);
+  const [universePage, setUniversePage] = useState(1);
+  const UNIVERSE_PAGE_SIZE = 100;
+
+  const filteredUniverse = useMemo(() => {
+    const q = searchQuery.toLowerCase();
+    return universeCompanies.filter((c) => {
+      const matchSearch =
+        !q ||
+        c.company_name.toLowerCase().includes(q) ||
+        (c.ticker_b3 ?? "").toLowerCase().includes(q) ||
+        (c.cnpj ?? "").includes(q) ||
+        (c.setor_cvm ?? "").toLowerCase().includes(q) ||
+        (c.gics_sector ?? "").toLowerCase().includes(q);
+      const matchConnected =
+        !universeConnectedOnly ||
+        c.has_financials ||
+        c.mapped_distributors > 0 ||
+        c.mapped_plants > 0;
+      return matchSearch && matchConnected;
+    });
+  }, [universeCompanies, searchQuery, universeConnectedOnly]);
+
+  const universeTotalPages = Math.max(1, Math.ceil(filteredUniverse.length / UNIVERSE_PAGE_SIZE));
+  const universeValidPage = Math.min(universePage, universeTotalPages);
+  const paginatedUniverse = useMemo(() => {
+    const start = (universeValidPage - 1) * UNIVERSE_PAGE_SIZE;
+    return filteredUniverse.slice(start, start + UNIVERSE_PAGE_SIZE);
+  }, [filteredUniverse, universeValidPage, UNIVERSE_PAGE_SIZE]);
 
   const toggleExpand = (rowId: string) => {
     setExpandedRowIds((prev) => {
@@ -117,7 +158,7 @@ export function SectorCompanyPanel({ bridgeReady }: { bridgeReady: boolean }) {
     }
   };
 
-  // Filter Conglomerates
+  // Filter Economic Groups
   const filteredConglomerates = useMemo(() => {
     if (!searchQuery) return conglomerates;
     const q = searchQuery.toLowerCase();
@@ -166,24 +207,30 @@ export function SectorCompanyPanel({ bridgeReady }: { bridgeReady: boolean }) {
     const totalPlants = assets.filter((a) => a.type === "plant").length;
     const mappedPlants = assets.filter((a) => a.type === "plant" && (a.mapped_cvm || a.custom_owner_name)).length;
     const unmapped = assets.filter((a) => !a.mapped_cvm && !a.custom_owner_name).length;
+    const totalCompanies = universeCompanies.length;
+    const connectedCompanies = universeCompanies.filter(
+      (c) => c.has_financials || c.mapped_distributors > 0 || c.mapped_plants > 0
+    ).length;
 
     return {
       activeCongs,
       distributors: `${mappedDists} / ${totalDists}`,
       plants: `${mappedPlants} / ${totalPlants}`,
-      unmapped
+      unmapped,
+      totalCompanies,
+      connectedCompanies,
     };
-  }, [conglomerates, assets]);
+  }, [conglomerates, assets, universeCompanies]);
 
   if (!bridgeReady || isLoading) {
-    return <StateBanner variant="loading" title="Loading conglomerate registry and asset mappings..." />;
+    return <StateBanner variant="loading" title="Loading CVM registry and sectoral linkages..." />;
   }
 
   if (isError) {
     return (
       <StateBanner
         variant="error"
-        title="Could not load conglomerate mappings"
+        title="Could not load registry data"
         message={error instanceof Error ? error.message : String(error)}
       />
     );
@@ -194,9 +241,9 @@ export function SectorCompanyPanel({ bridgeReady }: { bridgeReady: boolean }) {
       {/* Top Header Row */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800 pb-3.5">
         <div>
-          <h2 className="text-base font-semibold text-zinc-100">Central Asset & Conglomerate Registry</h2>
+          <h2 className="text-base font-semibold text-zinc-100">CVM Registry & Sectoral Data Hub</h2>
           <p className="text-xs text-zinc-500 mt-0.5">
-            Link physical grid assets to listed entities, GICS/CVM classifications, CNPJs, and tickers.
+            Connect CVM-registered companies (CNPJ) with sectoral databases to build auditable, traceable indicator pipelines.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -206,7 +253,7 @@ export function SectorCompanyPanel({ bridgeReady }: { bridgeReady: boolean }) {
             disabled={runningAutoMatcher}
             className="bg-amber-600 hover:bg-amber-700 text-white font-semibold flex items-center gap-1.5"
           >
-            {runningAutoMatcher ? "Matching..." : "⚡ Run Automatic Mapping"}
+            {runningAutoMatcher ? "Matching..." : "⚡ Auto-Link Sectors"}
           </Button>
         </div>
       </div>
@@ -218,41 +265,48 @@ export function SectorCompanyPanel({ bridgeReady }: { bridgeReady: boolean }) {
       )}
 
       {/* Summary Metrics */}
-      <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
-        <SummaryTile label="Active Conglomerates" value={summary.activeCongs} />
-        <SummaryTile label="Mapped Distributors" value={summary.distributors} />
-        <SummaryTile label="Mapped Gen Plants" value={summary.plants} />
+      <div className="grid gap-3 grid-cols-2 md:grid-cols-4 lg:grid-cols-6">
+        <SummaryTile label="Registry Size" value={summary.totalCompanies} />
+        <SummaryTile label="Active Links" value={summary.connectedCompanies} />
+        <SummaryTile label="Economic Groups" value={summary.activeCongs} />
         <SummaryTile
-          label="Unmapped Assets"
+          label="Pending Links"
           value={summary.unmapped}
           highlight={summary.unmapped > 0}
         />
+        <SummaryTile label="Dist. Coverage" value={summary.distributors} />
+        <SummaryTile label="Gen. Coverage" value={summary.plants} />
       </div>
 
       {/* Navigation & Filters Bar */}
       <div className="flex flex-col md:flex-row gap-3 justify-between items-start md:items-center bg-zinc-900/30 border border-zinc-850 rounded-lg p-2.5">
         <div className="flex rounded border border-zinc-700/80 overflow-hidden" role="tablist">
           <TabButton
-            label="Conglomerates Overview"
-            active={activeTab === "conglomerates"}
-            onClick={() => { setActiveTab("conglomerates"); setSearchQuery(""); setCurrentPage(1); }}
+            label="Company Registry"
+            active={activeTab === "universe"}
+            onClick={() => { setActiveTab("universe"); setSearchQuery(""); setUniversePage(1); }}
           />
           <TabButton
-            label="Asset Mapping Manager"
-            active={activeTab === "mapping"}
-            onClick={() => { setActiveTab("mapping"); setSearchQuery(""); setCurrentPage(1); }}
+            label="Economic Groups"
+            active={activeTab === "groups"}
+            onClick={() => { setActiveTab("groups"); setSearchQuery(""); setCurrentPage(1); }}
+          />
+          <TabButton
+            label="Sector Data Links"
+            active={activeTab === "links"}
+            onClick={() => { setActiveTab("links"); setSearchQuery(""); setCurrentPage(1); }}
           />
         </div>
 
         <div className="flex items-center gap-2 w-full md:w-auto">
           <Input
-            placeholder={activeTab === "conglomerates" ? "Search conglomerate, ticker, sector..." : "Search assets, agents..."}
+            placeholder="Search assets, companies, tickers, or CNPJs..."
             value={searchQuery}
-            onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-            className="h-8 max-w-xs text-xs"
+            onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); setUniversePage(1); }}
+            className="h-8 w-full md:max-w-xs text-xs"
           />
 
-          {activeTab === "mapping" && (
+          {activeTab === "links" && (
             <>
               <select
                 value={assetTypeFilter}
@@ -260,8 +314,8 @@ export function SectorCompanyPanel({ bridgeReady }: { bridgeReady: boolean }) {
                 className="h-8 rounded border border-zinc-800 bg-zinc-950 px-2 text-xs text-zinc-300 outline-none focus:border-amber-500"
               >
                 <option value="all">All Types</option>
-                <option value="distributor">Distributors</option>
-                <option value="plant">Gen Plants</option>
+                <option value="distributor">Distribution</option>
+                <option value="plant">Generation</option>
               </select>
 
               <select
@@ -270,27 +324,84 @@ export function SectorCompanyPanel({ bridgeReady }: { bridgeReady: boolean }) {
                 className="h-8 rounded border border-zinc-800 bg-zinc-950 px-2 text-xs text-zinc-300 outline-none focus:border-amber-500"
               >
                 <option value="all">All Sources</option>
-                <option value="auto">Auto matched</option>
+                <option value="auto">Auto linked</option>
                 <option value="manual">Manual override</option>
-                <option value="unmapped">Unmapped</option>
+                <option value="unmapped">Unlinked</option>
               </select>
             </>
+          )}
+
+          {activeTab === "universe" && (
+            <label className="flex items-center gap-1.5 cursor-pointer text-xs text-zinc-400 select-none whitespace-nowrap">
+              <input
+                type="checkbox"
+                checked={universeConnectedOnly}
+                onChange={(e) => { setUniverseConnectedOnly(e.target.checked); setUniversePage(1); }}
+                className="accent-amber-500"
+              />
+              Connected only
+            </label>
           )}
         </div>
       </div>
 
-      {/* Tab 1: Conglomerates Overview */}
-      {activeTab === "conglomerates" && (
+      {/* Tab 3: Company Registry */}
+      {activeTab === "universe" && (
+        <div className="space-y-3">
+          {universeQuery.isLoading ? (
+            <StateBanner variant="loading" title="Loading CVM company registry..." />
+          ) : universeQuery.isError ? (
+            <StateBanner
+              variant="error"
+              title="Could not load company registry"
+              message={universeQuery.error instanceof Error ? universeQuery.error.message : "Unknown error"}
+            />
+          ) : (
+            <>
+              <div className="flex items-center justify-between text-xs text-zinc-500 px-0.5">
+                <span className="font-mono">
+                  {filteredUniverse.length} of {universeCompanies.length} companies
+                </span>
+              </div>
+              <AllCompaniesTable companies={paginatedUniverse} />
+              {filteredUniverse.length > UNIVERSE_PAGE_SIZE && (
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-zinc-900/10 border border-zinc-850 rounded-lg p-3 text-xs text-zinc-400">
+                  <div>
+                    Showing{" "}
+                    <span className="font-semibold text-zinc-200">
+                      {Math.min(filteredUniverse.length, (universeValidPage - 1) * UNIVERSE_PAGE_SIZE + 1)}
+                    </span>{" "}to{" "}
+                    <span className="font-semibold text-zinc-200">
+                      {Math.min(filteredUniverse.length, universeValidPage * UNIVERSE_PAGE_SIZE)}
+                    </span>{" "}of{" "}
+                    <span className="font-semibold text-zinc-200">{filteredUniverse.length}</span> companies
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Button size="xs" disabled={universeValidPage === 1} onClick={() => setUniversePage(1)}>First</Button>
+                    <Button size="xs" disabled={universeValidPage === 1} onClick={() => setUniversePage((p) => Math.max(1, p - 1))}>Prev</Button>
+                    <span className="px-2 font-mono text-[11px] text-zinc-300">Page {universeValidPage} of {universeTotalPages}</span>
+                    <Button size="xs" disabled={universeValidPage === universeTotalPages} onClick={() => setUniversePage((p) => Math.min(universeTotalPages, p + 1))}>Next</Button>
+                    <Button size="xs" disabled={universeValidPage === universeTotalPages} onClick={() => setUniversePage(universeTotalPages)}>Last</Button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Tab 2: Economic Groups */}
+      {activeTab === "groups" && (
         <div className="border border-zinc-850 rounded-lg bg-zinc-950/20 overflow-hidden">
           <table className="w-full text-xs text-left border-collapse">
             <thead>
               <tr className="bg-zinc-900/50 text-[10px] uppercase font-semibold text-zinc-500 tracking-wider">
-                <th className="px-3.5 py-2.5">Company / Conglomerate</th>
+                <th className="px-3.5 py-2.5">Company / Group</th>
                 <th className="px-3.5 py-2.5">Ticker</th>
                 <th className="px-3.5 py-2.5">CNPJ</th>
                 <th className="px-3.5 py-2.5">CVM Sector</th>
                 <th className="px-3.5 py-2.5">GICS Sector</th>
-                <th className="px-3.5 py-2.5 text-center">Distributors</th>
+                <th className="px-3.5 py-2.5 text-center">Linked Assets</th>
                 <th className="px-3.5 py-2.5 text-right">Capacity (MW)</th>
               </tr>
             </thead>
@@ -298,7 +409,7 @@ export function SectorCompanyPanel({ bridgeReady }: { bridgeReady: boolean }) {
               {filteredConglomerates.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-4 py-8 text-center text-zinc-500">
-                    No conglomerates found matching the search.
+                    No groups found matching the search.
                   </td>
                 </tr>
               ) : (
@@ -353,7 +464,7 @@ export function SectorCompanyPanel({ bridgeReady }: { bridgeReady: boolean }) {
                           <td colSpan={7} className="px-8 py-2.5">
                             <div className="space-y-1.5 border-l-2 border-amber-600/30 pl-4 py-1">
                               <h4 className="text-[10px] uppercase font-semibold text-zinc-500 tracking-wider mb-2">
-                                Mapped physical grid assets
+                                Linked sectoral assets
                               </h4>
                               {companyAssets.map((a) => (
                                 <div key={`${a.id}-${a.type}`} className="flex items-center justify-between text-xs py-1 border-b border-zinc-900/40 last:border-0">
@@ -389,26 +500,26 @@ export function SectorCompanyPanel({ bridgeReady }: { bridgeReady: boolean }) {
         </div>
       )}
 
-      {/* Tab 2: Asset Mapping Manager */}
-      {activeTab === "mapping" && (
+      {/* Tab 1: Sector Data Links */}
+      {activeTab === "links" && (
         <div className="space-y-3">
           <div className="border border-zinc-850 rounded-lg bg-zinc-950/20 overflow-hidden">
             <table className="w-full text-xs text-left border-collapse">
               <thead>
                 <tr className="bg-zinc-900/50 text-[10px] uppercase font-semibold text-zinc-500 tracking-wider">
-                  <th className="px-3.5 py-2.5">Physical Asset</th>
+                  <th className="px-3.5 py-2.5">Sectoral Asset</th>
                   <th className="px-3.5 py-2.5">Details</th>
-                  <th className="px-3.5 py-2.5">Asset Type</th>
+                  <th className="px-3.5 py-2.5">Source</th>
                   <th className="px-3.5 py-2.5">Linked CVM Company</th>
-                  <th className="px-3.5 py-2.5">Mapping Status</th>
-                  <th className="px-3.5 py-2.5 text-right">Mapped Company CNPJ / Ticker</th>
+                  <th className="px-3.5 py-2.5">Link Status</th>
+                  <th className="px-3.5 py-2.5 text-right">CNPJ / Ticker</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-900">
                 {paginatedAssets.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="px-4 py-8 text-center text-zinc-500">
-                      No physical assets found matching the criteria.
+                      No sectoral assets found. Run "Auto-Link Sectors" to detect linkages automatically.
                     </td>
                   </tr>
                 ) : (
@@ -431,7 +542,7 @@ export function SectorCompanyPanel({ bridgeReady }: { bridgeReady: boolean }) {
                           <span className={`px-1.5 py-0.5 text-[9px] font-semibold rounded ${
                             a.type === "distributor" ? "bg-sky-500/10 text-sky-400" : "bg-emerald-500/10 text-emerald-400"
                           }`}>
-                            {a.type === "distributor" ? "Distributor" : "Gen Plant"}
+                            {a.type === "distributor" ? "Energy Dist." : "Energy Gen."}
                           </span>
                         </td>
                         <td className="px-3.5 py-2.5">
@@ -461,10 +572,10 @@ export function SectorCompanyPanel({ bridgeReady }: { bridgeReady: boolean }) {
                               isUpdating ? "border-amber-500/40 text-amber-500" : "border-zinc-800 text-zinc-200"
                             }`}
                           >
-                            <option value="">-- Unmapped / Loose --</option>
-                            <option value="action:add-custom" className="text-amber-500 font-semibold">+ Add Custom Owner...</option>
+                            <option value="">-- Unlinked --</option>
+                            <option value="action:add-custom" className="text-amber-500 font-semibold">+ Add Custom Entity...</option>
                             
-                            <optgroup label="CVM Listed Conglomerates">
+                            <optgroup label="CVM Listed Companies">
                               {conglomerates.filter(c => c.is_listed).map((c) => (
                                 <option key={c.cd_cvm} value={`cvm:${c.cd_cvm}`}>
                                   {c.company_name} ({c.ticker_b3 || "no-ticker"})
@@ -473,7 +584,7 @@ export function SectorCompanyPanel({ bridgeReady }: { bridgeReady: boolean }) {
                             </optgroup>
 
                             {customOwnersList.length > 0 && (
-                              <optgroup label="Non-Listed Custom Owners">
+                              <optgroup label="Non-Listed Custom Entities">
                                 {customOwnersList.map((o) => (
                                   <option key={`custom-${o}`} value={`custom:${o}`}>
                                     {o} (Non-Listed)
@@ -491,7 +602,7 @@ export function SectorCompanyPanel({ bridgeReady }: { bridgeReady: boolean }) {
                               ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
                               : "bg-zinc-800 border-zinc-750 text-zinc-500"
                           }`}>
-                            {a.mapping_source === "manual" ? "Override" : a.mapping_source === "auto" ? "Auto matched" : "Unmapped"}
+                            {a.mapping_source === "manual" ? "Override" : a.mapping_source === "auto" ? "Auto linked" : "Unlinked"}
                           </span>
                         </td>
                         <td className="px-3.5 py-2.5 text-right font-mono text-[10.5px] text-zinc-500">
@@ -519,7 +630,7 @@ export function SectorCompanyPanel({ bridgeReady }: { bridgeReady: boolean }) {
               <div>
                 Showing <span className="font-semibold text-zinc-200">{Math.min(filteredAssets.length, (validCurrentPage - 1) * pageSize + 1)}</span> to{" "}
                 <span className="font-semibold text-zinc-200">{Math.min(filteredAssets.length, validCurrentPage * pageSize)}</span> of{" "}
-                <span className="font-semibold text-zinc-200">{filteredAssets.length}</span> assets
+                <span className="font-semibold text-zinc-200">{filteredAssets.length}</span> linked assets
               </div>
               <div className="flex items-center gap-1.5">
                 <Button
@@ -586,5 +697,85 @@ function TabButton({ label, active, onClick }: { label: string; active: boolean;
     >
       {label}
     </button>
+  );
+}
+
+function formatCnpj(cnpj: string | null): string {
+  if (!cnpj) return "—";
+  const digits = cnpj.replace(/\D/g, "");
+  if (digits.length !== 14) return cnpj;
+  return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12)}`;
+}
+
+function AllCompaniesTable({ companies }: { companies: CvmRegistryEntry[] }) {
+  if (companies.length === 0) {
+    return (
+      <div className="rounded-md border border-zinc-800 bg-zinc-950/20 px-4 py-10 text-center text-xs text-zinc-500">
+        No companies match your search. Try clearing the filters.
+      </div>
+    );
+  }
+  return (
+    <div className="w-full max-w-full overflow-x-auto rounded-md border border-zinc-800">
+      <table className="w-full min-w-[900px] text-xs text-left border-collapse">
+        <thead>
+          <tr className="bg-zinc-900/50 text-[10px] uppercase font-semibold text-zinc-500 tracking-wider sticky top-0">
+            <th className="px-3.5 py-2.5">Company</th>
+            <th className="px-3.5 py-2.5">Ticker</th>
+            <th className="px-3.5 py-2.5">CNPJ</th>
+            <th className="px-3.5 py-2.5">CVM Sector</th>
+            <th className="px-3.5 py-2.5">GICS Sector</th>
+            <th className="px-3.5 py-2.5 text-center">Connections</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-zinc-900">
+          {companies.map((c) => {
+            const hasEnergy = c.mapped_distributors > 0 || c.mapped_plants > 0;
+            const hasAny = c.has_financials || hasEnergy;
+            return (
+              <tr
+                key={c.cd_cvm}
+                className={`hover:bg-zinc-900/30 transition-colors ${!hasAny ? "opacity-50" : ""}`}
+              >
+                <td className="px-3.5 py-2.5 font-medium text-zinc-200">
+                  <div>{c.company_name}</div>
+                  <div className="text-[10px] font-mono text-zinc-600 mt-0.5">CVM {c.cd_cvm}</div>
+                </td>
+                <td className="px-3.5 py-2.5 font-mono text-zinc-400">{c.ticker_b3 || "—"}</td>
+                <td className="px-3.5 py-2.5 font-mono text-zinc-500 text-[10.5px]">{formatCnpj(c.cnpj)}</td>
+                <td className="px-3.5 py-2.5 text-zinc-400">{c.setor_cvm || "—"}</td>
+                <td className="px-3.5 py-2.5 text-zinc-400">{c.gics_sector || "—"}</td>
+                <td className="px-3.5 py-2.5">
+                  <div className="flex flex-wrap items-center justify-center gap-1">
+                    {c.has_financials && (
+                      <span className="px-1.5 py-0.5 text-[9px] font-semibold rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 whitespace-nowrap">
+                        Financials
+                      </span>
+                    )}
+                    {hasEnergy && (
+                      <span
+                        title={`${c.mapped_distributors} distributor(s) · ${c.mapped_plants} plant(s)${c.total_capacity_mw > 0 ? ` · ${c.total_capacity_mw.toLocaleString("en-US", { maximumFractionDigits: 1 })} MW` : ""}`}
+                        className="px-1.5 py-0.5 text-[9px] font-semibold rounded bg-sky-500/10 text-sky-400 border border-sky-500/20 whitespace-nowrap cursor-help"
+                      >
+                        Energy
+                        {c.mapped_distributors > 0 && (
+                          <span className="ml-1 opacity-70">D:{c.mapped_distributors}</span>
+                        )}
+                        {c.mapped_plants > 0 && (
+                          <span className="ml-1 opacity-70">G:{c.mapped_plants}</span>
+                        )}
+                      </span>
+                    )}
+                    {!hasAny && (
+                      <span className="text-zinc-700 italic">—</span>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }

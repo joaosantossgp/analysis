@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { IdentifierBadge } from "@/components/data/IdentifierBadge";
-import { fetchCompanyInfo, type CompanyInfoResult } from "@/lib/api/companyDetail";
+import { fetchCompanyInfo, fetchCompanyConnections, type CompanyInfoResult, type CompanyConnectionsResult } from "@/lib/api/companyDetail";
 import { whenBridgeReady } from "@/lib/bridge/adapter";
 import { formatCNPJ } from "@/lib/format/cnpj";
 import { StateBanner } from "./feedback/StateBanner";
@@ -33,6 +33,15 @@ export function EntityHeader({
     queryFn: () => fetchCompanyInfo(cdCvm),
     enabled: bridgeReady && Number.isFinite(cdCvm) && cdCvm > 0,
   });
+
+  const connectionsQuery = useQuery<CompanyConnectionsResult>({
+    queryKey: ["company-connections", cdCvm],
+    queryFn: () => fetchCompanyConnections(cdCvm),
+    enabled: bridgeReady && Number.isFinite(cdCvm) && cdCvm > 0,
+    staleTime: 120_000,
+  });
+
+  const connections = connectionsQuery.data?.mode === "desktop" ? connectionsQuery.data.connections : null;
 
   if (!bridgeReady || query.isLoading) {
     return <StateBanner variant="loading" title="Loading company data…" />;
@@ -141,6 +150,31 @@ export function EntityHeader({
             <StatusChip tone={info.has_local_financial_reports ? "ok" : "warn"}>
               {localDataLabel}
             </StatusChip>
+            {connections && (
+              <>
+                {connections.has_financials && (
+                  <ConnectionChip color="amber" title="Has financial statements in the local database">
+                    Financials
+                  </ConnectionChip>
+                )}
+                {connections.mapped_distributors > 0 && (
+                  <ConnectionChip
+                    color="sky"
+                    title={`${connections.mapped_distributors} distribution concession(s) linked`}
+                  >
+                    Dist ×{connections.mapped_distributors}
+                  </ConnectionChip>
+                )}
+                {connections.mapped_plants > 0 && (
+                  <ConnectionChip
+                    color="emerald"
+                    title={`${connections.mapped_plants} generation plant(s) — ${connections.total_capacity_mw > 0 ? `${connections.total_capacity_mw.toLocaleString("en-US", { maximumFractionDigits: 1 })} MW total` : "capacity unknown"}`}
+                  >
+                    Gen ×{connections.mapped_plants}
+                  </ConnectionChip>
+                )}
+              </>
+            )}
           </div>
         </div>
 
@@ -265,6 +299,45 @@ function StatusChip({
       }}
     >
       <span aria-hidden="true">{tone === "ok" ? "●" : "▲"}</span>
+      {children}
+    </span>
+  );
+}
+
+function ConnectionChip({
+  color,
+  title,
+  children,
+}: {
+  color: "amber" | "sky" | "emerald";
+  title?: string;
+  children: ReactNode;
+}) {
+  const palette = {
+    amber: { bg: "rgba(245,158,11,0.08)", border: "rgba(245,158,11,0.25)", text: "rgb(251,191,36)" },
+    sky:   { bg: "rgba(14,165,233,0.08)", border: "rgba(14,165,233,0.25)", text: "rgb(56,189,248)" },
+    emerald: { bg: "rgba(16,185,129,0.08)", border: "rgba(16,185,129,0.25)", text: "rgb(52,211,153)" },
+  }[color];
+  return (
+    <span
+      title={title}
+      style={{
+        alignItems: "center",
+        background: palette.bg,
+        border: `1px solid ${palette.border}`,
+        borderRadius: "var(--radius-sm)",
+        color: palette.text,
+        cursor: title ? "help" : "default",
+        display: "inline-flex",
+        fontFamily: "var(--font-mono)",
+        fontSize: "var(--text-xs)",
+        fontWeight: 600,
+        gap: 4,
+        minHeight: 22,
+        padding: "2px 7px",
+      }}
+    >
+      <span aria-hidden="true">◆</span>
       {children}
     </span>
   );

@@ -21,6 +21,15 @@ function subNavFor(pathname: string, params: Record<string, string | undefined>)
       { to: `/empresas/${cdCvm}`, label: "Overview", end: true },
       { to: `/empresas/${cdCvm}/demonstrativos`, label: "Financial Statements" },
       { to: `/empresas/${cdCvm}/model-mapping`, label: "Model Mapping" },
+      { to: `/empresas/${cdCvm}/coverage`, label: "Coverage Status" },
+    ];
+  }
+
+  if (pathname.startsWith("/coverage")) {
+    return [
+      { to: "/coverage", label: "Universes", end: true },
+      { to: "/coverage/prioritization", label: "Prioritization" },
+      { to: "/coverage/work-queue", label: "Work Queue" },
     ];
   }
 
@@ -37,6 +46,13 @@ function subNavFor(pathname: string, params: Record<string, string | undefined>)
       { to: "/settings/sources", label: "Sources & Imports", activeOn: ["/settings/imports"] },
       { to: "/settings/updates", label: "Updates" },
       { to: "/settings/diagnostics", label: "Diagnostics" },
+    ];
+  }
+
+  if (pathname.startsWith("/news")) {
+    return [
+      { to: "/news", label: "Top News", end: true },
+      { to: "/news/latest", label: "Latest" },
     ];
   }
 

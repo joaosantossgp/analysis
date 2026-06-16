@@ -17,6 +17,7 @@ def test_build_settings_defaults_to_documents_runtime_root(monkeypatch, tmp_path
     assert settings.paths.db_dir == expected / "db"
     assert settings.paths.db_path == expected / "db" / "cvm_financials.db"
     assert settings.paths.energy_kpi_db_path == expected / "db" / "energy_kpis.db"
+    assert settings.paths.news_db_path == expected / "db" / "news.db"
 
 
 def test_build_settings_with_explicit_project_root_keeps_isolated_data(tmp_path):
@@ -24,6 +25,7 @@ def test_build_settings_with_explicit_project_root_keeps_isolated_data(tmp_path)
 
     assert settings.paths.data_dir == (tmp_path / "data").resolve()
     assert settings.paths.db_path == (tmp_path / "data" / "db" / "cvm_financials.db").resolve()
+    assert settings.paths.news_db_path == (tmp_path / "data" / "db" / "news.db").resolve()
 
 
 def test_build_settings_prefers_shared_runtime_files_inside_task_worktree(tmp_path):

@@ -89,3 +89,34 @@ export async function fetchCompanyKpis(
   }
   return { mode: "desktop", bundle };
 }
+
+export interface CompanyConnections {
+  has_financials: boolean;
+  mapped_distributors: number;
+  mapped_plants: number;
+  total_capacity_mw: number;
+}
+
+export type CompanyConnectionsResult =
+  | { mode: "desktop"; connections: CompanyConnections }
+  | { mode: "browser"; reason: string };
+
+export async function fetchCompanyConnections(
+  cdCvm: number,
+): Promise<CompanyConnectionsResult> {
+  const mode: BridgeMode = getBridgeMode();
+  if (mode === "browser") {
+    return { mode: "browser", reason: BROWSER_REASON };
+  }
+  const payload = await callBridge("get_company_connections", { cd_cvm: cdCvm });
+  if (payload.error) throw new Error(payload.error);
+  return {
+    mode: "desktop",
+    connections: {
+      has_financials: Boolean(payload.has_financials),
+      mapped_distributors: payload.mapped_distributors ?? 0,
+      mapped_plants: payload.mapped_plants ?? 0,
+      total_capacity_mw: payload.total_capacity_mw ?? 0,
+    },
+  };
+}
