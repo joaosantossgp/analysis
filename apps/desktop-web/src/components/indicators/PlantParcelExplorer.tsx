@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import type { ReactNode } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 
@@ -18,7 +18,17 @@ import type {
   PlantParcelSourceStatus,
 } from "@/lib/bridge/types";
 import { IndicatorChart } from "./IndicatorChart";
-import type { ChartAesthetics } from "@/lib/indicators/types";
+import { IndicatorControls } from "./IndicatorControls";
+import { IndicatorLegend } from "./IndicatorLegend";
+import type {
+  AxisSide,
+  ChartAesthetics,
+  ChartType,
+  IndicatorDef,
+  IndicatorSelection,
+  ResolvedSeries,
+  IndicatorUnit,
+} from "@/lib/indicators/types";
 
 const PAGE_SIZE = 100;
 const CCEE_PLANT_ENTITY_TYPE = "ccee_plant_parcel";
@@ -27,6 +37,17 @@ const CCEE_PLANT_SOURCE_ID_LIST = [
   "ccee_plant_generation_hourly",
 ] as const;
 const CCEE_PLANT_SOURCE_IDS = new Set<string>(CCEE_PLANT_SOURCE_ID_LIST);
+
+function mapPlantMetricUnit(unit: string, id: string): IndicatorUnit {
+  const u = (unit || "").toLowerCase();
+  if (u === "%" || u === "pct" || id.toLowerCase().includes("factor") || id.toLowerCase().endsWith("pct")) {
+    return "pct";
+  }
+  if (u === "mw" || u === "mwmed" || u === "gwh" || u === "mwh") {
+    return "volume";
+  }
+  return "number";
+}
 
 type Filters = {
   entity_type: string;
@@ -315,15 +336,6 @@ function PlantCatalogTable({
   );
 }
 
-const CHART_CONFIG: ChartAesthetics = {
-  type: "line",
-  smooth: true,
-  markers: true,
-  legend: false,
-  grid: true,
-  dataLabels: false,
-  indexMode: false,
-};
 
 function PlantDetailPanel({
   selected,
@@ -338,7 +350,39 @@ function PlantDetailPanel({
 }) {
   const [chartFreq, setChartFreq] = useState<"monthly" | "daily" | "hourly">("monthly");
   const [chartMonth, setChartMonth] = useState<string>("");
-  const [selectedMetricId, setSelectedMetricId] = useState<string>("all");
+  const [selectedSelections, setSelectedSelections] = useState<IndicatorSelection[]>([]);
+  const [chart, setChart] = useState<ChartAesthetics>({
+    type: "line",
+    smooth: true,
+    markers: true,
+    legend: true,
+    grid: true,
+    dataLabels: false,
+    indexMode: false,
+  });
+
+  const toggleSelection = useCallback((id: string) => {
+    setSelectedSelections((prev) => {
+      const exists = prev.some((s) => s.id === id);
+      if (exists) {
+        return prev.filter((s) => s.id !== id);
+      } else {
+        return [...prev, { id, axis: "auto", type: "auto" }];
+      }
+    });
+  }, []);
+
+  const setAxis = useCallback((id: string, axis: "auto" | AxisSide) => {
+    setSelectedSelections((prev) => prev.map((s) => (s.id === id ? { ...s, axis } : s)));
+  }, []);
+
+  const setType = useCallback((id: string, type: "auto" | ChartType) => {
+    setSelectedSelections((prev) => prev.map((s) => (s.id === id ? { ...s, type } : s)));
+  }, []);
+
+  const onChartChange = useCallback((patch: Partial<ChartAesthetics>) => {
+    setChart((prev) => ({ ...prev, ...patch }));
+  }, []);
 
   const months = useMemo(() => {
     if (!detail?.monthly_series) return [];
@@ -373,6 +417,93 @@ function PlantDetailPanel({
     refetchIntervalInBackground: true,
   });
 
+  const rawSeries = useMemo(() => {
+    return chartQuery.data?.mode === "desktop" ? chartQuery.data.data.series : [];
+  }, [chartQuery.data]);
+
+  const seriesKey = useMemo(() => {
+    return (rawSeries ?? []).map((s: any) => s.id).join(",");
+  }, [rawSeries]);
+
+  useEffect(() => {
+    if (rawSeries && rawSeries.length > 0) {
+      setSelectedSelections(
+        rawSeries.map((s: any) => ({
+          id: s.id,
+          axis: "auto",
+          type: "auto",
+        }))
+      );
+    } else {
+      setSelectedSelections([]);
+    }
+  }, [seriesKey]);
+
+  const defs: IndicatorDef[] = useMemo(() => {
+    return (rawSeries ?? []).map((s: any) => ({
+      id: s.id,
+      label: s.label,
+      category: "Generation",
+      unit: mapPlantMetricUnit(s.unit, s.id),
+      isPlaceholder: false,
+      available: true,
+    }));
+  }, [rawSeries]);
+
+  const { series: resolvedSeries, periods: chartPeriods } = useMemo(() => {
+    const periods = chartQuery.data?.mode === "desktop" ? chartQuery.data.data.periods : [];
+
+    const resolved: ResolvedSeries[] = selectedSelections
+      .map((sel) => {
+        const raw = rawSeries.find((s: any) => s.id === sel.id);
+        if (!raw) return null;
+
+        let color = raw.color || "#3B82F6";
+        if (!raw.color) {
+          const colors = ["#22D3EE", "#34D399", "#818CF8", "#FBBF24", "#F87171", "#A78BFA"];
+          const idx = rawSeries.findIndex((s: any) => s.id === sel.id);
+          color = colors[idx >= 0 ? idx % colors.length : 0];
+        }
+
+        let points = raw.points;
+        let latest = raw.latest;
+        
+        const unitFamily = mapPlantMetricUnit(raw.unit, raw.id);
+        const isPct = unitFamily === "pct";
+        if (isPct) {
+          points = raw.points.map((v: number | null) => (v !== null ? v / 100 : null));
+          latest = raw.latest !== null ? raw.latest / 100 : null;
+        }
+
+        if (chart.indexMode) {
+          const first = points.find((v: number | null): v is number => v !== null);
+          if (first != null && first !== 0) {
+            points = points.map((v: number | null) => (v !== null ? v / Math.abs(first) : null));
+          }
+        }
+
+        const resolvedType: ChartType =
+          sel.type === "auto" ? chart.type : sel.type;
+
+        const resolvedAxis: AxisSide =
+          sel.axis === "auto" ? "left" : sel.axis;
+
+        return {
+          id: raw.id,
+          label: raw.label,
+          unit: chart.indexMode ? ("number" as const) : unitFamily,
+          color,
+          type: resolvedType,
+          axis: resolvedAxis,
+          points,
+          latest,
+        } satisfies ResolvedSeries;
+      })
+      .filter((s): s is ResolvedSeries => s !== null);
+
+    return { series: resolved, periods };
+  }, [rawSeries, chartQuery.data, selectedSelections, chart.indexMode, chart.type]);
+
   if (!selected) {
     return (
       <StateBanner
@@ -391,41 +522,6 @@ function PlantDetailPanel({
   const hourly = detail.hourly_preview ?? [];
   const cceeMetrics = (detail.metrics ?? []).filter((metric) => isCceePlantSource(metric.source_id));
   const caveats = (detail.metadata?.caveats ?? []).filter((item: string) => !item.includes("ANEEL"));
-
-  const displayedSeries = (() => {
-    const rawSeries = chartQuery.data?.mode === "desktop" ? chartQuery.data.data.series : [];
-    const colored = rawSeries.map((s, idx) => {
-      let color = s.color || "#3B82F6";
-      if (!s.color) {
-        const colors = ["#22D3EE", "#34D399", "#818CF8", "#FBBF24", "#F87171", "#A78BFA"];
-        color = colors[idx % colors.length];
-      }
-      
-      let points = s.points;
-      let latest = s.latest;
-      const isPct = s.id.endsWith("pct") || s.unit === "pct";
-      if (isPct) {
-        points = s.points.map(v => v !== null ? v / 100 : null);
-        latest = s.latest !== null ? s.latest / 100 : null;
-      }
-      
-      return {
-        id: s.id,
-        label: s.label,
-        unit: s.unit as "pct" | "ratio" | "number",
-        color,
-        type: (s.type || "line") as "line" | "bar" | "area",
-        axis: (s.axis || "left") as "left" | "right",
-        points,
-        latest,
-      };
-    });
-
-    if (selectedMetricId === "all") return colored;
-    return colored.filter(s => s.id === selectedMetricId);
-  })();
-
-  const chartPeriods = chartQuery.data?.mode === "desktop" ? chartQuery.data.data.periods : [];
 
   return (
     <div className="rounded-md border border-zinc-800 bg-zinc-950/50 p-4 space-y-4">
@@ -454,20 +550,20 @@ function PlantDetailPanel({
           
           <div className="flex gap-2">
             <button
-              onClick={() => { setChartFreq("monthly"); setSelectedMetricId("all"); }}
+              onClick={() => { setChartFreq("monthly"); }}
               className={`rounded px-2 py-0.5 text-xs font-medium border ${chartFreq === "monthly" ? "bg-zinc-850 text-zinc-100 border-zinc-700" : "bg-transparent text-zinc-500 border-transparent hover:text-zinc-300"}`}
             >
               Monthly
             </button>
             <button
-              onClick={() => { setChartFreq("daily"); setSelectedMetricId("all"); }}
+              onClick={() => { setChartFreq("daily"); }}
               className={`rounded px-2 py-0.5 text-xs font-medium border ${chartFreq === "daily" ? "bg-zinc-850 text-zinc-100 border-zinc-700" : "bg-transparent text-zinc-500 border-transparent hover:text-zinc-300"}`}
               disabled={months.length === 0}
             >
               Daily
             </button>
             <button
-              onClick={() => { setChartFreq("hourly"); setSelectedMetricId("all"); }}
+              onClick={() => { setChartFreq("hourly"); }}
               className={`rounded px-2 py-0.5 text-xs font-medium border ${chartFreq === "hourly" ? "bg-zinc-850 text-zinc-100 border-zinc-700" : "bg-transparent text-zinc-500 border-transparent hover:text-zinc-300"}`}
               disabled={months.length === 0}
             >
@@ -476,43 +572,22 @@ function PlantDetailPanel({
           </div>
         </div>
 
-        {/* Chart Controls */}
-        <div className="grid gap-2 grid-cols-2">
-          {/* Metric Selector */}
-          <label className="text-[11px] text-zinc-500">
-            Metric
-            <select
-              value={selectedMetricId}
-              onChange={(e) => setSelectedMetricId(e.target.value)}
-              className="mt-1 h-8 w-full rounded border border-zinc-800 bg-zinc-950 px-2 text-xs text-zinc-100 outline-none"
-            >
-              <option value="all">All Series</option>
-              {(chartQuery.data?.mode === "desktop" ? chartQuery.data.data.series : []).map((s: any) => (
-                <option key={s.id} value={s.id}>{s.label}</option>
-              ))}
-            </select>
-          </label>
-
-          {/* Period Selector (Only for daily/hourly) */}
-          {chartFreq !== "monthly" ? (
-            <label className="text-[11px] text-zinc-500">
-              Period
-              <select
-                value={chartMonth}
-                onChange={(e) => setChartMonth(e.target.value)}
-                className="mt-1 h-8 w-full rounded border border-zinc-800 bg-zinc-950 px-2 text-xs text-zinc-100 outline-none font-mono"
-              >
-                {months.map((m) => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </select>
-            </label>
-          ) : (
-            <div className="text-[11px] text-zinc-500 self-end pb-2">
-              Showing full monthly history
-            </div>
-          )}
-        </div>
+        <IndicatorControls
+          periodValue={chartFreq !== "monthly" ? chartMonth : undefined}
+          periodOptions={chartFreq !== "monthly" ? months.map((m) => ({ value: m, label: m })) : undefined}
+          onPeriodChange={setChartMonth}
+          frequency="annual"
+          quarterlyAvailable={false}
+          onFrequencyChange={() => undefined}
+          showFrequency={false}
+          itemNoun="Metrics"
+          defs={defs}
+          selectedIds={selectedSelections.map((s) => s.id)}
+          onToggleIndicator={toggleSelection}
+          maxSelected={6}
+          chart={chart}
+          onChartChange={onChartChange}
+        />
 
         {/* Chart rendering */}
         <div className="relative border border-zinc-850 rounded-md bg-zinc-950/20 p-2 min-h-[240px] flex flex-col justify-center">
@@ -522,29 +597,29 @@ function PlantDetailPanel({
             <div className="text-center text-xs text-red-400 py-12">
               Error: {chartQuery.error instanceof Error ? chartQuery.error.message : String(chartQuery.error)}
             </div>
-          ) : displayedSeries.length === 0 ? (
+          ) : resolvedSeries.length === 0 ? (
             <div className="text-center text-xs text-zinc-500 py-12">No data to display. Please refresh the source.</div>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-3">
               <IndicatorChart
-                series={displayedSeries}
+                series={resolvedSeries}
                 periods={chartPeriods}
-                config={CHART_CONFIG}
+                config={chart}
                 height={220}
               />
               
               {/* Legend */}
-              <div className="flex flex-wrap gap-x-3 gap-y-1 justify-center text-[10px] text-zinc-400 font-mono">
-                {displayedSeries.map((s) => (
-                  <div key={s.id} className="flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: s.color }} />
-                    <span>{s.label}:</span>
-                    <span className="text-zinc-200">
-                      {s.latest !== null ? (s.unit === "pct" ? `${(s.latest * 100).toFixed(1)}%` : s.latest.toLocaleString("en-US", { maximumFractionDigits: 1 })) : "—"}
-                    </span>
-                  </div>
-                ))}
-              </div>
+              {chart.legend && resolvedSeries.length > 0 && (
+                <IndicatorLegend
+                  series={resolvedSeries}
+                  selectionById={new Map(selectedSelections.map((s) => [s.id, s]))}
+                  indexMode={chart.indexMode}
+                  showAxisControls={new Set(resolvedSeries.map((s) => s.unit)).size > 1}
+                  onSetAxis={setAxis}
+                  onSetType={setType}
+                  onRemove={toggleSelection}
+                />
+              )}
             </div>
           )}
         </div>
