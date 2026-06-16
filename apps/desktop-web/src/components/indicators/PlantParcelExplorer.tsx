@@ -292,7 +292,7 @@ function PlantCatalogTable({
   onSelect: (record: PlantParcelCatalogRecord) => void;
 }) {
   return (
-    <div className="overflow-auto rounded-md border border-zinc-800">
+    <div className="w-full max-w-full overflow-x-auto rounded-md border border-zinc-800">
       <table className="w-full min-w-[1050px] text-sm">
         <thead className="sticky top-0 bg-zinc-950 text-xs uppercase tracking-wide text-zinc-500">
           <tr>
