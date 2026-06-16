@@ -68,6 +68,29 @@ def test_storage_inventory_deduplicates_nested_roots_and_counts_sidecars(tmp_pat
     assert any(db["id"] == "news" for db in inventory["databases"])
 
 
+def test_storage_inventory_reports_news_db_as_separate_readable_database(tmp_path):
+    settings = _settings(tmp_path)
+    paths = settings.paths
+    paths.db_dir.mkdir(parents=True)
+
+    for db_path in (paths.db_path, paths.energy_kpi_db_path, paths.news_db_path):
+        with sqlite3.connect(db_path) as conn:
+            conn.execute("CREATE TABLE sample(id INTEGER PRIMARY KEY, value TEXT)")
+            conn.execute("INSERT INTO sample(value) VALUES ('x')")
+
+    manager = StorageInventoryManager(settings)
+    inventory = manager.scan()
+    databases = {db["id"]: db for db in inventory["databases"]}
+
+    assert set(databases) >= {"cvm_financials", "energy_kpis", "news"}
+    assert databases["news"]["label"] == "News"
+    assert databases["news"]["segment_id"] == "news"
+    assert databases["news"]["segment_label"] == "Financial news"
+    assert databases["news"]["exists"] is True
+    assert databases["news"]["readable"] is True
+    assert databases["news"]["sqlite"]["page_size"] > 0
+
+
 def test_storage_inventory_persists_latest_snapshot_and_bounded_history(tmp_path):
     settings = _settings(tmp_path)
     settings.paths.data_dir.mkdir(parents=True)

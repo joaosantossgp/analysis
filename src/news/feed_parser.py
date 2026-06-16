@@ -48,6 +48,8 @@ def parse_feed_bytes(payload: bytes, *, feed_url: str) -> ParsedFeed:
         return _parse_rss(root, feed_url=feed_url)
     if root_name == "feed":
         return _parse_atom(root, feed_url=feed_url)
+    if root_name == "RDF":
+        return _parse_rdf(root, feed_url=feed_url)
     raise NewsFeedParseError(f"Unsupported feed root: {root_name}")
 
 
@@ -98,6 +100,29 @@ def _parse_atom(root: ET.Element, *, feed_url: str) -> ParsedFeed:
                 published_at=_parse_date(_child_text(entry, "published") or _child_text(entry, "updated")),
                 summary=_child_text(entry, "summary") or _child_text(entry, "content"),
                 language=entry_language,
+            )
+        )
+    return ParsedFeed(title=feed_title, language=language, entries=tuple(entries))
+
+
+def _parse_rdf(root: ET.Element, *, feed_url: str) -> ParsedFeed:
+    channel = _first_child(root, "channel")
+    feed_title = _child_text(channel, "title") if channel is not None else None
+    language = _child_text(channel, "language") if channel is not None else None
+    entries: list[ParsedFeedEntry] = []
+    for item in _children(root, "item"):
+        title = _child_text(item, "title")
+        link = _child_text(item, "link")
+        if not title or not link:
+            continue
+        entries.append(
+            ParsedFeedEntry(
+                title=title,
+                url=urljoin(feed_url, link),
+                source_item_id=item.attrib.get("{http://www.w3.org/1999/02/22-rdf-syntax-ns#}about") or link,
+                published_at=_parse_date(_child_text(item, "date")),
+                summary=_child_text(item, "description"),
+                language=language,
             )
         )
     return ParsedFeed(title=feed_title, language=language, entries=tuple(entries))

@@ -1205,171 +1205,6 @@ function CapacityWidget({ universeId }: { universeId: string }) {
   );
 }
 
-// --- Collapsible Weights Tuning Panel ---
-function CollapsibleWeightsPanel({
-  universe,
-  onSaveSuccess,
-}: {
-  universe: any;
-  onSaveSuccess: () => void;
-}) {
-  const queryClient = useQueryClient();
-  const [isOpen, setIsOpen] = useState(false);
-
-  // Calibration states
-  const [weights, setWeights] = useState({
-    market_cap_weight: 0.3,
-    volume_weight: 0.3,
-    holding_weight: 0.2,
-    sector_weight: 0.2,
-  });
-
-  useEffect(() => {
-    if (universe?.assumptions?.weights) {
-      const w = universe.assumptions.weights;
-      setWeights({
-        market_cap_weight: w.market_cap_weight ?? 0.3,
-        volume_weight: w.volume_weight ?? 0.3,
-        holding_weight: w.holding_weight ?? 0.2,
-        sector_weight: w.sector_weight ?? 0.2,
-      });
-    }
-  }, [universe]);
-
-  const totalWeight = Math.round(
-    (weights.market_cap_weight +
-      weights.volume_weight +
-      weights.holding_weight +
-      weights.sector_weight) *
-      100
-  );
-  const isValidWeightSum = totalWeight === 100;
-
-  const updateMutation = useMutation({
-    mutationFn: () => {
-      const payload = {
-        id: universe.id,
-        name: universe.name,
-        purpose: universe.purpose || "",
-        benchmark: universe.benchmark || "",
-        status: universe.status,
-        assumptions: {
-          ...universe.assumptions,
-          weights,
-        },
-      };
-      return updateCoverageUniverse(payload);
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["coverage-universes"] });
-      void queryClient.invalidateQueries({ queryKey: ["coverage-universe-detail", universe.id] });
-      void queryClient.invalidateQueries({ queryKey: ["coverage-scores", universe.id] });
-      alert("Weights updated successfully!");
-      setIsOpen(false);
-      onSaveSuccess();
-    },
-    onError: (err) => alert(String(err))
-  });
-
-  return (
-    <div className="bg-[var(--color-surface-2)] border border-[var(--color-border-subtle)] rounded p-4 font-mono text-xs space-y-3">
-      <div className="flex justify-between items-center">
-        <div className="flex items-center gap-3">
-          <span className="font-bold uppercase tracking-wider text-[var(--color-id-ticker)]">Priority Weights Tuning</span>
-          <span className={`font-mono font-bold text-2xs px-2 py-0.5 rounded ${isValidWeightSum ? "bg-emerald-950/40 text-emerald-400 border border-emerald-900/60" : "bg-red-950/40 text-red-400 border border-red-900/60"}`}>
-            Total: {totalWeight}%
-          </span>
-        </div>
-        <Button variant="ghost" onClick={() => setIsOpen(!isOpen)}>
-          {isOpen ? "Hide Sliders" : "Configure Weights"}
-        </Button>
-      </div>
-
-      {isOpen && (
-        <div className="space-y-4 border-t border-[var(--color-border-subtle)] pt-3">
-          {!isValidWeightSum && (
-            <div className="p-2 border border-red-900 bg-red-950/20 text-red-400 rounded leading-relaxed">
-              [WARNING] Multi-factor priority scoring weights must sum to exactly 100% before saving. Adjust sliders below.
-            </div>
-          )}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-3">
-              <div className="space-y-1">
-                <div className="flex items-center justify-between text-3xs text-[var(--color-text-secondary)]">
-                  <span>Market Cap Weight</span>
-                  <span>{Math.round(weights.market_cap_weight * 100)}%</span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={Math.round(weights.market_cap_weight * 100)}
-                  onChange={(e) => setWeights({ ...weights, market_cap_weight: Number(e.target.value) / 100 })}
-                  className="w-full accent-cyan-600 cursor-pointer h-1 rounded-full bg-zinc-800"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <div className="flex items-center justify-between text-3xs text-[var(--color-text-secondary)]">
-                  <span>Average 30D Volume Weight</span>
-                  <span>{Math.round(weights.volume_weight * 100)}%</span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={Math.round(weights.volume_weight * 100)}
-                  onChange={(e) => setWeights({ ...weights, volume_weight: Number(e.target.value) / 100 })}
-                  className="w-full accent-cyan-600 cursor-pointer h-1 rounded-full bg-zinc-800"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <div className="space-y-1">
-                <div className="flex items-center justify-between text-3xs text-[var(--color-text-secondary)]">
-                  <span>Analyst Holdings Weight</span>
-                  <span>{Math.round(weights.holding_weight * 100)}%</span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={Math.round(weights.holding_weight * 100)}
-                  onChange={(e) => setWeights({ ...weights, holding_weight: Number(e.target.value) / 100 })}
-                  className="w-full accent-cyan-600 cursor-pointer h-1 rounded-full bg-zinc-800"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <div className="flex items-center justify-between text-3xs text-[var(--color-text-secondary)]">
-                  <span>Sector Relevance Weight</span>
-                  <span>{Math.round(weights.sector_weight * 100)}%</span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={Math.round(weights.sector_weight * 100)}
-                  onChange={(e) => setWeights({ ...weights, sector_weight: Number(e.target.value) / 100 })}
-                  className="w-full accent-cyan-600 cursor-pointer h-1 rounded-full bg-zinc-800"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-2 pt-2 border-t border-[var(--color-border-subtle)]">
-            <Button variant="ghost" onClick={() => setIsOpen(false)}>Cancel</Button>
-            <Button onClick={() => updateMutation.mutate()} disabled={updateMutation.isPending || !isValidWeightSum}>
-              {updateMutation.isPending ? "Saving..." : "Apply Weights"}
-            </Button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // --- Inline Checklist Popover Panel ---
 function InlineChecklistPopover({
   universeId,
@@ -1780,24 +1615,6 @@ function PrioritizationSection({ universeId }: { universeId: string }) {
       setOverrideRationale("");
       void queryClient.invalidateQueries({ queryKey: ["coverage-scores", universeId] });
       void queryClient.invalidateQueries({ queryKey: ["coverage-capacity", universeId] });
-      alert("Override saved successfully!");
-    },
-    onError: (err) => alert(String(err))
-  });
-
-  const removeMutation = useMutation({
-    mutationFn: (company: any) => {
-      const rationale = prompt("Enter rationale for removal:");
-      if (!rationale) throw new Error("Rationale is required");
-      return removeCompanyFromCoverageUniverse({
-        universe_id: universeId,
-        cd_cvm: company.cd_cvm,
-        rationale,
-      });
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["coverage-scores", universeId] });
-      void queryClient.invalidateQueries({ queryKey: ["coverage-capacity", universeId] });
     },
     onError: (err) => alert(String(err))
   });
@@ -1816,13 +1633,32 @@ function PrioritizationSection({ universeId }: { universeId: string }) {
     str
       .toLowerCase()
       .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, ""); // Remove accents
+      .replace(/[\u0300-\u036f]/g, "");
+
+  // --- Compute health status based on score quartiles + checklist % ---
+  const allFinalScores = scores.map((s: any) => s.final_score as number).sort((a: number, b: number) => a - b);
+  const p25 = allFinalScores.length > 0
+    ? allFinalScores[Math.floor(allFinalScores.length * 0.25)] ?? 0
+    : 0;
+  const p75 = allFinalScores.length > 0
+    ? allFinalScores[Math.floor(allFinalScores.length * 0.75)] ?? 0
+    : 0;
+
+  function getHealthStatus(item: any): "healthy" | "at_risk" | "stale" {
+    const total = item.total_checklist_count ?? 0;
+    const completed = item.completed_checklist_count ?? 0;
+    const pct = total > 0 ? (completed / total) * 100 : 0;
+    const score = item.final_score ?? 0;
+
+    if (score >= p75 && pct >= 80) return "healthy";
+    if (score < p25 || pct === 0) return "stale";
+    return "at_risk";
+  }
 
   // Perform filtering & sorting locally
   const filteredScores = useMemo(() => {
     let list = [...scores];
-    
-    // Text search
+
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(
@@ -1832,7 +1668,6 @@ function PrioritizationSection({ universeId }: { universeId: string }) {
       );
     }
 
-    // Sector filter
     if (sector) {
       const secTarget = normalize(sector.replace(/-/g, " "));
       list = list.filter((s) => {
@@ -1841,28 +1676,18 @@ function PrioritizationSection({ universeId }: { universeId: string }) {
       });
     }
 
-    // Tier filter
     if (tierFilter) {
       list = list.filter((s) => s.tier === tierFilter);
     }
 
-    // Sorting
     list.sort((a, b) => {
-      let valA = a[sortField];
-      let valB = b[sortField];
-
-      // Handle nulls
+      const valA = a[sortField];
+      const valB = b[sortField];
       if (valA == null) return sortOrder === "asc" ? -1 : 1;
       if (valB == null) return sortOrder === "asc" ? 1 : -1;
-
-      // Special string case
       if (typeof valA === "string") {
-        return sortOrder === "asc"
-          ? valA.localeCompare(valB)
-          : valB.localeCompare(valA);
+        return sortOrder === "asc" ? valA.localeCompare(valB) : valB.localeCompare(valA);
       }
-
-      // Default numeric case
       return sortOrder === "asc" ? valA - valB : valB - valA;
     });
 
@@ -1879,34 +1704,69 @@ function PrioritizationSection({ universeId }: { universeId: string }) {
   };
 
   const renderSortIndicator = (field: string) => {
-    if (sortField !== field) return null;
-    return sortOrder === "asc" ? " ▲" : " ▼";
+    if (sortField !== field) return <span className="ml-1 opacity-20">↕</span>;
+    return <span className="ml-1">{sortOrder === "asc" ? "▲" : "▼"}</span>;
   };
+
+  const TIER_ORDER = ["must_cover", "core", "watchlist", "opportunistic", "excluded", "inappropriate"];
+  const TIER_LABELS: Record<string, string> = {
+    must_cover: "Must Cover",
+    core: "Core Coverage",
+    watchlist: "Watchlist",
+    opportunistic: "Opportunistic",
+    excluded: "Excluded",
+    inappropriate: "Not Appropriate",
+  };
+
+  // Build rows with tier group headers injected
+  type TableRow = { type: "group"; tier: string; count: number } | { type: "item"; data: any };
+  const tableRows = useMemo<TableRow[]>(() => {
+    const rows: TableRow[] = [];
+    let lastTier = "";
+    const sorted = [...filteredScores].sort((a, b) => {
+      const ai = TIER_ORDER.indexOf(a.tier);
+      const bi = TIER_ORDER.indexOf(b.tier);
+      // If sort is by tier or default, group by tier first
+      if (sortField === "tier" || sortField === "final_score") {
+        if (ai !== bi) return ai - bi;
+        return (b.final_score ?? 0) - (a.final_score ?? 0);
+      }
+      // Otherwise respect the sort field, but still group
+      return 0;
+    });
+
+    // We use filteredScores directly for non-tier/score sorts, otherwise use tier-grouped
+    const list = (sortField === "tier" || sortField === "final_score") ? sorted : filteredScores;
+    const tierCounts: Record<string, number> = {};
+    list.forEach((s) => { tierCounts[s.tier] = (tierCounts[s.tier] ?? 0) + 1; });
+
+    let seen = new Set<string>();
+    list.forEach((s) => {
+      if (s.tier !== lastTier && !seen.has(s.tier)) {
+        rows.push({ type: "group", tier: s.tier, count: tierCounts[s.tier] ?? 0 });
+        lastTier = s.tier;
+        seen.add(s.tier);
+      }
+      rows.push({ type: "item", data: s });
+    });
+    return rows;
+  }, [filteredScores, sortField]);
 
   return (
     <div className="space-y-4">
-      <CapacityWidget universeId={universeId} />
-
-      {detailQuery.data && (
-        <CollapsibleWeightsPanel
-          universe={detailQuery.data}
-          onSaveSuccess={() => {}}
-        />
-      )}
-
       {/* Control Bar */}
-      <div className="flex flex-wrap items-center gap-4 bg-[var(--color-surface-2)] p-4 rounded border border-[var(--color-border-subtle)] font-mono text-xs">
-        <div className="flex-1 min-w-[200px]">
+      <div className="flex flex-wrap items-center gap-3 bg-[var(--color-surface-2)] px-4 py-3 rounded border border-[var(--color-border-subtle)] font-mono text-xs">
+        <div className="flex-1 min-w-[180px]">
           <input
             type="text"
-            placeholder="Search by ticker or name..."
+            placeholder="Search ticker or name..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-[var(--color-surface-3)] border border-[var(--color-border-default)] rounded px-2.5 py-1.5 focus:outline-none text-zinc-200"
+            className="w-full bg-[var(--color-surface-3)] border border-[var(--color-border-default)] rounded px-2.5 py-1.5 focus:outline-none text-zinc-200 placeholder:text-zinc-600"
           />
         </div>
-        
-        <div className="w-48">
+
+        <div className="w-44">
           <select
             value={sector}
             onChange={(e) => setSector(e.target.value)}
@@ -1929,134 +1789,222 @@ function PrioritizationSection({ universeId }: { universeId: string }) {
           >
             <option value="">All Tiers</option>
             <option value="must_cover">Must Cover</option>
-            <option value="core">Core Coverage</option>
+            <option value="core">Core</option>
             <option value="watchlist">Watchlist</option>
             <option value="opportunistic">Opportunistic</option>
             <option value="excluded">Excluded</option>
             <option value="inappropriate">Not Appropriate</option>
           </select>
         </div>
-        
+
         {(search || sector || tierFilter) && (
           <button
             type="button"
-            onClick={() => {
-              setSearch("");
-              setSector("");
-              setTierFilter("");
-            }}
-            className="px-3 py-1.5 border border-zinc-700 bg-zinc-800 hover:bg-zinc-750 text-2xs rounded text-zinc-300 cursor-pointer"
+            onClick={() => { setSearch(""); setSector(""); setTierFilter(""); }}
+            className="px-3 py-1.5 border border-zinc-700 bg-zinc-800 hover:bg-zinc-700 text-2xs rounded text-zinc-400 cursor-pointer transition-colors"
           >
-            Reset Filters
+            Reset
           </button>
         )}
+
+        <div className="ml-auto text-3xs text-[var(--color-text-tertiary)]">
+          {filteredScores.length} stocks
+        </div>
       </div>
 
+      {/* Prioritization Table */}
       <div className="overflow-x-auto border border-[var(--color-border-default)] rounded bg-[var(--color-surface-1)]">
         <table className="w-full border-collapse font-mono text-xs">
           <thead>
             <tr className="border-b border-[var(--color-border-default)] bg-[var(--color-surface-2)] text-[var(--color-text-tertiary)] uppercase text-2xs select-none">
-              <th className="px-3 py-2 text-left cursor-pointer hover:text-[var(--color-text-primary)]" onClick={() => handleSort("ticker_b3")}>
+              <th className="px-3 py-2.5 text-left w-8">
+                {/* Health status — no sort */}
+                Status
+              </th>
+              <th className="px-3 py-2.5 text-left cursor-pointer hover:text-[var(--color-text-primary)] transition-colors" onClick={() => handleSort("ticker_b3")}>
                 Ticker{renderSortIndicator("ticker_b3")}
               </th>
-              <th className="px-3 py-2 text-left cursor-pointer hover:text-[var(--color-text-primary)]" onClick={() => handleSort("company_name")}>
-                Company Name{renderSortIndicator("company_name")}
+              <th className="px-3 py-2.5 text-left cursor-pointer hover:text-[var(--color-text-primary)] transition-colors" onClick={() => handleSort("company_name")}>
+                Company{renderSortIndicator("company_name")}
               </th>
-              <th className="px-3 py-2 text-left cursor-pointer hover:text-[var(--color-text-primary)]" onClick={() => handleSort("tier")}>
+              <th className="px-3 py-2.5 text-left cursor-pointer hover:text-[var(--color-text-primary)] transition-colors" onClick={() => handleSort("tier")}>
                 Tier{renderSortIndicator("tier")}
               </th>
-              <th className="px-3 py-2 text-right cursor-pointer hover:text-[var(--color-text-primary)]" onClick={() => handleSort("market_cap")}>
-                Mkt Cap{renderSortIndicator("market_cap")}
-              </th>
-              <th className="px-3 py-2 text-right cursor-pointer hover:text-[var(--color-text-primary)]" onClick={() => handleSort("avg_volume")}>
-                Avg Vol{renderSortIndicator("avg_volume")}
-              </th>
-              <th className="px-3 py-2 text-center cursor-pointer hover:text-[var(--color-text-primary)]" onClick={() => handleSort("final_score")}>
+              <th className="px-3 py-2.5 text-center cursor-pointer hover:text-[var(--color-text-primary)] transition-colors w-44" onClick={() => handleSort("final_score")}>
                 Score{renderSortIndicator("final_score")}
               </th>
-              <th className="px-3 py-2 text-center cursor-pointer hover:text-[var(--color-text-primary)]" onClick={() => handleSort("completed_checklist_count")}>
+              <th className="px-3 py-2.5 text-center cursor-pointer hover:text-[var(--color-text-primary)] transition-colors w-32" onClick={() => handleSort("completed_checklist_count")}>
                 Checklist{renderSortIndicator("completed_checklist_count")}
               </th>
-              <th className="px-3 py-2 text-center">Actions</th>
+              <th className="px-3 py-2.5 text-left">Next Action</th>
+              <th className="px-3 py-2.5 text-center">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {filteredScores.length === 0 ? (
+            {tableRows.length === 0 ? (
               <tr>
                 <td colSpan={8} className="px-3 py-8 text-center text-[var(--color-text-tertiary)]">
                   No stocks match active filters.
                 </td>
               </tr>
             ) : (
-              filteredScores.map((s: any) => (
-                <tr key={s.cd_cvm} className="border-b border-[var(--color-border-subtle)] hover:bg-[var(--color-surface-2)]">
-                  <td className="px-3 py-2 text-[var(--color-id-ticker)] font-bold">
-                    <Link to={`/empresas/${s.cd_cvm}`} className="hover:underline">{s.ticker_b3 || "N/A"}</Link>
-                  </td>
-                  <td className="px-3 py-2 truncate max-w-xs">{s.company_name}</td>
-                  <td className="px-3 py-2 text-2xs uppercase">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedCompany(s);
-                        setIsDrawerOpen(true);
-                      }}
-                      className="px-1.5 py-0.5 rounded border border-[var(--color-border-subtle)] bg-[var(--color-surface-3)] hover:scale-105 transition-transform cursor-pointer"
-                    >
-                      {s.tier.replace("_", " ")}
-                    </button>
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    {s.market_cap ? (s.market_cap / 1e6).toFixed(1) + "M" : "-"}
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    {s.avg_volume ? (s.avg_volume / 1e3).toFixed(1) + "k" : "-"}
-                  </td>
-                  <td className="px-3 py-2 text-center font-bold">
-                    <PriorityScoreTooltip item={s} weights={detailQuery.data?.assumptions?.weights} />
-                  </td>
-                  <td className="px-3 py-2 text-center relative">
-                    <button
-                      type="button"
-                      onClick={() => setChecklistCompany(s)}
-                      className="px-2 py-0.5 rounded border border-[var(--color-border-subtle)] bg-[var(--color-surface-3)] hover:border-[var(--color-action-primary)] text-2xs font-semibold cursor-pointer"
-                    >
-                      {s.completed_checklist_count}/{s.total_checklist_count}
-                    </button>
-                    {checklistCompany?.cd_cvm === s.cd_cvm && (
-                      <InlineChecklistPopover
-                        universeId={universeId}
-                        company={s}
-                        onClose={() => setChecklistCompany(null)}
-                      />
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-center space-x-2">
-                    <button
-                      onClick={() => {
-                        setSelectedCompany(s);
-                        setIsDrawerOpen(false);
-                        setOverrideText(s.manual_score_override ? String(s.manual_score_override) : "");
-                      }}
-                      className="px-2 py-0.5 bg-[var(--color-surface-3)] border border-[var(--color-border-default)] rounded text-2xs hover:border-[var(--color-action-primary)]"
-                    >
-                      Override
-                    </button>
-                    <button
-                      onClick={() => removeMutation.mutate(s)}
-                      className="px-2 py-0.5 bg-[var(--color-surface-3)] border border-red-950 text-red-500 rounded text-2xs hover:bg-red-950"
-                    >
-                      Remove
-                    </button>
-                  </td>
-                </tr>
-              ))
+              tableRows.map((row, _idx) => {
+                if (row.type === "group") {
+                  return (
+                    <tr key={`group-${row.tier}`} className="bg-[var(--color-surface-2)] border-y border-[var(--color-border-subtle)]">
+                      <td colSpan={8} className="px-4 py-1.5">
+                        <span className="text-2xs font-bold uppercase tracking-widest text-[var(--color-text-tertiary)]">
+                          {TIER_LABELS[row.tier] ?? row.tier}
+                        </span>
+                        <span className="ml-2 text-3xs text-[var(--color-text-tertiary)] opacity-60">
+                          ({row.count})
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                }
+
+                const s = row.data;
+                const health = getHealthStatus(s);
+                const total = s.total_checklist_count ?? 0;
+                const completed = s.completed_checklist_count ?? 0;
+                const checkPct = total > 0 ? (completed / total) * 100 : 0;
+                const delta: number | null = s.score_delta ?? null;
+
+                return (
+                  <tr key={s.cd_cvm} className="border-b border-[var(--color-border-subtle)] hover:bg-[var(--color-surface-2)] transition-colors">
+
+                    {/* Health Status */}
+                    <td className="px-3 py-2.5 text-center">
+                      {health === "healthy" && (
+                        <span title="Healthy — high score and well covered" className="text-emerald-400 font-bold select-none cursor-default">●</span>
+                      )}
+                      {health === "at_risk" && (
+                        <span title="At Risk — mid score or low checklist completion" className="text-amber-400 font-bold select-none cursor-default">⚠</span>
+                      )}
+                      {health === "stale" && (
+                        <span title="Stale — low score or zero checklist completion" className="text-red-500 font-bold select-none cursor-default">✗</span>
+                      )}
+                    </td>
+
+                    {/* Ticker */}
+                    <td className="px-3 py-2.5 text-[var(--color-id-ticker)] font-bold">
+                      <Link to={`/empresas/${s.cd_cvm}`} className="hover:underline">{s.ticker_b3 || "N/A"}</Link>
+                    </td>
+
+                    {/* Company Name */}
+                    <td className="px-3 py-2.5 truncate max-w-[200px] text-[var(--color-text-primary)]">{s.company_name}</td>
+
+                    {/* Tier badge */}
+                    <td className="px-3 py-2.5 text-2xs uppercase">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedCompany(s);
+                          setIsDrawerOpen(true);
+                        }}
+                        className="px-1.5 py-0.5 rounded border border-[var(--color-border-subtle)] bg-[var(--color-surface-3)] hover:scale-105 transition-transform cursor-pointer hover:border-[var(--color-action-primary)]"
+                      >
+                        {s.tier.replace(/_/g, " ")}
+                      </button>
+                    </td>
+
+                    {/* Score bar + delta */}
+                    <td className="px-3 py-2.5">
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-1.5 rounded-full bg-zinc-800 overflow-hidden min-w-[60px]">
+                          <div
+                            className={`h-full rounded-full transition-all ${
+                              s.final_score >= p75
+                                ? "bg-emerald-500"
+                                : s.final_score >= p25
+                                ? "bg-amber-500"
+                                : "bg-red-500"
+                            }`}
+                            style={{ width: `${s.final_score}%` }}
+                          />
+                        </div>
+                        <span className={`font-bold tabular-nums text-xs min-w-[32px] text-right ${
+                          s.final_score >= p75 ? "text-emerald-400" : s.final_score >= p25 ? "text-amber-400" : "text-red-400"
+                        }`}>
+                          {s.final_score}
+                        </span>
+                        {delta !== null && delta !== 0 && (
+                          <span className={`text-3xs font-semibold tabular-nums ${delta > 0 ? "text-emerald-500" : "text-red-500"}`}>
+                            {delta > 0 ? "▲" : "▼"}{Math.abs(delta)}
+                          </span>
+                        )}
+                      </div>
+                      <PriorityScoreTooltip item={s} weights={detailQuery.data?.assumptions?.weights} />
+                    </td>
+
+                    {/* Checklist progress bar */}
+                    <td className="px-3 py-2.5 relative">
+                      <button
+                        type="button"
+                        onClick={() => setChecklistCompany(s)}
+                        className="w-full group flex flex-col gap-1 cursor-pointer"
+                        title={`${completed}/${total} checklist items complete — click to manage`}
+                      >
+                        <div className="flex items-center justify-between text-3xs text-[var(--color-text-tertiary)]">
+                          <span className={checkPct === 100 ? "text-emerald-400 font-semibold" : ""}>
+                            {completed}/{total}
+                          </span>
+                          <span className={checkPct === 100 ? "text-emerald-400" : checkPct > 0 ? "text-amber-400" : "text-zinc-600"}>
+                            {Math.round(checkPct)}%
+                          </span>
+                        </div>
+                        <div className="h-1.5 w-full rounded-full bg-zinc-800 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all ${
+                              checkPct === 100 ? "bg-emerald-500" : checkPct > 0 ? "bg-amber-500" : "bg-zinc-700"
+                            }`}
+                            style={{ width: `${checkPct}%` }}
+                          />
+                        </div>
+                      </button>
+                      {checklistCompany?.cd_cvm === s.cd_cvm && (
+                        <InlineChecklistPopover
+                          universeId={universeId}
+                          company={s}
+                          onClose={() => setChecklistCompany(null)}
+                        />
+                      )}
+                    </td>
+
+                    {/* Next Action */}
+                    <td className="px-3 py-2.5 text-2xs max-w-[140px]">
+                      {s.next_pending_item ? (
+                        <span className="text-amber-400/80 truncate block" title={s.next_pending_item}>
+                          {s.next_pending_item.replace(/_/g, " ")}
+                        </span>
+                      ) : (
+                        <span className="text-emerald-500 font-semibold">✓ All done</span>
+                      )}
+                    </td>
+
+                    {/* Actions */}
+                    <td className="px-3 py-2.5 text-center">
+                      <button
+                        onClick={() => {
+                          setSelectedCompany(s);
+                          setIsDrawerOpen(false);
+                          setOverrideText(s.manual_score_override ? String(s.manual_score_override) : "");
+                        }}
+                        className="px-2 py-0.5 bg-[var(--color-surface-3)] border border-[var(--color-border-default)] rounded text-2xs hover:border-[var(--color-action-primary)] transition-colors"
+                      >
+                        Override
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
       </div>
 
-      {/* Override dialog drawer modal */}
+      {/* Override modal */}
       {selectedCompany && !isDrawerOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 font-mono text-xs">
           <div className="w-full max-w-md bg-[var(--color-surface-1)] border border-[var(--color-border-default)] rounded p-4 shadow-xl space-y-4">
@@ -2069,7 +2017,7 @@ function PrioritizationSection({ universeId }: { universeId: string }) {
                 <div>Weights: Cap ({Math.round((detailQuery.data?.assumptions?.weights?.market_cap_weight ?? 0.3) * 100)}%), Vol ({Math.round((detailQuery.data?.assumptions?.weights?.volume_weight ?? 0.3) * 100)}%), Holdings ({Math.round((detailQuery.data?.assumptions?.weights?.holding_weight ?? 0.2) * 100)}%), Sector ({Math.round((detailQuery.data?.assumptions?.weights?.sector_weight ?? 0.2) * 100)}%)</div>
               </div>
               <div className="space-y-1">
-                <label className="block text-[var(--color-text-secondary)]">Override adjustment value (+/-)</label>
+                <label className="block text-[var(--color-text-secondary)]">Override adjustment (+/-)</label>
                 <input
                   type="number"
                   placeholder="e.g. 10 or -15"
@@ -2090,7 +2038,7 @@ function PrioritizationSection({ universeId }: { universeId: string }) {
                 />
               </div>
 
-              {/* History logs inside override modal */}
+              {/* History logs */}
               <div className="border-t border-[var(--color-border-subtle)] pt-3">
                 <span className="block font-bold text-2xs text-[var(--color-text-secondary)] uppercase tracking-wider mb-2">Previous Decision Logs</span>
                 {historyQuery.isLoading ? (
@@ -2102,14 +2050,12 @@ function PrioritizationSection({ universeId }: { universeId: string }) {
                     {historyQuery.data?.map((h: any) => (
                       <div key={h.id} className="p-1.5 bg-[var(--color-surface-2)] rounded border border-[var(--color-border-subtle)] text-3xs">
                         <div className="flex justify-between text-[var(--color-text-tertiary)]">
-                          <span className="uppercase font-semibold text-[var(--color-id-ticker)]">{h.event_type.replace("_", " ")}</span>
+                          <span className="uppercase font-semibold text-[var(--color-id-ticker)]">{h.event_type.replace(/_/g, " ")}</span>
                           <span>{h.timestamp.slice(0, 16).replace("T", " ")}</span>
                         </div>
-                        <div className="text-[var(--color-text-secondary)]">
-                          {h.previous_value} ➔ {h.new_value}
-                        </div>
-                        {h.rationale && (
-                          <div className="text-zinc-500 italic mt-0.5">"Why: {h.rationale}"</div>
+                        <div className="text-[var(--color-text-secondary)]">{h.previous_value} ➔ {h.new_value}</div>
+                        {h.rationale && h.rationale !== "auto_snapshot" && (
+                          <div className="text-zinc-500 italic mt-0.5">"{h.rationale}"</div>
                         )}
                       </div>
                     ))}
@@ -2123,7 +2069,7 @@ function PrioritizationSection({ universeId }: { universeId: string }) {
                 onClick={() => overrideMutation.mutate()}
                 disabled={overrideMutation.isPending || !overrideRationale}
               >
-                Apply
+                {overrideMutation.isPending ? "Saving..." : "Apply"}
               </Button>
             </div>
           </div>
@@ -2143,6 +2089,8 @@ function PrioritizationSection({ universeId }: { universeId: string }) {
     </div>
   );
 }
+
+
 
 // --- Work Queue / Gaps list tab ---
 function WorkQueueSection({ universeId }: { universeId: string }) {

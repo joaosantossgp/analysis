@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import time
+
 import requests
 from sqlalchemy import create_engine, text
 
 from src.news.fetcher import NewsFeedFetcher
 from src.news.feed_parser import NewsFeedParseError, parse_feed_bytes
 from src.news.repository import NewsRepository, NewsSource, canonicalize_url, user_source_id_for_url
-from src.news.schema import ensure_news_tables_for_connection
+from src.news.schema import ensure_news_tables_for_connection, get_news_engine
 from src.news.service import NewsCollectionService
+from src.news.sources import builtin_sources
+from src.platform.settings import build_settings
 
 
 VALID_RSS = b"""<?xml version="1.0" encoding="UTF-8"?>
@@ -41,6 +45,22 @@ VALID_ATOM = b"""<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
+VALID_RDF = b"""<?xml version="1.0" encoding="utf-8" ?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns="http://purl.org/rss/1.0/">
+  <channel rdf:about="https://www.gov.br/cvm/RSS">
+    <title>Comissao de Valores Mobiliarios</title>
+    <link>https://www.gov.br/cvm</link>
+  </channel>
+  <item rdf:about="https://www.gov.br/cvm/noticia">
+    <title>CVM cancela registro de companhia aberta</title>
+    <link>https://www.gov.br/cvm/noticia</link>
+    <description>Area tecnica aponta falta de informacoes.</description>
+    <dc:date>2026-06-10T12:45:40Z</dc:date>
+  </item>
+</rdf:RDF>
+"""
+
+
 def _source() -> NewsSource:
     return NewsSource(
         source_id="fixture-source",
@@ -49,6 +69,18 @@ def _source() -> NewsSource:
         reliability_layer="official",
         feed_url="https://example.com/feed.xml",
         priority=10,
+    )
+
+
+def _content_source() -> NewsSource:
+    return NewsSource(
+        source_id="official-content-source",
+        name="Official Content Source",
+        source_type="official",
+        reliability_layer="official",
+        feed_url="https://example.com/feed.xml",
+        priority=10,
+        allow_content_storage=True,
     )
 
 
@@ -106,6 +138,8 @@ def test_news_schema_creates_adjacent_db_tables_and_fts(tmp_path):
         }
         assert "news_sources" in tables
         assert "news_articles" in tables
+        assert "news_article_content" in tables
+        assert "news_retention_policy" in tables
         assert "news_source_health" in tables
         fts_enabled = conn.execute(
             text("SELECT value FROM news_schema_capabilities WHERE key = 'fts5'")
@@ -113,6 +147,30 @@ def test_news_schema_creates_adjacent_db_tables_and_fts(tmp_path):
         assert fts_enabled in {"0", "1"}
         if fts_enabled == "1":
             assert "news_articles_fts" in tables
+
+
+def test_news_schema_clean_install_creates_news_db_at_configured_path(tmp_path):
+    settings = build_settings(project_root=tmp_path)
+
+    assert not settings.paths.news_db_path.exists()
+
+    engine = get_news_engine(settings)
+    with engine.connect() as conn:
+        tables = {
+            row[0]
+            for row in conn.execute(
+                text("SELECT name FROM sqlite_master WHERE type IN ('table', 'virtual table')")
+            ).fetchall()
+        }
+        policy = conn.execute(
+            text("SELECT extracted_text_retention_days FROM news_retention_policy WHERE policy_id = 'default'")
+        ).scalar()
+
+    assert settings.paths.news_db_path.exists()
+    assert "news_articles" in tables
+    assert "news_article_content" in tables
+    assert "news_company_scope_overrides" in tables
+    assert policy == 90
 
 
 def test_news_schema_seeds_classification_catalog_and_preserves_user_flags(tmp_path):
@@ -149,6 +207,31 @@ def test_news_schema_upgrade_adds_columns_without_data_loss(tmp_path):
     engine = create_engine(f"sqlite:///{tmp_path / 'old-news.db'}")
     with engine.begin() as conn:
         conn.execute(text("""
+            CREATE TABLE news_sources (
+                source_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                source_type TEXT NOT NULL,
+                reliability_layer TEXT NOT NULL,
+                feed_url TEXT NOT NULL,
+                homepage_url TEXT,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                priority INTEGER NOT NULL DEFAULT 100,
+                user_defined INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """))
+        conn.execute(text("""
+            INSERT INTO news_sources (
+                source_id, name, source_type, reliability_layer, feed_url,
+                enabled, priority, user_defined, created_at, updated_at
+            )
+            VALUES (
+                'src', 'Old Source', 'official', 'official', 'https://example.com/feed.xml',
+                1, 10, 0, '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00'
+            )
+        """))
+        conn.execute(text("""
             CREATE TABLE news_articles (
                 article_id TEXT PRIMARY KEY,
                 source_id TEXT NOT NULL,
@@ -180,8 +263,25 @@ def test_news_schema_upgrade_adds_columns_without_data_loss(tmp_path):
 
     with engine.begin() as conn:
         ensure_news_tables_for_connection(conn)
+        tables = {
+            row[0]
+            for row in conn.execute(
+                text("SELECT name FROM sqlite_master WHERE type IN ('table', 'virtual table')")
+            ).fetchall()
+        }
+        source_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(news_sources)")).fetchall()}
         cols = {row[1] for row in conn.execute(text("PRAGMA table_info(news_articles)")).fetchall()}
+        retention = conn.execute(text("SELECT * FROM news_retention_policy WHERE policy_id = 'default'")).mappings().fetchone()
+        source = conn.execute(text("SELECT * FROM news_sources WHERE source_id = 'src'")).mappings().fetchone()
         assert {"source_item_id", "language", "paywall_status"}.issubset(cols)
+        assert "allow_content_storage" in source_cols
+        assert "news_article_content" in tables
+        assert "news_retention_policy" in tables
+        assert "news_company_scope_overrides" in tables
+        assert source["name"] == "Old Source"
+        assert source["allow_content_storage"] == 0
+        assert retention["extracted_text_retention_days"] == 90
+        assert retention["preserve_saved"] == 1
         count = conn.execute(text("SELECT count(*) FROM news_articles WHERE article_id = 'old'")).scalar()
         assert count == 1
 
@@ -196,6 +296,31 @@ def test_parse_valid_rss_and_atom_fixtures():
     assert atom.language == "en"
     assert atom.entries[0].source_item_id == "tag:example.com,2026:china-rates"
     assert atom.entries[0].published_at == "2026-06-16T09:10:00+00:00"
+
+
+def test_parse_valid_rdf_feed():
+    rdf = parse_feed_bytes(VALID_RDF, feed_url="https://www.gov.br/cvm/RSS")
+
+    assert rdf.title == "Comissao de Valores Mobiliarios"
+    assert len(rdf.entries) == 1
+    assert rdf.entries[0].source_item_id == "https://www.gov.br/cvm/noticia"
+    assert rdf.entries[0].published_at == "2026-06-10T12:45:40+00:00"
+
+
+def test_builtin_sources_include_validated_official_and_press_layers():
+    sources = {source.source_id: source for source in builtin_sources()}
+
+    assert set(sources) >= {
+        "cvm-rss",
+        "bcb-rss",
+        "bcb-copom-comunicados",
+        "b3-rss-news",
+        "ibge-rss-news",
+        "agencia-brasil-economia",
+    }
+    assert sources["cvm-rss"].reliability_layer == "official"
+    assert sources["ibge-rss-news"].allow_content_storage is True
+    assert sources["agencia-brasil-economia"].allow_content_storage is False
 
 
 def test_parse_malformed_feed_raises_explicit_error():
@@ -275,6 +400,33 @@ def test_collect_feed_payload_classifies_keywords_topics_and_events(tmp_path):
     assert listed_dividend["relevance_reasons"]
 
 
+def test_collect_feed_payload_stores_feed_content_only_when_source_allows(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'news-selective-content.db'}")
+    with engine.begin() as conn:
+        ensure_news_tables_for_connection(conn)
+
+    repository = NewsRepository(engine)
+    service = NewsCollectionService(repository)
+    service.collect_feed_payload(source=_source(), payload=VALID_RSS, http_status=200)
+    service.collect_feed_payload(source=_content_source(), payload=VALID_ATOM, http_status=200)
+
+    articles = repository.list_articles(include_hidden=True)["items"]
+    regular_article = next(article for article in articles if "Petrobras" in article["title"])
+    official_article = next(article for article in articles if "China" in article["title"])
+    summary = repository.get_content_storage_summary()
+    with engine.connect() as conn:
+        stored = conn.execute(
+            text("SELECT article_id, content_format, source_policy FROM news_article_content")
+        ).mappings().fetchall()
+
+    assert regular_article["content_status"] == "summary_available"
+    assert official_article["content_status"] == "full_text_available"
+    assert summary["content_count"] == 1
+    assert stored[0]["article_id"] == official_article["article_id"]
+    assert stored[0]["content_format"] == "feed"
+    assert stored[0]["source_policy"] == "feed_content_allowed"
+
+
 def test_repository_top_news_orders_by_score_not_chronology(tmp_path):
     engine = create_engine(f"sqlite:///{tmp_path / 'news-top-order.db'}")
     with engine.begin() as conn:
@@ -299,6 +451,80 @@ def test_repository_top_news_orders_by_score_not_chronology(tmp_path):
     assert latest["order"] == "latest"
     assert "Petrobras" in top["items"][0]["title"]
     assert "China" in latest["items"][0]["title"]
+
+
+def test_repository_large_history_caps_pages_and_keeps_top_order(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'news-large-history.db'}")
+    with engine.begin() as conn:
+        ensure_news_tables_for_connection(conn)
+
+    repository = NewsRepository(engine)
+    source = _source()
+    repository.upsert_source(source)
+    with engine.begin() as conn:
+        for index in range(1500):
+            article_id = f"bulk-{index:04d}"
+            published_day = (index % 28) + 1
+            published_hour = index % 24
+            conn.execute(
+                text("""
+                    INSERT INTO news_articles (
+                        article_id, source_id, source_item_id, title, source_name,
+                        original_url, canonical_url, published_at, discovered_at,
+                        fetched_at, summary, language, content_status, created_at, updated_at
+                    )
+                    VALUES (
+                        :article_id, :source_id, :source_item_id, :title, :source_name,
+                        :original_url, :canonical_url, :published_at, :discovered_at,
+                        :fetched_at, :summary, 'pt-BR', 'summary_available',
+                        datetime('now'), datetime('now')
+                    )
+                """),
+                {
+                    "article_id": article_id,
+                    "source_id": source.source_id,
+                    "source_item_id": article_id,
+                    "title": f"Bulk market article {index:04d}",
+                    "source_name": source.name,
+                    "original_url": f"https://example.com/bulk/{index}?utm_source=test",
+                    "canonical_url": f"https://example.com/bulk/{index}",
+                    "published_at": f"2026-06-{published_day:02d}T{published_hour:02d}:00:00+00:00",
+                    "discovered_at": f"2026-06-{published_day:02d}T{published_hour:02d}:05:00+00:00",
+                    "fetched_at": f"2026-06-{published_day:02d}T{published_hour:02d}:10:00+00:00",
+                    "summary": "Volume smoke fixture",
+                },
+            )
+            conn.execute(
+                text("""
+                    INSERT INTO news_article_scores (
+                        article_id, total_score, priority_level, components_json, reasons_json, updated_at
+                    )
+                    VALUES (
+                        :article_id, :total_score, :priority_level, '{}', '[]', datetime('now')
+                    )
+                """),
+                {
+                    "article_id": article_id,
+                    "total_score": 999.0 if index == 777 else float(index % 100),
+                    "priority_level": "Critical" if index == 777 else "Normal",
+                },
+            )
+
+    started = time.perf_counter()
+    latest = repository.list_articles(limit=50, offset=100, order="latest")
+    top = repository.list_articles(limit=999, offset=0, order="top")
+    elapsed = time.perf_counter() - started
+
+    assert latest["limit"] == 50
+    assert latest["offset"] == 100
+    assert latest["count"] == 50
+    assert latest["total"] == 1500
+    assert top["limit"] == 200
+    assert top["count"] == 200
+    assert top["total"] == 1500
+    assert top["items"][0]["article_id"] == "bulk-0777"
+    assert top["items"][0]["priority_level"] == "Critical"
+    assert elapsed < 5.0
 
 
 def test_repository_overview_sections_use_ranked_and_classified_articles(tmp_path):
@@ -706,6 +932,85 @@ def test_repository_updates_article_user_state(tmp_path):
     listed = repository.list_articles(include_hidden=True)["items"][0]
     assert listed["saved"] == 1
     assert listed["read_later"] == 1
+
+
+def test_repository_retention_cleanup_preserves_saved_and_clears_extracted_content_only(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'news-retention.db'}")
+    with engine.begin() as conn:
+        ensure_news_tables_for_connection(conn)
+
+    repository = NewsRepository(engine)
+    service = NewsCollectionService(repository)
+    service.collect_feed_payload(source=_source(), payload=VALID_RSS, http_status=200)
+    service.collect_feed_payload(source=_source(), payload=VALID_ATOM, http_status=200)
+    articles = repository.list_articles(include_hidden=True)["items"]
+    saved_article_id = articles[0]["article_id"]
+    removable_article_id = articles[1]["article_id"]
+    repository.store_article_content(article_id=saved_article_id, content_text="saved text")
+    repository.store_article_content(article_id=removable_article_id, content_text="removable text")
+    repository.update_article_user_state(article_id=saved_article_id, saved=True)
+    repository.update_retention_policy(extracted_text_retention_days=1, total_storage_limit_mb=16)
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE news_article_content SET extracted_at = datetime('now', '-2 days')"))
+        conn.execute(text("UPDATE news_articles SET extracted_at = datetime('now', '-2 days')"))
+
+    preview = repository.cleanup_extracted_content(dry_run=True)
+    cleanup = repository.cleanup_extracted_content()
+    summary = repository.get_content_storage_summary()
+    listed = repository.list_articles(include_hidden=True)["items"]
+    saved_article = next(article for article in listed if article["article_id"] == saved_article_id)
+    removable_article = next(article for article in listed if article["article_id"] == removable_article_id)
+
+    assert preview["deleted_content_count"] == 1
+    assert cleanup["deleted_content_count"] == 1
+    assert cleanup["freed_bytes"] == len("removable text".encode("utf-8"))
+    assert summary["content_count"] == 1
+    assert saved_article["content_status"] == "full_text_available"
+    assert removable_article["content_status"] == "summary_available"
+    assert repository.list_articles(include_hidden=True)["total"] == 2
+
+
+def test_repository_retention_cleanup_does_not_touch_main_database(tmp_path):
+    news_engine = create_engine(f"sqlite:///{tmp_path / 'news.db'}")
+    main_engine = create_engine(f"sqlite:///{tmp_path / 'cvm_financials.db'}")
+    with news_engine.begin() as conn:
+        ensure_news_tables_for_connection(conn)
+    with main_engine.begin() as conn:
+        conn.execute(text("CREATE TABLE sentinel(id INTEGER PRIMARY KEY, value TEXT NOT NULL)"))
+        conn.execute(text("INSERT INTO sentinel(value) VALUES ('keep')"))
+
+    repository = NewsRepository(news_engine)
+    service = NewsCollectionService(repository)
+    service.collect_feed_payload(source=_content_source(), payload=VALID_RSS, http_status=200)
+    repository.update_retention_policy(extracted_text_retention_days=1)
+    with news_engine.begin() as conn:
+        conn.execute(text("UPDATE news_article_content SET extracted_at = datetime('now', '-2 days')"))
+
+    cleanup = repository.cleanup_extracted_content()
+    with main_engine.connect() as conn:
+        value = conn.execute(text("SELECT value FROM sentinel WHERE id = 1")).scalar()
+
+    assert cleanup["deleted_content_count"] == 1
+    assert value == "keep"
+
+
+def test_repository_get_article_content_returns_local_copy_without_network(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'news-content-read.db'}")
+    with engine.begin() as conn:
+        ensure_news_tables_for_connection(conn)
+
+    repository = NewsRepository(engine)
+    service = NewsCollectionService(repository)
+    service.collect_feed_payload(source=_content_source(), payload=VALID_RSS, http_status=200)
+    article = repository.list_articles(include_hidden=True)["items"][0]
+    content = repository.get_article_content(article["article_id"])
+    missing = repository.get_article_content("missing")
+
+    assert missing is None
+    assert content["available"] is True
+    assert content["article_id"] == article["article_id"]
+    assert content["content_text"] == "Conselho aprovou nova distribuicao."
+    assert content["content_format"] == "feed"
 
 
 def test_repository_updates_source_settings_and_user_source_id_is_stable(tmp_path):

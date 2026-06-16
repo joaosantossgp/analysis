@@ -36,6 +36,7 @@ class NewsSource:
     enabled: bool = True
     priority: int = 100
     user_defined: bool = False
+    allow_content_storage: bool = False
 
 
 @dataclass(frozen=True)
@@ -149,6 +150,14 @@ def _first_match_reason(rows: list[dict[str, Any]]) -> str | None:
     return None
 
 
+def _bounded_int(value: int | None, default: int, minimum: int, maximum: int) -> int:
+    try:
+        parsed = int(value) if value is not None else int(default)
+    except (TypeError, ValueError):
+        parsed = int(default)
+    return max(int(minimum), min(int(maximum), parsed))
+
+
 def _company_scope_filter(company_scope_ids: set[int] | None) -> tuple[str, dict[str, Any]]:
     if company_scope_ids is None:
         return (
@@ -183,11 +192,11 @@ class NewsRepository:
                 text("""
                     INSERT INTO news_sources (
                         source_id, name, source_type, reliability_layer, feed_url,
-                        homepage_url, enabled, priority, user_defined, created_at, updated_at
+                        homepage_url, enabled, priority, user_defined, allow_content_storage, created_at, updated_at
                     )
                     VALUES (
                         :source_id, :name, :source_type, :reliability_layer, :feed_url,
-                        :homepage_url, :enabled, :priority, :user_defined, :now, :now
+                        :homepage_url, :enabled, :priority, :user_defined, :allow_content_storage, :now, :now
                     )
                     ON CONFLICT(source_id) DO UPDATE SET
                         name = excluded.name,
@@ -198,6 +207,7 @@ class NewsRepository:
                         enabled = excluded.enabled,
                         priority = excluded.priority,
                         user_defined = excluded.user_defined,
+                        allow_content_storage = excluded.allow_content_storage,
                         updated_at = excluded.updated_at
                 """),
                 {
@@ -210,6 +220,7 @@ class NewsRepository:
                     "enabled": 1 if source.enabled else 0,
                     "priority": int(source.priority),
                     "user_defined": 1 if source.user_defined else 0,
+                    "allow_content_storage": 1 if source.allow_content_storage else 0,
                     "now": now,
                 },
             )
@@ -221,11 +232,11 @@ class NewsRepository:
                 text("""
                     INSERT INTO news_sources (
                         source_id, name, source_type, reliability_layer, feed_url,
-                        homepage_url, enabled, priority, user_defined, created_at, updated_at
+                        homepage_url, enabled, priority, user_defined, allow_content_storage, created_at, updated_at
                     )
                     VALUES (
                         :source_id, :name, :source_type, :reliability_layer, :feed_url,
-                        :homepage_url, :enabled, :priority, :user_defined, :now, :now
+                        :homepage_url, :enabled, :priority, :user_defined, :allow_content_storage, :now, :now
                     )
                     ON CONFLICT(source_id) DO UPDATE SET
                         name = excluded.name,
@@ -234,6 +245,7 @@ class NewsRepository:
                         feed_url = excluded.feed_url,
                         homepage_url = excluded.homepage_url,
                         user_defined = excluded.user_defined,
+                        allow_content_storage = excluded.allow_content_storage,
                         updated_at = excluded.updated_at
                 """),
                 {
@@ -246,6 +258,7 @@ class NewsRepository:
                     "enabled": 1 if source.enabled else 0,
                     "priority": int(source.priority),
                     "user_defined": 1 if source.user_defined else 0,
+                    "allow_content_storage": 1 if source.allow_content_storage else 0,
                     "now": now,
                 },
             )
@@ -576,6 +589,272 @@ class NewsRepository:
                 {"cd_cvm": company_id, "action": normalized_action, "reason": reason},
             )
         return {"status": "success", "cd_cvm": company_id, "action": normalized_action}
+
+    def get_retention_policy(self) -> dict[str, Any]:
+        with self.engine.connect() as conn:
+            row = conn.execute(
+                text("""
+                    SELECT
+                        policy_id,
+                        metadata_retention_days,
+                        extracted_text_retention_days,
+                        total_storage_limit_mb,
+                        preserve_saved,
+                        preserve_official_documents,
+                        updated_at
+                    FROM news_retention_policy
+                    WHERE policy_id = 'default'
+                """)
+            ).mappings().fetchone()
+        return dict(row) if row else {
+            "policy_id": "default",
+            "metadata_retention_days": 1825,
+            "extracted_text_retention_days": 90,
+            "total_storage_limit_mb": 512,
+            "preserve_saved": 1,
+            "preserve_official_documents": 1,
+            "updated_at": None,
+        }
+
+    def update_retention_policy(
+        self,
+        *,
+        metadata_retention_days: int | None = None,
+        extracted_text_retention_days: int | None = None,
+        total_storage_limit_mb: int | None = None,
+        preserve_saved: bool | None = None,
+        preserve_official_documents: bool | None = None,
+    ) -> dict[str, Any]:
+        current = self.get_retention_policy()
+        values = {
+            "metadata_retention_days": _bounded_int(metadata_retention_days, current["metadata_retention_days"], 30, 3650),
+            "extracted_text_retention_days": _bounded_int(extracted_text_retention_days, current["extracted_text_retention_days"], 1, 3650),
+            "total_storage_limit_mb": _bounded_int(total_storage_limit_mb, current["total_storage_limit_mb"], 16, 10240),
+            "preserve_saved": current["preserve_saved"] if preserve_saved is None else 1 if preserve_saved else 0,
+            "preserve_official_documents": current["preserve_official_documents"] if preserve_official_documents is None else 1 if preserve_official_documents else 0,
+        }
+        with self.engine.begin() as conn:
+            conn.execute(
+                text("""
+                    INSERT INTO news_retention_policy (
+                        policy_id, metadata_retention_days, extracted_text_retention_days,
+                        total_storage_limit_mb, preserve_saved, preserve_official_documents, updated_at
+                    )
+                    VALUES (
+                        'default', :metadata_retention_days, :extracted_text_retention_days,
+                        :total_storage_limit_mb, :preserve_saved, :preserve_official_documents, datetime('now')
+                    )
+                    ON CONFLICT(policy_id) DO UPDATE SET
+                        metadata_retention_days = excluded.metadata_retention_days,
+                        extracted_text_retention_days = excluded.extracted_text_retention_days,
+                        total_storage_limit_mb = excluded.total_storage_limit_mb,
+                        preserve_saved = excluded.preserve_saved,
+                        preserve_official_documents = excluded.preserve_official_documents,
+                        updated_at = excluded.updated_at
+                """),
+                values,
+            )
+        return self.get_retention_policy()
+
+    def store_article_content(
+        self,
+        *,
+        article_id: str,
+        content_text: str,
+        content_format: str = "text",
+        source_policy: str | None = None,
+        content_status: str = "full_text_available",
+    ) -> dict[str, Any] | None:
+        text_value = str(content_text or "")
+        storage_bytes = len(text_value.encode("utf-8"))
+        now = utc_now_iso()
+        with self.engine.begin() as conn:
+            exists = conn.execute(
+                text("SELECT 1 FROM news_articles WHERE article_id = :article_id"),
+                {"article_id": article_id},
+            ).scalar()
+            if not exists:
+                return None
+            conn.execute(
+                text("""
+                    INSERT INTO news_article_content (
+                        article_id, content_text, content_format, source_policy,
+                        storage_bytes, extracted_at, created_at, updated_at
+                    )
+                    VALUES (
+                        :article_id, :content_text, :content_format, :source_policy,
+                        :storage_bytes, :now, :now, :now
+                    )
+                    ON CONFLICT(article_id) DO UPDATE SET
+                        content_text = excluded.content_text,
+                        content_format = excluded.content_format,
+                        source_policy = excluded.source_policy,
+                        storage_bytes = excluded.storage_bytes,
+                        extracted_at = excluded.extracted_at,
+                        updated_at = excluded.updated_at
+                """),
+                {
+                    "article_id": article_id,
+                    "content_text": text_value,
+                    "content_format": content_format,
+                    "source_policy": source_policy,
+                    "storage_bytes": storage_bytes,
+                    "now": now,
+                },
+            )
+            conn.execute(
+                text("""
+                    UPDATE news_articles
+                    SET content_status = :content_status,
+                        extracted_at = :now,
+                        updated_at = :now
+                    WHERE article_id = :article_id
+                """),
+                {"article_id": article_id, "content_status": content_status, "now": now},
+            )
+        return {"article_id": article_id, "storage_bytes": storage_bytes, "content_status": content_status}
+
+    def get_article_content(self, article_id: str) -> dict[str, Any] | None:
+        with self.engine.connect() as conn:
+            row = conn.execute(
+                text("""
+                    SELECT
+                        a.article_id,
+                        a.title,
+                        a.content_status,
+                        a.paywall_status,
+                        c.content_text,
+                        c.content_format,
+                        c.source_policy,
+                        c.storage_bytes,
+                        c.extracted_at,
+                        c.updated_at
+                    FROM news_articles a
+                    LEFT JOIN news_article_content c ON c.article_id = a.article_id
+                    WHERE a.article_id = :article_id
+                """),
+                {"article_id": article_id},
+            ).mappings().fetchone()
+        if not row:
+            return None
+        item = dict(row)
+        item["available"] = bool(item.get("content_text"))
+        return item
+
+    def get_content_storage_summary(self) -> dict[str, Any]:
+        policy = self.get_retention_policy()
+        with self.engine.connect() as conn:
+            row = conn.execute(
+                text("""
+                    SELECT
+                        COUNT(*) AS content_count,
+                        COALESCE(SUM(storage_bytes), 0) AS storage_bytes,
+                        MIN(extracted_at) AS oldest_extracted_at,
+                        MAX(extracted_at) AS newest_extracted_at
+                    FROM news_article_content
+                """)
+            ).mappings().fetchone()
+            saved_count = conn.execute(
+                text("""
+                    SELECT COUNT(*)
+                    FROM news_article_content c
+                    JOIN news_user_state u ON u.article_id = c.article_id
+                    WHERE COALESCE(u.saved, 0) = 1
+                """)
+            ).scalar()
+        summary = dict(row or {})
+        summary["saved_content_count"] = int(saved_count or 0)
+        summary["policy"] = policy
+        return summary
+
+    def cleanup_extracted_content(self, *, dry_run: bool = False) -> dict[str, Any]:
+        policy = self.get_retention_policy()
+        retention_days = int(policy["extracted_text_retention_days"])
+        storage_limit_bytes = int(policy["total_storage_limit_mb"]) * 1024 * 1024
+        preserve_saved = bool(policy["preserve_saved"])
+        preserve_official = bool(policy["preserve_official_documents"])
+        deleted_ids: list[str] = []
+        freed_bytes = 0
+        with self.engine.begin() as conn:
+            eligible = conn.execute(
+                text("""
+                    SELECT
+                        c.article_id,
+                        c.storage_bytes,
+                        c.extracted_at,
+                        COALESCE(u.saved, 0) AS saved,
+                        a.content_status
+                    FROM news_article_content c
+                    JOIN news_articles a ON a.article_id = c.article_id
+                    LEFT JOIN news_user_state u ON u.article_id = c.article_id
+                    WHERE c.extracted_at < datetime('now', '-' || :days || ' days')
+                    ORDER BY c.extracted_at ASC
+                """),
+                {"days": retention_days},
+            ).mappings().fetchall()
+            for row in eligible:
+                if preserve_saved and int(row["saved"] or 0):
+                    continue
+                if preserve_official and row["content_status"] == "official_document":
+                    continue
+                deleted_ids.append(str(row["article_id"]))
+                freed_bytes += int(row["storage_bytes"] or 0)
+
+            total_bytes = int(conn.execute(text("SELECT COALESCE(SUM(storage_bytes), 0) FROM news_article_content")).scalar() or 0)
+            if total_bytes - freed_bytes > storage_limit_bytes:
+                overflow_rows = conn.execute(
+                    text("""
+                        SELECT
+                            c.article_id,
+                            c.storage_bytes,
+                            COALESCE(u.saved, 0) AS saved,
+                            a.content_status
+                        FROM news_article_content c
+                        JOIN news_articles a ON a.article_id = c.article_id
+                        LEFT JOIN news_user_state u ON u.article_id = c.article_id
+                        ORDER BY c.extracted_at ASC
+                    """)
+                ).mappings().fetchall()
+                seen = set(deleted_ids)
+                for row in overflow_rows:
+                    if total_bytes - freed_bytes <= storage_limit_bytes:
+                        break
+                    article_id = str(row["article_id"])
+                    if article_id in seen:
+                        continue
+                    if preserve_saved and int(row["saved"] or 0):
+                        continue
+                    if preserve_official and row["content_status"] == "official_document":
+                        continue
+                    seen.add(article_id)
+                    deleted_ids.append(article_id)
+                    freed_bytes += int(row["storage_bytes"] or 0)
+
+            if not dry_run and deleted_ids:
+                for article_id in deleted_ids:
+                    conn.execute(text("DELETE FROM news_article_content WHERE article_id = :article_id"), {"article_id": article_id})
+                    conn.execute(
+                        text("""
+                            UPDATE news_articles
+                            SET content_status = CASE
+                                    WHEN summary IS NOT NULL AND trim(summary) != '' THEN 'summary_available'
+                                    ELSE 'metadata_only'
+                                END,
+                                extracted_at = NULL,
+                                updated_at = datetime('now')
+                            WHERE article_id = :article_id
+                              AND content_status NOT IN ('official_document', 'external_only', 'paywalled')
+                        """),
+                        {"article_id": article_id},
+                    )
+        return {
+            "status": "success",
+            "dry_run": bool(dry_run),
+            "deleted_content_count": len(deleted_ids),
+            "freed_bytes": freed_bytes,
+            "preserved_saved": bool(preserve_saved),
+            "preserved_official_documents": bool(preserve_official),
+        }
 
     def list_topics(self, *, active_only: bool = True) -> list[dict[str, Any]]:
         where_sql = "WHERE active = 1" if active_only else ""

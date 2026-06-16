@@ -8,14 +8,18 @@ import { StateBanner } from "@/components/feedback/StateBanner";
 import {
   applyNewsClassificationCorrection,
   addCustomNewsSource,
+  cleanupNewsExtractedContent,
   fetchNewsArticleClassification,
+  fetchNewsArticleContent,
   fetchNewsArticles,
   fetchNewsCompanyScope,
   fetchNewsCollectionRuns,
   fetchNewsOverview,
   fetchNewsRefreshStatus,
+  fetchNewsRetentionStatus,
   fetchNewsSources,
   refreshNewsSources,
+  saveNewsRetentionPolicy,
   setNewsCompanyScopeOverride,
   setNewsSourceEnabled,
   setNewsSourcePriority,
@@ -26,9 +30,14 @@ import type {
   ApplyNewsClassificationCorrectionResult,
   NewsArticle,
   NewsArticleClassificationResponse,
+  NewsArticleContentResponse,
   NewsCompanyScopeResponse,
   NewsOverviewSection,
   NewsRefreshStatus,
+  NewsRetentionStatus,
+  SaveNewsRetentionPolicyParams,
+  SaveNewsRetentionPolicyResult,
+  CleanupNewsExtractedContentResult,
   SetNewsCompanyScopeOverrideParams,
   SetNewsCompanyScopeOverrideResult,
   NewsSource,
@@ -78,6 +87,11 @@ export function NewsPage() {
     queryFn: fetchNewsCompanyScope,
     refetchInterval: 60_000,
   });
+  const retentionQuery = useQuery({
+    queryKey: ["news", "retention"],
+    queryFn: fetchNewsRetentionStatus,
+    refetchInterval: 60_000,
+  });
   const runsQuery = useQuery({
     queryKey: ["news", "runs"],
     queryFn: () => fetchNewsCollectionRuns(5),
@@ -92,6 +106,11 @@ export function NewsPage() {
   const classificationQuery = useQuery({
     queryKey: ["news", "article-classification", selectedArticleId],
     queryFn: () => fetchNewsArticleClassification(selectedArticleId ?? ""),
+    enabled: Boolean(selectedArticleId),
+  });
+  const articleContentQuery = useQuery({
+    queryKey: ["news", "article-content", selectedArticleId],
+    queryFn: () => fetchNewsArticleContent(selectedArticleId ?? ""),
     enabled: Boolean(selectedArticleId),
   });
 
@@ -140,6 +159,18 @@ export function NewsPage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["news", "company-scope"] });
       void queryClient.invalidateQueries({ queryKey: ["news", "overview"] });
+    },
+  });
+  const saveRetentionMutation = useMutation({
+    mutationFn: saveNewsRetentionPolicy,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["news", "retention"] });
+    },
+  });
+  const cleanupRetentionMutation = useMutation({
+    mutationFn: cleanupNewsExtractedContent,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["news"] });
     },
   });
 
@@ -342,6 +373,9 @@ export function NewsPage() {
             classification={classificationQuery.data ?? null}
             classificationLoading={classificationQuery.isFetching}
             classificationError={classificationQuery.error}
+            content={articleContentQuery.data ?? null}
+            contentLoading={articleContentQuery.isFetching}
+            contentError={articleContentQuery.error}
             correctionLoading={classificationCorrectionMutation.isPending}
             correctionResult={classificationCorrectionMutation.data ?? null}
             onCorrect={(params) => classificationCorrectionMutation.mutate(params)}
@@ -370,6 +404,17 @@ export function NewsPage() {
             disabled={articlesQuery.data?.mode === "browser" || companyScopeMutation.isPending}
             result={companyScopeMutation.data ?? null}
             onSetOverride={(params) => companyScopeMutation.mutate(params)}
+          />
+          <NewsRetentionPanel
+            status={retentionQuery.data ?? null}
+            loading={retentionQuery.isLoading}
+            disabled={articlesQuery.data?.mode === "browser"}
+            saving={saveRetentionMutation.isPending}
+            cleaning={cleanupRetentionMutation.isPending}
+            saveResult={saveRetentionMutation.data ?? null}
+            cleanupResult={cleanupRetentionMutation.data ?? null}
+            onSave={(params) => saveRetentionMutation.mutate(params)}
+            onCleanup={(dryRun) => cleanupRetentionMutation.mutate({ dry_run: dryRun })}
           />
           <AddSourcePanel
             disabled={articlesQuery.data?.mode === "browser"}
@@ -841,6 +886,9 @@ function ArticleDetailPanel({
   classification,
   classificationLoading,
   classificationError,
+  content,
+  contentLoading,
+  contentError,
   correctionLoading,
   correctionResult,
   onCorrect,
@@ -849,6 +897,9 @@ function ArticleDetailPanel({
   classification: NewsArticleClassificationResponse | null;
   classificationLoading: boolean;
   classificationError: unknown;
+  content: NewsArticleContentResponse | null;
+  contentLoading: boolean;
+  contentError: unknown;
   correctionLoading: boolean;
   correctionResult: ApplyNewsClassificationCorrectionResult | null;
   onCorrect: (params: ApplyNewsClassificationCorrectionParams) => void;
@@ -901,6 +952,13 @@ function ArticleDetailPanel({
               <p className="font-mono text-[11px] uppercase text-zinc-500">Availability</p>
               <p className="mt-1 text-xs text-zinc-300">{availabilityLabel(article)}</p>
             </div>
+
+            <ArticleContentPanel
+              article={article}
+              content={content}
+              loading={contentLoading}
+              error={contentError}
+            />
 
             <ClassificationPanel
               articleId={article.article_id}
@@ -1085,6 +1143,75 @@ function ClassificationPanel({
         onCorrect={onCorrect}
       />
       <CorrectionHistory corrections={classification.corrections ?? []} />
+    </div>
+  );
+}
+
+function ArticleContentPanel({
+  article,
+  content,
+  loading,
+  error,
+}: {
+  article: NewsArticle;
+  content: NewsArticleContentResponse | null;
+  loading: boolean;
+  error: unknown;
+}) {
+  if (loading) {
+    return <StateBanner variant="loading" title="Loading local content" size="dense" />;
+  }
+  if (error || content?.error) {
+    return (
+      <StateBanner
+        variant="warning"
+        title="Local content unavailable"
+        message={content?.error ?? (error instanceof Error ? error.message : "Could not load local article content.")}
+        size="dense"
+      />
+    );
+  }
+  if (!content?.available || !content.content_text) {
+    return (
+      <div className="rounded-md border border-zinc-800 bg-zinc-900/40 p-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="font-mono text-[11px] uppercase text-zinc-500">Local content</p>
+            <p className="mt-1 text-xs text-zinc-400">{localContentMissingLabel(article)}</p>
+          </div>
+          <a
+            href={article.original_url}
+            target="_blank"
+            rel="noreferrer"
+            className="shrink-0 text-xs text-amber-200 hover:text-amber-100"
+          >
+            Open source
+          </a>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-md border border-zinc-800 bg-zinc-900/40 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="font-mono text-[11px] uppercase text-zinc-500">Local content</p>
+          <p className="mt-1 text-[11px] text-zinc-500">
+            {content.content_format ?? "text"} · {formatBytes(content.storage_bytes ?? 0)} · extracted {formatDate(content.extracted_at)}
+          </p>
+        </div>
+        <a
+          href={article.original_url}
+          target="_blank"
+          rel="noreferrer"
+          className="text-xs text-amber-200 hover:text-amber-100"
+        >
+          Source
+        </a>
+      </div>
+      <div className="mt-3 max-h-80 overflow-auto rounded border border-zinc-800 bg-zinc-950/60 p-3">
+        <p className="whitespace-pre-wrap text-xs leading-5 text-zinc-300">{content.content_text}</p>
+      </div>
     </div>
   );
 }
@@ -1495,6 +1622,7 @@ function SourceCard({
                     <p className="truncate text-sm font-medium text-zinc-100">{source.name}</p>
                     <p className="mt-0.5 font-mono text-[11px] uppercase text-zinc-500">
                       {source.reliability_layer} · priority {source.priority}
+                      {source.allow_content_storage ? " · local content eligible" : ""}
                     </p>
                   </div>
                   <StatusPill status={source.last_status ?? (source.enabled ? "pending" : "disabled")} />
@@ -1655,6 +1783,157 @@ function NewsCompanyScopePanel({
 }
 
 type NewsApiScopeResult = NewsCompanyScopeResponse & { mode?: string; reason?: string };
+
+function NewsRetentionPanel({
+  status,
+  loading,
+  disabled,
+  saving,
+  cleaning,
+  saveResult,
+  cleanupResult,
+  onSave,
+  onCleanup,
+}: {
+  status: NewsApiRetentionResult | null;
+  loading: boolean;
+  disabled?: boolean;
+  saving: boolean;
+  cleaning: boolean;
+  saveResult: SaveNewsRetentionPolicyResult | null;
+  cleanupResult: CleanupNewsExtractedContentResult | null;
+  onSave: (params: SaveNewsRetentionPolicyParams) => void;
+  onCleanup: (dryRun: boolean) => void;
+}) {
+  const policy = status?.policy;
+  const [textDays, setTextDays] = useState(String(policy?.extracted_text_retention_days ?? 90));
+  const [storageLimit, setStorageLimit] = useState(String(policy?.total_storage_limit_mb ?? 512));
+  const [preserveSaved, setPreserveSaved] = useState(Boolean(policy?.preserve_saved ?? true));
+  const [preserveOfficial, setPreserveOfficial] = useState(Boolean(policy?.preserve_official_documents ?? true));
+
+  useEffect(() => {
+    if (!policy) return;
+    setTextDays(String(policy.extracted_text_retention_days));
+    setStorageLimit(String(policy.total_storage_limit_mb));
+    setPreserveSaved(Boolean(policy.preserve_saved));
+    setPreserveOfficial(Boolean(policy.preserve_official_documents));
+  }, [policy]);
+
+  return (
+    <section className="rounded-lg border border-zinc-800 bg-zinc-950/40">
+      <div className="border-b border-zinc-800 px-4 py-3">
+        <h2 className="text-sm font-semibold text-zinc-100">Retention</h2>
+      </div>
+      <div className="space-y-3 p-4">
+        {loading ? (
+          <StateBanner variant="loading" title="Loading retention" size="dense" />
+        ) : status?.error ? (
+          <StateBanner variant="warning" title="Retention unavailable" message={status.error} size="dense" />
+        ) : (
+          <div className="grid grid-cols-3 gap-2">
+            <MetricMini label="Copies" value={status?.content_count ?? 0} />
+            <MetricMini label="Saved" value={status?.saved_content_count ?? 0} />
+            <MetricMini label="Size" value={formatBytes(status?.storage_bytes ?? 0)} />
+          </div>
+        )}
+        <form
+          className="space-y-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSave({
+              extracted_text_retention_days: Number(textDays),
+              total_storage_limit_mb: Number(storageLimit),
+              preserve_saved: preserveSaved,
+              preserve_official_documents: preserveOfficial,
+            });
+          }}
+        >
+          <div className="grid grid-cols-2 gap-2">
+            <label className="space-y-1">
+              <span className="font-mono text-[11px] uppercase text-zinc-500">Text days</span>
+              <Input
+                type="number"
+                min={1}
+                max={3650}
+                value={textDays}
+                disabled={disabled || saving}
+                onChange={(event) => setTextDays(event.currentTarget.value)}
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="font-mono text-[11px] uppercase text-zinc-500">Limit MB</span>
+              <Input
+                type="number"
+                min={16}
+                max={10240}
+                value={storageLimit}
+                disabled={disabled || saving}
+                onChange={(event) => setStorageLimit(event.currentTarget.value)}
+              />
+            </label>
+          </div>
+          <label className="flex items-center gap-2 text-xs text-zinc-400">
+            <input
+              type="checkbox"
+              checked={preserveSaved}
+              disabled={disabled || saving}
+              onChange={(event) => setPreserveSaved(event.currentTarget.checked)}
+            />
+            Preserve saved articles
+          </label>
+          <label className="flex items-center gap-2 text-xs text-zinc-400">
+            <input
+              type="checkbox"
+              checked={preserveOfficial}
+              disabled={disabled || saving}
+              onChange={(event) => setPreserveOfficial(event.currentTarget.checked)}
+            />
+            Preserve official documents
+          </label>
+          <Button type="submit" size="xs" variant="secondary" loading={saving} disabled={disabled || saving}>
+            Save policy
+          </Button>
+          {saveResult?.status === "error" ? (
+            <p className="text-xs text-red-300">{saveResult.error ?? "Could not save policy."}</p>
+          ) : saveResult?.status === "success" ? (
+            <p className="text-xs text-emerald-300">Policy saved.</p>
+          ) : null}
+        </form>
+        <div className="flex flex-wrap gap-2 border-t border-zinc-800 pt-3">
+          <Button
+            type="button"
+            size="xs"
+            variant="secondary"
+            disabled={disabled || cleaning}
+            onClick={() => onCleanup(true)}
+          >
+            Preview cleanup
+          </Button>
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost"
+            loading={cleaning}
+            disabled={disabled || cleaning}
+            onClick={() => onCleanup(false)}
+          >
+            Clear extracted content
+          </Button>
+        </div>
+        {cleanupResult?.status === "success" ? (
+          <p className="text-xs text-zinc-400">
+            {cleanupResult.dry_run ? "Preview" : "Cleanup"}: {cleanupResult.deleted_content_count ?? 0} copies,
+            {" "}{formatBytes(cleanupResult.freed_bytes ?? 0)}.
+          </p>
+        ) : cleanupResult?.status === "error" ? (
+          <p className="text-xs text-red-300">{cleanupResult.error ?? "Cleanup failed."}</p>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+type NewsApiRetentionResult = NewsRetentionStatus & { mode?: string; reason?: string };
 
 function MetricMini({ label, value }: { label: string; value: string | number }) {
   return (
@@ -1901,6 +2180,25 @@ function availabilityLabel(article: NewsArticle) {
   }
 }
 
+function localContentMissingLabel(article: NewsArticle) {
+  if (article.paywall_status === "paywalled" || article.content_status === "paywalled") {
+    return "Paywalled content is not stored locally. Open the original source if you have access.";
+  }
+  if (article.content_status === "external_only") {
+    return "This article is external only. CVMAnalytics keeps metadata and attribution locally.";
+  }
+  if (article.content_status === "metadata_only") {
+    return "Only metadata is stored locally for this article.";
+  }
+  if (article.content_status === "summary_available") {
+    return "Only the feed summary is stored locally.";
+  }
+  if (article.content_status === "extraction_failed") {
+    return "Content extraction failed; metadata remains available.";
+  }
+  return "No local article body is currently stored.";
+}
+
 function refreshLabel(status: NewsRefreshStatus | null) {
   if (!status) return "—";
   return status.status;
@@ -1925,4 +2223,11 @@ function formatDate(value?: string | null) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function formatBytes(value: number) {
+  if (!Number.isFinite(value) || value <= 0) return "0 B";
+  if (value < 1024) return `${Math.round(value)} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }

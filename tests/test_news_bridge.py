@@ -6,6 +6,10 @@ from typing import Any
 from desktop.bridge_api.news import NewsBridgeMixin
 from src.news.repository import NewsSource
 from src.news.service import CollectionResult, FeedValidationResult
+from src.news.sources import builtin_sources
+
+
+EXPECTED_BUILTIN_SOURCE_IDS = [source.source_id for source in sorted(builtin_sources(), key=lambda item: (item.priority, item.name.lower()))]
 
 
 class _FakeRepository:
@@ -22,6 +26,9 @@ class _FakeRepository:
         self.correction_params: dict[str, Any] | None = None
         self.company_scope_override_params: dict[str, Any] | None = None
         self.overview_company_scope_ids: set[int] | None = None
+        self.retention_policy_params: dict[str, Any] | None = None
+        self.cleanup_params: dict[str, Any] | None = None
+        self.health_records: list[dict[str, Any]] = []
 
     def register_source(self, source: NewsSource) -> None:
         self.rows.setdefault(
@@ -95,6 +102,23 @@ class _FakeRepository:
             "event_types": [],
         }
 
+    def get_article_content(self, article_id: str):
+        if article_id == "missing":
+            return None
+        return {
+            "article_id": article_id,
+            "title": "News item",
+            "content_status": "full_text_available",
+            "paywall_status": None,
+            "available": True,
+            "content_text": "Local article content",
+            "content_format": "feed",
+            "source_policy": "feed_content_allowed",
+            "storage_bytes": 21,
+            "extracted_at": "2026-06-16T10:00:00+00:00",
+            "updated_at": "2026-06-16T10:00:00+00:00",
+        }
+
     def set_source_enabled(self, *, source_id: str, enabled: bool) -> bool:
         self.enabled_updates.append((source_id, enabled))
         if source_id not in self.rows:
@@ -111,6 +135,9 @@ class _FakeRepository:
 
     def update_source_fetch_state(self, **kwargs) -> None:
         self.fetch_state_updates.append(kwargs)
+
+    def record_source_health(self, **kwargs) -> None:
+        self.health_records.append(kwargs)
 
     def update_article_user_state(self, **kwargs):
         self.article_state_updates.append(kwargs)
@@ -143,15 +170,62 @@ class _FakeRepository:
         self.company_scope_override_params = kwargs
         return {"status": "success", "cd_cvm": kwargs["cd_cvm"], "action": kwargs["action"]}
 
+    def get_content_storage_summary(self):
+        return {
+            "content_count": 2,
+            "storage_bytes": 128,
+            "saved_content_count": 1,
+            "policy": {
+                "policy_id": "default",
+                "metadata_retention_days": 1825,
+                "extracted_text_retention_days": 90,
+                "total_storage_limit_mb": 512,
+                "preserve_saved": 1,
+                "preserve_official_documents": 1,
+                "updated_at": None,
+            },
+        }
+
+    def update_retention_policy(self, **kwargs):
+        self.retention_policy_params = kwargs
+        return {
+            "policy_id": "default",
+            "metadata_retention_days": kwargs.get("metadata_retention_days") or 1825,
+            "extracted_text_retention_days": kwargs.get("extracted_text_retention_days") or 90,
+            "total_storage_limit_mb": kwargs.get("total_storage_limit_mb") or 512,
+            "preserve_saved": kwargs.get("preserve_saved"),
+            "preserve_official_documents": kwargs.get("preserve_official_documents"),
+            "updated_at": None,
+        }
+
+    def cleanup_extracted_content(self, **kwargs):
+        self.cleanup_params = kwargs
+        return {
+            "status": "success",
+            "dry_run": kwargs.get("dry_run", False),
+            "deleted_content_count": 1,
+            "freed_bytes": 128,
+            "preserved_saved": True,
+            "preserved_official_documents": True,
+        }
+
 
 class _FakeNewsService:
-    def __init__(self, validation: FeedValidationResult | None = None) -> None:
+    def __init__(
+        self,
+        validation: FeedValidationResult | None = None,
+        *,
+        fail_sources: set[str] | None = None,
+    ) -> None:
         self.sources: list[str] = []
         self.validation = validation
         self.validated_urls: list[str] = []
+        self.fail_sources = fail_sources or set()
 
     def collect_source(self, *, source: NewsSource, trigger: str = "manual") -> CollectionResult:
         self.sources.append(source.source_id)
+        if source.source_id in self.fail_sources:
+            raise RuntimeError(f"boom {source.source_id}")
         return CollectionResult(
             run_id=f"run-{source.source_id}",
             status="success",
@@ -238,12 +312,34 @@ def test_news_bridge_manual_refresh_collects_enabled_builtin_sources():
 
     assert result["status"] == "started"
     assert status["status"] == "success"
-    assert status["source_count"] == 2
-    assert status["completed_sources"] == 2
-    assert status["articles_seen"] == 4
-    assert status["articles_inserted"] == 2
-    assert status["articles_updated"] == 2
-    assert service.sources == ["bcb-rss", "b3-rss-news"]
+    assert status["source_count"] == len(EXPECTED_BUILTIN_SOURCE_IDS)
+    assert status["completed_sources"] == len(EXPECTED_BUILTIN_SOURCE_IDS)
+    assert status["articles_seen"] == 2 * len(EXPECTED_BUILTIN_SOURCE_IDS)
+    assert status["articles_inserted"] == len(EXPECTED_BUILTIN_SOURCE_IDS)
+    assert status["articles_updated"] == len(EXPECTED_BUILTIN_SOURCE_IDS)
+    assert service.sources == EXPECTED_BUILTIN_SOURCE_IDS
+
+
+def test_news_bridge_manual_refresh_isolates_unexpected_source_failure():
+    repository = _FakeRepository()
+    service = _FakeNewsService(fail_sources={"bcb-rss"})
+    bridge = _FakeNewsBridge(repository=repository, service=service)
+
+    result = bridge.refresh_news_sources({})
+    status = _wait_for_refresh(bridge)
+
+    assert result["status"] == "started"
+    assert status["status"] == "error"
+    assert status["source_count"] == len(EXPECTED_BUILTIN_SOURCE_IDS)
+    assert status["completed_sources"] == len(EXPECTED_BUILTIN_SOURCE_IDS)
+    assert status["articles_inserted"] == len(EXPECTED_BUILTIN_SOURCE_IDS) - 1
+    assert status["error_count"] == 1
+    assert [source["source_id"] for source in status["sources"]] == EXPECTED_BUILTIN_SOURCE_IDS
+    assert next(source for source in status["sources"] if source["source_id"] == "bcb-rss")["status"] == "error"
+    assert service.sources == EXPECTED_BUILTIN_SOURCE_IDS
+    assert repository.health_records == [
+        {"source_id": "bcb-rss", "status": "error", "error": "boom bcb-rss"}
+    ]
 
 
 def test_news_bridge_preserves_disabled_source_choice():
@@ -267,11 +363,45 @@ def test_news_bridge_preserves_disabled_source_choice():
     status = _wait_for_refresh(bridge)
 
     assert status["status"] == "success"
-    assert status["source_count"] == 1
-    assert service.sources == ["b3-rss-news"]
+    assert status["source_count"] == len(EXPECTED_BUILTIN_SOURCE_IDS) - 1
+    assert service.sources == [source_id for source_id in EXPECTED_BUILTIN_SOURCE_IDS if source_id != "bcb-rss"]
 
 
 def test_news_bridge_blocks_manual_refresh_when_writes_are_not_allowed():
+    bridge = _FakeNewsBridge(
+        repository=_FakeRepository(),
+        service=_FakeNewsService(),
+        write_allowed=False,
+    )
+
+    result = bridge.refresh_news_sources({})
+
+    assert result == {"status": "blocked", "error": "refresh_news_sources"}
+
+
+def test_news_bridge_allows_news_refresh_in_dev_release_data_mode(monkeypatch):
+    monkeypatch.setenv("CVMANALYTICS_USE_RELEASE_DATA", "1")
+    monkeypatch.delenv("CVMANALYTICS_ALLOW_RELEASE_DATA_WRITES", raising=False)
+    monkeypatch.delenv("CVMANALYTICS_CONCURRENT_LOCK_DETECTED", raising=False)
+    service = _FakeNewsService()
+    bridge = _FakeNewsBridge(
+        repository=_FakeRepository(),
+        service=service,
+        write_allowed=False,
+    )
+
+    result = bridge.refresh_news_sources({})
+    status = _wait_for_refresh(bridge)
+
+    assert result["status"] == "started"
+    assert status["status"] == "success"
+    assert service.sources == EXPECTED_BUILTIN_SOURCE_IDS
+
+
+def test_news_bridge_blocks_news_refresh_under_concurrent_lock(monkeypatch):
+    monkeypatch.setenv("CVMANALYTICS_USE_RELEASE_DATA", "1")
+    monkeypatch.delenv("CVMANALYTICS_ALLOW_RELEASE_DATA_WRITES", raising=False)
+    monkeypatch.setenv("CVMANALYTICS_CONCURRENT_LOCK_DETECTED", "1")
     bridge = _FakeNewsBridge(
         repository=_FakeRepository(),
         service=_FakeNewsService(),
@@ -298,8 +428,8 @@ def test_news_bridge_returns_sources_with_health_payload():
 
     result = bridge.get_news_sources({})
 
-    assert result["count"] == 2
-    assert [item["source_id"] for item in result["items"]] == ["bcb-rss", "b3-rss-news"]
+    assert result["count"] == len(EXPECTED_BUILTIN_SOURCE_IDS)
+    assert [item["source_id"] for item in result["items"]] == EXPECTED_BUILTIN_SOURCE_IDS
 
 
 def test_news_bridge_returns_articles_with_bounded_params():
@@ -375,6 +505,34 @@ def test_news_bridge_returns_and_updates_company_scope_overrides():
     }
 
 
+def test_news_bridge_retention_policy_and_cleanup():
+    repository = _FakeRepository()
+    bridge = _FakeNewsBridge(repository=repository, service=_FakeNewsService())
+
+    status = bridge.get_news_retention_status({})
+    saved = bridge.save_news_retention_policy({
+        "extracted_text_retention_days": 45,
+        "total_storage_limit_mb": 256,
+        "preserve_saved": True,
+        "preserve_official_documents": True,
+    })
+    cleanup = bridge.cleanup_news_extracted_content({"dry_run": True})
+
+    assert status["content_count"] == 2
+    assert status["saved_content_count"] == 1
+    assert saved["status"] == "success"
+    assert repository.retention_policy_params == {
+        "metadata_retention_days": None,
+        "extracted_text_retention_days": 45,
+        "total_storage_limit_mb": 256,
+        "preserve_saved": True,
+        "preserve_official_documents": True,
+    }
+    assert cleanup["dry_run"] is True
+    assert cleanup["deleted_content_count"] == 1
+    assert repository.cleanup_params == {"dry_run": True}
+
+
 def test_news_bridge_returns_article_classification():
     repository = _FakeRepository()
     bridge = _FakeNewsBridge(repository=repository, service=_FakeNewsService())
@@ -386,6 +544,21 @@ def test_news_bridge_returns_article_classification():
     assert result["topics"][0]["topic_id"] == "topic_macro_rates"
     assert repository.classification_article_id == "art-1"
     assert missing["error"] == "article_id is required"
+
+
+def test_news_bridge_returns_article_content_without_fetching_network():
+    repository = _FakeRepository()
+    bridge = _FakeNewsBridge(repository=repository, service=_FakeNewsService())
+
+    result = bridge.get_news_article_content({"article_id": "art-1"})
+    missing = bridge.get_news_article_content({"article_id": "missing"})
+    invalid = bridge.get_news_article_content({})
+
+    assert result["available"] is True
+    assert result["content_text"] == "Local article content"
+    assert missing["available"] is False
+    assert "not found" in missing["error"]
+    assert invalid["error"] == "article_id is required"
 
 
 def test_news_bridge_applies_classification_correction_and_blocks_when_read_only():

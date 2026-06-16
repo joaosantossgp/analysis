@@ -187,6 +187,12 @@ class NewsCollectionService:
                     classification=classification,
                 )
                 self.repository.replace_article_score(article_id=result.article_id, score=score)
+                self._store_selective_feed_content(
+                    article_id=result.article_id,
+                    source=source,
+                    entry=entry,
+                    priority_level=score.priority_level,
+                )
                 inserted += 1 if result.inserted else 0
                 updated += 1 if result.updated else 0
             self.repository.record_source_health(
@@ -239,6 +245,35 @@ class NewsCollectionService:
                 error_count=1,
                 error_message=message,
             )
+
+    def _store_selective_feed_content(
+        self,
+        *,
+        article_id: str,
+        source: NewsSource,
+        entry,
+        priority_level: str,
+    ) -> None:
+        if not source.allow_content_storage:
+            return
+        content = str(entry.summary or "").strip()
+        if not content:
+            return
+        eligible = (
+            source.reliability_layer == "official"
+            or source.source_type == "official"
+            or priority_level in {"High", "Critical"}
+        )
+        if not eligible:
+            return
+        status = "official_document" if _looks_like_official_document(entry.url, entry.title) else "full_text_available"
+        self.repository.store_article_content(
+            article_id=article_id,
+            content_text=content,
+            content_format="feed",
+            source_policy="feed_content_allowed",
+            content_status=status,
+        )
 
     def _load_company_rows(self) -> list[dict]:
         if self.company_engine is None:
@@ -313,3 +348,8 @@ def _select_company_column(columns: set[str], column_name: str) -> str:
     if column_name in columns:
         return column_name
     return f"NULL AS {column_name}"
+
+
+def _looks_like_official_document(url: str, title: str) -> bool:
+    value = f"{url} {title}".lower()
+    return any(marker in value for marker in (".pdf", "comunicado", "fato relevante", "oficio", "deliberacao"))

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import os
+import sys
 import threading
 from datetime import datetime, timezone
 from typing import Any
@@ -25,6 +27,24 @@ def _sqlite_table_exists(conn, table_name: str) -> bool:
 
 
 class NewsBridgeMixin:
+    @staticmethod
+    def _is_release_data_write_block() -> bool:
+        if getattr(sys, "frozen", False):
+            return False
+        use_release = os.environ.get("CVMANALYTICS_USE_RELEASE_DATA", "").strip().lower() in {
+            "1", "true", "yes",
+        }
+        allow_release_writes = os.environ.get("CVMANALYTICS_ALLOW_RELEASE_DATA_WRITES", "").strip().lower() in {
+            "1", "true", "yes",
+        }
+        concurrent = os.environ.get("CVMANALYTICS_CONCURRENT_LOCK_DETECTED", "").strip() == "1"
+        return use_release and not allow_release_writes and not concurrent
+
+    def _is_news_write_allowed(self) -> bool:
+        if self._is_write_allowed():
+            return True
+        return self._is_release_data_write_block()
+
     def _news_refresh_status(self) -> dict[str, Any]:
         if not hasattr(self, "_news_refresh_state"):
             self._news_refresh_state = {
@@ -112,6 +132,7 @@ class NewsBridgeMixin:
             enabled=bool(int(row.get("enabled") if row.get("enabled") is not None else fallback.enabled)),
             priority=int(row.get("priority") if row.get("priority") is not None else fallback.priority),
             user_defined=bool(int(row.get("user_defined") if row.get("user_defined") is not None else fallback.user_defined)),
+            allow_content_storage=bool(int(row.get("allow_content_storage") if row.get("allow_content_storage") is not None else fallback.allow_content_storage)),
         )
 
     def _enabled_builtin_news_sources(self, repository: NewsRepository) -> list[NewsSource]:
@@ -213,7 +234,7 @@ class NewsBridgeMixin:
             })
 
     def set_news_company_scope_override(self, params=None) -> dict:
-        if not self._is_write_allowed():
+        if not self._is_news_write_allowed():
             return self._sanitize_for_json(self._write_blocked_response("set_news_company_scope_override"))
         params = params or {}
         try:
@@ -228,6 +249,47 @@ class NewsBridgeMixin:
             return self._sanitize_for_json(result)
         except Exception as exc:
             logger.error("failed to update news company scope override: %s", exc, exc_info=True)
+            return {"status": "error", "error": str(exc)}
+
+    def get_news_retention_status(self, params=None) -> dict:
+        try:
+            return self._sanitize_for_json(self._news_repository().get_content_storage_summary())
+        except Exception as exc:
+            logger.error("failed to load news retention status: %s", exc, exc_info=True)
+            return {"content_count": 0, "storage_bytes": 0, "saved_content_count": 0, "error": str(exc)}
+
+    def save_news_retention_policy(self, params=None) -> dict:
+        if not self._is_news_write_allowed():
+            return self._sanitize_for_json(self._write_blocked_response("save_news_retention_policy"))
+        params = params or {}
+        try:
+            policy = self._news_repository().update_retention_policy(
+                metadata_retention_days=params.get("metadata_retention_days"),
+                extracted_text_retention_days=params.get("extracted_text_retention_days"),
+                total_storage_limit_mb=params.get("total_storage_limit_mb"),
+                preserve_saved=bool(params["preserve_saved"]) if "preserve_saved" in params else None,
+                preserve_official_documents=(
+                    bool(params["preserve_official_documents"])
+                    if "preserve_official_documents" in params
+                    else None
+                ),
+            )
+            return self._sanitize_for_json({"status": "success", "policy": policy})
+        except Exception as exc:
+            logger.error("failed to save news retention policy: %s", exc, exc_info=True)
+            return {"status": "error", "error": str(exc)}
+
+    def cleanup_news_extracted_content(self, params=None) -> dict:
+        if not self._is_news_write_allowed():
+            return self._sanitize_for_json(self._write_blocked_response("cleanup_news_extracted_content"))
+        params = params or {}
+        try:
+            payload = self._news_repository().cleanup_extracted_content(
+                dry_run=bool(params.get("dry_run", False))
+            )
+            return self._sanitize_for_json(payload)
+        except Exception as exc:
+            logger.error("failed to cleanup news extracted content: %s", exc, exc_info=True)
             return {"status": "error", "error": str(exc)}
 
     def get_news_article_classification(self, params=None) -> dict:
@@ -247,8 +309,22 @@ class NewsBridgeMixin:
                 "error": str(exc),
             })
 
+    def get_news_article_content(self, params=None) -> dict:
+        params = params or {}
+        article_id = str(params.get("article_id") or "").strip()
+        if not article_id:
+            return {"available": False, "error": "article_id is required"}
+        try:
+            payload = self._news_repository().get_article_content(article_id)
+            if payload is None:
+                return {"available": False, "error": f"News article {article_id} not found"}
+            return self._sanitize_for_json(payload)
+        except Exception as exc:
+            logger.error("failed to load news article content: %s", exc, exc_info=True)
+            return {"available": False, "error": str(exc)}
+
     def apply_news_classification_correction(self, params=None) -> dict:
-        if not self._is_write_allowed():
+        if not self._is_news_write_allowed():
             return self._sanitize_for_json(self._write_blocked_response("apply_news_classification_correction"))
         params = params or {}
         article_id = str(params.get("article_id") or "").strip()
@@ -287,7 +363,7 @@ class NewsBridgeMixin:
             return self._sanitize_for_json({"items": [], "count": 0, "error": str(exc)})
 
     def set_news_source_enabled(self, params=None) -> dict:
-        if not self._is_write_allowed():
+        if not self._is_news_write_allowed():
             return self._sanitize_for_json(self._write_blocked_response("set_news_source_enabled"))
         params = params or {}
         source_id = str(params.get("source_id") or "").strip()
@@ -306,7 +382,7 @@ class NewsBridgeMixin:
             return {"status": "error", "error": str(exc)}
 
     def set_news_source_priority(self, params=None) -> dict:
-        if not self._is_write_allowed():
+        if not self._is_news_write_allowed():
             return self._sanitize_for_json(self._write_blocked_response("set_news_source_priority"))
         params = params or {}
         source_id = str(params.get("source_id") or "").strip()
@@ -323,7 +399,7 @@ class NewsBridgeMixin:
             return {"status": "error", "error": str(exc)}
 
     def add_custom_news_source(self, params=None) -> dict:
-        if not self._is_write_allowed():
+        if not self._is_news_write_allowed():
             return self._sanitize_for_json(self._write_blocked_response("add_custom_news_source"))
         params = params or {}
         feed_url = str(params.get("feed_url") or "").strip()
@@ -354,6 +430,7 @@ class NewsBridgeMixin:
                 enabled=enabled,
                 priority=priority,
                 user_defined=True,
+                allow_content_storage=False,
             )
             repository = self._news_repository()
             repository.upsert_source(source)
@@ -377,7 +454,7 @@ class NewsBridgeMixin:
             return {"status": "error", "error": str(exc)}
 
     def update_news_article_state(self, params=None) -> dict:
-        if not self._is_write_allowed():
+        if not self._is_news_write_allowed():
             return self._sanitize_for_json(self._write_blocked_response("update_news_article_state"))
         params = params or {}
         article_id = str(params.get("article_id") or "").strip()
@@ -404,7 +481,7 @@ class NewsBridgeMixin:
             return {"status": "error", "error": str(exc)}
 
     def refresh_news_sources(self, params=None) -> dict:
-        if not self._is_write_allowed():
+        if not self._is_news_write_allowed():
             return self._sanitize_for_json(self._write_blocked_response("refresh_news_sources"))
 
         if not hasattr(self, "_news_refresh_lock"):
@@ -436,23 +513,46 @@ class NewsBridgeMixin:
                 sources = self._enabled_builtin_news_sources(repository)
                 self._news_refresh_state.update({"source_count": len(sources)})
                 for source in sources:
-                    result = service.collect_source(source=source, trigger="manual")
-                    source_result = {
-                        "source_id": source.source_id,
-                        "name": source.name,
-                        "status": result.status,
-                        "articles_seen": result.articles_seen,
-                        "articles_inserted": result.articles_inserted,
-                        "articles_updated": result.articles_updated,
-                        "error_count": result.error_count,
-                        "error_message": result.error_message,
-                    }
+                    try:
+                        result = service.collect_source(source=source, trigger="manual")
+                        source_result = {
+                            "source_id": source.source_id,
+                            "name": source.name,
+                            "status": result.status,
+                            "articles_seen": result.articles_seen,
+                            "articles_inserted": result.articles_inserted,
+                            "articles_updated": result.articles_updated,
+                            "error_count": result.error_count,
+                            "error_message": result.error_message,
+                        }
+                    except Exception as exc:
+                        logger.error(
+                            "news refresh source failed: %s: %s",
+                            source.source_id,
+                            exc,
+                            exc_info=True,
+                        )
+                        source_result = {
+                            "source_id": source.source_id,
+                            "name": source.name,
+                            "status": "error",
+                            "articles_seen": 0,
+                            "articles_inserted": 0,
+                            "articles_updated": 0,
+                            "error_count": 1,
+                            "error_message": str(exc),
+                        }
+                        repository.record_source_health(
+                            source_id=source.source_id,
+                            status="error",
+                            error=str(exc),
+                        )
                     self._news_refresh_state["sources"].append(source_result)
                     self._news_refresh_state["completed_sources"] += 1
-                    self._news_refresh_state["articles_seen"] += result.articles_seen
-                    self._news_refresh_state["articles_inserted"] += result.articles_inserted
-                    self._news_refresh_state["articles_updated"] += result.articles_updated
-                    self._news_refresh_state["error_count"] += result.error_count
+                    self._news_refresh_state["articles_seen"] += source_result["articles_seen"]
+                    self._news_refresh_state["articles_inserted"] += source_result["articles_inserted"]
+                    self._news_refresh_state["articles_updated"] += source_result["articles_updated"]
+                    self._news_refresh_state["error_count"] += source_result["error_count"]
                 final_status = "error" if self._news_refresh_state["error_count"] else "success"
                 self._news_refresh_state.update({
                     "status": final_status,

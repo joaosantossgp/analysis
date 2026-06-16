@@ -8,6 +8,7 @@ export interface NewsSource {
   enabled: number | boolean;
   priority: number;
   user_defined: number | boolean;
+  allow_content_storage?: number | boolean;
   etag?: string | null;
   last_modified?: string | null;
   updated_at?: string | null;
@@ -136,6 +137,50 @@ export interface SetNewsCompanyScopeOverrideResult {
   error?: string;
 }
 
+export interface NewsRetentionPolicy {
+  policy_id: string;
+  metadata_retention_days: number;
+  extracted_text_retention_days: number;
+  total_storage_limit_mb: number;
+  preserve_saved: number | boolean;
+  preserve_official_documents: number | boolean;
+  updated_at?: string | null;
+}
+
+export interface NewsRetentionStatus {
+  content_count: number;
+  storage_bytes: number;
+  saved_content_count: number;
+  oldest_extracted_at?: string | null;
+  newest_extracted_at?: string | null;
+  policy?: NewsRetentionPolicy;
+  error?: string;
+}
+
+export interface SaveNewsRetentionPolicyParams {
+  metadata_retention_days?: number;
+  extracted_text_retention_days?: number;
+  total_storage_limit_mb?: number;
+  preserve_saved?: boolean;
+  preserve_official_documents?: boolean;
+}
+
+export interface SaveNewsRetentionPolicyResult {
+  status: "success" | "error" | "blocked" | string;
+  policy?: NewsRetentionPolicy;
+  error?: string;
+}
+
+export interface CleanupNewsExtractedContentResult {
+  status: "success" | "error" | "blocked" | string;
+  dry_run?: boolean;
+  deleted_content_count?: number;
+  freed_bytes?: number;
+  preserved_saved?: boolean;
+  preserved_official_documents?: boolean;
+  error?: string;
+}
+
 export interface NewsArticleKeywordMatch {
   keyword_rule_id: string;
   group_name: string;
@@ -201,6 +246,21 @@ export interface NewsArticleClassificationResponse {
     reasons: string[];
     updated_at?: string | null;
   } | null;
+  error?: string;
+}
+
+export interface NewsArticleContentResponse {
+  article_id?: string;
+  title?: string;
+  content_status?: string | null;
+  paywall_status?: string | null;
+  available: boolean;
+  content_text?: string | null;
+  content_format?: string | null;
+  source_policy?: string | null;
+  storage_bytes?: number | null;
+  extracted_at?: string | null;
+  updated_at?: string | null;
   error?: string;
 }
 

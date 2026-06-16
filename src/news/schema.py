@@ -147,12 +147,16 @@ def ensure_news_tables_for_connection(conn, *, enable_wal: bool = True) -> None:
             enabled          INTEGER NOT NULL DEFAULT 1,
             priority         INTEGER NOT NULL DEFAULT 100,
             user_defined     INTEGER NOT NULL DEFAULT 0,
+            allow_content_storage INTEGER NOT NULL DEFAULT 0,
             etag             TEXT,
             last_modified    TEXT,
             created_at       TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
         )
     """))
+    _ensure_columns(conn, "news_sources", {
+        "allow_content_storage": "INTEGER NOT NULL DEFAULT 0",
+    })
 
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS news_articles (
@@ -182,6 +186,35 @@ def ensure_news_tables_for_connection(conn, *, enable_wal: bool = True) -> None:
         "language": "TEXT",
         "paywall_status": "TEXT",
     })
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS news_article_content (
+            article_id      TEXT PRIMARY KEY REFERENCES news_articles(article_id) ON DELETE CASCADE,
+            content_text    TEXT NOT NULL,
+            content_format  TEXT NOT NULL DEFAULT 'text',
+            source_policy   TEXT,
+            storage_bytes   INTEGER NOT NULL DEFAULT 0,
+            extracted_at    TEXT NOT NULL DEFAULT (datetime('now')),
+            created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """))
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS news_retention_policy (
+            policy_id                    TEXT PRIMARY KEY DEFAULT 'default',
+            metadata_retention_days       INTEGER NOT NULL DEFAULT 1825,
+            extracted_text_retention_days INTEGER NOT NULL DEFAULT 90,
+            total_storage_limit_mb        INTEGER NOT NULL DEFAULT 512,
+            preserve_saved                INTEGER NOT NULL DEFAULT 1,
+            preserve_official_documents   INTEGER NOT NULL DEFAULT 1,
+            updated_at                    TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """))
+    conn.execute(text("""
+        INSERT OR IGNORE INTO news_retention_policy (policy_id)
+        VALUES ('default')
+    """))
 
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS news_events (
@@ -397,6 +430,7 @@ def ensure_news_tables_for_connection(conn, *, enable_wal: bool = True) -> None:
         "CREATE INDEX IF NOT EXISTS idx_news_articles_published ON news_articles(published_at DESC)",
         "CREATE INDEX IF NOT EXISTS idx_news_articles_discovered ON news_articles(discovered_at DESC)",
         "CREATE INDEX IF NOT EXISTS idx_news_articles_canonical_url ON news_articles(canonical_url)",
+        "CREATE INDEX IF NOT EXISTS idx_news_article_content_extracted ON news_article_content(extracted_at, storage_bytes)",
         "CREATE INDEX IF NOT EXISTS idx_news_article_companies_cd_cvm ON news_article_companies(cd_cvm, article_id)",
         "CREATE INDEX IF NOT EXISTS idx_news_article_sectors_slug ON news_article_sectors(sector_slug, article_id)",
         "CREATE INDEX IF NOT EXISTS idx_news_user_state_saved ON news_user_state(saved, article_id)",

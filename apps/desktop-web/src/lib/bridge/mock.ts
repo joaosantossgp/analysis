@@ -1211,6 +1211,20 @@ export function createMockBridge(): Partial<BridgeApi> {
       corrections: [],
     }),
 
+    get_news_article_content: async (params) => ({
+      article_id: params.article_id,
+      title: "Banco Central updates market expectations bulletin",
+      content_status: "full_text_available",
+      paywall_status: null,
+      available: true,
+      content_text: "Mock locally stored feed content for the selected News article.",
+      content_format: "feed",
+      source_policy: "feed_content_allowed",
+      storage_bytes: 64,
+      extracted_at: NOW,
+      updated_at: NOW,
+    }),
+
     apply_news_classification_correction: async (params) => ({
       status: "success",
       correction_id: "mock-correction-1",
@@ -1227,6 +1241,45 @@ export function createMockBridge(): Partial<BridgeApi> {
       deleted: !params.action,
     }),
 
+    get_news_retention_status: async () => ({
+      content_count: 0,
+      storage_bytes: 0,
+      saved_content_count: 0,
+      oldest_extracted_at: null,
+      newest_extracted_at: null,
+      policy: {
+        policy_id: "default",
+        metadata_retention_days: 1825,
+        extracted_text_retention_days: 90,
+        total_storage_limit_mb: 512,
+        preserve_saved: 1,
+        preserve_official_documents: 1,
+        updated_at: NOW,
+      },
+    }),
+
+    save_news_retention_policy: async (params) => ({
+      status: "success",
+      policy: {
+        policy_id: "default",
+        metadata_retention_days: params.metadata_retention_days ?? 1825,
+        extracted_text_retention_days: params.extracted_text_retention_days ?? 90,
+        total_storage_limit_mb: params.total_storage_limit_mb ?? 512,
+        preserve_saved: params.preserve_saved ?? true,
+        preserve_official_documents: params.preserve_official_documents ?? true,
+        updated_at: NOW,
+      },
+    }),
+
+    cleanup_news_extracted_content: async (params) => ({
+      status: "success",
+      dry_run: Boolean(params?.dry_run),
+      deleted_content_count: 0,
+      freed_bytes: 0,
+      preserved_saved: true,
+      preserved_official_documents: true,
+    }),
+
     get_news_sources: async () => ({
       items: [
         {
@@ -1239,6 +1292,7 @@ export function createMockBridge(): Partial<BridgeApi> {
           enabled: 1,
           priority: 10,
           user_defined: 0,
+          allow_content_storage: 1,
           etag: null,
           last_modified: null,
           updated_at: NOW,
@@ -1260,6 +1314,7 @@ export function createMockBridge(): Partial<BridgeApi> {
           enabled: 1,
           priority: 20,
           user_defined: 0,
+          allow_content_storage: 1,
           etag: null,
           last_modified: null,
           updated_at: NOW,

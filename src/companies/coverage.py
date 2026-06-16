@@ -498,6 +498,40 @@ class CoverageUniverseService:
                 override = comp_data["manual_score_override"] or 0.0
                 final_score = round(min(max(calc_score + override, 0.0), 100.0), 1)
 
+                # Lookup last snapshot score for delta calculation
+                snapshot_row = conn.execute(
+                    text(
+                        """
+                        SELECT new_value FROM coverage_decision_history
+                        WHERE universe_id = :u_id AND cd_cvm = :cd_cvm AND event_type = 'score_snapshot'
+                        ORDER BY timestamp DESC LIMIT 1
+                        """
+                    ),
+                    {"u_id": universe_id, "cd_cvm": cd_cvm},
+                ).fetchone()
+
+                score_delta: float | None = None
+                score_baseline: float | None = None
+                if snapshot_row and snapshot_row[0] is not None:
+                    try:
+                        score_baseline = float(snapshot_row[0])
+                        score_delta = round(final_score - score_baseline, 1)
+                    except (TypeError, ValueError):
+                        pass
+
+                # Derive next pending checklist item for 'Next Action' column
+                next_action_row = conn.execute(
+                    text(
+                        """
+                        SELECT item_key FROM coverage_checklists
+                        WHERE universe_id = :u_id AND cd_cvm = :cd_cvm AND is_completed = 0
+                        ORDER BY item_key LIMIT 1
+                        """
+                    ),
+                    {"u_id": universe_id, "cd_cvm": cd_cvm},
+                ).fetchone()
+                next_pending_item: str | None = next_action_row[0] if next_action_row else None
+
                 comp_data.update({
                     "market_cap": mkt_cap,
                     "avg_volume": avg_vol,
@@ -507,6 +541,9 @@ class CoverageUniverseService:
                     "sector_score": round(sector_score, 1),
                     "calculated_score": round(calc_score, 1),
                     "final_score": final_score,
+                    "score_delta": score_delta,
+                    "score_baseline": score_baseline,
+                    "next_pending_item": next_pending_item,
                 })
                 results.append(comp_data)
 
@@ -546,7 +583,7 @@ class CoverageUniverseService:
                 {"u_id": universe_id, "cd_cvm": cd_cvm, "override": override, "updated_at": now}
             )
 
-            # Log decision
+            # Log override decision
             conn.execute(
                 text(
                     """
@@ -563,6 +600,24 @@ class CoverageUniverseService:
                     "timestamp": now,
                 }
             )
+
+            # Snapshot the current calculated score so next load can show delta
+            # We recalculate current final_score inline to avoid a recursive call
+            uc_row = conn.execute(
+                text("SELECT holding_pct, manual_score_override FROM universe_companies WHERE universe_id = :u_id AND cd_cvm = :cd_cvm"),
+                {"u_id": universe_id, "cd_cvm": cd_cvm}
+            ).fetchone()
+            if uc_row:
+                override_snap = float(override) if override is not None else 0.0
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO coverage_decision_history (universe_id, cd_cvm, event_type, previous_value, new_value, rationale, timestamp)
+                        VALUES (:u_id, :cd_cvm, 'score_snapshot', NULL, :score, 'auto_snapshot', :timestamp)
+                        """
+                    ),
+                    {"u_id": universe_id, "cd_cvm": cd_cvm, "score": str(override_snap), "timestamp": now}
+                )
 
     # --- Checklists & Tasks ---
 
@@ -618,7 +673,7 @@ class CoverageUniverseService:
                 )
                 prev_val = "1" if existing[0] else "0"
 
-            # Log decision
+            # Log checklist change
             conn.execute(
                 text(
                     """
@@ -634,6 +689,17 @@ class CoverageUniverseService:
                     "rationale": rationale,
                     "timestamp": now,
                 }
+            )
+
+            # Score snapshot after checklist change so next load can compute delta
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO coverage_decision_history (universe_id, cd_cvm, event_type, previous_value, new_value, rationale, timestamp)
+                    VALUES (:u_id, :cd_cvm, 'score_snapshot', NULL, 'checklist_action', 'auto_snapshot', :timestamp)
+                    """
+                ),
+                {"u_id": universe_id, "cd_cvm": cd_cvm, "timestamp": now}
             )
 
     def get_work_queue(self, universe_id: str) -> list[dict[str, Any]]:
