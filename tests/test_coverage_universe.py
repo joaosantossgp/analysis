@@ -91,10 +91,10 @@ def test_engine(tmp_path):
         conn.execute(
             text(
                 """
-                INSERT INTO companies (cd_cvm, company_name, gics_sector, ticker_b3, updated_at)
+                INSERT INTO companies (cd_cvm, company_name, gics_sector, gics_sector_slug, ticker_b3, updated_at)
                 VALUES 
-                (9512, 'PETROLEO BRASILEIRO S.A.', 'Petróleo, Gás e Biocombustíveis', 'PETR4', '2026-06-16T12:00:00Z'),
-                (4170, 'VALE S.A.', 'Materiais Básicos', 'VALE3', '2026-06-16T12:00:00Z')
+                (9512, 'PETROLEO BRASILEIRO S.A.', 'Energy', 'energy', 'PETR4', '2026-06-16T12:00:00Z'),
+                (4170, 'VALE S.A.', 'Materials', 'materials', 'VALE3', '2026-06-16T12:00:00Z')
                 """
             )
         )
@@ -111,17 +111,26 @@ def test_engine(tmp_path):
             )
         )
 
-        # Seed mock market history volume
+        # Seed mock market history volume (5 distinct dates per company, with raw close price)
         conn.execute(
             text(
                 """
-                INSERT INTO market_history (cd_cvm, ticker, date, volume, adjusted_close, source)
+                INSERT INTO market_history (cd_cvm, ticker, date, volume, close, adjusted_close, source)
                 VALUES 
-                (9512, 'PETR4', '2026-06-15', 50000000.0, 38.5, 'yahoo'),
-                (4170, 'VALE3', '2026-06-15', 15000000.0, 62.1, 'yahoo')
+                (9512, 'PETR4', '2026-06-11', 50000000.0, 38.5, 38.5, 'yahoo'),
+                (9512, 'PETR4', '2026-06-12', 50000000.0, 38.5, 38.5, 'yahoo'),
+                (9512, 'PETR4', '2026-06-13', 50000000.0, 38.5, 38.5, 'yahoo'),
+                (9512, 'PETR4', '2026-06-14', 50000000.0, 38.5, 38.5, 'yahoo'),
+                (9512, 'PETR4', '2026-06-15', 50000000.0, 38.5, 38.5, 'yahoo'),
+                (4170, 'VALE3', '2026-06-11', 15000000.0, 62.1, 62.1, 'yahoo'),
+                (4170, 'VALE3', '2026-06-12', 15000000.0, 62.1, 62.1, 'yahoo'),
+                (4170, 'VALE3', '2026-06-13', 15000000.0, 62.1, 62.1, 'yahoo'),
+                (4170, 'VALE3', '2026-06-14', 15000000.0, 62.1, 62.1, 'yahoo'),
+                (4170, 'VALE3', '2026-06-15', 15000000.0, 62.1, 62.1, 'yahoo')
                 """
             )
         )
+
 
     return engine
 
@@ -311,4 +320,135 @@ def test_coverage_universe_service_lifecycle(test_engine):
     # 16. Delete universe
     service.delete_universe(u_id)
     assert service.get_universe(u_id) is None
+
+
+def test_coverage_universe_edge_cases(test_engine):
+    service = CoverageUniverseService(test_engine)
+    u_id = service.create_universe(
+        name="Edge Cases Universe",
+        purpose="Testing edge cases",
+        analysis_type="Equity",
+        benchmark="IBOV"
+    )
+    
+    # Let's seed a company with Portuguese GICS to verify it gets blocked/rejected
+    with test_engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT OR REPLACE INTO companies (cd_cvm, company_name, gics_sector, gics_sector_slug, ticker_b3, updated_at)
+                VALUES (1234, 'COMPANHIA PORTUGUESE GICS', 'Petróleo, Gás e Biocombustíveis', 'petroleo-gas-e-biocombustiveis', 'PORT4', '2026-06-16T12:00:00Z')
+                """
+            )
+        )
+        # Also seed market cap and 5 history records, but GICS sector is Portuguese
+        conn.execute(
+            text(
+                """
+                INSERT OR REPLACE INTO company_universe (cd_cvm, ticker, company_name, market_cap, market_cap_rank, source, selected_preset, created_at, updated_at)
+                VALUES (1234, 'PORT4', 'COMPANHIA PORTUGUESE GICS', 100000000.0, 10, 'yahoo', 'all', '2026-06-16', '2026-06-16')
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                INSERT OR REPLACE INTO market_history (cd_cvm, ticker, date, volume, close, adjusted_close, source)
+                VALUES 
+                (1234, 'PORT4', '2026-06-11', 100000.0, 10.0, 10.0, 'yahoo'),
+                (1234, 'PORT4', '2026-06-12', 100000.0, 10.0, 10.0, 'yahoo'),
+                (1234, 'PORT4', '2026-06-13', 100000.0, 10.0, 10.0, 'yahoo'),
+                (1234, 'PORT4', '2026-06-14', 100000.0, 10.0, 10.0, 'yahoo'),
+                (1234, 'PORT4', '2026-06-15', 100000.0, 10.0, 10.0, 'yahoo')
+                """
+            )
+        )
+
+    service.add_company_to_universe(u_id, 1234, "watchlist", "Portuguese GICS company")
+    scores = service.calculate_priority_scores(u_id)
+    port_comp = next(x for x in scores if x["cd_cvm"] == 1234)
+    # GICS sector should be resolved to Unknown/missing because it's Portuguese
+    assert port_comp["gics_sector"] == "Unknown"
+    assert "sector_complexity" in port_comp["missing_factors"]
+    assert port_comp["sector_score"] is None
+
+    # Let's seed a company with market cap conflict (equal priority, equal recency, different market cap values)
+    with test_engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT OR REPLACE INTO companies (cd_cvm, company_name, gics_sector, gics_sector_slug, ticker_b3, updated_at)
+                VALUES (5678, 'CONFLICT MCAP S.A.', 'Energy', 'energy', 'CONF3', '2026-06-16T12:00:00Z')
+                """
+            )
+        )
+        # Multiple presets with equal source priority (e.g. cvm/b3) and dates, but different market caps
+        conn.execute(
+            text(
+                """
+                INSERT INTO company_universe (cd_cvm, ticker, company_name, market_cap, market_cap_rank, source, selected_preset, created_at, updated_at)
+                VALUES 
+                (5678, 'CONF3', 'CONFLICT MCAP S.A.', 100000000.0, 11, 'b3', 'all', '2026-06-16', '2026-06-16'),
+                (5678, 'CONF3', 'CONFLICT MCAP S.A.', 200000000.0, 11, 'b3', 'top_500', '2026-06-16', '2026-06-16')
+                """
+            )
+        )
+        # 5 history records
+        conn.execute(
+            text(
+                """
+                INSERT OR REPLACE INTO market_history (cd_cvm, ticker, date, volume, close, adjusted_close, source)
+                VALUES 
+                (5678, 'CONF3', '2026-06-11', 100000.0, 10.0, 10.0, 'yahoo'),
+                (5678, 'CONF3', '2026-06-12', 100000.0, 10.0, 10.0, 'yahoo'),
+                (5678, 'CONF3', '2026-06-13', 100000.0, 10.0, 10.0, 'yahoo'),
+                (5678, 'CONF3', '2026-06-14', 100000.0, 10.0, 10.0, 'yahoo'),
+                (5678, 'CONF3', '2026-06-15', 100000.0, 10.0, 10.0, 'yahoo')
+                """
+            )
+        )
+
+    service.add_company_to_universe(u_id, 5678, "watchlist", "Market cap conflict company")
+    scores = service.calculate_priority_scores(u_id)
+    conf_comp = next(x for x in scores if x["cd_cvm"] == 5678)
+    assert conf_comp["market_cap"] is None
+    assert conf_comp["market_cap_selection_origin"] == "database_conflict"
+    assert "market_cap" in conf_comp["missing_factors"]
+
+    # Test that overrides do NOT write score_snapshot to decision history
+    service.save_manual_score_override(u_id, 1234, 15.0, "Manual override")
+    with test_engine.connect() as conn:
+        count = conn.execute(
+            text("SELECT COUNT(*) FROM coverage_decision_history WHERE event_type = 'score_snapshot'")
+        ).scalar()
+        assert count == 0
+
+    # Test score block behavior
+    # Let's seed a company with only sector complexity available
+    with test_engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT OR REPLACE INTO companies (cd_cvm, company_name, gics_sector, gics_sector_slug, ticker_b3, updated_at)
+                VALUES (9999, 'BLOCKED S.A.', 'Energy', 'energy', 'BLOC3', '2026-06-16T12:00:00Z')
+                """
+            )
+        )
+        # No market cap and no market history volume seeded!
+    service.add_company_to_universe(u_id, 9999, "watchlist", "Blocked company")
+    scores = service.calculate_priority_scores(u_id)
+    bloc_comp = next(x for x in scores if x["cd_cvm"] == 9999)
+    assert bloc_comp["score_status"] == "blocked"
+    assert bloc_comp["calculated_score"] is None
+    assert bloc_comp["final_score"] is None
+
+    # Verify that applying manual override to a blocked score does NOT unblock it
+    service.save_manual_score_override(u_id, 9999, 10.0, "Override blocked company")
+    scores = service.calculate_priority_scores(u_id)
+    bloc_comp = next(x for x in scores if x["cd_cvm"] == 9999)
+    assert bloc_comp["score_status"] == "blocked"
+    assert bloc_comp["final_score"] is None
+
+    service.delete_universe(u_id)
+
 

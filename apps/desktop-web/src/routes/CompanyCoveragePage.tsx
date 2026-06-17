@@ -207,15 +207,8 @@ export function CompanyCoveragePage() {
 
         {/* Competitor / supply chain factors */}
         <Panel title="Valuation Factors & Peers" subtitle="Local value-chain attributes.">
-          <div className="font-mono text-xs space-y-2 text-[var(--color-text-secondary)]">
-            <div className="p-2 border border-[var(--color-border-subtle)] bg-[var(--color-surface-2)] rounded">
-              <span className="block font-bold text-[var(--color-text-primary)]">Comparable Peers</span>
-              <span className="text-[var(--color-text-tertiary)]">TRPL4, EQTL3, CPFE3</span>
-            </div>
-            <div className="p-2 border border-[var(--color-border-subtle)] bg-[var(--color-surface-2)] rounded">
-              <span className="block font-bold text-[var(--color-text-primary)]">Key Value Drivers</span>
-              <span className="text-[var(--color-text-tertiary)]">Hydrology, FX, SIN capacity</span>
-            </div>
+          <div className="font-mono text-xs p-4 text-[var(--color-text-tertiary)] bg-[var(--color-surface-2)] border border-[var(--color-border-subtle)] rounded text-center">
+            Relationship data and comparable peers are not available yet.
           </div>
         </Panel>
       </div>

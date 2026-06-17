@@ -91,9 +91,12 @@ export function CoveragePage({ section }: Props) {
       };
       return updateCoverageUniverse(payload);
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       void queryClient.invalidateQueries({ queryKey: ["coverage-universes"] });
       alert(activeUniverse?.status === "archived" ? "Workspace restored!" : "Workspace archived!");
+      if (variables === "archived") {
+        handleSelectUniverse("");
+      }
     },
     onError: (err) => alert(String(err))
   });
@@ -166,6 +169,8 @@ export function CoveragePage({ section }: Props) {
         {!currentUniverseId ? (
           <DashboardHub
             universes={filteredUniverses}
+            showArchived={showArchived}
+            onShowArchivedChange={setShowArchived}
             onSelectUniverse={handleSelectUniverse}
             onOpenCreateModal={() => setIsCreateModalOpen(true)}
             onOpenDuplicateModal={(id) => {
@@ -183,6 +188,9 @@ export function CoveragePage({ section }: Props) {
                 benchmark: u.benchmark || "",
                 status: newStatus,
               });
+              if (newStatus === "archived" && id === activeUniverseId) {
+                handleSelectUniverse("");
+              }
               void universesQuery.refetch();
             }}
           />
@@ -566,12 +574,16 @@ function DuplicateUniverseModal({
 // --- Dashboard Hub Component ---
 function DashboardHub({
   universes,
+  showArchived,
+  onShowArchivedChange,
   onSelectUniverse,
   onOpenCreateModal,
   onOpenDuplicateModal,
   onArchiveUniverse,
 }: {
   universes: CoverageUniverse[];
+  showArchived: boolean;
+  onShowArchivedChange: (val: boolean) => void;
   onSelectUniverse: (id: string) => void;
   onOpenCreateModal: () => void;
   onOpenDuplicateModal: (id: string) => void;
@@ -580,11 +592,22 @@ function DashboardHub({
   return (
     <div className="space-y-6 font-mono text-xs select-none">
       <div className="flex items-center justify-between border-b border-[var(--color-border-subtle)] pb-4">
-        <div>
-          <h1 className="text-lg font-bold text-zinc-150 uppercase tracking-wider">COVERAGE WORKSPACES</h1>
-          <p className="text-3xs text-[var(--color-text-tertiary)] mt-1">
-            Manage your stock coverage lists, priority weights, and checklists.
-          </p>
+        <div className="flex items-center gap-6">
+          <div>
+            <h1 className="text-lg font-bold text-zinc-150 uppercase tracking-wider">COVERAGE WORKSPACES</h1>
+            <p className="text-3xs text-[var(--color-text-tertiary)] mt-1">
+              Manage your stock coverage lists, priority weights, and checklists.
+            </p>
+          </div>
+          <label className="flex items-center gap-1.5 cursor-pointer text-2xs text-[var(--color-text-secondary)] font-mono select-none">
+            <input
+              type="checkbox"
+              checked={showArchived}
+              onChange={(e) => onShowArchivedChange(e.target.checked)}
+              className="bg-[var(--color-surface-2)] border border-[var(--color-border-default)] rounded accent-cyan-600"
+            />
+            Show Archived
+          </label>
         </div>
         <Button variant="primary" onClick={onOpenCreateModal}>
           + CREATE NEW WORKSPACE
@@ -1317,7 +1340,7 @@ function WishListAdder({ universeId }: { universeId: string }) {
 
 // --- Prioritization Score List section ---
 // --- Priority Score Tooltip Breakdown ---
-function PriorityScoreTooltip({ item, weights, colorClass }: { item: any; weights: any; colorClass?: string }) {
+function PriorityScoreTooltip({ item, colorClass }: { item: any; colorClass?: string }) {
   if (item.score_status === "blocked") {
     return (
       <div className="relative group/score inline-block cursor-help">
@@ -1344,15 +1367,8 @@ function PriorityScoreTooltip({ item, weights, colorClass }: { item: any; weight
     );
   }
 
-  const wCap = Math.round((weights?.market_cap_weight ?? 0.3) * 100);
-  const wVol = Math.round((weights?.volume_weight ?? 0.3) * 100);
-  const wHold = Math.round((weights?.holding_weight ?? 0.2) * 100);
-  const wSect = Math.round((weights?.sector_weight ?? 0.2) * 100);
-
-  const contrCap = item.cap_score !== null && item.cap_score !== undefined ? ((item.cap_score * wCap) / 100).toFixed(1) : "—";
-  const contrVol = item.vol_score !== null && item.vol_score !== undefined ? ((item.vol_score * wVol) / 100).toFixed(1) : "—";
-  const contrHold = item.holding_score !== null && item.holding_score !== undefined ? ((item.holding_score * wHold) / 100).toFixed(1) : "—";
-  const contrSect = item.sector_score !== null && item.sector_score !== undefined ? ((item.sector_score * wSect) / 100).toFixed(1) : "—";
+  const details = item.factor_details || {};
+  const fKeys = ["market_cap", "volume", "holding_pct", "sector_complexity"];
 
   return (
     <div className="relative group/score inline-block cursor-help">
@@ -1363,23 +1379,26 @@ function PriorityScoreTooltip({ item, weights, colorClass }: { item: any; weight
         <div className="font-bold border-b border-zinc-850 pb-1 text-zinc-100 uppercase tracking-wider text-[10px]">
           Score Breakdown ({item.score_status || "complete"})
         </div>
-        <div className="space-y-1">
-          <div className="flex justify-between">
-            <span>Market Cap ({item.cap_score !== null && item.cap_score !== undefined ? `${item.cap_score} pts` : "Missing"})</span>
-            <span className="text-zinc-400">× {wCap}% = {contrCap}</span>
-          </div>
-          <div className="flex justify-between">
-            <span>Volume ({item.vol_score !== null && item.vol_score !== undefined ? `${item.vol_score} pts` : "Missing"})</span>
-            <span className="text-zinc-400">× {wVol}% = {contrVol}</span>
-          </div>
-          <div className="flex justify-between">
-            <span>Holdings ({item.holding_score !== null && item.holding_score !== undefined ? `${item.holding_score} pts` : "Missing"})</span>
-            <span className="text-zinc-400">× {wHold}% = {contrHold}</span>
-          </div>
-          <div className="flex justify-between">
-            <span>Sector ({item.sector_score !== null && item.sector_score !== undefined ? `${item.sector_score} pts` : "Missing"})</span>
-            <span className="text-zinc-400">× {wSect}% = {contrSect}</span>
-          </div>
+        <div className="space-y-2">
+          {fKeys.map((key) => {
+            const f = details[key] || { name: key, original_weight: 0, effective_weight: 0, score: null, contribution: 0, missing: true, weight_pct: 0 };
+            const pts = f.score !== null && f.score !== undefined ? `${f.score} pts` : "Missing";
+            const origW = f.original_weight !== undefined ? `${Math.round(f.original_weight * 100)}%` : "0%";
+            const effW = f.effective_weight !== undefined ? `${Math.round(f.effective_weight * 100)}%` : "0%";
+            const contr = f.contribution !== null && f.contribution !== undefined ? f.contribution.toFixed(1) : "—";
+            return (
+              <div key={key} className="flex flex-col gap-0.5 border-b border-zinc-900/40 pb-1 last:border-0 last:pb-0">
+                <div className="flex justify-between items-center text-zinc-300">
+                  <span className="font-semibold">{f.name}</span>
+                  <span className="font-bold text-zinc-200">{pts}</span>
+                </div>
+                <div className="flex justify-between text-zinc-500 text-[9px]">
+                  <span>Weight: {origW} (Eff: {effW})</span>
+                  <span>Contr: {contr} pts</span>
+                </div>
+              </div>
+            );
+          })}
         </div>
         <div className="border-t border-zinc-800 pt-1.5 space-y-1 text-2xs">
           <div className="flex justify-between">
@@ -2302,7 +2321,6 @@ function PrioritizationSection({ universeId, onOpenBulkModal, onOpenMethodology 
                         </div>
                         <PriorityScoreTooltip
                           item={s}
-                          weights={detailQuery.data?.assumptions?.weights}
                           colorClass={
                             s.score_status === "blocked"
                               ? "text-zinc-500 border-zinc-500"
