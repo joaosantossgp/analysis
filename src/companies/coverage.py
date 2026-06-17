@@ -583,11 +583,14 @@ class CoverageUniverseService:
                 cd_cvm = comp_data["cd_cvm"]
                 
                 # Fallbacks for catalog-only or missing companies
-                if not comp_data.get("company_name"):
-                    comp_data["company_name"] = f"CVM {cd_cvm}"
-                if not comp_data.get("ticker_b3"):
-                    from src.companies.identity import CompanyIdentityResolver
+                identity = None
+                if not comp_data.get("company_name") or not comp_data.get("ticker_b3"):
+                    from src.companies.identity import CompanyIdentityResolver  # noqa: PLC0415
                     identity = CompanyIdentityResolver().resolve(cd_cvm)
+
+                if not comp_data.get("company_name"):
+                    comp_data["company_name"] = (identity.company_name if identity else None) or f"CVM {cd_cvm}"
+                if not comp_data.get("ticker_b3"):
                     comp_data["ticker_b3"] = (identity.ticker_b3 if identity else None) or str(cd_cvm)
                 if not comp_data.get("setor_analitico"):
                     comp_data["setor_analitico"] = "Unknown"
