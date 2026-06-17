@@ -148,6 +148,7 @@ export function CompanyCoveragePage() {
                 onChange={(e) => {
                   setActiveUniverseId(e.target.value);
                   localStorage.setItem("active_coverage_universe_id", e.target.value);
+                  window.dispatchEvent(new Event("storage"));
                 }}
                 className="w-full bg-[var(--color-surface-2)] text-[var(--color-text-primary)] border border-[var(--color-border-default)] rounded px-2 py-1.5 focus:outline-none"
               >

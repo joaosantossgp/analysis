@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { NavLink, useLocation, useParams } from "react-router-dom";
 
 /**
@@ -12,7 +13,7 @@ import { NavLink, useLocation, useParams } from "react-router-dom";
 
 type Tab = { to: string; label: string; end?: boolean; activeOn?: string[] };
 
-function subNavFor(pathname: string, params: Record<string, string | undefined>): Tab[] {
+function subNavFor(pathname: string, params: Record<string, string | undefined>, activeUniverseId: string | null): Tab[] {
   // Company detail subtabs (Overview / Indicadores / Demonstrativos).
   const cdMatch = pathname.match(/^\/empresas\/([^/]+)/);
   if (cdMatch) {
@@ -26,6 +27,9 @@ function subNavFor(pathname: string, params: Record<string, string | undefined>)
   }
 
   if (pathname.startsWith("/coverage")) {
+    if (!activeUniverseId) {
+      return [];
+    }
     return [
       { to: "/coverage", label: "Universes", end: true },
       { to: "/coverage/prioritization", label: "Prioritization" },
@@ -64,7 +68,21 @@ function subNavFor(pathname: string, params: Record<string, string | undefined>)
 export function SubNav() {
   const { pathname } = useLocation();
   const params = useParams();
-  const tabs = subNavFor(pathname, params);
+  const [activeUniverseId, setActiveUniverseId] = useState<string | null>(() => {
+    return localStorage.getItem("active_coverage_universe_id");
+  });
+
+  useEffect(() => {
+    const handleStorage = () => {
+      setActiveUniverseId(localStorage.getItem("active_coverage_universe_id"));
+    };
+    window.addEventListener("storage", handleStorage);
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, []);
+
+  const tabs = subNavFor(pathname, params, activeUniverseId);
 
   if (tabs.length === 0) {
     return (

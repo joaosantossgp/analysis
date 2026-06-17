@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   fetchCoverageUniverses,
   fetchCoverageUniverse,
@@ -46,6 +46,7 @@ type Props = {
 
 export function CoveragePage({ section }: Props) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [activeUniverseId, setActiveUniverseId] = useState<string>(() => {
     return localStorage.getItem("active_coverage_universe_id") || "";
   });
@@ -80,10 +81,17 @@ export function CoveragePage({ section }: Props) {
   });
 
   useEffect(() => {
+    if (!currentUniverseId && section !== "universes") {
+      navigate("/coverage", { replace: true });
+    }
+  }, [currentUniverseId, section, navigate]);
+
+  useEffect(() => {
     // If activeUniverseId was set but is not found in filtered list (e.g. deleted/archived), clear it
     if (activeUniverseId && !activeUniverse) {
       setActiveUniverseId("");
       localStorage.removeItem("active_coverage_universe_id");
+      window.dispatchEvent(new Event("storage"));
     }
   }, [activeUniverse, activeUniverseId]);
 
@@ -94,6 +102,7 @@ export function CoveragePage({ section }: Props) {
     } else {
       localStorage.removeItem("active_coverage_universe_id");
     }
+    window.dispatchEvent(new Event("storage"));
   };
 
   if (universesQuery.isLoading) {
@@ -126,12 +135,14 @@ export function CoveragePage({ section }: Props) {
 
   return (
     <div className="flex h-[calc(100vh-48px)] overflow-hidden select-none">
-      <UniverseSidebar
-        universes={filteredUniverses}
-        activeUniverseId={currentUniverseId}
-        onSelectUniverse={handleSelectUniverse}
-        onOpenCreateModal={() => setIsCreateModalOpen(true)}
-      />
+      {currentUniverseId && (
+        <UniverseSidebar
+          universes={filteredUniverses}
+          activeUniverseId={currentUniverseId}
+          onSelectUniverse={handleSelectUniverse}
+          onOpenCreateModal={() => setIsCreateModalOpen(true)}
+        />
+      )}
 
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6 min-w-0 bg-[var(--color-surface-1)]">
         {!currentUniverseId ? (
