@@ -6,11 +6,11 @@ import sys
 import threading
 from datetime import datetime, timezone
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import quote_plus, urlsplit
 
 from sqlalchemy import text
 
-from src.news.repository import NewsRepository, NewsSource, user_source_id_for_url
+from src.news.repository import NewsRepository, NewsSource, google_company_source_id, user_source_id_for_url
 from src.news.schema import ensure_news_tables, get_news_engine
 from src.news.service import NewsCollectionService
 from src.news.sources import builtin_sources
@@ -76,16 +76,73 @@ class NewsBridgeMixin:
         settings = self._svc().settings
         company_engine = build_engine(settings)
         selected_preset: str | None = None
+        selected_coverage_universe_id: str | None = None
+        selected_coverage_universe_name: str | None = None
+        available_coverage_universes: list[dict[str, Any]] = []
         coverage_rows: list[dict[str, Any]] = []
         with company_engine.connect() as conn:
             has_app_settings = _sqlite_table_exists(conn, "app_settings")
             has_company_universe = _sqlite_table_exists(conn, "company_universe")
             has_companies = _sqlite_table_exists(conn, "companies")
+            has_coverage_universes = _sqlite_table_exists(conn, "coverage_universes")
+            has_universe_companies = _sqlite_table_exists(conn, "universe_companies")
+            scope_settings = repository.get_company_scope_settings()
+            selected_coverage_universe_id = str(scope_settings.get("coverage_universe_id") or "").strip() or None
+            if has_coverage_universes:
+                available_coverage_universes = [dict(row) for row in conn.execute(
+                    text("""
+                        SELECT
+                            u.id,
+                            u.name,
+                            u.status,
+                            u.updated_at,
+                            COALESCE(c.company_count, 0) AS company_count
+                        FROM coverage_universes u
+                        LEFT JOIN (
+                            SELECT universe_id, COUNT(*) AS company_count
+                            FROM universe_companies
+                            GROUP BY universe_id
+                        ) c ON c.universe_id = u.id
+                        ORDER BY u.updated_at DESC, u.name ASC
+                    """)
+                ).mappings().fetchall()]
+            if selected_coverage_universe_id and has_coverage_universes and has_universe_companies:
+                universe = conn.execute(
+                    text("SELECT id, name FROM coverage_universes WHERE id = :id"),
+                    {"id": selected_coverage_universe_id},
+                ).mappings().fetchone()
+                if universe:
+                    selected_coverage_universe_name = str(universe["name"])
+                    coverage_rows = [dict(row) for row in conn.execute(
+                        text("""
+                            SELECT
+                                uc.cd_cvm,
+                                COALESCE(c.company_name, 'CVM ' || uc.cd_cvm) AS company_name,
+                                c.ticker_b3 AS ticker,
+                                uc.tier AS coverage_tier,
+                                c.coverage_rank AS market_cap_rank
+                            FROM universe_companies uc
+                            LEFT JOIN companies c ON c.cd_cvm = uc.cd_cvm
+                            WHERE uc.universe_id = :universe_id
+                              AND uc.tier NOT IN ('excluded', 'inappropriate')
+                            ORDER BY
+                                CASE uc.tier
+                                    WHEN 'must_cover' THEN 1
+                                    WHEN 'core' THEN 2
+                                    WHEN 'watchlist' THEN 3
+                                    WHEN 'opportunistic' THEN 4
+                                    ELSE 5
+                                END,
+                                c.coverage_rank ASC,
+                                company_name ASC
+                        """),
+                        {"universe_id": selected_coverage_universe_id},
+                    ).mappings().fetchall()]
             if has_app_settings:
                 selected_preset = conn.execute(
                     text("SELECT value FROM app_settings WHERE key = 'selected_company_universe'")
                 ).scalar()
-            if selected_preset and has_company_universe:
+            if not selected_coverage_universe_id and selected_preset and has_company_universe:
                 coverage_rows = [dict(row) for row in conn.execute(
                     text("""
                         SELECT cu.cd_cvm, cu.company_name, cu.ticker, cu.market_cap_rank
@@ -95,7 +152,7 @@ class NewsBridgeMixin:
                     """),
                     {"preset": selected_preset},
                 ).mappings().fetchall()]
-            if not coverage_rows and has_companies:
+            if not selected_coverage_universe_id and not coverage_rows and has_companies:
                 coverage_rows = [dict(row) for row in conn.execute(
                     text("""
                         SELECT cd_cvm, company_name, ticker_b3 AS ticker, coverage_rank AS market_cap_rank
@@ -116,9 +173,100 @@ class NewsBridgeMixin:
         return {
             "company_ids": included_ids,
             "selected_preset": selected_preset,
+            "selected_coverage_universe_id": selected_coverage_universe_id,
+            "selected_coverage_universe_name": selected_coverage_universe_name,
+            "available_coverage_universes": available_coverage_universes,
             "coverage_companies": coverage_rows,
             "overrides": overrides,
         }
+
+    @staticmethod
+    def _google_news_query_for_company(company: dict[str, Any]) -> str:
+        terms: list[str] = []
+        ticker = str(company.get("ticker") or "").strip()
+        company_name = str(company.get("company_name") or "").strip()
+        if ticker:
+            terms.append(ticker)
+        if company_name:
+            terms.append(f'"{company_name}"')
+        if not terms:
+            terms.append(str(company.get("cd_cvm") or "companhia aberta"))
+        return " OR ".join(terms)
+
+    @staticmethod
+    def _google_news_feed_url(query: str, *, locale: str, country: str) -> str:
+        language = locale.split("-", 1)[0] if locale else "pt"
+        ceid = f"{country}:{language}"
+        return (
+            "https://news.google.com/rss/search?"
+            f"q={quote_plus(query)}&hl={quote_plus(locale)}&gl={quote_plus(country)}&ceid={quote_plus(ceid)}"
+        )
+
+    def _register_google_company_sources(self, repository: NewsRepository) -> dict[str, Any]:
+        settings = repository.get_google_company_feed_settings()
+        if not bool(int(settings.get("enabled") or 0)):
+            scope = self._news_company_scope(repository)
+            return {**settings, "generated_count": 0, "eligible_company_count": len(scope["company_ids"])}
+        scope = self._news_company_scope(repository)
+        companies_by_id = self._news_company_rows_by_id(scope["company_ids"])
+        max_companies = self._bounded_int(settings.get("max_companies"), default=50, minimum=1, maximum=250)
+        priority = self._bounded_int(settings.get("priority"), default=140, minimum=1, maximum=1000)
+        locale = str(settings.get("locale") or "pt-BR")
+        country = str(settings.get("country") or "BR")
+        generated = 0
+        for cd_cvm in sorted(scope["company_ids"]):
+            if generated >= max_companies:
+                break
+            company = companies_by_id.get(int(cd_cvm))
+            if not company:
+                continue
+            query = self._google_news_query_for_company(company)
+            source = NewsSource(
+                source_id=google_company_source_id(int(cd_cvm)),
+                name=f"Google News - {company.get('ticker') or company.get('company_name') or cd_cvm}",
+                source_type="aggregator_search",
+                reliability_layer="aggregator",
+                feed_url=self._google_news_feed_url(query, locale=locale, country=country),
+                homepage_url="https://news.google.com/",
+                enabled=True,
+                priority=priority,
+                user_defined=False,
+                allow_content_storage=False,
+            )
+            repository.register_source(source)
+            generated += 1
+        return {**settings, "generated_count": generated, "eligible_company_count": len(scope["company_ids"])}
+
+    def _news_company_rows_by_id(self, company_ids: set[int]) -> dict[int, dict[str, Any]]:
+        if not company_ids:
+            return {}
+        settings = self._svc().settings
+        company_engine = build_engine(settings)
+        params = {f"cd_cvm_{idx}": int(cd_cvm) for idx, cd_cvm in enumerate(sorted(company_ids))}
+        placeholders = ", ".join(f":{key}" for key in params)
+        with company_engine.connect() as conn:
+            if not _sqlite_table_exists(conn, "companies"):
+                return {}
+            rows = conn.execute(
+                text(f"""
+                    SELECT cd_cvm, company_name, ticker_b3 AS ticker, coverage_rank AS market_cap_rank
+                    FROM companies
+                    WHERE cd_cvm IN ({placeholders})
+                    ORDER BY coverage_rank ASC, company_name ASC
+                """),
+                params,
+            ).mappings().fetchall()
+        return {int(row["cd_cvm"]): dict(row) for row in rows if row.get("cd_cvm") is not None}
+
+    def _news_coverage_universe_exists(self, universe_id: str) -> bool:
+        company_engine = build_engine(self._svc().settings)
+        with company_engine.connect() as conn:
+            if not _sqlite_table_exists(conn, "coverage_universes"):
+                return False
+            return bool(conn.execute(
+                text("SELECT 1 FROM coverage_universes WHERE id = :id"),
+                {"id": universe_id},
+            ).scalar())
 
     @staticmethod
     def _news_source_from_row(row: dict[str, Any], fallback: NewsSource) -> NewsSource:
@@ -135,6 +283,21 @@ class NewsBridgeMixin:
             allow_content_storage=bool(int(row.get("allow_content_storage") if row.get("allow_content_storage") is not None else fallback.allow_content_storage)),
         )
 
+    @staticmethod
+    def _news_source_from_db_row(row: dict[str, Any]) -> NewsSource:
+        return NewsSource(
+            source_id=str(row.get("source_id") or ""),
+            name=str(row.get("name") or row.get("source_id") or "News source"),
+            source_type=str(row.get("source_type") or "user_provided_rss"),
+            reliability_layer=str(row.get("reliability_layer") or "user_provided"),
+            feed_url=str(row.get("feed_url") or ""),
+            homepage_url=row.get("homepage_url"),
+            enabled=bool(int(row.get("enabled") if row.get("enabled") is not None else 1)),
+            priority=int(row.get("priority") if row.get("priority") is not None else 100),
+            user_defined=bool(int(row.get("user_defined") if row.get("user_defined") is not None else 0)),
+            allow_content_storage=bool(int(row.get("allow_content_storage") if row.get("allow_content_storage") is not None else 0)),
+        )
+
     def _enabled_builtin_news_sources(self, repository: NewsRepository) -> list[NewsSource]:
         enabled: list[NewsSource] = []
         for source in builtin_sources():
@@ -146,6 +309,18 @@ class NewsBridgeMixin:
         enabled.sort(key=lambda item: (int(item.priority), item.name.lower()))
         return enabled
 
+    def _enabled_news_sources(self, repository: NewsRepository) -> list[NewsSource]:
+        for source in builtin_sources():
+            repository.register_source(source)
+        self._register_google_company_sources(repository)
+        enabled = [
+            self._news_source_from_db_row(row)
+            for row in repository.list_enabled_sources()
+            if str(row.get("feed_url") or "").strip()
+        ]
+        enabled.sort(key=lambda item: (int(item.priority), item.name.lower()))
+        return enabled
+
     def get_news_refresh_status(self, params=None) -> dict:
         return self._sanitize_for_json(self._news_refresh_status())
 
@@ -154,6 +329,7 @@ class NewsBridgeMixin:
             repository = self._news_repository()
             for source in builtin_sources():
                 repository.register_source(source)
+            self._register_google_company_sources(repository)
             sources = repository.list_sources()
             return self._sanitize_for_json({
                 "items": sources,
@@ -186,6 +362,50 @@ class NewsBridgeMixin:
                 "error": str(exc),
             })
 
+    def get_news_google_company_feed_settings(self, params=None) -> dict:
+        try:
+            repository = self._news_repository()
+            payload = self._register_google_company_sources(repository)
+            return self._sanitize_for_json(payload)
+        except Exception as exc:
+            logger.error("failed to load Google News company feed settings: %s", exc, exc_info=True)
+            return self._sanitize_for_json({
+                "settings_id": "default",
+                "enabled": 0,
+                "max_companies": 50,
+                "priority": 140,
+                "locale": "pt-BR",
+                "country": "BR",
+                "generated_count": 0,
+                "eligible_company_count": 0,
+                "error": str(exc),
+            })
+
+    def save_news_google_company_feed_settings(self, params=None) -> dict:
+        if not self._is_news_write_allowed():
+            return self._sanitize_for_json(self._write_blocked_response("save_news_google_company_feed_settings"))
+        params = params or {}
+        try:
+            repository = self._news_repository()
+            settings = repository.update_google_company_feed_settings(
+                enabled=bool(params["enabled"]) if "enabled" in params else None,
+                max_companies=params.get("max_companies"),
+                priority=params.get("priority"),
+                locale=str(params.get("locale") or "").strip() or None,
+                country=str(params.get("country") or "").strip() or None,
+            )
+            if not bool(int(settings.get("enabled") or 0)):
+                disabled_count = repository.disable_google_company_sources()
+                return self._sanitize_for_json({
+                    "status": "success",
+                    "settings": {**settings, "generated_count": 0, "eligible_company_count": 0, "disabled_count": disabled_count},
+                })
+            payload = self._register_google_company_sources(repository)
+            return self._sanitize_for_json({"status": "success", "settings": {**settings, **payload}})
+        except Exception as exc:
+            logger.error("failed to save Google News company feed settings: %s", exc, exc_info=True)
+            return {"status": "error", "error": str(exc)}
+
     def get_news_overview(self, params=None) -> dict:
         params = params or {}
         try:
@@ -217,6 +437,9 @@ class NewsBridgeMixin:
             }
             return self._sanitize_for_json({
                 "selected_preset": scope["selected_preset"],
+                "selected_coverage_universe_id": scope["selected_coverage_universe_id"],
+                "selected_coverage_universe_name": scope["selected_coverage_universe_name"],
+                "available_coverage_universes": scope["available_coverage_universes"],
                 "coverage_count": len(scope["coverage_companies"]),
                 "included_count": included_count,
                 "excluded_count": len(excluded_ids),
@@ -226,12 +449,38 @@ class NewsBridgeMixin:
             logger.error("failed to load news company scope: %s", exc, exc_info=True)
             return self._sanitize_for_json({
                 "selected_preset": None,
+                "selected_coverage_universe_id": None,
+                "selected_coverage_universe_name": None,
+                "available_coverage_universes": [],
                 "coverage_count": 0,
                 "included_count": 0,
                 "excluded_count": 0,
                 "overrides": [],
                 "error": str(exc),
             })
+
+    def set_news_company_scope_universe(self, params=None) -> dict:
+        if not self._is_news_write_allowed():
+            return self._sanitize_for_json(self._write_blocked_response("set_news_company_scope_universe"))
+        params = params or {}
+        universe_id = str(params.get("coverage_universe_id") or "").strip() or None
+        try:
+            repository = self._news_repository()
+            if universe_id:
+                if not self._news_coverage_universe_exists(universe_id):
+                    return {"status": "not_found", "error": f"Coverage universe {universe_id} not found"}
+            settings = repository.update_company_scope_settings(coverage_universe_id=universe_id)
+            scope = self._news_company_scope(repository)
+            return self._sanitize_for_json({
+                "status": "success",
+                "settings": settings,
+                "selected_coverage_universe_id": scope["selected_coverage_universe_id"],
+                "selected_coverage_universe_name": scope["selected_coverage_universe_name"],
+                "coverage_count": len(scope["coverage_companies"]),
+            })
+        except Exception as exc:
+            logger.error("failed to update News company scope universe: %s", exc, exc_info=True)
+            return {"status": "error", "error": str(exc)}
 
     def set_news_company_scope_override(self, params=None) -> dict:
         if not self._is_news_write_allowed():
@@ -510,7 +759,7 @@ class NewsBridgeMixin:
             try:
                 repository = self._news_repository()
                 service = self._news_collection_service()
-                sources = self._enabled_builtin_news_sources(repository)
+                sources = self._enabled_news_sources(repository)
                 self._news_refresh_state.update({"source_count": len(sources)})
                 for source in sources:
                     try:

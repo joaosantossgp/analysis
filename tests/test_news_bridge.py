@@ -29,6 +29,20 @@ class _FakeRepository:
         self.retention_policy_params: dict[str, Any] | None = None
         self.cleanup_params: dict[str, Any] | None = None
         self.health_records: list[dict[str, Any]] = []
+        self.company_scope_settings = {
+            "settings_id": "default",
+            "coverage_universe_id": None,
+            "updated_at": None,
+        }
+        self.google_settings = {
+            "settings_id": "default",
+            "enabled": 0,
+            "max_companies": 50,
+            "priority": 140,
+            "locale": "pt-BR",
+            "country": "BR",
+            "updated_at": None,
+        }
 
     def register_source(self, source: NewsSource) -> None:
         self.rows.setdefault(
@@ -64,6 +78,12 @@ class _FakeRepository:
 
     def list_sources(self) -> list[dict[str, Any]]:
         return list(self.rows.values())
+
+    def list_enabled_sources(self) -> list[dict[str, Any]]:
+        return sorted(
+            [row for row in self.rows.values() if int(row.get("enabled", 1)) == 1],
+            key=lambda row: (int(row.get("priority") or 100), str(row.get("name") or "").lower()),
+        )
 
     def list_articles(self, **kwargs) -> dict[str, Any]:
         self.article_params = kwargs
@@ -170,6 +190,13 @@ class _FakeRepository:
         self.company_scope_override_params = kwargs
         return {"status": "success", "cd_cvm": kwargs["cd_cvm"], "action": kwargs["action"]}
 
+    def get_company_scope_settings(self):
+        return dict(self.company_scope_settings)
+
+    def update_company_scope_settings(self, *, coverage_universe_id):
+        self.company_scope_settings["coverage_universe_id"] = coverage_universe_id
+        return dict(self.company_scope_settings)
+
     def get_content_storage_summary(self):
         return {
             "content_count": 2,
@@ -208,6 +235,23 @@ class _FakeRepository:
             "preserved_saved": True,
             "preserved_official_documents": True,
         }
+
+    def get_google_company_feed_settings(self):
+        return dict(self.google_settings)
+
+    def update_google_company_feed_settings(self, **kwargs):
+        for key, value in kwargs.items():
+            if value is not None:
+                self.google_settings[key] = 1 if key == "enabled" and value else 0 if key == "enabled" else value
+        return dict(self.google_settings)
+
+    def disable_google_company_sources(self) -> int:
+        count = 0
+        for source_id, row in self.rows.items():
+            if source_id.startswith("google_company_") and int(row.get("enabled", 1)) == 1:
+                row["enabled"] = 0
+                count += 1
+        return count
 
 
 class _FakeNewsService:
@@ -271,9 +315,24 @@ class _FakeNewsBridge(NewsBridgeMixin):
         return {
             "company_ids": {9512, 1234},
             "selected_preset": "top_200",
+            "selected_coverage_universe_id": repository.get_company_scope_settings()["coverage_universe_id"],
+            "selected_coverage_universe_name": "News Universe" if repository.get_company_scope_settings()["coverage_universe_id"] else None,
+            "available_coverage_universes": [
+                {"id": "u-news", "name": "News Universe", "status": "active", "company_count": 2}
+            ],
             "coverage_companies": [{"cd_cvm": 9512}],
             "overrides": repository.list_company_scope_overrides(),
         }
+
+    def _news_company_rows_by_id(self, company_ids):
+        rows = {
+            9512: {"cd_cvm": 9512, "company_name": "Petroleo Brasileiro S.A.", "ticker": "PETR4"},
+            1234: {"cd_cvm": 1234, "company_name": "Banco Exemplo S.A.", "ticker": "BEXP3"},
+        }
+        return {cd_cvm: rows[cd_cvm] for cd_cvm in company_ids if cd_cvm in rows}
+
+    def _news_coverage_universe_exists(self, universe_id: str) -> bool:
+        return universe_id == "u-news"
 
     def _is_write_allowed(self) -> bool:
         return self.write_allowed
@@ -365,6 +424,54 @@ def test_news_bridge_preserves_disabled_source_choice():
     assert status["status"] == "success"
     assert status["source_count"] == len(EXPECTED_BUILTIN_SOURCE_IDS) - 1
     assert service.sources == [source_id for source_id in EXPECTED_BUILTIN_SOURCE_IDS if source_id != "bcb-rss"]
+
+
+def test_news_bridge_refresh_collects_enabled_custom_sources():
+    rows = {
+        "user_custom": {
+            "source_id": "user_custom",
+            "name": "Custom Feed",
+            "source_type": "user_provided_rss",
+            "reliability_layer": "user_provided",
+            "feed_url": "https://example.com/feed.xml",
+            "homepage_url": None,
+            "enabled": 1,
+            "priority": 80,
+            "user_defined": 1,
+        }
+    }
+    service = _FakeNewsService()
+    bridge = _FakeNewsBridge(repository=_FakeRepository(rows), service=service)
+
+    bridge.refresh_news_sources({})
+    status = _wait_for_refresh(bridge)
+
+    assert status["status"] == "success"
+    assert "user_custom" in service.sources
+    assert status["source_count"] == len(EXPECTED_BUILTIN_SOURCE_IDS) + 1
+
+
+def test_news_bridge_google_company_feed_settings_generate_and_disable_sources():
+    repository = _FakeRepository()
+    service = _FakeNewsService()
+    bridge = _FakeNewsBridge(repository=repository, service=service)
+
+    saved = bridge.save_news_google_company_feed_settings({
+        "enabled": True,
+        "max_companies": 2,
+        "priority": 140,
+        "locale": "pt-BR",
+        "country": "BR",
+    })
+    sources = bridge.get_news_sources({})
+    disabled = bridge.save_news_google_company_feed_settings({"enabled": False})
+
+    google_sources = [row for row in sources["items"] if row["source_id"].startswith("google_company_")]
+    assert saved["status"] == "success"
+    assert saved["settings"]["generated_count"] == 2
+    assert len(google_sources) == 2
+    assert all("news.google.com/rss/search" in row["feed_url"] for row in google_sources)
+    assert disabled["settings"]["disabled_count"] == 2
 
 
 def test_news_bridge_blocks_manual_refresh_when_writes_are_not_allowed():
@@ -503,6 +610,22 @@ def test_news_bridge_returns_and_updates_company_scope_overrides():
         "action": "exclude",
         "reason": "Not relevant for News",
     }
+
+
+def test_news_bridge_selects_news_specific_coverage_universe():
+    repository = _FakeRepository()
+    bridge = _FakeNewsBridge(repository=repository, service=_FakeNewsService())
+
+    selected = bridge.set_news_company_scope_universe({"coverage_universe_id": "u-news"})
+    missing = bridge.set_news_company_scope_universe({"coverage_universe_id": "missing"})
+    cleared = bridge.set_news_company_scope_universe({"coverage_universe_id": None})
+
+    assert selected["status"] == "success"
+    assert selected["selected_coverage_universe_id"] == "u-news"
+    assert selected["selected_coverage_universe_name"] == "News Universe"
+    assert missing["status"] == "not_found"
+    assert cleared["status"] == "success"
+    assert cleared["selected_coverage_universe_id"] is None
 
 
 def test_news_bridge_retention_policy_and_cleanup():

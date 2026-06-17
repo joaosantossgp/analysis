@@ -10,10 +10,13 @@ import type {
   NewsArticlesResponse,
   NewsCompanyScopeResponse,
   NewsCollectionRunsResponse,
+  NewsGoogleCompanyFeedSettings,
   NewsOverviewParams,
   NewsOverviewResponse,
   NewsRefreshStatus,
   NewsRetentionStatus,
+  SaveNewsGoogleCompanyFeedSettingsParams,
+  SaveNewsGoogleCompanyFeedSettingsResult,
   NewsSourceMutationResult,
   NewsSourcesResponse,
   SaveNewsRetentionPolicyParams,
@@ -21,6 +24,8 @@ import type {
   CleanupNewsExtractedContentResult,
   SetNewsCompanyScopeOverrideParams,
   SetNewsCompanyScopeOverrideResult,
+  SetNewsCompanyScopeUniverseParams,
+  SetNewsCompanyScopeUniverseResult,
   UpdateNewsArticleStateParams,
   UpdateNewsArticleStateResult,
   BridgeApi,
@@ -128,6 +133,26 @@ export async function fetchNewsCompanyScope(): Promise<NewsApiResult<NewsCompany
     };
   }
   const payload = await callNewsBridge("get_news_company_scope", {});
+  return { mode, ...payload };
+}
+
+export async function fetchNewsGoogleCompanyFeedSettings(): Promise<NewsApiResult<NewsGoogleCompanyFeedSettings>> {
+  const mode = getNewsBridgeMode();
+  if (mode === "browser") {
+    return {
+      mode,
+      reason: BROWSER_REASON,
+      settings_id: "default",
+      enabled: false,
+      max_companies: 50,
+      priority: 140,
+      locale: "pt-BR",
+      country: "BR",
+      generated_count: 0,
+      eligible_company_count: 0,
+    };
+  }
+  const payload = await callNewsBridge("get_news_google_company_feed_settings", {});
   return { mode, ...payload };
 }
 
@@ -246,6 +271,17 @@ export async function setNewsCompanyScopeOverride(
   return { mode, ...payload };
 }
 
+export async function setNewsCompanyScopeUniverse(
+  params: SetNewsCompanyScopeUniverseParams,
+): Promise<NewsApiResult<SetNewsCompanyScopeUniverseResult>> {
+  const mode = getNewsBridgeMode();
+  if (mode === "browser") {
+    return { mode, reason: BROWSER_REASON, status: "error", error: BROWSER_REASON };
+  }
+  const payload = await callNewsBridge("set_news_company_scope_universe", params);
+  return { mode, ...payload };
+}
+
 export async function saveNewsRetentionPolicy(
   params: SaveNewsRetentionPolicyParams,
 ): Promise<NewsApiResult<SaveNewsRetentionPolicyResult>> {
@@ -254,6 +290,17 @@ export async function saveNewsRetentionPolicy(
     return { mode, reason: BROWSER_REASON, status: "error", error: BROWSER_REASON };
   }
   const payload = await callNewsBridge("save_news_retention_policy", params);
+  return { mode, ...payload };
+}
+
+export async function saveNewsGoogleCompanyFeedSettings(
+  params: SaveNewsGoogleCompanyFeedSettingsParams,
+): Promise<NewsApiResult<SaveNewsGoogleCompanyFeedSettingsResult>> {
+  const mode = getNewsBridgeMode();
+  if (mode === "browser") {
+    return { mode, reason: BROWSER_REASON, status: "error", error: BROWSER_REASON };
+  }
+  const payload = await callNewsBridge("save_news_google_company_feed_settings", params);
   return { mode, ...payload };
 }
 

@@ -396,6 +396,36 @@ def ensure_news_tables_for_connection(conn, *, enable_wal: bool = True) -> None:
     """))
 
     conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS news_company_scope_settings (
+            settings_id                  TEXT PRIMARY KEY DEFAULT 'default',
+            coverage_universe_id         TEXT,
+            created_at                   TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at                   TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """))
+    conn.execute(text("""
+        INSERT OR IGNORE INTO news_company_scope_settings (settings_id)
+        VALUES ('default')
+    """))
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS news_google_company_feed_settings (
+            settings_id     TEXT PRIMARY KEY DEFAULT 'default',
+            enabled         INTEGER NOT NULL DEFAULT 0,
+            max_companies   INTEGER NOT NULL DEFAULT 50,
+            priority        INTEGER NOT NULL DEFAULT 140,
+            locale          TEXT NOT NULL DEFAULT 'pt-BR',
+            country         TEXT NOT NULL DEFAULT 'BR',
+            created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """))
+    conn.execute(text("""
+        INSERT OR IGNORE INTO news_google_company_feed_settings (settings_id)
+        VALUES ('default')
+    """))
+
+    conn.execute(text("""
         CREATE TABLE IF NOT EXISTS news_collection_runs (
             run_id          TEXT PRIMARY KEY,
             trigger         TEXT NOT NULL,

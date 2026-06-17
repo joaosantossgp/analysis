@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 from sqlalchemy import Engine, inspect, text
 
 from src.news.classifier import classify_article_text
 from src.news.fetcher import NewsFeedFetcher
-from src.news.feed_parser import NewsFeedParseError, parse_feed_bytes
+from src.news.feed_parser import NewsFeedParseError, ParsedFeedEntry, parse_feed_bytes
 from src.news.repository import NewsRepository, NewsSource, utc_now_iso
 from src.news.scoring import score_article
 
@@ -169,10 +170,11 @@ class NewsCollectionService:
             keyword_rules = self.repository.list_keyword_rules(active_only=True)
             company_rows = self._load_company_rows()
             for entry in parsed.entries:
-                result = self.repository.upsert_article(source=source, entry=entry)
+                resolved_entry = self._resolve_aggregator_entry(source=source, entry=entry)
+                result = self.repository.upsert_article(source=source, entry=resolved_entry)
                 classification = classify_article_text(
-                    title=entry.title,
-                    summary=entry.summary,
+                    title=resolved_entry.title,
+                    summary=resolved_entry.summary,
                     keyword_rules=keyword_rules,
                     company_rows=company_rows,
                 )
@@ -182,7 +184,7 @@ class NewsCollectionService:
                 )
                 score = score_article(
                     source=source,
-                    published_at=entry.published_at,
+                    published_at=resolved_entry.published_at,
                     discovered_at=utc_now_iso(),
                     classification=classification,
                 )
@@ -190,7 +192,7 @@ class NewsCollectionService:
                 self._store_selective_feed_content(
                     article_id=result.article_id,
                     source=source,
-                    entry=entry,
+                    entry=resolved_entry,
                     priority_level=score.priority_level,
                 )
                 inserted += 1 if result.inserted else 0
@@ -245,6 +247,31 @@ class NewsCollectionService:
                 error_count=1,
                 error_message=message,
             )
+
+    def _resolve_aggregator_entry(self, *, source: NewsSource, entry: ParsedFeedEntry) -> ParsedFeedEntry:
+        if source.source_type != "aggregator_search":
+            return entry
+        resolution = self.fetcher.resolve_url(entry.url)
+        if resolution.status != "success" or not resolution.final_url:
+            logger.info("news aggregator URL resolution skipped: %s", resolution.error_message)
+            return _with_aggregator_note(entry, "Aggregator article URL was not resolved.")
+        if resolution.final_url == entry.url or _is_google_news_url(resolution.final_url):
+            return _with_aggregator_note(entry, "Aggregator article URL was not resolved.")
+        summary = entry.summary
+        if summary:
+            summary = f"{summary}\n\nOriginal source resolved from aggregator URL."
+        else:
+            summary = "Original source resolved from aggregator URL."
+        return ParsedFeedEntry(
+            title=entry.title,
+            url=resolution.final_url,
+            source_item_id=entry.source_item_id or entry.url,
+            published_at=entry.published_at,
+            summary=summary,
+            language=entry.language,
+            publisher_name=entry.publisher_name,
+            publisher_homepage_url=entry.publisher_homepage_url,
+        )
 
     def _store_selective_feed_content(
         self,
@@ -348,6 +375,31 @@ def _select_company_column(columns: set[str], column_name: str) -> str:
     if column_name in columns:
         return column_name
     return f"NULL AS {column_name}"
+
+
+def _with_aggregator_note(entry: ParsedFeedEntry, note: str) -> ParsedFeedEntry:
+    summary = str(entry.summary or "").strip()
+    if note in summary:
+        next_summary = summary or None
+    elif summary:
+        next_summary = f"{summary}\n\n{note}"
+    else:
+        next_summary = note
+    return ParsedFeedEntry(
+        title=entry.title,
+        url=entry.url,
+        source_item_id=entry.source_item_id,
+        published_at=entry.published_at,
+        summary=next_summary,
+        language=entry.language,
+        publisher_name=entry.publisher_name,
+        publisher_homepage_url=entry.publisher_homepage_url,
+    )
+
+
+def _is_google_news_url(url: str) -> bool:
+    host = urlsplit(str(url)).netloc.lower()
+    return host == "news.google.com" or host.endswith(".news.google.com")
 
 
 def _looks_like_official_document(url: str, title: str) -> bool:

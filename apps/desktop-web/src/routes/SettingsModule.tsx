@@ -20,6 +20,7 @@ import type {
 import { whenBridgeReady } from "@/lib/bridge/adapter";
 
 import { DataCoveragePage } from "./DataCoveragePage";
+import { NewsSettingsPanel } from "./NewsPage";
 import { StatusPage } from "./StatusPage";
 import { UpdateBasePage } from "./UpdateBasePage";
 import { UserImportsPage } from "./UserImportsPage";
@@ -116,7 +117,18 @@ export function SettingsModule({ section }: SettingsModuleProps) {
             <SettingsStorage loading={loading} summary={summary} />
           ) : section === "sources" || section === "imports" ? (
             <SettingsNestedPage intro={<SourcesIntro summary={summary} />}>
-              <UserImportsPage />
+              <SettingsGroup
+                title="News Sources & Retention"
+                subtitle="Local news feeds, RSS/Atom additions, source health, collection runs, and News database retention."
+              >
+                <NewsSettingsPanel />
+              </SettingsGroup>
+              <SettingsGroup
+                title="Manual Imports"
+                subtitle="User-managed import workflows and file-based source tools."
+              >
+                <UserImportsPage />
+              </SettingsGroup>
             </SettingsNestedPage>
           ) : section === "updates" ? (
             <SettingsNestedPage intro={<UpdatesIntro summary={summary} />}>
@@ -597,6 +609,26 @@ function SettingsNestedPage({
       {intro}
       {children}
     </>
+  );
+}
+
+function SettingsGroup({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string;
+  subtitle: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="space-y-3">
+      <div className="border-b border-zinc-800 pb-2">
+        <h2 className="text-sm font-semibold text-zinc-100">{title}</h2>
+        <p className="mt-1 text-sm leading-5 text-zinc-500">{subtitle}</p>
+      </div>
+      {children}
+    </section>
   );
 }
 

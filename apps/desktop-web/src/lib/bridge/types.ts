@@ -54,17 +54,22 @@ import type {
   NewsArticlesResponse,
   NewsCompanyScopeResponse,
   NewsCollectionRunsResponse,
+  NewsGoogleCompanyFeedSettings,
   NewsOverviewParams,
   NewsOverviewResponse,
   NewsRefreshStatus,
   NewsRetentionStatus,
   NewsSourceMutationResult,
   NewsSourcesResponse,
+  SaveNewsGoogleCompanyFeedSettingsParams,
+  SaveNewsGoogleCompanyFeedSettingsResult,
   SaveNewsRetentionPolicyParams,
   SaveNewsRetentionPolicyResult,
   CleanupNewsExtractedContentResult,
   SetNewsCompanyScopeOverrideParams,
-  SetNewsCompanyScopeOverrideResult
+  SetNewsCompanyScopeOverrideResult,
+  SetNewsCompanyScopeUniverseParams,
+  SetNewsCompanyScopeUniverseResult
 } from "./types.news";
 
 export type {
@@ -95,6 +100,7 @@ export type {
   NewsCompanyScopeResponse,
   NewsCollectionRun,
   NewsCollectionRunsResponse,
+  NewsGoogleCompanyFeedSettings,
   NewsOverviewParams,
   NewsOverviewResponse,
   NewsOverviewSection,
@@ -107,9 +113,13 @@ export type {
   NewsSourcesResponse,
   SaveNewsRetentionPolicyParams,
   SaveNewsRetentionPolicyResult,
+  SaveNewsGoogleCompanyFeedSettingsParams,
+  SaveNewsGoogleCompanyFeedSettingsResult,
   CleanupNewsExtractedContentResult,
   SetNewsCompanyScopeOverrideParams,
   SetNewsCompanyScopeOverrideResult,
+  SetNewsCompanyScopeUniverseParams,
+  SetNewsCompanyScopeUniverseResult,
   UpdateNewsArticleStateParams,
   UpdateNewsArticleStateResult
 } from "./types.news";
@@ -1411,6 +1421,7 @@ export interface BridgeApi {
   get_news_articles(params?: NewsArticlesParams): Promise<NewsArticlesResponse>;
   get_news_overview(params?: NewsOverviewParams): Promise<NewsOverviewResponse>;
   get_news_company_scope(params?: Record<string, unknown>): Promise<NewsCompanyScopeResponse>;
+  get_news_google_company_feed_settings(params?: Record<string, unknown>): Promise<NewsGoogleCompanyFeedSettings>;
   get_news_retention_status(params?: Record<string, unknown>): Promise<NewsRetentionStatus>;
   get_news_article_classification(params: { article_id: string }): Promise<NewsArticleClassificationResponse>;
   get_news_article_content(params: { article_id: string }): Promise<NewsArticleContentResponse>;
@@ -1424,6 +1435,8 @@ export interface BridgeApi {
   update_news_article_state(params: UpdateNewsArticleStateParams): Promise<UpdateNewsArticleStateResult>;
   apply_news_classification_correction(params: ApplyNewsClassificationCorrectionParams): Promise<ApplyNewsClassificationCorrectionResult>;
   set_news_company_scope_override(params: SetNewsCompanyScopeOverrideParams): Promise<SetNewsCompanyScopeOverrideResult>;
+  set_news_company_scope_universe(params: SetNewsCompanyScopeUniverseParams): Promise<SetNewsCompanyScopeUniverseResult>;
+  save_news_google_company_feed_settings(params: SaveNewsGoogleCompanyFeedSettingsParams): Promise<SaveNewsGoogleCompanyFeedSettingsResult>;
   save_news_retention_policy(params: SaveNewsRetentionPolicyParams): Promise<SaveNewsRetentionPolicyResult>;
   cleanup_news_extracted_content(params?: { dry_run?: boolean }): Promise<CleanupNewsExtractedContentResult>;
   get_companies(params: Record<string, unknown>): Promise<CompanyDirectoryPage>;

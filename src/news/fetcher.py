@@ -22,6 +22,15 @@ class FeedFetchResult:
     error_message: str | None = None
 
 
+@dataclass(frozen=True)
+class UrlResolutionResult:
+    status: str
+    original_url: str
+    final_url: str | None = None
+    http_status: int | None = None
+    error_message: str | None = None
+
+
 class NewsFeedFetcher:
     def __init__(
         self,
@@ -122,3 +131,45 @@ class NewsFeedFetcher:
             etag=result_etag,
             last_modified=result_last_modified,
         )
+
+    def resolve_url(self, url: str) -> UrlResolutionResult:
+        headers = {
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.5",
+            "User-Agent": self.user_agent,
+        }
+        try:
+            response = self.session.head(
+                url,
+                headers=headers,
+                timeout=min(self.timeout_seconds, 8),
+                allow_redirects=True,
+            )
+            http_status = int(getattr(response, "status_code", 0) or 0)
+            if http_status in {405, 403} or http_status < 200 or http_status >= 400:
+                response = self.session.get(
+                    url,
+                    headers={**headers, "Range": "bytes=0-0"},
+                    timeout=min(self.timeout_seconds, 8),
+                    stream=True,
+                    allow_redirects=True,
+                )
+                http_status = int(getattr(response, "status_code", 0) or 0)
+            final_url = str(getattr(response, "url", url) or url)
+            if http_status < 200 or http_status >= 400:
+                return UrlResolutionResult(
+                    status="error",
+                    original_url=url,
+                    final_url=final_url,
+                    http_status=http_status,
+                    error_message=f"URL resolution returned HTTP {http_status}",
+                )
+            return UrlResolutionResult(
+                status="success",
+                original_url=url,
+                final_url=final_url,
+                http_status=http_status,
+            )
+        except requests.Timeout:
+            return UrlResolutionResult(status="error", original_url=url, error_message="URL resolution timed out")
+        except requests.RequestException as exc:
+            return UrlResolutionResult(status="error", original_url=url, error_message=f"URL resolution failed: {exc}")

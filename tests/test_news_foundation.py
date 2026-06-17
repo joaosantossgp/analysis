@@ -7,7 +7,7 @@ from sqlalchemy import create_engine, text
 
 from src.news.fetcher import NewsFeedFetcher
 from src.news.feed_parser import NewsFeedParseError, parse_feed_bytes
-from src.news.repository import NewsRepository, NewsSource, canonicalize_url, user_source_id_for_url
+from src.news.repository import NewsRepository, NewsSource, canonicalize_url, google_company_source_id, user_source_id_for_url
 from src.news.schema import ensure_news_tables_for_connection, get_news_engine
 from src.news.service import NewsCollectionService
 from src.news.sources import builtin_sources
@@ -42,6 +42,23 @@ VALID_ATOM = b"""<?xml version="1.0" encoding="UTF-8"?>
     <summary>Iron ore and FX reacted after the decision.</summary>
   </entry>
 </feed>
+"""
+
+
+GOOGLE_NEWS_RSS = b"""<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Google News</title>
+    <item>
+      <title>Petrobras anuncia investimento</title>
+      <link>https://news.google.com/rss/articles/CBMiExample</link>
+      <guid>google-1</guid>
+      <pubDate>Tue, 16 Jun 2026 10:00:00 GMT</pubDate>
+      <description>Snippet from Google News.</description>
+      <source url="https://www.moneytimes.com.br">Money Times</source>
+    </item>
+  </channel>
+</rss>
 """
 
 
@@ -84,6 +101,18 @@ def _content_source() -> NewsSource:
     )
 
 
+def _aggregator_source() -> NewsSource:
+    return NewsSource(
+        source_id="google_company_9512",
+        name="Google News - PETR4",
+        source_type="aggregator_search",
+        reliability_layer="aggregator",
+        feed_url="https://news.google.com/rss/search?q=PETR4",
+        priority=140,
+        allow_content_storage=False,
+    )
+
+
 class _FakeResponse:
     def __init__(
         self,
@@ -111,6 +140,12 @@ class _FakeSession:
 
     def get(self, url, **kwargs):
         self.calls.append({"url": url, **kwargs})
+        if self.exception:
+            raise self.exception
+        return self.response
+
+    def head(self, url, **kwargs):
+        self.calls.append({"method": "HEAD", "url": url, **kwargs})
         if self.exception:
             raise self.exception
         return self.response
@@ -348,6 +383,10 @@ def test_canonicalize_url_removes_tracking_parameters():
     assert (
         canonicalize_url("HTTPS://Example.COM/path/?utm_source=x&b=2&fbclid=abc&a=1#frag")
         == "https://example.com/path?a=1&b=2"
+    )
+    assert (
+        canonicalize_url("https://news.google.com/rss/articles/x?oc=5&hl=en-US&gl=US&ceid=US:en")
+        == "https://news.google.com/rss/articles/x"
     )
 
 
@@ -779,6 +818,81 @@ def test_collect_source_sends_conditional_headers_and_updates_fetch_state(tmp_pa
     assert tuple(health) == ("success", 0, 200)
 
 
+def test_collect_aggregator_source_resolves_original_url_without_full_text_extraction(tmp_path):
+    session = _FakeSession(
+        _FakeResponse(
+            status_code=200,
+            body=GOOGLE_NEWS_RSS,
+            url="https://example.com/original/petrobras-investimento",
+        )
+    )
+    service, engine = _service_with_fake_fetcher(tmp_path, session)
+
+    result = service.collect_source(source=_aggregator_source())
+
+    assert result.status == "success"
+    assert any(call.get("method") == "HEAD" for call in session.calls)
+    with engine.connect() as conn:
+        article = conn.execute(
+            text("SELECT original_url, canonical_url, summary, content_status FROM news_articles LIMIT 1")
+        ).mappings().fetchone()
+        content_count = conn.execute(text("SELECT count(*) FROM news_article_content")).scalar()
+    assert article["original_url"] == "https://example.com/original/petrobras-investimento"
+    assert article["canonical_url"] == "https://example.com/original/petrobras-investimento"
+    assert article["content_status"] == "summary_available"
+    assert "Original source resolved" in article["summary"]
+    assert content_count == 0
+
+
+def test_collect_aggregator_source_preserves_publisher_when_google_url_is_not_resolved(tmp_path):
+    session = _FakeSession(
+        _FakeResponse(
+            status_code=200,
+            body=GOOGLE_NEWS_RSS,
+            url="https://news.google.com/rss/articles/CBMiExample?oc=5",
+        )
+    )
+    service, engine = _service_with_fake_fetcher(tmp_path, session)
+
+    result = service.collect_source(source=_aggregator_source())
+
+    assert result.status == "success"
+    with engine.connect() as conn:
+        article = conn.execute(
+            text("SELECT source_name, original_url, summary FROM news_articles LIMIT 1")
+        ).mappings().fetchone()
+    assert article["source_name"] == "Money Times"
+    assert article["original_url"].startswith("https://news.google.com/rss/articles/")
+    assert "Aggregator article URL was not resolved" in article["summary"]
+
+
+def test_collect_aggregator_source_updates_existing_google_article_publisher(tmp_path):
+    session = _FakeSession(
+        _FakeResponse(
+            status_code=200,
+            body=GOOGLE_NEWS_RSS,
+            url="https://news.google.com/rss/articles/CBMiExample?oc=5&hl=en-US",
+        )
+    )
+    service, engine = _service_with_fake_fetcher(tmp_path, session)
+    repository = service.repository
+    old_entry = parse_feed_bytes(GOOGLE_NEWS_RSS, feed_url="https://news.google.com/rss/search?q=PETR4").entries[0]
+    repository.upsert_article(source=_aggregator_source(), entry=old_entry)
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE news_articles SET source_name = 'Google News - PETR4'"))
+
+    result = service.collect_source(source=_aggregator_source())
+
+    assert result.status == "success"
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text("SELECT source_name, canonical_url FROM news_articles")
+        ).mappings().fetchall()
+    assert len(rows) == 1
+    assert rows[0]["source_name"] == "Money Times"
+    assert rows[0]["canonical_url"] == "https://news.google.com/rss/articles/CBMiExample"
+
+
 def test_collect_source_handles_not_modified_without_failure(tmp_path):
     session = _FakeSession(_FakeResponse(status_code=304, headers={"ETag": '"v1"'}))
     service, engine = _service_with_fake_fetcher(tmp_path, session)
@@ -1030,6 +1144,44 @@ def test_repository_updates_source_settings_and_user_source_id_is_stable(tmp_pat
     row = repository.get_source("fixture-source")
     assert row["enabled"] == 0
     assert row["priority"] == 7
+
+
+def test_repository_google_company_feed_settings_are_local_and_bounded(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'news-google-settings.db'}")
+    with engine.begin() as conn:
+        ensure_news_tables_for_connection(conn)
+    repository = NewsRepository(engine)
+
+    defaults = repository.get_google_company_feed_settings()
+    updated = repository.update_google_company_feed_settings(
+        enabled=True,
+        max_companies=999,
+        priority=0,
+        locale="pt-BR",
+        country="br",
+    )
+
+    assert defaults["enabled"] == 0
+    assert updated["enabled"] == 1
+    assert updated["max_companies"] == 250
+    assert updated["priority"] == 1
+    assert updated["country"] == "BR"
+    assert google_company_source_id(9512) == "google_company_9512"
+
+
+def test_repository_news_company_scope_settings_are_local(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'news-company-scope-settings.db'}")
+    with engine.begin() as conn:
+        ensure_news_tables_for_connection(conn)
+    repository = NewsRepository(engine)
+
+    defaults = repository.get_company_scope_settings()
+    updated = repository.update_company_scope_settings(coverage_universe_id="universe-1")
+    cleared = repository.update_company_scope_settings(coverage_universe_id=None)
+
+    assert defaults["coverage_universe_id"] is None
+    assert updated["coverage_universe_id"] == "universe-1"
+    assert cleared["coverage_universe_id"] is None
 
 
 def test_validate_feed_url_fetches_and_parses_without_ingesting_articles(tmp_path):

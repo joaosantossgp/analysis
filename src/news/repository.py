@@ -18,9 +18,13 @@ TRACKING_QUERY_PREFIXES = ("utm_",)
 TRACKING_QUERY_NAMES = {
     "fbclid",
     "gclid",
+    "ceid",
     "msclkid",
     "mc_cid",
     "mc_eid",
+    "gl",
+    "hl",
+    "oc",
     "yclid",
 }
 
@@ -73,6 +77,10 @@ def article_id_for_url(canonical_url: str) -> str:
 
 def user_source_id_for_url(feed_url: str) -> str:
     return "user_" + sha256(canonicalize_url(feed_url).encode("utf-8")).hexdigest()[:24]
+
+
+def google_company_source_id(cd_cvm: int) -> str:
+    return f"google_company_{int(cd_cvm)}"
 
 
 def _decode_aliases(value: str | None) -> list[str]:
@@ -301,6 +309,90 @@ class NewsRepository:
                 """)
             ).mappings().fetchall()
         return [dict(row) for row in rows]
+
+    def list_enabled_sources(self) -> list[dict[str, Any]]:
+        with self.engine.connect() as conn:
+            rows = conn.execute(
+                text("""
+                    SELECT *
+                    FROM news_sources
+                    WHERE enabled = 1
+                    ORDER BY priority ASC, name ASC
+                """)
+            ).mappings().fetchall()
+        return [dict(row) for row in rows]
+
+    def get_google_company_feed_settings(self) -> dict[str, Any]:
+        with self.engine.connect() as conn:
+            row = conn.execute(
+                text("""
+                    SELECT settings_id, enabled, max_companies, priority, locale, country, updated_at
+                    FROM news_google_company_feed_settings
+                    WHERE settings_id = 'default'
+                """)
+            ).mappings().fetchone()
+        if row:
+            return dict(row)
+        return {
+            "settings_id": "default",
+            "enabled": 0,
+            "max_companies": 50,
+            "priority": 140,
+            "locale": "pt-BR",
+            "country": "BR",
+            "updated_at": None,
+        }
+
+    def update_google_company_feed_settings(
+        self,
+        *,
+        enabled: bool | None = None,
+        max_companies: int | None = None,
+        priority: int | None = None,
+        locale: str | None = None,
+        country: str | None = None,
+    ) -> dict[str, Any]:
+        current = self.get_google_company_feed_settings()
+        next_values = {
+            "enabled": 1 if bool(enabled) else 0 if enabled is not None else int(current["enabled"]),
+            "max_companies": _bounded_int(max_companies, int(current["max_companies"]), 1, 250),
+            "priority": _bounded_int(priority, int(current["priority"]), 1, 1000),
+            "locale": str(locale or current["locale"] or "pt-BR").strip()[:16] or "pt-BR",
+            "country": str(country or current["country"] or "BR").strip().upper()[:4] or "BR",
+        }
+        with self.engine.begin() as conn:
+            conn.execute(
+                text("""
+                    INSERT INTO news_google_company_feed_settings (
+                        settings_id, enabled, max_companies, priority, locale, country, created_at, updated_at
+                    )
+                    VALUES (
+                        'default', :enabled, :max_companies, :priority, :locale, :country, :now, :now
+                    )
+                    ON CONFLICT(settings_id) DO UPDATE SET
+                        enabled = excluded.enabled,
+                        max_companies = excluded.max_companies,
+                        priority = excluded.priority,
+                        locale = excluded.locale,
+                        country = excluded.country,
+                        updated_at = excluded.updated_at
+                """),
+                {**next_values, "now": utc_now_iso()},
+            )
+        return self.get_google_company_feed_settings()
+
+    def disable_google_company_sources(self) -> int:
+        with self.engine.begin() as conn:
+            result = conn.execute(
+                text("""
+                    UPDATE news_sources
+                    SET enabled = 0,
+                        updated_at = :updated_at
+                    WHERE source_id LIKE 'google_company_%'
+                """),
+                {"updated_at": utc_now_iso()},
+            )
+        return int(result.rowcount or 0)
 
     def list_articles(
         self,
@@ -556,6 +648,40 @@ class NewsRepository:
                 """)
             ).mappings().fetchall()
         return [dict(row) for row in rows]
+
+    def get_company_scope_settings(self) -> dict[str, Any]:
+        with self.engine.connect() as conn:
+            row = conn.execute(
+                text("""
+                    SELECT settings_id, coverage_universe_id, updated_at
+                    FROM news_company_scope_settings
+                    WHERE settings_id = 'default'
+                """)
+            ).mappings().fetchone()
+        if row:
+            return dict(row)
+        return {
+            "settings_id": "default",
+            "coverage_universe_id": None,
+            "updated_at": None,
+        }
+
+    def update_company_scope_settings(self, *, coverage_universe_id: str | None) -> dict[str, Any]:
+        cleaned = str(coverage_universe_id or "").strip() or None
+        with self.engine.begin() as conn:
+            conn.execute(
+                text("""
+                    INSERT INTO news_company_scope_settings (
+                        settings_id, coverage_universe_id, created_at, updated_at
+                    )
+                    VALUES ('default', :coverage_universe_id, :now, :now)
+                    ON CONFLICT(settings_id) DO UPDATE SET
+                        coverage_universe_id = excluded.coverage_universe_id,
+                        updated_at = excluded.updated_at
+                """),
+                {"coverage_universe_id": cleaned, "now": utc_now_iso()},
+            )
+        return self.get_company_scope_settings()
 
     def set_company_scope_override(
         self,
@@ -1658,6 +1784,8 @@ class NewsRepository:
                     ON CONFLICT(canonical_url) DO UPDATE SET
                         source_item_id = COALESCE(excluded.source_item_id, news_articles.source_item_id),
                         title = excluded.title,
+                        source_name = excluded.source_name,
+                        original_url = excluded.original_url,
                         summary = COALESCE(excluded.summary, news_articles.summary),
                         published_at = COALESCE(excluded.published_at, news_articles.published_at),
                         fetched_at = excluded.fetched_at,
@@ -1668,7 +1796,7 @@ class NewsRepository:
                     "source_id": source.source_id,
                     "source_item_id": entry.source_item_id,
                     "title": entry.title,
-                    "source_name": source.name,
+                    "source_name": entry.publisher_name or source.name,
                     "original_url": entry.url,
                     "canonical_url": canonical_url,
                     "published_at": entry.published_at,

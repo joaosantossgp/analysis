@@ -86,25 +86,27 @@ export function TopBar({ onOpenPalette }: Props) {
       <ModuleNav />
 
       {/* Right cluster */}
-      <div className="ml-auto flex items-center gap-3 px-4">
+      <div className="ml-auto flex min-w-0 shrink items-center gap-2 px-2 sm:px-4">
         <button
           type="button"
           onClick={onOpenPalette}
-          className="inline-flex items-center gap-2 rounded-sm border px-2 py-1 font-mono text-xs hover:border-[var(--color-border-strong)]"
+          className="hidden min-w-0 max-w-72 items-center gap-2 rounded-sm border px-2 py-1 font-mono text-xs hover:border-[var(--color-border-strong)] md:inline-flex"
           style={{
             background: "var(--color-surface-2)",
             borderColor: "var(--color-border-default)",
             color: "var(--color-text-secondary)",
           }}
-          title="Abrir command palette (Ctrl+K)"
-          aria-label="Abrir command palette"
+          title="Open command palette (Ctrl+K)"
+          aria-label="Open command palette"
         >
-          <span>Buscar empresas, setores…</span>
-          <Kbd>Ctrl K</Kbd>
+          <span className="truncate">Search companies, sectors…</span>
+          <span className="hidden lg:inline-flex">
+            <Kbd>Ctrl K</Kbd>
+          </span>
         </button>
 
         <span
-          className="inline-flex items-center gap-1 rounded-sm border px-2 py-0.5 font-mono text-2xs uppercase tracking-wider"
+          className="hidden items-center gap-1 rounded-sm border px-2 py-0.5 font-mono text-2xs uppercase tracking-wider lg:inline-flex"
           style={{ borderColor: pill.border, color: pill.color }}
           aria-label={`Bridge status: ${pill.label}`}
         >
@@ -113,9 +115,9 @@ export function TopBar({ onOpenPalette }: Props) {
         </span>
 
         <span
-          className="font-mono text-2xs tabular-nums"
+          className="hidden font-mono text-2xs tabular-nums xl:inline"
           style={{ color: "var(--color-text-tertiary)" }}
-          aria-label="Hora UTC"
+          aria-label="UTC time"
         >
           {utc}
         </span>

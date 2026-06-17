@@ -1,45 +1,46 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useLocation } from "react-router-dom";
+import { useLocation } from "react-router-dom";
 
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { StateBanner } from "@/components/feedback/StateBanner";
 import {
-  applyNewsClassificationCorrection,
   addCustomNewsSource,
   cleanupNewsExtractedContent,
-  fetchNewsArticleClassification,
-  fetchNewsArticleContent,
   fetchNewsArticles,
   fetchNewsCompanyScope,
   fetchNewsCollectionRuns,
+  fetchNewsGoogleCompanyFeedSettings,
   fetchNewsOverview,
   fetchNewsRefreshStatus,
   fetchNewsRetentionStatus,
   fetchNewsSources,
   refreshNewsSources,
+  saveNewsGoogleCompanyFeedSettings,
   saveNewsRetentionPolicy,
   setNewsCompanyScopeOverride,
+  setNewsCompanyScopeUniverse,
   setNewsSourceEnabled,
   setNewsSourcePriority,
   updateNewsArticleState,
 } from "@/lib/api/news";
 import type {
-  ApplyNewsClassificationCorrectionParams,
-  ApplyNewsClassificationCorrectionResult,
   NewsArticle,
-  NewsArticleClassificationResponse,
-  NewsArticleContentResponse,
   NewsCompanyScopeResponse,
   NewsOverviewSection,
   NewsRefreshStatus,
   NewsRetentionStatus,
+  NewsGoogleCompanyFeedSettings,
+  SaveNewsGoogleCompanyFeedSettingsParams,
+  SaveNewsGoogleCompanyFeedSettingsResult,
   SaveNewsRetentionPolicyParams,
   SaveNewsRetentionPolicyResult,
   CleanupNewsExtractedContentResult,
   SetNewsCompanyScopeOverrideParams,
   SetNewsCompanyScopeOverrideResult,
+  SetNewsCompanyScopeUniverseParams,
+  SetNewsCompanyScopeUniverseResult,
   NewsSource,
 } from "@/lib/bridge/types";
 
@@ -56,7 +57,6 @@ export function NewsPage() {
   const [showSavedOnly, setShowSavedOnly] = useState(false);
   const [showReadLaterOnly, setShowReadLaterOnly] = useState(false);
   const [includeHidden, setIncludeHidden] = useState(false);
-  const [selectedArticleId, setSelectedArticleId] = useState<string | null>(null);
   const [articleOffset, setArticleOffset] = useState(0);
 
   const articlesQuery = useQuery({
@@ -87,57 +87,22 @@ export function NewsPage() {
     queryFn: fetchNewsCompanyScope,
     refetchInterval: 60_000,
   });
-  const retentionQuery = useQuery({
-    queryKey: ["news", "retention"],
-    queryFn: fetchNewsRetentionStatus,
-    refetchInterval: 60_000,
-  });
-  const runsQuery = useQuery({
-    queryKey: ["news", "runs"],
-    queryFn: () => fetchNewsCollectionRuns(5),
-    refetchInterval: 60_000,
-  });
   const refreshStatusQuery = useQuery({
     queryKey: ["news", "refresh-status"],
     queryFn: fetchNewsRefreshStatus,
     refetchInterval: (query) =>
       query.state.data?.status === "running" ? 2_000 : 15_000,
   });
-  const classificationQuery = useQuery({
-    queryKey: ["news", "article-classification", selectedArticleId],
-    queryFn: () => fetchNewsArticleClassification(selectedArticleId ?? ""),
-    enabled: Boolean(selectedArticleId),
-  });
-  const articleContentQuery = useQuery({
-    queryKey: ["news", "article-content", selectedArticleId],
-    queryFn: () => fetchNewsArticleContent(selectedArticleId ?? ""),
-    enabled: Boolean(selectedArticleId),
-  });
-
   const refreshMutation = useMutation({
     mutationFn: refreshNewsSources,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["news"] });
     },
   });
-  const sourceEnabledMutation = useMutation({
-    mutationFn: setNewsSourceEnabled,
+  const companyScopeUniverseMutation = useMutation({
+    mutationFn: setNewsCompanyScopeUniverse,
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["news", "sources"] });
-    },
-  });
-  const sourcePriorityMutation = useMutation({
-    mutationFn: setNewsSourcePriority,
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["news", "sources"] });
-    },
-  });
-  const addSourceMutation = useMutation({
-    mutationFn: addCustomNewsSource,
-    onSuccess: (payload) => {
-      if (payload.status === "success") {
-        void queryClient.invalidateQueries({ queryKey: ["news", "sources"] });
-      }
+      void queryClient.invalidateQueries({ queryKey: ["news"] });
     },
   });
   const articleStateMutation = useMutation({
@@ -146,46 +111,14 @@ export function NewsPage() {
       void queryClient.invalidateQueries({ queryKey: ["news", "articles"] });
     },
   });
-  const classificationCorrectionMutation = useMutation({
-    mutationFn: applyNewsClassificationCorrection,
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["news", "article-classification", selectedArticleId] });
-      void queryClient.invalidateQueries({ queryKey: ["news", "articles"] });
-      void queryClient.invalidateQueries({ queryKey: ["news", "overview"] });
-    },
-  });
-  const companyScopeMutation = useMutation({
-    mutationFn: setNewsCompanyScopeOverride,
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["news", "company-scope"] });
-      void queryClient.invalidateQueries({ queryKey: ["news", "overview"] });
-    },
-  });
-  const saveRetentionMutation = useMutation({
-    mutationFn: saveNewsRetentionPolicy,
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["news", "retention"] });
-    },
-  });
-  const cleanupRetentionMutation = useMutation({
-    mutationFn: cleanupNewsExtractedContent,
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["news"] });
-    },
-  });
 
   const articles = articlesQuery.data?.items ?? [];
   const overviewSections = overviewQuery.data?.sections ?? [];
-  const overviewArticles = useMemo(
-    () => overviewSections.flatMap((section) => section.items),
-    [overviewSections],
-  );
   const sources = sourcesQuery.data?.items ?? [];
-  const runs = runsQuery.data?.items ?? [];
   const browserReason =
     articlesQuery.data?.mode === "browser" ? articlesQuery.data.reason : null;
   const loadError =
-    articlesQuery.error ?? sourcesQuery.error ?? runsQuery.error ?? refreshStatusQuery.error;
+    articlesQuery.error ?? sourcesQuery.error ?? refreshStatusQuery.error;
 
   const sourceStats = useMemo(() => summarizeSources(sources), [sources]);
   const refreshStatus = refreshStatusQuery.data ?? null;
@@ -198,20 +131,10 @@ export function NewsPage() {
       }),
     [articles, searchText, showSavedOnly, showReadLaterOnly],
   );
-  const selectedArticle = useMemo(
-    () =>
-      filteredArticles.find((article) => article.article_id === selectedArticleId) ??
-      overviewArticles.find((article) => article.article_id === selectedArticleId) ??
-      null,
-    [filteredArticles, overviewArticles, selectedArticleId],
+  const frontPage = useMemo(
+    () => buildEditorialFrontPage(overviewSections, articles),
+    [overviewSections, articles],
   );
-
-  useEffect(() => {
-    if (selectedArticleId && !selectedArticle) {
-      setSelectedArticleId(null);
-    }
-  }, [selectedArticle, selectedArticleId]);
-
   useEffect(() => {
     setArticleOffset(0);
   }, [view, sourceFilter, includeHidden]);
@@ -224,20 +147,27 @@ export function NewsPage() {
   const canNextPage = articleOffset + loadedCount < totalCount;
 
   return (
-    <section className="space-y-4 p-6">
+    <section className="space-y-3 px-6 py-4">
       {browserReason ? <StateBanner variant="browser-only" message={browserReason} /> : null}
 
-      <header className="flex flex-wrap items-start justify-between gap-4">
+      <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="font-mono text-xs uppercase tracking-wider text-zinc-500">
+          <p className="font-mono text-[11px] uppercase tracking-wider text-zinc-500">
             Local News
           </p>
-          <h1 className="mt-1 text-2xl font-semibold text-zinc-100">News</h1>
-          <p className="mt-1 max-w-3xl text-sm text-zinc-400">
+          <h1 className="text-xl font-semibold text-zinc-100">News</h1>
+          <p className="mt-0.5 max-w-3xl text-sm text-zinc-400">
             Financial news collected into the local News database with explicit source status.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <NewsUniverseQuickSelect
+            scope={companyScopeQuery.data ?? null}
+            loading={companyScopeQuery.isLoading}
+            saving={companyScopeUniverseMutation.isPending}
+            result={companyScopeUniverseMutation.data ?? null}
+            onSelect={(params) => companyScopeUniverseMutation.mutate(params)}
+          />
           <Button
             type="button"
             variant="primary"
@@ -250,16 +180,11 @@ export function NewsPage() {
         </div>
       </header>
 
-      <div className="grid gap-3 md:grid-cols-4">
-        <MetricTile label="Articles" value={articlesQuery.data?.total ?? 0} />
-        <MetricTile label="Sources" value={sources.length} detail={`${sourceStats.enabled} enabled`} />
-        <MetricTile label="Healthy" value={sourceStats.healthy} detail="successful or unchanged" />
-        <MetricTile
-          label="Refresh"
-          value={refreshLabel(refreshStatus)}
-          detail={refreshDetail(refreshStatus)}
-        />
-      </div>
+      <NewsStatusStrip
+        totalArticles={articlesQuery.data?.total ?? 0}
+        sourceStats={sourceStats}
+        refreshStatus={refreshStatus}
+      />
 
       {loadError ? (
         <StateBanner
@@ -281,26 +206,25 @@ export function NewsPage() {
         />
       ) : null}
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+      {view === "top" ? (
+          <EditorialFrontPage
+            loading={overviewQuery.isLoading || articlesQuery.isLoading}
+            error={overviewQuery.error ?? overviewQuery.data?.error}
+            frontPage={frontPage}
+          />
+      ) : null}
+
+      <div className={`grid gap-4 ${view === "latest" ? "xl:grid-cols-[minmax(0,1fr)_360px]" : ""}`}>
         <main className="min-w-0 rounded-lg border border-zinc-800 bg-zinc-950/40">
-          {view === "top" ? (
-            <NewsOverview
-              sections={overviewSections}
-              loading={overviewQuery.isLoading}
-              error={overviewQuery.error ?? overviewQuery.data?.error}
-              selectedArticleId={selectedArticleId}
-              onSelect={setSelectedArticleId}
-            />
-          ) : null}
           <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
             <div>
               <h2 className="text-sm font-semibold text-zinc-100">
-                {view === "latest" ? "Latest" : "Top News"}
+                {view === "latest" ? "Latest" : "More News"}
               </h2>
               <p className="mt-0.5 text-xs text-zinc-500">
                 {view === "latest"
                   ? "Chronological local feed"
-                  : "Explainable ranking area"}
+                  : "Dense ranked list after the front page"}
               </p>
             </div>
             <span className="font-mono text-xs text-zinc-500">
@@ -342,9 +266,7 @@ export function NewsPage() {
               <>
                 <ArticleList
                   articles={filteredArticles}
-                  selectedArticleId={selectedArticleId}
                   disabled={articleStateMutation.isPending}
-                  onSelect={setSelectedArticleId}
                   onUpdate={(params) => articleStateMutation.mutate(params)}
                 />
                 <ArticlePager
@@ -366,187 +288,496 @@ export function NewsPage() {
             )}
           </div>
         </main>
-
-        <aside className="space-y-4">
-          <ArticleDetailPanel
-            article={selectedArticle}
-            classification={classificationQuery.data ?? null}
-            classificationLoading={classificationQuery.isFetching}
-            classificationError={classificationQuery.error}
-            content={articleContentQuery.data ?? null}
-            contentLoading={articleContentQuery.isFetching}
-            contentError={articleContentQuery.error}
-            correctionLoading={classificationCorrectionMutation.isPending}
-            correctionResult={classificationCorrectionMutation.data ?? null}
-            onCorrect={(params) => classificationCorrectionMutation.mutate(params)}
-          />
-          <SourceHealthPanel
-            sources={sources}
-            loading={sourcesQuery.isLoading}
-            disabled={articlesQuery.data?.mode === "browser"}
-            pendingSourceId={
-              sourceEnabledMutation.isPending
-                ? sourceEnabledMutation.variables?.source_id ?? null
-                : sourcePriorityMutation.isPending
-                  ? sourcePriorityMutation.variables?.source_id ?? null
-                  : null
-            }
-            onToggleSource={(source, enabled) =>
-              sourceEnabledMutation.mutate({ source_id: source.source_id, enabled })
-            }
-            onPriorityChange={(source, priority) =>
-              sourcePriorityMutation.mutate({ source_id: source.source_id, priority })
-            }
-          />
-          <NewsCompanyScopePanel
-            scope={companyScopeQuery.data ?? null}
-            loading={companyScopeQuery.isLoading}
-            disabled={articlesQuery.data?.mode === "browser" || companyScopeMutation.isPending}
-            result={companyScopeMutation.data ?? null}
-            onSetOverride={(params) => companyScopeMutation.mutate(params)}
-          />
-          <NewsRetentionPanel
-            status={retentionQuery.data ?? null}
-            loading={retentionQuery.isLoading}
-            disabled={articlesQuery.data?.mode === "browser"}
-            saving={saveRetentionMutation.isPending}
-            cleaning={cleanupRetentionMutation.isPending}
-            saveResult={saveRetentionMutation.data ?? null}
-            cleanupResult={cleanupRetentionMutation.data ?? null}
-            onSave={(params) => saveRetentionMutation.mutate(params)}
-            onCleanup={(dryRun) => cleanupRetentionMutation.mutate({ dry_run: dryRun })}
-          />
-          <AddSourcePanel
-            disabled={articlesQuery.data?.mode === "browser"}
-            loading={addSourceMutation.isPending}
-            result={addSourceMutation.data ?? null}
-            onSubmit={(params) => addSourceMutation.mutate(params)}
-          />
-          <RunsPanel runs={runs} loading={runsQuery.isLoading} />
-        </aside>
       </div>
     </section>
   );
 }
 
-function NewsOverview({
-  sections,
-  loading,
-  error,
-  selectedArticleId,
-  onSelect,
-}: {
-  sections: NewsOverviewSection[];
-  loading: boolean;
-  error: unknown;
-  selectedArticleId: string | null;
-  onSelect: (articleId: string) => void;
-}) {
-  if (loading) {
-    return (
-      <div className="border-b border-zinc-800 p-4">
-        <StateBanner variant="loading" title="Loading overview" size="dense" />
-      </div>
-    );
-  }
-  if (error) {
-    return (
-      <div className="border-b border-zinc-800 p-4">
-        <StateBanner
-          variant="warning"
-          title="Overview unavailable"
-          message={error instanceof Error ? error.message : String(error)}
-          size="dense"
-        />
-      </div>
-    );
-  }
-  if (sections.length === 0) return null;
+export function NewsSettingsPanel() {
+  const queryClient = useQueryClient();
+  const sourcesQuery = useQuery({
+    queryKey: ["news", "sources"],
+    queryFn: fetchNewsSources,
+    refetchInterval: 60_000,
+  });
+  const companyScopeQuery = useQuery({
+    queryKey: ["news", "company-scope"],
+    queryFn: fetchNewsCompanyScope,
+    refetchInterval: 60_000,
+  });
+  const googleCompanyFeedsQuery = useQuery({
+    queryKey: ["news", "google-company-feeds"],
+    queryFn: fetchNewsGoogleCompanyFeedSettings,
+    refetchInterval: 60_000,
+  });
+  const retentionQuery = useQuery({
+    queryKey: ["news", "retention"],
+    queryFn: fetchNewsRetentionStatus,
+    refetchInterval: 60_000,
+  });
+  const runsQuery = useQuery({
+    queryKey: ["news", "runs"],
+    queryFn: () => fetchNewsCollectionRuns(5),
+    refetchInterval: 60_000,
+  });
+  const sourceEnabledMutation = useMutation({
+    mutationFn: setNewsSourceEnabled,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["news"] });
+    },
+  });
+  const sourcePriorityMutation = useMutation({
+    mutationFn: setNewsSourcePriority,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["news"] });
+    },
+  });
+  const addSourceMutation = useMutation({
+    mutationFn: addCustomNewsSource,
+    onSuccess: (payload) => {
+      if (payload.status === "success") {
+        void queryClient.invalidateQueries({ queryKey: ["news"] });
+      }
+    },
+  });
+  const companyScopeMutation = useMutation({
+    mutationFn: setNewsCompanyScopeOverride,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["news", "company-scope"] });
+      void queryClient.invalidateQueries({ queryKey: ["news", "overview"] });
+    },
+  });
+  const companyScopeUniverseMutation = useMutation({
+    mutationFn: setNewsCompanyScopeUniverse,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["news"] });
+    },
+  });
+  const saveRetentionMutation = useMutation({
+    mutationFn: saveNewsRetentionPolicy,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["news", "retention"] });
+    },
+  });
+  const googleCompanyFeedsMutation = useMutation({
+    mutationFn: saveNewsGoogleCompanyFeedSettings,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["news"] });
+    },
+  });
+  const cleanupRetentionMutation = useMutation({
+    mutationFn: cleanupNewsExtractedContent,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["news"] });
+    },
+  });
+
+  const sourceMutationPending = sourceEnabledMutation.isPending || sourcePriorityMutation.isPending;
+  const pendingSourceId =
+    sourceEnabledMutation.isPending
+      ? sourceEnabledMutation.variables?.source_id ?? null
+      : sourcePriorityMutation.isPending
+        ? sourcePriorityMutation.variables?.source_id ?? null
+        : null;
+  const sources = sourcesQuery.data?.items ?? [];
+  const runs = runsQuery.data?.items ?? [];
 
   return (
-    <div className="border-b border-zinc-800 p-4">
-      <div className="grid gap-3 lg:grid-cols-2">
-        {sections.map((section) => (
-          <OverviewSectionCard
-            key={section.section_id}
-            section={section}
-            selectedArticleId={selectedArticleId}
-            onSelect={onSelect}
-          />
-        ))}
+    <div className="space-y-4">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.45fr)]">
+        <SourceHealthPanel
+          sources={sources}
+          loading={sourcesQuery.isLoading}
+          disabled={sourceMutationPending}
+          pendingSourceId={pendingSourceId}
+          onToggleSource={(source, enabled) =>
+            sourceEnabledMutation.mutate({ source_id: source.source_id, enabled })
+          }
+          onPriorityChange={(source, priority) =>
+            sourcePriorityMutation.mutate({ source_id: source.source_id, priority })
+          }
+        />
+        <AddSourcePanel
+          disabled={addSourceMutation.isPending}
+          loading={addSourceMutation.isPending}
+          result={addSourceMutation.data ?? null}
+          onSubmit={(params) => addSourceMutation.mutate(params)}
+        />
       </div>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <NewsCompanyScopePanel
+          scope={companyScopeQuery.data ?? null}
+          loading={companyScopeQuery.isLoading}
+          disabled={companyScopeMutation.isPending || companyScopeUniverseMutation.isPending}
+          result={companyScopeMutation.data ?? null}
+          universeResult={companyScopeUniverseMutation.data ?? null}
+          onSetOverride={(params) => companyScopeMutation.mutate(params)}
+          onSelectUniverse={(params) => companyScopeUniverseMutation.mutate(params)}
+        />
+        <GoogleCompanyFeedsPanel
+          settings={googleCompanyFeedsQuery.data ?? null}
+          loading={googleCompanyFeedsQuery.isLoading}
+          saving={googleCompanyFeedsMutation.isPending}
+          result={googleCompanyFeedsMutation.data ?? null}
+          onSave={(params) => googleCompanyFeedsMutation.mutate(params)}
+        />
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <NewsRetentionPanel
+          status={retentionQuery.data ?? null}
+          loading={retentionQuery.isLoading}
+          saving={saveRetentionMutation.isPending}
+          cleaning={cleanupRetentionMutation.isPending}
+          saveResult={saveRetentionMutation.data ?? null}
+          cleanupResult={cleanupRetentionMutation.data ?? null}
+          onSave={(params) => saveRetentionMutation.mutate(params)}
+          onCleanup={(dryRun) => cleanupRetentionMutation.mutate({ dry_run: dryRun })}
+        />
+      </div>
+
+      <RunsPanel runs={runs} loading={runsQuery.isLoading} />
     </div>
   );
 }
 
-function OverviewSectionCard({
-  section,
-  selectedArticleId,
+type EditorialFrontPageModel = {
+  lead: NewsArticle | null;
+  secondary: NewsArticle[];
+  critical: NewsArticle[];
+  macro: NewsArticle[];
+  companies: NewsArticle[];
+  sectors: NewsArticle[];
+  keywords: NewsArticle[];
+};
+
+function NewsStatusStrip({
+  totalArticles,
+  sourceStats,
+  refreshStatus,
+}: {
+  totalArticles: number;
+  sourceStats: ReturnType<typeof summarizeSources>;
+  refreshStatus: NewsRefreshStatus | null;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-y border-zinc-900 py-2 font-mono text-[11px] uppercase text-zinc-500">
+      <span>{totalArticles} local articles</span>
+      <span>{sourceStats.enabled} sources enabled</span>
+      <span>{sourceStats.healthy} healthy</span>
+      <span>Refresh {refreshLabel(refreshStatus)} · {refreshDetail(refreshStatus)}</span>
+    </div>
+  );
+}
+
+function NewsUniverseQuickSelect({
+  scope,
+  loading,
+  saving,
+  result,
   onSelect,
 }: {
-  section: NewsOverviewSection;
-  selectedArticleId: string | null;
-  onSelect: (articleId: string) => void;
+  scope: NewsApiScopeResult | null;
+  loading: boolean;
+  saving: boolean;
+  result: SetNewsCompanyScopeUniverseResult | null;
+  onSelect: (params: SetNewsCompanyScopeUniverseParams) => void;
 }) {
-  const critical = section.section_id === "critical_news";
+  const universes = scope?.available_coverage_universes ?? [];
+  const selectedId = scope?.selected_coverage_universe_id ?? "";
+  const selectedName =
+    scope?.selected_coverage_universe_name ||
+    (scope?.selected_preset ? `Default: ${scope.selected_preset}` : "Default coverage");
+  const count = scope?.included_count ?? scope?.coverage_count ?? 0;
+  const statusText =
+    result?.status === "success"
+      ? "saved"
+      : result?.status === "error" || result?.status === "not_found"
+        ? "error"
+        : saving
+          ? "saving"
+          : `${count} companies`;
+
   return (
-    <section className={`rounded-md border p-3 ${critical ? "border-red-900/70 bg-red-950/10" : "border-zinc-800 bg-zinc-900/30"}`}>
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h3 className="text-sm font-semibold text-zinc-100">{section.title}</h3>
-          <p className="mt-0.5 text-xs leading-4 text-zinc-500">{section.reason}</p>
-        </div>
-        <span className="font-mono text-[11px] uppercase text-zinc-500">
-          {section.items.length}
-        </span>
-      </div>
-      <div className="mt-3 space-y-2">
-        {section.items.length === 0 ? (
-          <p className="rounded border border-zinc-800 bg-zinc-950/40 px-2 py-2 text-xs text-zinc-500">
-            No matching local articles.
-          </p>
+    <div className="flex min-w-[260px] max-w-full items-center gap-2 rounded-md border border-zinc-800 bg-zinc-950/60 px-2 py-1.5">
+      <div className="min-w-0 flex-1">
+        <p className="font-mono text-[10px] uppercase text-zinc-500">News universe</p>
+        {universes.length > 0 ? (
+          <select
+            value={selectedId}
+            disabled={loading || saving}
+            title={selectedName}
+            onChange={(event) => onSelect({ coverage_universe_id: event.currentTarget.value || null })}
+            className="mt-0.5 h-7 w-full min-w-0 rounded border border-zinc-800 bg-black px-2 text-xs text-zinc-100 outline-none focus:border-amber-500 disabled:opacity-50"
+          >
+            <option value="">Default coverage</option>
+            {universes.map((universe) => (
+              <option key={universe.id} value={universe.id}>
+                {universe.name} ({universe.company_count})
+              </option>
+            ))}
+          </select>
         ) : (
-          section.items.map((article) => (
-            <OverviewArticleLine
+          <p className="mt-1 truncate text-xs text-zinc-400" title={loading ? "Loading universes" : selectedName}>
+            {loading ? "Loading universes" : "No Coverage universes"}
+          </p>
+        )}
+      </div>
+      <span
+        className={`whitespace-nowrap rounded border px-1.5 py-0.5 font-mono text-[10px] uppercase ${
+          statusText === "error"
+            ? "border-red-500/40 text-red-300"
+            : statusText === "saved"
+              ? "border-emerald-500/40 text-emerald-300"
+              : "border-zinc-800 text-zinc-500"
+        }`}
+      >
+        {statusText}
+      </span>
+    </div>
+  );
+}
+
+function EditorialFrontPage({
+  loading,
+  error,
+  frontPage,
+}: {
+  loading: boolean;
+  error: unknown;
+  frontPage: EditorialFrontPageModel;
+}) {
+  if (loading) {
+    return <StateBanner variant="loading" title="Building front page" />;
+  }
+  if (error) {
+    return (
+      <StateBanner
+        variant="warning"
+        title="Front page unavailable"
+        message={error instanceof Error ? error.message : String(error)}
+        size="dense"
+      />
+    );
+  }
+  if (!frontPage.lead) {
+    return (
+      <StateBanner
+        variant="empty"
+        title="No front page yet"
+        message="Run Refresh to collect enabled sources into the local News database."
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {frontPage.critical.length ? (
+        <CriticalNewsStrip articles={frontPage.critical} />
+      ) : null}
+
+      <section className="overflow-hidden border-y border-zinc-800 py-4">
+        <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.9fr)_minmax(250px,290px)] 2xl:grid-cols-[minmax(0,0.9fr)_minmax(0,0.95fr)_minmax(0,0.85fr)]">
+          <LeadStory
+            article={frontPage.lead}
+          />
+          <div className="min-w-0 space-y-3 border-zinc-800 xl:border-x xl:px-4">
+            <EditorialColumn
+              title="Secondary Lead"
+              articles={frontPage.secondary}
+            />
+          </div>
+          <aside className="min-w-0 space-y-4 2xl:grid 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] 2xl:gap-x-5 2xl:gap-y-4 2xl:space-y-0">
+            <EditorialRail
+              title="Macro Watch"
+              articles={frontPage.macro}
+            />
+            <EditorialRail
+              title="My Companies"
+              articles={frontPage.companies}
+            />
+            <div className="hidden 2xl:block">
+              <EditorialRail
+                title="My Sectors"
+                articles={frontPage.sectors}
+              />
+            </div>
+            <div className="hidden 2xl:block">
+              <EditorialRail
+                title="Keyword Alerts"
+                articles={frontPage.keywords}
+              />
+            </div>
+          </aside>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function LeadStory({
+  article,
+}: {
+  article: NewsArticle;
+}) {
+  const summary = plainArticleSummary(article.summary);
+  return (
+    <article className="min-w-0">
+      <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] uppercase text-zinc-500">
+        <span className="text-amber-300">{article.source_name}</span>
+        <time>{formatDate(article.published_at ?? article.discovered_at)}</time>
+        <PriorityPill priority={article.priority_level ?? "Normal"} />
+        <ContentStatus status={article.content_status} paywall={article.paywall_status} />
+      </div>
+      <a
+        href={article.original_url}
+        target="_blank"
+        rel="noreferrer"
+        className="mt-2 block text-left"
+      >
+        <h2 className="max-w-4xl text-3xl font-semibold leading-[1.06] text-zinc-50 [overflow-wrap:anywhere] lg:text-4xl 2xl:text-5xl">
+          {article.title}
+        </h2>
+      </a>
+      {summary ? (
+        <p className="mt-3 line-clamp-4 max-w-3xl text-sm leading-6 text-zinc-300 2xl:text-base 2xl:leading-7">{summary}</p>
+      ) : null}
+      <div className="mt-3 grid gap-2 md:grid-cols-2">
+        {(article.relevance_reasons ?? []).slice(0, 2).map((reason) => (
+          <p key={reason} className="border-l border-amber-600/50 pl-3 text-xs leading-5 text-zinc-300 2xl:text-sm">
+            {reason}
+          </p>
+        ))}
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <a
+          href={article.original_url}
+          target="_blank"
+          rel="noreferrer"
+          className="rounded border border-zinc-700 px-3 py-1.5 text-sm text-zinc-200 hover:border-amber-500 hover:text-amber-200"
+        >
+          Open original
+        </a>
+      </div>
+    </article>
+  );
+}
+
+function CriticalNewsStrip({
+  articles,
+}: {
+  articles: NewsArticle[];
+}) {
+  return (
+    <section className="border-y border-red-900/70 bg-red-950/10 px-4 py-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="font-mono text-[11px] uppercase text-red-300">Critical News</span>
+        {articles.slice(0, 3).map((article) => (
+          <a
+            key={article.article_id}
+            href={article.original_url}
+            target="_blank"
+            rel="noreferrer"
+            className="text-left text-sm font-medium text-zinc-100 hover:text-red-200"
+          >
+            {article.title}
+          </a>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function EditorialColumn({
+  title,
+  articles,
+}: {
+  title: string;
+  articles: NewsArticle[];
+}) {
+  return (
+    <section>
+      <h3 className="border-b border-zinc-800 pb-2 font-mono text-[11px] uppercase tracking-wider text-zinc-500">
+        {title}
+      </h3>
+      <div className="divide-y divide-zinc-800">
+        {articles.length ? (
+          articles.map((article) => (
+            <EditorialStoryLine
               key={article.article_id}
               article={article}
-              selected={article.article_id === selectedArticleId}
-              onSelect={onSelect}
+              size="medium"
             />
           ))
+        ) : (
+          <EditorialEmpty message="No secondary story available." />
         )}
       </div>
     </section>
   );
 }
 
-function OverviewArticleLine({
-  article,
-  selected,
-  onSelect,
+function EditorialRail({
+  title,
+  articles,
 }: {
-  article: NewsArticle;
-  selected: boolean;
-  onSelect: (articleId: string) => void;
+  title: string;
+  articles: NewsArticle[];
 }) {
   return (
-    <button
-      type="button"
-      onClick={() => onSelect(article.article_id)}
-      className={`w-full rounded border px-2 py-2 text-left ${
-        selected ? "border-amber-600/70 bg-amber-500/5" : "border-zinc-800 bg-zinc-950/40 hover:border-zinc-700"
-      }`}
-    >
-      <div className="flex flex-wrap items-center gap-2 text-[11px]">
-        <span className="font-mono text-amber-200">{article.source_name}</span>
-        <time className="font-mono text-zinc-500">{formatDate(article.published_at ?? article.discovered_at)}</time>
-        <PriorityPill priority={article.priority_level ?? "Normal"} />
+    <section>
+      <h3 className="border-b border-zinc-800 pb-2 font-mono text-[11px] uppercase tracking-wider text-amber-200">
+        {title}
+      </h3>
+      <div className="divide-y divide-zinc-800">
+        {articles.length ? (
+          articles.slice(0, 4).map((article) => (
+            <EditorialStoryLine
+              key={article.article_id}
+              article={article}
+              size="small"
+            />
+          ))
+        ) : (
+          <EditorialEmpty message="No matching local articles." />
+        )}
       </div>
-      <p className="mt-1 line-clamp-2 text-xs font-medium leading-4 text-zinc-200">
-        {article.title}
-      </p>
-    </button>
+    </section>
   );
+}
+
+function EditorialStoryLine({
+  article,
+  size,
+}: {
+  article: NewsArticle;
+  size: "medium" | "small";
+}) {
+  const summary = plainArticleSummary(article.summary);
+  return (
+    <article className="min-w-0 py-2.5">
+      <div className="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase text-zinc-500">
+        <span className="text-amber-200">{article.source_name}</span>
+        <time>{formatDate(article.published_at ?? article.discovered_at)}</time>
+        {article.priority_level && article.priority_level !== "Normal" ? (
+          <PriorityPill priority={article.priority_level} />
+        ) : null}
+      </div>
+      <a href={article.original_url} target="_blank" rel="noreferrer" className="mt-1 block text-left">
+        <h4 className={`${size === "medium" ? "text-lg leading-6 2xl:text-xl" : "text-sm leading-5"} font-semibold text-zinc-100 [overflow-wrap:anywhere] hover:text-amber-200`}>
+          {article.title}
+        </h4>
+      </a>
+      {size === "medium" && summary ? (
+        <p className="mt-1 line-clamp-1 text-sm leading-5 text-zinc-400 2xl:line-clamp-2">{summary}</p>
+      ) : null}
+    </article>
+  );
+}
+
+function EditorialEmpty({ message }: { message: string }) {
+  return <p className="py-3 text-sm text-zinc-500">{message}</p>;
 }
 
 function ArticleFilters({
@@ -705,35 +936,13 @@ function ToggleChip({
   );
 }
 
-function MetricTile({
-  label,
-  value,
-  detail,
-}: {
-  label: string;
-  value: string | number;
-  detail?: string;
-}) {
-  return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-3">
-      <p className="font-mono text-[11px] uppercase tracking-wider text-zinc-500">{label}</p>
-      <p className="mt-1 font-mono text-lg text-zinc-100">{value}</p>
-      {detail ? <p className="mt-1 text-xs text-zinc-500">{detail}</p> : null}
-    </div>
-  );
-}
-
 function ArticleList({
   articles,
-  selectedArticleId,
   disabled,
-  onSelect,
   onUpdate,
 }: {
   articles: NewsArticle[];
-  selectedArticleId: string | null;
   disabled?: boolean;
-  onSelect: (articleId: string) => void;
   onUpdate: (params: {
     article_id: string;
     read?: boolean;
@@ -749,9 +958,7 @@ function ArticleList({
         <ArticleRow
           key={article.article_id}
           article={article}
-          selected={article.article_id === selectedArticleId}
           disabled={disabled}
-          onSelect={onSelect}
           onUpdate={onUpdate}
         />
       ))}
@@ -761,15 +968,11 @@ function ArticleList({
 
 function ArticleRow({
   article,
-  selected,
   disabled,
-  onSelect,
   onUpdate,
 }: {
   article: NewsArticle;
-  selected: boolean;
   disabled?: boolean;
-  onSelect: (articleId: string) => void;
   onUpdate: (params: {
     article_id: string;
     read?: boolean;
@@ -790,9 +993,7 @@ function ArticleRow({
 
   return (
     <article
-      className={`rounded-md border px-3 py-3 first:mt-0 last:mb-0 ${
-        selected ? "border-amber-600/70 bg-amber-500/5" : "border-transparent"
-      } ${isRead ? "opacity-75" : ""}`}
+      className={`rounded-md border border-transparent px-3 py-3 first:mt-0 last:mb-0 ${isRead ? "opacity-75" : ""}`}
     >
       <div className="flex flex-wrap items-center gap-2 text-xs">
         <span className="font-mono text-amber-200">{article.source_name}</span>
@@ -814,743 +1015,79 @@ function ArticleRow({
       {article.summary ? (
         <p className="mt-1 line-clamp-2 text-sm text-zinc-400">{article.summary}</p>
       ) : null}
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button
-          type="button"
-          size="xs"
-          variant={isRead ? "ghost" : "secondary"}
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] uppercase text-zinc-500">
+        <ArticleTextAction
           disabled={disabled}
           onClick={() => onUpdate({ article_id: article.article_id, read: !isRead })}
         >
           {isRead ? "Unread" : "Read"}
-        </Button>
-        <Button
-          type="button"
-          size="xs"
-          variant={selected ? "primary" : "secondary"}
-          onClick={() => onSelect(article.article_id)}
-        >
-          Details
-        </Button>
-        <Button
-          type="button"
-          size="xs"
-          variant={isSaved ? "primary" : "secondary"}
+        </ArticleTextAction>
+        <ArticleTextAction
           disabled={disabled}
           onClick={() => onUpdate({ article_id: article.article_id, saved: !isSaved })}
+          active={isSaved}
         >
           {isSaved ? "Saved" : "Save"}
-        </Button>
-        <Button
-          type="button"
-          size="xs"
-          variant={isReadLater ? "primary" : "secondary"}
+        </ArticleTextAction>
+        <ArticleTextAction
           disabled={disabled}
           onClick={() => onUpdate({ article_id: article.article_id, read_later: !isReadLater })}
+          active={isReadLater}
         >
           Later
-        </Button>
-        <Button
-          type="button"
-          size="xs"
-          variant="ghost"
+        </ArticleTextAction>
+        <ArticleTextAction
           disabled={disabled}
           onClick={() => onUpdate({ article_id: article.article_id, hidden: true })}
         >
           Hide
-        </Button>
+        </ArticleTextAction>
       </div>
-      <form
-        className="mt-2 grid grid-cols-[1fr_auto] gap-2"
-        onSubmit={(event) => {
-          event.preventDefault();
-          onUpdate({ article_id: article.article_id, notes: note.trim() });
-        }}
-      >
-        <Input
-          value={note}
-          disabled={disabled}
-          placeholder="Short note"
-          onChange={(event) => setNote(event.currentTarget.value)}
-        />
-        <Button type="submit" size="xs" variant="secondary" disabled={disabled}>
-          Note
-        </Button>
-      </form>
+      {article.notes ? (
+        <form
+          className="mt-2 grid grid-cols-[1fr_auto] gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onUpdate({ article_id: article.article_id, notes: note.trim() });
+          }}
+        >
+          <Input
+            value={note}
+            disabled={disabled}
+            placeholder="Short note"
+            onChange={(event) => setNote(event.currentTarget.value)}
+          />
+          <Button type="submit" size="xs" variant="secondary" disabled={disabled}>
+            Note
+          </Button>
+        </form>
+      ) : null}
     </article>
   );
 }
 
-function ArticleDetailPanel({
-  article,
-  classification,
-  classificationLoading,
-  classificationError,
-  content,
-  contentLoading,
-  contentError,
-  correctionLoading,
-  correctionResult,
-  onCorrect,
-}: {
-  article: NewsArticle | null;
-  classification: NewsArticleClassificationResponse | null;
-  classificationLoading: boolean;
-  classificationError: unknown;
-  content: NewsArticleContentResponse | null;
-  contentLoading: boolean;
-  contentError: unknown;
-  correctionLoading: boolean;
-  correctionResult: ApplyNewsClassificationCorrectionResult | null;
-  onCorrect: (params: ApplyNewsClassificationCorrectionParams) => void;
-}) {
-  return (
-    <section className="rounded-lg border border-zinc-800 bg-zinc-950/40">
-      <div className="border-b border-zinc-800 px-4 py-3">
-        <h2 className="text-sm font-semibold text-zinc-100">Article Details</h2>
-      </div>
-      <div className="p-4">
-        {!article ? (
-          <StateBanner
-            variant="empty"
-            title="No article selected"
-            message="Select Details on a feed item to inspect source, timestamps, availability, and local state."
-            size="dense"
-          />
-        ) : (
-          <div className="space-y-4">
-            <div>
-              <p className="font-mono text-[11px] uppercase text-amber-200">
-                {article.source_name}
-              </p>
-              <h3 className="mt-1 text-sm font-semibold leading-5 text-zinc-100">
-                {article.title}
-              </h3>
-              {article.summary ? (
-                <p className="mt-2 text-xs leading-5 text-zinc-400">{article.summary}</p>
-              ) : null}
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <ContentStatus status={article.content_status} paywall={article.paywall_status} />
-              {article.read ? <StatusPill status="read" /> : <StatusPill status="unread" />}
-              {article.saved ? <StatusPill status="saved" /> : null}
-              {article.read_later ? <StatusPill status="read_later" /> : null}
-              {article.hidden ? <StatusPill status="hidden" /> : null}
-            </div>
-
-            <dl className="space-y-2 text-xs">
-              <DetailRow label="Published" value={formatDate(article.published_at)} />
-              <DetailRow label="Discovered" value={formatDate(article.discovered_at)} />
-              <DetailRow label="Fetched" value={formatDate(article.fetched_at)} />
-              <DetailRow label="Source ID" value={article.source_id} mono />
-              <DetailLink label="Original URL" href={article.original_url} />
-              <DetailLink label="Canonical URL" href={article.canonical_url} />
-            </dl>
-
-            <div className="rounded-md border border-zinc-800 bg-zinc-900/40 p-3">
-              <p className="font-mono text-[11px] uppercase text-zinc-500">Availability</p>
-              <p className="mt-1 text-xs text-zinc-300">{availabilityLabel(article)}</p>
-            </div>
-
-            <ArticleContentPanel
-              article={article}
-              content={content}
-              loading={contentLoading}
-              error={contentError}
-            />
-
-            <ClassificationPanel
-              articleId={article.article_id}
-              classification={classification}
-              loading={classificationLoading}
-              error={classificationError}
-              correctionLoading={correctionLoading}
-              correctionResult={correctionResult}
-              onCorrect={onCorrect}
-            />
-            <ScorePanel article={article} classification={classification} />
-
-            {article.notes ? (
-              <div className="rounded-md border border-zinc-800 bg-zinc-900/40 p-3">
-                <p className="font-mono text-[11px] uppercase text-zinc-500">Note</p>
-                <p className="mt-1 whitespace-pre-wrap text-xs text-zinc-300">{article.notes}</p>
-              </div>
-            ) : null}
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function ClassificationPanel({
-  articleId,
-  classification,
-  loading,
-  error,
-  correctionLoading,
-  correctionResult,
-  onCorrect,
-}: {
-  articleId: string;
-  classification: NewsArticleClassificationResponse | null;
-  loading: boolean;
-  error: unknown;
-  correctionLoading: boolean;
-  correctionResult: ApplyNewsClassificationCorrectionResult | null;
-  onCorrect: (params: ApplyNewsClassificationCorrectionParams) => void;
-}) {
-  if (loading) {
-    return <StateBanner variant="loading" title="Loading classification" size="dense" />;
-  }
-  if (error || classification?.error) {
-    return (
-      <StateBanner
-        variant="warning"
-        title="Classification unavailable"
-        message={
-          classification?.error ??
-          (error instanceof Error ? error.message : "Could not load article classification.")
-        }
-        size="dense"
-      />
-    );
-  }
-  if (
-    !classification ||
-    (classification.keywords.length === 0 &&
-      classification.topics.length === 0 &&
-      classification.event_types.length === 0 &&
-      classification.companies.length === 0 &&
-      classification.sectors.length === 0)
-  ) {
-    return (
-      <div className="rounded-md border border-zinc-800 bg-zinc-900/40 p-3">
-        <p className="font-mono text-[11px] uppercase text-zinc-500">Classification</p>
-        <p className="mt-1 text-xs text-zinc-400">No deterministic matches recorded.</p>
-      </div>
-    );
-  }
-  return (
-    <div className="space-y-3 rounded-md border border-zinc-800 bg-zinc-900/40 p-3">
-      <p className="font-mono text-[11px] uppercase text-zinc-500">Classification</p>
-      <CompanyMatchGroup
-        items={classification.companies.map((item) => ({
-          key: String(item.cd_cvm),
-          cdCvm: item.cd_cvm,
-          label: `CVM ${item.cd_cvm}`,
-          reason: item.match_reason,
-        }))}
-        disabled={correctionLoading}
-        onRemove={(item) =>
-          onCorrect({
-            article_id: articleId,
-            target_type: "company",
-            target_id: String(item.cdCvm),
-            action: "remove",
-            user_value: { match_reason: "Removed from article by user" },
-          })
-        }
-      />
-      <SectorMatchGroup
-        items={classification.sectors.map((item) => ({
-          key: `${item.parent_sector_slug ?? "root"}-${item.sector_slug}`,
-          sectorSlug: item.sector_slug,
-          to: item.parent_sector_slug
-            ? `/setores/${item.parent_sector_slug}/${item.sector_slug}`
-            : `/setores/${item.sector_slug}`,
-          label: item.parent_sector_name
-            ? `${item.parent_sector_name}: ${item.sector_name}`
-            : item.sector_name,
-          reason: item.match_reason,
-        }))}
-        disabled={correctionLoading}
-        onRemove={(item) =>
-          onCorrect({
-            article_id: articleId,
-            target_type: "sector",
-            target_id: item.sectorSlug,
-            action: "remove",
-            user_value: { match_reason: "Removed from article by user" },
-          })
-        }
-      />
-      <TagGroup
-        label="Keywords"
-        items={classification.keywords.map((item) => ({
-          key: `${item.keyword_rule_id}-${item.matched_term}`,
-          targetId: item.keyword_rule_id,
-          targetType: "keyword",
-          label: `${item.group_name}: ${item.matched_term}`,
-          reason: item.match_reason,
-        }))}
-        disabled={correctionLoading}
-        onRemove={(item) =>
-          onCorrect({
-            article_id: articleId,
-            target_type: item.targetType,
-            target_id: item.targetId,
-            action: "remove",
-            user_value: { match_reason: "Removed from article by user" },
-          })
-        }
-      />
-      <TagGroup
-        label="Topics"
-        items={classification.topics.map((item) => ({
-          key: item.topic_id,
-          targetId: item.topic_id,
-          targetType: "topic",
-          label: `${item.topic_type}: ${item.label}`,
-          reason: item.match_reason,
-        }))}
-        disabled={correctionLoading}
-        onRemove={(item) =>
-          onCorrect({
-            article_id: articleId,
-            target_type: item.targetType,
-            target_id: item.targetId,
-            action: "remove",
-            user_value: { match_reason: "Removed from article by user" },
-          })
-        }
-      />
-      <TagGroup
-        label="Events"
-        items={classification.event_types.map((item) => ({
-          key: item.event_type_id,
-          targetId: item.event_type_id,
-          targetType: "event_type",
-          label: item.sub_event ? `${item.category}: ${item.sub_event}` : item.category,
-          reason: item.match_reason,
-        }))}
-        disabled={correctionLoading}
-        onRemove={(item) =>
-          onCorrect({
-            article_id: articleId,
-            target_type: item.targetType,
-            target_id: item.targetId,
-            action: "remove",
-            user_value: { match_reason: "Removed from article by user" },
-          })
-        }
-      />
-      <ManualCorrectionForm
-        articleId={articleId}
-        disabled={correctionLoading}
-        result={correctionResult}
-        onCorrect={onCorrect}
-      />
-      <CorrectionHistory corrections={classification.corrections ?? []} />
-    </div>
-  );
-}
-
-function ArticleContentPanel({
-  article,
-  content,
-  loading,
-  error,
-}: {
-  article: NewsArticle;
-  content: NewsArticleContentResponse | null;
-  loading: boolean;
-  error: unknown;
-}) {
-  if (loading) {
-    return <StateBanner variant="loading" title="Loading local content" size="dense" />;
-  }
-  if (error || content?.error) {
-    return (
-      <StateBanner
-        variant="warning"
-        title="Local content unavailable"
-        message={content?.error ?? (error instanceof Error ? error.message : "Could not load local article content.")}
-        size="dense"
-      />
-    );
-  }
-  if (!content?.available || !content.content_text) {
-    return (
-      <div className="rounded-md border border-zinc-800 bg-zinc-900/40 p-3">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="font-mono text-[11px] uppercase text-zinc-500">Local content</p>
-            <p className="mt-1 text-xs text-zinc-400">{localContentMissingLabel(article)}</p>
-          </div>
-          <a
-            href={article.original_url}
-            target="_blank"
-            rel="noreferrer"
-            className="shrink-0 text-xs text-amber-200 hover:text-amber-100"
-          >
-            Open source
-          </a>
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div className="rounded-md border border-zinc-800 bg-zinc-900/40 p-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <p className="font-mono text-[11px] uppercase text-zinc-500">Local content</p>
-          <p className="mt-1 text-[11px] text-zinc-500">
-            {content.content_format ?? "text"} · {formatBytes(content.storage_bytes ?? 0)} · extracted {formatDate(content.extracted_at)}
-          </p>
-        </div>
-        <a
-          href={article.original_url}
-          target="_blank"
-          rel="noreferrer"
-          className="text-xs text-amber-200 hover:text-amber-100"
-        >
-          Source
-        </a>
-      </div>
-      <div className="mt-3 max-h-80 overflow-auto rounded border border-zinc-800 bg-zinc-950/60 p-3">
-        <p className="whitespace-pre-wrap text-xs leading-5 text-zinc-300">{content.content_text}</p>
-      </div>
-    </div>
-  );
-}
-
-function ScorePanel({
-  article,
-  classification,
-}: {
-  article: NewsArticle;
-  classification: NewsArticleClassificationResponse | null;
-}) {
-  const score = classification?.score;
-  const total = score?.total_score ?? article.relevance_score ?? 0;
-  const priority = score?.priority_level ?? article.priority_level ?? "Normal";
-  const components = score?.components ?? article.relevance_components ?? {};
-  const reasons = score?.reasons ?? article.relevance_reasons ?? [];
-  return (
-    <div className="rounded-md border border-zinc-800 bg-zinc-900/40 p-3">
-      <div className="flex items-center justify-between gap-2">
-        <p className="font-mono text-[11px] uppercase text-zinc-500">Priority</p>
-        <PriorityPill priority={priority} />
-      </div>
-      <p className="mt-1 font-mono text-xs text-zinc-300">Score {Number(total).toFixed(2)}</p>
-      {Object.keys(components).length > 0 ? (
-        <div className="mt-2 grid grid-cols-2 gap-1 text-[11px] text-zinc-400">
-          {Object.entries(components).map(([key, value]) => (
-            <div key={key} className="flex justify-between gap-2 rounded border border-zinc-800 px-2 py-1">
-              <span>{key.replaceAll("_", " ")}</span>
-              <span className="font-mono text-zinc-300">{Number(value).toFixed(2)}</span>
-            </div>
-          ))}
-        </div>
-      ) : null}
-      {reasons.length > 0 ? (
-        <ul className="mt-2 space-y-1 text-[11px] leading-4 text-zinc-500">
-          {reasons.map((reason) => (
-            <li key={reason}>{reason}</li>
-          ))}
-        </ul>
-      ) : null}
-    </div>
-  );
-}
-
-function ManualCorrectionForm({
-  articleId,
+function ArticleTextAction({
+  active,
   disabled,
-  result,
-  onCorrect,
+  children,
+  onClick,
 }: {
-  articleId: string;
-  disabled: boolean;
-  result: ApplyNewsClassificationCorrectionResult | null;
-  onCorrect: (params: ApplyNewsClassificationCorrectionParams) => void;
-}) {
-  const [targetType, setTargetType] = useState("company");
-  const [targetId, setTargetId] = useState("");
-  const [sectorName, setSectorName] = useState("");
-  const [reason, setReason] = useState("Manual user correction");
-
-  return (
-    <form
-      className="rounded border border-zinc-800 bg-zinc-950/50 p-3"
-      onSubmit={(event) => {
-        event.preventDefault();
-        const cleanTargetId = targetId.trim();
-        if (!cleanTargetId) return;
-        onCorrect({
-          article_id: articleId,
-          target_type: targetType,
-          target_id: cleanTargetId,
-          action: "add",
-          user_value: {
-            match_reason: reason.trim() || "Manual user correction",
-            sector_name: targetType === "sector" ? sectorName.trim() : undefined,
-          },
-        });
-      }}
-    >
-      <p className="font-mono text-[11px] uppercase text-zinc-500">Manual correction</p>
-      <div className="mt-2 grid gap-2 md:grid-cols-[120px_1fr]">
-        <label className="space-y-1">
-          <span className="font-mono text-[11px] uppercase text-zinc-500">Type</span>
-          <select
-            value={targetType}
-            disabled={disabled}
-            onChange={(event) => setTargetType(event.currentTarget.value)}
-            className="h-8 w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 text-sm text-zinc-100 outline-none focus:border-amber-500"
-          >
-            <option value="company">Company</option>
-            <option value="sector">Sector</option>
-            <option value="topic">Topic</option>
-            <option value="event_type">Event type</option>
-            <option value="keyword">Keyword</option>
-          </select>
-        </label>
-        <label className="space-y-1">
-          <span className="font-mono text-[11px] uppercase text-zinc-500">ID</span>
-          <Input
-            value={targetId}
-            disabled={disabled}
-            placeholder="CVM code, sector slug, topic ID, event ID, or keyword rule ID"
-            onChange={(event) => setTargetId(event.currentTarget.value)}
-          />
-        </label>
-      </div>
-      {targetType === "sector" ? (
-        <label className="mt-2 block space-y-1">
-          <span className="font-mono text-[11px] uppercase text-zinc-500">Sector name</span>
-          <Input
-            value={sectorName}
-            disabled={disabled}
-            placeholder="Required for manual sector links"
-            onChange={(event) => setSectorName(event.currentTarget.value)}
-          />
-        </label>
-      ) : null}
-      <label className="mt-2 block space-y-1">
-        <span className="font-mono text-[11px] uppercase text-zinc-500">Reason</span>
-        <Input
-          value={reason}
-          disabled={disabled}
-          onChange={(event) => setReason(event.currentTarget.value)}
-        />
-      </label>
-      <div className="mt-2 flex items-center justify-between gap-3">
-        <Button
-          type="submit"
-          size="xs"
-          variant="secondary"
-          loading={disabled}
-          disabled={disabled || !targetId.trim() || (targetType === "sector" && !sectorName.trim())}
-        >
-          Add
-        </Button>
-        {result?.status === "error" ? (
-          <p className="text-xs text-red-300">{result.error ?? "Correction failed."}</p>
-        ) : result?.status === "success" ? (
-          <p className="text-xs text-emerald-300">Correction saved.</p>
-        ) : null}
-      </div>
-    </form>
-  );
-}
-
-function CorrectionHistory({
-  corrections,
-}: {
-  corrections: NonNullable<NewsArticleClassificationResponse["corrections"]>;
-}) {
-  if (corrections.length === 0) return null;
-  return (
-    <div className="rounded border border-zinc-800 bg-zinc-950/50 p-3">
-      <p className="font-mono text-[11px] uppercase text-zinc-500">Correction history</p>
-      <div className="mt-2 space-y-2">
-        {corrections.slice(0, 8).map((correction) => (
-          <div key={correction.correction_id} className="text-[11px] leading-4 text-zinc-400">
-            <p>
-              <span className="font-mono uppercase text-zinc-300">{correction.correction_action}</span>{" "}
-              {correction.target_type} <span className="font-mono">{correction.target_id}</span>
-            </p>
-            <p className="text-zinc-500">
-              {formatDate(correction.created_at)}
-              {correction.original_match_reason ? ` · previous: ${correction.original_match_reason}` : ""}
-            </p>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function SectorMatchGroup({
-  items,
-  disabled,
-  onRemove,
-}: {
-  items: Array<{ key: string; sectorSlug: string; to: string; label: string; reason: string }>;
+  active?: boolean;
   disabled?: boolean;
-  onRemove?: (item: { key: string; sectorSlug: string; to: string; label: string; reason: string }) => void;
+  children: ReactNode;
+  onClick: () => void;
 }) {
-  if (items.length === 0) return null;
-  return (
-    <div>
-      <p className="font-mono text-[11px] uppercase text-zinc-500">Sectors</p>
-      <div className="mt-1 space-y-1">
-        {items.map((item) => (
-          <div key={item.key} className="rounded border border-zinc-800 bg-zinc-950/50 px-2 py-1.5">
-            <div className="flex items-start justify-between gap-2">
-              <Link to={item.to} className="text-xs font-medium text-amber-200 hover:text-amber-100">
-                {item.label}
-              </Link>
-              {onRemove ? (
-                <button
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => onRemove(item)}
-                  className="font-mono text-[10px] uppercase text-zinc-500 hover:text-red-300 disabled:opacity-50"
-                >
-                  Remove
-                </button>
-              ) : null}
-            </div>
-            <p className="mt-0.5 text-[11px] leading-4 text-zinc-500">{item.reason}</p>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function CompanyMatchGroup({
-  items,
-  disabled,
-  onRemove,
-}: {
-  items: Array<{ key: string; cdCvm: number; label: string; reason: string }>;
-  disabled?: boolean;
-  onRemove?: (item: { key: string; cdCvm: number; label: string; reason: string }) => void;
-}) {
-  if (items.length === 0) return null;
-  return (
-    <div>
-      <p className="font-mono text-[11px] uppercase text-zinc-500">Companies</p>
-      <div className="mt-1 space-y-1">
-        {items.map((item) => (
-          <div key={item.key} className="rounded border border-zinc-800 bg-zinc-950/50 px-2 py-1.5">
-            <div className="flex items-start justify-between gap-2">
-              <Link
-                to={`/empresas/${item.cdCvm}`}
-                className="text-xs font-medium text-amber-200 hover:text-amber-100"
-              >
-                {item.label}
-              </Link>
-              {onRemove ? (
-                <button
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => onRemove(item)}
-                  className="font-mono text-[10px] uppercase text-zinc-500 hover:text-red-300 disabled:opacity-50"
-                >
-                  Remove
-                </button>
-              ) : null}
-            </div>
-            <p className="mt-0.5 text-[11px] leading-4 text-zinc-500">{item.reason}</p>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function TagGroup({
-  label,
-  items,
-  disabled,
-  onRemove,
-}: {
-  label: string;
-  items: Array<{ key: string; label: string; reason: string; targetId?: string; targetType?: string }>;
-  disabled?: boolean;
-  onRemove?: (item: { key: string; label: string; reason: string; targetId: string; targetType: string }) => void;
-}) {
-  if (items.length === 0) return null;
-  return (
-    <div>
-      <p className="font-mono text-[11px] uppercase text-zinc-500">{label}</p>
-      <div className="mt-1 space-y-1">
-        {items.map((item) => (
-          <div key={item.key} className="rounded border border-zinc-800 bg-zinc-950/50 px-2 py-1.5">
-            <div className="flex items-start justify-between gap-2">
-              <p className="text-xs font-medium text-zinc-200">{item.label}</p>
-              <TagRemoveButton item={item} disabled={disabled} onRemove={onRemove} />
-            </div>
-            <p className="mt-0.5 text-[11px] leading-4 text-zinc-500">{item.reason}</p>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function TagRemoveButton({
-  item,
-  disabled,
-  onRemove,
-}: {
-  item: { key: string; label: string; reason: string; targetId?: string; targetType?: string };
-  disabled?: boolean;
-  onRemove?: (item: { key: string; label: string; reason: string; targetId: string; targetType: string }) => void;
-}) {
-  if (!onRemove || !item.targetId || !item.targetType) return null;
-  const removableItem = { ...item, targetId: item.targetId, targetType: item.targetType };
   return (
     <button
       type="button"
       disabled={disabled}
-      onClick={() => onRemove(removableItem)}
-      className="font-mono text-[10px] uppercase text-zinc-500 hover:text-red-300 disabled:opacity-50"
+      onClick={onClick}
+      className={`transition-colors hover:text-amber-200 disabled:opacity-50 ${
+        active ? "text-amber-200" : "text-zinc-500"
+      }`}
     >
-      Remove
+      {children}
     </button>
-  );
-}
-
-function DetailRow({
-  label,
-  value,
-  mono,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-}) {
-  return (
-    <div className="grid grid-cols-[92px_minmax(0,1fr)] gap-3">
-      <dt className="font-mono uppercase text-zinc-500">{label}</dt>
-      <dd className={`${mono ? "font-mono" : ""} min-w-0 break-words text-zinc-300`}>{value}</dd>
-    </div>
-  );
-}
-
-function DetailLink({ label, href }: { label: string; href?: string | null }) {
-  if (!href) return <DetailRow label={label} value="-" />;
-  return (
-    <div className="grid grid-cols-[92px_minmax(0,1fr)] gap-3">
-      <dt className="font-mono uppercase text-zinc-500">{label}</dt>
-      <dd className="min-w-0">
-        <a
-          href={href}
-          target="_blank"
-          rel="noreferrer"
-          className="break-words text-xs text-amber-200 hover:text-amber-100"
-        >
-          {href}
-        </a>
-      </dd>
-    </div>
   );
 }
 
@@ -1571,18 +1108,28 @@ function SourceHealthPanel({
 }) {
   return (
     <section className="rounded-lg border border-zinc-800 bg-zinc-950/40">
-      <div className="border-b border-zinc-800 px-4 py-3">
-        <h2 className="text-sm font-semibold text-zinc-100">Sources</h2>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800 px-4 py-3">
+        <div>
+          <h2 className="text-sm font-semibold text-zinc-100">Sources</h2>
+          <p className="mt-0.5 text-xs text-zinc-500">Enabled feeds, health, and collection priority.</p>
+        </div>
+        <span className="font-mono text-[11px] uppercase text-zinc-500">
+          {sources.filter((source) => Boolean(source.enabled)).length}/{sources.length} enabled
+        </span>
       </div>
-      <div className="p-4">
+      <div>
         {loading ? (
-          <StateBanner variant="loading" title="Loading sources" size="dense" />
+          <div className="p-4">
+            <StateBanner variant="loading" title="Loading sources" size="dense" />
+          </div>
         ) : sources.length === 0 ? (
-          <StateBanner variant="empty" title="No sources" size="dense" />
+          <div className="p-4">
+            <StateBanner variant="empty" title="No sources" size="dense" />
+          </div>
         ) : (
-          <div className="space-y-3">
+          <div className="divide-y divide-zinc-800">
             {sources.map((source) => (
-              <SourceCard
+              <SourceRow
                 key={source.source_id}
                 source={source}
                 disabled={disabled || pendingSourceId === source.source_id}
@@ -1597,7 +1144,7 @@ function SourceHealthPanel({
   );
 }
 
-function SourceCard({
+function SourceRow({
   source,
   disabled,
   onToggleSource,
@@ -1616,23 +1163,24 @@ function SourceCard({
   }, [source.priority]);
 
   return (
-    <div className="rounded-md border border-zinc-800 bg-zinc-900/40 p-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-zinc-100">{source.name}</p>
-                    <p className="mt-0.5 font-mono text-[11px] uppercase text-zinc-500">
-                      {source.reliability_layer} · priority {source.priority}
-                      {source.allow_content_storage ? " · local content eligible" : ""}
-                    </p>
-                  </div>
-                  <StatusPill status={source.last_status ?? (source.enabled ? "pending" : "disabled")} />
-                </div>
-                {source.last_error ? (
-                  <p className="mt-2 text-xs text-red-300">{source.last_error}</p>
-                ) : null}
-      <div className="mt-3 grid grid-cols-[1fr_auto] items-end gap-2">
-        <label className="space-y-1">
-          <span className="font-mono text-[11px] uppercase text-zinc-500">Priority</span>
+    <div className={`grid gap-3 px-4 py-3 md:grid-cols-[minmax(0,1fr)_110px_92px] md:items-center ${enabled ? "" : "opacity-60"}`}>
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="min-w-0 truncate text-sm font-medium text-zinc-100">{source.name}</p>
+          <StatusPill status={source.last_status ?? (source.enabled ? "pending" : "disabled")} />
+        </div>
+        <p className="mt-1 font-mono text-[11px] uppercase text-zinc-500">
+          {source.reliability_layer}
+          {source.allow_content_storage ? " · local content eligible" : ""}
+          {source.last_success_at ? ` · last success ${formatDate(source.last_success_at)}` : ""}
+        </p>
+        {source.last_error ? (
+          <p className="mt-1 text-xs text-red-300">{source.last_error}</p>
+        ) : null}
+      </div>
+      <label className="space-y-1">
+        <span className="font-mono text-[10px] uppercase text-zinc-500">Priority</span>
+        <div className="max-w-28">
           <Input
             type="number"
             min={1}
@@ -1650,7 +1198,9 @@ function SourceCard({
               }
             }}
           />
-        </label>
+        </div>
+      </label>
+      <div className="flex justify-start md:justify-end">
         <Button
           type="button"
           size="xs"
@@ -1665,23 +1215,192 @@ function SourceCard({
   );
 }
 
+function GoogleCompanyFeedsPanel({
+  settings,
+  loading,
+  saving,
+  result,
+  onSave,
+}: {
+  settings: NewsApiGoogleCompanyFeedsResult | null;
+  loading: boolean;
+  saving: boolean;
+  result: SaveNewsGoogleCompanyFeedSettingsResult | null;
+  onSave: (params: SaveNewsGoogleCompanyFeedSettingsParams) => void;
+}) {
+  const [enabled, setEnabled] = useState(false);
+  const [maxCompanies, setMaxCompanies] = useState("50");
+  const [priority, setPriority] = useState("140");
+  const [locale, setLocale] = useState("pt-BR");
+  const [country, setCountry] = useState("BR");
+
+  useEffect(() => {
+    if (!settings) return;
+    setEnabled(Boolean(settings.enabled));
+    setMaxCompanies(String(settings.max_companies ?? 50));
+    setPriority(String(settings.priority ?? 140));
+    setLocale(settings.locale || "pt-BR");
+    setCountry(settings.country || "BR");
+  }, [settings]);
+
+  const generatedCount = settings?.generated_count ?? result?.settings?.generated_count ?? 0;
+  const eligibleCompanyCount = settings?.eligible_company_count ?? result?.settings?.eligible_company_count ?? 0;
+  const scopeIsEmpty = eligibleCompanyCount === 0;
+
+  return (
+    <section className="rounded-lg border border-zinc-800 bg-zinc-950/40">
+      <div className="border-b border-zinc-800 px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-zinc-100">Google News Company Feeds</h2>
+            <p className="mt-0.5 text-xs text-zinc-500">
+              Optional aggregator feeds for companies in the News scope.
+            </p>
+          </div>
+          <StatusPill status={enabled ? "enabled" : "disabled"} />
+        </div>
+      </div>
+      <div className="space-y-3 p-4">
+        {loading ? (
+          <StateBanner variant="loading" title="Loading Google News settings" size="dense" />
+        ) : settings?.error ? (
+          <StateBanner variant="warning" title="Google News settings unavailable" message={settings.error} size="dense" />
+        ) : null}
+
+        <p className="text-xs leading-5 text-zinc-500">
+          Uses Google News RSS search URLs per company. These are treated as aggregator sources, not official
+          company or regulatory sources, and remain lower priority than direct feeds.
+        </p>
+        <div className="grid grid-cols-2 gap-2">
+          <MetricMini label="Eligible companies" value={eligibleCompanyCount} />
+          <MetricMini label="Generated feeds" value={generatedCount} />
+        </div>
+        {scopeIsEmpty ? (
+          <StateBanner
+            variant="warning"
+            title="No company scope available"
+            message="Google News company feeds appear in Sources only after the News company scope has companies from coverage or News-specific inclusions."
+            size="dense"
+          />
+        ) : null}
+
+        <label className="flex items-start gap-3 rounded-md border border-zinc-800 bg-black/20 p-3">
+          <input
+            type="checkbox"
+            className="mt-1 h-4 w-4 accent-amber-500"
+            checked={enabled}
+            disabled={saving}
+            onChange={(event) => setEnabled(event.currentTarget.checked)}
+          />
+          <span>
+            <span className="block text-sm font-medium text-zinc-100">Enable generated company feeds</span>
+            <span className="block text-xs leading-5 text-zinc-500">
+              Generates up to {maxCompanies || "0"} local source entries from {eligibleCompanyCount} eligible companies.
+            </span>
+          </span>
+        </label>
+
+        <div className="grid gap-3 sm:grid-cols-4">
+          <label className="space-y-1 sm:col-span-2">
+            <span className="font-mono text-[10px] uppercase text-zinc-500">Max companies</span>
+            <Input
+              type="number"
+              min={1}
+              max={250}
+              value={maxCompanies}
+              disabled={saving}
+              mono
+              onChange={(event) => setMaxCompanies(event.currentTarget.value)}
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="font-mono text-[10px] uppercase text-zinc-500">Priority</span>
+            <Input
+              type="number"
+              min={1}
+              max={1000}
+              value={priority}
+              disabled={saving}
+              mono
+              onChange={(event) => setPriority(event.currentTarget.value)}
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="font-mono text-[10px] uppercase text-zinc-500">Country</span>
+            <Input
+              value={country}
+              disabled={saving}
+              mono
+              onChange={(event) => setCountry(event.currentTarget.value.toUpperCase())}
+            />
+          </label>
+        </div>
+
+        <label className="space-y-1">
+          <span className="font-mono text-[10px] uppercase text-zinc-500">Locale</span>
+          <Input
+            value={locale}
+            disabled={saving}
+            mono
+            onChange={(event) => setLocale(event.currentTarget.value)}
+          />
+        </label>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-900 pt-3">
+          <p className="font-mono text-[11px] uppercase text-zinc-500">
+            {enabled && scopeIsEmpty
+              ? "No generated sources until companies are available"
+              : `${generatedCount} generated source${generatedCount === 1 ? "" : "s"}`}
+          </p>
+          <Button
+            type="button"
+            size="xs"
+            disabled={saving}
+            onClick={() =>
+              onSave({
+                enabled,
+                max_companies: Number(maxCompanies),
+                priority: Number(priority),
+                locale,
+                country,
+              })
+            }
+          >
+            {saving ? "Saving" : "Save"}
+          </Button>
+        </div>
+        {result?.error ? (
+          <StateBanner variant="warning" title="Google News settings were not saved" message={result.error} size="dense" />
+        ) : result?.status === "success" ? (
+          <StateBanner variant="success" title="Google News settings saved" size="dense" />
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
 function NewsCompanyScopePanel({
   scope,
   loading,
   disabled,
   result,
+  universeResult,
   onSetOverride,
+  onSelectUniverse,
 }: {
   scope: NewsApiScopeResult | null;
   loading: boolean;
   disabled?: boolean;
   result: SetNewsCompanyScopeOverrideResult | null;
+  universeResult: SetNewsCompanyScopeUniverseResult | null;
   onSetOverride: (params: SetNewsCompanyScopeOverrideParams) => void;
+  onSelectUniverse: (params: SetNewsCompanyScopeUniverseParams) => void;
 }) {
   const [companyId, setCompanyId] = useState("");
   const [action, setAction] = useState<"include" | "exclude">("include");
   const [reason, setReason] = useState("News-specific company scope override");
   const overrides = scope?.overrides ?? [];
+  const universes = scope?.available_coverage_universes ?? [];
 
   return (
     <section className="rounded-lg border border-zinc-800 bg-zinc-950/40">
@@ -1701,9 +1420,52 @@ function NewsCompanyScopePanel({
           </div>
         )}
         <p className="text-xs leading-5 text-zinc-500">
-          Uses the current company universe{scope?.selected_preset ? ` (${scope.selected_preset})` : ""}.
-          Overrides apply only to News.
+          Uses the Coverage universe selected for News, plus News-specific inclusions and exclusions. This does not
+          change the active Coverage universe.
         </p>
+        <label className="space-y-1">
+          <span className="font-mono text-[10px] uppercase text-zinc-500">Coverage universe for News</span>
+          <select
+            className="h-9 w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 text-sm text-zinc-100 outline-none transition-colors focus:border-amber-500 disabled:opacity-50"
+            value={scope?.selected_coverage_universe_id ?? ""}
+            disabled={disabled || loading}
+            onChange={(event) =>
+              onSelectUniverse({ coverage_universe_id: event.currentTarget.value || null })
+            }
+          >
+            <option value="">Default coverage universe</option>
+            {universes.map((universe) => (
+              <option key={universe.id} value={universe.id}>
+                {universe.name} ({universe.company_count})
+              </option>
+            ))}
+          </select>
+        </label>
+        <p className="font-mono text-[11px] uppercase text-zinc-500">
+          {scope?.selected_coverage_universe_name
+            ? `News universe: ${scope.selected_coverage_universe_name}`
+            : scope?.selected_preset
+              ? `Default preset: ${scope.selected_preset}`
+              : "Default coverage fallback"}
+        </p>
+        {universes.length === 0 && !loading ? (
+          <StateBanner
+            variant="warning"
+            title="No Coverage universes found"
+            message="Create or populate a Coverage universe first, then select it here for News."
+            size="dense"
+          />
+        ) : null}
+        {universeResult?.status === "error" || universeResult?.status === "not_found" ? (
+          <StateBanner
+            variant="warning"
+            title="News universe was not updated"
+            message={universeResult.error ?? "Coverage universe selection failed."}
+            size="dense"
+          />
+        ) : universeResult?.status === "success" ? (
+          <StateBanner variant="success" title="News universe saved" size="dense" />
+        ) : null}
         <form
           className="space-y-2"
           onSubmit={(event) => {
@@ -1783,6 +1545,7 @@ function NewsCompanyScopePanel({
 }
 
 type NewsApiScopeResult = NewsCompanyScopeResponse & { mode?: string; reason?: string };
+type NewsApiGoogleCompanyFeedsResult = NewsGoogleCompanyFeedSettings & { mode?: string; reason?: string };
 
 function NewsRetentionPanel({
   status,
@@ -1963,6 +1726,7 @@ function AddSourcePanel({
     <section className="rounded-lg border border-zinc-800 bg-zinc-950/40">
       <div className="border-b border-zinc-800 px-4 py-3">
         <h2 className="text-sm font-semibold text-zinc-100">Add RSS/Atom</h2>
+        <p className="mt-0.5 text-xs text-zinc-500">Validated custom feeds only. Arbitrary HTML scraping stays disabled.</p>
       </div>
       <form
         className="space-y-3 p-4"
@@ -2047,23 +1811,36 @@ function RunsPanel({
 }) {
   return (
     <section className="rounded-lg border border-zinc-800 bg-zinc-950/40">
-      <div className="border-b border-zinc-800 px-4 py-3">
-        <h2 className="text-sm font-semibold text-zinc-100">Collection Runs</h2>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800 px-4 py-3">
+        <div>
+          <h2 className="text-sm font-semibold text-zinc-100">Collection Runs</h2>
+          <p className="mt-0.5 text-xs text-zinc-500">Recent refresh diagnostics and source failure isolation.</p>
+        </div>
+        <span className="font-mono text-[11px] uppercase text-zinc-500">{runs.length} recent</span>
       </div>
-      <div className="p-4">
+      <div>
         {loading ? (
-          <StateBanner variant="loading" title="Loading runs" size="dense" />
+          <div className="p-4">
+            <StateBanner variant="loading" title="Loading runs" size="dense" />
+          </div>
         ) : runs.length === 0 ? (
-          <StateBanner variant="empty" title="No refresh history" size="dense" />
+          <div className="p-4">
+            <StateBanner variant="empty" title="No refresh history" size="dense" />
+          </div>
         ) : (
-          <div className="space-y-2">
+          <div className="divide-y divide-zinc-800">
             {runs.map((run) => (
-              <div key={run.run_id} className="flex items-center justify-between gap-3 text-xs">
-                <div>
-                  <p className="font-mono text-zinc-300">{formatDate(run.started_at)}</p>
-                  <p className="text-zinc-500">
-                    {run.articles_inserted} inserted · {run.articles_seen} seen
-                  </p>
+              <div key={run.run_id} className="grid gap-2 px-4 py-3 text-xs md:grid-cols-[160px_minmax(0,1fr)_auto] md:items-center">
+                <p className="font-mono text-zinc-300">{formatDate(run.started_at)}</p>
+                <div className="min-w-0 text-zinc-500">
+                  <span className="font-mono text-zinc-300">{run.articles_inserted}</span> inserted
+                  <span className="mx-2 text-zinc-700">·</span>
+                  <span className="font-mono text-zinc-300">{run.articles_seen}</span> seen
+                  <span className="mx-2 text-zinc-700">·</span>
+                  <span className={run.error_count ? "font-mono text-red-300" : "font-mono text-zinc-300"}>
+                    {run.error_count}
+                  </span>{" "}
+                  errors
                 </div>
                 <StatusPill status={run.status} />
               </div>
@@ -2114,6 +1891,126 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
+function plainArticleSummary(summary: string | null | undefined) {
+  if (!summary) return "";
+  return summary
+    .replace(/Original source resolved from aggregator URL\./gi, " ")
+    .replace(/Aggregator article URL was not resolved\./gi, " ")
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, " ")
+    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, " ")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function buildEditorialFrontPage(
+  sections: NewsOverviewSection[],
+  topArticles: NewsArticle[],
+): EditorialFrontPageModel {
+  const bySection = new Map(sections.map((section) => [section.section_id, section.items]));
+  const critical = bySection.get("critical_news") ?? [];
+  const topMarket = bySection.get("top_market_news") ?? topArticles;
+  const macro = bySection.get("macro_watch") ?? [];
+  const companies = bySection.get("my_companies") ?? [];
+  const sectors = bySection.get("my_sectors") ?? [];
+  const keywords = bySection.get("keyword_alerts") ?? [];
+  const used = new Set<string>();
+  const usedStoryKeys = new Set<string>();
+  const sourceCounts = new Map<string, number>();
+  const topicCounts = new Map<string, number>();
+
+  const markUsed = (article: NewsArticle) => {
+    const sourceKey = article.source_id || article.source_name;
+    const topicKey = editorialTopicKey(article);
+    const storyKey = editorialStoryKey(article);
+    used.add(article.article_id);
+    usedStoryKeys.add(storyKey);
+    sourceCounts.set(sourceKey, (sourceCounts.get(sourceKey) ?? 0) + 1);
+    topicCounts.set(topicKey, (topicCounts.get(topicKey) ?? 0) + 1);
+  };
+
+  const take = (items: NewsArticle[], limit: number, options: { maxPerSource?: number; maxPerTopic?: number } = {}) => {
+    const result: NewsArticle[] = [];
+    const deferred: NewsArticle[] = [];
+    const accept = (article: NewsArticle) => {
+      if (used.has(article.article_id)) return;
+      if (usedStoryKeys.has(editorialStoryKey(article))) return;
+      const sourceKey = article.source_id || article.source_name;
+      const topicKey = editorialTopicKey(article);
+      const sourceCount = sourceCounts.get(sourceKey) ?? 0;
+      const topicCount = topicCounts.get(topicKey) ?? 0;
+      if (
+        (options.maxPerSource && sourceCount >= options.maxPerSource) ||
+        (options.maxPerTopic && topicCount >= options.maxPerTopic)
+      ) {
+        deferred.push(article);
+        return;
+      }
+      markUsed(article);
+      result.push(article);
+    };
+    for (const article of items) {
+      if (result.length >= limit) break;
+      accept(article);
+    }
+    for (const article of deferred) {
+      if (result.length >= limit) break;
+      if (used.has(article.article_id)) continue;
+      if (usedStoryKeys.has(editorialStoryKey(article))) continue;
+      markUsed(article);
+      result.push(article);
+    }
+    return result;
+  };
+
+  const lead = take(critical, 1)[0] ?? take(topMarket, 1)[0] ?? null;
+  const secondary = take(topMarket, 3, { maxPerSource: 2, maxPerTopic: 1 });
+  const criticalStrip = take(critical, 3, { maxPerSource: 2, maxPerTopic: 1 });
+
+  return {
+    lead,
+    secondary,
+    critical: criticalStrip,
+    macro: take(macro, 4, { maxPerSource: 2, maxPerTopic: 2 }),
+    companies: take(companies, 4, { maxPerSource: 2, maxPerTopic: 2 }),
+    sectors: take(sectors, 5, { maxPerSource: 2, maxPerTopic: 2 }),
+    keywords: take(keywords, 5, { maxPerSource: 2, maxPerTopic: 2 }),
+  };
+}
+
+function editorialStoryKey(article: NewsArticle) {
+  return normalizeEditorialText(article.title)
+    .replace(/\b(google|news|rss|noticias|brasil|brazil)\b/g, " ")
+    .split(/\s+/)
+    .filter((word) => word.length > 2)
+    .slice(0, 8)
+    .join(" ");
+}
+
+function editorialTopicKey(article: NewsArticle) {
+  return normalizeEditorialText(article.title)
+    .split(/\s+/)
+    .filter((word) => word.length > 3)
+    .slice(0, 5)
+    .join(" ");
+}
+
+function normalizeEditorialText(value: string) {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function summarizeSources(sources: NewsSource[]) {
   return sources.reduce(
     (acc, source) => {
@@ -2153,50 +2050,6 @@ function filterArticles(
       .toLowerCase();
     return haystack.includes(search);
   });
-}
-
-function availabilityLabel(article: NewsArticle) {
-  if (article.paywall_status === "paywalled") {
-    return "Paywalled. Open externally; the app will not bypass access controls.";
-  }
-  switch (article.content_status) {
-    case "full_text_available":
-      return "Full text is available locally.";
-    case "summary_available":
-      return "Summary or feed snippet is available locally.";
-    case "official_document":
-      return "Official document metadata is available; eligible documents can be preserved.";
-    case "external_only":
-      return "External only. Open the original source to read.";
-    case "extraction_failed":
-      return "Metadata was stored, but content extraction failed.";
-    case "offline_copy_available":
-      return "An offline copy is available locally.";
-    case "paywalled":
-      return "Paywalled. Open externally; the app will not bypass access controls.";
-    case "metadata_only":
-    default:
-      return "Metadata only. Open the original source to read.";
-  }
-}
-
-function localContentMissingLabel(article: NewsArticle) {
-  if (article.paywall_status === "paywalled" || article.content_status === "paywalled") {
-    return "Paywalled content is not stored locally. Open the original source if you have access.";
-  }
-  if (article.content_status === "external_only") {
-    return "This article is external only. CVMAnalytics keeps metadata and attribution locally.";
-  }
-  if (article.content_status === "metadata_only") {
-    return "Only metadata is stored locally for this article.";
-  }
-  if (article.content_status === "summary_available") {
-    return "Only the feed summary is stored locally.";
-  }
-  if (article.content_status === "extraction_failed") {
-    return "Content extraction failed; metadata remains available.";
-  }
-  return "No local article body is currently stored.";
 }
 
 function refreshLabel(status: NewsRefreshStatus | null) {

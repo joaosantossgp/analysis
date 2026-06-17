@@ -23,6 +23,8 @@ class ParsedFeedEntry:
     published_at: str | None
     summary: str | None
     language: str | None = None
+    publisher_name: str | None = None
+    publisher_homepage_url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -73,6 +75,8 @@ def _parse_rss(root: ET.Element, *, feed_url: str) -> ParsedFeed:
                 published_at=_parse_date(_child_text(item, "pubDate") or _child_text(item, "dc:date")),
                 summary=_child_text(item, "description"),
                 language=language,
+                publisher_name=_child_text(item, "source"),
+                publisher_homepage_url=_child_attr(item, "source", "url"),
             )
         )
     return ParsedFeed(title=feed_title, language=language, entries=tuple(entries))
@@ -100,6 +104,8 @@ def _parse_atom(root: ET.Element, *, feed_url: str) -> ParsedFeed:
                 published_at=_parse_date(_child_text(entry, "published") or _child_text(entry, "updated")),
                 summary=_child_text(entry, "summary") or _child_text(entry, "content"),
                 language=entry_language,
+                publisher_name=_child_text(entry, "source"),
+                publisher_homepage_url=_child_attr(entry, "source", "url"),
             )
         )
     return ParsedFeed(title=feed_title, language=language, entries=tuple(entries))
@@ -123,6 +129,8 @@ def _parse_rdf(root: ET.Element, *, feed_url: str) -> ParsedFeed:
                 published_at=_parse_date(_child_text(item, "date")),
                 summary=_child_text(item, "description"),
                 language=language,
+                publisher_name=_child_text(item, "source"),
+                publisher_homepage_url=_child_attr(item, "source", "url"),
             )
         )
     return ParsedFeed(title=feed_title, language=language, entries=tuple(entries))
@@ -181,3 +189,11 @@ def _child_text(node: ET.Element, name: str) -> str | None:
         return None
     text = "".join(child.itertext()).strip()
     return text or None
+
+
+def _child_attr(node: ET.Element, name: str, attr: str) -> str | None:
+    child = _first_child(node, name)
+    if child is None:
+        return None
+    value = str(child.attrib.get(attr) or "").strip()
+    return value or None

@@ -18,6 +18,7 @@ NEWS_METHODS = {
     "get_news_article_content",
     "get_news_sources",
     "get_news_collection_runs",
+    "get_news_google_company_feed_settings",
     "get_news_refresh_status",
     "refresh_news_sources",
     "set_news_source_enabled",
@@ -26,6 +27,8 @@ NEWS_METHODS = {
     "update_news_article_state",
     "apply_news_classification_correction",
     "set_news_company_scope_override",
+    "set_news_company_scope_universe",
+    "save_news_google_company_feed_settings",
     "save_news_retention_policy",
     "cleanup_news_extracted_content",
 }

@@ -114,12 +114,51 @@ export interface NewsCompanyScopeOverride {
   updated_at?: string | null;
 }
 
+export interface NewsCoverageUniverseOption {
+  id: string;
+  name: string;
+  status?: string | null;
+  company_count: number;
+  updated_at?: string | null;
+}
+
 export interface NewsCompanyScopeResponse {
   selected_preset?: string | null;
+  selected_coverage_universe_id?: string | null;
+  selected_coverage_universe_name?: string | null;
+  available_coverage_universes?: NewsCoverageUniverseOption[];
   coverage_count: number;
   included_count: number;
   excluded_count: number;
   overrides: NewsCompanyScopeOverride[];
+  error?: string;
+}
+
+export interface NewsGoogleCompanyFeedSettings {
+  settings_id: string;
+  enabled: number | boolean;
+  max_companies: number;
+  priority: number;
+  locale: string;
+  country: string;
+  generated_count?: number;
+  eligible_company_count?: number;
+  disabled_count?: number;
+  updated_at?: string | null;
+  error?: string;
+}
+
+export interface SaveNewsGoogleCompanyFeedSettingsParams {
+  enabled?: boolean;
+  max_companies?: number;
+  priority?: number;
+  locale?: string;
+  country?: string;
+}
+
+export interface SaveNewsGoogleCompanyFeedSettingsResult {
+  status: "success" | "error" | "blocked" | string;
+  settings?: NewsGoogleCompanyFeedSettings;
   error?: string;
 }
 
@@ -134,6 +173,23 @@ export interface SetNewsCompanyScopeOverrideResult {
   cd_cvm?: number;
   action?: "include" | "exclude" | null | string;
   deleted?: boolean;
+  error?: string;
+}
+
+export interface SetNewsCompanyScopeUniverseParams {
+  coverage_universe_id?: string | null;
+}
+
+export interface SetNewsCompanyScopeUniverseResult {
+  status: "success" | "error" | "not_found" | "blocked" | string;
+  settings?: {
+    settings_id: string;
+    coverage_universe_id?: string | null;
+    updated_at?: string | null;
+  };
+  selected_coverage_universe_id?: string | null;
+  selected_coverage_universe_name?: string | null;
+  coverage_count?: number;
   error?: string;
 }
 
