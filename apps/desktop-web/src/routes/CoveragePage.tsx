@@ -1382,7 +1382,12 @@ function PriorityScoreTooltip({ item, colorClass }: { item: any; colorClass?: st
         <div className="space-y-2">
           {fKeys.map((key) => {
             const f = details[key] || { name: key, original_weight: 0, effective_weight: 0, score: null, contribution: 0, missing: true, weight_pct: 0 };
-            const pts = f.score !== null && f.score !== undefined ? `${f.score} pts` : "Missing";
+            let pts = "Missing";
+            if (f.original_weight === 0) {
+              pts = "Disabled";
+            } else if (f.score !== null && f.score !== undefined) {
+              pts = `${f.score} pts`;
+            }
             const origW = f.original_weight !== undefined ? `${Math.round(f.original_weight * 100)}%` : "0%";
             const effW = f.effective_weight !== undefined ? `${Math.round(f.effective_weight * 100)}%` : "0%";
             const contr = f.contribution !== null && f.contribution !== undefined ? f.contribution.toFixed(1) : "—";
@@ -1416,7 +1421,20 @@ function PriorityScoreTooltip({ item, colorClass }: { item: any; colorClass?: st
             <span className="text-[var(--color-action-primary)]">{item.final_score !== null && item.final_score !== undefined ? item.final_score : "—"}</span>
           </div>
         </div>
-        {item.market_cap !== null && item.market_cap !== undefined && (
+        {(item.market_cap_selection_origin === "snapshot_conflict" || item.market_cap_selection_origin === "database_conflict") && (
+          <div className="border-t border-zinc-800 pt-1.5 text-[9px] leading-normal text-red-400 font-bold bg-red-950/20 border border-red-900/40 p-1.5 rounded space-y-1">
+            <div className="uppercase tracking-wider">⚠️ Market Cap Conflict</div>
+            <div className="font-normal text-zinc-400 text-[8px]">
+              Multiple values found with equal priority/date/timestamps:
+            </div>
+            {item.market_cap_conflict_metadata?.candidates?.map((c: any, idx: number) => (
+              <div key={idx} className="font-normal text-zinc-300 text-[8px]">
+                • {c.source}: {c.market_cap ? (c.market_cap / 1e9).toFixed(2) + "B BRL" : "N/A"} ({c.as_of_date || "no date"})
+              </div>
+            ))}
+          </div>
+        )}
+        {item.market_cap !== null && item.market_cap !== undefined && item.market_cap_selection_origin !== "snapshot_conflict" && item.market_cap_selection_origin !== "database_conflict" && (
           <div className="border-t border-zinc-800 pt-1.5 space-y-0.5 text-[9px] leading-normal text-zinc-500">
             <div className="font-semibold text-zinc-400 uppercase tracking-wider mb-0.5">Market Cap Details</div>
             <div>Value: {(item.market_cap / 1e9).toFixed(2)}B {item.market_cap_currency || "BRL"}</div>

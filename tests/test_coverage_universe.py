@@ -452,3 +452,160 @@ def test_coverage_universe_edge_cases(test_engine):
     service.delete_universe(u_id)
 
 
+def test_coverage_universe_hotfixes(test_engine):
+    from src.companies.coverage import normalize_market_cap_source, _resolve_canonical_market_caps, CoverageUniverseService
+    from unittest.mock import Mock
+
+    # 1. Test normalize_market_cap_source
+    assert normalize_market_cap_source("yahoo") == "yahoo_finance"
+    assert normalize_market_cap_source("yahoo_finance") == "yahoo_finance"
+    assert normalize_market_cap_source("imported_market_cap") == "imported_user_data"
+    assert normalize_market_cap_source("imported_user_data") == "imported_user_data"
+    assert normalize_market_cap_source("b3") == "official_b3"
+    assert normalize_market_cap_source("cvm") == "official_cvm"
+    assert normalize_market_cap_source(None) == "unknown"
+    assert normalize_market_cap_source("random") == "unknown"
+
+    # 2. Test _resolve_canonical_market_caps snapshot conflict
+    entry1 = Mock(cd_cvm=1234, market_cap_brl=100000.0, source="b3", as_of_date="2026-06-16", downloaded_at="2026-06-16T12:00:00Z", rank=1, company_name="Test")
+    entry2 = Mock(cd_cvm=1234, market_cap_brl=200000.0, source="b3", as_of_date="2026-06-16", downloaded_at="2026-06-16T12:00:00Z", rank=1, company_name="Test")
+    res = _resolve_canonical_market_caps([entry1, entry2])
+    assert 1234 in res
+    best, conflicts = res[1234]
+    assert conflicts is not None
+    assert len(conflicts) == 2
+
+    # 3. Test DB Fallback Conflict & Zero-Weight Factors
+    service = CoverageUniverseService(test_engine)
+    u_id = service.create_universe(
+        name="Hotfix Test Universe",
+        purpose="Testing hotfixes",
+        analysis_type="Equity",
+        benchmark="IBOV"
+    )
+
+    # Seed companies
+    with test_engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT OR REPLACE INTO companies (cd_cvm, company_name, gics_sector, gics_sector_slug, ticker_b3, updated_at)
+                VALUES 
+                (7777, 'CONFLICT DB S.A.', 'Energy', 'energy', 'CONF7', '2026-06-16T12:00:00Z'),
+                (8888, 'ZERO WEIGHT S.A.', 'Energy', 'energy', 'ZERO8', '2026-06-16T12:00:00Z')
+                """
+            )
+        )
+        # Seed conflict DB entries
+        conn.execute(
+            text(
+                """
+                INSERT INTO company_universe (cd_cvm, ticker, company_name, market_cap, market_cap_rank, source, selected_preset, created_at, updated_at)
+                VALUES 
+                (7777, 'CONF7', 'CONFLICT DB S.A.', 100000.0, 1, 'b3', 'all', '2026-06-16', '2026-06-16'),
+                (7777, 'CONF7', 'CONFLICT DB S.A.', 200000.0, 1, 'b3', 'top_500', '2026-06-16', '2026-06-16')
+                """
+            )
+        )
+        # Seed 5 market history entries for both companies
+        conn.execute(
+            text(
+                """
+                INSERT OR REPLACE INTO market_history (cd_cvm, ticker, date, volume, close, adjusted_close, source)
+                VALUES 
+                (7777, 'CONF7', '2026-06-11', 1000.0, 10.0, 10.0, 'yahoo'),
+                (7777, 'CONF7', '2026-06-12', 1000.0, 10.0, 10.0, 'yahoo'),
+                (7777, 'CONF7', '2026-06-13', 1000.0, 10.0, 10.0, 'yahoo'),
+                (7777, 'CONF7', '2026-06-14', 1000.0, 10.0, 10.0, 'yahoo'),
+                (7777, 'CONF7', '2026-06-15', 1000.0, 10.0, 10.0, 'yahoo'),
+                (8888, 'ZERO8', '2026-06-11', 1000.0, 10.0, 10.0, 'yahoo'),
+                (8888, 'ZERO8', '2026-06-12', 1000.0, 10.0, 10.0, 'yahoo'),
+                (8888, 'ZERO8', '2026-06-13', 1000.0, 10.0, 10.0, 'yahoo'),
+                (8888, 'ZERO8', '2026-06-14', 1000.0, 10.0, 10.0, 'yahoo'),
+                (8888, 'ZERO8', '2026-06-15', 1000.0, 10.0, 10.0, 'yahoo')
+                """
+            )
+        )
+
+    service.add_company_to_universe(u_id, 7777, "core", "Conflict test")
+    service.add_company_to_universe(u_id, 8888, "watchlist", "Zero weight test")
+
+    # Let's verify DB Fallback conflict
+    scores = service.calculate_priority_scores(u_id)
+    conf_comp = next(x for x in scores if x["cd_cvm"] == 7777)
+    assert conf_comp["market_cap"] is None
+    assert conf_comp["market_cap_selection_origin"] == "database_conflict"
+    assert "market_cap" in conf_comp["missing_factors"]
+
+    # Now let's test zero-weight factor logic by modifying the universe assumptions weights
+    assumptions = service.get_universe(u_id)["assumptions"]
+    # Disable market cap, holding pct and sector complexity weights; keep only volume weight
+    assumptions["weights"] = {
+        "market_cap_weight": 0.0,
+        "volume_weight": 0.5,
+        "holding_weight": 0.0,
+        "sector_weight": 0.5
+    }
+    service.update_universe(
+        universe_id=u_id,
+        name="Hotfix Test Universe",
+        purpose="Testing hotfixes",
+        benchmark="IBOV",
+        status="draft",
+        assumptions=assumptions
+    )
+
+    scores_zero = service.calculate_priority_scores(u_id)
+    zero_comp = next(x for x in scores_zero if x["cd_cvm"] == 8888)
+
+    # With only volume weight active and volume available, it should NOT be blocked!
+    assert zero_comp["score_status"] == "complete"
+    assert zero_comp["final_score"] is not None
+    # Zero-weight factors should not be listed as missing
+    assert "market_cap" not in zero_comp["missing_factors"]
+    assert "holding_pct" not in zero_comp["missing_factors"]
+    assert "sector_complexity" not in zero_comp["missing_factors"]
+    # Factor details for zero-weight factors should have missing = False
+    assert zero_comp["factor_details"]["market_cap"]["missing"] is False
+    assert zero_comp["factor_details"]["holding_pct"]["missing"] is False
+    assert zero_comp["factor_details"]["sector_complexity"]["missing"] is False
+
+    # 4. Test delete transactional integrity (rollback)
+    from sqlalchemy.engine.base import Connection
+    original_execute = Connection.execute
+
+    def mock_execute(self_conn, statement, *args, **kwargs):
+        if "DELETE FROM coverage_universes" in str(statement):
+            raise ValueError("Simulated DB failure")
+        return original_execute(self_conn, statement, *args, **kwargs)
+
+    # Verify rows exist before delete attempt
+    with test_engine.connect() as conn:
+        u_count = conn.execute(text("SELECT COUNT(*) FROM coverage_universes WHERE id = :u_id"), {"u_id": u_id}).scalar()
+        comp_count = conn.execute(text("SELECT COUNT(*) FROM universe_companies WHERE universe_id = :u_id"), {"u_id": u_id}).scalar()
+        assert u_count == 1
+        assert comp_count == 2
+
+    # Patch execution to raise error
+    import unittest.mock as mock
+    with mock.patch.object(Connection, "execute", new=mock_execute):
+        with pytest.raises(ValueError, match="Simulated DB failure"):
+            service.delete_universe(u_id)
+
+    # Verify rows STILL exist (rolled back!)
+    with test_engine.connect() as conn:
+        u_count = conn.execute(text("SELECT COUNT(*) FROM coverage_universes WHERE id = :u_id"), {"u_id": u_id}).scalar()
+        comp_count = conn.execute(text("SELECT COUNT(*) FROM universe_companies WHERE universe_id = :u_id"), {"u_id": u_id}).scalar()
+        assert u_count == 1
+        assert comp_count == 2
+
+    # Now do a successful delete
+    service.delete_universe(u_id)
+    with test_engine.connect() as conn:
+        u_count = conn.execute(text("SELECT COUNT(*) FROM coverage_universes WHERE id = :u_id"), {"u_id": u_id}).scalar()
+        comp_count = conn.execute(text("SELECT COUNT(*) FROM universe_companies WHERE universe_id = :u_id"), {"u_id": u_id}).scalar()
+        assert u_count == 0
+        assert comp_count == 0
+
+
+

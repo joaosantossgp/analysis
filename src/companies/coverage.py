@@ -36,6 +36,33 @@ COMPLEX_SECTORS = ["Utilidade Pública", "Intermediários Financeiros", "Energia
 MIN_LIQUIDITY_OBSERVATIONS = 5
 
 
+def normalize_market_cap_source(source_str: str | None) -> str:
+    if not source_str:
+        return "unknown"
+    s = source_str.strip().lower()
+    if s in ("b3", "b3_official", "official_b3", "official-b3"):
+        return "official_b3"
+    if s in ("cvm", "cvm_official", "official_cvm", "official-cvm"):
+        return "official_cvm"
+    if s in ("imported_official", "official_imported", "official-imported"):
+        return "imported_official"
+    if s in ("imported", "imported_user_data", "imported_market_cap", "csv_import", "user", "user_data", "csv"):
+        return "imported_user_data"
+    if s in ("yahoo", "yahoo_finance", "yfinance", "yahoo finance", "yfinance_api"):
+        return "yahoo_finance"
+    return "unknown"
+
+
+NORMALIZED_SOURCE_PRIORITY = {
+    "official_b3": 6,
+    "official_cvm": 5,
+    "imported_official": 4,
+    "yahoo_finance": 3,
+    "imported_user_data": 2,
+    "unknown": 1
+}
+
+
 def _resolve_canonical_market_caps(snapshot_entries: list[Any]) -> dict[int, Any]:
     # Group by cd_cvm
     grouped: dict[int, list[Any]] = {}
@@ -45,22 +72,35 @@ def _resolve_canonical_market_caps(snapshot_entries: list[Any]) -> dict[int, Any
         grouped.setdefault(entry.cd_cvm, []).append(entry)
         
     resolved: dict[int, Any] = {}
-    SOURCE_PRIORITY = {
-        "b3": 4,
-        "cvm": 3,
-        "yahoo": 2,
-        "imported": 1
-    }
     for cd_cvm, entries in grouped.items():
         # Sort ascending so the best one is at the end
         sorted_entries = sorted(entries, key=lambda e: (
-            SOURCE_PRIORITY.get((e.source or "").strip().lower(), 0),
+            NORMALIZED_SOURCE_PRIORITY.get(normalize_market_cap_source(e.source), 1),
             (e.as_of_date or "").strip(),
             (e.downloaded_at or "").strip(),
             -(e.rank if e.rank is not None else 0),
             e.company_name or ""
         ))
-        resolved[cd_cvm] = sorted_entries[-1]
+        
+        best_entry = sorted_entries[-1]
+        best_norm_src = normalize_market_cap_source(best_entry.source)
+        best_prio = NORMALIZED_SOURCE_PRIORITY.get(best_norm_src, 1)
+        best_as_of = (best_entry.as_of_date or "").strip()
+        best_downloaded = (best_entry.downloaded_at or "").strip()
+        
+        top_candidates = [
+            e for e in sorted_entries
+            if normalize_market_cap_source(e.source) == best_norm_src
+            and (e.as_of_date or "").strip() == best_as_of
+            and (e.downloaded_at or "").strip() == best_downloaded
+        ]
+        
+        unique_caps = set(round(e.market_cap_brl, 2) for e in top_candidates)
+        if len(unique_caps) > 1:
+            resolved[cd_cvm] = (best_entry, top_candidates)
+        else:
+            resolved[cd_cvm] = (best_entry, None)
+            
     return resolved
 
 
@@ -610,8 +650,7 @@ class CoverageUniverseService:
                 {"u_id": universe_id, "cd_cvm": cd_cvm, "key": item}
             )
 
-    # --- Prioritization Scoring ---
-
+    # --- Prioritization Scoring
     def calculate_priority_scores(self, universe_id: str) -> list[dict[str, Any]]:
         self._ensure_schema()
         universe = self.get_universe(universe_id)
@@ -649,19 +688,6 @@ class CoverageUniverseService:
             companies = conn.execute(text(query), {"u_id": universe_id}).fetchall()
             
             results = []
-            SOURCE_PRIORITY = {
-                "b3": 4,
-                "cvm": 3,
-                "yahoo": 2,
-                "imported": 1
-            }
-
-            def db_row_key(row):
-                src = (row[1] or "").strip().lower()
-                prio = SOURCE_PRIORITY.get(src, 0)
-                s_date = (row[2] or "").strip()
-                u_date = (row[3] or "").strip()
-                return (prio, s_date, u_date)
 
             for comp in companies:
                 comp_data = dict(comp._mapping)
@@ -688,9 +714,15 @@ class CoverageUniverseService:
 
                 # 1. Market Cap (from canonical snapshot service with deterministic DB fallback)
                 mkt_cap = None
-                mcap_entry = mcap_map.get(cd_cvm)
+                mcap_entry = None
+                mcap_conflict_candidates = None
                 
+                resolved_tuple = mcap_map.get(cd_cvm)
+                if resolved_tuple:
+                    mcap_entry, mcap_conflict_candidates = resolved_tuple
+
                 mcap_source = None
+                mcap_source_normalized = "unknown"
                 mcap_source_date = None
                 mcap_downloaded_at = None
                 mcap_method = None
@@ -698,10 +730,26 @@ class CoverageUniverseService:
                 mcap_is_stale = False
                 mcap_selection_origin = None
                 mcap_preset = None
+                mcap_conflict_metadata = None
 
-                if mcap_entry:
+                if mcap_conflict_candidates:
+                    mkt_cap = None
+                    mcap_source = mcap_entry.source if mcap_entry else None
+                    mcap_source_normalized = normalize_market_cap_source(mcap_source)
+                    mcap_source_date = mcap_entry.as_of_date if mcap_entry else None
+                    mcap_downloaded_at = mcap_entry.downloaded_at if mcap_entry else None
+                    mcap_method = "snapshot_conflict"
+                    mcap_selection_origin = "snapshot_conflict"
+                    mcap_conflict_metadata = {
+                        "candidates": [
+                            {"source": e.source, "as_of_date": e.as_of_date, "market_cap": e.market_cap_brl}
+                            for e in mcap_conflict_candidates
+                        ]
+                    }
+                elif mcap_entry:
                     mkt_cap = mcap_entry.market_cap_brl
                     mcap_source = mcap_entry.source
+                    mcap_source_normalized = normalize_market_cap_source(mcap_source)
                     mcap_source_date = mcap_entry.as_of_date
                     mcap_downloaded_at = mcap_entry.downloaded_at
                     mcap_method = mcap_entry.method
@@ -720,7 +768,7 @@ class CoverageUniverseService:
                     except Exception:
                         pass
                 
-                if mkt_cap is None:
+                if mkt_cap is None and mcap_selection_origin != "snapshot_conflict":
                     db_query = """
                         SELECT market_cap, source, source_date, updated_at, selected_preset
                         FROM company_universe
@@ -728,19 +776,47 @@ class CoverageUniverseService:
                     """
                     rows = conn.execute(text(db_query), {"cd_cvm": cd_cvm}).fetchall()
                     if rows:
+                        def db_row_key(r):
+                            norm_src = normalize_market_cap_source(r[1])
+                            prio = NORMALIZED_SOURCE_PRIORITY.get(norm_src, 1)
+                            s_date = (r[2] or "").strip()
+                            u_date = (r[3] or "").strip()
+                            return (prio, s_date, u_date)
+                            
                         sorted_rows = sorted(rows, key=db_row_key)
-                        max_key = db_row_key(sorted_rows[-1])
-                        top_rows = [r for r in sorted_rows if db_row_key(r) == max_key]
-                        unique_caps = set(round(r[0], 2) for r in top_rows)
-                        if len(unique_caps) > 1:
+                        best_row = sorted_rows[-1]
+                        best_norm_src = normalize_market_cap_source(best_row[1])
+                        best_prio = NORMALIZED_SOURCE_PRIORITY.get(best_norm_src, 1)
+                        best_s_date = (best_row[2] or "").strip()
+                        best_u_date = (best_row[3] or "").strip()
+                        
+                        top_rows = [
+                            r for r in sorted_rows
+                            if normalize_market_cap_source(r[1]) == best_norm_src
+                            and (r[2] or "").strip() == best_s_date
+                            and (r[3] or "").strip() == best_u_date
+                        ]
+                        
+                        unique_db_caps = set(round(r[0], 2) for r in top_rows)
+                        if len(unique_db_caps) > 1:
                             mkt_cap = None
+                            mcap_source = best_row[1]
+                            mcap_source_normalized = best_norm_src
+                            mcap_source_date = best_row[2]
+                            mcap_downloaded_at = best_row[3]
                             mcap_method = "database_conflict"
                             mcap_selection_origin = "database_conflict"
                             mcap_preset = None
+                            mcap_conflict_metadata = {
+                                "candidates": [
+                                    {"source": r[1], "as_of_date": r[2], "market_cap": r[0]}
+                                    for r in top_rows
+                                ]
+                            }
                         else:
-                            best_row = top_rows[0]
                             mkt_cap = best_row[0]
                             mcap_source = best_row[1]
+                            mcap_source_normalized = best_norm_src
                             mcap_source_date = best_row[2]
                             mcap_downloaded_at = best_row[3]
                             mcap_method = "database_cache"
@@ -791,17 +867,13 @@ class CoverageUniverseService:
                     liquidity_is_stale = True
 
                 # Calculate Scores & Factor availability
-                missing_factors = []
-
                 if mkt_cap is None or mkt_cap <= 0:
                     cap_score = None
-                    missing_factors.append("market_cap")
                 else:
                     cap_score = self._calc_log_score(mkt_cap, 7.0, 11.7) # 10M to 50B
 
                 if num_obs < MIN_LIQUIDITY_OBSERVATIONS:
                     vol_score = None
-                    missing_factors.append("volume")
                 else:
                     vol_score = self._calc_log_score(avg_val, 4.0, 8.0) # 10k to 100M
 
@@ -811,7 +883,6 @@ class CoverageUniverseService:
                 if w_hold > 0.0:
                     if holding_pct is None or holding_pct == 0.0:
                         holding_score = None
-                        missing_factors.append("holding_pct")
                     else:
                         holding_score = min(max(holding_pct, 0.0), 100.0)
                 else:
@@ -821,7 +892,6 @@ class CoverageUniverseService:
                 gics_class = resolve_gics_classification(gics_sector=gics_val, gics_sector_slug=gics_sector_slug)
                 if gics_class is None:
                     sector_score = None
-                    missing_factors.append("sector_complexity")
                     comp_data["gics_sector"] = "Unknown"
                 else:
                     gics_slug = gics_class.gics_sector_slug
@@ -829,40 +899,56 @@ class CoverageUniverseService:
                     sector_score = 100.0 if is_complex else 50.0
                     comp_data["gics_sector"] = gics_class.gics_sector
 
-                # Factor availability counting
+                # Factor availability counting based ONLY on weights > 0
                 w_cap = weights.get("market_cap_weight", 0.3)
                 w_vol = weights.get("volume_weight", 0.3)
                 w_hold = weights.get("holding_weight", 0.2)
                 w_sect = weights.get("sector_weight", 0.2)
 
-                active_factors = []
+                available_factors = []
+                missing_factors = []
                 available_weights_sum = 0.0
                 calculated_sum = 0.0
 
-                if w_cap > 0 and cap_score is not None:
-                    active_factors.append("market_cap")
-                    available_weights_sum += w_cap
-                    calculated_sum += cap_score * w_cap
+                if w_cap > 0:
+                    if cap_score is not None:
+                        available_factors.append("market_cap")
+                        available_weights_sum += w_cap
+                        calculated_sum += cap_score * w_cap
+                    else:
+                        missing_factors.append("market_cap")
 
-                if w_vol > 0 and vol_score is not None:
-                    active_factors.append("volume")
-                    available_weights_sum += w_vol
-                    calculated_sum += vol_score * w_vol
+                if w_vol > 0:
+                    if vol_score is not None:
+                        available_factors.append("volume")
+                        available_weights_sum += w_vol
+                        calculated_sum += vol_score * w_vol
+                    else:
+                        missing_factors.append("volume")
 
-                if w_hold > 0 and holding_score is not None:
-                    active_factors.append("holding_pct")
-                    available_weights_sum += w_hold
-                    calculated_sum += holding_score * w_hold
+                if w_hold > 0:
+                    if holding_score is not None:
+                        available_factors.append("holding_pct")
+                        available_weights_sum += w_hold
+                        calculated_sum += holding_score * w_hold
+                    else:
+                        missing_factors.append("holding_pct")
 
-                if w_sect > 0 and sector_score is not None:
-                    active_factors.append("sector_complexity")
-                    available_weights_sum += w_sect
-                    calculated_sum += sector_score * w_sect
+                if w_sect > 0:
+                    if sector_score is not None:
+                        available_factors.append("sector_complexity")
+                        available_weights_sum += w_sect
+                        calculated_sum += sector_score * w_sect
+                    else:
+                        missing_factors.append("sector_complexity")
+
+                active_weights_sum = w_cap + w_vol + w_hold + w_sect
 
                 is_blocked = (
+                    active_weights_sum == 0 or
                     available_weights_sum < 0.5 or 
-                    len(active_factors) <= 1 or 
-                    (len(active_factors) == 1 and active_factors[0] == "sector_complexity")
+                    len(available_factors) <= 1 or 
+                    (len(available_factors) == 1 and available_factors[0] == "sector_complexity")
                 )
 
                 if is_blocked:
@@ -884,7 +970,7 @@ class CoverageUniverseService:
                         "raw_value": mkt_cap,
                         "score": round(cap_score, 1) if cap_score is not None else None,
                         "contribution": round((cap_score * w_cap) / available_weights_sum, 1) if (w_cap > 0 and cap_score is not None and available_weights_sum > 0) else 0.0,
-                        "missing": cap_score is None,
+                        "missing": w_cap > 0 and cap_score is None,
                         "weight_pct": round(w_cap * 100, 1),
                     },
                     "volume": {
@@ -894,7 +980,7 @@ class CoverageUniverseService:
                         "raw_value": avg_val if vol_score is not None else None,
                         "score": round(vol_score, 1) if vol_score is not None else None,
                         "contribution": round((vol_score * w_vol) / available_weights_sum, 1) if (w_vol > 0 and vol_score is not None and available_weights_sum > 0) else 0.0,
-                        "missing": vol_score is None,
+                        "missing": w_vol > 0 and vol_score is None,
                         "weight_pct": round(w_vol * 100, 1),
                     },
                     "holding_pct": {
@@ -904,7 +990,7 @@ class CoverageUniverseService:
                         "raw_value": holding_pct if holding_score is not None else None,
                         "score": round(holding_score, 1) if holding_score is not None else None,
                         "contribution": round((holding_score * w_hold) / available_weights_sum, 1) if (w_hold > 0 and holding_score is not None and available_weights_sum > 0) else 0.0,
-                        "missing": holding_score is None,
+                        "missing": w_hold > 0 and holding_score is None,
                         "weight_pct": round(w_hold * 100, 1),
                     },
                     "sector_complexity": {
@@ -914,7 +1000,7 @@ class CoverageUniverseService:
                         "raw_value": gics_class.gics_sector if gics_class else None,
                         "score": round(sector_score, 1) if sector_score is not None else None,
                         "contribution": round((sector_score * w_sect) / available_weights_sum, 1) if (w_sect > 0 and sector_score is not None and available_weights_sum > 0) else 0.0,
-                        "missing": sector_score is None,
+                        "missing": w_sect > 0 and sector_score is None,
                         "weight_pct": round(w_sect * 100, 1),
                     }
                 }
@@ -922,6 +1008,7 @@ class CoverageUniverseService:
                 comp_data.update({
                     "market_cap": mkt_cap,
                     "market_cap_source": mcap_source,
+                    "market_cap_source_normalized": mcap_source_normalized,
                     "market_cap_source_date": mcap_source_date,
                     "market_cap_downloaded_at": mcap_downloaded_at,
                     "market_cap_method": mcap_method,
@@ -930,6 +1017,7 @@ class CoverageUniverseService:
                     "market_cap_is_stale": mcap_is_stale,
                     "market_cap_selection_origin": mcap_selection_origin,
                     "market_cap_preset": mcap_preset,
+                    "market_cap_conflict_metadata": mcap_conflict_metadata,
                     "avg_volume": avg_vol,
                     "avg_value_brl": avg_val,
                     "liquidity_observations": num_obs,
