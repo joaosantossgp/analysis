@@ -283,6 +283,9 @@ class CVMDatabase:
         """Persiste metadados na tabela companies (se existir). Idempotente."""
         updated_at = datetime.utcnow().replace(microsecond=0).isoformat()
 
+        if ticker_b3 and ticker_b3.endswith(".SA"):
+            ticker_b3 = ticker_b3[:-3]
+
         # Resolve ticker_b3 and cnpj if not provided
         if not ticker_b3 or not cnpj:
             from src.companies.identity import CompanyIdentityResolver

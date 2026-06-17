@@ -88,6 +88,13 @@ class CompanyIdentityResolver:
         self.skip_db = skip_db
         self._cache: dict[int, CompanyIdentity] = {}
         self._ticker_map_cache = None
+        self._catalog_service = None
+
+    def _get_catalog_service(self):
+        if self._catalog_service is None:
+            from src.companies.catalog import CompanyCatalogService
+            self._catalog_service = CompanyCatalogService(timeout=3, ttl_seconds=3600)
+        return self._catalog_service
 
     def _get_engine(self):
         if self._engine is not None:
@@ -172,8 +179,7 @@ class CompanyIdentityResolver:
         # 2. Try CVM Catalog Service
         catalog_entry = None
         try:
-            from src.companies.catalog import CompanyCatalogService
-            catalog = CompanyCatalogService(timeout=3, ttl_seconds=3600)
+            catalog = self._get_catalog_service()
             catalog_entry = catalog.lookup_company(cd_cvm)
         except Exception as e:
             logger.debug(f"Catalog lookup failed for cd_cvm={cd_cvm}: {e}")
@@ -292,8 +298,7 @@ class CompanyIdentityResolver:
             pass
             
         try:
-            from src.companies.catalog import CompanyCatalogService
-            catalog = CompanyCatalogService(timeout=3, ttl_seconds=3600)
+            catalog = self._get_catalog_service()
             for entry in catalog.list_entries():
                 e_cnpj = "".join(c for c in str(entry.cnpj or "") if c.isdigit())
                 if e_cnpj == clean_cnpj:

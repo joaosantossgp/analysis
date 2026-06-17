@@ -101,6 +101,10 @@ def main():
                     continue
 
                 # Prepara os valores
+                ticker_clean = identity.ticker_b3
+                if ticker_clean and ticker_clean.endswith(".SA"):
+                    ticker_clean = ticker_clean[:-3]
+
                 params = {
                     "cd": identity.cd_cvm,
                     "name": identity.company_name,
@@ -112,7 +116,7 @@ def main():
                     "gics_industry_group": identity.gics_industry_group,
                     "gics_industry": identity.gics_industry,
                     "gics_sub_industry": identity.gics_sub_industry,
-                    "ticker": identity.ticker_b3,
+                    "ticker": ticker_clean,
                     "is_active": 1 if identity.is_active else 0,
                     "updated_at": updated_at,
                 }
