@@ -1227,7 +1227,7 @@ function WishListAdder({ universeId }: { universeId: string }) {
 
 // --- Prioritization Score List section ---
 // --- Priority Score Tooltip Breakdown ---
-function PriorityScoreTooltip({ item, weights }: { item: any; weights: any }) {
+function PriorityScoreTooltip({ item, weights, colorClass }: { item: any; weights: any; colorClass?: string }) {
   const wCap = Math.round((weights?.market_cap_weight ?? 0.3) * 100);
   const wVol = Math.round((weights?.volume_weight ?? 0.3) * 100);
   const wHold = Math.round((weights?.holding_weight ?? 0.2) * 100);
@@ -1240,7 +1240,7 @@ function PriorityScoreTooltip({ item, weights }: { item: any; weights: any }) {
 
   return (
     <div className="relative group/score inline-block cursor-help">
-      <span className="font-bold text-[var(--color-action-primary)] border-b border-dotted border-[var(--color-action-primary)]">
+      <span className={`font-bold border-b border-dotted ${colorClass || "text-[var(--color-action-primary)] border-[var(--color-action-primary)]"}`}>
         {item.final_score}
       </span>
       <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 p-3 bg-zinc-950 border border-zinc-800 rounded shadow-xl opacity-0 invisible group-hover/score:opacity-100 group-hover/score:visible transition-all duration-200 z-50 text-left font-mono text-3xs text-zinc-300 pointer-events-none space-y-2 leading-relaxed">
@@ -2163,18 +2163,17 @@ function PrioritizationSection({ universeId, onOpenBulkModal, onOpenMethodology 
                             style={{ width: `${s.final_score}%` }}
                           />
                         </div>
-                        <span className={`font-bold tabular-nums text-xs min-w-[32px] text-right ${
-                          s.final_score >= p75 ? "text-emerald-400" : s.final_score >= p25 ? "text-amber-400" : "text-red-400"
-                        }`}>
-                          {s.final_score}
-                        </span>
+                        <PriorityScoreTooltip
+                          item={s}
+                          weights={detailQuery.data?.assumptions?.weights}
+                          colorClass={s.final_score >= p75 ? "text-emerald-400 border-emerald-400" : s.final_score >= p25 ? "text-amber-400 border-amber-400" : "text-red-400 border-red-400"}
+                        />
                         {delta !== null && delta !== 0 && (
                           <span className={`text-3xs font-semibold tabular-nums ${delta > 0 ? "text-emerald-500" : "text-red-500"}`}>
                             {delta > 0 ? "▲" : "▼"}{Math.abs(delta)}
                           </span>
                         )}
                       </div>
-                      <PriorityScoreTooltip item={s} weights={detailQuery.data?.assumptions?.weights} />
                     </td>
 
                     {/* Checklist progress bar */}
