@@ -80,6 +80,24 @@ export function CoveragePage({ section }: Props) {
     enabled: !!currentUniverseId,
   });
 
+  const archiveMutation = useMutation({
+    mutationFn: (newStatus: string) => {
+      const payload = {
+        id: currentUniverseId,
+        name: activeUniverse?.name || "",
+        purpose: activeUniverse?.purpose || "",
+        benchmark: activeUniverse?.benchmark || "",
+        status: newStatus,
+      };
+      return updateCoverageUniverse(payload);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["coverage-universes"] });
+      alert(activeUniverse?.status === "archived" ? "Workspace restored!" : "Workspace archived!");
+    },
+    onError: (err) => alert(String(err))
+  });
+
   useEffect(() => {
     if (!currentUniverseId && section !== "universes") {
       navigate("/coverage", { replace: true });
@@ -154,14 +172,18 @@ export function CoveragePage({ section }: Props) {
               setDuplicateUniverseId(id);
               setIsDuplicateModalOpen(true);
             }}
-            onDeleteUniverse={async (id) => {
-              if (window.confirm("Are you sure you want to delete this universe?")) {
-                await deleteCoverageUniverse(id);
-                void universesQuery.refetch();
-                if (activeUniverseId === id) {
-                  handleSelectUniverse("");
-                }
-              }
+            onArchiveUniverse={async (id, currentStatus) => {
+              const u = universes.find((univ) => univ.id === id);
+              if (!u) return;
+              const newStatus = currentStatus === "archived" ? "active" : "archived";
+              await updateCoverageUniverse({
+                id,
+                name: u.name,
+                purpose: u.purpose || "",
+                benchmark: u.benchmark || "",
+                status: newStatus,
+              });
+              void universesQuery.refetch();
             }}
           />
         ) : (
@@ -206,10 +228,23 @@ export function CoveragePage({ section }: Props) {
                 }}>
                   Duplicate
                 </Button>
-                <DeleteUniverseButton universeId={currentUniverseId} onSuccess={() => {
-                  void universesQuery.refetch();
-                  handleSelectUniverse("");
-                }} />
+                {activeUniverse?.status === "archived" ? (
+                  <Button
+                    variant="primary"
+                    onClick={() => archiveMutation.mutate("active")}
+                    disabled={archiveMutation.isPending}
+                  >
+                    Restore Workspace
+                  </Button>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    onClick={() => archiveMutation.mutate("archived")}
+                    disabled={archiveMutation.isPending}
+                  >
+                    Archive Workspace
+                  </Button>
+                )}
               </div>
             </div>
 
@@ -221,6 +256,7 @@ export function CoveragePage({ section }: Props) {
                   setMethodologyTab(tab);
                   setIsMethodologyOpen(true);
                 }}
+                onSelectUniverse={handleSelectUniverse}
               />
             )}
 
@@ -533,13 +569,13 @@ function DashboardHub({
   onSelectUniverse,
   onOpenCreateModal,
   onOpenDuplicateModal,
-  onDeleteUniverse,
+  onArchiveUniverse,
 }: {
   universes: CoverageUniverse[];
   onSelectUniverse: (id: string) => void;
   onOpenCreateModal: () => void;
   onOpenDuplicateModal: (id: string) => void;
-  onDeleteUniverse: (id: string) => void;
+  onArchiveUniverse: (id: string, currentStatus: string) => void;
 }) {
   return (
     <div className="space-y-6 font-mono text-xs select-none">
@@ -615,17 +651,29 @@ function DashboardHub({
                   <Button variant="ghost" size="xs" onClick={() => onOpenDuplicateModal(u.id)}>
                     Clone
                   </Button>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onDeleteUniverse(u.id);
-                    }}
-                    className="p-1 px-2 border border-transparent rounded hover:border-red-900 hover:bg-red-950/30 text-red-500 transition-all text-2xs"
-                    title="Delete Permanently"
-                  >
-                    Delete
-                  </button>
+                  {u.status === "archived" ? (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onArchiveUniverse(u.id, "archived");
+                      }}
+                      className="p-1 px-2 border border-transparent rounded hover:border-emerald-900 hover:bg-emerald-950/30 text-emerald-400 transition-all text-2xs font-bold"
+                    >
+                      Restore
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onArchiveUniverse(u.id, u.status);
+                      }}
+                      className="p-1 px-2 border border-transparent rounded hover:border-zinc-700 hover:bg-zinc-800 text-zinc-400 transition-all text-2xs"
+                    >
+                      Archive
+                    </button>
+                  )}
                 </div>
               </div>
             );
@@ -650,7 +698,15 @@ function getUniverseAccentColor(name: string): string {
   return colors[hash % colors.length];
 }
 
-function UniverseSummarySection({ universe, onOpenMethodology }: { universe: CoverageUniverse; onOpenMethodology: (tab: "scoring" | "capacity") => void }) {
+function UniverseSummarySection({
+  universe,
+  onOpenMethodology,
+  onSelectUniverse,
+}: {
+  universe: CoverageUniverse;
+  onOpenMethodology: (tab: "scoring" | "capacity") => void;
+  onSelectUniverse: (id: string) => void;
+}) {
   const queryClient = useQueryClient();
   
   // Inline metadata states
@@ -746,8 +802,9 @@ function UniverseSummarySection({ universe, onOpenMethodology }: { universe: Cov
 
   // Calculations for KPIs
   const items = scoresQuery.data || [];
-  const avgScore = items.length > 0
-    ? Math.round((items.reduce((acc: number, item: any) => acc + item.final_score, 0) / items.length) * 10) / 10
+  const rankedItems = items.filter((i: any) => i.score_status !== "blocked" && typeof i.final_score === "number");
+  const avgScore = rankedItems.length > 0
+    ? Math.round((rankedItems.reduce((acc: number, item: any) => acc + item.final_score, 0) / rankedItems.length) * 10) / 10
     : 0;
 
   let completedTasks = 0;
@@ -940,6 +997,28 @@ function UniverseSummarySection({ universe, onOpenMethodology }: { universe: Cov
         <div className="mt-6">
           <Panel title="Wish List Quick Add" subtitle="Quick add companies to this workspace.">
             <WishListAdder universeId={universe.id} />
+          </Panel>
+        </div>
+
+        <div className="mt-6 border-t border-red-900/45 pt-6">
+          <Panel
+            title="Danger Zone"
+            subtitle="Irreversible operations. Be careful."
+          >
+            <div className="space-y-3 p-1">
+              <p className="text-3xs text-zinc-400 leading-normal">
+                Permanent deletion will cascade and erase all companies, checklists, decision history, and capacity setups for this universe. This action is transactional and cannot be undone.
+              </p>
+              <div className="flex justify-start pt-1.5 border-t border-zinc-900/40">
+                <DeleteUniverseButton
+                  universeId={universe.id}
+                  onSuccess={() => {
+                    void queryClient.invalidateQueries({ queryKey: ["coverage-universes"] });
+                    onSelectUniverse("");
+                  }}
+                />
+              </div>
+            </div>
           </Panel>
         </div>
       </div>
@@ -1239,15 +1318,41 @@ function WishListAdder({ universeId }: { universeId: string }) {
 // --- Prioritization Score List section ---
 // --- Priority Score Tooltip Breakdown ---
 function PriorityScoreTooltip({ item, weights, colorClass }: { item: any; weights: any; colorClass?: string }) {
+  if (item.score_status === "blocked") {
+    return (
+      <div className="relative group/score inline-block cursor-help">
+        <span className="font-bold border-b border-dotted text-zinc-550 border-zinc-550">
+          Blocked
+        </span>
+        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 p-3 bg-zinc-950 border border-zinc-800 rounded shadow-xl opacity-0 invisible group-hover/score:opacity-100 group-hover/score:visible transition-all duration-200 z-50 text-left font-mono text-3xs text-zinc-300 pointer-events-none space-y-2 leading-relaxed">
+          <div className="font-bold border-b border-zinc-850 pb-1 text-red-400 uppercase tracking-wider text-[10px]">
+            Score Blocked
+          </div>
+          <p className="text-zinc-400">
+            This company's score is blocked due to insufficient factors:
+          </p>
+          <div className="text-red-400 font-bold bg-red-950/20 border border-red-900/40 p-1.5 rounded">
+            Missing: {item.missing_factors && item.missing_factors.length > 0
+              ? item.missing_factors.map((f: string) => f.replace(/_/g, " ")).join(", ")
+              : "No details"}
+          </div>
+          <p className="text-4xs text-zinc-500 leading-normal">
+            A score is blocked when: available weights total &lt; 50%, only one factor is available, or sector complexity is the only available factor. Manual override cannot unblock.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   const wCap = Math.round((weights?.market_cap_weight ?? 0.3) * 100);
   const wVol = Math.round((weights?.volume_weight ?? 0.3) * 100);
   const wHold = Math.round((weights?.holding_weight ?? 0.2) * 100);
   const wSect = Math.round((weights?.sector_weight ?? 0.2) * 100);
 
-  const contrCap = ((item.cap_score * wCap) / 100).toFixed(1);
-  const contrVol = ((item.vol_score * wVol) / 100).toFixed(1);
-  const contrHold = ((item.holding_score * wHold) / 100).toFixed(1);
-  const contrSect = ((item.sector_score * wSect) / 100).toFixed(1);
+  const contrCap = item.cap_score !== null && item.cap_score !== undefined ? ((item.cap_score * wCap) / 100).toFixed(1) : "—";
+  const contrVol = item.vol_score !== null && item.vol_score !== undefined ? ((item.vol_score * wVol) / 100).toFixed(1) : "—";
+  const contrHold = item.holding_score !== null && item.holding_score !== undefined ? ((item.holding_score * wHold) / 100).toFixed(1) : "—";
+  const contrSect = item.sector_score !== null && item.sector_score !== undefined ? ((item.sector_score * wSect) / 100).toFixed(1) : "—";
 
   return (
     <div className="relative group/score inline-block cursor-help">
@@ -1256,30 +1361,30 @@ function PriorityScoreTooltip({ item, weights, colorClass }: { item: any; weight
       </span>
       <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 p-3 bg-zinc-950 border border-zinc-800 rounded shadow-xl opacity-0 invisible group-hover/score:opacity-100 group-hover/score:visible transition-all duration-200 z-50 text-left font-mono text-3xs text-zinc-300 pointer-events-none space-y-2 leading-relaxed">
         <div className="font-bold border-b border-zinc-850 pb-1 text-zinc-100 uppercase tracking-wider text-[10px]">
-          Score Breakdown
+          Score Breakdown ({item.score_status || "complete"})
         </div>
         <div className="space-y-1">
           <div className="flex justify-between">
-            <span>Market Cap Factor ({item.cap_score} pts)</span>
+            <span>Market Cap ({item.cap_score !== null && item.cap_score !== undefined ? `${item.cap_score} pts` : "Missing"})</span>
             <span className="text-zinc-400">× {wCap}% = {contrCap}</span>
           </div>
           <div className="flex justify-between">
-            <span>Volume Factor ({item.vol_score} pts)</span>
+            <span>Volume ({item.vol_score !== null && item.vol_score !== undefined ? `${item.vol_score} pts` : "Missing"})</span>
             <span className="text-zinc-400">× {wVol}% = {contrVol}</span>
           </div>
           <div className="flex justify-between">
-            <span>Holdings Factor ({item.holding_score} pts)</span>
+            <span>Holdings ({item.holding_score !== null && item.holding_score !== undefined ? `${item.holding_score} pts` : "Missing"})</span>
             <span className="text-zinc-400">× {wHold}% = {contrHold}</span>
           </div>
           <div className="flex justify-between">
-            <span>Sector Factor ({item.sector_score} pts)</span>
+            <span>Sector ({item.sector_score !== null && item.sector_score !== undefined ? `${item.sector_score} pts` : "Missing"})</span>
             <span className="text-zinc-400">× {wSect}% = {contrSect}</span>
           </div>
         </div>
         <div className="border-t border-zinc-800 pt-1.5 space-y-1 text-2xs">
           <div className="flex justify-between">
             <span>Calculated Score:</span>
-            <span className="font-bold text-zinc-100">{item.calculated_score}</span>
+            <span className="font-bold text-zinc-100">{item.calculated_score !== null && item.calculated_score !== undefined ? item.calculated_score : "—"}</span>
           </div>
           <div className="flex justify-between">
             <span>Manual Override:</span>
@@ -1289,9 +1394,27 @@ function PriorityScoreTooltip({ item, weights, colorClass }: { item: any; weight
           </div>
           <div className="flex justify-between border-t border-zinc-800/60 pt-1 font-bold text-zinc-100">
             <span>Final Score:</span>
-            <span className="text-[var(--color-action-primary)]">{item.final_score}</span>
+            <span className="text-[var(--color-action-primary)]">{item.final_score !== null && item.final_score !== undefined ? item.final_score : "—"}</span>
           </div>
         </div>
+        {item.market_cap !== null && item.market_cap !== undefined && (
+          <div className="border-t border-zinc-800 pt-1.5 space-y-0.5 text-[9px] leading-normal text-zinc-500">
+            <div className="font-semibold text-zinc-400 uppercase tracking-wider mb-0.5">Market Cap Details</div>
+            <div>Value: {(item.market_cap / 1e9).toFixed(2)}B {item.market_cap_currency || "BRL"}</div>
+            <div>Source: {item.market_cap_source || "N/A"} ({item.market_cap_method || "N/A"})</div>
+            <div>Date: {item.market_cap_source_date || "N/A"}</div>
+            {item.market_cap_is_stale && <div className="text-amber-550 font-bold">Status: STALE CACHE</div>}
+          </div>
+        )}
+        {item.avg_volume !== null && item.avg_volume !== undefined && (
+          <div className="border-t border-zinc-800 pt-1.5 space-y-0.5 text-[9px] leading-normal text-zinc-500">
+            <div className="font-semibold text-zinc-400 uppercase tracking-wider mb-0.5">Liquidity Details</div>
+            <div>30D Avg Daily Value: {item.avg_value_brl !== null && item.avg_value_brl !== undefined ? `${(item.avg_value_brl / 1e6).toFixed(2)}M BRL` : `${(item.avg_volume / 1e3).toFixed(1)}k shares`}</div>
+            {item.liquidity_observations !== null && item.liquidity_observations !== undefined && (
+              <div>Observations: {item.liquidity_observations} days</div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -2119,7 +2242,6 @@ function PrioritizationSection({ universeId, onOpenBulkModal, onOpenMethodology 
                 const total = s.total_checklist_count ?? 0;
                 const completed = s.completed_checklist_count ?? 0;
                 const checkPct = total > 0 ? (completed / total) * 100 : 0;
-                const delta: number | null = s.score_delta ?? null;
 
                 return (
                   <tr key={s.cd_cvm} className="border-b border-[var(--color-border-subtle)] hover:bg-[var(--color-surface-2)] transition-colors">
@@ -2163,27 +2285,34 @@ function PrioritizationSection({ universeId, onOpenBulkModal, onOpenMethodology 
                     <td className="px-3 py-2.5">
                       <div className="flex items-center gap-2">
                         <div className="flex-1 h-1.5 rounded-full bg-zinc-800 overflow-hidden min-w-[60px]">
-                          <div
-                            className={`h-full rounded-full transition-all ${
-                              s.final_score >= p75
-                                ? "bg-emerald-500"
-                                : s.final_score >= p25
-                                ? "bg-amber-500"
-                                : "bg-red-500"
-                            }`}
-                            style={{ width: `${s.final_score}%` }}
-                          />
+                          {s.score_status === "blocked" ? (
+                            <div className="h-full rounded-full bg-zinc-600/50" style={{ width: "100%" }} />
+                          ) : (
+                            <div
+                              className={`h-full rounded-full transition-all ${
+                                s.final_score >= p75
+                                  ? "bg-emerald-500"
+                                  : s.final_score >= p25
+                                  ? "bg-amber-500"
+                                  : "bg-red-500"
+                              }`}
+                              style={{ width: `${s.final_score}%` }}
+                            />
+                          )}
                         </div>
                         <PriorityScoreTooltip
                           item={s}
                           weights={detailQuery.data?.assumptions?.weights}
-                          colorClass={s.final_score >= p75 ? "text-emerald-400 border-emerald-400" : s.final_score >= p25 ? "text-amber-400 border-amber-400" : "text-red-400 border-red-400"}
+                          colorClass={
+                            s.score_status === "blocked"
+                              ? "text-zinc-500 border-zinc-500"
+                              : s.final_score >= p75
+                              ? "text-emerald-400 border-emerald-400"
+                              : s.final_score >= p25
+                              ? "text-amber-400 border-amber-400"
+                              : "text-red-400 border-red-400"
+                          }
                         />
-                        {delta !== null && delta !== 0 && (
-                          <span className={`text-3xs font-semibold tabular-nums ${delta > 0 ? "text-emerald-500" : "text-red-500"}`}>
-                            {delta > 0 ? "▲" : "▼"}{Math.abs(delta)}
-                          </span>
-                        )}
                       </div>
                     </td>
 

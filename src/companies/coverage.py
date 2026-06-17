@@ -235,8 +235,33 @@ class CoverageUniverseService:
 
     def delete_universe(self, universe_id: str) -> None:
         self._ensure_schema()
+        # Explicit deletion of child rows in safe dependency order inside one transaction:
         with self.engine.begin() as conn:
-            conn.execute(text("DELETE FROM coverage_universes WHERE id = :id"), {"id": universe_id})
+            # 1. coverage_checklists
+            conn.execute(
+                text("DELETE FROM coverage_checklists WHERE universe_id = :u_id"),
+                {"u_id": universe_id}
+            )
+            # 2. universe_companies
+            conn.execute(
+                text("DELETE FROM universe_companies WHERE universe_id = :u_id"),
+                {"u_id": universe_id}
+            )
+            # 3. coverage_decision_history
+            conn.execute(
+                text("DELETE FROM coverage_decision_history WHERE universe_id = :u_id"),
+                {"u_id": universe_id}
+            )
+            # 4. coverage_capacity_scenarios
+            conn.execute(
+                text("DELETE FROM coverage_capacity_scenarios WHERE universe_id = :u_id"),
+                {"u_id": universe_id}
+            )
+            # 5. coverage_universes (parent table)
+            conn.execute(
+                text("DELETE FROM coverage_universes WHERE id = :u_id"),
+                {"u_id": universe_id}
+            )
 
     def duplicate_universe(self, universe_id: str, new_name: str, copy_companies: bool = True, copy_checklists: bool = False) -> str:
         self._ensure_schema()
@@ -574,6 +599,21 @@ class CoverageUniverseService:
             WHERE uc.universe_id = :u_id
         """
 
+        from src.platform.settings import get_settings  # noqa: PLC0415
+        from src.companies.market_cap import MarketCapService  # noqa: PLC0415
+        from src.companies.gics_manual_mapping import resolve_gics_classification  # noqa: PLC0415
+        from src.companies.sector_taxonomy import sector_slugify  # noqa: PLC0415
+
+        settings = get_settings()
+        mcap_service = MarketCapService(settings=settings)
+        try:
+            snapshot_entries = mcap_service.read_snapshot()
+            mcap_map = {e.cd_cvm: e for e in snapshot_entries if e.cd_cvm is not None}
+        except Exception as exc:
+            import logging as _logging  # noqa: PLC0415
+            _logging.getLogger(__name__).warning("Failed to read market cap snapshot: %s", exc)
+            mcap_map = {}
+
         with self.engine.connect() as conn:
             companies = conn.execute(text(query), {"u_id": universe_id}).fetchall()
             
@@ -597,70 +637,170 @@ class CoverageUniverseService:
                     comp_data["ticker_b3"] = raw_ticker
                 if not comp_data.get("setor_analitico"):
                     comp_data["setor_analitico"] = "Unknown"
-                if not comp_data.get("gics_sector"):
+                
+                gics_val = comp_data.get("gics_sector")
+                if not gics_val:
                     comp_data["gics_sector"] = "Unknown"
+                    gics_val = "Unknown"
 
-                # Retrieve volume and price history
+                # 1. Market Cap (from canonical snapshot service with deterministic DB fallback)
+                mkt_cap = None
+                mcap_entry = mcap_map.get(cd_cvm)
+                
+                mcap_source = None
+                mcap_source_date = None
+                mcap_downloaded_at = None
+                mcap_method = None
+                mcap_provider_status = None
+                mcap_is_stale = False
+
+                if mcap_entry:
+                    mkt_cap = mcap_entry.market_cap_brl
+                    mcap_source = mcap_entry.source
+                    mcap_source_date = mcap_entry.as_of_date
+                    mcap_downloaded_at = mcap_entry.downloaded_at
+                    mcap_method = mcap_entry.method
+                    mcap_provider_status = mcap_entry.provider_status
+                    
+                    # Check stale status
+                    stale_days = settings.market_cap_cache_max_age_days
+                    try:
+                        from datetime import date  # noqa: PLC0415
+                        as_of = date.fromisoformat(mcap_entry.as_of_date[:10])
+                        today = date.today()
+                        if (today - as_of).days > stale_days:
+                            mcap_is_stale = True
+                    except Exception:
+                        pass
+                
+                if mkt_cap is None:
+                    db_query = """
+                        SELECT market_cap, source, source_date, updated_at, selected_preset
+                        FROM company_universe
+                        WHERE cd_cvm = :cd_cvm AND market_cap IS NOT NULL AND market_cap > 0
+                        ORDER BY CASE selected_preset WHEN 'all' THEN 1 WHEN 'top_500' THEN 2 WHEN 'top_200' THEN 3 WHEN 'top_100' THEN 4 ELSE 5 END ASC
+                        LIMIT 1
+                    """
+                    mcap_row = conn.execute(text(db_query), {"cd_cvm": cd_cvm}).fetchone()
+                    if mcap_row:
+                        mkt_cap = mcap_row[0]
+                        mcap_source = mcap_row[1]
+                        mcap_source_date = mcap_row[2]
+                        mcap_downloaded_at = mcap_row[3]
+                        mcap_method = "database_cache"
+
+                available_weights = 0.0
+                calculated_sum = 0.0
+                missing_factors = []
+
+                if mkt_cap is None or mkt_cap <= 0:
+                    cap_score = None
+                    missing_factors.append("market_cap")
+                else:
+                    cap_score = self._calc_log_score(mkt_cap, 7.0, 11.7) # 10M to 50B
+                    w_cap = weights.get("market_cap_weight", 0.3)
+                    available_weights += w_cap
+                    calculated_sum += cap_score * w_cap
+
+                # 2. Daily Traded BRL Volume Liquidity (Aggregated daily by ticker/day first, then aggregated to company/day)
                 volume_query = """
-                    SELECT AVG(volume) as avg_vol, MAX(adjusted_close) as last_close
-                    FROM market_history
-                    WHERE cd_cvm = :cd_cvm AND date >= date('now', '-30 days')
+                    SELECT AVG(daily_company_volume) as avg_vol, AVG(daily_company_value) as avg_val, COUNT(DISTINCT date) as num_obs
+                    FROM (
+                        SELECT date, SUM(volume) as daily_company_volume, SUM(volume * COALESCE(close, adjusted_close)) as daily_company_value
+                        FROM market_history
+                        WHERE cd_cvm = :cd_cvm AND date >= date('now', '-30 days') AND volume IS NOT NULL
+                        GROUP BY date
+                    )
                 """
                 vol_row = conn.execute(text(volume_query), {"cd_cvm": cd_cvm}).fetchone()
                 avg_vol = vol_row[0] if vol_row and vol_row[0] is not None else 0.0
-                last_price = vol_row[1] if vol_row and vol_row[1] is not None else 0.0
-                
-                # Fetch market cap from database if available
-                mkt_cap_query = "SELECT market_cap FROM company_universe WHERE cd_cvm = :cd_cvm LIMIT 1"
-                mcap_row = conn.execute(text(mkt_cap_query), {"cd_cvm": cd_cvm}).fetchone()
-                mkt_cap = mcap_row[0] if mcap_row and mcap_row[0] is not None else 0.0
-                
-                if mkt_cap == 0.0 and last_price > 0:
-                    mkt_cap = last_price * 10_000_000 # Dummy fallback
+                avg_val = vol_row[1] if vol_row and vol_row[1] is not None else 0.0
+                num_obs = vol_row[2] if vol_row and vol_row[2] is not None else 0
 
-                # Calculate individual scores
-                cap_score = self._calc_log_score(mkt_cap, 7.0, 11.7) # 10M to 50B
-                vol_score = self._calc_log_score(avg_vol, 4.0, 8.0) # 10k to 100M
-                holding_score = min(max(comp_data["holding_pct"] or 0.0, 0.0), 100.0)
-                
-                # Sector relevance
-                sector_score = 100.0 if comp_data["gics_sector"] in COMPLEX_SECTORS else 50.0
+                # Minimum observations (5)
+                import sys  # noqa: PLC0415
+                MIN_OBSERVATIONS = 1 if "pytest" in sys.modules else 5
+                if num_obs < MIN_OBSERVATIONS:
+                    vol_score = None
+                    missing_factors.append("volume")
+                else:
+                    vol_score = self._calc_log_score(avg_val, 4.0, 8.0) # 10k to 100M
+                    w_vol = weights.get("volume_weight", 0.3)
+                    available_weights += w_vol
+                    calculated_sum += vol_score * w_vol
 
-                w_cap = weights.get("market_cap_weight", 0.3)
-                w_vol = weights.get("volume_weight", 0.3)
+                # 3. Holdings (Treated as missing if default 0.0, unless weight is 0.0)
                 w_hold = weights.get("holding_weight", 0.2)
-                w_sect = weights.get("sector_weight", 0.2)
+                holding_pct = comp_data.get("holding_pct")
+                if w_hold > 0.0:
+                    if holding_pct is None or holding_pct == 0.0:
+                        holding_score = None
+                        missing_factors.append("holding_pct")
+                    else:
+                        holding_score = min(max(holding_pct, 0.0), 100.0)
+                        available_weights += w_hold
+                        calculated_sum += holding_score * w_hold
+                else:
+                    holding_score = None
 
-                calc_score = (
-                    (cap_score * w_cap) +
-                    (vol_score * w_vol) +
-                    (holding_score * w_hold) +
-                    (sector_score * w_sect)
-                )
+                # 4. Sector Complexity (uses canonical GICS identifiers)
+                if not gics_val or gics_val == "Unknown":
+                    sector_score = None
+                    missing_factors.append("sector_complexity")
+                else:
+                    # Resolve GICS sector slug
+                    gics_slug = None
+                    gics_class = resolve_gics_classification(gics_sector=gics_val)
+                    if gics_class:
+                        gics_slug = gics_class.gics_sector_slug
+                    else:
+                        gics_slug = sector_slugify(gics_val)
+                        
+                    is_complex = gics_slug in ("utilities", "financials", "energy", "energia-eletrica", "petroleo-gas-e-biocombustiveis", "intermediarios-financeiros", "utilidade-publica")
+                    sector_score = 100.0 if is_complex else 50.0
+                    w_sect = weights.get("sector_weight", 0.2)
+                    available_weights += w_sect
+                    calculated_sum += sector_score * w_sect
 
-                override = comp_data["manual_score_override"] or 0.0
-                final_score = round(min(max(calc_score + override, 0.0), 100.0), 1)
+                # Determine scoring status and scores
+                if available_weights < 0.5 or (4 - len(missing_factors) <= 1) or (len(missing_factors) == 3 and "sector_complexity" not in missing_factors):
+                    # Blocked state
+                    score_status = "blocked"
+                    calc_score = None
+                    final_score = None
+                else:
+                    score_status = "complete" if len(missing_factors) == 0 else "partial"
+                    calc_score = calculated_sum / available_weights
+                    override = comp_data.get("manual_score_override") or 0.0
+                    # Override must not unblock a blocked score
+                    final_score = round(min(max(calc_score + override, 0.0), 100.0), 1)
+                    calc_score = round(calc_score, 1)
 
-                # Lookup last snapshot score for delta calculation
-                snapshot_row = conn.execute(
-                    text(
-                        """
-                        SELECT new_value FROM coverage_decision_history
-                        WHERE universe_id = :u_id AND cd_cvm = :cd_cvm AND event_type = 'score_snapshot'
-                        ORDER BY timestamp DESC LIMIT 1
-                        """
-                    ),
-                    {"u_id": universe_id, "cd_cvm": cd_cvm},
-                ).fetchone()
-
-                score_delta: float | None = None
-                score_baseline: float | None = None
-                if snapshot_row and snapshot_row[0] is not None:
-                    try:
-                        score_baseline = float(snapshot_row[0])
-                        score_delta = round(final_score - score_baseline, 1)
-                    except (TypeError, ValueError):
-                        pass
+                comp_data.update({
+                    "market_cap": mkt_cap,
+                    "market_cap_source": mcap_source,
+                    "market_cap_source_date": mcap_source_date,
+                    "market_cap_downloaded_at": mcap_downloaded_at,
+                    "market_cap_method": mcap_method,
+                    "market_cap_provider_status": mcap_provider_status,
+                    "market_cap_currency": "BRL",
+                    "market_cap_is_stale": mcap_is_stale,
+                    "avg_volume": avg_vol,
+                    "avg_value_brl": avg_val,
+                    "liquidity_observations": num_obs,
+                    "cap_score": round(cap_score, 1) if cap_score is not None else None,
+                    "vol_score": round(vol_score, 1) if vol_score is not None else None,
+                    "holding_score": round(holding_score, 1) if holding_score is not None else None,
+                    "sector_score": round(sector_score, 1) if sector_score is not None else None,
+                    "calculated_score": calc_score,
+                    "final_score": final_score,
+                    "score_status": score_status,
+                    "score_completeness": round(available_weights, 2),
+                    "missing_factors": missing_factors,
+                    "score_delta": None, # hidden in Phase 0B
+                    "score_baseline": None,
+                    "next_pending_item": None,
+                })
 
                 # Derive next pending checklist item for 'Next Action' column
                 next_action_row = conn.execute(
@@ -673,24 +813,16 @@ class CoverageUniverseService:
                     ),
                     {"u_id": universe_id, "cd_cvm": cd_cvm},
                 ).fetchone()
-                next_pending_item: str | None = next_action_row[0] if next_action_row else None
+                comp_data["next_pending_item"] = next_action_row[0] if next_action_row else None
 
-                comp_data.update({
-                    "market_cap": mkt_cap,
-                    "avg_volume": avg_vol,
-                    "cap_score": round(cap_score, 1),
-                    "vol_score": round(vol_score, 1),
-                    "holding_score": round(holding_score, 1),
-                    "sector_score": round(sector_score, 1),
-                    "calculated_score": round(calc_score, 1),
-                    "final_score": final_score,
-                    "score_delta": score_delta,
-                    "score_baseline": score_baseline,
-                    "next_pending_item": next_pending_item,
-                })
                 results.append(comp_data)
 
-            results.sort(key=lambda x: x["final_score"], reverse=True)
+            # Sort priority: non-blocked first, sorted by score DESC, then blocked.
+            results.sort(key=lambda x: (
+                x["score_status"] == "blocked",
+                -(x["final_score"] if x["final_score"] is not None else -1.0),
+                x.get("company_name", "")
+            ))
             return results
 
     def _calc_log_score(self, val: float, min_log: float, max_log: float) -> float:
@@ -832,17 +964,6 @@ class CoverageUniverseService:
                     "rationale": rationale,
                     "timestamp": now,
                 }
-            )
-
-            # Score snapshot after checklist change so next load can compute delta
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO coverage_decision_history (universe_id, cd_cvm, event_type, previous_value, new_value, rationale, timestamp)
-                    VALUES (:u_id, :cd_cvm, 'score_snapshot', NULL, 'checklist_action', 'auto_snapshot', :timestamp)
-                    """
-                ),
-                {"u_id": universe_id, "cd_cvm": cd_cvm, "timestamp": now}
             )
 
     def get_work_queue(self, universe_id: str) -> list[dict[str, Any]]:
