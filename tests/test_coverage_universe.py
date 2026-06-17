@@ -264,16 +264,49 @@ def test_coverage_universe_service_lifecycle(test_engine):
     assert len(scores3) == 1
     assert scores3[0]["cd_cvm"] == 9512
 
-    # 15. Test duplication
-    dup_id = service.duplicate_universe(u_id, "Cloned Universe Setup")
-    assert dup_id is not None
-    dup = service.get_universe(dup_id)
-    assert dup["name"] == "Cloned Universe Setup"
-    assert dup["purpose"] == "Energy & Materials universe"
-    assert dup["benchmark"] == "IBOV"
-    # Company list should start empty in copy
-    assert len(service.calculate_priority_scores(dup_id)) == 0
-    service.delete_universe(dup_id)
+    # 15. Test duplication (with default copy_companies=True)
+    dup_id_default = service.duplicate_universe(u_id, "Cloned Universe Default")
+    assert dup_id_default is not None
+    dup_default = service.get_universe(dup_id_default)
+    assert dup_default["name"] == "Cloned Universe Default"
+    # Company list should be copied
+    dup_scores = service.calculate_priority_scores(dup_id_default)
+    assert len(dup_scores) == 1
+    assert dup_scores[0]["cd_cvm"] == 9512
+    # Checklists should not be copied by default (they are initialized as not completed)
+    dup_check = service.get_coverage_checklists(dup_id_default, 9512)
+    assert len(dup_check) > 0
+    assert all(chk["is_completed"] == 0 for chk in dup_check)
+    service.delete_universe(dup_id_default)
+
+    # 15b. Test duplication with checklists copy
+    dup_id_check = service.duplicate_universe(u_id, "Cloned Universe with Checklists", copy_companies=True, copy_checklists=True)
+    dup_check2 = service.get_coverage_checklists(dup_id_check, 9512)
+    assert any(chk["item_key"] == "model_updated" and chk["is_completed"] == 1 for chk in dup_check2)
+    service.delete_universe(dup_id_check)
+
+    # 15c. Test duplication (without copy_companies)
+    dup_id_empty = service.duplicate_universe(u_id, "Cloned Universe Empty", copy_companies=False)
+    assert len(service.calculate_priority_scores(dup_id_empty)) == 0
+    service.delete_universe(dup_id_empty)
+
+    # 15d. Test bulk update companies (add & remove)
+    bulk_id = service.create_universe("Bulk Universe", "Testing bulk updates", "Equity", "IBOV")
+    # Bulk add PETR4 and VALE3 as core
+    service.bulk_update_companies_in_universe(bulk_id, [9512, 4170], "core", "Bulk add energy and materials")
+    bulk_scores = service.calculate_priority_scores(bulk_id)
+    assert len(bulk_scores) == 2
+    assert any(x["cd_cvm"] == 9512 and x["tier"] == "core" for x in bulk_scores)
+    assert any(x["cd_cvm"] == 4170 and x["tier"] == "core" for x in bulk_scores)
+    
+    # Bulk change PETR4 to must_cover and remove VALE3 (tier='none')
+    service.bulk_update_companies_in_universe(bulk_id, [9512], "must_cover", "Upgrade Petro")
+    service.bulk_update_companies_in_universe(bulk_id, [4170], "none", "Remove Vale")
+    bulk_scores2 = service.calculate_priority_scores(bulk_id)
+    assert len(bulk_scores2) == 1
+    assert bulk_scores2[0]["cd_cvm"] == 9512
+    assert bulk_scores2[0]["tier"] == "must_cover"
+    service.delete_universe(bulk_id)
 
     # 16. Delete universe
     service.delete_universe(u_id)

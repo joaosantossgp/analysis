@@ -1603,13 +1603,15 @@ export interface BridgeApi {
   run_automatic_mapping(params?: Record<string, unknown>): Promise<{ status: string; matched?: number; preserved_manual?: number; error?: string }>;
   get_company_universe(params?: Record<string, unknown>): Promise<{ items: CvmRegistryEntry[]; count: number; error?: string }>;
   get_company_connections(params: { cd_cvm: number }): Promise<{ has_financials: boolean; mapped_distributors: number; mapped_plants: number; total_capacity_mw: number; error?: string }>;
+  resolve_company_identities(params: { inputs: string[] }): Promise<{ resolved: any[]; unmapped: string[]; error?: string }>;
   // Coverage Universe
   get_coverage_universes(params?: Record<string, unknown>): Promise<any>;
   get_coverage_universe(params: { id: string }): Promise<any>;
   create_coverage_universe(params: { name: string; purpose?: string; analysis_type?: string; benchmark?: string }): Promise<{ universe_id?: string; error?: string }>;
   update_coverage_universe(params: { id: string; name: string; purpose?: string; benchmark?: string; status: string; assumptions?: any }): Promise<{ success?: boolean; error?: string }>;
   delete_coverage_universe(params: { id: string }): Promise<{ success?: boolean; error?: string }>;
-  duplicate_coverage_universe(params: { id: string; name: string }): Promise<{ universe_id?: string; error?: string }>;
+  duplicate_coverage_universe(params: { id: string; name: string; copy_companies?: boolean; copy_checklists?: boolean }): Promise<{ universe_id?: string; error?: string }>;
+  bulk_update_companies_in_coverage_universe(params: { universe_id: string; company_ids: number[]; tier: string; rationale: string }): Promise<{ success?: boolean; error?: string }>;
   add_company_to_coverage_universe(params: { universe_id: string; cd_cvm: number; tier: string; rationale: string; owner?: string; holding_pct?: number }): Promise<{ success?: boolean; error?: string }>;
   remove_company_from_coverage_universe(params: { universe_id: string; cd_cvm: number; rationale: string }): Promise<{ success?: boolean; error?: string }>;
   calculate_coverage_priority_scores(params: { universe_id: string }): Promise<{ items?: any[]; _bridge_ms?: number; error?: string }>;

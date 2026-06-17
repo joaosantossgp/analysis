@@ -62,11 +62,33 @@ export async function deleteCoverageUniverse(id: string): Promise<boolean> {
   return !!res.success;
 }
 
-export async function duplicateCoverageUniverse(id: string, name: string): Promise<string> {
-  const res = await callBridge("duplicate_coverage_universe", { id, name });
+export async function duplicateCoverageUniverse(
+  id: string,
+  name: string,
+  copy_companies: boolean = true,
+  copy_checklists: boolean = false,
+): Promise<string> {
+  const res = await callBridge("duplicate_coverage_universe", {
+    id,
+    name,
+    copy_companies,
+    copy_checklists,
+  });
   if (res.error) throw new Error(res.error);
   return res.universe_id!;
 }
+
+export async function bulkUpdateCompaniesInCoverageUniverse(params: {
+  universe_id: string;
+  company_ids: number[];
+  tier: string;
+  rationale: string;
+}): Promise<boolean> {
+  const res = await callBridge("bulk_update_companies_in_coverage_universe", params);
+  if (res.error) throw new Error(res.error);
+  return !!res.success;
+}
+
 
 
 export async function addCompanyToCoverageUniverse(params: {

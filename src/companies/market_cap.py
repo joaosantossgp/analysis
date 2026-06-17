@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from src.platform.settings import AppSettings
-from src.companies.ticker_map import REVERSE_TICKER_MAP, TICKER_MAP
+from src.companies.identity import CompanyIdentityResolver
 from src.financials.utils import now_iso_seconds
 
 logger = logging.getLogger("src.companies.market_cap")
@@ -255,10 +255,11 @@ class MarketCapService:
                 f"Yahoo Finance market-cap provider is not enabled. "
                 "Configure CVM_MARKET_CAP_PROVIDER=yahoo_finance to enable."
             )
-        # Get unique tickers from TICKER_MAP
-        tickers = sorted(list(set(TICKER_MAP.values())))
+        # Get unique tickers from resolver
+        resolver = CompanyIdentityResolver()
+        tickers = resolver.get_all_configured_tickers()
         if not tickers:
-            raise ValueError("No tickers found in TICKER_MAP to fetch.")
+            raise ValueError("No tickers found to fetch.")
 
         parsed_rows: list[dict[str, Any]] = []
         as_of_val = now_iso_seconds()[:10]
@@ -651,11 +652,10 @@ class MarketCapService:
 
             # 2. Match by ticker map
             if mapping_status == "unmapped" and ticker:
-                # Try canonical reverse map first
-                lookup_key = ticker.replace(".SA", "").upper()
-                mapped_code = REVERSE_TICKER_MAP.get(lookup_key)
-                if mapped_code and mapped_code in catalog_companies:
-                    match = catalog_companies[mapped_code]
+                resolver = CompanyIdentityResolver()
+                identity = resolver.resolve_by_ticker(ticker)
+                if identity and identity.cd_cvm in catalog_companies:
+                    match = catalog_companies[identity.cd_cvm]
                     cd_cvm = match.cd_cvm
                     cnpj = match.cnpj or cnpj
                     ticker = ticker or match.ticker_b3
@@ -691,9 +691,11 @@ class MarketCapService:
                     mapping_status = "mapped"
                     mapping_confidence = 0.8
 
-            # Try mapping unmapped ticker using TICKER_MAP fallback for fallback notes/ticker display
+            # Try mapping unmapped ticker using resolver fallback for fallback notes/ticker display
             if cd_cvm and not ticker:
-                ticker = TICKER_MAP.get(cd_cvm)
+                resolver = CompanyIdentityResolver()
+                identity = resolver.resolve(cd_cvm)
+                ticker = identity.ticker_b3 if identity else None
 
             if mapping_status == "unmapped":
                 notes_extra = "Unmapped on import"

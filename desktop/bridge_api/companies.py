@@ -232,8 +232,9 @@ class CompanyBridgeMixin:
             if info:
                 ticker = info.get("ticker_b3")
             if not ticker:
-                from src.companies.ticker_map import TICKER_MAP  # noqa: PLC0415
-                ticker = TICKER_MAP.get(cd_cvm)
+                from src.companies.identity import CompanyIdentityResolver  # noqa: PLC0415
+                identity = CompanyIdentityResolver().resolve(cd_cvm)
+                ticker = identity.ticker_b3 if identity else None
 
             prices_by_year = {}
             if ticker:
@@ -679,3 +680,54 @@ class CompanyBridgeMixin:
             return self._sanitize_for_json(dataclasses.asdict(result))
         except Exception as exc:
             return {"error": str(exc)}
+
+    def resolve_company_identities(self, params=None) -> dict:
+        p = params or {}
+        inputs = p.get("inputs", [])
+        if not isinstance(inputs, list):
+            return {"error": "inputs parameter must be a list of strings"}
+        
+        from src.companies.identity import CompanyIdentityResolver  # noqa: PLC0415
+        resolver = CompanyIdentityResolver()
+        
+        resolved = []
+        unmapped = []
+        
+        for inp in inputs:
+            inp_clean = str(inp).strip()
+            if not inp_clean:
+                continue
+            
+            identity = None
+            
+            # 1. Try resolving as cd_cvm if it is purely digits
+            if inp_clean.isdigit():
+                identity = resolver.resolve(int(inp_clean))
+            
+            # 2. Try resolving as CNPJ if it has digits matching CNPJ lengths
+            if not identity:
+                only_digits = "".join(c for c in inp_clean if c.isdigit())
+                if len(only_digits) in (8, 14):
+                    identity = resolver.resolve_by_cnpj(inp_clean)
+            
+            # 3. Try resolving as ticker
+            if not identity:
+                identity = resolver.resolve_by_ticker(inp_clean)
+                
+            if identity:
+                resolved.append({
+                    "input": inp,
+                    "cd_cvm": identity.cd_cvm,
+                    "ticker_b3": identity.ticker_b3,
+                    "company_name": identity.company_name,
+                    "cnpj": identity.cnpj,
+                    "gics_sector": identity.gics_sector,
+                })
+            else:
+                unmapped.append(inp)
+                
+        return self._sanitize_for_json({
+            "resolved": resolved,
+            "unmapped": unmapped
+        })
+

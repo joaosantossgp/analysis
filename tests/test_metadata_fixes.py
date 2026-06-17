@@ -309,7 +309,7 @@ class TestDatabaseLifecycleAndMigrations:
             weg = conn.execute(
                 text("SELECT cnpj, ticker_b3 FROM companies WHERE cd_cvm = 5410")
             ).fetchone()
-            assert weg[0] is None
+            assert weg[0] == "84429695000111"  # Backfilled from resolver
             assert weg[1] == "WEGE3"
             
             # Verify invalid CNPJ rejected/kept untouched

@@ -26,6 +26,10 @@ import { StateBanner } from "@/components/feedback/StateBanner";
 import { Panel } from "@/components/surface/Panel";
 import { Button } from "@/components/ui/Button";
 
+// New sub-components
+import { UniverseSidebar } from "@/components/coverage/UniverseSidebar";
+import { BulkCompanyManagerModal } from "@/components/coverage/BulkCompanyManagerModal";
+
 const DEFAULT_TIER_HOURS: Record<string, number> = {
   must_cover: 120.0,
   core: 80.0,
@@ -40,10 +44,17 @@ type Props = {
 };
 
 export function CoveragePage({ section }: Props) {
+  const queryClient = useQueryClient();
   const [activeUniverseId, setActiveUniverseId] = useState<string>(() => {
     return localStorage.getItem("active_coverage_universe_id") || "";
   });
   const [showArchived, setShowArchived] = useState(false);
+
+  // Modal and custom workflow states
+  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isDuplicateModalOpen, setIsDuplicateModalOpen] = useState(false);
+  const [duplicateUniverseId, setDuplicateUniverseId] = useState("");
 
   const universesQuery = useQuery({
     queryKey: ["coverage-universes"],
@@ -55,18 +66,25 @@ export function CoveragePage({ section }: Props) {
     return universes.filter((u) => showArchived || u.status !== "archived");
   }, [universes, showArchived]);
 
-  const activeUniverse = filteredUniverses.find((u) => u.id === activeUniverseId) || filteredUniverses[0];
+  // Land on empty/dashboard if activeUniverseId is empty or not found in filtered list
+  const activeUniverse = filteredUniverses.find((u) => u.id === activeUniverseId);
+  const currentUniverseId = activeUniverse?.id || "";
 
   useEffect(() => {
-    if (activeUniverse?.id && activeUniverse.id !== activeUniverseId) {
-      setActiveUniverseId(activeUniverse.id);
-      localStorage.setItem("active_coverage_universe_id", activeUniverse.id);
+    // If activeUniverseId was set but is not found in filtered list (e.g. deleted/archived), clear it
+    if (activeUniverseId && !activeUniverse) {
+      setActiveUniverseId("");
+      localStorage.removeItem("active_coverage_universe_id");
     }
   }, [activeUniverse, activeUniverseId]);
 
   const handleSelectUniverse = (id: string) => {
     setActiveUniverseId(id);
-    localStorage.setItem("active_coverage_universe_id", id);
+    if (id) {
+      localStorage.setItem("active_coverage_universe_id", id);
+    } else {
+      localStorage.removeItem("active_coverage_universe_id");
+    }
   };
 
   if (universesQuery.isLoading) {
@@ -84,12 +102,6 @@ export function CoveragePage({ section }: Props) {
     );
   }
 
-  if (universes.length === 0) {
-    return <CreateFirstUniversePanel onSuccess={() => void universesQuery.refetch()} />;
-  }
-
-  const currentUniverseId = activeUniverse?.id || "";
-
   const handleExport = async () => {
     try {
       const { filename, content_base64 } = await downloadCoverageUniverseExcel(currentUniverseId);
@@ -104,244 +116,128 @@ export function CoveragePage({ section }: Props) {
   };
 
   return (
-    <div className="space-y-6 px-4 py-3">
-      {/* Header cluster */}
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[var(--color-border-subtle)] pb-4">
-        <div className="space-y-1">
-          <div className="flex items-center gap-3">
-            <span className="font-mono text-xs text-[var(--color-text-tertiary)] uppercase tracking-wider">Universe</span>
-            <select
-              value={currentUniverseId}
-              onChange={(e) => handleSelectUniverse(e.target.value)}
-              className="bg-[var(--color-surface-2)] text-[var(--color-text-primary)] border border-[var(--color-border-default)] rounded px-2 py-1 font-mono text-sm focus:outline-none focus:border-[var(--color-action-primary)]"
-            >
-              {filteredUniverses.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name} [{u.analysis_type}]{u.status === "archived" ? " [Archived]" : ""} ({u.company_count} cos)
-                </option>
-              ))}
-            </select>
-            <label className="flex items-center gap-1.5 ml-3 cursor-pointer text-2xs text-[var(--color-text-secondary)] font-mono select-none">
-              <input
-                type="checkbox"
-                checked={showArchived}
-                onChange={(e) => setShowArchived(e.target.checked)}
-                className="bg-[var(--color-surface-2)] border border-[var(--color-border-default)] rounded accent-cyan-600"
-              />
-              Show Archived
-            </label>
-          </div>
-          {activeUniverse?.purpose && (
-            <p className="text-xs text-[var(--color-text-secondary)] italic">{activeUniverse.purpose}</p>
-          )}
-        </div>
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" onClick={handleExport} disabled={!currentUniverseId}>
-            Export to Excel
-          </Button>
-          <DuplicateUniverseButton universeId={currentUniverseId} onSuccess={(id) => {
-            void universesQuery.refetch();
-            handleSelectUniverse(id);
-          }} />
-          <CreateUniverseButton onSuccess={(id) => {
-            void universesQuery.refetch();
-            handleSelectUniverse(id);
-          }} />
-          <DeleteUniverseButton universeId={currentUniverseId} onSuccess={() => {
-            void universesQuery.refetch();
-            setActiveUniverseId("");
-          }} />
-        </div>
+    <div className="flex h-[calc(100vh-48px)] overflow-hidden select-none">
+      <UniverseSidebar
+        universes={filteredUniverses}
+        activeUniverseId={currentUniverseId}
+        onSelectUniverse={handleSelectUniverse}
+        onOpenCreateModal={() => setIsCreateModalOpen(true)}
+      />
+
+      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6 min-w-0 bg-[var(--color-surface-1)]">
+        {!currentUniverseId ? (
+          <DashboardHub
+            universes={filteredUniverses}
+            onSelectUniverse={handleSelectUniverse}
+            onOpenCreateModal={() => setIsCreateModalOpen(true)}
+            onOpenDuplicateModal={(id) => {
+              setDuplicateUniverseId(id);
+              setIsDuplicateModalOpen(true);
+            }}
+            onDeleteUniverse={async (id) => {
+              if (window.confirm("Are you sure you want to delete this universe?")) {
+                await deleteCoverageUniverse(id);
+                void universesQuery.refetch();
+                if (activeUniverseId === id) {
+                  handleSelectUniverse("");
+                }
+              }
+            }}
+          />
+        ) : (
+          <>
+            {/* Header cluster */}
+            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[var(--color-border-subtle)] pb-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => handleSelectUniverse("")}
+                    className="text-zinc-500 hover:text-cyan-400 font-mono text-2xs uppercase tracking-wider cursor-pointer border border-zinc-800 rounded px-1.5 py-0.5 bg-zinc-950/20"
+                  >
+                    ← Dashboard
+                  </button>
+                  <span className="text-zinc-700">/</span>
+                  <span className="font-mono text-xs text-[var(--color-text-tertiary)] uppercase tracking-wider">Active Workspace</span>
+                  <h2 className="text-sm font-bold text-zinc-100 uppercase tracking-wide">
+                    {activeUniverse?.name} [{activeUniverse?.analysis_type}]
+                  </h2>
+                  <label className="flex items-center gap-1.5 ml-3 cursor-pointer text-2xs text-[var(--color-text-secondary)] font-mono select-none">
+                    <input
+                      type="checkbox"
+                      checked={showArchived}
+                      onChange={(e) => setShowArchived(e.target.checked)}
+                      className="bg-[var(--color-surface-2)] border border-[var(--color-border-default)] rounded accent-cyan-600"
+                    />
+                    Show Archived
+                  </label>
+                </div>
+                {activeUniverse?.purpose && (
+                  <p className="text-xs text-[var(--color-text-secondary)] italic">{activeUniverse.purpose}</p>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                <Button variant="ghost" onClick={handleExport} disabled={!currentUniverseId}>
+                  Export to Excel
+                </Button>
+                <Button variant="ghost" onClick={() => {
+                  setDuplicateUniverseId(currentUniverseId);
+                  setIsDuplicateModalOpen(true);
+                }}>
+                  Duplicate
+                </Button>
+                <DeleteUniverseButton universeId={currentUniverseId} onSuccess={() => {
+                  void universesQuery.refetch();
+                  handleSelectUniverse("");
+                }} />
+              </div>
+            </div>
+
+            {/* Main Area */}
+            {section === "universes" && activeUniverse && (
+              <UniverseSummarySection universe={activeUniverse} />
+            )}
+
+            {section === "prioritization" && currentUniverseId && (
+              <PrioritizationSection universeId={currentUniverseId} onOpenBulkModal={() => setIsBulkModalOpen(true)} />
+            )}
+
+            {section === "work-queue" && currentUniverseId && (
+              <WorkQueueSection universeId={currentUniverseId} />
+            )}
+          </>
+        )}
       </div>
 
-      {/* Main Area */}
-      {section === "universes" && activeUniverse && (
-        <UniverseSummarySection universe={activeUniverse} />
-      )}
+      <CreateUniverseModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        onSuccess={(id) => {
+          handleSelectUniverse(id);
+        }}
+      />
 
-      {section === "prioritization" && currentUniverseId && (
-        <PrioritizationSection universeId={currentUniverseId} />
-      )}
+      <DuplicateUniverseModal
+        isOpen={isDuplicateModalOpen}
+        onClose={() => setIsDuplicateModalOpen(false)}
+        universeId={duplicateUniverseId}
+        onSuccess={(id) => {
+          handleSelectUniverse(id);
+        }}
+      />
 
-      {section === "work-queue" && currentUniverseId && (
-        <WorkQueueSection universeId={currentUniverseId} />
-      )}
+      <BulkCompanyManagerModal
+        isOpen={isBulkModalOpen}
+        onClose={() => setIsBulkModalOpen(false)}
+        universeId={currentUniverseId}
+        onSuccess={() => {
+          void queryClient.invalidateQueries({ queryKey: ["coverage-scores", currentUniverseId] });
+        }}
+      />
     </div>
   );
 }
 
-// --- First Universe Creation Empty State ---
-function CreateFirstUniversePanel({ onSuccess }: { onSuccess: (id: string) => void }) {
-  const [name, setName] = useState("");
-  const [purpose, setPurpose] = useState("");
-  const [type, setType] = useState<string>("Equity");
-  const [benchmark, setBenchmark] = useState("IBOV");
-  const [error, setError] = useState<string | null>(null);
-
-  const mutation = useMutation({
-    mutationFn: () => createCoverageUniverse({ name, purpose, analysis_type: type, benchmark }),
-    onSuccess: (id) => {
-      onSuccess(id);
-    },
-    onError: (err) => {
-      setError(String(err));
-    }
-  });
-
-  return (
-    <div className="max-w-md mx-auto my-12">
-      <Panel title="Create stock coverage universe" subtitle="Start by defining a workspace for coverage decisions.">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (!name) return;
-            mutation.mutate();
-          }}
-          className="space-y-4 font-mono text-xs"
-        >
-          <div className="space-y-1">
-            <label className="block text-[var(--color-text-secondary)]">Universe Name *</label>
-            <input
-              type="text"
-              required
-              placeholder="e.g., Equity Watch 2026"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border-default)] rounded px-2 py-1.5 focus:outline-none focus:border-[var(--color-action-primary)] text-sm"
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="block text-[var(--color-text-secondary)]">Purpose / Scope</label>
-            <textarea
-              placeholder="Primary sector focus or theme details..."
-              value={purpose}
-              onChange={(e) => setPurpose(e.target.value)}
-              className="w-full h-20 bg-[var(--color-surface-2)] border border-[var(--color-border-default)] rounded px-2 py-1.5 focus:outline-none focus:border-[var(--color-action-primary)] text-sm"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <label className="block text-[var(--color-text-secondary)]">Analysis Type</label>
-              <select
-                value={type}
-                onChange={(e) => setType(e.target.value)}
-                className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border-default)] rounded px-2 py-1.5 focus:outline-none text-sm"
-              >
-                <option value="Equity">Equity</option>
-                <option value="Credit">Credit</option>
-                <option value="IB">IB</option>
-                <option value="Portfolio Monitoring">Portfolio Monitoring</option>
-                <option value="Sector Watch">Sector Watch</option>
-              </select>
-            </div>
-            <div className="space-y-1">
-              <label className="block text-[var(--color-text-secondary)]">Benchmark</label>
-              <input
-                type="text"
-                placeholder="IBOV, IPCA, etc."
-                value={benchmark}
-                onChange={(e) => setBenchmark(e.target.value)}
-                className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border-default)] rounded px-2 py-1.5 focus:outline-none text-sm"
-              />
-            </div>
-          </div>
-          {error && <div className="text-[var(--color-state-err)] bg-[var(--color-surface-3)] p-2 rounded">{error}</div>}
-          <div className="pt-2 flex justify-end">
-            <Button type="submit" disabled={mutation.isPending}>
-              {mutation.isPending ? "Creating..." : "Initialize Workspace"}
-            </Button>
-          </div>
-        </form>
-      </Panel>
-    </div>
-  );
-}
-
-// --- Create Universe Modal Dialog Button ---
-function CreateUniverseButton({ onSuccess }: { onSuccess: (id: string) => void }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [purpose, setPurpose] = useState("");
-  const [type, setType] = useState<string>("Equity");
-  const [benchmark, setBenchmark] = useState("");
-
-  const queryClient = useQueryClient();
-  const mutation = useMutation({
-    mutationFn: () => createCoverageUniverse({ name, purpose, analysis_type: type, benchmark }),
-    onSuccess: (id) => {
-      setName("");
-      setPurpose("");
-      setIsOpen(false);
-      void queryClient.invalidateQueries({ queryKey: ["coverage-universes"] });
-      onSuccess(id);
-    }
-  });
-
-  return (
-    <>
-      <Button onClick={() => setIsOpen(true)}>Create Universe</Button>
-      {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 font-mono text-xs">
-          <div className="w-full max-w-md bg-[var(--color-surface-1)] border border-[var(--color-border-default)] rounded p-4 shadow-xl space-y-4">
-            <h3 className="text-sm font-medium border-b border-[var(--color-border-subtle)] pb-2 text-[var(--color-id-ticker)]">
-              CREATE COVERAGE UNIVERSE
-            </h3>
-            <div className="space-y-3">
-              <div className="space-y-1">
-                <label className="block text-[var(--color-text-secondary)]">Name</label>
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border-default)] rounded px-2 py-1 focus:outline-none"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="block text-[var(--color-text-secondary)]">Purpose</label>
-                <textarea
-                  value={purpose}
-                  onChange={(e) => setPurpose(e.target.value)}
-                  className="w-full h-16 bg-[var(--color-surface-2)] border border-[var(--color-border-default)] rounded px-2 py-1 focus:outline-none"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[var(--color-text-secondary)]">Type</label>
-                  <select
-                    value={type}
-                    onChange={(e) => setType(e.target.value)}
-                    className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border-default)] rounded px-1.5 py-1 focus:outline-none"
-                  >
-                    <option value="Equity">Equity</option>
-                    <option value="Credit">Credit</option>
-                    <option value="IB">IB</option>
-                    <option value="Portfolio Monitoring">Portfolio Monitoring</option>
-                    <option value="Sector Watch">Sector Watch</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[var(--color-text-secondary)]">Benchmark</label>
-                  <input
-                    type="text"
-                    value={benchmark}
-                    onChange={(e) => setBenchmark(e.target.value)}
-                    className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border-default)] rounded px-2 py-1 focus:outline-none"
-                  />
-                </div>
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 pt-2 border-t border-[var(--color-border-subtle)]">
-              <Button variant="ghost" onClick={() => setIsOpen(false)}>Cancel</Button>
-              <Button onClick={() => mutation.mutate()} disabled={!name || mutation.isPending}>
-                Create
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
-  );
-}
 
 // --- Delete Universe Button ---
 function DeleteUniverseButton({ universeId, onSuccess }: { universeId: string; onSuccess: () => void }) {
@@ -382,59 +278,318 @@ function DeleteUniverseButton({ universeId, onSuccess }: { universeId: string; o
   );
 }
 
-// --- Duplicate Universe Button ---
-function DuplicateUniverseButton({ universeId, onSuccess }: { universeId: string; onSuccess: (id: string) => void }) {
-  const [isOpen, setIsOpen] = useState(false);
+// --- Create Universe Modal ---
+function CreateUniverseModal({
+  isOpen,
+  onClose,
+  onSuccess,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onSuccess: (id: string) => void;
+}) {
   const [name, setName] = useState("");
+  const [purpose, setPurpose] = useState("");
+  const [type, setType] = useState<string>("Equity");
+  const [benchmark, setBenchmark] = useState("");
 
+  const queryClient = useQueryClient();
   const mutation = useMutation({
-    mutationFn: () => duplicateCoverageUniverse(universeId, name),
-    onSuccess: (newId) => {
+    mutationFn: () => createCoverageUniverse({ name, purpose, analysis_type: type, benchmark }),
+    onSuccess: (id) => {
       setName("");
-      setIsOpen(false);
-      onSuccess(newId);
+      setPurpose("");
+      setBenchmark("");
+      onClose();
+      void queryClient.invalidateQueries({ queryKey: ["coverage-universes"] });
+      onSuccess(id);
     },
-    onError: (err) => alert(String(err))
+    onError: (err) => alert(String(err)),
   });
 
+  if (!isOpen) return null;
+
   return (
-    <>
-      <Button variant="ghost" onClick={() => setIsOpen(true)} disabled={!universeId}>
-        Duplicate
-      </Button>
-      {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 font-mono text-xs">
-          <div className="w-full max-w-md bg-[var(--color-surface-1)] border border-[var(--color-border-default)] rounded p-4 shadow-xl space-y-4">
-            <h3 className="text-sm font-medium border-b border-[var(--color-border-subtle)] pb-2 text-[var(--color-id-ticker)]">
-              DUPLICATE COVERAGE UNIVERSE
-            </h3>
-            <div className="space-y-3">
-              <p className="text-[var(--color-text-secondary)]">
-                Clones weights and hours settings. The company list will start empty in the copy.
-              </p>
-              <div className="space-y-1">
-                <label className="block text-[var(--color-text-secondary)]">New Name</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Duplicated Watchlist"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border-default)] rounded px-2 py-1 focus:outline-none"
-                />
-              </div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 font-mono text-xs select-none">
+      <div className="w-full max-w-md bg-[var(--color-surface-1)] border border-[var(--color-border-default)] rounded p-4 shadow-xl space-y-4">
+        <h3 className="text-sm font-medium border-b border-[var(--color-border-subtle)] pb-2 text-[var(--color-id-ticker)] uppercase">
+          Create Coverage Universe
+        </h3>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!name) return;
+            mutation.mutate();
+          }}
+          className="space-y-3"
+        >
+          <div className="space-y-1">
+            <label className="block text-[var(--color-text-secondary)]">Universe Name *</label>
+            <input
+              type="text"
+              required
+              placeholder="e.g., Equity Watch 2026"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border-default)] rounded px-2 py-1.5 focus:outline-none text-sm"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="block text-[var(--color-text-secondary)]">Purpose / Scope</label>
+            <textarea
+              placeholder="Primary sector focus or theme details..."
+              value={purpose}
+              onChange={(e) => setPurpose(e.target.value)}
+              className="w-full h-20 bg-[var(--color-surface-2)] border border-[var(--color-border-default)] rounded px-2 py-1.5 focus:outline-none text-sm"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="block text-[var(--color-text-secondary)]">Analysis Type</label>
+              <select
+                value={type}
+                onChange={(e) => setType(e.target.value)}
+                className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border-default)] rounded px-2 py-1.5 focus:outline-none text-sm text-zinc-200"
+              >
+                <option value="Equity">Equity</option>
+                <option value="Credit">Credit</option>
+                <option value="IB">IB</option>
+                <option value="Portfolio Monitoring">Portfolio Monitoring</option>
+                <option value="Sector Watch">Sector Watch</option>
+              </select>
             </div>
-            <div className="flex justify-end gap-2 pt-2 border-t border-[var(--color-border-subtle)]">
-              <Button variant="ghost" onClick={() => setIsOpen(false)}>Cancel</Button>
-              <Button onClick={() => mutation.mutate()} disabled={!name || mutation.isPending}>
-                Duplicate
-              </Button>
+            <div className="space-y-1">
+              <label className="block text-[var(--color-text-secondary)]">Benchmark</label>
+              <input
+                type="text"
+                placeholder="IBOV, IPCA, etc."
+                value={benchmark}
+                onChange={(e) => setBenchmark(e.target.value)}
+                className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border-default)] rounded px-2 py-1.5 focus:outline-none text-sm"
+              />
             </div>
           </div>
-        </div>
-      )}
-    </>
+          <div className="flex justify-end gap-2 pt-2 border-t border-[var(--color-border-subtle)]">
+            <Button type="button" variant="ghost" onClick={onClose} disabled={mutation.isPending}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={!name || mutation.isPending} loading={mutation.isPending}>
+              Create
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
+
+// --- Duplicate Universe Modal ---
+function DuplicateUniverseModal({
+  isOpen,
+  onClose,
+  universeId,
+  onSuccess,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  universeId: string;
+  onSuccess: (id: string) => void;
+}) {
+  const [name, setName] = useState("");
+  const [copyCompanies, setCopyCompanies] = useState(true);
+  const [copyChecklists, setCopyChecklists] = useState(false);
+
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: () => duplicateCoverageUniverse(universeId, name, copyCompanies, copyChecklists),
+    onSuccess: (newId) => {
+      setName("");
+      onClose();
+      void queryClient.invalidateQueries({ queryKey: ["coverage-universes"] });
+      onSuccess(newId);
+    },
+    onError: (err) => alert(String(err)),
+  });
+
+  useEffect(() => {
+    if (isOpen) {
+      setName("");
+      setCopyCompanies(true);
+      setCopyChecklists(false);
+    }
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 font-mono text-xs select-none">
+      <div className="w-full max-w-md bg-[var(--color-surface-1)] border border-[var(--color-border-default)] rounded p-4 shadow-xl space-y-4">
+        <h3 className="text-sm font-medium border-b border-[var(--color-border-subtle)] pb-2 text-[var(--color-id-ticker)] uppercase">
+          Duplicate Coverage Universe
+        </h3>
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <label className="block text-[var(--color-text-secondary)]">New Name</label>
+            <input
+              type="text"
+              placeholder="e.g. Duplicated Watchlist"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border-default)] rounded px-2 py-1 focus:outline-none text-zinc-100"
+            />
+          </div>
+
+          <div className="space-y-2 pt-2 border-t border-[var(--color-border-subtle)]/45">
+            <label className="flex items-center gap-2 cursor-pointer select-none text-zinc-300">
+              <input
+                type="checkbox"
+                checked={copyCompanies}
+                onChange={(e) => {
+                  setCopyCompanies(e.target.checked);
+                  if (!e.target.checked) setCopyChecklists(false);
+                }}
+                className="accent-cyan-600 rounded"
+              />
+              <span>Copy companies list</span>
+            </label>
+            <label
+              className={`flex items-center gap-2 select-none ${
+                copyCompanies ? "cursor-pointer text-zinc-300" : "cursor-not-allowed text-zinc-650"
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={copyChecklists}
+                disabled={!copyCompanies}
+                onChange={(e) => setCopyChecklists(e.target.checked)}
+                className="accent-cyan-600 rounded"
+              />
+              <span>Copy checklists completed status</span>
+            </label>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 pt-2 border-t border-[var(--color-border-subtle)]">
+          <Button variant="ghost" onClick={onClose} disabled={mutation.isPending}>
+            Cancel
+          </Button>
+          <Button onClick={() => mutation.mutate()} disabled={!name || mutation.isPending} loading={mutation.isPending}>
+            Duplicate
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- Dashboard Hub Component ---
+function DashboardHub({
+  universes,
+  onSelectUniverse,
+  onOpenCreateModal,
+  onOpenDuplicateModal,
+  onDeleteUniverse,
+}: {
+  universes: CoverageUniverse[];
+  onSelectUniverse: (id: string) => void;
+  onOpenCreateModal: () => void;
+  onOpenDuplicateModal: (id: string) => void;
+  onDeleteUniverse: (id: string) => void;
+}) {
+  return (
+    <div className="space-y-6 font-mono text-xs select-none">
+      <div className="flex items-center justify-between border-b border-[var(--color-border-subtle)] pb-4">
+        <div>
+          <h1 className="text-lg font-bold text-zinc-150 uppercase tracking-wider">COVERAGE WORKSPACES</h1>
+          <p className="text-3xs text-[var(--color-text-tertiary)] mt-1">
+            Manage your stock coverage lists, priority weights, and checklists.
+          </p>
+        </div>
+        <Button variant="primary" onClick={onOpenCreateModal}>
+          + CREATE NEW WORKSPACE
+        </Button>
+      </div>
+
+      {universes.length === 0 ? (
+        <div className="p-10 border border-dashed border-[var(--color-border-subtle)] rounded-lg text-center text-zinc-500">
+          No universes found. Create your first workspace to start covering stocks.
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {universes.map((u) => {
+            let typeColor = "text-zinc-400 bg-zinc-950 border-zinc-900";
+            if (u.analysis_type === "Equity") typeColor = "text-cyan-400 bg-cyan-950/20 border-cyan-900/40";
+            if (u.analysis_type === "Credit") typeColor = "text-emerald-400 bg-emerald-950/20 border-emerald-900/40";
+            if (u.analysis_type === "IB") typeColor = "text-pink-400 bg-pink-950/20 border-pink-900/40";
+            if (u.analysis_type === "Portfolio Monitoring") typeColor = "text-amber-400 bg-amber-950/20 border-amber-900/40";
+            if (u.analysis_type === "Sector Watch") typeColor = "text-sky-400 bg-sky-950/20 border-sky-900/40";
+
+            return (
+              <div
+                key={u.id}
+                className="bg-[var(--color-surface-2)] border border-[var(--color-border-subtle)] hover:border-cyan-700/60 rounded p-4 flex flex-col justify-between gap-4 transition-all hover:shadow-lg"
+              >
+                <div>
+                  <div className="flex items-start justify-between gap-2">
+                    <span className={`px-1.5 py-0.5 rounded border text-[10px] font-bold ${typeColor}`}>
+                      {u.analysis_type}
+                    </span>
+                    <span className={`text-[10px] font-bold uppercase ${
+                      u.status === "active" ? "text-emerald-400" : u.status === "draft" ? "text-amber-400" : "text-zinc-500"
+                    }`}>
+                      {u.status}
+                    </span>
+                  </div>
+                  <h4 className="text-sm font-bold text-zinc-100 mt-3 hover:text-cyan-400 cursor-pointer" onClick={() => onSelectUniverse(u.id)}>
+                    {u.name}
+                  </h4>
+                  {u.purpose && (
+                    <p className="text-3xs text-zinc-400 mt-1.5 line-clamp-2 italic leading-relaxed">
+                      {u.purpose}
+                    </p>
+                  )}
+                </div>
+
+                <div className="border-t border-zinc-900/60 pt-3 flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <span className="block text-4xs text-zinc-500 uppercase">Covered Stocks</span>
+                    <span className="text-xs font-bold text-zinc-200">{u.company_count} cos</span>
+                  </div>
+                  {u.benchmark && (
+                    <div className="space-y-0.5 text-right">
+                      <span className="block text-4xs text-zinc-500 uppercase">Benchmark</span>
+                      <span className="text-xs font-bold text-zinc-200">{u.benchmark}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 pt-1 border-t border-zinc-900/40">
+                  <Button variant="secondary" size="xs" block onClick={() => onSelectUniverse(u.id)}>
+                    Open
+                  </Button>
+                  <Button variant="ghost" size="xs" onClick={() => onOpenDuplicateModal(u.id)}>
+                    Clone
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDeleteUniverse(u.id);
+                    }}
+                    className="p-1 px-2 border border-transparent rounded hover:border-red-900 hover:bg-red-950/30 text-red-500 transition-all text-2xs"
+                    title="Delete Permanently"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 // --- Universe Overview / Metadata Summary tab ---
 function getUniverseAccentColor(name: string): string {
@@ -1567,7 +1722,7 @@ function CoverageQuickEditDrawer({
 }
 
 // --- Prioritization Score List section ---
-function PrioritizationSection({ universeId }: { universeId: string }) {
+function PrioritizationSection({ universeId, onOpenBulkModal }: { universeId: string; onOpenBulkModal: () => void }) {
   const queryClient = useQueryClient();
   const [selectedCompany, setSelectedCompany] = useState<any | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -1806,6 +1961,10 @@ function PrioritizationSection({ universeId }: { universeId: string }) {
             Reset
           </button>
         )}
+
+        <Button variant="primary" onClick={onOpenBulkModal}>
+          Manage Companies
+        </Button>
 
         <div className="ml-auto text-3xs text-[var(--color-text-tertiary)]">
           {filteredScores.length} stocks

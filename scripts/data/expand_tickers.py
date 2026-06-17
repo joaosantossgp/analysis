@@ -361,14 +361,13 @@ def save_results(settings, all_candidates: list[dict], validated: list[dict]) ->
     df.to_csv(out_csv, index=False, encoding="utf-8-sig")
     log.info(f"CSV salvo: {out_csv} ({len(df)} candidatos)")
 
-    # Snippet Python para constants.py
+    # Snippet para ticker_map.csv
     log.info("")
     log.info("=" * 70)
-    log.info("Snippet para adicionar em src/companies/ticker_map.py → TICKER_MAP:")
+    log.info("Linhas para adicionar em data/import/ticker_map.csv:")
     log.info("=" * 70)
-    log.info("    # ── Novos tickers descobertos por expand_tickers.py ────────────────")
     for c in validated:
-        log.info(f"    {c['cd_cvm']:6d}: '{c['ticker_b3']}',   # {c['company_name'][:40]}")
+        log.info(f"{c['cd_cvm']},{c['ticker_b3']},{c.get('cnpj') or ''},{c['company_name']}")
     log.info("=" * 70)
     log.info(f"Total de novos tickers validados: {len(validated)}")
     log.info(f"Revisar manualmente em: {out_csv}")

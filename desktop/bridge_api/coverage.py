@@ -95,14 +95,45 @@ class CoverageBridgeMixin:
         p = params or {}
         u_id = p.get("id") or p.get("universe_id")
         new_name = p.get("name") or p.get("new_name")
+        copy_companies = bool(p.get("copy_companies", True))
+        copy_checklists = bool(p.get("copy_checklists", False))
         if not u_id or not new_name:
             return {"error": "Missing universe_id or name parameter"}
         try:
-            new_uid = self._coverage_svc().duplicate_universe(str(u_id), str(new_name))
+            new_uid = self._coverage_svc().duplicate_universe(
+                universe_id=str(u_id),
+                new_name=str(new_name),
+                copy_companies=copy_companies,
+                copy_checklists=copy_checklists,
+            )
             return {"universe_id": new_uid}
         except Exception as exc:
             logger.exception("Error in duplicate_coverage_universe")
             return {"error": str(exc)}
+
+    def bulk_update_companies_in_coverage_universe(self, params=None) -> dict[str, Any]:
+        p = params or {}
+        u_id = p.get("universe_id") or p.get("id")
+        company_ids_raw = p.get("company_ids")
+        tier = p.get("tier")
+        rationale = p.get("rationale", "")
+        if not u_id or company_ids_raw is None or tier is None:
+            return {"error": "Missing universe_id, company_ids, or tier parameter"}
+        if not rationale:
+            return {"error": "Rationale is mandatory for all coverage decisions"}
+        try:
+            company_ids = [int(x) for x in company_ids_raw]
+            self._coverage_svc().bulk_update_companies_in_universe(
+                universe_id=str(u_id),
+                company_ids=company_ids,
+                tier=str(tier),
+                rationale=str(rationale),
+            )
+            return {"success": True}
+        except Exception as exc:
+            logger.exception("Error in bulk_update_companies_in_coverage_universe")
+            return {"error": str(exc)}
+
 
 
     def add_company_to_coverage_universe(self, params=None) -> dict[str, Any]:

@@ -600,11 +600,11 @@ class CVMScraper:
                 final[s] = self.standardizer.enrich(df, s, tipo, (self.report_type=="consolidated"))
         else: final = reports
         
-        from src.companies.ticker_map import TICKER_MAP
-        raw_ticker = TICKER_MAP.get(int(cvm))
+        from src.companies.identity import CompanyIdentityResolver
+        identity = CompanyIdentityResolver().resolve(int(cvm))
         ticker_b3 = None
-        if raw_ticker:
-            ticker_b3 = raw_ticker.strip().upper()
+        if identity and identity.ticker_b3:
+            ticker_b3 = identity.ticker_b3.strip().upper()
             if ticker_b3.endswith(".SA"):
                 ticker_b3 = ticker_b3[:-3]
 

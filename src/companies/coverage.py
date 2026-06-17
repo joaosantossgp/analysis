@@ -238,7 +238,7 @@ class CoverageUniverseService:
         with self.engine.begin() as conn:
             conn.execute(text("DELETE FROM coverage_universes WHERE id = :id"), {"id": universe_id})
 
-    def duplicate_universe(self, universe_id: str, new_name: str) -> str:
+    def duplicate_universe(self, universe_id: str, new_name: str, copy_companies: bool = True, copy_checklists: bool = False) -> str:
         self._ensure_schema()
         u = self.get_universe(universe_id)
         if not u:
@@ -295,7 +295,142 @@ class CoverageUniverseService:
                     "tier_weights_json": weights_json,
                 },
             )
+
+            # 3. Duplicate companies if requested
+            if copy_companies:
+                companies = conn.execute(
+                    text("SELECT cd_cvm, tier, manual_score_override, owner_analyst, holding_pct FROM universe_companies WHERE universe_id = :u_id"),
+                    {"u_id": universe_id}
+                ).fetchall()
+                
+                for c_row in companies:
+                    conn.execute(
+                        text(
+                            """
+                            INSERT INTO universe_companies (universe_id, cd_cvm, tier, manual_score_override, owner_analyst, holding_pct, updated_at)
+                            VALUES (:new_uid, :cd_cvm, :tier, :override, :owner, :holding, :updated_at)
+                            """
+                        ),
+                        {
+                            "new_uid": new_uid,
+                            "cd_cvm": c_row.cd_cvm,
+                            "tier": c_row.tier,
+                            "override": c_row.manual_score_override,
+                            "owner": c_row.owner_analyst,
+                            "holding": c_row.holding_pct,
+                            "updated_at": now,
+                        }
+                    )
+                    
+                    if copy_checklists:
+                        checklists = conn.execute(
+                            text("SELECT item_key, is_completed, completed_at, comments FROM coverage_checklists WHERE universe_id = :u_id AND cd_cvm = :cd_cvm"),
+                            {"u_id": universe_id, "cd_cvm": c_row.cd_cvm}
+                        ).fetchall()
+                        for chk in checklists:
+                            conn.execute(
+                                text(
+                                    """
+                                    INSERT INTO coverage_checklists (universe_id, cd_cvm, item_key, is_completed, completed_at, comments)
+                                    VALUES (:new_uid, :cd_cvm, :item_key, :is_completed, :completed_at, :comments)
+                                    """
+                                ),
+                                {
+                                    "new_uid": new_uid,
+                                    "cd_cvm": c_row.cd_cvm,
+                                    "item_key": chk.item_key,
+                                    "is_completed": chk.is_completed,
+                                    "completed_at": chk.completed_at,
+                                    "comments": chk.comments,
+                                }
+                            )
+                    else:
+                        self._init_checklist_items(conn, new_uid, c_row.cd_cvm, c_row.tier)
+                        
         return new_uid
+
+    def bulk_update_companies_in_universe(self, universe_id: str, company_ids: list[int], tier: str, rationale: str) -> None:
+        self._ensure_schema()
+        now = now_iso_seconds()
+        with self.engine.begin() as conn:
+            for cd_cvm in company_ids:
+                if tier == "none":
+                    existing = conn.execute(
+                        text("SELECT tier FROM universe_companies WHERE universe_id = :u_id AND cd_cvm = :cd_cvm"),
+                        {"u_id": universe_id, "cd_cvm": cd_cvm}
+                    ).fetchone()
+                    if not existing:
+                        continue
+                    prev_tier = existing[0]
+
+                    conn.execute(
+                        text("DELETE FROM universe_companies WHERE universe_id = :u_id AND cd_cvm = :cd_cvm"),
+                        {"u_id": universe_id, "cd_cvm": cd_cvm}
+                    )
+
+                    conn.execute(
+                        text(
+                            """
+                            INSERT INTO coverage_decision_history (universe_id, cd_cvm, event_type, previous_value, new_value, rationale, timestamp)
+                            VALUES (:u_id, :cd_cvm, 'tier_change', :prev, 'none', :rationale, :timestamp)
+                            """
+                        ),
+                        {"u_id": universe_id, "cd_cvm": cd_cvm, "prev": prev_tier, "rationale": rationale, "timestamp": now}
+                    )
+                else:
+                    existing = conn.execute(
+                        text("SELECT tier, holding_pct FROM universe_companies WHERE universe_id = :u_id AND cd_cvm = :cd_cvm"),
+                        {"u_id": universe_id, "cd_cvm": cd_cvm}
+                    ).fetchone()
+
+                    holding_val = 0.0
+
+                    if existing:
+                        prev_tier, prev_holding = existing
+                        conn.execute(
+                            text(
+                                """
+                                UPDATE universe_companies
+                                SET tier = :tier, updated_at = :updated_at
+                                WHERE universe_id = :u_id AND cd_cvm = :cd_cvm
+                                """
+                            ),
+                            {"u_id": universe_id, "cd_cvm": cd_cvm, "tier": tier, "updated_at": now}
+                        )
+                        
+                        if prev_tier != tier:
+                            conn.execute(
+                                text(
+                                    """
+                                    INSERT INTO coverage_decision_history (universe_id, cd_cvm, event_type, previous_value, new_value, rationale, timestamp)
+                                    VALUES (:u_id, :cd_cvm, 'tier_change', :prev, :new, :rationale, :timestamp)
+                                    """
+                                ),
+                                {"u_id": universe_id, "cd_cvm": cd_cvm, "prev": prev_tier, "new": tier, "rationale": rationale, "timestamp": now}
+                            )
+                    else:
+                        conn.execute(
+                            text(
+                                """
+                                INSERT INTO universe_companies (universe_id, cd_cvm, tier, manual_score_override, owner_analyst, holding_pct, updated_at)
+                                VALUES (:u_id, :cd_cvm, :tier, NULL, NULL, :holding, :updated_at)
+                                """
+                            ),
+                            {"u_id": universe_id, "cd_cvm": cd_cvm, "tier": tier, "holding": holding_val, "updated_at": now}
+                        )
+
+                        self._init_checklist_items(conn, universe_id, cd_cvm, tier)
+
+                        conn.execute(
+                            text(
+                                """
+                                INSERT INTO coverage_decision_history (universe_id, cd_cvm, event_type, previous_value, new_value, rationale, timestamp)
+                                VALUES (:u_id, :cd_cvm, 'tier_change', 'none', :new, :rationale, :timestamp)
+                                """
+                            ),
+                            {"u_id": universe_id, "cd_cvm": cd_cvm, "new": tier, "rationale": rationale, "timestamp": now}
+                        )
+
 
 
     # --- Company Universe membership ---
@@ -451,7 +586,9 @@ class CoverageUniverseService:
                 if not comp_data.get("company_name"):
                     comp_data["company_name"] = f"CVM {cd_cvm}"
                 if not comp_data.get("ticker_b3"):
-                    comp_data["ticker_b3"] = str(cd_cvm)
+                    from src.companies.identity import CompanyIdentityResolver
+                    identity = CompanyIdentityResolver().resolve(cd_cvm)
+                    comp_data["ticker_b3"] = (identity.ticker_b3 if identity else None) or str(cd_cvm)
                 if not comp_data.get("setor_analitico"):
                     comp_data["setor_analitico"] = "Unknown"
                 if not comp_data.get("gics_sector"):
@@ -723,7 +860,9 @@ class CoverageUniverseService:
                 if not item.get("company_name"):
                     item["company_name"] = f"CVM {item['cd_cvm']}"
                 if not item.get("ticker_b3"):
-                    item["ticker_b3"] = str(item['cd_cvm'])
+                    from src.companies.identity import CompanyIdentityResolver
+                    identity = CompanyIdentityResolver().resolve(item['cd_cvm'])
+                    item["ticker_b3"] = (identity.ticker_b3 if identity else None) or str(item['cd_cvm'])
                 
                 title = f"Complete required task: {item_key.replace('_', ' ').title()}"
                 desc = f"Company {item['company_name']} ({item['ticker_b3']}) in tier '{item['tier']}' is missing: {item_key}."
@@ -845,7 +984,10 @@ class CoverageUniverseService:
                 if not item.get("company_name"):
                     item["company_name"] = f"CVM {item.get('cd_cvm') or ''}"
                 if not item.get("ticker_b3"):
-                    item["ticker_b3"] = str(item.get('cd_cvm') or '')
+                    from src.companies.identity import CompanyIdentityResolver
+                    cd = item.get('cd_cvm')
+                    identity = CompanyIdentityResolver().resolve(cd) if cd else None
+                    item["ticker_b3"] = (identity.ticker_b3 if identity else None) or str(cd or '')
                 results.append(item)
             return results
 

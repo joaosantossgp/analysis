@@ -131,8 +131,10 @@ def resolve_ticker(cd_cvm: int | str, read_service: Any = None) -> str | None:
             logger.debug("Error retrieving ticker from query_layer for cd_cvm=%s: %s", cd_cvm, exc)
 
     if not ticker:
-        from src.companies.ticker_map import TICKER_MAP
-        ticker = TICKER_MAP.get(cd_cvm)
+        from src.companies.identity import CompanyIdentityResolver
+        resolver = CompanyIdentityResolver()
+        identity = resolver.resolve(cd_cvm)
+        ticker = identity.ticker_b3 if identity else None
 
     if not ticker:
         return None

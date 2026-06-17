@@ -21,7 +21,7 @@ from uuid import uuid4
 import pandas as pd
 import requests
 
-from src.companies.ticker_map import TICKER_MAP
+from src.companies.identity import CompanyIdentityResolver
 from src.platform.contracts import RefreshPolicy, RefreshProgressUpdate, RefreshRequest
 from src.financials.read_service import resolve_refresh_year_range
 from src.refresh.service import HeadlessRefreshService
@@ -1162,7 +1162,8 @@ class IntelligentSelectorService:
                 and last_report_year == end_year
             )
 
-            ticker = TICKER_MAP.get(cd_cvm)
+            identity = CompanyIdentityResolver().resolve(cd_cvm)
+            ticker = identity.ticker_b3 if identity else None
             snapshot = self._load_market_snapshot(ticker, cache, fetch_budget)
             mktcap = float(snapshot.get("mktcap", 0.0) or 0.0)
             avg_volume = float(snapshot.get("avg_volume", 0.0) or 0.0)

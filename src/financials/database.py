@@ -157,9 +157,10 @@ def _backfill_companies_metadata(engine: Engine) -> None:
             return
             
         logger.info("Running automatic local metadata backfill for %d companies...", len(rows))
-        from src.companies.ticker_map import TICKER_MAP
+        from src.companies.identity import CompanyIdentityResolver
         from src.companies.cnpj import validate_cnpj
         
+        resolver = CompanyIdentityResolver()
         updates_list = []
         
         for row in rows:
@@ -168,15 +169,18 @@ def _backfill_companies_metadata(engine: Engine) -> None:
             ticker_b3 = row[2]
             
             updates = {}
-            # 1. Normalize existing CNPJ to exactly 14 digits if it is valid but formatted/mismatched
             if cnpj:
                 cleaned_cnpj = "".join(c for c in str(cnpj) if c.isdigit())
                 if cleaned_cnpj != cnpj and validate_cnpj(cleaned_cnpj):
                     updates["cnpj"] = cleaned_cnpj
-            
-            # 2. Backfill ticker if missing
+            else:
+                identity = resolver.resolve(int(cd_cvm))
+                if identity and identity.cnpj:
+                    updates["cnpj"] = identity.cnpj
+
             if not ticker_b3:
-                raw_ticker = TICKER_MAP.get(int(cd_cvm))
+                identity = resolver.resolve(int(cd_cvm))
+                raw_ticker = identity.ticker_b3 if identity else None
                 if raw_ticker:
                     clean_ticker = raw_ticker.strip().upper()
                     if clean_ticker.endswith(".SA"):
@@ -279,31 +283,20 @@ class CVMDatabase:
         """Persiste metadados na tabela companies (se existir). Idempotente."""
         updated_at = datetime.utcnow().replace(microsecond=0).isoformat()
 
-        # Resolve ticker_b3 if not provided
-        if not ticker_b3:
-            from src.companies.ticker_map import TICKER_MAP
-            raw_ticker = TICKER_MAP.get(int(cvm_code))
-            if raw_ticker:
-                ticker_b3 = raw_ticker.strip().upper()
-                if ticker_b3.endswith(".SA"):
-                    ticker_b3 = ticker_b3[:-3]
+        # Resolve ticker_b3 and cnpj if not provided
+        if not ticker_b3 or not cnpj:
+            from src.companies.identity import CompanyIdentityResolver
+            resolver = CompanyIdentityResolver()
+            identity = resolver.resolve(int(cvm_code))
+            if identity:
+                if not ticker_b3 and identity.ticker_b3:
+                    ticker_b3 = identity.ticker_b3
+                    if ticker_b3.endswith(".SA"):
+                        ticker_b3 = ticker_b3[:-3]
+                if not cnpj and identity.cnpj:
+                    cnpj = identity.cnpj
 
-        # Resolve cnpj if not provided
-        if not cnpj:
-            try:
-                from src.companies.catalog import CompanyCatalogService
-                catalog = CompanyCatalogService(timeout=5)
-                entry = catalog.lookup_company(int(cvm_code))
-                if entry and entry.cnpj:
-                    from src.companies.cnpj import validate_cnpj
-                    if validate_cnpj(entry.cnpj):
-                        cnpj = "".join(c for c in str(entry.cnpj) if c.isdigit())
-                        if not ticker_b3 and entry.ticker_b3:
-                            ticker_b3 = entry.ticker_b3
-            except Exception:
-                pass
-        else:
-            # Validate provided CNPJ
+        if cnpj:
             from src.companies.cnpj import validate_cnpj
             if validate_cnpj(cnpj):
                 cnpj = "".join(c for c in str(cnpj) if c.isdigit())

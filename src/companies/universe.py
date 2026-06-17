@@ -10,7 +10,7 @@ import requests
 from sqlalchemy import inspect, text
 
 from src.platform.settings import AppSettings
-from src.companies.ticker_map import REVERSE_TICKER_MAP, TICKER_MAP
+from src.companies.identity import CompanyIdentityResolver
 from src.financials.utils import now_iso_seconds
 from src.companies.market_cap import MarketCapService
 
@@ -209,11 +209,13 @@ class SnapshotCompanyUniverseProvider:
         except Exception:
             return self._get_available_companies_from_catalog()
         entries: list[CompanyUniverseEntry] = []
+        _resolver = CompanyIdentityResolver()
         for item in getattr(page, "items", ()):
             cd_cvm = _coerce_int(_get(item, "cd_cvm"))
             if cd_cvm is None:
                 continue
-            ticker = _clean_ticker(_get(item, "ticker_b3") or TICKER_MAP.get(cd_cvm))
+            identity = _resolver.resolve(cd_cvm)
+            ticker = _clean_ticker(_get(item, "ticker_b3") or (identity.ticker_b3 if identity else None))
             entries.append(
                 CompanyUniverseEntry(
                     cd_cvm=cd_cvm,
@@ -235,14 +237,16 @@ class SnapshotCompanyUniverseProvider:
             return []
 
         entries: list[CompanyUniverseEntry] = []
+        _resolver = CompanyIdentityResolver()
         for entry in catalog_entries:
             cd_cvm = _coerce_int(getattr(entry, "cd_cvm", None))
             if cd_cvm is None:
                 continue
+            identity = _resolver.resolve(cd_cvm)
             entries.append(
                 CompanyUniverseEntry(
                     cd_cvm=cd_cvm,
-                    ticker=_clean_ticker(getattr(entry, "ticker_b3", None) or TICKER_MAP.get(cd_cvm)),
+                    ticker=_clean_ticker(getattr(entry, "ticker_b3", None) or (identity.ticker_b3 if identity else None)),
                     company_name=str(getattr(entry, "company_name", None) or f"CVM {cd_cvm}"),
                     market_cap=None,
                     market_cap_rank=None,

@@ -30,7 +30,7 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
 from src.platform.db import build_engine
 from src.platform.settings import build_settings
 from src.platform.startup import collect_startup_report, format_startup_report
-from src.companies.ticker_map import TICKER_MAP
+from src.companies.identity import CompanyIdentityResolver
 
 logging.basicConfig(
     level=logging.INFO,
@@ -103,6 +103,7 @@ def load_sector_excel(settings) -> dict[int, str]:
 
 def build_companies_df(existing_df: pd.DataFrame, cvm_df: pd.DataFrame, sector_map: dict[int, str]) -> pd.DataFrame:
     rows = []
+    resolver = CompanyIdentityResolver()
     for _, row in existing_df.iterrows():
         cd_cvm = int(row["CD_CVM"])
         cvm_info = cvm_df.loc[cd_cvm] if cd_cvm in cvm_df.index else None
@@ -120,6 +121,12 @@ def build_companies_df(existing_df: pd.DataFrame, cvm_df: pd.DataFrame, sector_m
             sit = str(cvm_info.get("SIT", "ATIVO")).strip().upper()
             is_active = 1 if sit in {"A", "ATIVO"} else 0
 
+        identity = resolver.resolve(cd_cvm)
+        ticker_val = identity.ticker_b3 if identity else None
+        if ticker_val and ticker_val.endswith(".SA"):
+            ticker_val = ticker_val[:-3]
+        cnpj = cnpj or (identity.cnpj if identity else None)
+
         rows.append(
             {
                 "cd_cvm": cd_cvm,
@@ -129,7 +136,7 @@ def build_companies_df(existing_df: pd.DataFrame, cvm_df: pd.DataFrame, sector_m
                 "setor_cvm": setor_cvm,
                 "setor_analitico": sector_map.get(cd_cvm),
                 "company_type": str(row.get("COMPANY_TYPE", "comercial") or "comercial"),
-                "ticker_b3": TICKER_MAP.get(cd_cvm),
+                "ticker_b3": ticker_val,
                 "is_active": is_active,
             }
         )

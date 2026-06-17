@@ -1358,7 +1358,7 @@ class StatusBridgeMixin:
                     self._data_coverage_cache = (cache_signature, cached_payload)
                 return self._sanitize_for_json(cached_payload)
 
-            from src.companies.ticker_map import TICKER_MAP  # noqa: PLC0415
+            from src.companies.identity import CompanyIdentityResolver  # noqa: PLC0415
             from desktop.services import IntelligentSelectorService  # noqa: PLC0415
 
             svc = self._svc()
@@ -1479,7 +1479,8 @@ class StatusBridgeMixin:
                 except Exception:
                     continue
                 company_name = str(item.get("company_name") or f"CVM {cd}")
-                ticker = TICKER_MAP.get(cd)
+                identity = CompanyIdentityResolver().resolve(cd)
+                ticker = identity.ticker_b3 if identity else None
                 ticker_mapped = bool(ticker)
                 cvm_valid = cd > 0
                 has_registry = cd in company_rows

@@ -96,3 +96,26 @@ export async function fetchCompanyHistoricalIndicators(
   return { mode: "desktop", data };
 }
 
+export interface ResolvedIdentity {
+  input: string;
+  cd_cvm: number;
+  ticker_b3: string | null;
+  company_name: string;
+  cnpj: string | null;
+  gics_sector: string | null;
+}
+
+export async function resolveCompanyIdentities(inputs: string[]): Promise<{
+  resolved: ResolvedIdentity[];
+  unmapped: string[];
+}> {
+  const mode = getBridgeMode();
+  if (mode === "browser") {
+    return { resolved: [], unmapped: inputs };
+  }
+  const res = await callBridge("resolve_company_identities", { inputs });
+  if (res.error) throw new Error(res.error);
+  return res;
+}
+
+
