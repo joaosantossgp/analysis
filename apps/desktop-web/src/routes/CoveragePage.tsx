@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/Button";
 // New sub-components
 import { UniverseSidebar } from "@/components/coverage/UniverseSidebar";
 import { BulkCompanyManagerModal } from "@/components/coverage/BulkCompanyManagerModal";
+import { CoverageMethodologyModal } from "@/components/coverage/CoverageMethodologyModal";
 
 const DEFAULT_TIER_HOURS: Record<string, number> = {
   must_cover: 120.0,
@@ -55,6 +56,8 @@ export function CoveragePage({ section }: Props) {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isDuplicateModalOpen, setIsDuplicateModalOpen] = useState(false);
   const [duplicateUniverseId, setDuplicateUniverseId] = useState("");
+  const [isMethodologyOpen, setIsMethodologyOpen] = useState(false);
+  const [methodologyTab, setMethodologyTab] = useState<"scoring" | "capacity">("scoring");
 
   const universesQuery = useQuery({
     queryKey: ["coverage-universes"],
@@ -69,6 +72,12 @@ export function CoveragePage({ section }: Props) {
   // Land on empty/dashboard if activeUniverseId is empty or not found in filtered list
   const activeUniverse = filteredUniverses.find((u) => u.id === activeUniverseId);
   const currentUniverseId = activeUniverse?.id || "";
+
+  const capacityQuery = useQuery({
+    queryKey: ["coverage-capacity", currentUniverseId],
+    queryFn: () => fetchCoverageCapacityData(currentUniverseId),
+    enabled: !!currentUniverseId,
+  });
 
   useEffect(() => {
     // If activeUniverseId was set but is not found in filtered list (e.g. deleted/archived), clear it
@@ -195,15 +204,34 @@ export function CoveragePage({ section }: Props) {
 
             {/* Main Area */}
             {section === "universes" && activeUniverse && (
-              <UniverseSummarySection universe={activeUniverse} />
+              <UniverseSummarySection
+                universe={activeUniverse}
+                onOpenMethodology={(tab) => {
+                  setMethodologyTab(tab);
+                  setIsMethodologyOpen(true);
+                }}
+              />
             )}
 
             {section === "prioritization" && currentUniverseId && (
-              <PrioritizationSection universeId={currentUniverseId} onOpenBulkModal={() => setIsBulkModalOpen(true)} />
+              <PrioritizationSection
+                universeId={currentUniverseId}
+                onOpenBulkModal={() => setIsBulkModalOpen(true)}
+                onOpenMethodology={(tab) => {
+                  setMethodologyTab(tab);
+                  setIsMethodologyOpen(true);
+                }}
+              />
             )}
 
             {section === "work-queue" && currentUniverseId && (
-              <WorkQueueSection universeId={currentUniverseId} />
+              <WorkQueueSection
+                universeId={currentUniverseId}
+                onOpenMethodology={(tab) => {
+                  setMethodologyTab(tab);
+                  setIsMethodologyOpen(true);
+                }}
+              />
             )}
           </>
         )}
@@ -233,6 +261,13 @@ export function CoveragePage({ section }: Props) {
         onSuccess={() => {
           void queryClient.invalidateQueries({ queryKey: ["coverage-scores", currentUniverseId] });
         }}
+      />
+
+      <CoverageMethodologyModal
+        isOpen={isMethodologyOpen}
+        onClose={() => setIsMethodologyOpen(false)}
+        defaultTab={methodologyTab}
+        availableHours={capacityQuery.data?.available_hours || 1600}
       />
     </div>
   );
@@ -604,7 +639,7 @@ function getUniverseAccentColor(name: string): string {
   return colors[hash % colors.length];
 }
 
-function UniverseSummarySection({ universe }: { universe: CoverageUniverse }) {
+function UniverseSummarySection({ universe, onOpenMethodology }: { universe: CoverageUniverse; onOpenMethodology: (tab: "scoring" | "capacity") => void }) {
   const queryClient = useQueryClient();
   
   // Inline metadata states
@@ -746,7 +781,17 @@ function UniverseSummarySection({ universe }: { universe: CoverageUniverse }) {
           <span className="text-xl font-bold font-mono text-[var(--color-id-ticker)]">{universe.company_count}</span>
         </div>
         <div className="bg-[var(--color-surface-2)] p-4 rounded border border-[var(--color-border-subtle)] space-y-1">
-          <span className="block text-3xs text-[var(--color-text-tertiary)] uppercase tracking-wider font-semibold">Average Priority Score</span>
+          <div className="flex items-center justify-between">
+            <span className="block text-3xs text-[var(--color-text-tertiary)] uppercase tracking-wider font-semibold">Average Priority Score</span>
+            <button
+              type="button"
+              onClick={() => onOpenMethodology("scoring")}
+              className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-zinc-800 text-zinc-400 hover:bg-cyan-950 hover:text-cyan-400 text-3xs font-bold transition-colors cursor-pointer border border-zinc-700/60"
+              title="Click for scoring methodology guide"
+            >
+              ?
+            </button>
+          </div>
           <span className="text-xl font-bold font-mono text-cyan-400">
             {avgScore} <span className="text-3xs text-[var(--color-text-secondary)]">/ 100</span>
           </span>
@@ -761,7 +806,17 @@ function UniverseSummarySection({ universe }: { universe: CoverageUniverse }) {
           </div>
         </div>
         <div className="bg-[var(--color-surface-2)] p-4 rounded border border-[var(--color-border-subtle)] space-y-1">
-          <span className="block text-3xs text-[var(--color-text-tertiary)] uppercase tracking-wider font-semibold">Capacity Boundary</span>
+          <div className="flex items-center justify-between">
+            <span className="block text-3xs text-[var(--color-text-tertiary)] uppercase tracking-wider font-semibold">Capacity Boundary</span>
+            <button
+              type="button"
+              onClick={() => onOpenMethodology("capacity")}
+              className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-zinc-800 text-zinc-400 hover:bg-cyan-950 hover:text-cyan-400 text-3xs font-bold transition-colors cursor-pointer border border-zinc-700/60"
+              title="Click for capacity guide & multipliers"
+            >
+              ?
+            </button>
+          </div>
           <div className="flex items-center justify-between text-2xs">
             <span className="text-[var(--color-text-secondary)]">{capData.required_hours || 0} / {capData.available_hours || 0} h</span>
             <span className={`font-semibold uppercase ${capacityPct > 100 ? "text-[var(--color-state-err)]" : "text-[var(--color-state-ok)]"}`}>
@@ -1232,7 +1287,7 @@ function PriorityScoreTooltip({ item, weights }: { item: any; weights: any }) {
 }
 
 // --- Capacity Simulator Widget ---
-function CapacityWidget({ universeId }: { universeId: string }) {
+function CapacityWidget({ universeId, onOpenMethodology }: { universeId: string; onOpenMethodology: (tab: "scoring" | "capacity") => void }) {
   const queryClient = useQueryClient();
   const capacityQuery = useQuery({
     queryKey: ["coverage-capacity", universeId],
@@ -1277,7 +1332,17 @@ function CapacityWidget({ universeId }: { universeId: string }) {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-4 flex-1 min-w-[280px]">
           <div className="space-y-1">
-            <span className="block text-3xs text-[var(--color-text-tertiary)] uppercase tracking-wider font-semibold">Capacity Utilization</span>
+            <div className="flex items-center gap-1.5">
+              <span className="block text-3xs text-[var(--color-text-tertiary)] uppercase tracking-wider font-semibold">Capacity Utilization</span>
+              <button
+                type="button"
+                onClick={() => onOpenMethodology("capacity")}
+                className="inline-flex items-center justify-center w-3 h-3 rounded-full bg-zinc-800 text-zinc-400 hover:bg-cyan-950 hover:text-cyan-400 text-3xs font-bold transition-colors cursor-pointer border border-zinc-700/60"
+                title="Click for capacity guide & multipliers"
+              >
+                ?
+              </button>
+            </div>
             <div className="flex items-center gap-2">
               <span className={`text-sm font-bold uppercase ${isOverloaded ? "text-[var(--color-state-err)] animate-pulse" : "text-[var(--color-state-ok)]"}`}>
                 {capacityPct}%
@@ -1722,7 +1787,7 @@ function CoverageQuickEditDrawer({
 }
 
 // --- Prioritization Score List section ---
-function PrioritizationSection({ universeId, onOpenBulkModal }: { universeId: string; onOpenBulkModal: () => void }) {
+function PrioritizationSection({ universeId, onOpenBulkModal, onOpenMethodology }: { universeId: string; onOpenBulkModal: () => void; onOpenMethodology: (tab: "scoring" | "capacity") => void }) {
   const queryClient = useQueryClient();
   const [selectedCompany, setSelectedCompany] = useState<any | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -1989,8 +2054,23 @@ function PrioritizationSection({ universeId, onOpenBulkModal }: { universeId: st
               <th className="px-3 py-2.5 text-left cursor-pointer hover:text-[var(--color-text-primary)] transition-colors" onClick={() => handleSort("tier")}>
                 Tier{renderSortIndicator("tier")}
               </th>
-              <th className="px-3 py-2.5 text-center cursor-pointer hover:text-[var(--color-text-primary)] transition-colors w-44" onClick={() => handleSort("final_score")}>
-                Score{renderSortIndicator("final_score")}
+              <th className="px-3 py-2.5 text-center w-44">
+                <div className="flex items-center justify-center gap-1 select-none">
+                  <span className="cursor-pointer hover:text-[var(--color-text-primary)] transition-colors" onClick={() => handleSort("final_score")}>
+                    Score{renderSortIndicator("final_score")}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenMethodology("scoring");
+                    }}
+                    className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-zinc-800 text-zinc-400 hover:bg-cyan-950 hover:text-cyan-400 text-3xs font-bold transition-colors cursor-pointer border border-zinc-700/60"
+                    title="Click for scoring methodology guide"
+                  >
+                    ?
+                  </button>
+                </div>
               </th>
               <th className="px-3 py-2.5 text-center cursor-pointer hover:text-[var(--color-text-primary)] transition-colors w-32" onClick={() => handleSort("completed_checklist_count")}>
                 Checklist{renderSortIndicator("completed_checklist_count")}
@@ -2252,7 +2332,7 @@ function PrioritizationSection({ universeId, onOpenBulkModal }: { universeId: st
 
 
 // --- Work Queue / Gaps list tab ---
-function WorkQueueSection({ universeId }: { universeId: string }) {
+function WorkQueueSection({ universeId, onOpenMethodology }: { universeId: string; onOpenMethodology: (tab: "scoring" | "capacity") => void }) {
   const queueQuery = useQuery({
     queryKey: ["coverage-work-queue", universeId],
     queryFn: () => fetchCoverageWorkQueue(universeId),
@@ -2263,7 +2343,7 @@ function WorkQueueSection({ universeId }: { universeId: string }) {
 
   return (
     <div className="space-y-4">
-      <CapacityWidget universeId={universeId} />
+      <CapacityWidget universeId={universeId} onOpenMethodology={onOpenMethodology} />
 
       <Panel title="Active Tasks" subtitle="Dynamic checklist items missing from covered stocks in this universe.">
         <div className="space-y-2">
