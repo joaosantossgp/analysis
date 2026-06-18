@@ -89,6 +89,27 @@ def test_read_csv_cached_keeps_pandas_when_polars_conversion_fails(scraper, tmp_
     assert int(df.loc[0, "CD_CVM"]) == 25690
 
 
+def test_polars_to_pandas_falls_back_to_records_when_pyarrow_is_unavailable(scraper):
+    class _PolarsLikeFrame:
+        def to_pandas(self):
+            raise RuntimeError("pyarrow unavailable")
+
+        def to_dicts(self):
+            return [
+                {
+                    "CD_CVM": 25690,
+                    "ORDEM_EXERC": "ÚLTIMO",
+                    "DS_CONTA": "Receita",
+                    "VL_CONTA": 1000,
+                }
+            ]
+
+    df = scraper._polars_to_pandas(_PolarsLikeFrame())
+
+    assert isinstance(df, pd.DataFrame)
+    assert int(df.loc[0, "CD_CVM"]) == 25690
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # normalize_units
 # ──────────────────────────────────────────────────────────────────────────────

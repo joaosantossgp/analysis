@@ -386,6 +386,12 @@ class CVMScraper:
             self._csv_cache[filepath] = df
         return self._csv_cache[filepath]
 
+    def _polars_to_pandas(self, df):
+        try:
+            return df.to_pandas()
+        except Exception:
+            return _pd().DataFrame(df.to_dicts())
+
     def process_data(self, cvm_code, years):
         all_data = []
         file_patterns = ['BPA', 'BPP', 'DRE', 'DFC_MD', 'DFC_MI', 'DVA', 'DMPL']
@@ -404,7 +410,7 @@ class CVMScraper:
                                     df_company_pl = df_company_pl.filter(pl.col('ORDEM_EXERC') == 'ÚLTIMO')
                                 if df_company_pl.is_empty():
                                     continue
-                                df_company = df_company_pl.to_pandas()
+                                df_company = self._polars_to_pandas(df_company_pl)
                             else:
                                 df_company = df[df['CD_CVM'].astype('Int64') == int(cvm_code)].copy()
                                 if 'ORDEM_EXERC' in df_company.columns:
