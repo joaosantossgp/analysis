@@ -6,6 +6,7 @@ import socket
 import threading
 import time
 from dataclasses import dataclass, field
+from typing import Callable
 
 from sqlalchemy import text
 
@@ -88,6 +89,7 @@ class RefreshJobWorker:
         refresh_service: HeadlessRefreshService | None = None,
         logger: logging.Logger | None = None,
         config: RefreshWorkerConfig | None = None,
+        worker_heartbeat_callback: Callable[[str], None] | None = None,
     ) -> None:
         self.settings = settings or get_settings()
         self.logger = logger or logging.getLogger(__name__)
@@ -97,6 +99,7 @@ class RefreshJobWorker:
             logger=self.logger,
         )
         self.config = config or RefreshWorkerConfig()
+        self.worker_heartbeat_callback = worker_heartbeat_callback
 
     @property
     def engine(self):
@@ -113,17 +116,21 @@ class RefreshJobWorker:
             lease_seconds=self.config.lease_seconds,
             max_attempts=self.config.max_attempts,
         )
+        self._emit_worker_heartbeat("running")
         while stop_event is None or not stop_event.is_set():
             claimed = self.run_once()
             if claimed:
                 continue
+            self._emit_worker_heartbeat("idle")
             wait_seconds = max(0.2, float(self.config.poll_interval_seconds))
             if stop_event is not None:
                 stop_event.wait(wait_seconds)
             else:
                 time.sleep(wait_seconds)
+        self._emit_worker_heartbeat("stopped")
 
     def run_once(self) -> bool:
+        self._emit_worker_heartbeat("running")
         recovered = self.repository.recover_stale_jobs(
             lease_seconds=self.config.lease_seconds,
             max_attempts=self.config.max_attempts,
@@ -142,6 +149,17 @@ class RefreshJobWorker:
 
         self._run_job(job)
         return True
+
+    def _emit_worker_heartbeat(self, state: str) -> None:
+        if self.worker_heartbeat_callback is None:
+            return
+        try:
+            self.worker_heartbeat_callback(str(state))
+        except Exception:
+            self.logger.exception(
+                "refresh_worker_heartbeat_callback_failed worker_id=%s",
+                self.config.worker_id,
+            )
 
     def _run_job(self, job: RefreshJobRecord) -> None:
         log_event(

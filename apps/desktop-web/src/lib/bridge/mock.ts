@@ -1280,6 +1280,19 @@ export function createMockBridge(): Partial<BridgeApi> {
       preserved_official_documents: true,
     }),
 
+    backfill_news_article_content: async (params) => ({
+      status: "success",
+      limit: params?.limit ?? 25,
+      include_normal: Boolean(params?.include_normal),
+      candidate_count: 0,
+      attempted_count: 0,
+      stored_count: 0,
+      paywalled_count: 0,
+      failed_count: 0,
+      skipped_count: 0,
+      errors: [],
+    }),
+
     get_news_sources: async () => ({
       items: [
         {

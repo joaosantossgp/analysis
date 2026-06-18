@@ -867,6 +867,141 @@ class NewsRepository:
         item["available"] = bool(item.get("content_text"))
         return item
 
+    def get_article_for_content_fetch(self, article_id: str) -> dict[str, Any] | None:
+        with self.engine.connect() as conn:
+            row = conn.execute(
+                text("""
+                    SELECT
+                        a.article_id,
+                        a.title,
+                        a.original_url,
+                        a.canonical_url,
+                        a.content_status,
+                        a.paywall_status
+                    FROM news_articles a
+                    LEFT JOIN news_article_content c ON c.article_id = a.article_id
+                    WHERE a.article_id = :article_id
+                      AND c.article_id IS NULL
+                """),
+                {"article_id": article_id},
+            ).mappings().fetchone()
+        return dict(row) if row else None
+
+    def mark_article_content_status(
+        self,
+        *,
+        article_id: str,
+        content_status: str,
+        paywall_status: str | None = None,
+    ) -> None:
+        now = utc_now_iso()
+        with self.engine.begin() as conn:
+            conn.execute(
+                text("""
+                    UPDATE news_articles
+                    SET content_status = :content_status,
+                        paywall_status = COALESCE(:paywall_status, paywall_status),
+                        updated_at = :now
+                    WHERE article_id = :article_id
+                """),
+                {
+                    "article_id": article_id,
+                    "content_status": content_status,
+                    "paywall_status": paywall_status,
+                    "now": now,
+                },
+            )
+
+    def list_google_content_backfill_candidates(
+        self,
+        *,
+        limit: int = 25,
+        include_normal: bool = False,
+    ) -> list[dict[str, Any]]:
+        bounded_limit = _bounded_int(limit, 25, 1, 250)
+        priority_filter = "" if include_normal else "AND COALESCE(s.priority_level, 'Normal') IN ('High', 'Critical')"
+        with self.engine.connect() as conn:
+            rows = conn.execute(
+                text(f"""
+                    SELECT
+                        a.article_id,
+                        a.title,
+                        a.original_url,
+                        a.canonical_url,
+                        a.content_status,
+                        a.paywall_status,
+                        COALESCE(s.priority_level, 'Normal') AS priority_level
+                    FROM news_articles a
+                    JOIN news_sources src ON src.source_id = a.source_id
+                    LEFT JOIN news_article_scores s ON s.article_id = a.article_id
+                    LEFT JOIN news_article_content c ON c.article_id = a.article_id
+                    WHERE src.source_type = 'aggregator_search'
+                      AND (
+                        a.source_id LIKE 'google_company_%'
+                        OR a.source_id LIKE 'google-topic-%'
+                      )
+                      AND COALESCE(a.paywall_status, '') != 'paywalled'
+                      AND a.content_status NOT IN ('full_text_available', 'official_document', 'offline_copy_available', 'paywalled')
+                      AND c.article_id IS NULL
+                      {priority_filter}
+                    ORDER BY
+                        CASE COALESCE(s.priority_level, 'Normal')
+                            WHEN 'Critical' THEN 0
+                            WHEN 'High' THEN 1
+                            ELSE 2
+                        END,
+                        COALESCE(a.published_at, a.discovered_at) DESC
+                    LIMIT :limit
+                """),
+                {"limit": bounded_limit},
+            ).mappings().fetchall()
+        return [dict(row) for row in rows]
+
+    def update_article_original_url(
+        self,
+        *,
+        article_id: str,
+        original_url: str,
+    ) -> None:
+        canonical_url = canonicalize_url(original_url)
+        now = utc_now_iso()
+        with self.engine.begin() as conn:
+            existing = conn.execute(
+                text("""
+                    SELECT article_id
+                    FROM news_articles
+                    WHERE canonical_url = :canonical_url
+                      AND article_id != :article_id
+                """),
+                {"article_id": article_id, "canonical_url": canonical_url},
+            ).scalar()
+            if existing:
+                conn.execute(
+                    text("""
+                        UPDATE news_articles
+                        SET original_url = :original_url,
+                            updated_at = :now
+                        WHERE article_id = :article_id
+                    """),
+                    {"article_id": article_id, "original_url": original_url, "now": now},
+                )
+                return
+            conn.execute(
+                text("""
+                    UPDATE news_articles
+                    SET original_url = :original_url,
+                        canonical_url = :canonical_url,
+                        updated_at = :now
+                    WHERE article_id = :article_id
+                """),
+                {
+                    "article_id": article_id,
+                    "original_url": original_url,
+                    "canonical_url": canonical_url,
+                    "now": now,
+                },
+            )
+
     def get_content_storage_summary(self) -> dict[str, Any]:
         policy = self.get_retention_policy()
         with self.engine.connect() as conn:

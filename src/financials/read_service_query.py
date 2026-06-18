@@ -227,6 +227,7 @@ class ReadServiceQueryMixin:
     ) -> CompanyInfoDTO | None:
         payload = self.query_layer.get_company_info_with_read_model_state(cd_cvm)
         if payload:
+            payload = self._enrich_company_identity_fallback(payload, default_cd_cvm=cd_cvm)
             return self._apply_company_read_model_state(
                 self._build_company_info_dto(payload, default_cd_cvm=cd_cvm),
                 payload,
@@ -240,7 +241,10 @@ class ReadServiceQueryMixin:
             return None
         return self._with_company_read_model_state(
             self._build_company_info_dto(
-                self._company_catalog_payload(catalog_entry),
+                self._enrich_company_identity_fallback(
+                    self._company_catalog_payload(catalog_entry),
+                    default_cd_cvm=cd_cvm,
+                ),
                 default_cd_cvm=cd_cvm,
             )
         )
@@ -268,6 +272,36 @@ class ReadServiceQueryMixin:
             "company_type": "comercial",
             "ticker_b3": entry.ticker_b3,
         }
+
+    def _enrich_company_identity_fallback(
+        self,
+        payload: dict[str, Any],
+        *,
+        default_cd_cvm: int,
+    ) -> dict[str, Any]:
+        if payload.get("ticker_b3") and payload.get("cnpj"):
+            return payload
+        try:
+            from src.companies.identity import CompanyIdentityResolver  # noqa: PLC0415
+
+            identity = CompanyIdentityResolver(engine=self.engine).resolve(
+                int(payload.get("cd_cvm") or default_cd_cvm)
+            )
+        except Exception:
+            identity = None
+        if identity is None:
+            return payload
+
+        enriched = dict(payload)
+        if not enriched.get("ticker_b3") and identity.ticker_b3:
+            ticker = str(identity.ticker_b3).strip().upper()
+            if ticker.endswith(".SA"):
+                ticker = ticker[:-3]
+            if ticker and not ticker.isdigit():
+                enriched["ticker_b3"] = ticker
+        if not enriched.get("cnpj") and identity.cnpj:
+            enriched["cnpj"] = identity.cnpj
+        return enriched
 
     @staticmethod
     def _build_company_info_dto(

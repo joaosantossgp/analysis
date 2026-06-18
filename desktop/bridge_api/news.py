@@ -231,7 +231,7 @@ class NewsBridgeMixin:
                 enabled=True,
                 priority=priority,
                 user_defined=False,
-                allow_content_storage=False,
+                allow_content_storage=True,
             )
             repository.register_source(source)
             generated += 1
@@ -541,6 +541,20 @@ class NewsBridgeMixin:
             logger.error("failed to cleanup news extracted content: %s", exc, exc_info=True)
             return {"status": "error", "error": str(exc)}
 
+    def backfill_news_article_content(self, params=None) -> dict:
+        if not self._is_news_write_allowed():
+            return self._sanitize_for_json(self._write_blocked_response("backfill_news_article_content"))
+        params = params or {}
+        try:
+            payload = self._news_collection_service().backfill_google_article_content(
+                limit=self._bounded_int(params.get("limit"), default=25, minimum=1, maximum=250),
+                include_normal=bool(params.get("include_normal", False)),
+            )
+            return self._sanitize_for_json(payload.__dict__)
+        except Exception as exc:
+            logger.error("failed to backfill news article content: %s", exc, exc_info=True)
+            return {"status": "error", "error": str(exc)}
+
     def get_news_article_classification(self, params=None) -> dict:
         params = params or {}
         article_id = str(params.get("article_id") or "").strip()
@@ -564,9 +578,15 @@ class NewsBridgeMixin:
         if not article_id:
             return {"available": False, "error": "article_id is required"}
         try:
-            payload = self._news_repository().get_article_content(article_id)
+            repository = self._news_repository()
+            payload = repository.get_article_content(article_id)
             if payload is None:
                 return {"available": False, "error": f"News article {article_id} not found"}
+            if not payload.get("available") and self._is_news_write_allowed():
+                result = self._news_collection_service().fetch_article_content_on_demand(article_id)
+                payload = repository.get_article_content(article_id) or payload
+                payload["fetch_status"] = result.status
+                payload["fetch_error"] = result.errors[0] if result.errors else None
             return self._sanitize_for_json(payload)
         except Exception as exc:
             logger.error("failed to load news article content: %s", exc, exc_info=True)

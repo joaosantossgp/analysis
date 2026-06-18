@@ -815,6 +815,48 @@ class RefreshBridgeMixin:
                     },
                 )
 
+    def _record_refresh_worker_diagnostic(
+        self,
+        *,
+        status: str,
+        worker_id: str | None = None,
+        error: str | None = None,
+    ) -> None:
+        from sqlalchemy import text  # noqa: PLC0415
+        from src.companies.universe import ensure_company_universe_tables_for_connection  # noqa: PLC0415
+
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        values: dict[str, Any] = {
+            "refresh_worker_status": str(status),
+            "refresh_worker_last_heartbeat_at": now,
+        }
+        if worker_id:
+            values["refresh_worker_id"] = str(worker_id)
+        if error is not None:
+            values["refresh_worker_last_error"] = str(error)
+        elif status in {"starting", "running", "idle"}:
+            values["refresh_worker_last_error"] = ""
+        if status == "starting":
+            values["refresh_worker_started_at"] = now
+
+        with self._svc().engine.begin() as conn:
+            ensure_company_universe_tables_for_connection(conn)
+            for key, value in values.items():
+                conn.execute(text("DELETE FROM app_settings WHERE key = :key"), {"key": key})
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO app_settings (key, value, updated_at)
+                        VALUES (:key, :value, :updated_at)
+                        """
+                    ),
+                    {
+                        "key": key,
+                        "value": json.dumps(value, ensure_ascii=True),
+                        "updated_at": now,
+                    },
+                )
+
     def _active_refresh_job(self) -> dict[str, Any] | None:
         try:
             response = self._refresh().get_refresh_status({})
@@ -1196,15 +1238,44 @@ class RefreshBridgeMixin:
             except Exception:
                 pass
 
+            config = RefreshWorkerConfig()
+            self._record_refresh_worker_diagnostic(
+                status="starting",
+                worker_id=config.worker_id,
+            )
+
+            last_worker_diagnostic = {"status": "starting", "written_at": 0.0}
+
+            def _heartbeat(state: str) -> None:
+                mapped_status = "running" if state in {"running", "idle"} else state
+                now_monotonic = time.monotonic()
+                if (
+                    mapped_status == last_worker_diagnostic["status"]
+                    and now_monotonic - float(last_worker_diagnostic["written_at"]) < 15.0
+                ):
+                    return
+                self._record_refresh_worker_diagnostic(
+                    status=mapped_status,
+                    worker_id=config.worker_id,
+                )
+                last_worker_diagnostic["status"] = mapped_status
+                last_worker_diagnostic["written_at"] = now_monotonic
+
             refresh_service = HeadlessRefreshService(settings=svc.settings)
             worker = RefreshJobWorker(
                 settings=svc.settings,
                 repository=repository,
                 refresh_service=refresh_service,
-                config=RefreshWorkerConfig(),
+                config=config,
+                worker_heartbeat_callback=_heartbeat,
             )
             worker.run_forever()
-        except Exception:
-            # Worker é best-effort: se falhar, o usuário ainda vê o status
-            # "queued" no UI mas não trava o app.
-            pass
+        except Exception as exc:
+            logger.exception("desktop-refresh-worker failed")
+            try:
+                self._record_refresh_worker_diagnostic(
+                    status="error",
+                    error=f"{exc.__class__.__name__}: {exc}",
+                )
+            except Exception:
+                logger.exception("failed to persist refresh worker diagnostic")

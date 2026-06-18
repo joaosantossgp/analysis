@@ -317,6 +317,8 @@ export interface NewsArticleContentResponse {
   storage_bytes?: number | null;
   extracted_at?: string | null;
   updated_at?: string | null;
+  fetch_status?: string | null;
+  fetch_error?: string | null;
   error?: string;
 }
 
@@ -375,6 +377,25 @@ export interface NewsCollectionRun {
 export interface NewsCollectionRunsResponse {
   items: NewsCollectionRun[];
   count: number;
+  error?: string;
+}
+
+export interface BackfillNewsArticleContentParams {
+  limit?: number;
+  include_normal?: boolean;
+}
+
+export interface BackfillNewsArticleContentResult {
+  status: "success" | "error" | "blocked" | string;
+  limit?: number;
+  include_normal?: boolean;
+  candidate_count?: number;
+  attempted_count?: number;
+  stored_count?: number;
+  paywalled_count?: number;
+  failed_count?: number;
+  skipped_count?: number;
+  errors?: string[];
   error?: string;
 }
 

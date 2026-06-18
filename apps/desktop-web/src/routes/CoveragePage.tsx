@@ -44,6 +44,12 @@ type Props = {
   section: "universes" | "prioritization" | "work-queue" | "capacity";
 };
 
+function formatB3OrCvm(company: { ticker_b3?: string | null; cd_cvm?: number | string | null }) {
+  const ticker = String(company.ticker_b3 || "").trim();
+  if (ticker) return ticker;
+  return company.cd_cvm ? `CVM ${company.cd_cvm}` : "CVM n/a";
+}
+
 export function CoveragePage({ section }: Props) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -1286,11 +1292,11 @@ function WishListAdder({ universeId }: { universeId: string }) {
                 type="button"
                 onClick={() => {
                   setSelectedCvm(c.cd_cvm);
-                  setSearch(`${c.ticker_b3 || "CVM"} - ${c.company_name}`);
+                  setSearch(`${formatB3OrCvm(c)} - ${c.company_name}`);
                 }}
                 className="w-full text-left px-3 py-1.5 hover:bg-[var(--color-surface-3)] font-mono text-2xs truncate"
               >
-                [{c.ticker_b3 || c.cd_cvm}] {c.company_name}
+                [{formatB3OrCvm(c)}] {c.company_name}
               </button>
             ))}
           </div>
@@ -1648,7 +1654,7 @@ function InlineChecklistPopover({
       {/* Floating Popover Panel */}
       <div className="absolute right-0 top-full mt-1 z-40 w-80 p-4 bg-zinc-900 border border-zinc-800 rounded shadow-2xl font-mono text-xs text-zinc-100 text-left space-y-3">
         <h4 className="font-bold border-b border-zinc-800 pb-1.5 text-[var(--color-id-ticker)] uppercase text-3xs">
-          Deliverables checklist: {company.ticker_b3}
+          Deliverables checklist: {formatB3OrCvm(company)}
         </h4>
         
         {checklistsQuery.isLoading ? (
@@ -1826,7 +1832,7 @@ function CoverageQuickEditDrawer({
         <div className="border-b border-zinc-850 pb-3 mb-4 flex justify-between items-start">
           <div className="max-w-[85%]">
             <h3 className="text-sm font-bold text-[var(--color-id-ticker)] truncate">
-              {company.ticker_b3 || "N/A"} - {company.company_name}
+              {formatB3OrCvm(company)} - {company.company_name}
             </h3>
             <span className="text-3xs text-zinc-500 block mt-0.5">
               CVM: {company.cd_cvm} · Sector: {company.gics_sector || company.sector_name || "N/A"}
@@ -2298,7 +2304,7 @@ function PrioritizationSection({ universeId, onOpenBulkModal, onOpenMethodology 
 
                     {/* Ticker */}
                     <td className="px-3 py-2.5 text-[var(--color-id-ticker)] font-bold">
-                      <Link to={`/empresas/${s.cd_cvm}`} className="hover:underline">{s.ticker_b3 || "N/A"}</Link>
+                      <Link to={`/empresas/${s.cd_cvm}`} className="hover:underline">{formatB3OrCvm(s)}</Link>
                     </td>
 
                     {/* Company Name */}
@@ -2423,7 +2429,7 @@ function PrioritizationSection({ universeId, onOpenBulkModal, onOpenMethodology 
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 font-mono text-xs">
           <div className="w-full max-w-md bg-[var(--color-surface-1)] border border-[var(--color-border-default)] rounded p-4 shadow-xl space-y-4">
             <h3 className="text-sm font-medium border-b border-[var(--color-border-subtle)] pb-2 text-[var(--color-id-ticker)]">
-              SCORE OVERRIDE: {selectedCompany.ticker_b3}
+              SCORE OVERRIDE: {formatB3OrCvm(selectedCompany)}
             </h3>
             <div className="space-y-3">
               <div className="bg-[var(--color-surface-2)] p-2 rounded space-y-1 text-2xs text-[var(--color-text-secondary)]">
@@ -2532,7 +2538,7 @@ function WorkQueueSection({ universeId, onOpenMethodology }: { universeId: strin
               >
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
-                    <span className="font-bold text-[var(--color-id-ticker)]">{t.ticker_b3}</span>
+                    <span className="font-bold text-[var(--color-id-ticker)]">{formatB3OrCvm(t)}</span>
                     <span className="text-[var(--color-text-secondary)]">({t.company_name})</span>
                   </div>
                   <p className="text-[var(--color-text-tertiary)]">{t.description}</p>

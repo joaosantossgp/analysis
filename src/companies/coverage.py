@@ -36,6 +36,17 @@ COMPLEX_SECTORS = ["Utilidade Pública", "Intermediários Financeiros", "Energia
 MIN_LIQUIDITY_OBSERVATIONS = 5
 
 
+def _clean_b3_ticker(value: Any) -> str | None:
+    if value is None:
+        return None
+    text_value = str(value).strip().upper()
+    if text_value.endswith(".SA"):
+        text_value = text_value[:-3]
+    if not text_value or text_value.isdigit():
+        return None
+    return text_value
+
+
 def normalize_market_cap_source(source_str: str | None) -> str:
     if not source_str:
         return "unknown"
@@ -702,10 +713,7 @@ class CoverageUniverseService:
                 if not comp_data.get("company_name"):
                     comp_data["company_name"] = (identity.company_name if identity else None) or f"CVM {cd_cvm}"
                 if not comp_data.get("ticker_b3"):
-                    raw_ticker = (identity.ticker_b3 if identity else None) or str(cd_cvm)
-                    if raw_ticker.endswith(".SA"):
-                        raw_ticker = raw_ticker[:-3]
-                    comp_data["ticker_b3"] = raw_ticker
+                    comp_data["ticker_b3"] = _clean_b3_ticker(identity.ticker_b3 if identity else None)
                 if not comp_data.get("setor_analitico"):
                     comp_data["setor_analitico"] = "Unknown"
                 
@@ -1208,13 +1216,11 @@ class CoverageUniverseService:
                 if not item.get("ticker_b3"):
                     from src.companies.identity import CompanyIdentityResolver
                     identity = CompanyIdentityResolver().resolve(item['cd_cvm'])
-                    raw_t = (identity.ticker_b3 if identity else None) or str(item['cd_cvm'])
-                    if raw_t.endswith(".SA"):
-                        raw_t = raw_t[:-3]
-                    item["ticker_b3"] = raw_t
+                    item["ticker_b3"] = _clean_b3_ticker(identity.ticker_b3 if identity else None)
                 
                 title = f"Complete required task: {item_key.replace('_', ' ').title()}"
-                desc = f"Company {item['company_name']} ({item['ticker_b3']}) in tier '{item['tier']}' is missing: {item_key}."
+                identifier = item["ticker_b3"] or f"CVM {item['cd_cvm']}"
+                desc = f"Company {item['company_name']} ({identifier}) in tier '{item['tier']}' is missing: {item_key}."
                 
                 item.update({
                     "title": title,
@@ -1336,10 +1342,7 @@ class CoverageUniverseService:
                     from src.companies.identity import CompanyIdentityResolver
                     cd = item.get('cd_cvm')
                     identity = CompanyIdentityResolver().resolve(cd) if cd else None
-                    raw_t = (identity.ticker_b3 if identity else None) or str(cd or '')
-                    if raw_t.endswith(".SA"):
-                        raw_t = raw_t[:-3]
-                    item["ticker_b3"] = raw_t
+                    item["ticker_b3"] = _clean_b3_ticker(identity.ticker_b3 if identity else None)
                 results.append(item)
             return results
 

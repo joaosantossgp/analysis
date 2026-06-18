@@ -2,6 +2,8 @@ import { callBridge, getBridgeMode, type BridgeMode } from "../bridge/adapter";
 import type {
   AddCustomNewsSourceParams,
   AddCustomNewsSourceResult,
+  BackfillNewsArticleContentParams,
+  BackfillNewsArticleContentResult,
   ApplyNewsClassificationCorrectionParams,
   ApplyNewsClassificationCorrectionResult,
   NewsArticleClassificationResponse,
@@ -312,5 +314,16 @@ export async function cleanupNewsExtractedContent(
     return { mode, reason: BROWSER_REASON, status: "error", error: BROWSER_REASON };
   }
   const payload = await callNewsBridge("cleanup_news_extracted_content", params);
+  return { mode, ...payload };
+}
+
+export async function backfillNewsArticleContent(
+  params: BackfillNewsArticleContentParams = {},
+): Promise<NewsApiResult<BackfillNewsArticleContentResult>> {
+  const mode = getNewsBridgeMode();
+  if (mode === "browser") {
+    return { mode, reason: BROWSER_REASON, status: "error", error: BROWSER_REASON };
+  }
+  const payload = await callNewsBridge("backfill_news_article_content", params);
   return { mode, ...payload };
 }

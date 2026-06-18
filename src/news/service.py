@@ -14,6 +14,8 @@ from src.news.scoring import score_article
 
 logger = logging.getLogger(__name__)
 
+MAX_GOOGLE_TOPIC_ENTRIES_PER_REFRESH = 30
+
 
 @dataclass(frozen=True)
 class CollectionResult:
@@ -37,6 +39,20 @@ class FeedValidationResult:
     etag: str | None = None
     last_modified: str | None = None
     error_message: str | None = None
+
+
+@dataclass(frozen=True)
+class ArticleContentBackfillResult:
+    status: str
+    limit: int
+    include_normal: bool
+    candidate_count: int
+    attempted_count: int
+    stored_count: int
+    paywalled_count: int
+    failed_count: int
+    skipped_count: int
+    errors: tuple[str, ...] = ()
 
 
 class NewsCollectionService:
@@ -155,6 +171,176 @@ class NewsCollectionService:
             last_modified=fetch_result.last_modified,
         )
 
+    def backfill_google_article_content(
+        self,
+        *,
+        limit: int = 25,
+        include_normal: bool = False,
+    ) -> ArticleContentBackfillResult:
+        bounded_limit = max(1, min(int(limit or 25), 250))
+        candidates = self.repository.list_google_content_backfill_candidates(
+            limit=bounded_limit,
+            include_normal=include_normal,
+        )
+        attempted = 0
+        stored = 0
+        paywalled = 0
+        failed = 0
+        skipped = 0
+        errors: list[str] = []
+        for candidate in candidates:
+            url = str(candidate.get("original_url") or "").strip()
+            article_id = str(candidate.get("article_id") or "").strip()
+            if not url or not article_id:
+                skipped += 1
+                continue
+            if _is_google_news_url(url):
+                resolution = self.fetcher.resolve_url(url)
+                if resolution.status != "success" or not resolution.final_url or _is_google_news_url(resolution.final_url):
+                    skipped += 1
+                    message = resolution.error_message or "Google News URL was not resolved to an original source"
+                    errors.append(f"{candidate.get('title') or article_id}: {message}")
+                    continue
+                url = resolution.final_url
+                self.repository.update_article_original_url(article_id=article_id, original_url=url)
+            attempted += 1
+            fetched = self.fetcher.fetch_article_text(url)
+            if fetched.status == "success" and fetched.content_text:
+                self.repository.store_article_content(
+                    article_id=article_id,
+                    content_text=fetched.content_text,
+                    content_format=fetched.content_format or "text",
+                    source_policy=fetched.storage_policy or "original_page_text_allowed",
+                    content_status="full_text_available",
+                )
+                stored += 1
+                continue
+            if fetched.status == "paywalled":
+                self.repository.mark_article_content_status(
+                    article_id=article_id,
+                    content_status="paywalled",
+                    paywall_status="paywalled",
+                )
+                paywalled += 1
+                continue
+            failed += 1
+            message = fetched.error_message or fetched.status
+            errors.append(f"{candidate.get('title') or article_id}: {message}")
+        return ArticleContentBackfillResult(
+            status="success",
+            limit=bounded_limit,
+            include_normal=include_normal,
+            candidate_count=len(candidates),
+            attempted_count=attempted,
+            stored_count=stored,
+            paywalled_count=paywalled,
+            failed_count=failed,
+            skipped_count=skipped,
+            errors=tuple(errors[:10]),
+        )
+
+    def fetch_article_content_on_demand(self, article_id: str) -> ArticleContentBackfillResult:
+        candidate = self.repository.get_article_for_content_fetch(article_id)
+        if not candidate:
+            return ArticleContentBackfillResult(
+                status="not_found",
+                limit=1,
+                include_normal=True,
+                candidate_count=0,
+                attempted_count=0,
+                stored_count=0,
+                paywalled_count=0,
+                failed_count=0,
+                skipped_count=1,
+                errors=("Article has no fetchable metadata or already has local content.",),
+            )
+        return self._fetch_and_store_article_content(candidate)
+
+    def _fetch_and_store_article_content(self, candidate: dict[str, object]) -> ArticleContentBackfillResult:
+        article_id = str(candidate.get("article_id") or "").strip()
+        url = str(candidate.get("original_url") or candidate.get("canonical_url") or "").strip()
+        if not article_id or not url:
+            return ArticleContentBackfillResult(
+                status="error",
+                limit=1,
+                include_normal=True,
+                candidate_count=1,
+                attempted_count=0,
+                stored_count=0,
+                paywalled_count=0,
+                failed_count=0,
+                skipped_count=1,
+                errors=("Article URL is missing.",),
+            )
+        if _is_google_news_url(url):
+            resolution = self.fetcher.resolve_url(url)
+            if resolution.status != "success" or not resolution.final_url or _is_google_news_url(resolution.final_url):
+                message = resolution.error_message or "Google News URL was not resolved to an original source"
+                return ArticleContentBackfillResult(
+                    status="skipped",
+                    limit=1,
+                    include_normal=True,
+                    candidate_count=1,
+                    attempted_count=0,
+                    stored_count=0,
+                    paywalled_count=0,
+                    failed_count=0,
+                    skipped_count=1,
+                    errors=(message,),
+                )
+            url = resolution.final_url
+            self.repository.update_article_original_url(article_id=article_id, original_url=url)
+        fetched = self.fetcher.fetch_article_text(url)
+        if fetched.status == "success" and fetched.content_text:
+            self.repository.store_article_content(
+                article_id=article_id,
+                content_text=fetched.content_text,
+                content_format=fetched.content_format or "text",
+                source_policy=fetched.storage_policy or "original_page_text_allowed",
+                content_status="full_text_available",
+            )
+            return ArticleContentBackfillResult(
+                status="success",
+                limit=1,
+                include_normal=True,
+                candidate_count=1,
+                attempted_count=1,
+                stored_count=1,
+                paywalled_count=0,
+                failed_count=0,
+                skipped_count=0,
+            )
+        if fetched.status == "paywalled":
+            self.repository.mark_article_content_status(
+                article_id=article_id,
+                content_status="paywalled",
+                paywall_status="paywalled",
+            )
+            return ArticleContentBackfillResult(
+                status="paywalled",
+                limit=1,
+                include_normal=True,
+                candidate_count=1,
+                attempted_count=1,
+                stored_count=0,
+                paywalled_count=1,
+                failed_count=0,
+                skipped_count=0,
+            )
+        message = fetched.error_message or fetched.status
+        return ArticleContentBackfillResult(
+            status="error",
+            limit=1,
+            include_normal=True,
+            candidate_count=1,
+            attempted_count=1,
+            stored_count=0,
+            paywalled_count=0,
+            failed_count=1,
+            skipped_count=0,
+            errors=(message,),
+        )
+
     def _ingest_payload(
         self,
         *,
@@ -165,11 +351,14 @@ class NewsCollectionService:
     ) -> CollectionResult:
         try:
             parsed = parse_feed_bytes(payload, feed_url=source.feed_url)
+            entries = list(parsed.entries)
+            if _is_google_topic_source(source):
+                entries = entries[:MAX_GOOGLE_TOPIC_ENTRIES_PER_REFRESH]
             inserted = 0
             updated = 0
             keyword_rules = self.repository.list_keyword_rules(active_only=True)
             company_rows = self._load_company_rows()
-            for entry in parsed.entries:
+            for entry in entries:
                 resolved_entry = self._resolve_aggregator_entry(source=source, entry=entry)
                 result = self.repository.upsert_article(source=source, entry=resolved_entry)
                 classification = classify_article_text(
@@ -195,19 +384,25 @@ class NewsCollectionService:
                     entry=resolved_entry,
                     priority_level=score.priority_level,
                 )
+                self._store_selective_original_content(
+                    article_id=result.article_id,
+                    source=source,
+                    entry=resolved_entry,
+                    priority_level=score.priority_level,
+                )
                 inserted += 1 if result.inserted else 0
                 updated += 1 if result.updated else 0
             self.repository.record_source_health(
                 source_id=source.source_id,
                 status="success",
-                article_count=len(parsed.entries),
+                article_count=len(entries),
                 http_status=http_status,
             )
             self.repository.finish_collection_run(
                 run_id=run_id,
                 status="success",
                 source_count=1,
-                articles_seen=len(parsed.entries),
+                articles_seen=len(entries),
                 articles_inserted=inserted,
                 articles_updated=updated,
                 error_count=0,
@@ -215,7 +410,7 @@ class NewsCollectionService:
             return CollectionResult(
                 run_id=run_id,
                 status="success",
-                articles_seen=len(parsed.entries),
+                articles_seen=len(entries),
                 articles_inserted=inserted,
                 articles_updated=updated,
                 error_count=0,
@@ -251,6 +446,8 @@ class NewsCollectionService:
     def _resolve_aggregator_entry(self, *, source: NewsSource, entry: ParsedFeedEntry) -> ParsedFeedEntry:
         if source.source_type != "aggregator_search":
             return entry
+        if _is_google_topic_source(source):
+            return _with_aggregator_note(entry, "Aggregator article URL is preserved for fast topic collection.")
         resolution = self.fetcher.resolve_url(entry.url)
         if resolution.status != "success" or not resolution.final_url:
             logger.info("news aggregator URL resolution skipped: %s", resolution.error_message)
@@ -281,6 +478,8 @@ class NewsCollectionService:
         entry,
         priority_level: str,
     ) -> None:
+        if source.source_type == "aggregator_search":
+            return
         if not source.allow_content_storage:
             return
         content = str(entry.summary or "").strip()
@@ -301,6 +500,47 @@ class NewsCollectionService:
             source_policy="feed_content_allowed",
             content_status=status,
         )
+
+    def _store_selective_original_content(
+        self,
+        *,
+        article_id: str,
+        source: NewsSource,
+        entry,
+        priority_level: str,
+    ) -> None:
+        if source.source_type != "aggregator_search":
+            return
+        if not source.allow_content_storage:
+            return
+        if _is_google_news_url(entry.url):
+            return
+        eligible = priority_level in {"High", "Critical"}
+        if not eligible:
+            return
+        fetched = self.fetcher.fetch_article_text(entry.url)
+        if fetched.status == "success" and fetched.content_text:
+            self.repository.store_article_content(
+                article_id=article_id,
+                content_text=fetched.content_text,
+                content_format=fetched.content_format or "text",
+                source_policy=fetched.storage_policy or "original_page_text_allowed",
+                content_status="full_text_available",
+            )
+            return
+        if fetched.status == "paywalled":
+            self.repository.mark_article_content_status(
+                article_id=article_id,
+                content_status="paywalled",
+                paywall_status="paywalled",
+            )
+            return
+        if fetched.status in {"error", "unsupported", "unavailable"}:
+            logger.info(
+                "news original article extraction skipped for %s: %s",
+                entry.url,
+                fetched.error_message or fetched.status,
+            )
 
     def _load_company_rows(self) -> list[dict]:
         if self.company_engine is None:
@@ -400,6 +640,10 @@ def _with_aggregator_note(entry: ParsedFeedEntry, note: str) -> ParsedFeedEntry:
 def _is_google_news_url(url: str) -> bool:
     host = urlsplit(str(url)).netloc.lower()
     return host == "news.google.com" or host.endswith(".news.google.com")
+
+
+def _is_google_topic_source(source: NewsSource) -> bool:
+    return source.source_id.startswith("google-topic-")
 
 
 def _looks_like_official_document(url: str, title: str) -> bool:

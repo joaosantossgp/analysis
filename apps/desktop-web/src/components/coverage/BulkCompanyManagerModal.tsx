@@ -369,7 +369,7 @@ export function BulkCompanyManagerModal({ isOpen, onClose, universeId, onSuccess
                     <div className="flex-1 overflow-y-auto bg-zinc-950/45 border border-zinc-900 rounded p-1.5 space-y-1">
                       {resolvedList.map((item, idx) => (
                         <div key={idx} className="flex items-center justify-between text-3xs text-zinc-300">
-                          <span className="font-bold text-zinc-100">{item.ticker_b3 || "CVM_" + item.cd_cvm}</span>
+                          <span className="font-bold text-zinc-100">{item.ticker_b3 || `CVM ${item.cd_cvm}`}</span>
                           <span className="truncate max-w-[160px] text-zinc-500">{item.company_name}</span>
                         </div>
                       ))}

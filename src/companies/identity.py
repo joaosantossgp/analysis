@@ -121,6 +121,9 @@ class CompanyIdentityResolver:
         return identity
 
     def _resolve_uncached(self, cd_cvm: int) -> CompanyIdentity | None:
+        tmap = self._get_ticker_map()
+        tinfo = tmap.get(cd_cvm, {})
+
         # 1. Query database if available and not skipped
         if not self.skip_db:
             try:
@@ -134,13 +137,13 @@ class CompanyIdentityResolver:
                     """), {"cd": cd_cvm}).fetchone()
                     
                     if row:
-                        cnpj_val = row[3]
+                        cnpj_val = row[3] or tinfo.get("cnpj_hint")
                         if cnpj_val:
                             cnpj_val = "".join(c for c in str(cnpj_val) if c.isdigit())
                             if len(cnpj_val) != 14:
                                 cnpj_val = None
 
-                        ticker_val = row[4]
+                        ticker_val = row[4] or tinfo.get("ticker_b3")
                         if ticker_val:
                             ticker_val = str(ticker_val).strip().upper()
                             if not ticker_val.endswith(".SA") and not ticker_val.isdigit() and len(ticker_val) > 0:
@@ -183,9 +186,6 @@ class CompanyIdentityResolver:
             catalog_entry = catalog.lookup_company(cd_cvm)
         except Exception as e:
             logger.debug(f"Catalog lookup failed for cd_cvm={cd_cvm}: {e}")
-
-        tmap = self._get_ticker_map()
-        tinfo = tmap.get(cd_cvm, {})
 
         if catalog_entry:
             cnpj_val = catalog_entry.cnpj

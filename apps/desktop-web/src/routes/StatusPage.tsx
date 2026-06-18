@@ -208,12 +208,29 @@ function RuntimeCard({ status }: { status: AppStatusPayload }) {
             tone={lockStatusTone(runtime.lock_status)}
           />
         )}
+        {runtime.refresh_worker && (
+          <Field
+            label="Refresh worker"
+            value={refreshWorkerLabel(runtime.refresh_worker)}
+            tone={refreshWorkerTone(runtime.refresh_worker)}
+          />
+        )}
       </dl>
       {showReleaseDataWarning && (
         <p className="mt-4 rounded border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-300">
           Dev mode is using the release data directory. Destructive actions affect real user data.
         </p>
       )}
+      {runtime.refresh_worker?.last_error ? (
+        <p className="mt-4 rounded border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-200">
+          Refresh worker error: {runtime.refresh_worker.last_error}
+        </p>
+      ) : null}
+      {runtime.refresh_worker?.stale ? (
+        <p className="mt-4 rounded border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-300">
+          Refresh jobs are active, but the worker heartbeat is missing or stale.
+        </p>
+      ) : null}
       <p className="mt-4 border-t border-zinc-800 pt-3 text-xs text-zinc-500">
         Diagnostics: {errorCount} error{errorCount === 1 ? "" : "s"} · {warningCount} warning
         {warningCount === 1 ? "" : "s"}.
@@ -785,6 +802,31 @@ function lockStatusTone(lock: LockStatusPayload): Tone {
   if (lock.status === "locked_by_self") return "good";
   if (lock.status === "locked_by_other") return "bad";
   if (lock.status === "stale_recovered") return "warn";
+  return "neutral";
+}
+
+function refreshWorkerLabel(worker: {
+  status?: string | null;
+  active_jobs?: number | null;
+  heartbeat_age_seconds?: number | null;
+}): string {
+  const status = worker.status || "unknown";
+  const activeJobs = worker.active_jobs ?? 0;
+  const heartbeatAge = worker.heartbeat_age_seconds;
+  const heartbeat =
+    heartbeatAge == null ? "heartbeat n/a" : `heartbeat ${Math.max(0, Math.round(heartbeatAge))}s ago`;
+  return `${status} · active jobs ${activeJobs} · ${heartbeat}`;
+}
+
+function refreshWorkerTone(worker: {
+  status?: string | null;
+  active_jobs?: number | null;
+  stale?: boolean | null;
+}): Tone {
+  const status = String(worker.status || "").toLowerCase();
+  if (status === "error" || worker.stale) return "bad";
+  if ((worker.active_jobs ?? 0) > 0 && !["running", "idle"].includes(status)) return "warn";
+  if (status === "running" || status === "idle") return "good";
   return "neutral";
 }
 

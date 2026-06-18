@@ -608,4 +608,49 @@ def test_coverage_universe_hotfixes(test_engine):
         assert comp_count == 0
 
 
+def test_coverage_keeps_cvm_code_out_of_ticker_field(test_engine, monkeypatch):
+    class _Identity:
+        company_name = "NO TICKER S.A."
+        ticker_b3 = None
+
+    class _Resolver:
+        def resolve(self, cd_cvm):
+            return _Identity()
+
+    import src.companies.identity as identity_module
+
+    monkeypatch.setattr(identity_module, "CompanyIdentityResolver", _Resolver)
+
+    service = CoverageUniverseService(test_engine)
+    u_id = service.create_universe(
+        name="No Ticker Universe",
+        purpose="Ticker fallback regression",
+        analysis_type="Equity",
+        benchmark="IBOV",
+    )
+    with test_engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT OR REPLACE INTO companies (
+                    cd_cvm, company_name, gics_sector, gics_sector_slug, ticker_b3, updated_at
+                )
+                VALUES (
+                    123456, 'NO TICKER S.A.', 'Energy', 'energy', NULL, '2026-06-18T12:00:00Z'
+                )
+                """
+            )
+        )
+
+    service.add_company_to_universe(u_id, 123456, "watchlist", "No ticker regression")
+
+    scores = service.calculate_priority_scores(u_id)
+    row = next(item for item in scores if item["cd_cvm"] == 123456)
+    assert row["ticker_b3"] is None
+
+    queue = service.get_work_queue(u_id)
+    task = next(item for item in queue if item["cd_cvm"] == 123456)
+    assert task["ticker_b3"] is None
+    assert "(CVM 123456)" in task["description"]
+
 

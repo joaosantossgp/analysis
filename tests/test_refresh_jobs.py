@@ -301,6 +301,30 @@ class _StubRefreshService:
         return replace(self.result, request=request)
 
 
+def test_refresh_job_worker_emits_worker_heartbeat_without_jobs(tmp_path):
+    settings, repository = _make_repository(tmp_path)
+    result = RefreshResult(
+        request=RefreshRequest(companies=(), start_year=2010, end_year=2025),
+        companies=(),
+        planning_stats={},
+        synced_companies=0,
+        cancelled=False,
+    )
+    heartbeats: list[str] = []
+    worker = RefreshJobWorker(
+        settings=settings,
+        repository=repository,
+        refresh_service=_StubRefreshService(result),
+        config=RefreshWorkerConfig(worker_id="worker-test"),
+        worker_heartbeat_callback=heartbeats.append,
+    )
+
+    ran = worker.run_once()
+
+    assert ran is False
+    assert heartbeats == ["running"]
+
+
 @pytest.mark.parametrize(
     ("status", "expected_last_status", "expected_last_error"),
     [

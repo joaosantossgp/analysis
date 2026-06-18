@@ -107,6 +107,113 @@ class StatusBridgeMixin:
         except Exception as exc:
             return self._sanitize_for_json({"ok": False, "error": str(exc)})
 
+    def _refresh_worker_runtime_status(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "status": "unknown",
+            "worker_id": None,
+            "started_at": None,
+            "last_heartbeat_at": None,
+            "last_error": None,
+            "active_jobs": 0,
+            "heartbeat_age_seconds": None,
+            "stale": False,
+        }
+        try:
+            db_path = Path(self._svc().settings.paths.db_path)
+            if not db_path.exists():
+                payload["status"] = "database_missing"
+                return payload
+
+            uri = db_path.resolve().as_uri() + "?mode=ro"
+            with sqlite3.connect(uri, uri=True) as conn:
+                conn.row_factory = sqlite3.Row
+                present = {
+                    str(row[0])
+                    for row in conn.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table'"
+                    ).fetchall()
+                }
+                if "app_settings" in present:
+                    keys = (
+                        "refresh_worker_status",
+                        "refresh_worker_id",
+                        "refresh_worker_started_at",
+                        "refresh_worker_last_heartbeat_at",
+                        "refresh_worker_last_error",
+                    )
+                    placeholders = ",".join("?" for _ in keys)
+                    rows = conn.execute(
+                        f"SELECT key, value FROM app_settings WHERE key IN ({placeholders})",
+                        keys,
+                    ).fetchall()
+                    for row in rows:
+                        raw = row["value"]
+                        try:
+                            value = json.loads(raw) if raw is not None else None
+                        except Exception:
+                            value = raw
+                        key = str(row["key"])
+                        if key == "refresh_worker_status":
+                            payload["status"] = str(value or "unknown")
+                        elif key == "refresh_worker_id":
+                            payload["worker_id"] = value
+                        elif key == "refresh_worker_started_at":
+                            payload["started_at"] = value
+                        elif key == "refresh_worker_last_heartbeat_at":
+                            payload["last_heartbeat_at"] = value
+                        elif key == "refresh_worker_last_error":
+                            payload["last_error"] = value or None
+
+                if "refresh_jobs" in present:
+                    row = conn.execute(
+                        "SELECT COUNT(*) FROM refresh_jobs WHERE lower(state) IN ('queued', 'running')"
+                    ).fetchone()
+                    payload["active_jobs"] = int(row[0] or 0) if row else 0
+
+            last_heartbeat_at = payload.get("last_heartbeat_at")
+            if last_heartbeat_at:
+                try:
+                    raw_ts = str(last_heartbeat_at).replace("Z", "+00:00")
+                    heartbeat_dt = datetime.fromisoformat(raw_ts)
+                    if heartbeat_dt.tzinfo is None:
+                        heartbeat_dt = heartbeat_dt.replace(tzinfo=timezone.utc)
+                    age = max(
+                        0,
+                        int((datetime.now(timezone.utc) - heartbeat_dt.astimezone(timezone.utc)).total_seconds()),
+                    )
+                    payload["heartbeat_age_seconds"] = age
+                except Exception:
+                    payload["heartbeat_age_seconds"] = None
+
+            heartbeat_age = payload.get("heartbeat_age_seconds")
+            active_jobs = int(payload.get("active_jobs") or 0)
+            if active_jobs > 0 and (heartbeat_age is None or int(heartbeat_age) > 30):
+                payload["stale"] = True
+            return payload
+        except Exception as exc:
+            payload["status"] = "error"
+            payload["last_error"] = str(exc)
+            return payload
+
+    @staticmethod
+    def _append_refresh_worker_diagnostics(
+        diagnostics: dict[str, Any],
+        worker_status: dict[str, Any],
+    ) -> None:
+        warnings = diagnostics.setdefault("warnings", [])
+        errors = diagnostics.setdefault("errors", [])
+        status = str(worker_status.get("status") or "unknown").lower()
+        active_jobs = int(worker_status.get("active_jobs") or 0)
+        if status == "error":
+            errors.append(
+                "Refresh worker failed: "
+                + str(worker_status.get("last_error") or "no error recorded")
+            )
+        elif active_jobs > 0 and worker_status.get("stale"):
+            warnings.append(
+                "Refresh jobs are queued/running but the worker heartbeat is missing or stale."
+            )
+
     def get_app_status(self, params=None) -> dict:
         """Compact local runtime status for the packaged Vite UI."""
         p = params or {}
@@ -120,6 +227,8 @@ class StatusBridgeMixin:
             database = self.get_database_diagnostics({})
             update = self._get_software_update_status(force=force_update_check)
             diagnostics = self._runtime_diagnostics_summary(paths)
+            refresh_worker = self._refresh_worker_runtime_status()
+            self._append_refresh_worker_diagnostics(diagnostics, refresh_worker)
             recent = self._collect_recent_diagnostics(paths, database)
             from desktop import lockfile as _lockfile  # noqa: PLC0415
 
@@ -138,6 +247,7 @@ class StatusBridgeMixin:
                     "using_release_data_dir": self._using_release_data_dir(),
                     "write_mode": "read-write" if self._is_write_allowed() else "read-only",
                     "lock_status": _lockfile.get_status(),
+                    "refresh_worker": refresh_worker,
                 },
                 "paths": {
                     key: self._path_payload(key, value)
@@ -202,6 +312,7 @@ class StatusBridgeMixin:
             path_map = self._status_path_map()
             lock_status = _lockfile.get_status()
             write_mode = "read-write" if self._is_write_allowed() else "read-only"
+            refresh_worker = self._refresh_worker_runtime_status()
             runtime = {
                 "version": __version__,
                 "runtime_mode": self._runtime_mode(),
@@ -212,6 +323,7 @@ class StatusBridgeMixin:
                 "using_release_data_dir": self._using_release_data_dir(),
                 "write_mode": write_mode,
                 "lock_status": lock_status,
+                "refresh_worker": refresh_worker,
             }
             storage = {
                 key: self._path_payload(key, value)
@@ -387,6 +499,21 @@ class StatusBridgeMixin:
                     "severity": "critical",
                     "message": "The local data directory is locked by another CVMAnalytics process.",
                     "action_route": "/settings/diagnostics",
+                })
+            if str(refresh_worker.get("status") or "").lower() == "error":
+                errors.append({
+                    "segment_id": "runtime",
+                    "severity": "critical",
+                    "message": "Refresh worker failed: "
+                    + str(refresh_worker.get("last_error") or "no error recorded"),
+                    "action_route": "/settings/updates",
+                })
+            elif int(refresh_worker.get("active_jobs") or 0) > 0 and refresh_worker.get("stale"):
+                warnings.append({
+                    "segment_id": "runtime",
+                    "severity": "warning",
+                    "message": "Refresh jobs are queued/running but the worker heartbeat is missing or stale.",
+                    "action_route": "/settings/updates",
                 })
 
             overall_status = self._settings_overall_status(

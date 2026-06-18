@@ -31,6 +31,7 @@ NEWS_METHODS = {
     "save_news_google_company_feed_settings",
     "save_news_retention_policy",
     "cleanup_news_extracted_content",
+    "backfill_news_article_content",
 }
 
 

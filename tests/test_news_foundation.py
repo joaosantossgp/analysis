@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import time
+from types import SimpleNamespace
 
 import requests
 from sqlalchemy import create_engine, text
 
+import src.news.fetcher as news_fetcher
 from src.news.fetcher import NewsFeedFetcher
-from src.news.feed_parser import NewsFeedParseError, parse_feed_bytes
+from src.news.feed_parser import NewsFeedParseError, ParsedFeedEntry, parse_feed_bytes
 from src.news.repository import NewsRepository, NewsSource, canonicalize_url, google_company_source_id, user_source_id_for_url
 from src.news.schema import ensure_news_tables_for_connection, get_news_engine
+from src.news.scoring import ArticleScore
 from src.news.service import NewsCollectionService
 from src.news.sources import builtin_sources
 from src.platform.settings import build_settings
@@ -131,6 +134,10 @@ class _FakeResponse:
         for start in range(0, len(self.body), chunk_size):
             yield self.body[start : start + chunk_size]
 
+    @property
+    def text(self) -> str:
+        return self.body.decode("utf-8", errors="replace")
+
 
 class _FakeSession:
     def __init__(self, response=None, exception: Exception | None = None) -> None:
@@ -151,7 +158,25 @@ class _FakeSession:
         return self.response
 
 
-def _service_with_fake_fetcher(tmp_path, session: _FakeSession) -> tuple[NewsCollectionService, object]:
+class _QueueSession:
+    def __init__(self, responses: list[_FakeResponse]) -> None:
+        self.responses = list(responses)
+        self.calls: list[dict] = []
+
+    def get(self, url, **kwargs):
+        self.calls.append({"method": "GET", "url": url, **kwargs})
+        return self.responses.pop(0)
+
+    def head(self, url, **kwargs):
+        self.calls.append({"method": "HEAD", "url": url, **kwargs})
+        return self.responses.pop(0)
+
+    def post(self, url, **kwargs):
+        self.calls.append({"method": "POST", "url": url, **kwargs})
+        return self.responses.pop(0)
+
+
+def _service_with_fake_fetcher(tmp_path, session) -> tuple[NewsCollectionService, object]:
     engine = create_engine(f"sqlite:///{tmp_path / 'news.db'}")
     with engine.begin() as conn:
         ensure_news_tables_for_connection(conn)
@@ -352,10 +377,20 @@ def test_builtin_sources_include_validated_official_and_press_layers():
         "b3-rss-news",
         "ibge-rss-news",
         "agencia-brasil-economia",
+        "google-topic-brazil-markets",
+        "google-topic-brazil-macro",
+        "google-topic-brazil-business",
+        "google-topic-commodities",
+        "google-topic-global-macro",
+        "google-topic-regulation",
+        "google-topic-sector-energy-utilities",
+        "google-topic-sector-financials",
     }
     assert sources["cvm-rss"].reliability_layer == "official"
     assert sources["ibge-rss-news"].allow_content_storage is True
     assert sources["agencia-brasil-economia"].allow_content_storage is False
+    assert sources["google-topic-brazil-markets"].source_type == "aggregator_search"
+    assert sources["google-topic-brazil-markets"].allow_content_storage is False
 
 
 def test_parse_malformed_feed_raises_explicit_error():
@@ -791,7 +826,13 @@ def test_collect_source_sends_conditional_headers_and_updates_fetch_state(tmp_pa
             headers={"ETag": '"v2"', "Last-Modified": "Tue, 16 Jun 2026 10:00:00 GMT"},
         )
     )
-    service, engine = _service_with_fake_fetcher(tmp_path, session)
+    engine = create_engine(f"sqlite:///{tmp_path / 'news.db'}")
+    with engine.begin() as conn:
+        ensure_news_tables_for_connection(conn)
+    service = NewsCollectionService(
+        NewsRepository(engine),
+        fetcher=NewsFeedFetcher(session=session, max_bytes=5000),
+    )
     source = _source()
     repository = service.repository
     repository.upsert_source(source)
@@ -818,6 +859,26 @@ def test_collect_source_sends_conditional_headers_and_updates_fetch_state(tmp_pa
     assert tuple(health) == ("success", 0, 200)
 
 
+def test_fetcher_resolves_google_news_article_url_with_batch_fallback():
+    google_url = "https://news.google.com/rss/articles/CBMiExample?oc=5"
+    google_html = b'''
+    <html><body><c-wiz><div data-n-a-id="CBMiExample" data-n-a-ts="1781723269" data-n-a-sg="sig123"></div></c-wiz></body></html>
+    '''
+    batch_body = b''')]}'\n\n[["wrb.fr","Fbv4je","[\\"garturlres\\",\\"https://example.com/original/article\\",1]",null,null,null,""]]\n'''
+    session = _QueueSession([
+        _FakeResponse(status_code=200, url=google_url),
+        _FakeResponse(status_code=200, body=google_html, url=google_url),
+        _FakeResponse(status_code=200, body=batch_body, url="https://news.google.com/_/DotsSplashUi/data/batchexecute"),
+    ])
+    fetcher = NewsFeedFetcher(session=session)
+
+    result = fetcher.resolve_url(google_url)
+
+    assert result.status == "success"
+    assert result.final_url == "https://example.com/original/article"
+    assert [call["method"] for call in session.calls] == ["HEAD", "GET", "POST"]
+
+
 def test_collect_aggregator_source_resolves_original_url_without_full_text_extraction(tmp_path):
     session = _FakeSession(
         _FakeResponse(
@@ -826,7 +887,13 @@ def test_collect_aggregator_source_resolves_original_url_without_full_text_extra
             url="https://example.com/original/petrobras-investimento",
         )
     )
-    service, engine = _service_with_fake_fetcher(tmp_path, session)
+    engine = create_engine(f"sqlite:///{tmp_path / 'news.db'}")
+    with engine.begin() as conn:
+        ensure_news_tables_for_connection(conn)
+    service = NewsCollectionService(
+        NewsRepository(engine),
+        fetcher=NewsFeedFetcher(session=session, max_bytes=5000),
+    )
 
     result = service.collect_source(source=_aggregator_source())
 
@@ -842,6 +909,308 @@ def test_collect_aggregator_source_resolves_original_url_without_full_text_extra
     assert article["content_status"] == "summary_available"
     assert "Original source resolved" in article["summary"]
     assert content_count == 0
+
+
+def test_collect_aggregator_source_extracts_original_text_when_storage_is_allowed(tmp_path):
+    original_html = b"""
+    <html>
+      <head><title>ignored</title><script>tracking()</script></head>
+      <body>
+        <nav>menu</nav>
+        <article>
+          <h1>Petrobras covenant waiver</h1>
+          <p>Petrobras informou que obteve waiver de covenant financeiro em debentures.</p>
+          <p>A companhia afirmou que a liquidez permanece suficiente para cumprir obrigacoes.</p>
+          <p>O texto completo da fonte original foi coletado sem cookies, login ou credenciais.</p>
+        </article>
+      </body>
+    </html>
+    """
+    high_priority_feed = GOOGLE_NEWS_RSS.replace(
+        b"Snippet from Google News.",
+        b"Petrobras obteve waiver de covenant e reforcou liquidez.",
+    )
+    session = _QueueSession([
+        _FakeResponse(status_code=200, body=high_priority_feed),
+        _FakeResponse(status_code=200, url="https://example.com/original/petrobras-investimento"),
+        _FakeResponse(
+            status_code=200,
+            body=original_html,
+            headers={"Content-Type": "text/html; charset=utf-8"},
+            url="https://example.com/original/petrobras-investimento",
+        ),
+    ])
+    engine = create_engine(f"sqlite:///{tmp_path / 'news.db'}")
+    with engine.begin() as conn:
+        ensure_news_tables_for_connection(conn)
+    service = NewsCollectionService(
+        NewsRepository(engine),
+        fetcher=NewsFeedFetcher(session=session, max_bytes=5000),
+    )
+    source = NewsSource(
+        source_id="google_company_9512",
+        name="Google News - PETR4",
+        source_type="aggregator_search",
+        reliability_layer="aggregator",
+        feed_url="https://news.google.com/rss/search?q=PETR4",
+        priority=140,
+        allow_content_storage=True,
+    )
+
+    result = service.collect_source(source=source)
+
+    assert result.status == "success"
+    with engine.connect() as conn:
+        article = conn.execute(
+            text("SELECT content_status FROM news_articles LIMIT 1")
+        ).mappings().fetchone()
+        content = conn.execute(
+            text("SELECT content_text, content_format, source_policy FROM news_article_content LIMIT 1")
+        ).mappings().fetchone()
+    assert article["content_status"] == "full_text_available"
+    assert content["content_format"] == "text"
+    assert content["source_policy"] in {
+        "trafilatura_original_page_text_allowed",
+        "fallback_original_page_text_allowed",
+    }
+    assert "Petrobras informou que obteve waiver" in content["content_text"]
+    assert "tracking()" not in content["content_text"]
+
+
+def test_collect_aggregator_source_marks_paywall_without_storing_original_text(tmp_path):
+    high_priority_feed = GOOGLE_NEWS_RSS.replace(
+        b"Snippet from Google News.",
+        b"Petrobras obteve waiver de covenant e reforcou liquidez.",
+    )
+    session = _QueueSession([
+        _FakeResponse(status_code=200, body=high_priority_feed),
+        _FakeResponse(status_code=200, url="https://example.com/original/paywalled"),
+        _FakeResponse(status_code=403, body=b"", url="https://example.com/original/paywalled"),
+    ])
+    engine = create_engine(f"sqlite:///{tmp_path / 'news.db'}")
+    with engine.begin() as conn:
+        ensure_news_tables_for_connection(conn)
+    service = NewsCollectionService(
+        NewsRepository(engine),
+        fetcher=NewsFeedFetcher(session=session, max_bytes=5000),
+    )
+    source = NewsSource(
+        source_id="google_company_9512",
+        name="Google News - PETR4",
+        source_type="aggregator_search",
+        reliability_layer="aggregator",
+        feed_url="https://news.google.com/rss/search?q=PETR4",
+        priority=140,
+        allow_content_storage=True,
+    )
+
+    result = service.collect_source(source=source)
+
+    assert result.status == "success"
+    with engine.connect() as conn:
+        article = conn.execute(
+            text("SELECT content_status, paywall_status FROM news_articles LIMIT 1")
+        ).mappings().fetchone()
+        content_count = conn.execute(text("SELECT count(*) FROM news_article_content")).scalar()
+    assert article["content_status"] == "paywalled"
+    assert article["paywall_status"] == "paywalled"
+    assert content_count == 0
+
+
+def test_backfill_google_article_content_updates_existing_resolved_articles(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'news.db'}")
+    with engine.begin() as conn:
+        ensure_news_tables_for_connection(conn)
+    repository = NewsRepository(engine)
+    source = NewsSource(
+        source_id="google_company_9512",
+        name="Google News - PETR4",
+        source_type="aggregator_search",
+        reliability_layer="aggregator",
+        feed_url="https://news.google.com/rss/search?q=PETR4",
+        priority=140,
+        allow_content_storage=True,
+    )
+    repository.upsert_source(source)
+    entry = ParsedFeedEntry(
+        title="Petrobras obtem waiver de covenant",
+        url="https://news.google.com/rss/articles/CBMiBackfill",
+        source_item_id="google-old-1",
+        published_at="2026-06-16T10:00:00Z",
+        summary="Petrobras obteve waiver de covenant e reforcou liquidez.",
+    )
+    upsert = repository.upsert_article(source=source, entry=entry)
+    repository.replace_article_score(
+        article_id=upsert.article_id,
+        score=ArticleScore(total_score=4.5, priority_level="Critical", components={}, reasons=()),
+    )
+    html = b"""
+    <html><body><article>
+      <p>Petrobras obteve waiver de covenant financeiro em debentures emitidas no mercado local.</p>
+      <p>A administracao informou que a liquidez permanece suficiente para cumprir obrigacoes.</p>
+      <p>A companhia tambem disse que a renegociacao reduz riscos financeiros no curto prazo.</p>
+    </article></body></html>
+    """
+    session = _QueueSession([
+        _FakeResponse(status_code=200, url="https://example.com/original/backfill"),
+        _FakeResponse(
+            status_code=200,
+            body=html,
+            headers={"Content-Type": "text/html"},
+            url="https://example.com/original/backfill",
+        ),
+    ])
+    service = NewsCollectionService(repository, fetcher=NewsFeedFetcher(session=session, max_bytes=5000))
+
+    result = service.backfill_google_article_content(limit=10)
+
+    assert result.status == "success"
+    assert result.attempted_count == 1
+    assert result.stored_count == 1
+    with engine.connect() as conn:
+        article = conn.execute(text("SELECT original_url, content_status FROM news_articles WHERE article_id = :article_id"), {"article_id": upsert.article_id}).mappings().fetchone()
+        content = conn.execute(text("SELECT content_text FROM news_article_content WHERE article_id = :article_id"), {"article_id": upsert.article_id}).mappings().fetchone()
+    assert article["original_url"] == "https://example.com/original/backfill"
+    assert article["content_status"] == "full_text_available"
+    assert "Petrobras obteve waiver" in content["content_text"]
+
+
+def test_fetch_article_content_on_demand_resolves_google_and_stores_text(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'news-on-demand.db'}")
+    with engine.begin() as conn:
+        ensure_news_tables_for_connection(conn)
+    repository = NewsRepository(engine)
+    source = NewsSource(
+        source_id="google-topic-brazil-markets",
+        name="Google News - Brazil Markets",
+        source_type="aggregator_search",
+        reliability_layer="aggregator",
+        feed_url="https://news.google.com/rss/search?q=mercado",
+        allow_content_storage=False,
+    )
+    repository.upsert_source(source)
+    entry = ParsedFeedEntry(
+        title="Mercado brasileiro fecha em alta",
+        url="https://news.google.com/rss/articles/CBMiOnDemand",
+        source_item_id="topic-on-demand",
+        published_at="2026-06-16T10:00:00Z",
+        summary="Resumo de mercado financeiro brasileiro.",
+    )
+    upsert = repository.upsert_article(source=source, entry=entry)
+    google_html = b'''
+    <html><body>
+      <c-wiz><div data-n-a-sg="sig123" data-n-a-ts="1718500000"></div></c-wiz>
+    </body></html>
+    '''
+    batch_body = b''')]}'\n\n[["wrb.fr","Fbv4je","[\\"garturlres\\",\\"https://example.com/mercado-original\\",1]",null,null,null,""]]\n'''
+    article_html = b"""
+    <html><body><article>
+      <p>Mercado brasileiro fechou em alta com apoio de bancos e commodities.</p>
+      <p>Analistas citaram melhora no apetite por risco e queda dos juros futuros.</p>
+      <p>O volume financeiro tambem ficou acima da media recente na bolsa local.</p>
+      <p>Investidores acompanharam dados de inflacao, discursos de autoridades monetarias e noticias sobre empresas de grande capitalizacao.</p>
+      <p>A leitura predominante foi de ajuste positivo depois de uma sequencia de pregoes volateis no mercado domestico.</p>
+    </article></body></html>
+    """
+    session = _QueueSession([
+        _FakeResponse(status_code=200, url="https://news.google.com/rss/articles/CBMiOnDemand"),
+        _FakeResponse(status_code=200, body=google_html, url="https://news.google.com/rss/articles/CBMiOnDemand"),
+        _FakeResponse(status_code=200, body=batch_body, url="https://news.google.com/_/DotsSplashUi/data/batchexecute"),
+        _FakeResponse(
+            status_code=200,
+            body=article_html,
+            headers={"Content-Type": "text/html"},
+            url="https://example.com/mercado-original",
+        ),
+    ])
+    service = NewsCollectionService(repository, fetcher=NewsFeedFetcher(session=session, max_bytes=5000))
+
+    result = service.fetch_article_content_on_demand(upsert.article_id)
+
+    assert result.status == "success"
+    assert result.stored_count == 1
+    with engine.connect() as conn:
+        article = conn.execute(
+            text("SELECT original_url, content_status FROM news_articles WHERE article_id = :article_id"),
+            {"article_id": upsert.article_id},
+        ).mappings().fetchone()
+        content = conn.execute(
+            text("SELECT content_text FROM news_article_content WHERE article_id = :article_id"),
+            {"article_id": upsert.article_id},
+        ).mappings().fetchone()
+    assert article["original_url"] == "https://example.com/mercado-original"
+    assert article["content_status"] == "full_text_available"
+    assert "Mercado brasileiro fechou em alta" in content["content_text"]
+
+
+def test_fetch_article_text_prefers_trafilatura_when_available(monkeypatch):
+    extracted_text = (
+        "Texto principal extraido pelo trafilatura com contexto suficiente sobre mercado, juros, "
+        "empresas brasileiras, commodities e fatores macroeconomicos relevantes para investidores. "
+        "O conteudo deve ser longo o bastante para passar pelo limite minimo de armazenamento local. "
+        "A noticia descreve os principais vetores de preco, risco e liquidez observados no dia."
+    )
+
+    def fake_import_module(name: str):
+        if name != "trafilatura":
+            raise ImportError(name)
+        return SimpleNamespace(extract=lambda *args, **kwargs: extracted_text)
+
+    monkeypatch.setattr(news_fetcher, "import_module", fake_import_module)
+    html = b"""
+    <html><body>
+      <nav>Menu ruidoso</nav>
+      <article><p>Fallback text that should not be used.</p></article>
+    </body></html>
+    """
+    session = _FakeSession(
+        _FakeResponse(
+            status_code=200,
+            body=html,
+            headers={"Content-Type": "text/html"},
+            url="https://example.com/article",
+        )
+    )
+    fetcher = NewsFeedFetcher(session=session, max_bytes=5000)
+
+    result = fetcher.fetch_article_text("https://example.com/article")
+
+    assert result.status == "success"
+    assert result.content_text == extracted_text
+    assert result.storage_policy == "trafilatura_original_page_text_allowed"
+
+
+def test_backfill_google_article_content_includes_google_topic_sources(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'news-topic-backfill.db'}")
+    with engine.begin() as conn:
+        ensure_news_tables_for_connection(conn)
+    repository = NewsRepository(engine)
+    now = "2026-06-16T10:00:00Z"
+    source = NewsSource(
+        source_id="google-topic-brazil-markets",
+        name="Google News - Brazil Markets",
+        source_type="aggregator_search",
+        reliability_layer="aggregator",
+        feed_url="https://news.google.com/rss/search?q=mercado",
+        allow_content_storage=True,
+    )
+    repository.register_source(source)
+    repository.upsert_article(
+        source=source,
+        entry=ParsedFeedEntry(
+            title="Mercado brasileiro fecha em alta",
+            url="https://example.com/mercado",
+            source_item_id="topic-1",
+            published_at=now,
+            summary="Resumo de mercado financeiro brasileiro.",
+            language="pt-BR",
+        ),
+        fetched_at=now,
+    )
+
+    candidates = repository.list_google_content_backfill_candidates(limit=10, include_normal=True)
+
+    assert [item["title"] for item in candidates] == ["Mercado brasileiro fecha em alta"]
 
 
 def test_collect_aggregator_source_preserves_publisher_when_google_url_is_not_resolved(tmp_path):
@@ -864,6 +1233,47 @@ def test_collect_aggregator_source_preserves_publisher_when_google_url_is_not_re
     assert article["source_name"] == "Money Times"
     assert article["original_url"].startswith("https://news.google.com/rss/articles/")
     assert "Aggregator article URL was not resolved" in article["summary"]
+
+
+def test_collect_google_topic_source_is_limited_and_keeps_fast_google_urls(tmp_path):
+    source = NewsSource(
+        source_id="google-topic-brazil-markets",
+        name="Google News - Brazil Markets",
+        source_type="aggregator_search",
+        reliability_layer="aggregator",
+        feed_url="https://news.google.com/rss/search?q=mercado",
+        allow_content_storage=False,
+    )
+    items = "\n".join(
+        f"""
+        <item>
+          <title>Mercado noticia {index}</title>
+          <link>https://news.google.com/rss/articles/topic-{index}?oc=5</link>
+          <guid>topic-{index}</guid>
+          <pubDate>Tue, 16 Jun 2026 10:{index % 60:02d}:00 GMT</pubDate>
+          <description>Resumo da noticia {index}</description>
+        </item>
+        """
+        for index in range(35)
+    )
+    payload = f"<?xml version='1.0'?><rss version='2.0'><channel>{items}</channel></rss>".encode("utf-8")
+    engine = create_engine(f"sqlite:///{tmp_path / 'news-topic-limit.db'}")
+    with engine.begin() as conn:
+        ensure_news_tables_for_connection(conn)
+    repository = NewsRepository(engine)
+    service = NewsCollectionService(repository)
+
+    result = service.collect_feed_payload(source=source, payload=payload)
+
+    assert result.status == "success"
+    assert result.articles_seen == 30
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text("SELECT original_url, summary FROM news_articles ORDER BY published_at DESC")
+        ).mappings().fetchall()
+    assert len(rows) == 30
+    assert all(row["original_url"].startswith("https://news.google.com/rss/articles/") for row in rows)
+    assert all("fast topic collection" in row["summary"] for row in rows)
 
 
 def test_collect_aggregator_source_updates_existing_google_article_publisher(tmp_path):

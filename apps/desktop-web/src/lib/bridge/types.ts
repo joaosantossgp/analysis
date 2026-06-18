@@ -44,6 +44,8 @@ import type {
 import type {
   AddCustomNewsSourceParams,
   AddCustomNewsSourceResult,
+  BackfillNewsArticleContentParams,
+  BackfillNewsArticleContentResult,
   ApplyNewsClassificationCorrectionParams,
   ApplyNewsClassificationCorrectionResult,
   NewsArticleClassificationResponse,
@@ -88,6 +90,8 @@ export type {
 export type {
   AddCustomNewsSourceParams,
   AddCustomNewsSourceResult,
+  BackfillNewsArticleContentParams,
+  BackfillNewsArticleContentResult,
   ApplyNewsClassificationCorrectionParams,
   ApplyNewsClassificationCorrectionResult,
   NewsArticle,
@@ -876,6 +880,17 @@ export type LockStatusPayload = {
   stale_pid?: number | null;
 };
 
+export type RefreshWorkerRuntimeStatus = {
+  status: string;
+  worker_id?: string | null;
+  started_at?: string | null;
+  last_heartbeat_at?: string | null;
+  last_error?: string | null;
+  active_jobs?: number;
+  heartbeat_age_seconds?: number | null;
+  stale?: boolean;
+};
+
 export type AppRuntimeStatus = {
   version: string;
   build_commit?: string | null;
@@ -888,6 +903,7 @@ export type AppRuntimeStatus = {
   using_release_data_dir?: boolean;
   write_mode?: "read-write" | "read-only" | string;
   lock_status?: LockStatusPayload | null;
+  refresh_worker?: RefreshWorkerRuntimeStatus | null;
 };
 
 export type LocalPathInfo = {
@@ -1439,6 +1455,7 @@ export interface BridgeApi {
   save_news_google_company_feed_settings(params: SaveNewsGoogleCompanyFeedSettingsParams): Promise<SaveNewsGoogleCompanyFeedSettingsResult>;
   save_news_retention_policy(params: SaveNewsRetentionPolicyParams): Promise<SaveNewsRetentionPolicyResult>;
   cleanup_news_extracted_content(params?: { dry_run?: boolean }): Promise<CleanupNewsExtractedContentResult>;
+  backfill_news_article_content(params?: BackfillNewsArticleContentParams): Promise<BackfillNewsArticleContentResult>;
   get_companies(params: Record<string, unknown>): Promise<CompanyDirectoryPage>;
   get_company_info(params: Record<string, unknown>): Promise<CompanyInfo>;
   get_company_years(params: Record<string, unknown>): Promise<CompanyYearsResult>;

@@ -71,6 +71,41 @@ def test_resolver_csv_fallback():
     assert identity.source in ("db", "catalog", "ticker_map")
 
 
+@pytest.mark.parametrize(
+    ("cd_cvm", "expected_ticker"),
+    [
+        (25690, "MATD3.SA"),
+        (24295, "VBBR3.SA"),
+    ],
+)
+def test_resolver_backfills_missing_db_ticker_from_csv(temp_db_engine, cd_cvm, expected_ticker):
+    with temp_db_engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO companies (
+                    cd_cvm, company_name, nome_comercial, cnpj, ticker_b3, is_active,
+                    setor_cvm, setor_analitico, gics_sector, gics_sector_slug, updated_at
+                ) VALUES (
+                    :cd_cvm, :company_name, NULL, NULL, NULL, 1,
+                    NULL, NULL, NULL, NULL, '2026-06-18T12:00:00'
+                )
+                """
+            ),
+            {
+                "cd_cvm": cd_cvm,
+                "company_name": "HOSPITAL MATER DEI S.A." if cd_cvm == 25690 else "VIBRA ENERGIA S/A",
+            },
+        )
+
+    resolver = CompanyIdentityResolver(engine=temp_db_engine)
+    identity = resolver.resolve(cd_cvm)
+
+    assert identity is not None
+    assert identity.source == "db"
+    assert identity.ticker_b3 == expected_ticker
+
+
 def test_resolve_by_ticker(temp_db_engine):
     resolver = CompanyIdentityResolver(engine=temp_db_engine)
     

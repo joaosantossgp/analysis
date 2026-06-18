@@ -7,7 +7,9 @@ import { Input } from "@/components/ui/Input";
 import { StateBanner } from "@/components/feedback/StateBanner";
 import {
   addCustomNewsSource,
+  backfillNewsArticleContent,
   cleanupNewsExtractedContent,
+  fetchNewsArticleContent,
   fetchNewsArticles,
   fetchNewsCompanyScope,
   fetchNewsCollectionRuns,
@@ -27,6 +29,8 @@ import {
 } from "@/lib/api/news";
 import type {
   NewsArticle,
+  NewsArticleContentResponse,
+  BackfillNewsArticleContentResult,
   NewsCompanyScopeResponse,
   NewsOverviewSection,
   NewsRefreshStatus,
@@ -58,6 +62,7 @@ export function NewsPage() {
   const [showReadLaterOnly, setShowReadLaterOnly] = useState(false);
   const [includeHidden, setIncludeHidden] = useState(false);
   const [articleOffset, setArticleOffset] = useState(0);
+  const [readerArticleId, setReaderArticleId] = useState<string | null>(null);
 
   const articlesQuery = useQuery({
     queryKey: ["news", "articles", view, sourceFilter, includeHidden, articleOffset],
@@ -92,6 +97,11 @@ export function NewsPage() {
     queryFn: fetchNewsRefreshStatus,
     refetchInterval: (query) =>
       query.state.data?.status === "running" ? 2_000 : 15_000,
+  });
+  const articleContentQuery = useQuery({
+    queryKey: ["news", "article-content", readerArticleId],
+    queryFn: () => fetchNewsArticleContent(readerArticleId ?? ""),
+    enabled: Boolean(readerArticleId),
   });
   const refreshMutation = useMutation({
     mutationFn: refreshNewsSources,
@@ -135,6 +145,20 @@ export function NewsPage() {
     () => buildEditorialFrontPage(overviewSections, articles),
     [overviewSections, articles],
   );
+  const readableArticles = useMemo(
+    () => [...overviewSections.flatMap((section) => section.items), ...articles],
+    [overviewSections, articles],
+  );
+  const readerArticle = useMemo(
+    () => readableArticles.find((article) => article.article_id === readerArticleId) ?? null,
+    [readableArticles, readerArticleId],
+  );
+  const openArticleReader = (article: NewsArticle) => {
+    setReaderArticleId(article.article_id);
+    if (!article.read) {
+      articleStateMutation.mutate({ article_id: article.article_id, read: true });
+    }
+  };
   useEffect(() => {
     setArticleOffset(0);
   }, [view, sourceFilter, includeHidden]);
@@ -211,6 +235,7 @@ export function NewsPage() {
             loading={overviewQuery.isLoading || articlesQuery.isLoading}
             error={overviewQuery.error ?? overviewQuery.data?.error}
             frontPage={frontPage}
+            onOpenArticle={openArticleReader}
           />
       ) : null}
 
@@ -267,6 +292,7 @@ export function NewsPage() {
                 <ArticleList
                   articles={filteredArticles}
                   disabled={articleStateMutation.isPending}
+                  onOpenArticle={openArticleReader}
                   onUpdate={(params) => articleStateMutation.mutate(params)}
                 />
                 <ArticlePager
@@ -289,7 +315,122 @@ export function NewsPage() {
           </div>
         </main>
       </div>
+      <NewsArticleReader
+        article={readerArticle}
+        content={articleContentQuery.data ?? null}
+        loading={articleContentQuery.isFetching}
+        error={articleContentQuery.error}
+        onClose={() => setReaderArticleId(null)}
+      />
     </section>
+  );
+}
+
+function NewsArticleReader({
+  article,
+  content,
+  loading,
+  error,
+  onClose,
+}: {
+  article: NewsArticle | null;
+  content: NewsArticleContentResponse | null;
+  loading: boolean;
+  error: unknown;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    if (!article) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [article, onClose]);
+
+  if (!article) return null;
+
+  const localText = plainArticleSummary(content?.content_text);
+  const summary = plainArticleSummary(article.summary);
+  const canReadLocal = Boolean(localText);
+  const readableText = canReadLocal ? localText : summary;
+  const availabilityMessage = readerAvailabilityMessage(article, content);
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm" role="dialog" aria-modal="true">
+      <div className="flex h-full justify-end">
+        <article className="flex h-full w-full max-w-4xl flex-col border-l border-zinc-800 bg-zinc-950 shadow-2xl">
+          <header className="border-b border-zinc-800 px-5 py-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] uppercase text-zinc-500">
+                  <span className="text-amber-300">{article.source_name}</span>
+                  <time>{formatDate(article.published_at ?? article.discovered_at)}</time>
+                  <ContentStatus status={article.content_status} paywall={article.paywall_status} />
+                  <PriorityPill priority={article.priority_level ?? "Normal"} />
+                </div>
+                <h2 className="mt-2 text-2xl font-semibold leading-tight text-zinc-50 [overflow-wrap:anywhere]">
+                  {article.title}
+                </h2>
+              </div>
+              <button
+                type="button"
+                className="rounded border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:border-amber-500 hover:text-amber-100"
+                onClick={onClose}
+              >
+                Close
+              </button>
+            </div>
+          </header>
+
+          <div className="flex-1 overflow-y-auto px-5 py-4">
+            {loading ? (
+              <StateBanner variant="loading" title="Loading local article content" size="dense" />
+            ) : error ? (
+              <StateBanner
+                variant="warning"
+                title="Could not load local content"
+                message={error instanceof Error ? error.message : String(error)}
+                size="dense"
+              />
+            ) : null}
+
+            <div className="mb-4 rounded-md border border-zinc-800 bg-black/20 px-3 py-2">
+              <p className="text-sm leading-6 text-zinc-300">{availabilityMessage}</p>
+            </div>
+
+            {readableText ? (
+              <div className="max-w-3xl whitespace-pre-wrap text-base leading-7 text-zinc-200">
+                {readableText}
+              </div>
+            ) : (
+              <StateBanner
+                variant="empty"
+                title="No local article text"
+                message="CVMAnalytics has metadata for this article, but no readable local text yet."
+                size="dense"
+              />
+            )}
+          </div>
+
+          <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-800 px-5 py-3">
+            <p className="font-mono text-[11px] uppercase text-zinc-500">
+              {canReadLocal ? "Local copy" : "Local metadata"}
+            </p>
+            <a
+              href={article.original_url}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded border border-zinc-700 px-3 py-1.5 text-sm text-zinc-200 hover:border-amber-500 hover:text-amber-200"
+            >
+              Open original
+            </a>
+          </footer>
+        </article>
+      </div>
+    </div>
   );
 }
 
@@ -371,6 +512,12 @@ export function NewsSettingsPanel() {
       void queryClient.invalidateQueries({ queryKey: ["news"] });
     },
   });
+  const backfillContentMutation = useMutation({
+    mutationFn: backfillNewsArticleContent,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["news"] });
+    },
+  });
 
   const sourceMutationPending = sourceEnabledMutation.isPending || sourcePriorityMutation.isPending;
   const pendingSourceId =
@@ -434,6 +581,13 @@ export function NewsSettingsPanel() {
           cleanupResult={cleanupRetentionMutation.data ?? null}
           onSave={(params) => saveRetentionMutation.mutate(params)}
           onCleanup={(dryRun) => cleanupRetentionMutation.mutate({ dry_run: dryRun })}
+        />
+        <NewsContentBackfillPanel
+          running={backfillContentMutation.isPending}
+          result={backfillContentMutation.data ?? null}
+          onRun={(includeNormal) =>
+            backfillContentMutation.mutate({ limit: 25, include_normal: includeNormal })
+          }
         />
       </div>
 
@@ -543,10 +697,12 @@ function EditorialFrontPage({
   loading,
   error,
   frontPage,
+  onOpenArticle,
 }: {
   loading: boolean;
   error: unknown;
   frontPage: EditorialFrontPageModel;
+  onOpenArticle: (article: NewsArticle) => void;
 }) {
   if (loading) {
     return <StateBanner variant="loading" title="Building front page" />;
@@ -574,39 +730,45 @@ function EditorialFrontPage({
   return (
     <div className="space-y-3">
       {frontPage.critical.length ? (
-        <CriticalNewsStrip articles={frontPage.critical} />
+        <CriticalNewsStrip articles={frontPage.critical} onOpenArticle={onOpenArticle} />
       ) : null}
 
       <section className="overflow-hidden border-y border-zinc-800 py-4">
         <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.9fr)_minmax(250px,290px)] 2xl:grid-cols-[minmax(0,0.9fr)_minmax(0,0.95fr)_minmax(0,0.85fr)]">
           <LeadStory
             article={frontPage.lead}
+            onOpenArticle={onOpenArticle}
           />
           <div className="min-w-0 space-y-3 border-zinc-800 xl:border-x xl:px-4">
             <EditorialColumn
               title="Secondary Lead"
               articles={frontPage.secondary}
+              onOpenArticle={onOpenArticle}
             />
           </div>
           <aside className="min-w-0 space-y-4 2xl:grid 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] 2xl:gap-x-5 2xl:gap-y-4 2xl:space-y-0">
             <EditorialRail
               title="Macro Watch"
               articles={frontPage.macro}
+              onOpenArticle={onOpenArticle}
             />
             <EditorialRail
               title="My Companies"
               articles={frontPage.companies}
+              onOpenArticle={onOpenArticle}
             />
             <div className="hidden 2xl:block">
               <EditorialRail
                 title="My Sectors"
                 articles={frontPage.sectors}
+                onOpenArticle={onOpenArticle}
               />
             </div>
             <div className="hidden 2xl:block">
               <EditorialRail
                 title="Keyword Alerts"
                 articles={frontPage.keywords}
+                onOpenArticle={onOpenArticle}
               />
             </div>
           </aside>
@@ -618,8 +780,10 @@ function EditorialFrontPage({
 
 function LeadStory({
   article,
+  onOpenArticle,
 }: {
   article: NewsArticle;
+  onOpenArticle: (article: NewsArticle) => void;
 }) {
   const summary = plainArticleSummary(article.summary);
   return (
@@ -630,16 +794,11 @@ function LeadStory({
         <PriorityPill priority={article.priority_level ?? "Normal"} />
         <ContentStatus status={article.content_status} paywall={article.paywall_status} />
       </div>
-      <a
-        href={article.original_url}
-        target="_blank"
-        rel="noreferrer"
-        className="mt-2 block text-left"
-      >
+      <button type="button" className="mt-2 block text-left" onClick={() => onOpenArticle(article)}>
         <h2 className="max-w-4xl text-3xl font-semibold leading-[1.06] text-zinc-50 [overflow-wrap:anywhere] lg:text-4xl 2xl:text-5xl">
           {article.title}
         </h2>
-      </a>
+      </button>
       {summary ? (
         <p className="mt-3 line-clamp-4 max-w-3xl text-sm leading-6 text-zinc-300 2xl:text-base 2xl:leading-7">{summary}</p>
       ) : null}
@@ -651,6 +810,13 @@ function LeadStory({
         ))}
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          className="rounded border border-amber-700 px-3 py-1.5 text-sm text-amber-100 hover:border-amber-400"
+          onClick={() => onOpenArticle(article)}
+        >
+          Read in app
+        </button>
         <a
           href={article.original_url}
           target="_blank"
@@ -666,23 +832,24 @@ function LeadStory({
 
 function CriticalNewsStrip({
   articles,
+  onOpenArticle,
 }: {
   articles: NewsArticle[];
+  onOpenArticle: (article: NewsArticle) => void;
 }) {
   return (
     <section className="border-y border-red-900/70 bg-red-950/10 px-4 py-3">
       <div className="flex flex-wrap items-center gap-3">
         <span className="font-mono text-[11px] uppercase text-red-300">Critical News</span>
         {articles.slice(0, 3).map((article) => (
-          <a
+          <button
             key={article.article_id}
-            href={article.original_url}
-            target="_blank"
-            rel="noreferrer"
+            type="button"
+            onClick={() => onOpenArticle(article)}
             className="text-left text-sm font-medium text-zinc-100 hover:text-red-200"
           >
             {article.title}
-          </a>
+          </button>
         ))}
       </div>
     </section>
@@ -692,9 +859,11 @@ function CriticalNewsStrip({
 function EditorialColumn({
   title,
   articles,
+  onOpenArticle,
 }: {
   title: string;
   articles: NewsArticle[];
+  onOpenArticle: (article: NewsArticle) => void;
 }) {
   return (
     <section>
@@ -708,6 +877,7 @@ function EditorialColumn({
               key={article.article_id}
               article={article}
               size="medium"
+              onOpenArticle={onOpenArticle}
             />
           ))
         ) : (
@@ -721,9 +891,11 @@ function EditorialColumn({
 function EditorialRail({
   title,
   articles,
+  onOpenArticle,
 }: {
   title: string;
   articles: NewsArticle[];
+  onOpenArticle: (article: NewsArticle) => void;
 }) {
   return (
     <section>
@@ -737,6 +909,7 @@ function EditorialRail({
               key={article.article_id}
               article={article}
               size="small"
+              onOpenArticle={onOpenArticle}
             />
           ))
         ) : (
@@ -750,9 +923,11 @@ function EditorialRail({
 function EditorialStoryLine({
   article,
   size,
+  onOpenArticle,
 }: {
   article: NewsArticle;
   size: "medium" | "small";
+  onOpenArticle: (article: NewsArticle) => void;
 }) {
   const summary = plainArticleSummary(article.summary);
   return (
@@ -764,11 +939,11 @@ function EditorialStoryLine({
           <PriorityPill priority={article.priority_level} />
         ) : null}
       </div>
-      <a href={article.original_url} target="_blank" rel="noreferrer" className="mt-1 block text-left">
+      <button type="button" className="mt-1 block text-left" onClick={() => onOpenArticle(article)}>
         <h4 className={`${size === "medium" ? "text-lg leading-6 2xl:text-xl" : "text-sm leading-5"} font-semibold text-zinc-100 [overflow-wrap:anywhere] hover:text-amber-200`}>
           {article.title}
         </h4>
-      </a>
+      </button>
       {size === "medium" && summary ? (
         <p className="mt-1 line-clamp-1 text-sm leading-5 text-zinc-400 2xl:line-clamp-2">{summary}</p>
       ) : null}
@@ -939,10 +1114,12 @@ function ToggleChip({
 function ArticleList({
   articles,
   disabled,
+  onOpenArticle,
   onUpdate,
 }: {
   articles: NewsArticle[];
   disabled?: boolean;
+  onOpenArticle: (article: NewsArticle) => void;
   onUpdate: (params: {
     article_id: string;
     read?: boolean;
@@ -959,6 +1136,7 @@ function ArticleList({
           key={article.article_id}
           article={article}
           disabled={disabled}
+          onOpenArticle={onOpenArticle}
           onUpdate={onUpdate}
         />
       ))}
@@ -969,10 +1147,12 @@ function ArticleList({
 function ArticleRow({
   article,
   disabled,
+  onOpenArticle,
   onUpdate,
 }: {
   article: NewsArticle;
   disabled?: boolean;
+  onOpenArticle: (article: NewsArticle) => void;
   onUpdate: (params: {
     article_id: string;
     read?: boolean;
@@ -1004,18 +1184,24 @@ function ArticleRow({
         {isSaved ? <StatusPill status="saved" /> : null}
         {isReadLater ? <StatusPill status="read_later" /> : null}
       </div>
-      <a
-        href={article.original_url}
-        target="_blank"
-        rel="noreferrer"
-        className="mt-1 block text-sm font-medium text-zinc-100 hover:text-amber-200"
+      <button
+        type="button"
+        className="mt-1 block text-left text-sm font-medium text-zinc-100 hover:text-amber-200"
+        onClick={() => onOpenArticle(article)}
       >
         {article.title}
-      </a>
+      </button>
       {article.summary ? (
-        <p className="mt-1 line-clamp-2 text-sm text-zinc-400">{article.summary}</p>
+        <p className="mt-1 line-clamp-2 text-sm text-zinc-400">{plainArticleSummary(article.summary)}</p>
       ) : null}
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] uppercase text-zinc-500">
+        <ArticleTextAction
+          disabled={disabled}
+          onClick={() => onOpenArticle(article)}
+          active
+        >
+          Read in app
+        </ArticleTextAction>
         <ArticleTextAction
           disabled={disabled}
           onClick={() => onUpdate({ article_id: article.article_id, read: !isRead })}
@@ -1707,6 +1893,80 @@ function MetricMini({ label, value }: { label: string; value: string | number })
   );
 }
 
+function NewsContentBackfillPanel({
+  running,
+  result,
+  onRun,
+}: {
+  running: boolean;
+  result: BackfillNewsArticleContentResult | null;
+  onRun: (includeNormal: boolean) => void;
+}) {
+  const [includeNormal, setIncludeNormal] = useState(false);
+  return (
+    <section className="rounded-lg border border-zinc-800 bg-zinc-950/40">
+      <div className="border-b border-zinc-800 px-4 py-3">
+        <h2 className="text-sm font-semibold text-zinc-100">Article Text Backfill</h2>
+        <p className="mt-0.5 text-xs text-zinc-500">
+          Attempts to fetch readable text for older Google News articles whose original source URL is already resolved.
+        </p>
+      </div>
+      <div className="space-y-3 p-4">
+        <p className="text-xs leading-5 text-zinc-500">
+          This does not read from Google directly and does not bypass paywalls. It fetches the original source page,
+          stores text only when extraction succeeds, and marks blocked sources as paywalled.
+        </p>
+        <label className="flex items-start gap-3 rounded-md border border-zinc-800 bg-black/20 p-3">
+          <input
+            type="checkbox"
+            className="mt-1 h-4 w-4 accent-amber-500"
+            checked={includeNormal}
+            disabled={running}
+            onChange={(event) => setIncludeNormal(event.currentTarget.checked)}
+          />
+          <span>
+            <span className="block text-sm font-medium text-zinc-100">Include Normal priority</span>
+            <span className="block text-xs leading-5 text-zinc-500">
+              Default backfill targets High and Critical articles first.
+            </span>
+          </span>
+        </label>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-900 pt-3">
+          <p className="font-mono text-[11px] uppercase text-zinc-500">Runs up to 25 articles per click</p>
+          <Button
+            type="button"
+            size="xs"
+            disabled={running}
+            loading={running}
+            onClick={() => onRun(includeNormal)}
+          >
+            Backfill text
+          </Button>
+        </div>
+        {result?.status === "success" ? (
+          <div className="rounded-md border border-zinc-800 bg-black/20 p-3 text-xs leading-5 text-zinc-400">
+            <p className="font-mono uppercase text-zinc-300">
+              {result.stored_count ?? 0} stored · {result.paywalled_count ?? 0} paywalled · {result.failed_count ?? 0} failed
+            </p>
+            <p className="mt-1">
+              {result.attempted_count ?? 0} attempted from {result.candidate_count ?? 0} candidates.
+            </p>
+            {result.errors?.length ? (
+              <ul className="mt-2 list-disc space-y-1 pl-4 text-zinc-500">
+                {result.errors.slice(0, 3).map((error) => (
+                  <li key={error}>{error}</li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ) : result?.error ? (
+          <StateBanner variant="warning" title="Backfill did not run" message={result.error} size="dense" />
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
 function AddSourcePanel({
   disabled,
   loading,
@@ -1891,6 +2151,39 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
+function readerAvailabilityMessage(article: NewsArticle, content: NewsArticleContentResponse | null) {
+  if (article.paywall_status === "paywalled" || article.content_status === "paywalled") {
+    return "This source is marked as paywalled. The app keeps attribution and metadata locally and will not bypass access controls.";
+  }
+  if (content?.available && content.content_text) {
+    if (article.content_status === "official_document") {
+      return "Official document content is available locally.";
+    }
+    return "Local article text is available in CVMAnalytics.";
+  }
+  if (content?.fetch_status === "paywalled") {
+    return "The original source appears to be paywalled. CVMAnalytics keeps the metadata locally and will not bypass access controls.";
+  }
+  if (content?.fetch_status === "error" || content?.fetch_status === "skipped") {
+    return content.fetch_error
+      ? `The app could not extract readable text from the original source: ${content.fetch_error}`
+      : "The app could not extract readable text from the original source.";
+  }
+  if (plainArticleSummary(article.summary)) {
+    return "Only the feed summary is available locally. Use Open original for the full source article.";
+  }
+  if (article.content_status === "external_only") {
+    return "This article is external only. CVMAnalytics keeps metadata and attribution locally.";
+  }
+  if (article.content_status === "metadata_only") {
+    return "Only metadata is available locally for this article.";
+  }
+  if (article.content_status === "extraction_failed") {
+    return "Content extraction failed. Metadata and source attribution remain available locally.";
+  }
+  return "Local readable content is not available for this article.";
+}
+
 function plainArticleSummary(summary: string | null | undefined) {
   if (!summary) return "";
   return summary
@@ -1898,14 +2191,29 @@ function plainArticleSummary(summary: string | null | undefined) {
     .replace(/Aggregator article URL was not resolved\./gi, " ")
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, " ")
     .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, " ")
-    .replace(/<[^>]*>/g, " ")
+    .replace(/<img\b[^>]*>/gi, " ")
+    .replace(/<(br|\/p|\/div|\/li|\/tr|\/h[1-6])\b[^>]*>/gi, "\n")
+    .replace(/<(p|div|li|tr|h[1-6]|table|tbody|thead|td|th)\b[^>]*>/gi, " ")
     .replace(/&nbsp;/gi, " ")
+    .replace(/&#160;/gi, " ")
     .replace(/&amp;/gi, "&")
     .replace(/&lt;/gi, "<")
     .replace(/&gt;/gi, ">")
     .replace(/&quot;/gi, '"')
     .replace(/&#39;/gi, "'")
-    .replace(/\s+/g, " ")
+    .replace(/&#58;/gi, ":")
+    .replace(/&#(\d+);/g, (_, code: string) => {
+      const value = Number(code);
+      return Number.isFinite(value) ? String.fromCharCode(value) : " ";
+    })
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, " ")
+    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, " ")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/https:\/\/news\.google\.com\/rss\/articles\/[^\s]+/gi, " ")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
 

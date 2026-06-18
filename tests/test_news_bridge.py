@@ -57,6 +57,7 @@ class _FakeRepository:
                 "enabled": 1 if source.enabled else 0,
                 "priority": source.priority,
                 "user_defined": 1 if source.user_defined else 0,
+                "allow_content_storage": source.allow_content_storage,
             },
         )
 
@@ -71,6 +72,7 @@ class _FakeRepository:
             "enabled": 1 if source.enabled else 0,
             "priority": source.priority,
             "user_defined": 1 if source.user_defined else 0,
+            "allow_content_storage": source.allow_content_storage,
         }
 
     def get_source(self, source_id: str) -> dict[str, Any] | None:
@@ -265,6 +267,7 @@ class _FakeNewsService:
         self.validation = validation
         self.validated_urls: list[str] = []
         self.fail_sources = fail_sources or set()
+        self.content_fetches: list[str] = []
 
     def collect_source(self, *, source: NewsSource, trigger: str = "manual") -> CollectionResult:
         self.sources.append(source.source_id)
@@ -290,6 +293,22 @@ class _FakeNewsService:
             final_url=feed_url,
             etag='"v1"',
             last_modified="Tue, 16 Jun 2026 10:00:00 GMT",
+        )
+
+    def fetch_article_content_on_demand(self, article_id: str):
+        self.content_fetches.append(article_id)
+        from src.news.service import ArticleContentBackfillResult
+
+        return ArticleContentBackfillResult(
+            status="success",
+            limit=1,
+            include_normal=True,
+            candidate_count=1,
+            attempted_count=1,
+            stored_count=1,
+            paywalled_count=0,
+            failed_count=0,
+            skipped_count=0,
         )
 
 
@@ -471,6 +490,7 @@ def test_news_bridge_google_company_feed_settings_generate_and_disable_sources()
     assert saved["settings"]["generated_count"] == 2
     assert len(google_sources) == 2
     assert all("news.google.com/rss/search" in row["feed_url"] for row in google_sources)
+    assert all(row["allow_content_storage"] is True for row in google_sources)
     assert disabled["settings"]["disabled_count"] == 2
 
 
@@ -682,6 +702,44 @@ def test_news_bridge_returns_article_content_without_fetching_network():
     assert missing["available"] is False
     assert "not found" in missing["error"]
     assert invalid["error"] == "article_id is required"
+
+
+def test_news_bridge_fetches_article_content_on_demand_when_local_text_is_missing():
+    class _OnDemandRepository(_FakeRepository):
+        def __init__(self) -> None:
+            super().__init__()
+            self.calls = 0
+
+        def get_article_content(self, article_id: str):
+            self.calls += 1
+            if self.calls == 1:
+                return {
+                    "article_id": article_id,
+                    "title": "News item",
+                    "content_status": "metadata_only",
+                    "paywall_status": None,
+                    "available": False,
+                    "content_text": None,
+                }
+            return {
+                "article_id": article_id,
+                "title": "News item",
+                "content_status": "full_text_available",
+                "paywall_status": None,
+                "available": True,
+                "content_text": "Fetched article text",
+            }
+
+    repository = _OnDemandRepository()
+    service = _FakeNewsService()
+    bridge = _FakeNewsBridge(repository=repository, service=service)
+
+    result = bridge.get_news_article_content({"article_id": "needs-fetch"})
+
+    assert result["available"] is True
+    assert result["content_text"] == "Fetched article text"
+    assert result["fetch_status"] == "success"
+    assert service.content_fetches == ["needs-fetch"]
 
 
 def test_news_bridge_applies_classification_correction_and_blocks_when_read_only():

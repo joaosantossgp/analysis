@@ -178,6 +178,14 @@ export function CompanyCommandBar({
   const pendingHistory =
     refreshMutation.isPending && refreshMutation.variables?.type === "history";
   const progress = companyRefreshProgress(status);
+  const isTerminalRefreshState =
+    !isActive && ["success", "no_data", "error", "stalled"].includes(String(refreshState));
+  const dispatchJobId = refreshMutation.data?.job_id ?? null;
+  const statusJobId = status?.job_id ?? null;
+  const terminalStateMatchesDispatch =
+    isTerminalRefreshState && (!dispatchJobId || !statusJobId || dispatchJobId === statusJobId);
+  const showDispatchNotice = Boolean(refreshMutation.data) && !terminalStateMatchesDispatch;
+  const showOutcomeNotice = Boolean(status) && terminalStateMatchesDispatch;
   const historyId = `company-command-history-${cdCvm}`;
   const detailsId = `company-command-details-${cdCvm}`;
   const exportDetailsId = `company-command-export-${cdCvm}`;
@@ -309,12 +317,13 @@ export function CompanyCommandBar({
 
       {isActive ? <ActiveProgress status={status} progress={progress} isFetching={statusQuery.isFetching} /> : null}
 
-      {browserReason || statusQuery.isError || refreshMutation.isError || refreshMutation.data ? (
+      {browserReason || statusQuery.isError || refreshMutation.isError || showDispatchNotice || showOutcomeNotice ? (
         <div className="mt-2">
           {browserReason ? <Notice tone="warning">{browserReason}</Notice> : null}
           {statusQuery.isError ? <ErrorNotice error={statusQuery.error} /> : null}
           {refreshMutation.isError ? <ErrorNotice error={refreshMutation.error} /> : null}
-          {refreshMutation.data ? <DispatchNotice result={refreshMutation.data} /> : null}
+          {showDispatchNotice && refreshMutation.data ? <DispatchNotice result={refreshMutation.data} /> : null}
+          {showOutcomeNotice ? <RefreshOutcomeNotice status={status} /> : null}
         </div>
       ) : null}
 
@@ -443,6 +452,13 @@ function buildStatusText({
   if (isActive) {
     return `Updating company data${status?.progress_message ? ` · ${status.progress_message}` : ""}`;
   }
+  const state = normalizedTrackingState(status);
+  if (state === "no_data") {
+    return status?.progress_message || "No CVM statements found for the selected range";
+  }
+  if (state === "stalled") {
+    return "Update stalled · Worker heartbeat is missing or stale";
+  }
   if (hasRefreshError) return "Update failed · Existing local data remains available";
   const parts = [latestPeriodLabel ? `Local data current · Through ${latestPeriodLabel}` : "Local data status unavailable"];
   const last = formatDateTime(lastRefreshAt);
@@ -463,6 +479,11 @@ function StatusDetails({
   if (loading) return <Notice tone="neutral">Loading refresh diagnostics...</Notice>;
   if (!status) return <Notice tone="neutral">No technical refresh details are available yet.</Notice>;
   const progress = companyRefreshProgress(status);
+  const state = normalizedTrackingState(status);
+  const reason =
+    status.latest_attempt_reason_message ||
+    status.status_reason_message ||
+    (state === "no_data" ? status.progress_message : null);
   return (
     <div className="space-y-2">
       <dl className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
@@ -472,10 +493,11 @@ function StatusDetails({
         <Field label="Range" value={formatRange(status)} />
         <Field label="Source" value={status.source_label || status.source_scope || "n/a"} />
         <Field label="Job" value={shortJobId(status.job_id)} mono />
-        <Field label="State" value={formatStateLabel(normalizedTrackingState(status))} />
+        <Field label="State" value={formatStateLabel(state)} />
         <Field label="Progress" value={progress == null ? "n/a" : `${progress}%`} mono />
       </dl>
       {isFetching && isActiveCompanyRefresh(status) ? <Notice tone="warning">Polling active refresh status...</Notice> : null}
+      {reason ? <Notice tone={state === "no_data" ? "warning" : "neutral"}>{reason}</Notice> : null}
       {status.last_error ? <Notice tone="error">{status.last_error}</Notice> : null}
     </div>
   );
@@ -599,6 +621,27 @@ function DispatchNotice({ result }: { result: RefreshDispatchResponse }) {
       {result.job_id ? <span className="ml-2 font-mono text-xs opacity-80">{shortJobId(result.job_id)}</span> : null}
     </Notice>
   );
+}
+
+function RefreshOutcomeNotice({ status }: { status: CompanyRefreshStatus | null }) {
+  const state = normalizedTrackingState(status);
+  if (state === "success") {
+    return <Notice tone="success" role="status">{status?.progress_message || "Update completed."}</Notice>;
+  }
+  if (state === "no_data") {
+    return (
+      <Notice tone="warning" role="status">
+        {status?.latest_attempt_reason_message || status?.progress_message || "No CVM statements found for the selected range."}
+      </Notice>
+    );
+  }
+  if (state === "stalled") {
+    return <Notice tone="warning" role="alert">Update stalled. Check refresh worker diagnostics in Settings.</Notice>;
+  }
+  if (state === "error") {
+    return <Notice tone="error" role="alert">{status?.last_error || "Update failed."}</Notice>;
+  }
+  return null;
 }
 
 function exportStatusMessage(status: string, errorMessage: string | null | undefined) {
