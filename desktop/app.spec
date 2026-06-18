@@ -16,6 +16,7 @@ VITE_DIST_DIR = ROOT / "apps" / "desktop-web" / "dist"
 UPDATE_HELPER = ROOT / "desktop" / "update_helper.ps1"
 GICS_MAPPING_CSV = ROOT / "data" / "import" / "gics_mapping.csv"
 CANONICAL_ACCOUNTS_CSV = ROOT / "data" / "import" / "canonical_accounts.csv"
+TICKER_MAP_CSV = ROOT / "data" / "import" / "ticker_map.csv"
 
 datas = []
 
@@ -39,6 +40,11 @@ if GICS_MAPPING_CSV.exists():
 # can run from the packaged desktop bridge.
 if CANONICAL_ACCOUNTS_CSV.exists():
     datas.append((str(CANONICAL_ACCOUNTS_CSV), "data/import"))
+
+# Ship canonical CVM -> B3/Yahoo ticker mapping used by identity fallback in
+# packaged desktop installs whose local DB lacks ticker_b3.
+if TICKER_MAP_CSV.exists():
+    datas.append((str(TICKER_MAP_CSV), "data/import"))
 
 # v0.3.1: pythonnet's .NET assembly cannot bind its dependencies without
 # Python.Runtime.deps.json sitting next to Python.Runtime.dll. PyInstaller's

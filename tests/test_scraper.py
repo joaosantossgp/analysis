@@ -63,6 +63,32 @@ def _make_zip_bytes(file_entries: dict) -> bytes:
     return buf.getvalue()
 
 
+def test_read_csv_cached_keeps_pandas_when_polars_conversion_fails(scraper, tmp_path, monkeypatch):
+    class _BrokenPolars:
+        Int64 = object()
+
+        def read_csv(self, *args, **kwargs):
+            raise RuntimeError("polars runtime unavailable")
+
+        def from_pandas(self, *args, **kwargs):
+            raise RuntimeError("pyarrow unavailable")
+
+    import src.financials.scraper as scraper_module
+
+    csv_path = tmp_path / "dfp_cia_aberta_DRE_con_2025.csv"
+    csv_path.write_text(
+        "CD_CVM;ORDEM_EXERC;DS_CONTA;VL_CONTA;ESCALA_MOEDA\n"
+        "25690;ÚLTIMO;Receita;1000;MIL\n",
+        encoding="latin1",
+    )
+    monkeypatch.setattr(scraper_module, "_pl", lambda: _BrokenPolars())
+
+    df = scraper._read_csv_cached(str(csv_path))
+
+    assert isinstance(df, pd.DataFrame)
+    assert int(df.loc[0, "CD_CVM"]) == 25690
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # normalize_units
 # ──────────────────────────────────────────────────────────────────────────────

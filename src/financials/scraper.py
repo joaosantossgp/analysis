@@ -369,7 +369,7 @@ class CVMScraper:
                 if wanted:
                     df = df.select(wanted)
             except Exception:
-                df = _pd().read_csv(
+                df_pandas = _pd().read_csv(
                     filepath,
                     sep=";",
                     encoding="latin1",
@@ -377,7 +377,12 @@ class CVMScraper:
                     usecols=lambda column: column in _CSV_USECOLS,
                 )
                 if pl is not None:
-                    df = pl.from_pandas(df)
+                    try:
+                        df = pl.from_pandas(df_pandas)
+                    except Exception:
+                        df = df_pandas
+                else:
+                    df = df_pandas
             self._csv_cache[filepath] = df
         return self._csv_cache[filepath]
 
@@ -417,7 +422,12 @@ class CVMScraper:
                             setor = str(self.setores_map.get(str(cvm_code), '')).lower()
                             df_company['COMPANY_TYPE'] = 'financeira' if any(k in setor for k in ['banc', 'financ']) else 'comercial'
                             all_data.append(df_company)
-                        except Exception: continue
+                        except Exception as exc:
+                            with self._print_lock:
+                                print(
+                                    f"  Error processing {filename} for CVM {cvm_code}: {exc}"
+                                )
+                            continue
         return _pd().concat(all_data, ignore_index=True) if all_data else None
 
     def calculate_quarters(self, df, report_type):
