@@ -258,6 +258,14 @@ class RefreshBridgeMixin:
         if not self._is_write_allowed():
             return self._sanitize_for_json(self._write_blocked_response("request_refresh"))
         p = params or {}
+        if p.get("ui_route") or p.get("ui_route_cd_cvm") or p.get("ui_action"):
+            self._append_runtime_log(
+                "request_refresh "
+                f"cd_cvm={p.get('cd_cvm')} "
+                f"ui_route_cd_cvm={p.get('ui_route_cd_cvm')} "
+                f"ui_action={p.get('ui_action')} "
+                f"ui_route={p.get('ui_route')}"
+            )
         # Single-company refresh (from no-data company page) routes through the
         # same code path as the HTTP API (`service.request_company_refresh`),
         # which does a full incremental backfill (2010..current). The batch

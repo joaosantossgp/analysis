@@ -34,8 +34,21 @@ export async function requestCompanyRefresh(
   if (getBridgeMode() === "browser") {
     throw new Error(BROWSER_REASON);
   }
+  const routeContext = currentCompanyRouteContext();
+  if (
+    routeContext.routeCdCvm != null &&
+    Number.isFinite(routeContext.routeCdCvm) &&
+    Number(routeContext.routeCdCvm) !== Number(cdCvm)
+  ) {
+    throw new Error(
+      `Blocked company refresh mismatch: visible route CVM ${routeContext.routeCdCvm}, requested CVM ${cdCvm}.`,
+    );
+  }
   const response = await callBridge("request_refresh", {
     cd_cvm: cdCvm,
+    ui_route: routeContext.hash,
+    ui_route_cd_cvm: routeContext.routeCdCvm,
+    ui_action: "company_command_bar_refresh",
     ...(options?.startYear != null ? { start_year: options.startYear } : {}),
     ...(options?.endYear != null ? { end_year: options.endYear } : {}),
   });
@@ -50,6 +63,16 @@ export async function requestCompanyRefresh(
     );
   }
   return response;
+}
+
+function currentCompanyRouteContext(): { hash: string; routeCdCvm: number | null } {
+  if (typeof window === "undefined") return { hash: "", routeCdCvm: null };
+  const hash = window.location.hash || "";
+  const match = hash.match(/#\/empresas\/(\d+)(?:\/|$)/);
+  return {
+    hash,
+    routeCdCvm: match ? Number.parseInt(match[1], 10) : null,
+  };
 }
 
 export function isActiveCompanyRefresh(
