@@ -16,6 +16,35 @@ from src.financials.utils import now_iso_seconds
 
 logger = logging.getLogger("src.companies.market_history")
 
+YAHOO_TICKER_ALIASES: dict[str, str] = {
+    # Eletrobras rebranded to AXIA Energia. B3 tickers changed on 2025-11-10.
+    # Keep old DB/company mappings readable, but use active Yahoo symbols for
+    # market-history downloads.
+    "ELET3.SA": "AXIA3.SA",
+    "ELET5.SA": "AXIA5.SA",
+    "ELET6.SA": "AXIA6.SA",
+}
+
+YAHOO_TICKER_CANDIDATE_ALIASES: dict[str, list[str]] = {
+    "ELET3.SA": ["AXIA3.SA", "AXIA5.SA", "AXIA6.SA", "AXIA7.SA"],
+    "ELET5.SA": ["AXIA5.SA", "AXIA3.SA", "AXIA6.SA", "AXIA7.SA"],
+    "ELET6.SA": ["AXIA6.SA", "AXIA3.SA", "AXIA5.SA", "AXIA7.SA"],
+    "AXIA3.SA": ["AXIA3.SA", "AXIA5.SA", "AXIA6.SA", "AXIA7.SA"],
+    "AXIA5.SA": ["AXIA5.SA", "AXIA3.SA", "AXIA6.SA", "AXIA7.SA"],
+    "AXIA6.SA": ["AXIA6.SA", "AXIA3.SA", "AXIA5.SA", "AXIA7.SA"],
+}
+
+
+def _normalize_yahoo_ticker(ticker: str | None) -> str | None:
+    if not ticker:
+        return None
+    normalized = str(ticker).strip().upper()
+    if not normalized:
+        return None
+    if "." not in normalized:
+        normalized = f"{normalized}.SA"
+    return YAHOO_TICKER_ALIASES.get(normalized, normalized)
+
 
 def _finite_float(value: Any) -> float | None:
     try:
@@ -139,15 +168,7 @@ def resolve_ticker(cd_cvm: int | str, read_service: Any = None) -> str | None:
     if not ticker:
         return None
 
-    ticker = ticker.strip().upper()
-    if not ticker:
-        return None
-
-    # Append .SA to Brazilian tickers if they don't have exchange suffix
-    if "." not in ticker:
-        ticker = f"{ticker}.SA"
-
-    return ticker
+    return _normalize_yahoo_ticker(ticker)
 
 
 def resolve_company_tickers(cd_cvm: int | str, read_service: Any = None) -> list[str]:
@@ -160,6 +181,23 @@ def resolve_company_tickers(cd_cvm: int | str, read_service: Any = None) -> list
     primary = resolve_ticker(cd_cvm, read_service)
     if not primary:
         return []
+
+    legacy_primary = None
+    if read_service:
+        try:
+            info = read_service.query_layer.get_company_info(cd_cvm)
+            if info and info.get("ticker_b3"):
+                legacy_primary = _normalize_yahoo_ticker(str(info.get("ticker_b3")))
+        except Exception:
+            legacy_primary = None
+
+    alias_candidates = YAHOO_TICKER_CANDIDATE_ALIASES.get(primary)
+    if alias_candidates:
+        return alias_candidates
+    if legacy_primary and legacy_primary != primary:
+        alias_candidates = YAHOO_TICKER_CANDIDATE_ALIASES.get(legacy_primary)
+        if alias_candidates:
+            return alias_candidates
     
     # Extract the base ticker (letters only, usually first 4 characters, e.g. PETR)
     import re
@@ -273,7 +311,7 @@ class MarketHistoryService:
             "row_count": 0,
             "last_downloaded_at": None,
             "is_stale": True,
-            "warnings": ["Error querying local database."],
+            "warnings": ["No local market history has been downloaded yet."],
         }
 
     def refresh_market_history(

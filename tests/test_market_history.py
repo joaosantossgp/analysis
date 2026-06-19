@@ -81,6 +81,45 @@ def test_resolve_company_tickers_success(tmp_path):
     assert "VALE4.SA" in vale_tickers
 
 
+def test_eletrobras_market_history_uses_axia_yahoo_alias(tmp_path, monkeypatch):
+    catalog_info = {2437: {"ticker_b3": "ELET3"}}
+    service, read_service = _setup_history_service(tmp_path, catalog_info)
+
+    from src.companies.market_history import resolve_company_tickers
+
+    assert resolve_ticker(2437, read_service) == "AXIA3.SA"
+    assert resolve_company_tickers(2437, read_service)[:3] == ["AXIA3.SA", "AXIA5.SA", "AXIA6.SA"]
+
+    requested_tickers = []
+    dates = pd.date_range(start="2026-06-01", periods=2)
+    df = pd.DataFrame({
+        "Open": [51.0, 52.0],
+        "High": [52.0, 53.0],
+        "Low": [50.0, 51.0],
+        "Close": [51.5, 52.5],
+        "Adj Close": [51.5, 52.5],
+        "Volume": [1000000, 1200000],
+        "Dividends": [0.0, 0.0],
+        "Stock Splits": [1.0, 1.0],
+    }, index=dates)
+
+    class CapturingYFTicker:
+        def __init__(self, ticker):
+            requested_tickers.append(ticker)
+
+        def history(self, *args, **kwargs):
+            return df
+
+    import yfinance as yf
+    monkeypatch.setattr(yf, "Ticker", CapturingYFTicker)
+
+    res = service.refresh_market_history(2437, start_date="2026-06-01")
+    assert res["ok"] is True
+    assert res["ticker"] == "AXIA3.SA"
+    assert requested_tickers == ["AXIA3.SA"]
+    assert res["inserted_rows"] == 2
+
+
 # 2. Ingestion and provider-response normalization tests
 class MockYFTicker:
     def __init__(self, df_to_return):
@@ -529,6 +568,8 @@ def test_on_demand_table_creation(tmp_path):
     # Query status — this should automatically create the table
     status = service.get_market_history_status(9512, "PETR4.SA")
     assert status["ticker"] == "PETR4.SA"
+    assert status["has_local_data"] is False
+    assert status["warnings"] == ["No local market history has been downloaded yet."]
     
     # Verify the table exists now
     inspector = inspect(read_service.engine)
