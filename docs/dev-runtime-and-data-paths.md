@@ -39,13 +39,14 @@ which only runs when `sys.frozen=True` (packaged build).
 Override with `CVMANALYTICS_DATA_DIR` env var to redirect the release app to a
 different location (useful for staging or operator installs).
 
-## Data directory — dev mode (default: shared Documents data)
+## Data directory — dev mode (default: isolated repo data)
 
-When running `python -m desktop.app --dev`, the app uses the same user-visible
-data root as the packaged release app:
+When running `python -m desktop.app --dev`, the app uses the active Vite UI
+source tree, but stores runtime data under the repo-local development directory
+by default:
 
 ```
-%USERPROFILE%\Documents\CVMAnalytics\
+{repo}\data\
 ├── db\
 │   └── cvm_financials.db
 │   └── energy_kpis.db
@@ -55,20 +56,20 @@ data root as the packaged release app:
 └── raw\
 ```
 
-This keeps dev smoke tests aligned with the real large databases used by the
-release app. It avoids testing against a small repo-local database and missing
-performance problems such as large CCEE Plant Parcels caches.
+This keeps dev writes safe. Downloads, refreshes, resets, and experiments do
+not mutate the packaged release data in `%USERPROFILE%\Documents\CVMAnalytics`.
 
-In dev, `desktop.app` sets `CVMANALYTICS_USE_RELEASE_DATA=1` automatically when
-it points at Documents. The Status page shows the shared-data warning and
-destructive bridge actions remain blocked unless explicitly allowed.
+To test against the real release data, set `CVMANALYTICS_USE_RELEASE_DATA=1`
+or use `scripts\release\dev-desktop-release-data.ps1`. In that mode the Status
+page shows the shared-data warning and destructive bridge actions remain
+blocked unless explicitly allowed.
 
-`CVM_DATA_DIR` takes precedence. Set it explicitly when you need a sandbox or
-isolated fixture data.
+`CVM_DATA_DIR` takes precedence. Set it explicitly when you need a custom
+sandbox or fixture data directory.
 
 ## Dev commands
 
-### Default dev (shared Documents data)
+### Default dev (isolated repo data)
 
 ```powershell
 # From repo root
@@ -79,7 +80,21 @@ python -m desktop.app --dev
 .\scripts\release\dev-desktop.ps1 --debug    # opens DevTools
 ```
 
+Data lives in `{repo}\data\`. Writes are enabled.
+
+### Dev with shared release Documents data
+
+```powershell
+.\scripts\release\dev-desktop-release-data.ps1
+```
+
 Data lives in `%USERPROFILE%\Documents\CVMAnalytics\` — same as the release app.
+Writes are blocked by default. To opt in to writes:
+
+```powershell
+$env:CVMANALYTICS_ALLOW_RELEASE_DATA_WRITES = "1"
+.\scripts\release\dev-desktop-release-data.ps1
+```
 
 ### Dev with custom data directory
 
@@ -131,8 +146,8 @@ The Status strip shows **BRIDGE · MOCK** in violet and the Status page shows
 
 | Variable | Default (dev) | Purpose |
 |----------|---------------|---------|
-| `CVM_DATA_DIR` | `%USERPROFILE%\Documents\CVMAnalytics` | Root data directory (all modes); set explicitly for isolated data |
-| `CVMANALYTICS_USE_RELEASE_DATA` | `1` in desktop dev shared-data mode | Marks dev as using the release Documents path |
+| `CVM_DATA_DIR` | `{repo}\data` in desktop dev, `%USERPROFILE%\Documents\CVMAnalytics` in release | Root data directory (all modes); set explicitly for custom data |
+| `CVMANALYTICS_USE_RELEASE_DATA` | — | Set to `1` to point desktop dev at the release Documents path |
 | `CVMANALYTICS_ALLOW_RELEASE_DATA_WRITES` | — | Set to `1` to allow destructive bridge calls in dev+release-data mode (normally blocked) |
 | `CVMANALYTICS_CONCURRENT_LOCK_DETECTED` | — | Set automatically at startup when another process holds the same data directory lock; forces read-only mode |
 | `CVMANALYTICS_DATA_DIR` | — | Override data root for the packaged release app |
@@ -196,7 +211,7 @@ To opt in to writes explicitly:
 
 ```powershell
 $env:CVMANALYTICS_ALLOW_RELEASE_DATA_WRITES = "1"
-.\scripts\release\dev-desktop.ps1
+.\scripts\release\dev-desktop-release-data.ps1
 ```
 
 The release app (packaged, `sys.frozen=True`) is never affected — it always has
@@ -218,23 +233,23 @@ under "Runtime diagnostics". When `CVMANALYTICS_USE_RELEASE_DATA=1` is active:
 
 ## Testing workflows
 
-### Run dev against shared Documents data
+### Run dev against isolated data
 
 ```powershell
 .\scripts\release\dev-desktop.ps1
 ```
 
-Same database as the installed app. Check the Status page to confirm the path.
-Destructive bridge actions are blocked by default in dev shared-data mode.
+Safe for downloads and resets. Data under `{repo}\data\` is not shared with the
+release app.
 
-### Run dev against isolated data
+### Run dev against shared Documents data
 
 ```powershell
-$env:CVM_DATA_DIR = "$PWD\data"
-python -m desktop.app --dev
+.\scripts\release\dev-desktop-release-data.ps1
 ```
 
-Safe for resets. Data under `{repo}/data/` is not shared with the release app.
+Same database as the installed app. Check the Status page to confirm the path.
+Destructive bridge actions are blocked by default in dev shared-data mode.
 
 ### Reset only onboarding state (explicit isolated data)
 

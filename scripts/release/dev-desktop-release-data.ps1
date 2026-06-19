@@ -1,16 +1,15 @@
-# Compatibility wrapper for the default dev desktop workflow.
-# Dev mode now points at the shared Documents data directory by default.
+# Explicit dev desktop workflow against the shared Documents data directory.
 #
 # WARNING: This uses the same database as the installed release app.
 # Destructive actions (database reset, onboarding reset) affect real user data.
 # The Status page will show a warning when this mode is active.
 #
 # Usage:
-#   .\scripts\dev-desktop-release-data.ps1
-#   .\scripts\dev-desktop-release-data.ps1 --debug    # opens DevTools
+#   .\scripts\release\dev-desktop-release-data.ps1
+#   .\scripts\release\dev-desktop-release-data.ps1 --debug    # opens DevTools
 #
 # Data directory: %USERPROFILE%\Documents\CVMAnalytics
-# To use isolated dev data, set CVM_DATA_DIR explicitly before launching.
+# To use isolated dev data, run .\scripts\release\dev-desktop.ps1.
 
 param(
     [switch]$Debug
@@ -23,6 +22,13 @@ Set-Location $repoRoot
 
 $releaseDataDir = Join-Path $env:USERPROFILE "Documents\CVMAnalytics"
 $env:CVMANALYTICS_USE_RELEASE_DATA = "1"
+Remove-Item Env:CVM_DATA_DIR -ErrorAction SilentlyContinue
+Remove-Item Env:CVM_DB_DIR -ErrorAction SilentlyContinue
+Remove-Item Env:SQLITE_PATH -ErrorAction SilentlyContinue
+Remove-Item Env:CVM_NEWS_DB -ErrorAction SilentlyContinue
+Remove-Item Env:CVM_OUTPUT_DIR -ErrorAction SilentlyContinue
+Remove-Item Env:CVM_LOG_DIR -ErrorAction SilentlyContinue
+Remove-Item Env:CVM_CACHE_DIR -ErrorAction SilentlyContinue
 
 $extraArgs = @("--dev")
 if ($Debug) { $extraArgs += "--debug" }

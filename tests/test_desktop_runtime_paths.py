@@ -7,20 +7,42 @@ from unittest.mock import patch
 from desktop import app
 
 
-def test_configure_dev_data_paths_defaults_to_documents_root(
+def test_configure_dev_data_paths_defaults_to_repo_data(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(app.sys, "frozen", False, raising=False)
+    monkeypatch.setattr(app, "_repo_root", lambda: tmp_path)
 
     with patch.dict(environ, {"USERPROFILE": str(tmp_path)}, clear=True):
+        app._configure_bundled_data_paths()
+
+        data_root = tmp_path / "data"
+        assert Path(app.os.environ["CVM_DATA_DIR"]) == data_root
+        assert Path(app.os.environ["CVM_DB_DIR"]) == data_root / "db"
+        assert Path(app.os.environ["SQLITE_PATH"]) == data_root / "db" / "cvm_financials.db"
+        assert Path(app.os.environ["CVM_NEWS_DB"]) == data_root / "db" / "news.db"
+        assert "CVMANALYTICS_USE_RELEASE_DATA" not in app.os.environ
+
+
+def test_configure_dev_data_paths_uses_documents_when_release_data_is_explicit(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(app.sys, "frozen", False, raising=False)
+    monkeypatch.setattr(app, "_repo_root", lambda: tmp_path / "repo")
+
+    with patch.dict(
+        environ,
+        {"USERPROFILE": str(tmp_path), "CVMANALYTICS_USE_RELEASE_DATA": "1"},
+        clear=True,
+    ):
         app._configure_bundled_data_paths()
 
         data_root = tmp_path / "Documents" / "CVMAnalytics"
         assert Path(app.os.environ["CVM_DATA_DIR"]) == data_root
         assert Path(app.os.environ["CVM_DB_DIR"]) == data_root / "db"
         assert Path(app.os.environ["SQLITE_PATH"]) == data_root / "db" / "cvm_financials.db"
-        assert Path(app.os.environ["CVM_NEWS_DB"]) == data_root / "db" / "news.db"
         assert app.os.environ["CVMANALYTICS_USE_RELEASE_DATA"] == "1"
 
 

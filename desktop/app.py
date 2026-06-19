@@ -10,9 +10,11 @@ Uso:
   python -m desktop.app --diagnose-runtime  # write diagnostics log and exit
 
 Dev data path:
-  By default, --dev mode uses the same Documents path as the packaged release
-  app (%USERPROFILE%\\Documents\\CVMAnalytics) for realistic local testing.
-  Set CVM_DATA_DIR=<path> to use an arbitrary or isolated data directory.
+  By default, --dev mode uses isolated repo-local data at <repo>\\data so
+  downloads and other writes are safe while developing. Set
+  CVMANALYTICS_USE_RELEASE_DATA=1 to point dev at the packaged release data
+  root (%USERPROFILE%\\Documents\\CVMAnalytics), which remains read-only unless
+  CVMANALYTICS_ALLOW_RELEASE_DATA_WRITES=1 is also set.
 
 Phase 5B (v0.15.0): the packaged desktop runtime is Vite only. The legacy
 web runtime is no longer bundled. The updater, bundle layout, and user-data
@@ -122,19 +124,21 @@ def _legacy_install_data_root() -> Path | None:
 
 def _configure_bundled_data_paths() -> None:
     if not _bundled():
-        # In dev mode, default to the same Documents path the release app uses
-        # so local smoke tests exercise the real large databases. CVM_DATA_DIR
-        # remains the explicit escape hatch for isolated/sandbox data.
         if not os.environ.get("CVM_DATA_DIR"):
-            user_root = _user_data_root()
-            os.environ.setdefault("CVMANALYTICS_USE_RELEASE_DATA", "1")
-            os.environ["CVM_DATA_DIR"] = str(user_root)
-            os.environ.setdefault("CVM_DB_DIR", str(user_root / "db"))
-            os.environ.setdefault("SQLITE_PATH", str(user_root / "db" / "cvm_financials.db"))
-            os.environ.setdefault("CVM_NEWS_DB", str(user_root / "db" / "news.db"))
-            os.environ.setdefault("CVM_OUTPUT_DIR", str(user_root / "output"))
-            os.environ.setdefault("CVM_LOG_DIR", str(user_root / "logs"))
-            os.environ.setdefault("CVM_CACHE_DIR", str(user_root / "cache"))
+            use_release_data = os.environ.get("CVMANALYTICS_USE_RELEASE_DATA", "").strip().lower() in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }
+            data_root = _user_data_root() if use_release_data else _repo_root() / "data"
+            os.environ["CVM_DATA_DIR"] = str(data_root)
+            os.environ.setdefault("CVM_DB_DIR", str(data_root / "db"))
+            os.environ.setdefault("SQLITE_PATH", str(data_root / "db" / "cvm_financials.db"))
+            os.environ.setdefault("CVM_NEWS_DB", str(data_root / "db" / "news.db"))
+            os.environ.setdefault("CVM_OUTPUT_DIR", str(data_root / "output"))
+            os.environ.setdefault("CVM_LOG_DIR", str(data_root / "logs"))
+            os.environ.setdefault("CVM_CACHE_DIR", str(data_root / "cache"))
         return
 
     user_root = _user_data_root()

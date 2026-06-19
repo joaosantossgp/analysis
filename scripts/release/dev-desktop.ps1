@@ -1,12 +1,12 @@
-# Run the desktop app in dev mode with the shared Documents data root.
-# This is the default dev workflow so local testing matches the release app.
+# Run the desktop app in dev mode with isolated repo-local data.
+# This is the default dev workflow for safe downloads, resets, and experiments.
 #
 # Usage:
-#   .\scripts\dev-desktop.ps1
-#   .\scripts\dev-desktop.ps1 --debug    # opens DevTools
+#   .\scripts\release\dev-desktop.ps1
+#   .\scripts\release\dev-desktop.ps1 --debug    # opens DevTools
 #
-# Data directory: %USERPROFILE%\Documents\CVMAnalytics
-# To use isolated dev data, set CVM_DATA_DIR explicitly before launching.
+# Data directory: <repo>\data
+# To test against release data, use .\scripts\release\dev-desktop-release-data.ps1.
 
 param(
     [switch]$Debug
@@ -17,15 +17,19 @@ $repoRoot = Split-Path -Parent (Split-Path -Parent $scriptDir)
 
 Set-Location $repoRoot
 
-$releaseDataDir = Join-Path $env:USERPROFILE "Documents\CVMAnalytics"
-$env:CVMANALYTICS_USE_RELEASE_DATA = "1"
+$devDataDir = Join-Path $repoRoot "data"
+Remove-Item Env:CVMANALYTICS_USE_RELEASE_DATA -ErrorAction SilentlyContinue
+Remove-Item Env:CVMANALYTICS_ALLOW_RELEASE_DATA_WRITES -ErrorAction SilentlyContinue
+if (-not $env:CVM_DATA_DIR) {
+    $env:CVM_DATA_DIR = $devDataDir
+}
 
 $args = @("--dev")
 if ($Debug) { $args += "--debug" }
 
-Write-Host "[dev-desktop] Starting dev desktop with shared Documents data..." -ForegroundColor Cyan
-Write-Host "[dev-desktop] Data directory: $releaseDataDir" -ForegroundColor DarkCyan
-Write-Host "[dev-desktop] Destructive actions are blocked by default in dev shared-data mode." -ForegroundColor DarkYellow
+Write-Host "[dev-desktop] Starting dev desktop with isolated data..." -ForegroundColor Cyan
+Write-Host "[dev-desktop] Data directory: $env:CVM_DATA_DIR" -ForegroundColor DarkCyan
+Write-Host "[dev-desktop] Writes are enabled for this isolated dev data directory." -ForegroundColor DarkGreen
 Write-Host ""
 
 python -m desktop.app @args
