@@ -11,6 +11,7 @@ from src.companies.gics_manual_mapping import resolve_gics_classification
 from src.companies.universe import ensure_company_universe_tables_for_connection
 from src.companies.coverage import ensure_coverage_tables_for_connection
 from src.financials.excel_mapping import ensure_excel_mapping_tables_for_connection
+from src.financials.marts import ensure_financial_mart_tables_for_connection
 from src.refresh.jobs import ensure_refresh_runtime_tables_for_connection
 from src.energy_kpi.schema import get_energy_kpi_engine
 from src.companies.market_history import ensure_market_history_tables_for_connection
@@ -103,6 +104,7 @@ def init_db_tables(engine: Engine) -> None:
         ensure_coverage_tables_for_connection(conn)
         ensure_excel_mapping_tables_for_connection(conn)
         ensure_market_history_tables_for_connection(conn)
+        ensure_financial_mart_tables_for_connection(conn)
         _ensure_company_columns(conn)
 
     _index_ddl = [

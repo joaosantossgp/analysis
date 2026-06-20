@@ -1,36 +1,61 @@
 # Active Project Map
 
-This is the short source-of-truth map for CVMAnalytics. If another document
-conflicts with this file, inspect the active code paths below before changing
-anything.
+Short source-of-truth map for CVMAnalytics. If another document conflicts with
+this file, inspect the active code paths below before changing anything.
 
 ## Active App
 
-- Frontend: `apps/desktop-web` (Vite + React + TypeScript).
-- Desktop shell: `desktop/app.py` (pywebview window and launch modes).
-- Bridge: `desktop/bridge.py` exposed to React as `window.pywebview.api`.
-- Python core/data layer: `src/` (`read_service`, `query_layer`, database,
-  refresh, scraper, KPI/export logic).
-- Desktop services: `desktop/services.py` for bridge-facing business logic.
-- HTTP API adapter: `apps/api` (FastAPI for API tests/dev-hosted HTTP access,
-  not the desktop frontend).
+| Area | Active path |
+|---|---|
+| Packaged product | `dist/CVMAnalytics/CVMAnalytics.exe` |
+| Frontend | `apps/desktop-web` (Vite + React + TypeScript) |
+| Desktop shell | `desktop/app.py` |
+| Bridge | `desktop/bridge.py` and `desktop/bridge_api/` |
+| Python core/data | `src/` |
+| Bridge services | `desktop/services.py` |
+| HTTP API adapter | `apps/api` (FastAPI tests/dev-hosted access, not desktop UI) |
+| Landing page | `apps/landing` (GitHub Pages/download surface, not product runtime) |
 
-## Active Indicator Surfaces
+## Active Routes
 
-- `apps/desktop-web/src/routes/CountryKpisPage.tsx` is the active desktop
-  Indicators module. The URL remains `/country-kpis` for compatibility, but the
-  UI is organized as `Macroeconomic` and `Sector & Company`.
-- Macroeconomic indicators include country-level Energy Utilities KPIs and
-  Brazilian SIN subsystem KPIs.
-- Sector & Company indicators reuse existing sector/company bridge reads; they
-  are not a separate data layer.
-- SIN module reference: `docs/reference/energy-utilities-sin-kpis.md`.
-- Indicators module reference: `docs/reference/indicators-module.md`.
+Route source: `apps/desktop-web/src/App.tsx`.
+
+- `/`, `/empresas`, `/empresas/:cdCvm`, company statements, model mapping, and
+  company coverage status.
+- `/setores`, sector details, and subsector details.
+- `/coverage`, `/coverage/prioritization`, `/coverage/work-queue`.
+- `/news`, `/news/latest`.
+- `/indicators`.
+- `/settings` with health, storage, sources/imports, updates, coverage, and
+  diagnostics.
+- `/dev/data-ops`.
+
+Compatibility redirects:
+
+- `/atualizar-base` -> `/settings/updates`;
+- `/data-coverage` -> `/settings/coverage`;
+- `/status` -> `/settings/diagnostics`;
+- `/country-kpis` -> `/indicators`;
+- `/empresas/:cdCvm/indicadores` -> `/empresas/:cdCvm`.
+
+## Canonical Docs
+
+| Topic | Doc |
+|---|---|
+| Architecture | `docs/architecture.md` |
+| Data sources | `docs/data-sources.md` |
+| Excel exports | `docs/excel-exports.md` |
+| Development | `docs/development.md` |
+| Build/release/updater | `docs/build-release.md` |
+| Troubleshooting | `docs/troubleshooting.md` |
+| Product workflows | `docs/product-workflows.md` |
+| Full repository map | `docs/reference/repository-map.md` |
+| Agent rules | `AGENTS.md` |
 
 ## Active Commands
 
 ```powershell
-# local no-release desktop dev
+# real desktop dev
 python -m desktop.app --dev
 
 # Vite checks
@@ -46,23 +71,22 @@ pytest apps/api/tests -q
 .\desktop\build_desktop.ps1
 ```
 
-`python -m desktop.app --dev` starts or reuses the Vite dev server at
-`127.0.0.1:5173` and opens the pywebview shell with the real Python bridge.
-
-## Removed Legacy Paths
+## Legacy / Historical
 
 - `apps/web` was the old Next.js app and has been removed from the active tree.
-- `apps/web/next.config.ts`, `apps/web/app/**`, `apps/web/components/**`, and
-  `apps/web/tests/**` are not active development targets.
-- Legacy Next-specific performance guardrails and web-route docs were removed
-  from active docs/scripts.
+- `docs/archive/migration/` is completed migration history, not current
+  operating guidance.
+- ADRs under `docs/decisions/` are point-in-time decision records.
+- Release notes under `docs/releases/` are historical per-version notes; GitHub
+  Releases are the published release source.
 
-## AI Agent Warning
+## Agent Warning
 
+- Verify active runtime from scripts/config before documenting it as fact.
 - Do not create or modify Next.js routes, pages, layouts, API routes, or
   components.
-- Do not infer architecture from `archive/`, `docs/archive/migration/`, release notes,
-  or old ADR context. Those paths can contain historical references.
+- Do not infer current architecture from `archive/`, `docs/archive/migration/`,
+  release notes, or old ADR context.
 - Inspect `apps/desktop-web`, `desktop/`, `src/`, and `apps/api` before changing
   UI/runtime/backend behavior.
 - If a file appears legacy or unused, report it instead of modifying it.

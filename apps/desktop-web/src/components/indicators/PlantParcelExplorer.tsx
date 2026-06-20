@@ -420,13 +420,16 @@ function PlantDetailPanel({
 
   const chartQuery = useQuery({
     queryKey: ["plant-parcel-chart-data", detail?.entity_type, detail?.entity_id, chartFreq, chartMonth],
-    queryFn: () =>
-      fetchPlantParcelChartData({
+    queryFn: () => {
+      const hourlyWindow = chartFreq === "hourly" ? monthDateWindow(chartMonth) : {};
+      return fetchPlantParcelChartData({
         entity_type: detail?.entity_type,
         entity_id: detail?.entity_id ?? "",
         frequency: chartFreq,
         year_month: chartFreq !== "monthly" ? chartMonth : undefined,
-      }),
+        ...hourlyWindow,
+      });
+    },
     enabled: !!detail?.entity_id && (chartFreq === "monthly" || !!chartMonth),
     staleTime: 30_000,
     placeholderData: keepPreviousData,
@@ -699,6 +702,20 @@ function PlantDetailPanel({
       </div>
     </div>
   );
+}
+
+function monthDateWindow(referenceMonth: string) {
+  const [yearValue, monthValue] = referenceMonth.split("-").map((part) => Number(part));
+  if (!Number.isFinite(yearValue) || !Number.isFinite(monthValue) || monthValue < 1 || monthValue > 12) {
+    return {};
+  }
+  const lastDay = new Date(Date.UTC(yearValue, monthValue, 0)).getUTCDate();
+  const month = String(monthValue).padStart(2, "0");
+  return {
+    start_datetime: `${yearValue}-${month}-01T00:00:00`,
+    end_datetime: `${yearValue}-${month}-${String(lastDay).padStart(2, "0")}T23:59:59`,
+    limit: 2000,
+  };
 }
 
 function MethodologyList({ metrics }: { metrics: PlantMetric[] }) {

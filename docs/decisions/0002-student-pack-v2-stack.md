@@ -126,4 +126,4 @@ Correcao factual importante:
 - [GitHub Student Developer Pack](https://education.github.com/pack)
 - [GitHub Codespaces benefit page](https://education.github.com/pack/redeem/github-codespaces)
 - [Appwrite Education](https://appwrite.io/education)
-- [docs/STUDENT_PACK_PLAN.md](../STUDENT_PACK_PLAN.md)
+- `docs/STUDENT_PACK_PLAN.md` (historical input, removed from active docs)

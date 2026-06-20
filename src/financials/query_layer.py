@@ -30,6 +30,7 @@ from sqlalchemy import Engine, inspect, text
 
 from src.platform.db import get_engine
 from src.companies.sector_taxonomy import canonical_sector_sql, gics_sector_bucket_sql
+from src.financials.marts import DIRECTORY_MART_NAME, KPI_ACCOUNT_MART_NAME, PERIOD_MART_NAME
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -153,12 +154,22 @@ def _period_type(label: object) -> str | None:
     return "annual" if parsed[1] is None else "quarter"
 
 
+def _optional_float(value) -> float | None:
+    try:
+        if value is None or _pd().isna(value):
+            return None
+        return float(value)
+    except Exception:
+        return None
+
+
 class CVMQueryLayer:
     """Camada de leitura reutilizavel do banco CVM."""
 
     def __init__(self, engine: Optional[Engine] = None):
         self.engine = engine or get_engine()
         self._company_columns: frozenset[str] | None = None
+        self._mart_ready_cache: dict[str, bool] = {}
 
     def _company_column_names(self) -> frozenset[str]:
         if self._company_columns is None:
@@ -210,6 +221,34 @@ class CVMQueryLayer:
         """Prefer persisted GICS sector label when present for histograms/filters."""
         return gics_sector_bucket_sql(self._company_column_names(), table_alias="c")
 
+    def _is_financial_mart_ready(self, mart_name: str) -> bool:
+        cached = self._mart_ready_cache.get(mart_name)
+        if cached is not None:
+            return cached
+        ready = False
+        try:
+            inspector = inspect(self.engine)
+            if inspector.has_table(mart_name) and inspector.has_table("financial_mart_builds"):
+                with self.engine.connect() as conn:
+                    row = conn.execute(
+                        text("""
+                            SELECT status, row_count
+                            FROM financial_mart_builds
+                            WHERE mart_name = :mart_name
+                            LIMIT 1
+                        """),
+                        {"mart_name": mart_name},
+                    ).mappings().first()
+                ready = bool(row and row["status"] == "success" and int(row["row_count"] or 0) >= 0)
+        except Exception:
+            _logger.debug("financial mart readiness check failed mart=%s", mart_name, exc_info=True)
+            ready = False
+        self._mart_ready_cache[mart_name] = ready
+        return ready
+
+    def clear_financial_mart_readiness_cache(self) -> None:
+        self._mart_ready_cache.clear()
+
     def get_companies(self, search: str = "") -> _pd().DataFrame:
         rows_df, _ = self.get_companies_directory_page(
             search=search,
@@ -237,6 +276,14 @@ class CVMQueryLayer:
         page: int = 1,
         page_size: int | None = 20,
     ) -> tuple[_pd().DataFrame, int]:
+        if self._is_financial_mart_ready(DIRECTORY_MART_NAME):
+            return self._get_companies_directory_page_from_mart(
+                search=search,
+                sector_name=sector_name,
+                page=page,
+                page_size=page_size,
+            )
+
         where_sql, params = self._company_directory_filters(search=search, sector_name=sector_name)
 
         count_sql = text(
@@ -310,6 +357,60 @@ class CVMQueryLayer:
         rows_df = _pd().read_sql(rows_sql, self.engine, params=paged_params)
         return rows_df.reset_index(drop=True), total_items
 
+    def _get_companies_directory_page_from_mart(
+        self,
+        *,
+        search: str = "",
+        sector_name: str | None = None,
+        page: int = 1,
+        page_size: int | None = 20,
+    ) -> tuple[_pd().DataFrame, int]:
+        where_sql, params = self._company_directory_filters(search=search, sector_name=sector_name)
+
+        count_sql = text(
+            f"""
+            SELECT COUNT(*) AS total_items
+            FROM companies c
+            LEFT JOIN {DIRECTORY_MART_NAME} dm ON dm.cd_cvm = c.cd_cvm
+            WHERE {where_sql}
+            """
+        )
+        total_items = int(_pd().read_sql(count_sql, self.engine, params=params).iloc[0]["total_items"])
+
+        paging_sql = ""
+        paged_params = dict(params)
+        if page_size is not None:
+            paging_sql = " LIMIT :limit OFFSET :offset"
+            paged_params["limit"] = int(page_size)
+            paged_params["offset"] = max(0, (int(page) - 1) * int(page_size))
+
+        gics_sql = self._persisted_gics_select_sql()
+        rows_sql = text(
+            f"""
+            SELECT
+                c.cd_cvm,
+                c.company_name,
+                COALESCE(c.ticker_b3, '') AS ticker_b3,
+                c.setor_analitico,
+                c.setor_cvm,
+                {_CANONICAL_SECTOR_SQL} AS sector_name,
+                COALESCE(dm.has_financial_data, 0) AS has_financial_data,
+                c.coverage_rank{gics_sql},
+                COALESCE(dm.financial_row_count, 0) AS total_rows
+            FROM companies c
+            LEFT JOIN {DIRECTORY_MART_NAME} dm ON dm.cd_cvm = c.cd_cvm
+            WHERE {where_sql}
+            ORDER BY
+                CASE WHEN COALESCE(dm.has_financial_data, 0) > 0 THEN 0 ELSE 1 END ASC,
+                CASE WHEN c.coverage_rank IS NULL THEN 1 ELSE 0 END ASC,
+                c.coverage_rank ASC,
+                c.company_name ASC
+            {paging_sql}
+            """
+        )
+        rows_df = _pd().read_sql(rows_sql, self.engine, params=paged_params)
+        return rows_df.reset_index(drop=True), total_items
+
     def get_available_company_sectors(self) -> _pd().DataFrame:
         bucket = self._sector_bucket_expression_sql()
         sql = text(
@@ -333,6 +434,9 @@ class CVMQueryLayer:
         not needed for sorting or display. Avoids a full aggregation over the
         multi-million-row financial_reports table.
         """
+        if self._is_financial_mart_ready(DIRECTORY_MART_NAME):
+            return self._get_companies_directory_light_from_mart()
+
         gics_sql = self._persisted_gics_select_sql()
         sql = text(
             f"""
@@ -365,6 +469,31 @@ class CVMQueryLayer:
                     ) THEN 0
                     ELSE 1
                 END ASC,
+                CASE WHEN c.coverage_rank IS NULL THEN 1 ELSE 0 END ASC,
+                c.coverage_rank ASC,
+                c.company_name ASC
+            """
+        )
+        return _pd().read_sql(sql, self.engine).reset_index(drop=True)
+
+    def _get_companies_directory_light_from_mart(self) -> _pd().DataFrame:
+        gics_sql = self._persisted_gics_select_sql()
+        sql = text(
+            f"""
+            SELECT
+                c.cd_cvm,
+                c.company_name,
+                COALESCE(c.ticker_b3, '') AS ticker_b3,
+                c.setor_analitico,
+                c.setor_cvm,
+                {_CANONICAL_SECTOR_SQL} AS sector_name,
+                0 AS total_rows,
+                COALESCE(dm.has_financial_data, 0) AS has_financial_data,
+                c.coverage_rank{gics_sql}
+            FROM companies c
+            LEFT JOIN {DIRECTORY_MART_NAME} dm ON dm.cd_cvm = c.cd_cvm
+            ORDER BY
+                CASE WHEN COALESCE(dm.has_financial_data, 0) > 0 THEN 0 ELSE 1 END ASC,
                 CASE WHEN c.coverage_rank IS NULL THEN 1 ELSE 0 END ASC,
                 c.coverage_rank ASC,
                 c.company_name ASC
@@ -512,6 +641,14 @@ class CVMQueryLayer:
             "mg_ebit",
             "mg_liq",
         ]
+        if self._is_financial_mart_ready(KPI_ACCOUNT_MART_NAME):
+            return self._get_sector_metric_rows_from_kpi_mart(
+                sector_name=sector_name,
+                years=years,
+                cd_cvms=cd_cvms,
+                result_columns=result_columns,
+            )
+
         where_parts = [
             'fr."PERIOD_LABEL" = CAST(fr."REPORT_YEAR" AS TEXT)',
             'fr."QA_CONFLICT" = false',
@@ -595,6 +732,114 @@ class CVMQueryLayer:
 
         return pivot[result_columns].reset_index(drop=True)
 
+    def _get_sector_metric_rows_from_kpi_mart(
+        self,
+        *,
+        sector_name: str | None,
+        years: list[int] | None,
+        cd_cvms: list[int] | None,
+        result_columns: list[str],
+    ) -> _pd().DataFrame:
+        where_parts = [
+            "kam.period_label = CAST(kam.report_year AS TEXT)",
+            "kam.cd_conta IN ('3.01', '3.05', '3.11', '2.03')",
+        ]
+        params: dict[str, object] = {}
+
+        if sector_name:
+            where_parts.append(f"{_CANONICAL_SECTOR_SQL} = :sector_name")
+            params["sector_name"] = str(sector_name)
+
+        normalized_years = sorted({int(year) for year in years or []})
+        if normalized_years:
+            placeholders = ", ".join(f":y{i}" for i in range(len(normalized_years)))
+            where_parts.append(f"kam.report_year IN ({placeholders})")
+            params.update({f"y{i}": year for i, year in enumerate(normalized_years)})
+
+        normalized_cd_cvms = sorted({int(cd_cvm) for cd_cvm in cd_cvms or []})
+        if cd_cvms is not None and not normalized_cd_cvms:
+            return _pd().DataFrame(columns=result_columns)
+        if normalized_cd_cvms:
+            placeholders = ", ".join(f":cd{i}" for i in range(len(normalized_cd_cvms)))
+            where_parts.append(f"kam.cd_cvm IN ({placeholders})")
+            params.update({f"cd{i}": cd_cvm for i, cd_cvm in enumerate(normalized_cd_cvms)})
+
+        sql = text(
+            f"""
+            SELECT
+                c.cd_cvm,
+                c.company_name,
+                c.ticker_b3,
+                {_CANONICAL_SECTOR_SQL} AS sector_name,
+                kam.report_year,
+                kam.cd_conta,
+                SUM(kam.value) AS account_value
+            FROM {KPI_ACCOUNT_MART_NAME} kam
+            JOIN companies c ON c.cd_cvm = kam.cd_cvm
+            WHERE {' AND '.join(where_parts)}
+            GROUP BY
+                c.cd_cvm,
+                c.company_name,
+                c.ticker_b3,
+                {_CANONICAL_SECTOR_SQL},
+                kam.report_year,
+                kam.cd_conta
+            """
+        )
+        df = _pd().read_sql(sql, self.engine, params=params)
+        return self._sector_metric_rows_from_account_frame(df, result_columns)
+
+    def _sector_metric_rows_from_account_frame(self, df, result_columns: list[str]):
+        if df.empty:
+            return _pd().DataFrame(columns=result_columns)
+
+        pivot = df.pivot_table(
+            index=["cd_cvm", "company_name", "ticker_b3", "sector_name", "report_year"],
+            columns="cd_conta",
+            values="account_value",
+            aggfunc="first",
+        ).reset_index()
+        pivot.columns.name = None
+        pivot = pivot.rename(
+            columns={
+                "3.01": "receita",
+                "3.05": "ebit",
+                "3.11": "lucro_liq",
+                "2.03": "pl",
+            }
+        )
+
+        for column in ("receita", "ebit", "lucro_liq", "pl"):
+            if column not in pivot.columns:
+                pivot[column] = _pd().NA
+
+        receita = _pd().to_numeric(pivot["receita"], errors="coerce")
+        ebit = _pd().to_numeric(pivot["ebit"], errors="coerce")
+        lucro_liq = _pd().to_numeric(pivot["lucro_liq"], errors="coerce")
+        pl = _pd().to_numeric(pivot["pl"], errors="coerce")
+
+        pivot["mg_ebit"] = ebit.divide(receita.where(receita != 0))
+        pivot["mg_liq"] = lucro_liq.divide(receita.where(receita != 0))
+        pivot["roe"] = lucro_liq.divide(pl.where(pl != 0))
+
+        return pivot[result_columns].reset_index(drop=True)
+
+    def get_company_historical_indicator_metrics(self, cd_cvm: int) -> dict[int, dict[str, float | None]]:
+        """Return annual ROE/EBIT margin/net margin metrics by year."""
+        df = self.get_sector_metric_rows(cd_cvms=[int(cd_cvm)])
+        metrics_by_year: dict[int, dict[str, float | None]] = {}
+        if df.empty:
+            return metrics_by_year
+
+        for _, row in df.iterrows():
+            year = int(row["report_year"])
+            metrics_by_year[year] = {
+                "roe": _optional_float(row.get("roe")),
+                "mg_ebit": _optional_float(row.get("mg_ebit")),
+                "mg_liq": _optional_float(row.get("mg_liq")),
+            }
+        return metrics_by_year
+
     @slow_query_warn(threshold_ms=200)
     def get_company_years_map(self, cd_cvms: list[int]) -> dict[int, tuple[int, ...]]:
         """Retorna mapa cd_cvm -> anos com dados anuais completos (DFP).
@@ -608,6 +853,24 @@ class CVMQueryLayer:
             return {}
 
         unique_ids = tuple(sorted({int(cd_cvm) for cd_cvm in cd_cvms}))
+        if self._is_financial_mart_ready(PERIOD_MART_NAME):
+            placeholders = ", ".join(f":cd{i}" for i in range(len(unique_ids)))
+            params = {f"cd{i}": cd_cvm for i, cd_cvm in enumerate(unique_ids)}
+            sql = text(
+                f"""
+                SELECT DISTINCT cd_cvm, report_year
+                FROM {PERIOD_MART_NAME}
+                WHERE cd_cvm IN ({placeholders})
+                  AND period_label = CAST(report_year AS TEXT)
+                ORDER BY cd_cvm, report_year
+                """
+            )
+            df = _pd().read_sql(sql, self.engine, params=params)
+            years_map: dict[int, list[int]] = {int(cd_cvm): [] for cd_cvm in unique_ids}
+            for _, row in df.iterrows():
+                years_map.setdefault(int(row["cd_cvm"]), []).append(int(row["report_year"]))
+            return {cd_cvm: tuple(years) for cd_cvm, years in years_map.items()}
+
         if not inspect(self.engine).has_table("financial_reports"):
             return {int(cd_cvm): () for cd_cvm in unique_ids}
 
@@ -801,6 +1064,12 @@ class CVMQueryLayer:
         return row.iloc[0].to_dict()
 
     def get_company_info_with_read_model_state(self, cd_cvm: int) -> dict:
+        if (
+            self._is_financial_mart_ready(DIRECTORY_MART_NAME)
+            and self._is_financial_mart_ready(PERIOD_MART_NAME)
+        ):
+            return self._get_company_info_with_read_model_state_from_marts(cd_cvm)
+
         inspector = inspect(self.engine)
         has_financial_reports = inspector.has_table("financial_reports")
         has_refresh_status = inspector.has_table("company_refresh_status")
@@ -897,6 +1166,89 @@ class CVMQueryLayer:
         payload.update(self.get_latest_financial_period(cd_cvm))
         return payload
 
+    def _get_company_info_with_read_model_state_from_marts(self, cd_cvm: int) -> dict:
+        inspector = inspect(self.engine)
+        has_refresh_status = inspector.has_table("company_refresh_status")
+        has_status_read_model = False
+        if has_refresh_status:
+            status_columns = {
+                str(column.get("name") or "").lower()
+                for column in inspector.get_columns("company_refresh_status")
+            }
+            has_status_read_model = "read_model_updated_at" in status_columns
+
+        status_join = ""
+        read_model_updated_at = (
+            "CASE WHEN annual.latest_readable_year IS NOT NULL THEN c.updated_at ELSE NULL END"
+        )
+        if has_status_read_model:
+            status_join = """
+            LEFT JOIN company_refresh_status crs ON crs.cd_cvm = c.cd_cvm
+            """
+            read_model_updated_at = (
+                "COALESCE(crs.read_model_updated_at, "
+                "CASE WHEN annual.latest_readable_year IS NOT NULL THEN c.updated_at ELSE NULL END)"
+            )
+
+        cols = self._company_column_names()
+        is_active_sql = "1 AS is_active"
+        if "is_active" in cols:
+            is_active_sql = "COALESCE(c.is_active, 1) AS is_active"
+
+        gics_parts: list[str] = []
+        for col in (
+            "gics_sector",
+            "gics_sector_slug",
+            "gics_industry_group",
+            "gics_industry",
+            "gics_sub_industry",
+        ):
+            if col in cols:
+                gics_parts.append(f"c.{col}")
+        gics_cols_sql = (",\n                " + ",\n                ".join(gics_parts)) if gics_parts else ""
+
+        sql = text(
+            f"""
+            SELECT
+                c.cd_cvm,
+                c.company_name,
+                c.nome_comercial,
+                c.cnpj,
+                c.setor_cvm,
+                c.setor_analitico,
+                {_CANONICAL_SECTOR_SQL} AS sector_name,
+                c.company_type,
+                c.ticker_b3,
+                {is_active_sql},
+                COALESCE(dm.has_financial_data, 0) AS has_local_financial_reports,
+                CASE WHEN annual.latest_readable_year IS NOT NULL THEN 1 ELSE 0 END AS has_readable_current_data,
+                COALESCE(annual.readable_years_count, 0) AS readable_years_count,
+                annual.latest_readable_year AS latest_readable_year,
+                {read_model_updated_at} AS read_model_updated_at{gics_cols_sql}
+            FROM companies c
+            LEFT JOIN {DIRECTORY_MART_NAME} dm ON dm.cd_cvm = c.cd_cvm
+            LEFT JOIN (
+                SELECT
+                    cd_cvm,
+                    COUNT(DISTINCT report_year) AS readable_years_count,
+                    MAX(report_year) AS latest_readable_year
+                FROM {PERIOD_MART_NAME}
+                WHERE cd_cvm = :cd_cvm
+                  AND period_label = CAST(report_year AS TEXT)
+                GROUP BY cd_cvm
+            ) annual ON annual.cd_cvm = c.cd_cvm
+            {status_join}
+            WHERE c.cd_cvm = :cd_cvm
+            LIMIT 1
+            """
+        )
+        row = _pd().read_sql(sql, self.engine, params={"cd_cvm": int(cd_cvm)})
+        if row.empty:
+            return {}
+        payload = row.iloc[0].to_dict()
+        payload.update(self.get_latest_financial_period(cd_cvm))
+        return payload
+
     def get_available_years(self, cd_cvm: int) -> list[int]:
         """Retorna os anos com dados anuais completos (DFP) para a empresa.
 
@@ -907,6 +1259,19 @@ class CVMQueryLayer:
         mais recente do que o ultimo DFP publicado causariam referenceYear sem
         dados no Comparar, exibindo '-' em todas as celulas.
         """
+        if self._is_financial_mart_ready(PERIOD_MART_NAME):
+            sql = text(
+                f"""
+                SELECT DISTINCT report_year
+                FROM {PERIOD_MART_NAME}
+                WHERE cd_cvm = :cd_cvm
+                  AND period_label = CAST(report_year AS TEXT)
+                ORDER BY report_year
+                """
+            )
+            df = _pd().read_sql(sql, self.engine, params={"cd_cvm": int(cd_cvm)})
+            return [int(year) for year in df["report_year"].tolist()]
+
         sql = text(
             """
             SELECT DISTINCT "REPORT_YEAR"
@@ -979,7 +1344,10 @@ class CVMQueryLayer:
         return sorted(periods, key=lambda item: _period_sort_key(item["period_label"]))
 
     def get_latest_financial_period(self, cd_cvm: int) -> dict:
-        complete_periods = self.get_company_complete_periods(cd_cvm)
+        if self._is_financial_mart_ready(PERIOD_MART_NAME):
+            complete_periods = self._get_company_complete_periods_from_mart(cd_cvm)
+        else:
+            complete_periods = self.get_company_complete_periods(cd_cvm)
         latest = complete_periods[-1] if complete_periods else {}
         return {
             "readable_financial_periods_count": len(complete_periods),
@@ -989,6 +1357,40 @@ class CVMQueryLayer:
             "latest_financial_period_year": latest.get("period_year"),
             "latest_financial_period_quarter": latest.get("period_quarter"),
         }
+
+    def _get_company_complete_periods_from_mart(self, cd_cvm: int) -> list[dict]:
+        sql = text(
+            f"""
+            SELECT report_year, period_label, period_type, quarter,
+                   has_bpa + has_bpp + has_dre + has_dfc AS statement_count
+            FROM {PERIOD_MART_NAME}
+            WHERE cd_cvm = :cd_cvm
+              AND is_complete_standard_period = 1
+            """
+        )
+        df = _pd().read_sql(sql, self.engine, params={"cd_cvm": int(cd_cvm)})
+        if df.empty:
+            return []
+
+        periods: list[dict] = []
+        for _, row in df.iterrows():
+            period_label = str(row["period_label"])
+            parsed = _parse_period_label(period_label)
+            if parsed is None:
+                continue
+            year, quarter = parsed
+            periods.append(
+                {
+                    "report_year": int(row["report_year"]),
+                    "period_label": period_label,
+                    "period_display": _period_display_label(period_label),
+                    "period_type": "annual" if quarter is None else "quarter",
+                    "period_year": int(year),
+                    "period_quarter": int(quarter) if quarter is not None else None,
+                    "statement_count": int(row["statement_count"]),
+                }
+            )
+        return sorted(periods, key=lambda item: _period_sort_key(item["period_label"]))
 
     def get_available_export_periods(self, cd_cvm: int) -> dict:
         """Returns exportable periods split into annual DFP years and ITR-only years.
@@ -1118,6 +1520,9 @@ class CVMQueryLayer:
             return _pd().DataFrame()
 
         years_int = [int(year) for year in years]
+        if self._is_financial_mart_ready(KPI_ACCOUNT_MART_NAME):
+            return self._get_kpi_accounts_from_mart(cd_cvm, years_int, annual_only=True)
+
         cd_contas = list(_KPI_ACCOUNTS.values())
         placeholders_y = ", ".join(f":y{i}" for i in range(len(years_int)))
         placeholders_c = ", ".join(f":c{i}" for i in range(len(cd_contas)))
@@ -1160,6 +1565,9 @@ class CVMQueryLayer:
             return _pd().DataFrame()
 
         years_int = [int(year) for year in years]
+        if self._is_financial_mart_ready(KPI_ACCOUNT_MART_NAME):
+            return self._get_kpi_accounts_from_mart(cd_cvm, years_int, annual_only=False)
+
         cd_contas = list(_KPI_ACCOUNTS.values())
         placeholders_y = ", ".join(f":y{i}" for i in range(len(years_int)))
         placeholders_c = ", ".join(f":c{i}" for i in range(len(cd_contas)))
@@ -1194,6 +1602,62 @@ class CVMQueryLayer:
 
         inv_map = {value: key for key, value in _KPI_ACCOUNTS.items()}
         pivot = pivot.rename(columns=inv_map)
+        pivot["_sort"] = pivot["PERIOD_LABEL"].apply(_period_sort_key)
+        return pivot.sort_values("_sort").drop(columns="_sort").reset_index(drop=True)
+
+    def _get_kpi_accounts_from_mart(self, cd_cvm: int, years: list[int], *, annual_only: bool):
+        if not years:
+            return _pd().DataFrame()
+
+        years_int = [int(year) for year in years]
+        cd_contas = list(_KPI_ACCOUNTS.values())
+        placeholders_y = ", ".join(f":y{i}" for i in range(len(years_int)))
+        placeholders_c = ", ".join(f":c{i}" for i in range(len(cd_contas)))
+
+        params: dict = {f"y{i}": year for i, year in enumerate(years_int)}
+        params.update({f"c{i}": conta for i, conta in enumerate(cd_contas)})
+        params["cd_cvm"] = int(cd_cvm)
+        annual_clause = "AND period_label = CAST(report_year AS TEXT)" if annual_only else ""
+
+        sql = text(
+            f"""
+            SELECT report_year AS "REPORT_YEAR",
+                   period_label AS "PERIOD_LABEL",
+                   cd_conta AS "CD_CONTA",
+                   SUM(value) AS "VL_CONTA"
+            FROM {KPI_ACCOUNT_MART_NAME}
+            WHERE cd_cvm = :cd_cvm
+              AND report_year IN ({placeholders_y})
+              AND cd_conta IN ({placeholders_c})
+              {annual_clause}
+            GROUP BY report_year, period_label, cd_conta
+            """
+        )
+
+        df = _pd().read_sql(sql, self.engine, params=params)
+        if df.empty:
+            return _pd().DataFrame()
+
+        if annual_only:
+            pivot = df.pivot_table(
+                index="REPORT_YEAR",
+                columns="CD_CONTA",
+                values="VL_CONTA",
+                aggfunc="first",
+            ).reset_index()
+        else:
+            pivot = df.pivot_table(
+                index=["REPORT_YEAR", "PERIOD_LABEL"],
+                columns="CD_CONTA",
+                values="VL_CONTA",
+                aggfunc="first",
+            ).reset_index()
+        pivot.columns.name = None
+
+        inv_map = {value: key for key, value in _KPI_ACCOUNTS.items()}
+        pivot = pivot.rename(columns=inv_map)
+        if annual_only:
+            return pivot.sort_values("REPORT_YEAR").reset_index(drop=True)
         pivot["_sort"] = pivot["PERIOD_LABEL"].apply(_period_sort_key)
         return pivot.sort_values("_sort").drop(columns="_sort").reset_index(drop=True)
 

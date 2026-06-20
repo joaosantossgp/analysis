@@ -58,7 +58,7 @@ data root as the packaged release app:
 This keeps dev lookups aligned with the real database used by the `.exe`.
 
 In dev, `desktop.app` sets `CVMANALYTICS_USE_RELEASE_DATA=1` automatically when
-it points at Documents. The Status page shows the shared-data warning and
+it points at Documents. Settings -> Diagnostics shows the shared-data warning and
 destructive bridge actions remain blocked unless explicitly allowed.
 
 `CVM_DATA_DIR` takes precedence. Set it explicitly when you need a sandbox or
@@ -123,7 +123,7 @@ of `window.pywebview.api`. The fixture provides:
 production builds (Vite tree-shakes `import.meta.env.DEV === false` paths). A
 runtime guard inside `mock.ts` also throws if somehow loaded in a non-dev build.
 
-The Status strip shows **BRIDGE · MOCK** in violet and the Status page shows
+The Status strip shows **BRIDGE · MOCK** in violet and Settings -> Diagnostics shows
 `Mode: mock (fixture)` in the Runtime card.
 
 ## Environment variables
@@ -178,7 +178,7 @@ starts in **restricted mode**:
 - All destructive bridge methods (`start_data_update`, `reset_local_database`,
   `start_onboarding_setup`, etc.) return `{"ok": false, "status": "blocked"}`.
 - The restriction persists for the lifetime of the process.
-- The Status page shows `Write mode: read-only` and `Lock: locked by another
+- Settings -> Diagnostics shows `Write mode: read-only` and `Lock: locked by another
   process`.
 
 ## Write mode in dev+release-data
@@ -203,7 +203,8 @@ write access regardless of these env vars.
 
 ## Dev diagnostics and safety controls
 
-The **Status page** (`/status`) shows the active data directory and database path
+**Settings -> Diagnostics** (`/settings/diagnostics`; `/status` redirects there)
+shows the active data directory and database path
 under "Runtime diagnostics". When `CVMANALYTICS_USE_RELEASE_DATA=1` is active:
 
 - The **Mode** field shows `vite dev (release data)`.
@@ -223,7 +224,7 @@ under "Runtime diagnostics". When `CVMANALYTICS_USE_RELEASE_DATA=1` is active:
 .\scripts\release\dev-desktop.ps1
 ```
 
-Same database as the installed app. Check the Status page to confirm the path.
+Same database as the installed app. Check Settings -> Diagnostics to confirm the path.
 Destructive bridge actions are blocked by default in dev shared-data mode.
 
 ### Run dev against isolated data
@@ -246,7 +247,132 @@ next start.
 
 ### Verify active data directory
 
-Open the Status page (`/status`) → "Runtime diagnostics" → "Data directory".
+Open Settings -> Diagnostics (`/settings/diagnostics`) -> "Runtime diagnostics" -> "Data directory".
+The same page also includes "Energy KPI Marts", which reports daily/preview
+mart freshness, source high-water marks, and write-mode status without exact
+raw hourly counts.
+
+### Rebuild Energy KPI marts
+
+CCEE hourly plant-parcel data can be much larger than the rest of the local
+database. Daily plant charts and detail previews read rebuildable marts instead
+of aggregating `ccee_plant_parcel_hourly` on demand.
+
+For a targeted month:
+
+```powershell
+python scripts/data/rebuild_energy_marts.py --reference-month 2026-04
+```
+
+To rebuild only the compact source/submarket monthly summary:
+
+```powershell
+python scripts/data/rebuild_energy_marts.py --reference-month 2026-04 --source-submarket-only
+```
+
+From Settings -> Diagnostics, use "Rebuild daily YYYY-MM" to rebuild only the
+latest source month's daily mart plus the source/submarket summary mart. The UI
+action is intentionally scoped and does not expose a one-click full historical
+rebuild.
+
+For a full maintenance rebuild:
+
+```powershell
+python scripts/data/rebuild_energy_marts.py --all
+```
+
+`--all` scans the full hourly table and can be slow on large user databases.
+The daily mart rebuild is chunked by `reference_month` for progress visibility,
+but it is still a maintenance job, not an app-startup path. Benchmark full
+rebuilds on a copied database before running them on a user's live data root.
+The rebuild preserves raw/source tables and records status in
+`energy_mart_builds`.
+
+`plant_parcel_source_submarket_monthly_mart` is a compact diagnostic/filter
+summary at `reference_month + generation_source + submarket` grain. It exists so
+broad source/submarket diagnostics can move away from raw hourly scans before
+any future decision to remove raw-hourly source/submarket indexes.
+
+Current schema initialization does not create the standalone
+`idx_cppe_ref(reference_datetime)` index on `ccee_plant_parcel_hourly`. A copied
+database benchmark in June 2026 showed the primary key can serve standalone date
+lookups and `idx_cppe_parcel_ref` serves guarded drill-down, while removing the
+redundant index frees about 2.22 GB before compaction. A later copied-DB
+benchmark showed `idx_cppe_source` and `idx_cppe_submarket` are no longer used
+by representative app-facing reads after the source/submarket mart cutover, and
+dropping both would free about 2.67 GB of SQLite pages before compaction. Ad hoc
+raw-hourly source/submarket filters would become full scans, so live removal is
+a separate maintenance phase with rollback.
+
+### Rebuild CVM financial marts
+
+CVM financial statement rows remain in `financial_reports` as the audit source
+of truth. Rebuildable query marts provide smaller read models for company
+directory, period-completeness, and KPI-account paths.
+After a successful rebuild, Companies list metadata, available-year lookups,
+Company Detail latest-period metadata, KPI account reads, sector metric rows,
+and historical indicator metrics read these marts by default. Fresh or unbuilt
+profiles keep the canonical raw-query path until mart metadata reports a
+successful rebuild. Depreciation/amortization extraction still reads
+`financial_reports` because it depends on statement-line text matching that is
+not yet represented in the KPI account mart.
+
+For a full maintenance rebuild:
+
+```powershell
+python scripts/data/rebuild_cvm_financial_marts.py
+```
+
+To rebuild only one mart family:
+
+```powershell
+python scripts/data/rebuild_cvm_financial_marts.py --periods-only
+python scripts/data/rebuild_cvm_financial_marts.py --directory-only
+python scripts/data/rebuild_cvm_financial_marts.py --kpi-accounts-only
+```
+
+The rebuild is idempotent, preserves `financial_reports`, and records freshness
+and source coverage in `financial_mart_builds`. The marts are maintenance/read
+models only; Excel export and audit checks should still validate values against
+the canonical financial rows until each read path is explicitly cut over.
+
+A copied-database benchmark in June 2026 showed that, after the mart cutovers,
+the following `financial_reports` indexes were not used by representative hot
+reads and can be considered for a later backup-and-compact maintenance flow:
+`idx_fr_cd_cvm`, `idx_fr_period_label`, `idx_fr_cd_conta`,
+`idx_fr_cd_cvm_period_label`, `idx_fr_cd_conta_period_label`, and
+`idx_fr_year_period`. Dropping them on the copy freed 40,770 SQLite pages and a
+`VACUUM INTO` compact copy was about 297 MB versus the 480 MB source copy. Keep
+`idx_fr_cd_cvm_stmt_year` and `idx_fr_cvm_year` for now; statement and export
+period reads still depend on them. Do not drop these indexes on the live DB
+without a timestamped backup, copied-DB equality checks, compact-copy quick
+check, and packaged runtime smoke test.
+
+### Compact Energy KPI database copy
+
+After removing rebuildable indexes or caches, SQLite may show free pages without
+shrinking the physical `.db` file. Create a compact validated copy with:
+
+```powershell
+python scripts/data/compact_energy_db.py `
+  --database "$env:USERPROFILE\Documents\CVMAnalytics\db\energy_kpis.db" `
+  --output "$env:USERPROFILE\Documents\CVMAnalytics\db\energy_kpis.compact.db"
+```
+
+The command uses SQLite `VACUUM INTO`, validates the compact copy with practical
+read-only checks, and does not replace the live database. It exact-counts compact
+mart/metadata tables and uses fast high-water checks for
+`ccee_plant_parcel_hourly` by default. Add `--exact-hourly-count` only for
+planned maintenance windows because it can scan the full hourly table. Add
+`--full-integrity-check` only when a long SQLite `PRAGMA integrity_check` window
+is acceptable. If `--database` is omitted, the script prefers
+`%USERPROFILE%\Documents\CVMAnalytics\db\energy_kpis.db` when it exists, then
+falls back to the configured development data path.
+
+Do not swap the compact copy into the live data root while CVMAnalytics is
+running. A future replacement flow must create a timestamped backup, verify the
+copy, stop app processes, replace the database atomically, keep rollback
+instructions, and run the packaged runtime smoke test.
 
 ### Reload UI
 
@@ -255,7 +381,7 @@ Press F5 inside the pywebview window while running `--dev`.
 ## Known limitations
 
 - **Browser-only preview** (`npm run dev` in `apps/desktop-web`) has no bridge.
-  All `window.pywebview.api` calls fail. The Status page shows a browser fallback
+  All `window.pywebview.api` calls fail. Settings -> Diagnostics shows a browser fallback
   banner. Use `npm run dev:mock` for fixture-backed UI development, or
   `python -m desktop.app --dev` for realistic testing.
 - `CVMANALYTICS_USE_RELEASE_DATA` does not copy or migrate data — it just points

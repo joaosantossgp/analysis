@@ -25,7 +25,10 @@ import type {
   PlantParcelManualImportParams,
   PlantParcelManualImportResult,
   PlantParcelChartDataParams,
-  PlantParcelChartDataResponse
+  PlantParcelChartDataResponse,
+  EnergyMartStatusResponse,
+  EnergyMartRebuildState,
+  StartEnergyMartRebuildParams
 } from "./types.energy";
 
 import type {
@@ -164,7 +167,11 @@ export type {
   PlantParcelManualImportResult,
   PlantParcelChartDataParams,
   PlantParcelChartSeries,
-  PlantParcelChartDataResponse
+  PlantParcelChartDataResponse,
+  EnergyMartBuildStatus,
+  EnergyMartRebuildState,
+  EnergyMartStatusResponse,
+  StartEnergyMartRebuildParams
 } from "./types.energy";
 
 // Mirror of the Python bridge surface in desktop/bridge.py.
@@ -1525,6 +1532,8 @@ export interface BridgeApi {
   get_sin_kpi_series(params?: SINKPISeriesParams): Promise<SINKPISeriesResponse>;
   get_sin_kpi_health(params?: Record<string, unknown>): Promise<SINKPIHealthResponse>;
   refresh_sin_kpis(params?: SINKPIRefreshParams): Promise<SINKPIRefreshResult>;
+  get_energy_mart_status(params?: Record<string, unknown>): Promise<EnergyMartStatusResponse>;
+  start_energy_mart_rebuild(params: StartEnergyMartRebuildParams): Promise<EnergyMartRebuildState>;
   get_plant_parcel_source_statuses(params?: Record<string, unknown>): Promise<PlantParcelSourceStatusResponse>;
   get_plant_parcel_catalog(params?: PlantParcelCatalogParams): Promise<PlantParcelCatalogResponse>;
   get_plant_parcel_detail(params: PlantParcelDetailParams): Promise<PlantParcelDetailResponse>;
@@ -1610,6 +1619,8 @@ export interface BridgeApi {
   get_sin_kpi_series(params?: SINKPISeriesParams): Promise<SINKPISeriesResponse>;
   get_sin_kpi_health(params?: Record<string, unknown>): Promise<SINKPIHealthResponse>;
   refresh_sin_kpis(params?: SINKPIRefreshParams): Promise<SINKPIRefreshResult>;
+  get_energy_mart_status(params?: Record<string, unknown>): Promise<EnergyMartStatusResponse>;
+  start_energy_mart_rebuild(params: StartEnergyMartRebuildParams): Promise<EnergyMartRebuildState>;
   get_plant_parcel_source_statuses(params?: Record<string, unknown>): Promise<PlantParcelSourceStatusResponse>;
   get_plant_parcel_catalog(params?: PlantParcelCatalogParams): Promise<PlantParcelCatalogResponse>;
   get_plant_parcel_detail(params: PlantParcelDetailParams): Promise<PlantParcelDetailResponse>;

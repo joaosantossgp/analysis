@@ -249,6 +249,7 @@ export interface PlantParcelSourceStatusResponse {
   refresh_finished_at?: string | null;
   database_path?: string;
   raw_data_dir?: string;
+  mart_status?: Record<string, Record<string, unknown>>;
   error?: string;
 }
 
@@ -336,6 +337,7 @@ export interface PlantParcelDetailResponse {
   metadata: {
     caveats: string[];
     latest_refresh_by_source: Record<string, Record<string, unknown>>;
+    plant_hourly_marts?: Record<string, Record<string, unknown>>;
   };
   error?: string;
 }
@@ -416,6 +418,9 @@ export interface PlantParcelChartDataParams {
   entity_type?: string;
   frequency: "monthly" | "daily" | "hourly";
   year_month?: string;
+  start_datetime?: string;
+  end_datetime?: string;
+  limit?: number;
 }
 
 export interface PlantParcelChartSeries {
@@ -435,5 +440,78 @@ export interface PlantParcelChartDataResponse {
   frequency: string;
   entity_type: string;
   entity_id: string;
+  metadata?: {
+    data_source?: string;
+    reference_month?: string;
+    guardrails?: Record<string, unknown>;
+    mart_status?: Record<string, Record<string, unknown>>;
+  };
   error?: string;
+}
+
+export interface EnergyMartBuildStatus {
+  mart_name?: string;
+  build_version?: string | null;
+  rebuilt_at?: string | null;
+  source_table?: string | null;
+  source_row_estimate?: number | null;
+  source_max_rowid?: number | null;
+  source_latest_reference?: string | null;
+  period_start?: string | null;
+  period_end?: string | null;
+  row_count?: number | null;
+  status?: string | null;
+  error_message?: string | null;
+  metadata_json?: string | null;
+  row_count_current?: number | null;
+  period_start_current?: string | null;
+  period_end_current?: string | null;
+  period_count_current?: number | null;
+  parcel_count_current?: number | null;
+  generation_source_count_current?: number | null;
+  submarket_count_current?: number | null;
+  grouped_parcel_count_current?: number | null;
+  source_observations_current?: number | null;
+  is_current_for_latest_source_month?: boolean;
+}
+
+export interface EnergyMartRebuildState {
+  status: "idle" | "running" | "success" | "error" | "already_running" | "blocked" | string;
+  error?: string | null;
+  rebuild_id?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  reference_months?: string[] | null;
+  rebuild_daily?: boolean;
+  rebuild_preview?: boolean;
+  rebuild_source_submarket?: boolean;
+  result?: Record<string, unknown> | null;
+}
+
+export interface EnergyMartStatusResponse {
+  db_path?: string;
+  db_size_bytes?: number;
+  source?: {
+    table?: string;
+    row_estimate?: number | null;
+    max_rowid?: number | null;
+    latest_reference?: string | null;
+    latest_reference_month?: string | null;
+    count_method?: string;
+  };
+  marts?: Record<string, EnergyMartBuildStatus>;
+  recommended_daily_rebuild_month?: string | null;
+  notes?: string[];
+  rebuild?: EnergyMartRebuildState;
+  write_mode?: "read-write" | "read-only" | string;
+  error?: string;
+}
+
+export interface StartEnergyMartRebuildParams {
+  reference_month?: string;
+  all?: boolean;
+  confirm?: string;
+  rebuild_daily?: boolean;
+  rebuild_preview?: boolean;
+  rebuild_source_submarket?: boolean;
 }

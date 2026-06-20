@@ -33,6 +33,7 @@ from src.energy_kpi.plant_parcel_ingest import (
     SOURCE_CCEE_HOURLY,
     SOURCE_CCEE_MONTHLY,
 )
+from src.energy_kpi.plant_marts import get_plant_hourly_mart_status
 from src.energy_kpi.schema import get_energy_kpi_engine
 from src.energy_kpi.sin_catalog import SIN_KPI_CATALOG
 from src.platform.settings import AppSettings
@@ -69,6 +70,191 @@ class EnergyKPIReadService:
 
     def _engine(self):
         return get_energy_kpi_engine(self._settings)
+
+    def get_energy_mart_status(self) -> dict[str, Any]:
+        """Return lightweight Energy mart maintenance status.
+
+        This intentionally avoids exact counts on the raw hourly fact table.
+        Mart row counts are acceptable here because the marts are compact
+        relative to the raw CCEE hourly table and are meant for diagnostics.
+        """
+        db_path = self._settings.paths.energy_kpi_db_path
+        with self._engine().connect() as conn:
+            mart_status = get_plant_hourly_mart_status(conn)
+            source_max_rowid = int(
+                conn.execute(text("SELECT MAX(rowid) FROM ccee_plant_parcel_hourly")).scalar()
+                or 0
+            )
+            source_latest_reference = conn.execute(
+                text("SELECT MAX(reference_datetime) FROM ccee_plant_parcel_hourly")
+            ).scalar()
+            daily_rows = int(
+                conn.execute(text("SELECT COUNT(*) FROM plant_parcel_daily_generation_mart")).scalar()
+                or 0
+            )
+            preview_rows = int(
+                conn.execute(text("SELECT COUNT(*) FROM plant_parcel_hourly_preview_mart")).scalar()
+                or 0
+            )
+            daily_coverage = conn.execute(text("""
+                SELECT MIN(reference_month) AS period_start,
+                       MAX(reference_month) AS period_end,
+                       COUNT(DISTINCT reference_month) AS period_count,
+                       COUNT(DISTINCT plant_parcel_code) AS parcel_count,
+                       SUM(hourly_observations) AS source_observations
+                FROM plant_parcel_daily_generation_mart
+            """)).mappings().first() or {}
+            preview_coverage = conn.execute(text("""
+                SELECT MIN(reference_month) AS period_start,
+                       MAX(reference_month) AS period_end,
+                       COUNT(DISTINCT plant_parcel_code) AS parcel_count
+                FROM plant_parcel_hourly_preview_mart
+            """)).mappings().first() or {}
+            source_submarket_rows = int(
+                conn.execute(text("SELECT COUNT(*) FROM plant_parcel_source_submarket_monthly_mart")).scalar()
+                or 0
+            )
+            source_submarket_coverage = conn.execute(text("""
+                SELECT MIN(reference_month) AS period_start,
+                       MAX(reference_month) AS period_end,
+                       COUNT(DISTINCT reference_month) AS period_count,
+                       COUNT(DISTINCT generation_source) AS generation_source_count,
+                       COUNT(DISTINCT submarket) AS submarket_count,
+                       SUM(plant_parcel_count) AS grouped_parcel_count,
+                       SUM(hourly_observations) AS source_observations
+                FROM plant_parcel_source_submarket_monthly_mart
+            """)).mappings().first() or {}
+
+        source_latest_month = str(source_latest_reference)[:7] if source_latest_reference else None
+        daily_build = dict(mart_status.get("plant_parcel_daily_generation_mart") or {})
+        preview_build = dict(mart_status.get("plant_parcel_hourly_preview_mart") or {})
+        daily_period_end = daily_coverage.get("period_end")
+        is_daily_current = bool(source_latest_month and daily_period_end and str(daily_period_end) >= source_latest_month)
+        return {
+            "db_path": str(db_path),
+            "db_size_bytes": db_path.stat().st_size if db_path.exists() else 0,
+            "source": {
+                "table": "ccee_plant_parcel_hourly",
+                "row_estimate": source_max_rowid,
+                "max_rowid": source_max_rowid,
+                "latest_reference": source_latest_reference,
+                "latest_reference_month": source_latest_month,
+                "count_method": "MAX(rowid)",
+            },
+            "marts": {
+                "plant_parcel_daily_generation_mart": {
+                    **daily_build,
+                    "row_count_current": daily_rows,
+                    "period_start_current": daily_coverage.get("period_start"),
+                    "period_end_current": daily_period_end,
+                    "period_count_current": int(daily_coverage.get("period_count") or 0),
+                    "parcel_count_current": int(daily_coverage.get("parcel_count") or 0),
+                    "source_observations_current": int(daily_coverage.get("source_observations") or 0),
+                    "is_current_for_latest_source_month": is_daily_current,
+                },
+                "plant_parcel_hourly_preview_mart": {
+                    **preview_build,
+                    "row_count_current": preview_rows,
+                    "period_start_current": preview_coverage.get("period_start"),
+                    "period_end_current": preview_coverage.get("period_end"),
+                    "parcel_count_current": int(preview_coverage.get("parcel_count") or 0),
+                },
+                "plant_parcel_source_submarket_monthly_mart": {
+                    **dict(mart_status.get("plant_parcel_source_submarket_monthly_mart") or {}),
+                    "row_count_current": source_submarket_rows,
+                    "period_start_current": source_submarket_coverage.get("period_start"),
+                    "period_end_current": source_submarket_coverage.get("period_end"),
+                    "period_count_current": int(source_submarket_coverage.get("period_count") or 0),
+                    "generation_source_count_current": int(source_submarket_coverage.get("generation_source_count") or 0),
+                    "submarket_count_current": int(source_submarket_coverage.get("submarket_count") or 0),
+                    "grouped_parcel_count_current": int(source_submarket_coverage.get("grouped_parcel_count") or 0),
+                    "source_observations_current": int(source_submarket_coverage.get("source_observations") or 0),
+                },
+            },
+            "recommended_daily_rebuild_month": source_latest_month,
+            "notes": [
+                "Raw hourly row count is estimated with MAX(rowid); exact COUNT(*) is intentionally avoided.",
+                "Daily marts are rebuildable from ccee_plant_parcel_hourly and do not replace raw/source facts.",
+            ],
+        }
+
+    def get_plant_parcel_source_submarket_summary(
+        self,
+        *,
+        reference_month: str | None = None,
+        generation_source: str | None = None,
+        submarket: str | None = None,
+        limit: int = 500,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """Return compact source/submarket monthly summaries from the mart."""
+        conditions: list[str] = []
+        params: dict[str, Any] = {}
+        if reference_month:
+            params["reference_month"] = str(reference_month).strip()
+            conditions.append("reference_month = :reference_month")
+        if generation_source:
+            params["generation_source"] = str(generation_source).strip()
+            conditions.append("generation_source = :generation_source")
+        if submarket:
+            params["submarket"] = str(submarket).strip()
+            conditions.append("submarket = :submarket")
+        bounded_limit = max(1, min(int(limit or 500), 1000))
+        bounded_offset = max(0, int(offset or 0))
+        params.update({"limit": bounded_limit, "offset": bounded_offset})
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+
+        with self._engine().connect() as conn:
+            rows = conn.execute(text(f"""
+                SELECT reference_month, generation_source, submarket,
+                       plant_parcel_count, hourly_observations,
+                       generation_mwh, verified_generation_mwh,
+                       first_reference_datetime, last_reference_datetime,
+                       source_dataset, first_snapshot_id, last_snapshot_id,
+                       rebuilt_at, build_version
+                FROM plant_parcel_source_submarket_monthly_mart
+                {where}
+                ORDER BY reference_month DESC, hourly_observations DESC,
+                         generation_source, submarket
+                LIMIT :limit OFFSET :offset
+            """), params).mappings().all()
+            total = int(conn.execute(text(f"""
+                SELECT COUNT(*)
+                FROM plant_parcel_source_submarket_monthly_mart
+                {where}
+            """), params).scalar() or 0)
+            coverage = conn.execute(text(f"""
+                SELECT MIN(reference_month) AS period_start,
+                       MAX(reference_month) AS period_end,
+                       COUNT(DISTINCT reference_month) AS period_count,
+                       COUNT(DISTINCT generation_source) AS generation_source_count,
+                       COUNT(DISTINCT submarket) AS submarket_count,
+                       SUM(hourly_observations) AS source_observations
+                FROM plant_parcel_source_submarket_monthly_mart
+                {where}
+            """), params).mappings().first() or {}
+
+        return {
+            "records": [dict(row) for row in rows],
+            "count": len(rows),
+            "total": total,
+            "limit": bounded_limit,
+            "offset": bounded_offset,
+            "filters": {
+                "reference_month": reference_month,
+                "generation_source": generation_source,
+                "submarket": submarket,
+            },
+            "data_source": "plant_parcel_source_submarket_monthly_mart",
+            "coverage": {
+                "period_start": coverage.get("period_start"),
+                "period_end": coverage.get("period_end"),
+                "period_count": int(coverage.get("period_count") or 0),
+                "generation_source_count": int(coverage.get("generation_source_count") or 0),
+                "submarket_count": int(coverage.get("submarket_count") or 0),
+                "source_observations": int(coverage.get("source_observations") or 0),
+            },
+        }
 
     # ── Catalog ───────────────────────────────────────────────────────────────
 
@@ -480,6 +666,7 @@ class EnergyKPIReadService:
                     "records": self._fast_ccee_hourly_record_count(conn, latest_logs.get(SOURCE_CCEE_HOURLY, {})),
                     "latest_reference": conn.execute(text("SELECT MAX(reference_datetime) FROM ccee_plant_parcel_hourly")).scalar(),
                 }
+            plant_hourly_mart_status = get_plant_hourly_mart_status(conn)
 
         statuses: list[dict[str, Any]] = []
         for row in source_rows:
@@ -543,6 +730,7 @@ class EnergyKPIReadService:
             "count": len(statuses),
             "database_path": str(self._settings.paths.energy_kpi_db_path),
             "raw_data_dir": str(self._settings.paths.energy_kpi_raw_dir),
+            "mart_status": plant_hourly_mart_status,
         }
 
     def get_plant_parcel_catalog(
@@ -735,7 +923,7 @@ class EnergyKPIReadService:
                     SELECT reference_datetime, commercialization_period,
                            generation_center_of_gravity_mwh, verified_generation_ons_mwh,
                            verified_availability_mwh, unavailability_mwh, source_dataset, snapshot_id
-                    FROM ccee_plant_parcel_hourly
+                    FROM plant_parcel_hourly_preview_mart
                     WHERE plant_parcel_code = :entity_id
                     ORDER BY reference_datetime DESC, commercialization_period DESC
                     LIMIT 48
@@ -773,6 +961,7 @@ class EnergyKPIReadService:
                      AND x.started_at = l.started_at
                 """)).mappings().all()
             }
+            plant_hourly_marts = get_plant_hourly_mart_status(conn)
 
         metrics = self._build_plant_metrics(
             entity_type=resolved_type,
@@ -800,6 +989,7 @@ class EnergyKPIReadService:
                     "Energia firme, energia assegurada, and gross/net generation are not inferred without an explicit source methodology.",
                 ],
                 "latest_refresh_by_source": latest_logs,
+                "plant_hourly_marts": plant_hourly_marts,
             },
         }
 
@@ -1236,6 +1426,9 @@ class EnergyKPIReadService:
         entity_type: str | None = None,
         frequency: str,
         year_month: str | None = None,
+        start_datetime: str | None = None,
+        end_datetime: str | None = None,
+        limit: int | None = None,
     ) -> dict[str, Any]:
         """Query and return chart-ready historical data for selected plant/parcel."""
         entity_id = str(entity_id or "").strip()
@@ -1247,6 +1440,8 @@ class EnergyKPIReadService:
 
             periods: list[str] = []
             series_data: dict[str, dict[str, Any]] = {}
+            data_source = "unknown"
+            guardrails: dict[str, Any] = {}
 
             def init_series(name: str, label: str, unit: str, axis: str, chart_type: str = "line", color: str = "") -> None:
                 series_data[name] = {
@@ -1261,6 +1456,7 @@ class EnergyKPIReadService:
                 }
 
             if frequency == "monthly":
+                data_source = "ccee_plant_parcel_monthly"
                 init_series("generation_mwmed", "Generation (MWmed)", "number", "left", "line")
                 init_series("generation_gwh", "Generation (GWh)", "number", "left", "line")
                 init_series("capacity_mw", "Capacity (MW)", "number", "right", "line")
@@ -1335,36 +1531,53 @@ class EnergyKPIReadService:
                 cap_mw = conn.execute(text(cap_sql), {"entity_id": entity_id}).scalar() or 0.0
 
                 if frequency == "daily":
+                    data_source = "plant_parcel_daily_generation_mart"
                     if resolved_type == "aneel_plant":
                         sql = """
                             SELECT 
-                                date(h.reference_datetime) AS reference_date,
-                                SUM(h.generation_center_of_gravity_mwh) AS generation_mwh,
-                                SUM(h.verified_generation_ons_mwh) AS verified_generation_mwh,
-                                SUM(h.verified_availability_mwh) AS verified_availability_mwh,
-                                SUM(h.unavailability_mwh) AS unavailability_mwh
-                            FROM ccee_plant_parcel_hourly h
-                            JOIN ccee_plant_parcels p ON p.plant_parcel_code = h.plant_parcel_code
+                                d.reference_date,
+                                SUM(d.generation_mwh) AS generation_mwh,
+                                SUM(d.verified_generation_mwh) AS verified_generation_mwh,
+                                SUM(d.verified_availability_mwh) AS verified_availability_mwh,
+                                SUM(d.unavailability_mwh) AS unavailability_mwh
+                            FROM plant_parcel_daily_generation_mart d
+                            JOIN ccee_plant_parcels p ON p.plant_parcel_code = d.plant_parcel_code
                             WHERE p.ceg = :entity_id
-                              AND h.reference_month = :year_month
-                            GROUP BY date(h.reference_datetime)
-                            ORDER BY reference_date ASC
+                              AND d.reference_month = :year_month
+                            GROUP BY d.reference_date
+                            ORDER BY d.reference_date ASC
                         """
                     else:
                         sql = """
                             SELECT 
-                                date(reference_datetime) AS reference_date,
-                                SUM(generation_center_of_gravity_mwh) AS generation_mwh,
-                                SUM(verified_generation_ons_mwh) AS verified_generation_mwh,
-                                SUM(verified_availability_mwh) AS verified_availability_mwh,
-                                SUM(unavailability_mwh) AS unavailability_mwh
-                            FROM ccee_plant_parcel_hourly
+                                reference_date,
+                                generation_mwh,
+                                verified_generation_mwh,
+                                verified_availability_mwh,
+                                unavailability_mwh
+                            FROM plant_parcel_daily_generation_mart
                             WHERE plant_parcel_code = :entity_id
                               AND reference_month = :year_month
-                            GROUP BY date(reference_datetime)
                             ORDER BY reference_date ASC
                         """
                     rows = conn.execute(text(sql), {"entity_id": entity_id, "year_month": year_month_val}).mappings().all()
+                    if not rows:
+                        return {
+                            "error": (
+                                "Daily hourly mart has no rows for this entity/month. "
+                                "Rebuild energy marts before requesting daily CCEE charts."
+                            ),
+                            "series": [],
+                            "periods": [],
+                            "frequency": frequency,
+                            "entity_type": resolved_type,
+                            "entity_id": entity_id,
+                            "metadata": {
+                                "data_source": data_source,
+                                "reference_month": year_month_val,
+                                "mart_status": get_plant_hourly_mart_status(conn),
+                            },
+                        }
                     for row in rows:
                         ref = row["reference_date"]
                         periods.append(ref)
@@ -1382,6 +1595,57 @@ class EnergyKPIReadService:
                         series_data["unavailability_mwh"]["points"].append(unavail)
                         series_data["capacity_factor_pct"]["points"].append(cf_pct)
                 else: # hourly
+                    data_source = "ccee_plant_parcel_hourly"
+                    start_value = str(start_datetime or "").strip()
+                    end_value = str(end_datetime or "").strip()
+                    if not start_value or not end_value:
+                        return {
+                            "error": "Hourly drill-down requires explicit start_datetime and end_datetime.",
+                            "series": [],
+                            "periods": [],
+                            "frequency": frequency,
+                            "entity_type": resolved_type,
+                            "entity_id": entity_id,
+                            "metadata": {
+                                "data_source": data_source,
+                                "guardrails": {
+                                    "requires_entity_id": True,
+                                    "requires_reference_month": True,
+                                    "requires_start_datetime": True,
+                                    "requires_end_datetime": True,
+                                    "max_window_days": 31,
+                                },
+                            },
+                        }
+                    window_days = _datetime_window_days(start_value, end_value)
+                    if window_days is None or window_days < 0 or window_days > 31:
+                        return {
+                            "error": "Hourly drill-down date window must be valid and at most 31 days.",
+                            "series": [],
+                            "periods": [],
+                            "frequency": frequency,
+                            "entity_type": resolved_type,
+                            "entity_id": entity_id,
+                            "metadata": {
+                                "data_source": data_source,
+                                "guardrails": {
+                                    "requires_entity_id": True,
+                                    "requires_reference_month": True,
+                                    "requires_start_datetime": True,
+                                    "requires_end_datetime": True,
+                                    "max_window_days": 31,
+                                },
+                            },
+                        }
+                    row_limit = max(1, min(int(limit or 2000), 5000))
+                    guardrails = {
+                        "requires_entity_id": True,
+                        "requires_reference_month": True,
+                        "requires_start_datetime": True,
+                        "requires_end_datetime": True,
+                        "max_window_days": 31,
+                        "limit": row_limit,
+                    }
                     if resolved_type == "aneel_plant":
                         sql = """
                             SELECT 
@@ -1395,8 +1659,11 @@ class EnergyKPIReadService:
                             JOIN ccee_plant_parcels p ON p.plant_parcel_code = h.plant_parcel_code
                             WHERE p.ceg = :entity_id
                               AND h.reference_month = :year_month
+                              AND h.reference_datetime >= :start_datetime
+                              AND h.reference_datetime <= :end_datetime
                             GROUP BY h.reference_datetime, h.commercialization_period
                             ORDER BY h.reference_datetime ASC, h.commercialization_period ASC
+                            LIMIT :limit
                         """
                     else:
                         sql = """
@@ -1410,9 +1677,21 @@ class EnergyKPIReadService:
                             FROM ccee_plant_parcel_hourly
                             WHERE plant_parcel_code = :entity_id
                               AND reference_month = :year_month
+                              AND reference_datetime >= :start_datetime
+                              AND reference_datetime <= :end_datetime
                             ORDER BY reference_datetime ASC, commercialization_period ASC
+                            LIMIT :limit
                         """
-                    rows = conn.execute(text(sql), {"entity_id": entity_id, "year_month": year_month_val}).mappings().all()
+                    rows = conn.execute(
+                        text(sql),
+                        {
+                            "entity_id": entity_id,
+                            "year_month": year_month_val,
+                            "start_datetime": start_value,
+                            "end_datetime": end_value,
+                            "limit": row_limit,
+                        },
+                    ).mappings().all()
                     for row in rows:
                         dt = row["reference_datetime"]
                         p = row["commercialization_period"]
@@ -1441,6 +1720,11 @@ class EnergyKPIReadService:
                 "frequency": frequency,
                 "entity_type": resolved_type,
                 "entity_id": entity_id,
+                "metadata": {
+                    "data_source": data_source,
+                    "guardrails": guardrails,
+                    "mart_status": get_plant_hourly_mart_status(conn),
+                },
             }
 
 
@@ -1452,6 +1736,15 @@ def _kw_to_mw(value: Any) -> float | None:
         return float(value) / 1000.0
     except (TypeError, ValueError):
         return None
+
+
+def _datetime_window_days(start_datetime: str, end_datetime: str) -> int | None:
+    try:
+        start = datetime.fromisoformat(str(start_datetime).replace("Z", "+00:00"))
+        end = datetime.fromisoformat(str(end_datetime).replace("Z", "+00:00"))
+    except Exception:
+        return None
+    return (end.date() - start.date()).days + 1
 
 
 def _normalize_search_text(value: Any) -> str:

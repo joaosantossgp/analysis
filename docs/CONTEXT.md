@@ -1,7 +1,10 @@
 # CONTEXT.md - CVM Reports Capture
 
-> Referencia tecnica: regras de negocio, pipeline, arquitetura e troubleshooting.
-> Para regras operacionais e convencoes de agentes, veja `AGENTS.md` na raiz.
+> Referencia tecnica para regras de negocio e pipeline financeiro em `src/` e
+> `apps/api`. Para arquitetura runtime, fontes, Excel, desenvolvimento e release,
+> veja `docs/architecture.md`, `docs/data-sources.md`,
+> `docs/excel-exports.md`, `docs/development.md` e `docs/build-release.md`.
+> Para regras operacionais de agentes, veja `AGENTS.md` na raiz.
 
 ---
 
@@ -29,7 +32,9 @@ Extrai demonstracoes financeiras historicas de companhias listadas na CVM, organ
 
 ## 3. Regras de negocio essenciais
 
-- Output gera abas **BPA**, **BPP**, **DRE** e **DFC**.
+- O pipeline financeiro preserva demonstracoes **BPA**, **BPP**, **DRE** e
+  **DFC**. O Excel analitico atual expoe uma aba `Model` e mantem as
+  demonstracoes completas em abas `raw_*` ocultas; veja `docs/excel-exports.md`.
 - Linhas identificadas por `LINE_ID_BASE` estavel - sempre usa `CD_CONTA` quando disponivel; chave sintetica deterministica quando nao.
 - `DS_CONTA_norm` obrigatorio em todas as abas: lower, remocao de acentos, trim, colapso de espacos, remocao de NBSP.
 - Output nao deve usar sufixos artificiais como `#1`, `#2`.
@@ -49,14 +54,17 @@ Extrai demonstracoes financeiras historicas de companhias listadas na CVM, organ
 
 ### QA e criterios de aceite
 
-Validacoes obrigatorias antes de exportar Excel:
+Validacoes obrigatorias para a camada financeira e/ou para exportacoes Excel:
 - `LINE_ID_BASE` unico por aba
 - `DS_CONTA_norm` sem nulos
 - ausencia de `"#"` nos IDs finais
 - fechamento BPA e BPP (Ativo Total = Passivo Total)
 - DFC: `Q1 + Q2 + Q3 + Q4 = YYYY` quando todos os periodos existirem
 
-Abas **QA_LOG** e **QA_Errors** sao obrigatorias para rastreabilidade.
+Logs, abas e metadata de QA devem preservar rastreabilidade. O workbook
+analitico atual usa `README`, `metadata`, `mapping_audit`, `raw_*` e blocos de
+checks; nao documente abas legadas como obrigatorias sem validar a
+implementacao.
 
 ---
 
@@ -116,7 +124,7 @@ Abas **QA_LOG** e **QA_Errors** sao obrigatorias para rastreabilidade.
 ## 5. Arquitetura de pastas
 
 ```text
-cvm_repots_capture/
+analisys/
 |-- src/                        # Pipeline de extracao e processamento
 |   |-- platform/               # Settings, DB engine, data layout, contracts, errors
 |   |-- companies/              # Catalogo, universo, tickers, market cap, GICS/setores
@@ -130,7 +138,7 @@ cvm_repots_capture/
 |   |-- build_desktop.ps1       # Script de build do .exe via PyInstaller
 |   `-- updater.py              # Auto-updater do desktop
 |-- apps/
-|   |-- api/                    # FastAPI read-only (adaptador HTTP hospedado/dev)
+|   |-- api/                    # FastAPI adapter (HTTP dev/hosted surface)
 |   |-- desktop-web/            # Vite SPA empacotada no desktop
 |   `-- landing/                # Pagina publica de download
 |-- scripts/                    # Tooling em subpastas: data/ setup/ diagnostics/ qa/ release/ governance/
@@ -139,7 +147,7 @@ cvm_repots_capture/
 |-- data/
 |   |-- import/                 # Mapeamentos aprovados, incluindo canonical_accounts.csv e GICS
 |   |-- schema/migrations/      # SQL de migracoes
-|   |-- db/cvm_financials.db    # SQLite local
+|   |-- db/cvm_financials.db    # SQLite local de desenvolvimento
 |   |-- cache/                  # Caches auxiliares
 |   |-- reports/                # Relatorios gerados, nao versionados
 |   `-- metadata/               # Metadados de empresas e tickers

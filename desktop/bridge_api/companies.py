@@ -167,63 +167,11 @@ class CompanyBridgeMixin:
                 return {"error": "cd_cvm is required", "yearly_data": []}
 
             svc = self._svc()
-
-            # Fetch from SQLite via engine
-            import pandas as pd  # noqa: PLC0415
-            from sqlalchemy import text  # noqa: PLC0415
-
-            where_parts = [
-                'fr."CD_CVM" = :cd_cvm',
-                'fr."PERIOD_LABEL" = CAST(fr."REPORT_YEAR" AS TEXT)',
-                'fr."QA_CONFLICT" = false',
-                "fr.\"CD_CONTA\" IN ('3.01', '3.05', '3.11', '2.03')",
-            ]
-
-            df = pd.read_sql(
-                text(f"""
-                SELECT
-                    fr."REPORT_YEAR" AS report_year,
-                    fr."CD_CONTA" AS cd_conta,
-                    SUM(fr."VL_CONTA") AS account_value
-                FROM financial_reports fr
-                WHERE {" AND ".join(where_parts)}
-                GROUP BY fr."REPORT_YEAR", fr."CD_CONTA"
-                """),
-                svc.engine,
-                params={"cd_cvm": cd_cvm}
-            )
-
-            metrics_by_year = {}
-            if not df.empty:
-                pivot = df.pivot(
-                    index="report_year",
-                    columns="cd_conta",
-                    values="account_value"
-                ).reset_index()
-
-                for col in ("3.01", "3.05", "3.11", "2.03"):
-                    if col not in pivot.columns:
-                        pivot[col] = pd.NA
-
-                for _, row in pivot.iterrows():
-                    yr = int(row["report_year"])
-                    receita = float(row["3.01"]) if pd.notna(row["3.01"]) and row["3.01"] != 0 else None
-                    ebit = float(row["3.05"]) if pd.notna(row["3.05"]) else None
-                    lucro_liq = float(row["3.11"]) if pd.notna(row["3.11"]) else None
-                    pl = float(row["2.03"]) if pd.notna(row["2.03"]) and row["2.03"] != 0 else None
-
-                    mg_ebit = ebit / receita if receita and ebit is not None else None
-                    mg_liq = lucro_liq / receita if receita and lucro_liq is not None else None
-                    roe = lucro_liq / pl if pl and lucro_liq is not None else None
-
-                    metrics_by_year[yr] = {
-                        "roe": roe,
-                        "mg_ebit": mg_ebit,
-                        "mg_liq": mg_liq,
-                    }
+            metrics_by_year = svc.query_layer.get_company_historical_indicator_metrics(cd_cvm)
 
             # 2. Fetch stock price history from Yahoo Finance or local cache
             from src.companies.market_cap import MarketCapService  # noqa: PLC0415
+            from sqlalchemy import text  # noqa: PLC0415
             mkt_cap_svc = MarketCapService(settings=svc.settings, read_service=svc)
 
             # Resolve ticker

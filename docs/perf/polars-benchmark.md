@@ -6,6 +6,9 @@
 **Baseline:** post-#101 (usecols + per-file cache) and post-#102 (vectorized apply)  
 **Dataset:** 100,000-row synthetic CSV matching real CVM schema (9 columns, latin-1, semicolon-delimited, ~9.3 MB)  
 **Methodology:** 5 warm runs per operation; report median and p90; `tracemalloc` peak for memory.
+**Status:** Dated benchmark evidence. File paths and line counts below reflect
+the repository at the time of the benchmark; verify current paths before using
+this as implementation guidance.
 
 ---
 

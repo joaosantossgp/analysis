@@ -2,297 +2,152 @@
 
 ## Overview
 
-CVMAnalytics is a local-first Windows desktop application for collecting, organizing, and analyzing Brazilian public company financial data. The app combines a Python data pipeline, a local SQLite database, and a packaged desktop UI through pywebview.
+CVMAnalytics is a local-first Windows desktop app for financial analysis of
+Brazilian public companies. It collects CVM financial statements, stores them
+in local SQLite databases, exposes them through a pywebview desktop UI, and
+exports analyst-oriented Excel workbooks.
 
-The authoritative runtime is the packaged Windows desktop executable. The public landing page (`apps/landing/`, published via GitHub Pages) is a marketing surface only — it is not the product. The old Vercel deploy is retired.
+The product is a serious financial analysis tool, not a generic dashboard. It
+prioritizes offline access to already-downloaded data, auditable source
+tracking, reproducible refreshes, predictable packaging, and Excel files that
+open cleanly.
 
 ## Download
 
-**[⬇ Download the latest Windows build (CVMAnalytics-windows.zip)](https://github.com/joaosantossgp/analisys/releases/latest/download/CVMAnalytics-windows.zip)**
+[Download the latest Windows build](https://github.com/joaosantossgp/analisys/releases/latest/download/CVMAnalytics-windows.zip)
 
 - Checksum: [CVMAnalytics-windows.zip.sha256](https://github.com/joaosantossgp/analisys/releases/latest/download/CVMAnalytics-windows.zip.sha256)
-- All releases: [github.com/joaosantossgp/analisys/releases](https://github.com/joaosantossgp/analisys/releases)
+- Distribution channel: [GitHub Releases](https://github.com/joaosantossgp/analisys/releases)
+- Public site: `apps/landing/` on GitHub Pages. It is a download/marketing
+  surface only, not the product runtime.
 
-The download link always points to the current stable release. The link is version-stable — it does not change between releases.
+## Active App
 
-**Requirements**
+The active product runtime is the packaged Windows desktop app:
 
-- Windows only (Windows 11, or recent Windows 10). macOS and Linux are not supported.
-- Microsoft Edge **WebView2** runtime. It is preinstalled on Windows 11 and usually present on recent Windows 10; if missing, install it from Microsoft (search "WebView2 Runtime").
-- The app is not code-signed yet, so Windows SmartScreen may warn on first launch. Choose **More info → Run anyway**.
-
-Your data is never written inside the install folder. The local database, Excel exports, and logs live under:
-
-```
-%USERPROFILE%\Documents\CVMAnalytics\
+```text
+dist/CVMAnalytics/CVMAnalytics.exe
 ```
 
-Updates and uninstalls never touch that directory.
+Verified active paths:
 
-## Screenshots
-
-| Company directory | Company overview |
+| Area | Active path |
 |---|---|
-| ![Company directory — searchable list of B3-listed companies with sector, coverage years, and data status](docs/assets/screenshots/company-directory.png) | ![Company overview — header with CVM/B3 codes, coverage summary, and annual KPI history](docs/assets/screenshots/company-overview.png) |
+| Desktop shell | `desktop/app.py` |
+| Build script | `desktop/build_desktop.ps1` |
+| PyInstaller spec | `desktop/app.spec` |
+| Frontend | `apps/desktop-web` |
+| Frontend build output | `apps/desktop-web/dist` bundled as `_internal/desktop-web` |
+| Python bridge | `desktop/bridge.py` and `desktop/bridge_api/` |
+| Python data/core | `src/` |
+| HTTP API adapter | `apps/api` for tests/dev-hosted HTTP access; not the desktop UI |
 
-| Financial statements | Indicators / KPIs |
-|---|---|
-| ![Financial statements — DRE/BPA/BPP/DFC matrix with multi-year columns and Excel export](docs/assets/screenshots/financial-statements.png) | ![Indicators — KPI tape and multi-year trend charts for margins, ROE, and leverage](docs/assets/screenshots/indicators.png) |
+`apps/desktop-web` is the only UI bundled into the desktop executable. The old
+Next.js `apps/web` app was removed from the active tree. Do not recreate or
+modify Next.js routes for product work.
 
 ## Quick Start
 
-For non-developers who just want to run the app:
+For end users:
 
-1. **Download** [CVMAnalytics-windows.zip](https://github.com/joaosantossgp/analisys/releases/latest/download/CVMAnalytics-windows.zip) (see [Download](#download) above).
-2. **Unzip** it to any folder you control, e.g. `Documents\Apps\CVMAnalytics`. Keep `CVMAnalytics.exe` and the `_internal\` folder together.
-3. **Run** `CVMAnalytics.exe`. If SmartScreen warns, choose **More info → Run anyway**.
-4. **First launch** sets up a local database under `%USERPROFILE%\Documents\CVMAnalytics\`. Use the in-app **Updates** screen to download CVM/B3 data for the companies you follow.
-5. **Explore**: browse the company directory, open a company for its overview, financial statements (DRE / BPA / BPP / DFC), and KPI trends, then export any company's history to Excel.
+1. Download `CVMAnalytics-windows.zip`.
+2. Extract it to a folder you control, for example
+   `Documents\Apps\CVMAnalytics`.
+3. Keep `CVMAnalytics.exe` and `_internal\` together.
+4. Run `CVMAnalytics.exe`.
+5. Use Settings -> Updates to download CVM data for the companies you follow.
 
-The app is local-first — your data and queries stay on your machine. New versions are picked up automatically: the app checks GitHub Releases on startup and updates in place without overwriting your data.
+Runtime data is stored outside the install folder:
 
-## Who This Is For
-
-- Equity researchers and analysts who follow Brazilian publicly traded companies (CVM-regulated).
-- Developers and finance students who want a local, scriptable view of historical financial statements without a cloud account.
-- Power users who prefer keeping their data and queries on their own machine.
-
-## Key Features
-
-- Downloads and standardizes historical CVM filings (DFP / ITR) for B3-listed companies.
-- Persists everything in a local SQLite database for offline use.
-- Desktop UI with company directory, sector views, an Indicators hub for macroeconomic and sector/company KPI context, and statement matrices.
-- Excel export for any company's financial history.
-- Background refresh queue with per-company status, retries, and freshness signals.
-- Auto-updater that downloads new releases from GitHub and applies them without overwriting user data.
-
-## Current Architecture
-
-```
-┌────────────────────────────────────────────────────────────────┐
-│                      CVMAnalytics.exe                          │
-│                                                                │
-│  PyInstaller bundle:                                           │
-│    • Python core (src/)            – pipeline, DB, KPIs        │
-│    • pywebview window              – WebView2 / Edge Chromium  │
-│    • desktop/bridge.py             – window.pywebview.api      │
-│    • Vite static SPA               – only packaged UI runtime  │
-│                                                                │
-│  User-writable data lives outside the install dir:             │
-│    %USERPROFILE%\Documents\CVMAnalytics\db\cvm_financials.db   │
-└────────────────────────────────────────────────────────────────┘
-```
-
-- **Python (`src/`)** owns the data pipeline, SQLite access, KPI engine, refresh worker, and Excel export.
-- **pywebview** hosts WebView2 and exposes Python callables to JavaScript as `window.pywebview.api`.
-- **Vite + React + TypeScript** under `apps/desktop-web/` builds to a static SPA served from a local loopback HTTP server. This is the only packaged desktop UI runtime.
-- **FastAPI (`apps/api/`)** remains in source as an HTTP API/development backend adapter and API test surface. It is not started or packaged by the desktop runtime.
-
-The Phase 3 sequence ported every P0 production screen into Vite (statements, KPIs, sectors, Excel export, refresh, status/updater). Phase 4 (`v0.14.0`) made Vite the default. Phase 5B (`v0.15.0`) removed the desktop-packaged Node runtime. The old source-only Next.js app was later removed from the active tree to avoid ambiguity. Phase 6 (`v0.17.0`) completed the final product hardening audit, standardized KPI/monospaced styling, and finalized the stable release pass. See `docs/archive/migration/` for historical detail.
-
-## Active Application Source of Truth
-
-- Active frontend: `apps/desktop-web` (Vite + React + TypeScript).
-- Active runtime integration: pywebview loads the Vite build and exposes `desktop/bridge.py` through `window.pywebview.api`.
-- Do not create or modify Next.js routes, pages, layouts, API routes, or components. The old `apps/web` Next.js app was removed.
-- Do not infer current architecture from archived, migration, release, or legacy folders. Inspect `apps/desktop-web`, `desktop/`, `src/`, and `apps/api` before changing app behavior.
-- If a file appears legacy or unused, report it instead of modifying it.
-
-## Runtime Model
-
-- Local-first. Authoritative runtime is the Windows desktop app.
-- Default runtime: the desktop app launches Python, serves the Vite SPA over a loopback HTTP server, and loads it inside the pywebview window. No bundled Node process is spawned.
-- `--legacy` is no longer supported in the packaged app. It shows a short warning and continues into the Vite UI.
-- All desktop data calls go through `window.pywebview.api` directly to Python — no HTTP roundtrip to a separate backend.
-
-### Launch Modes
-
-```
-CVMAnalytics.exe              Vite default (no Node process)
-CVMAnalytics.exe --vite       alias of default Vite mode
-CVMAnalytics.exe --legacy     unsupported; warns, then continues into Vite
-CVMAnalytics.exe --dev        packaged build ignores dev flag; source mode uses Vite dev server
-CVMAnalytics.exe --debug      open DevTools in the active mode
-CVMAnalytics.exe --diagnose-runtime   write diagnostics log and exit
-```
-
-## User Data Location
-
-Active runtime data root (Phase 3C and later):
-
-```
+```text
 %USERPROFILE%\Documents\CVMAnalytics\
-  db\
-    cvm_financials.db            ← active runtime database
-  output\                        ← Excel exports
-  logs\                          ← refresh / app logs
-  cache\
-  backup\                        ← legacy DB snapshots from migration
-  recovery.log
 ```
 
-Resolution priority for the active root:
+This folder holds local databases, caches, logs, source files, and Excel
+outputs. Already-downloaded data remains usable offline. Refreshes and updater
+checks need network access.
 
-1. `CVMANALYTICS_DATA_DIR` environment variable (operator override).
-2. `%USERPROFILE%\Documents\CVMAnalytics` (Phase 3C default).
-3. `%LOCALAPPDATA%\CVMAnalytics` (pre-Phase-3C fallback if `USERPROFILE`
-   is unset, e.g. service accounts).
+## Developer Commands
 
-Updater-internal staging is kept separately under
-`%LOCALAPPDATA%\CVMAnalytics\` (`versions/`, `update_rollback/`). These
-paths are deny-listed by the updater allowlist and are unrelated to the
-runtime data root above.
+Install dependencies:
 
-Legacy migration: on first launch under v0.7.0+, if the Documents data
-root has no database, the app does a WAL-safe `sqlite3 .backup` copy
-from the first existing legacy source (LocalAppData, then install-dir).
-Legacy originals are never moved or deleted, and Documents DB is never
-overwritten if it already exists.
-
-User data is never written under the install directory. The updater can never overwrite these paths.
-
-## Development Setup
-
-```bash
-# Python deps
+```powershell
 pip install -r requirements.txt
-pip install -r apps/api/requirements-dev.txt
+npm --prefix apps/desktop-web install
+```
 
-# Vite desktop UI deps (only needed when running/building the dev UI)
-cd apps/desktop-web && npm install && cd ../..
+Run the desktop app with the real Python bridge and Vite dev server:
 
-# Initialize the dev DB (repo-relative path used in dev mode)
-python scripts/setup/setup_db.py
-python scripts/setup/setup_companies_table.py
-
-# Validate environment
-python scripts/diagnostics/runtime_doctor.py --require-canonical
-
-# Run the desktop app in dev mode against the Vite dev server
+```powershell
 python -m desktop.app --dev
 ```
 
-Desktop dev mode defaults to the same `%USERPROFILE%\Documents\CVMAnalytics`
-data root used by the packaged app so performance and large local caches match
-real usage. Set `CVM_DATA_DIR` explicitly when you need an isolated repo-local
-or fixture database.
-
-Headless and HTTP alternatives:
-
-```bash
-# CLI refresh for a single company
-python main.py --companies PETROBRAS --start_year 2021 --end_year 2025
-
-# Optional local FastAPI
-uvicorn apps.api.app.main:app --reload
-# → Swagger at http://127.0.0.1:8000/docs
-
-# Vite UI dev server only
-cd apps/desktop-web && npm run dev
-```
-
-## Desktop Build
+Run frontend checks:
 
 ```powershell
-# From the repo root
+npm --prefix apps/desktop-web run typecheck
+npm --prefix apps/desktop-web run build
+```
+
+Run Python checks:
+
+```powershell
+python -m py_compile desktop/app.py desktop/bridge.py
+pytest tests -q
+```
+
+Build the packaged desktop app:
+
+```powershell
 .\desktop\build_desktop.ps1
-
-# Or, after a successful prior Vite build:
-.\desktop\build_desktop.ps1 -SkipViteBuild
-
-# Result
-.\dist\CVMAnalytics\CVMAnalytics.exe
 ```
 
-The build script:
+See [docs/development.md](docs/development.md) and
+[docs/build-release.md](docs/build-release.md) for the full validated command
+map.
 
-1. Runs the Vite build in `apps/desktop-web/`.
-2. Injects the version into `desktop/__version__.py`.
-3. Runs `pyinstaller desktop/app.spec` to produce `dist/CVMAnalytics/`.
+## Financial Data Caveats
 
-The packaged folder contains only `CVMAnalytics.exe` and `_internal/`. No user data and no dev database are bundled.
+CVM DFP/ITR filings from `dados.cvm.gov.br` are the primary official source for
+financial statements. B3/CVM identifiers, GICS mappings, Yahoo Finance market
+data, Google News RSS, ONS/CCEE/ANEEL/OWID energy datasets, and user imports
+are separate sources with different reliability levels.
 
-## Update Flow
+Do not treat Yahoo Finance, yfinance, Google News, or other external/aggregator
+sources as equivalent to CVM or B3 official data. Documentation and UI should
+distinguish official, external, reported, calculated, estimated, and imported
+data. Calculated values must remain traceable to source, company, period,
+account, transformation/formula, and timestamp.
 
-- The app polls GitHub Releases on startup.
-- A newer tag triggers an in-app prompt.
-- The updater downloads `CVMAnalytics-windows-v<version>.zip` (and its `.sha256`) into `%LOCALAPPDATA%\CVMAnalytics\versions\<version>\`, validates the checksum, and extracts.
-- `desktop/update_helper.ps1` swaps only allowlisted entries (`CVMAnalytics.exe` and `_internal\`) over the current install. A pre-swap snapshot is written to `%LOCALAPPDATA%\CVMAnalytics\update_rollback\<utc-ts>\`.
-- The helper never touches `data\`, `output\`, `logs\`, `cache\`, or any `*.db` / `*.db-wal` / `*.db-shm` under the install directory.
+See [docs/data-sources.md](docs/data-sources.md).
 
-## Migration Status
+## Canonical Documentation
 
-The desktop runtime migration is complete as of v0.17.0. All phases are released. The table below is **historical reference only** — it stops at the migration milestones and does not track the current version (see `desktop/__version__.py`).
+| Topic | Canonical doc |
+|---|---|
+| Runtime architecture | [docs/architecture.md](docs/architecture.md) |
+| Data sources and auditability | [docs/data-sources.md](docs/data-sources.md) |
+| Excel export standards | [docs/excel-exports.md](docs/excel-exports.md) |
+| Development setup and commands | [docs/development.md](docs/development.md) |
+| Build, release, updater | [docs/build-release.md](docs/build-release.md) |
+| Troubleshooting | [docs/troubleshooting.md](docs/troubleshooting.md) |
+| Product workflows | [docs/product-workflows.md](docs/product-workflows.md) |
+| Active repo map | [docs/active-project-map.md](docs/active-project-map.md) |
+| Full repository map | [docs/reference/repository-map.md](docs/reference/repository-map.md) |
+| Agent rules | [AGENTS.md](AGENTS.md) |
 
-| Phase | Goal | Status |
-|---|---|---|
-| Phase 0 | User-data safety net | **Released** |
-| Phase 1 | Parallel Vite SPA shell | Done |
-| Phase 2 | Wire Vite SPA into pywebview | **Released as opt-in `--vite` (`v0.4.0`)** |
-| Phase 3A–3I | Incremental Vite parity slices | **Released through `v0.13.0`**: statements, Update Base, Documents data root, KPIs, KPI charts, sectors, sub-sector detail, Excel export (full + per-statement), single-company refresh, status/diagnostics, software updater UI |
-| Phase 3J | Default switch readiness audit | Done |
-| Phase 4 | Vite default + legacy fallback (`--legacy`) | **Released as `v0.14.0`, hotfix `v0.14.1`.** Default startup loads the Vite SPA with no Node process. |
-| Phase 5A | Legacy deletion audit | Done. Confirmed `apps/desktop-web` was the desktop UI and the old web app was not a package dependency. |
-| Phase 5B | Remove desktop-packaged Node runtime | **Released as `v0.15.0`.** The desktop package no longer ships a bundled Node runtime or standalone web server. |
-| Phase 5C | Legacy source cleanup | Done. The old Next.js app was removed from the active tree; active scripts and docs now point at `apps/desktop-web`. |
-| Phase 6 | Stable Release / Final Product Pass | **Released (v0.17.0)** |
+Historical migration docs live under `docs/archive/migration/`. ADRs under
+`docs/decisions/` preserve point-in-time decisions. Release notes under
+`docs/releases/` are a partial local index; GitHub Releases are the published
+release source.
 
-See:
+## Known Limits
 
-- [docs/archive/migration/README.md](docs/archive/migration/README.md) — phase tracker
-- [docs/archive/migration/PHASE_0_USER_DATA_SAFETY.md](docs/archive/migration/PHASE_0_USER_DATA_SAFETY.md) — Phase 0 spec and validation
-- [docs/archive/migration/NEXT_AGENT_HANDOFF.md](docs/archive/migration/NEXT_AGENT_HANDOFF.md) — detailed phase history (historical; migration complete as of v0.17.0)
-
-## Repository Structure
-
-```
-desktop/          pywebview shell, PyInstaller spec, updater, build script
-apps/desktop-web/ Vite static SPA packaged into the .exe  ← only packaged UI
-apps/api/         HTTP API/development backend adapter + API tests, not desktop UI
-apps/landing/     Marketing landing page
-src/              Python core packages: platform, companies, financials, refresh, energy_kpi
-main.py           CLI entry point for headless refresh
-scripts/          Setup, batches, diagnostics, validation helpers
-data/             Import references, DB schema, dev SQLite/raw/cache/report outputs
-docs/             Active documentation, migration docs, ADRs
-tests/            pytest suite
-```
-
-See [docs/reference/repository-map.md](docs/reference/repository-map.md) for a full folder, workflow, and documentation status map.
-
-Key docs: [docs/COMO_RODAR.md](docs/COMO_RODAR.md) (run guide) · [docs/DESIGN.md](docs/DESIGN.md) (design system) · [docs/PRODUCT.md](docs/PRODUCT.md) (product brief).
-
-## Contributor Orientation
-
-**"I want to change the desktop UI"** → `apps/desktop-web/src/`. Read `docs/skills/CVMANALYTICS_VITE_UI_SKILL.md` first. Run `python -m desktop.app --dev` to see changes live. Components call Python exclusively through `lib/bridge/adapter.ts` — never call `window.pywebview.api` directly.
-
-**"I want to change data or financial logic"** -> `src/`. The Python core owns the pipeline, KPI engine, DB access, refresh worker, and Excel export across `src/financials/`, `src/companies/`, `src/platform/`, and `src/refresh/`. Read `docs/CONTEXT.md` before touching financial calculations or column conventions.
-
-**"I want to change packaging or the updater"** → `desktop/`. The PyInstaller spec is `desktop/app.spec`. Build script is `desktop/build_desktop.ps1`. Auto-updater is `desktop/updater.py` + `desktop/update_helper.ps1`. Do not change these without re-running the full release pipeline — a wrong path in the spec produces a broken EXE with no obvious build-time error.
-
-**"I want to change the HTTP API"** → `apps/api/` (FastAPI) and shared read logic in `src/`. The API is not the desktop UI and does not affect pywebview routing unless a bridge/API contract also changes. Read `docs/reference/v2-api-contract.md` before modifying any API contract.
-
-**"Which docs are current vs historical?"** → `docs/active-project-map.md` and `docs/reference/repository-map.md` for the active map. Short answer: `docs/reference/` and `docs/decisions/` are active only when they do not conflict with the active Vite desktop map. `docs/archive/migration/` is completed history.
-
-**What not to touch casually:**
-- `desktop/app.spec` — PyInstaller spec; a wrong entry produces a broken EXE
-- `desktop/build_desktop.ps1` — build pipeline; test end-to-end before merging
-- `.github/workflows/release-desktop.yml` — changes affect artifacts downloaded by real users
-- `src/platform/settings.py` — user data paths; wrong changes break the live DB location
-- `data/import/canonical_accounts.csv` — referenced by `src/platform/settings.py` and packaged with the desktop build
-
-## Roadmap
-
-- Known deferred items: code signing (SmartScreen warning on download), AV/UPX review.
-
-## Known Limitations
-
-- Windows-only. macOS and Linux are not supported targets.
-- Requires Microsoft Edge WebView2 runtime (preinstalled on Windows 11; usually present on recent Windows 10).
-- The packaged desktop app is Vite-only and does not spawn a Node.js child process. `CVMAnalytics.exe --legacy` is unsupported and continues into Vite after a warning.
-- The dev database under `data/db/cvm_financials.db` is for developer use only. End users do not need it; the packaged app provisions its own DB under `%USERPROFILE%\Documents\CVMAnalytics` (with WAL-safe migration from legacy `%LOCALAPPDATA%` if present).
-- No telemetry. No crash reporting service is wired into the local desktop app.
-
-## License
-
-See repository LICENSE file if present. Otherwise treat as all-rights-reserved by the author.
+- Browser-only Vite preview has no `window.pywebview.api` bridge unless mock
+  mode is used.
+- Dev mode uses the same Documents data root by default and blocks destructive
+  writes unless explicitly allowed.
+- The packaged app is Vite-only. `--legacy` is unsupported and continues into
+  Vite after logging a warning.
+- Packaged-app smoke, clean install, update-over-previous-version, and manual
+  Excel-open validation remain required before publishing a release.

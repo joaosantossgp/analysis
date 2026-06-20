@@ -1,5 +1,10 @@
 # Como Rodar - CVM Analytics
 
+> Guia operacional em portugues. Para a documentacao canonica atual em ingles,
+> veja `docs/development.md`, `docs/build-release.md` e
+> `docs/troubleshooting.md`. Se houver conflito, valide pelos scripts/configs
+> atuais antes de seguir este arquivo.
+
 Guia pratico para baixar o app desktop e, quando necessario, subir o app local oficial e as superficies de desenvolvimento.
 
 Fluxo principal atual:
@@ -35,7 +40,7 @@ A pagina publica de download vive em `apps/landing/` e e publicada via GitHub Pa
 Entre na pasta do projeto:
 
 ```powershell
-cd C:\caminho\para\cvm_repots_capture
+cd C:\caminho\para\analisys
 ```
 
 Crie e ative a `.venv` se necessario:

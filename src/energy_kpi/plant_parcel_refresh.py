@@ -12,6 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 
 from src.energy_kpi.metrics import normalize_reference_month
+from src.energy_kpi.plant_marts import rebuild_plant_hourly_marts
 from src.energy_kpi.plant_parcel_ingest import (
     PLANT_SOURCES,
     SOURCE_ANEEL_SIGA,
@@ -146,6 +147,7 @@ class PlantParcelRefreshJob:
         warning = None
         snapshot_date = None
         detected_encoding = None
+        mart_rebuild: dict | None = None
 
         try:
             if source_id == SOURCE_CCEE_MONTHLY:
@@ -166,8 +168,15 @@ class PlantParcelRefreshJob:
                 snapshot = fetch_ccee_hourly_snapshot(self.settings, year_month)
                 frame = parse_ccee_hourly(snapshot)
                 def _persist_ccee_hourly(conn) -> int:
+                    nonlocal mart_rebuild
                     persist_plant_snapshot_record(conn, snapshot)
-                    return upsert_ccee_hourly(conn, frame)
+                    inserted = upsert_ccee_hourly(conn, frame)
+                    if inserted > 0:
+                        mart_rebuild = rebuild_plant_hourly_marts(
+                            conn,
+                            reference_months=_reference_periods_from_frame(frame),
+                        )
+                    return inserted
                 rows_inserted = _with_write_retry(engine, _persist_ccee_hourly)
                 rows_read = int(len(frame))
                 period_start = snapshot.period_start
@@ -254,7 +263,8 @@ class PlantParcelRefreshJob:
                         file_hash=:checksum,
                         file_type=:file_type,
                         detected_period=:detected_period,
-                        source_page_url=:source_page_url
+                        source_page_url=:source_page_url,
+                        elapsed_aggregate_ms=:elapsed_aggregate_ms
                     WHERE refresh_id=:refresh_id
                 """),
                 {
@@ -282,6 +292,7 @@ class PlantParcelRefreshJob:
                     "file_type": _file_type_from_path(local_file_path),
                     "detected_period": _format_detected_period(period_start, period_end),
                     "source_page_url": source_meta.get("official_url"),
+                    "elapsed_aggregate_ms": (mart_rebuild or {}).get("elapsed_ms"),
                     "refresh_id": self._refresh_id,
                 },
             )
@@ -310,6 +321,7 @@ class PlantParcelRefreshJob:
             "period_start": period_start,
             "period_end": period_end,
             "local_file_path": local_file_path,
+            "mart_rebuild": mart_rebuild,
         }
 
     def run_manual_file_import(
@@ -386,6 +398,7 @@ class PlantParcelRefreshJob:
         period_start = None
         period_end = None
         snapshot_date = None
+        mart_rebuild: dict | None = None
 
         try:
             if not src_path.exists() or not src_path.is_file():
@@ -458,10 +471,17 @@ class PlantParcelRefreshJob:
                 period_end = detected_periods[-1] if detected_periods else requested_period
 
                 def _persist_manual_import(conn) -> int:
+                    nonlocal mart_rebuild
                     persist_plant_snapshot_record(conn, snapshot)
                     if source_id == SOURCE_CCEE_MONTHLY:
                         return upsert_ccee_monthly(conn, frame)
-                    return upsert_ccee_hourly(conn, frame)
+                    inserted = upsert_ccee_hourly(conn, frame)
+                    if inserted > 0:
+                        mart_rebuild = rebuild_plant_hourly_marts(
+                            conn,
+                            reference_months=_reference_periods_from_frame(frame),
+                        )
+                    return inserted
                 rows_inserted = _with_write_retry(engine, _persist_manual_import)
 
             if rows_inserted <= 0:
@@ -508,7 +528,8 @@ class PlantParcelRefreshJob:
                         detected_period=:detected_period,
                         file_size_bytes=:file_size_bytes,
                         file_type=:file_type,
-                        source_page_url=:source_page_url
+                        source_page_url=:source_page_url,
+                        elapsed_aggregate_ms=:elapsed_aggregate_ms
                     WHERE refresh_id=:refresh_id
                 """),
                 {
@@ -533,6 +554,7 @@ class PlantParcelRefreshJob:
                     "detected_encoding": detected_encoding,
                     "detected_period": detected_period,
                     "file_type": file_type,
+                    "elapsed_aggregate_ms": (mart_rebuild or {}).get("elapsed_ms"),
                     "refresh_id": self._refresh_id,
                 },
             )
@@ -569,6 +591,7 @@ class PlantParcelRefreshJob:
             "period_start": period_start,
             "period_end": period_end,
             "local_file_path": local_file_path,
+            "mart_rebuild": mart_rebuild,
         }
 
 

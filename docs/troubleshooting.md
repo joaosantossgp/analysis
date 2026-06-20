@@ -1,0 +1,70 @@
+# Troubleshooting
+
+## Where To Look First
+
+Use Settings -> Diagnostics in the desktop app for runtime mode, bridge state,
+data paths, database counts, updater state, logs, and local dependency probes.
+
+Key local paths:
+
+```text
+%USERPROFILE%\Documents\CVMAnalytics\db
+%USERPROFILE%\Documents\CVMAnalytics\output
+%USERPROFILE%\Documents\CVMAnalytics\logs
+%USERPROFILE%\Documents\CVMAnalytics\cache
+%LOCALAPPDATA%\CVMAnalytics\versions
+%LOCALAPPDATA%\CVMAnalytics\update_rollback
+%LOCALAPPDATA%\CVMAnalytics\update_error.log
+```
+
+## Common Problems
+
+| Symptom | Check |
+|---|---|
+| App opens but has no financial data | Confirm `db/cvm_financials.db` exists and run Settings -> Updates for target companies |
+| Browser preview shows no data | `npm run dev` has no pywebview bridge; use `python -m desktop.app --dev` or `npm run dev:mock` |
+| Writes are blocked in dev | Dev mode is using release Documents data; set isolated `CVM_DATA_DIR` or explicitly allow writes |
+| Another instance warning | A live process owns `{data_dir}/runtime.lock`; close the other process before writes |
+| Update Base cannot start Top N universe | Market-cap ranking source unavailable; choose `all`, import a snapshot, or resolve Yahoo Finance/network issue |
+| Company has no history | It may exist in the catalog but have no local CVM statement rows; run company-level refresh |
+| Market widgets empty | Ticker mapping or unofficial market-data provider may be unavailable |
+| News content unavailable | Only metadata/feed summary may be stored; the app does not bypass paywalls |
+| Excel export fails | Check output directory permissions, open-file locks, and exporter tests |
+| Packaged app launches old version | Check Settings -> Diagnostics build provenance and release ZIP layout |
+| Updater fails | Inspect `%LOCALAPPDATA%\CVMAnalytics\update_error.log` and rollback directory |
+
+## Safe Diagnostics
+
+```powershell
+python scripts/diagnostics/runtime_doctor.py --require-canonical
+python -m py_compile desktop/app.py desktop/bridge.py
+npm --prefix apps/desktop-web run typecheck
+pytest tests -q
+```
+
+For data-specific issues, inspect the relevant bridge method and read-service
+path before changing code. Avoid deleting user databases as a first response.
+
+## Packaged vs Dev Differences
+
+- Packaged app runs from `dist/CVMAnalytics/CVMAnalytics.exe` and serves bundled
+  Vite assets from `_internal/desktop-web`.
+- `python -m desktop.app --dev` uses the Vite dev server but the real bridge.
+- Browser-only Vite preview does not have a real bridge.
+- Packaged app writes to Documents by default; dev mode also points there unless
+  `CVM_DATA_DIR` is set.
+- Dev shared-data mode blocks destructive writes by default. Packaged mode does
+  not.
+
+## Escalation Checklist
+
+Before documenting a bug as fixed, record:
+
+- exact mode: packaged, source, dev, browser, mock;
+- active data root and database path;
+- app version/build provenance;
+- bridge method or route involved;
+- source class involved: CVM, external market data, news, energy, user import,
+  calculated;
+- minimal reproduction;
+- command/test or manual check used to validate the fix.

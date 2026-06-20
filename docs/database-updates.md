@@ -73,8 +73,8 @@ The Update Base page calls `start_data_update` through the
 `RefreshMode` selects what gets fetched: `missing` | `full` | `outdated` |
 `failed`.
 
-Progress is polled via `get_refresh_status` (job-level) and surfaced on the
-Status page and the Update Base page.
+Progress is polled via `get_refresh_status` (job-level) and surfaced in
+Settings -> Diagnostics and the Update Base page.
 
 ## Top N universe configuration
 

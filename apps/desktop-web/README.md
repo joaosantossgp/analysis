@@ -1,146 +1,91 @@
-# apps/desktop-web — Vite SPA desktop runtime (default UI)
+# apps/desktop-web
+
+Vite + React + TypeScript desktop UI for CVMAnalytics.
 
 ## Status
 
-**Stable desktop runtime (`v0.17.0+`).** This package is the **only packaged desktop UI**. The legacy Next.js app was removed from the active tree; the package does not ship legacy standalone server assets or a bundled Node runtime. `CVMAnalytics.exe --legacy` now shows a short unsupported-runtime warning and continues into the Vite UI. `v0.14.1` added the idempotent startup GICS backfill: it reads `_internal/data/import/gics_mapping.csv` and populates `companies.gics_sector / gics_sector_slug / gics_sub_industry` for rows whose GICS fields are empty.
+This is the only frontend bundled into `CVMAnalytics.exe`. It is built by
+`desktop/build_desktop.ps1`, bundled by `desktop/app.spec` as
+`_internal/desktop-web`, and served by `desktop/app.py` inside pywebview.
 
-## Active Application Source of Truth
+The old Next.js `apps/web` app was removed from the active tree. Do not create
+Next.js routes, pages, layouts, API routes, or components for desktop product
+work.
 
-- Active frontend work happens here, in `apps/desktop-web`.
-- Runtime data access goes through `src/lib/api/*` -> `src/lib/bridge/adapter.ts` -> `window.pywebview.api` -> `desktop/bridge.py`.
-- Do not create or modify Next.js routes, pages, API routes, or components. The old `apps/web` app is not part of the active CVMAnalytics app.
-- Do not infer current UI architecture from archived, migration, release, or legacy docs. Inspect this Vite app before changing UI.
-- If a file appears legacy or unused, report it instead of modifying it.
+## Bridge Contract
 
-Screens with dynamic routing prove the architecture:
+Components must call the Python bridge through frontend facades:
 
-- **Companies directory** (`/`) — Phase 3D dense table backed by `CVMBridge.get_companies` and `get_company_filters`. URL-driven `?search=&sector=&page=`, debounced search by name/ticker/CVM code, GICS sector dropdown, active-filter chips with per-filter clear, reset action, result count, dense columns (company / ticker / CVM / sector / sub-industry / years / rows / data dot), loading/error/empty/filtered-empty states. Powered by TanStack Query.
-- **Sectors directory** (`/setores`) — Phase 3D. GICS hub view backed by `get_sectors`. Tab switcher between GICS sectors and GICS sub-industries (`?visao=sub_sector`), per-row company count and latest year, link to filtered companies directory and to sector detail. No invented aggregate metrics.
-- **Sector detail** (`/setores/:slug`) — Phase 3D. Backed by `get_sector_detail`. Breadcrumb, company count + base-year header, year selector (`?ano=`), in-sector company filter (`?q=`), company table with links to company detail, link back to the directory filtered by sector.
-- **Sub-sector detail** (`/setores/:sectorSlug/:subSectorSlug`) — Phase 3H. Backed by `get_sub_sector_detail`. Breadcrumbs, active year selector (`?ano=`), in-subsector company search (`?q=`), and dense table of companies showing basic metrics (ROE, Margem EBIT, Margem Líquida).
-- **Company detail** (`/empresas/:cdCvm`) — dynamic route. Uses unified `EntityHeader`. Header card + annual KPI table with format-aware cells (pct/money/ratio). **Phase 3E**: full company workbook Excel export button (writes to `Documents/CVMAnalytics/output/` via `export_company_excel`). **Phase 3F**: single-company refresh panel using existing `request_refresh({ cd_cvm })` and `get_refresh_status({ cd_cvm })`, with real backend freshness/status fields, 2s active polling, dispatch feedback, and query invalidation after terminal status.
-- **Indicadores (KPIs)** (`/empresas/:cdCvm/indicadores`) — Phase 3C.1 & Phase 3H. Year multi-select with "Last 5" / "All" presets, KPI summary cards for the latest selected year, annual + quarterly tables with unit-aware formatting (R$ mn / % / x / bps), and lightweight custom SVG trend charts (Margem EBITDA, Margem Líquida, ROE, Leverage) with gap-handling and tooltips. Missing values render as em dash. Phase 3E adds the same full-workbook export action.
-- **Financial statements** (`/empresas/:cdCvm/demonstrativos?stmt=DRE`) — DRE/BPA/BPP/DFC matrix via `get_company_statement`, with real data, statement switching, row filtering, loading/error/empty states. Uses unified `EntityHeader`. Phase 3E adds the full-workbook export action.
-- **Update Base** (`/atualizar-base`) — local database health, empty-DB guidance, real DB diagnostics panel (db_path, data_root, row counts via `get_database_diagnostics`), post-job row-count delta with explicit warning when a refresh inserts zero rows, guarded refresh start with optional CVM-code targeting, job polling, logs, history, cancel. Uses unified `PageHeader`.
-- **Status** (`/status`) — Phase 3G. Compact local diagnostics dashboard backed by `get_app_status`: app version, Vite runtime mode, bridge state, packaged flag, local data/db/output/log/cache paths, SQLite counts, latest report year, GitHub release check status, compact recent logs, and runtime probes for .NET/WebView2/pythonnet/SQLite. Uses `open_status_path` for safe symbolic folder-open actions. Uses unified `PageHeader`.
-- **Runtime health** (`/health`) — `CVMBridge.get_health()` rendering status, version, dialect. Uses unified `PageHeader`.
-
-Persistent data root (Phase 3C.0): `%USERPROFILE%\Documents\CVMAnalytics` by default; override with `CVMANALYTICS_DATA_DIR`. On first launch the app does a WAL-safe `sqlite3.backup` from any legacy `%LOCALAPPDATA%\CVMAnalytics\db\cvm_financials.db` or `<install-dir>\data\db\cvm_financials.db` it finds. Legacy originals are never moved or deleted.
-
-Router: `react-router-dom` v7 with `HashRouter` (portable across `file://`, `http://127.0.0.1:<port>`, and pywebview's `http_server=True`).
-
-## Goal
-
-Run the packaged desktop UI as a static Vite + React + TypeScript build against the existing Python bridge (`desktop/bridge.py::CVMBridge`) without an embedded Node runtime.
-
-## What is here
-
-```
-apps/desktop-web/
-├── index.html
-├── package.json
-├── vite.config.ts
-├── tsconfig.json
-├── public/
-└── src/
-    ├── App.tsx
-    ├── main.tsx
-    ├── index.css
-    ├── components/
-    │   └── HealthCard.tsx
-    └── lib/
-        ├── bridge/
-        │   ├── adapter.ts     # single chokepoint for window.pywebview.api
-        │   └── types.ts       # typed mirror of Python bridge methods
-        └── api/
-            ├── health.ts
-            ├── companyDetail.ts
-            ├── companyRefresh.ts
-            ├── companies.ts
-            ├── statements.ts
-            ├── appStatus.ts
-            └── updateBase.ts
+```text
+route/component
+  -> src/lib/api/<domain>.ts
+  -> src/lib/bridge/adapter.ts
+  -> window.pywebview.api
+  -> desktop/bridge.py
+  -> desktop/bridge_api/<domain>.py
 ```
 
-## Bridge pattern
+Bridge types live in `src/lib/bridge/types.ts`. Mock fixture behavior lives in
+`src/lib/bridge/mock.ts` and is dev-only.
 
-Components MUST NOT touch `window.pywebview.api` directly. They go through:
+## Routes
 
-```
-UI component
-  -> lib/api/<facade>.ts     (one file per domain area)
-  -> lib/bridge/adapter.ts   (callBridge + whenBridgeReady)
-  -> window.pywebview.api    (injected by pywebview at runtime)
-  -> Python bridge (desktop/bridge.py)
-  -> Python service/core (src/*)
-```
+The canonical route table is `src/App.tsx`. Current areas include:
 
-`callBridge<K>(method, params)` is the only typed entry point. Adding a new bridge method is a two-step change: add the signature to `BridgeApi` in `lib/bridge/types.ts`, then add a facade under `lib/api/`.
+- `/` home summary;
+- `/empresas`, `/empresas/:cdCvm`, company statements, model mapping, and
+  coverage status;
+- `/setores` and sector/subsector details;
+- `/coverage`, prioritization, and work queue;
+- `/news`;
+- `/indicators`;
+- `/settings` with health, storage, sources/imports, updates, coverage, and
+  diagnostics;
+- `/dev/data-ops`.
 
-## Dev — browser
+Compatibility redirects include `/atualizar-base`, `/data-coverage`,
+`/status`, `/country-kpis`, and `/empresas/:cdCvm/indicadores`.
 
-```bash
-cd apps/desktop-web
-npm install
-npm run dev
-```
+## Development
 
-Open `http://127.0.0.1:5173/`. The `HealthCard` will show a yellow "Browser-mode preview" banner because `window.pywebview.api` is not injected by a real browser. This is the expected dev-without-Python flow.
-
-For fixture-backed UI work without a real bridge, run `npm run dev:mock` (in-process mock bridge). For the full dev workflows — isolated vs release data, mock bridge, env vars, lockfile/read-only policy, F5 reload — see [docs/dev-runtime-and-data-paths.md](../../docs/dev-runtime-and-data-paths.md).
-
-## Dev — inside pywebview
-
-```bash
-cd <repo root>
-python -m desktop.app
-```
-
-This serves the built static assets from `apps/desktop-web/dist/` over a loopback HTTP server and opens them inside pywebview with the real `CVMBridge()` attached. For live Vite dev-server testing, use `python scripts/diagnostics/phase1_pywebview_smoke.py --manual`.
-
-## Build
-
-```bash
-cd apps/desktop-web
-npm run build
-```
-
-Output is a static SPA at `apps/desktop-web/dist/`.
-
-## Phase 5B — Vite-only packaged launch mode
-
-The packaged desktop executable loads this Vite SPA as the only packaged UI runtime. Legacy standalone server assets and the bundled Node runtime are no longer included.
+Install frontend dependencies:
 
 ```powershell
-# packaged — Vite default (no Node process)
-.\dist\CVMAnalytics\CVMAnalytics.exe
-.\dist\CVMAnalytics\CVMAnalytics.exe --vite     # alias of default
-
-# packaged — unsupported legacy flag; warns, then continues into Vite
-.\dist\CVMAnalytics\CVMAnalytics.exe --legacy
-
-# dev (starts/uses the Vite dev server at 127.0.0.1:5173)
-python -m desktop.app --dev
-
-# source mode against apps/desktop-web/dist/
-python -m desktop.app
-
-# dev with live reload (Vite dev server + pywebview, interactive)
-python scripts/diagnostics/phase1_pywebview_smoke.py --manual
+npm --prefix apps/desktop-web install
 ```
 
-In default / `--vite` mode:
+Real desktop dev with pywebview and the Python bridge:
 
-- pywebview loads `_internal/desktop-web/index.html` over a local HTTP server bound to a free port (`http.server.ThreadingHTTPServer`). No `file://` origin issues with WebView2.
-- The Python bridge is the same `CVMBridge()` the legacy mode uses.
-- `%USERPROFILE%\Documents\CVMAnalytics\db\cvm_financials.db` is read/written exactly as in legacy mode unless `CVMANALYTICS_DATA_DIR` overrides it.
-- **No bundled Node runtime is launched.** Verified end-to-end against the packaged exe.
+```powershell
+python -m desktop.app --dev
+```
 
-`--legacy` no longer starts a legacy web runtime. It writes a recovery-log entry, shows a short warning, and proceeds with the Vite UI so old shortcuts still open the application.
+Browser preview without the real bridge:
 
-## What this does NOT change
+```powershell
+npm --prefix apps/desktop-web run dev
+```
 
-- Does not call FastAPI. Bridge-only.
-- Does not change the user-data contract. Data still lives under `%USERPROFILE%\Documents\CVMAnalytics`.
-- Does not change the updater allowlist/denylist or the flat-root ZIP contract.
-- Uses TanStack Query for directory, sectors, detail, refresh, status, and export status screens.
+Browser preview with fixture bridge:
+
+```powershell
+npm --prefix apps/desktop-web run dev:mock
+```
+
+Checks:
+
+```powershell
+npm --prefix apps/desktop-web run typecheck
+npm --prefix apps/desktop-web run build
+```
+
+See [docs/development.md](../../docs/development.md) for data-path, lock, and
+write-mode behavior.
+
+## Source Of Truth
+
+- Runtime architecture: [docs/architecture.md](../../docs/architecture.md)
+- Data sources: [docs/data-sources.md](../../docs/data-sources.md)
+- Excel exports: [docs/excel-exports.md](../../docs/excel-exports.md)
+- UI implementation rules:
+  [docs/skills/CVMANALYTICS_VITE_UI_SKILL.md](../../docs/skills/CVMANALYTICS_VITE_UI_SKILL.md)

@@ -18,6 +18,7 @@ from src.energy_kpi.metrics import (
     mwh_to_twh,
     mwmed_to_mwh,
 )
+from src.energy_kpi.plant_marts import rebuild_plant_hourly_marts
 from src.energy_kpi.plant_parcel_ingest import (
     SOURCE_ANEEL_SIGA,
     SOURCE_CCEE_HOURLY,
@@ -256,6 +257,239 @@ def test_plant_parcel_read_detail_is_offline_and_derives_metrics(tmp_path: Path,
     assert "generation_center_of_gravity_gwh" in metric_ids
     assert "capacity_factor_pct" in metric_ids
     assert detail["metadata"]["caveats"]
+
+
+def test_plant_daily_chart_uses_rebuilt_mart_not_raw_hourly_scan(tmp_path: Path, db_engine, monkeypatch):
+    monthly_path = _write_csv(
+        tmp_path / "monthly.csv",
+        [
+            "MES_REFERENCIA",
+            "COD_PARCELA_USINA",
+            "SIGLA_PARCELA_USINA",
+            "CEG",
+            "NOME_EMPRESARIAL",
+            "SUBMERCADO",
+            "FONTE_ENERGIA_PRIMARIA",
+            "ESTADO_UF",
+            "CAP_T",
+            "GARANTIA_FISICA",
+            "GERACAO_CENTRO_GRAVIDADE",
+        ],
+        [["2026-02", "1001", "PLT1", "CEG123", "Utility SA", "SE/CO", "Hidraulica", "SP", "100", "50", "40"]],
+    )
+    hourly_path = _write_csv(
+        tmp_path / "hourly.csv",
+        [
+            "MES_REFERENCIA",
+            "DATA",
+            "PERIODO_COMERCIALIZACAO",
+            "CODIGO_PARCELA_USINA",
+            "SIGLA_USINA",
+            "FONTE_PRIMARIA",
+            "SUBMERCADO",
+            "GERACAO_CENTRO_GRAVIDADE",
+            "GERACAO_VERIFICADA_ONS",
+            "DISPONIBILIDADE_VERIFICADA_UG",
+            "INDISPONIBILIDADE_UTE_ORDEM_MERITO_ECONOMICO",
+        ],
+        [
+            ["202602", "02/02/2026", 1, "1001", "PLT1", "Hidraulica", "SE/CO", "10", "9", "8", "0"],
+            ["202602", "02/02/2026", 2, "1001", "PLT1", "Hidraulica", "SE/CO", "12", "11", "7", "1"],
+        ],
+    )
+
+    with db_engine.begin() as conn:
+        seed_plant_sources(conn)
+        upsert_ccee_monthly(
+            conn,
+            parse_ccee_monthly(_snapshot(monthly_path, SOURCE_CCEE_MONTHLY, "CCEE", "PARCELA_USINA_MONTANTE_MENSAL")),
+        )
+        upsert_ccee_hourly(
+            conn,
+            parse_ccee_hourly(_snapshot(hourly_path, SOURCE_CCEE_HOURLY, "CCEE", "GERACAO_HORARIA_USINA")),
+        )
+        mart_result = rebuild_plant_hourly_marts(conn, reference_months=["2026-02"])
+
+    assert mart_result["daily_rows"] == 1
+    assert mart_result["preview_rows"] == 2
+    assert mart_result["source_submarket_rows"] == 1
+    with db_engine.connect() as conn:
+        summary = conn.execute(text("""
+            SELECT reference_month, generation_source, submarket,
+                   plant_parcel_count, hourly_observations, generation_mwh,
+                   verified_generation_mwh
+            FROM plant_parcel_source_submarket_monthly_mart
+        """)).mappings().one()
+    assert summary["reference_month"] == "2026-02"
+    assert summary["generation_source"] == "Hidraulica"
+    assert summary["submarket"] == "SE/CO"
+    assert summary["plant_parcel_count"] == 1
+    assert summary["hourly_observations"] == 2
+    assert summary["generation_mwh"] == pytest.approx(22.0)
+    assert summary["verified_generation_mwh"] == pytest.approx(20.0)
+
+    settings = build_settings(project_root=tmp_path)
+    svc = EnergyKPIReadService(settings)
+    monkeypatch.setattr(svc, "_engine", lambda: db_engine)
+
+    statements: list[str] = []
+
+    def capture_statement(_conn, _cursor, statement, _parameters, _context, _executemany):
+        statements.append(" ".join(str(statement).split()))
+
+    event.listen(db_engine, "before_cursor_execute", capture_statement)
+    try:
+        chart = svc.get_plant_parcel_chart_data(
+            entity_id="1001",
+            entity_type="ccee_plant_parcel",
+            frequency="daily",
+            year_month="2026-02",
+        )
+    finally:
+        event.remove(db_engine, "before_cursor_execute", capture_statement)
+
+    assert chart.get("error") is None
+    assert chart["metadata"]["data_source"] == "plant_parcel_daily_generation_mart"
+    assert chart["periods"] == ["2026-02-02"]
+    series = {row["id"]: row for row in chart["series"]}
+    assert series["generation_mwh"]["points"] == [pytest.approx(22.0)]
+    assert any("FROM plant_parcel_daily_generation_mart" in stmt for stmt in statements)
+    assert not any("FROM ccee_plant_parcel_hourly" in stmt for stmt in statements)
+
+
+def test_hourly_chart_requires_explicit_bounded_window(db_engine, monkeypatch):
+    settings = build_settings()
+    svc = EnergyKPIReadService(settings)
+    monkeypatch.setattr(svc, "_engine", lambda: db_engine)
+
+    result = svc.get_plant_parcel_chart_data(
+        entity_id="1001",
+        entity_type="ccee_plant_parcel",
+        frequency="hourly",
+        year_month="2026-02",
+    )
+
+    assert "requires explicit start_datetime and end_datetime" in result["error"]
+
+
+def test_energy_mart_status_uses_fast_hourly_estimate(tmp_path: Path, db_engine, monkeypatch):
+    hourly_path = _write_csv(
+        tmp_path / "hourly.csv",
+        [
+            "MES_REFERENCIA",
+            "DATA",
+            "PERIODO_COMERCIALIZACAO",
+            "CODIGO_PARCELA_USINA",
+            "SIGLA_USINA",
+            "FONTE_PRIMARIA",
+            "SUBMERCADO",
+            "GERACAO_CENTRO_GRAVIDADE",
+            "GERACAO_VERIFICADA_ONS",
+            "DISPONIBILIDADE_VERIFICADA_UG",
+            "INDISPONIBILIDADE_UTE_ORDEM_MERITO_ECONOMICO",
+        ],
+        [
+            ["202602", "02/02/2026", 1, "1001", "PLT1", "Hidraulica", "SE/CO", "10", "9", "8", "0"],
+            ["202602", "02/02/2026", 2, "1001", "PLT1", "Hidraulica", "SE/CO", "12", "11", "7", "1"],
+        ],
+    )
+    with db_engine.begin() as conn:
+        seed_plant_sources(conn)
+        upsert_ccee_hourly(
+            conn,
+            parse_ccee_hourly(_snapshot(hourly_path, SOURCE_CCEE_HOURLY, "CCEE", "GERACAO_HORARIA_USINA")),
+        )
+        rebuild_plant_hourly_marts(conn, reference_months=["2026-02"])
+
+    settings = build_settings(project_root=tmp_path)
+    svc = EnergyKPIReadService(settings)
+    monkeypatch.setattr(svc, "_engine", lambda: db_engine)
+
+    statements: list[str] = []
+
+    def capture_statement(_conn, _cursor, statement, _parameters, _context, _executemany):
+        statements.append(" ".join(str(statement).split()))
+
+    event.listen(db_engine, "before_cursor_execute", capture_statement)
+    try:
+        status = svc.get_energy_mart_status()
+    finally:
+        event.remove(db_engine, "before_cursor_execute", capture_statement)
+
+    assert status["source"]["count_method"] == "MAX(rowid)"
+    assert status["source"]["latest_reference_month"] == "2026-02"
+    daily = status["marts"]["plant_parcel_daily_generation_mart"]
+    assert daily["row_count_current"] == 1
+    assert daily["source_observations_current"] == 2
+    assert daily["is_current_for_latest_source_month"] is True
+    source_submarket = status["marts"]["plant_parcel_source_submarket_monthly_mart"]
+    assert source_submarket["row_count_current"] == 1
+    assert source_submarket["generation_source_count_current"] == 1
+    assert source_submarket["submarket_count_current"] == 1
+    assert source_submarket["source_observations_current"] == 2
+    assert not any("COUNT(*) FROM ccee_plant_parcel_hourly" in stmt for stmt in statements)
+
+
+def test_source_submarket_summary_reads_mart_not_hourly(tmp_path: Path, db_engine, monkeypatch):
+    hourly_path = _write_csv(
+        tmp_path / "hourly.csv",
+        [
+            "MES_REFERENCIA",
+            "DATA",
+            "PERIODO_COMERCIALIZACAO",
+            "CODIGO_PARCELA_USINA",
+            "SIGLA_USINA",
+            "FONTE_PRIMARIA",
+            "SUBMERCADO",
+            "GERACAO_CENTRO_GRAVIDADE",
+            "GERACAO_VERIFICADA_ONS",
+            "DISPONIBILIDADE_VERIFICADA_UG",
+            "INDISPONIBILIDADE_UTE_ORDEM_MERITO_ECONOMICO",
+        ],
+        [
+            ["202602", "02/02/2026", 1, "1001", "PLT1", "Hidraulica", "SE/CO", "10", "9", "8", "0"],
+            ["202602", "02/02/2026", 2, "1001", "PLT1", "Hidraulica", "SE/CO", "12", "11", "7", "1"],
+            ["202602", "02/02/2026", 1, "1002", "PLT2", "Eólica", "NORDESTE", "20", "18", "9", "0"],
+        ],
+    )
+    with db_engine.begin() as conn:
+        seed_plant_sources(conn)
+        upsert_ccee_hourly(
+            conn,
+            parse_ccee_hourly(_snapshot(hourly_path, SOURCE_CCEE_HOURLY, "CCEE", "GERACAO_HORARIA_USINA")),
+        )
+        rebuild_plant_hourly_marts(
+            conn,
+            reference_months=["2026-02"],
+            rebuild_daily=False,
+            rebuild_preview=False,
+            rebuild_source_submarket=True,
+        )
+
+    settings = build_settings(project_root=tmp_path)
+    svc = EnergyKPIReadService(settings)
+    monkeypatch.setattr(svc, "_engine", lambda: db_engine)
+
+    statements: list[str] = []
+
+    def capture_statement(_conn, _cursor, statement, _parameters, _context, _executemany):
+        statements.append(" ".join(str(statement).split()))
+
+    event.listen(db_engine, "before_cursor_execute", capture_statement)
+    try:
+        summary = svc.get_plant_parcel_source_submarket_summary(reference_month="2026-02")
+    finally:
+        event.remove(db_engine, "before_cursor_execute", capture_statement)
+
+    assert summary["data_source"] == "plant_parcel_source_submarket_monthly_mart"
+    assert summary["total"] == 2
+    assert summary["coverage"]["source_observations"] == 3
+    by_group = {(row["generation_source"], row["submarket"]): row for row in summary["records"]}
+    assert by_group[("Hidraulica", "SE/CO")]["hourly_observations"] == 2
+    assert by_group[("Hidraulica", "SE/CO")]["plant_parcel_count"] == 1
+    assert by_group[("Eólica", "NORDESTE")]["hourly_observations"] == 1
+    assert any("FROM plant_parcel_source_submarket_monthly_mart" in stmt for stmt in statements)
+    assert not any("FROM ccee_plant_parcel_hourly" in stmt for stmt in statements)
 
 
 def test_plant_catalog_search_is_accent_insensitive(tmp_path: Path, db_engine, monkeypatch):
@@ -759,6 +993,7 @@ def test_get_plant_parcel_chart_data(tmp_path: Path, db_engine, monkeypatch):
             conn,
             parse_ccee_hourly(_snapshot(hourly_path, SOURCE_CCEE_HOURLY, "CCEE", "GERACAO_HORARIA_USINA")),
         )
+        rebuild_plant_hourly_marts(conn, reference_months=["2026-02"])
 
     settings = build_settings(project_root=tmp_path)
     svc = EnergyKPIReadService(settings)
@@ -786,7 +1021,9 @@ def test_get_plant_parcel_chart_data(tmp_path: Path, db_engine, monkeypatch):
         entity_id="1001",
         entity_type="ccee_plant_parcel",
         frequency="hourly",
-        year_month="2026-02"
+        year_month="2026-02",
+        start_datetime="2026-02-01T00:00:00",
+        end_datetime="2026-02-01T23:59:59",
     )
     assert hourly_chart["frequency"] == "hourly"
     assert len(hourly_chart["periods"]) == 2

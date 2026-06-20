@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   fetchAppStatus,
@@ -8,6 +8,7 @@ import {
   triggerApplyUpdate,
   fetchUpdateProgress,
 } from "@/lib/api/appStatus";
+import { fetchEnergyMartStatus, startEnergyMartRebuild, type EnergyMartStatusResult } from "@/lib/api/energyKpis";
 import { PageHeader as UnifiedPageHeader } from "@/components/PageHeader";
 import { whenBridgeReady } from "@/lib/bridge/adapter";
 import type {
@@ -19,11 +20,13 @@ import type {
   LockStatusPayload,
   UpdateStatus,
   UpdateProgressStatus,
+  EnergyMartStatusResponse,
 } from "@/lib/bridge/types";
 
 const PATH_ORDER: StatusPathKind[] = ["data", "database", "output", "logs", "cache"];
 
 export function StatusPage() {
+  const queryClient = useQueryClient();
   const [bridgeReady, setBridgeReady] = useState(false);
   const [forceCheckCount, setForceCheckCount] = useState(0);
   const [copiedKind, setCopiedKind] = useState<string | null>(null);
@@ -49,6 +52,25 @@ export function StatusPage() {
 
   const openMutation = useMutation({
     mutationFn: openStatusPath,
+  });
+
+  const energyMartQuery = useQuery({
+    queryKey: ["energy-mart-status"],
+    queryFn: fetchEnergyMartStatus,
+    enabled: bridgeReady,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+    refetchInterval: (query) => {
+      const martStatus = query.state.data?.mode === "desktop" ? query.state.data.status : null;
+      return martStatus?.rebuild?.status === "running" ? 2000 : false;
+    },
+  });
+
+  const energyMartRebuildMutation = useMutation({
+    mutationFn: startEnergyMartRebuild,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["energy-mart-status"] });
+    },
   });
 
   const result = statusQuery.data;
@@ -111,6 +133,22 @@ export function StatusPage() {
               onCheckUpdates={() => setForceCheckCount((value) => value + 1)}
             />
           </div>
+
+          <EnergyMartMaintenanceCard
+            result={energyMartQuery.data ?? null}
+            loading={energyMartQuery.isLoading}
+            error={energyMartQuery.error}
+            rebuildError={energyMartRebuildMutation.error}
+            rebuilding={energyMartRebuildMutation.isPending}
+            onRefresh={() => { void energyMartQuery.refetch(); }}
+            onRebuildLatestDaily={(referenceMonth) => {
+              energyMartRebuildMutation.mutate({
+                reference_month: referenceMonth,
+                rebuild_daily: true,
+                rebuild_preview: false,
+              });
+            }}
+          />
 
           <div className="grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
             <DiagnosticsCard diagnostics={status.diagnostics} />
@@ -347,6 +385,113 @@ function DatabaseCard({ database }: { database: DatabaseDiagnostics | null }) {
         <InlineError>Latest refresh error: {database.latest_error}</InlineError>
       ) : null}
       {database.error ? <InlineError>{database.error}</InlineError> : null}
+    </Card>
+  );
+}
+
+function EnergyMartMaintenanceCard({
+  result,
+  loading,
+  error,
+  rebuildError,
+  rebuilding,
+  onRefresh,
+  onRebuildLatestDaily,
+}: {
+  result: EnergyMartStatusResult | null;
+  loading: boolean;
+  error: unknown;
+  rebuildError: unknown;
+  rebuilding: boolean;
+  onRefresh: () => void;
+  onRebuildLatestDaily: (referenceMonth: string) => void;
+}) {
+  const browserReason = result?.mode === "browser" ? result.reason : null;
+  const status: EnergyMartStatusResponse | null = result?.mode === "desktop" ? result.status : null;
+  const daily = status?.marts?.plant_parcel_daily_generation_mart;
+  const preview = status?.marts?.plant_parcel_hourly_preview_mart;
+  const sourceSubmarket = status?.marts?.plant_parcel_source_submarket_monthly_mart;
+  const rebuildState = status?.rebuild;
+  const latestMonth = status?.recommended_daily_rebuild_month ?? status?.source?.latest_reference_month ?? null;
+  const writeBlocked = status?.write_mode === "read-only";
+  const rebuildRunning = rebuilding || rebuildState?.status === "running";
+  const canRebuildLatest = Boolean(latestMonth) && !writeBlocked && !rebuildRunning;
+  const tone: Tone =
+    error || status?.error || rebuildState?.status === "error"
+      ? "bad"
+      : daily?.is_current_for_latest_source_month
+        ? "good"
+        : "warn";
+
+  return (
+    <Card title="Energy KPI Marts" eyebrow="Rebuildable hot-path cache" tone={tone}>
+      {browserReason ? (
+        <p className="text-sm text-amber-200">{browserReason}</p>
+      ) : loading && !status ? (
+        <p className="text-sm text-zinc-500">Loading Energy mart status...</p>
+      ) : (
+        <>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <Metric label="Daily rows" value={formatInt(daily?.row_count_current ?? daily?.row_count)} />
+            <Metric label="Daily months" value={formatInt(daily?.period_count_current)} />
+            <Metric label="Hourly estimate" value={formatInt(status?.source?.row_estimate)} />
+            <Metric
+              label="Latest source month"
+              value={status?.source?.latest_reference_month ?? "n/a"}
+              tone={daily?.is_current_for_latest_source_month ? "good" : "warn"}
+            />
+          </div>
+          <dl className="mt-4 grid gap-3 border-t border-zinc-800 pt-3 text-sm sm:grid-cols-2">
+            <Field label="Daily coverage" value={formatPeriodRange(daily?.period_start_current, daily?.period_end_current)} mono />
+            <Field label="Daily rebuilt" value={formatDateTime(daily?.rebuilt_at ?? null)} />
+            <Field label="Preview rows" value={formatInt(preview?.row_count_current ?? preview?.row_count)} mono />
+            <Field label="Source/submarket rows" value={formatInt(sourceSubmarket?.row_count_current ?? sourceSubmarket?.row_count)} mono />
+            <Field label="Source/submarket coverage" value={formatPeriodRange(sourceSubmarket?.period_start_current, sourceSubmarket?.period_end_current)} mono />
+            <Field label="Source/submarket groups" value={`${formatInt(sourceSubmarket?.generation_source_count_current)} sources · ${formatInt(sourceSubmarket?.submarket_count_current)} submarkets`} />
+            <Field label="Write mode" value={status?.write_mode ?? "unknown"} tone={writeBlocked ? "warn" : "neutral"} />
+          </dl>
+          <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-zinc-800 pt-3">
+            <button
+              type="button"
+              onClick={onRefresh}
+              className="rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 hover:border-zinc-500 hover:text-zinc-100"
+            >
+              Refresh status
+            </button>
+            <button
+              type="button"
+              disabled={!canRebuildLatest}
+              onClick={() => {
+                if (latestMonth) onRebuildLatestDaily(latestMonth);
+              }}
+              className="rounded border border-cyan-700/70 bg-cyan-500/10 px-3 py-1.5 text-xs font-medium text-cyan-100 hover:bg-cyan-500/15 disabled:cursor-not-allowed disabled:border-zinc-800 disabled:bg-zinc-900 disabled:text-zinc-600"
+            >
+              {rebuildRunning ? "Rebuilding..." : latestMonth ? `Rebuild daily ${latestMonth}` : "No month available"}
+            </button>
+          </div>
+          <p className="mt-3 text-xs leading-5 text-zinc-500">
+            This rebuilds the daily and source/submarket marts for the latest source month only. Raw hourly facts remain intact, and exact raw hourly counts are not used here.
+          </p>
+          {writeBlocked ? (
+            <p className="mt-3 rounded border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
+              Write actions are blocked in this runtime mode. Status reads remain available.
+            </p>
+          ) : null}
+          {rebuildState?.status && rebuildState.status !== "idle" ? (
+            <p className="mt-3 rounded border border-zinc-800 bg-zinc-950/50 p-3 text-xs text-zinc-300">
+              Rebuild status: {rebuildState.status}
+              {rebuildState.finished_at ? ` · finished ${formatDateTime(rebuildState.finished_at)}` : ""}
+              {rebuildState.error ? ` · ${rebuildState.error}` : ""}
+            </p>
+          ) : null}
+        </>
+      )}
+      {error ? (
+        <InlineError>{error instanceof Error ? error.message : String(error)}</InlineError>
+      ) : null}
+      {rebuildError ? (
+        <InlineError>{rebuildError instanceof Error ? rebuildError.message : String(rebuildError)}</InlineError>
+      ) : null}
     </Card>
   );
 }
@@ -896,6 +1041,12 @@ function formatBytes(bytes: number | null | undefined): string {
 function formatInt(value: number | null | undefined): string {
   if (value == null) return "n/a";
   return new Intl.NumberFormat("en-US").format(value);
+}
+
+function formatPeriodRange(start: string | null | undefined, end: string | null | undefined): string {
+  if (!start && !end) return "n/a";
+  if (start && end && start !== end) return `${start} to ${end}`;
+  return start ?? end ?? "n/a";
 }
 
 function formatDateTime(value: string | null): string {

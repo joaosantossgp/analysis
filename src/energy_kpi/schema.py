@@ -522,16 +522,103 @@ def ensure_energy_kpi_tables_for_connection(conn, *, enable_wal: bool = True) ->
         "ccee_plant_parcel_hourly(plant_parcel_code, reference_datetime)"
     ))
     conn.execute(text(
-        "CREATE INDEX IF NOT EXISTS idx_cppe_ref ON ccee_plant_parcel_hourly(reference_datetime)"
-    ))
-    conn.execute(text(
         "CREATE INDEX IF NOT EXISTS idx_cppe_ref_month ON ccee_plant_parcel_hourly(reference_month)"
     ))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS plant_parcel_daily_generation_mart (
+            plant_parcel_code             TEXT NOT NULL,
+            reference_date                TEXT NOT NULL,
+            reference_month               TEXT NOT NULL,
+            generation_mwh                REAL,
+            verified_generation_mwh       REAL,
+            verified_availability_mwh     REAL,
+            unavailability_mwh            REAL,
+            hourly_observations           INTEGER NOT NULL DEFAULT 0,
+            first_reference_datetime      TEXT,
+            last_reference_datetime       TEXT,
+            source_dataset                TEXT,
+            first_snapshot_id             TEXT,
+            last_snapshot_id              TEXT,
+            rebuilt_at                    TEXT NOT NULL,
+            build_version                 TEXT NOT NULL,
+            PRIMARY KEY (plant_parcel_code, reference_date)
+        )
+    """))
     conn.execute(text(
-        "CREATE INDEX IF NOT EXISTS idx_cppe_submarket ON ccee_plant_parcel_hourly(submarket)"
+        "CREATE INDEX IF NOT EXISTS idx_ppdgm_parcel_month_date ON "
+        "plant_parcel_daily_generation_mart(plant_parcel_code, reference_month, reference_date)"
     ))
     conn.execute(text(
-        "CREATE INDEX IF NOT EXISTS idx_cppe_source ON ccee_plant_parcel_hourly(generation_source)"
+        "CREATE INDEX IF NOT EXISTS idx_ppdgm_month_date ON "
+        "plant_parcel_daily_generation_mart(reference_month, reference_date)"
+    ))
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS plant_parcel_hourly_preview_mart (
+            plant_parcel_code                  TEXT NOT NULL,
+            reference_datetime                 TEXT NOT NULL,
+            reference_month                    TEXT NOT NULL,
+            commercialization_period           INTEGER NOT NULL,
+            generation_center_of_gravity_mwh   REAL,
+            verified_generation_ons_mwh        REAL,
+            verified_availability_mwh          REAL,
+            unavailability_mwh                 REAL,
+            source_dataset                     TEXT,
+            snapshot_id                        TEXT,
+            rebuilt_at                         TEXT NOT NULL,
+            build_version                      TEXT NOT NULL,
+            PRIMARY KEY (plant_parcel_code, reference_datetime, commercialization_period)
+        )
+    """))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_pphpm_parcel_ref ON "
+        "plant_parcel_hourly_preview_mart(plant_parcel_code, reference_datetime)"
+    ))
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS energy_mart_builds (
+            mart_name                  TEXT PRIMARY KEY,
+            build_version              TEXT NOT NULL,
+            rebuilt_at                 TEXT NOT NULL,
+            source_table               TEXT NOT NULL,
+            source_row_estimate        INTEGER,
+            source_max_rowid           INTEGER,
+            source_latest_reference    TEXT,
+            period_start               TEXT,
+            period_end                 TEXT,
+            row_count                  INTEGER,
+            status                     TEXT NOT NULL,
+            error_message              TEXT,
+            metadata_json              TEXT
+        )
+    """))
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS plant_parcel_source_submarket_monthly_mart (
+            reference_month             TEXT NOT NULL,
+            generation_source           TEXT NOT NULL,
+            submarket                   TEXT NOT NULL,
+            plant_parcel_count          INTEGER NOT NULL,
+            hourly_observations         INTEGER NOT NULL,
+            generation_mwh              REAL,
+            verified_generation_mwh     REAL,
+            first_reference_datetime    TEXT,
+            last_reference_datetime     TEXT,
+            source_dataset              TEXT,
+            first_snapshot_id           TEXT,
+            last_snapshot_id            TEXT,
+            rebuilt_at                  TEXT NOT NULL,
+            build_version               TEXT NOT NULL,
+            PRIMARY KEY (reference_month, generation_source, submarket)
+        )
+    """))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_ppssmm_source_month ON "
+        "plant_parcel_source_submarket_monthly_mart(generation_source, reference_month)"
+    ))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_ppssmm_submarket_month ON "
+        "plant_parcel_source_submarket_monthly_mart(submarket, reference_month)"
     ))
 
     # ANEEL Electricity Distribution Analytics Domain Tables

@@ -6,6 +6,19 @@
 **Dataset:** 449 companies, ~40,410 financial_reports rows (6 annual years x 14 accounts/company + 1 quarterly row/year)
 **Methodology:** 7 warm runs per query; report median, p95, min, max. EXPLAIN QUERY PLAN captured for each.
 **Benchmark script:** `scripts/diagnostics/benchmark_read_paths.py` (repeatable; `--runs N --phase before|after`)
+**Status:** Dated benchmark evidence. Verify current code paths before using
+this as implementation guidance.
+
+> **2026-06-20 update:** the CVM financial mart cutover changed the hot-path
+> assumptions in this document. Companies directory metadata, available-year
+> lookups, latest-period metadata, KPI account reads, sector metric rows, and
+> historical indicator metrics now use rebuildable marts when
+> `financial_mart_builds` reports a successful rebuild. A copied production DB
+> benchmark showed `idx_fr_cd_cvm`, `idx_fr_period_label`, `idx_fr_cd_conta`,
+> `idx_fr_cd_cvm_period_label`, `idx_fr_cd_conta_period_label`, and
+> `idx_fr_year_period` are candidates for later backup-and-compact removal.
+> Keep `idx_fr_cd_cvm_stmt_year` and `idx_fr_cvm_year` for now because statement,
+> export-period, and DFC depreciation reads still use raw `financial_reports`.
 
 > **SQLite vs PostgreSQL note:** The benchmark runs on in-memory SQLite to be self-contained. SQLite's query planner differs from PostgreSQL's in two relevant ways: (1) it will not use a column index when comparing two columns from the same table (self-referential joins), and (2) it does not support partial/functional indexes. The findings below distinguish SQLite-confirmed improvements from PostgreSQL-expected improvements.
 

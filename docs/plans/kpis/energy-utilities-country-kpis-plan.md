@@ -10,6 +10,9 @@
 > **and** the broader Sector KPI Registry it seeds. Multiple AI agents continue
 > from this file. Do **not** start coding until the Implementation Readiness
 > Checklist (§18) is green and João approves. Keep this doc the single source of
+> planning truth only. Some code paths named here may predate later package
+> reorganization; verify current paths from `docs/architecture.md` and `rg`
+> before editing.
 > truth — do not fork into scratch notes.
 
 ---

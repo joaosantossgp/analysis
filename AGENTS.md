@@ -5,11 +5,12 @@ Canonical operating rules for AI agents in this project. English-only. ~120 line
 ## 1. How to read this file
 
 - This is the **default** contract. Read once per session.
+- For runtime architecture, data sources, Excel exports, development, build/release, troubleshooting, and product workflows, start with the canonical docs linked from `README.md`.
 - For a full map of every folder, workflow, and doc status, see `docs/reference/repository-map.md`.
 - For long-running autonomous PRs, also read `docs/governance/autonomous-mode.md`.
 - Before touching `src/` or `apps/api/`, also read `docs/CONTEXT.md`.
 - Before implementing or reviewing any Vite UI screen in `apps/desktop-web`, read and follow: [docs/skills/CVMANALYTICS_VITE_UI_SKILL.md](docs/skills/CVMANALYTICS_VITE_UI_SKILL.md).
-- Active reference docs live in `docs/reference/`. ADRs live in `docs/decisions/`. Migration history lives in `docs/archive/migration/` (all phases complete as of v0.17.0).
+- Active reference docs live in `docs/` and `docs/reference/`. ADRs live in `docs/decisions/`. Migration history lives in `docs/archive/migration/` (all phases complete as of v0.17.0).
 - `archive/` (at root) is historical — governance snapshots and old experiments. Do not treat as current contract.
 
 ## Active Application Source of Truth
@@ -154,6 +155,13 @@ Each task type has a minimal extra rule on top of the principles. Match the mode
 ## 6. Source-of-truth pointers
 
 - `README.md` — project overview
+- `docs/architecture.md` — active runtime architecture and boundaries
+- `docs/data-sources.md` — source classes, caveats, and auditability rules
+- `docs/excel-exports.md` — Excel workbook standards and validation
+- `docs/development.md` — development setup and command map
+- `docs/build-release.md` — build, release, updater, and validation contract
+- `docs/troubleshooting.md` — runtime, data, updater, and export troubleshooting
+- `docs/product-workflows.md` — implemented vs planned analyst workflows
 - `docs/COMO_RODAR.md` — how to run locally (Portuguese, operational)
 - `docs/CONTEXT.md` — domain rules for `src/` and `apps/api/`
 - `docs/decisions/` — ADRs (durable architectural decisions)

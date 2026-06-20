@@ -2,12 +2,16 @@
 
 This directory holds per-version release notes for the CVMAnalytics desktop product.
 
-The **current release is `v0.27.3`** (Model Mapping performance optimization). The packaged Windows desktop EXE distributed via [GitHub Releases](https://github.com/joaosantossgp/analisys/releases) is the authoritative distribution channel — this directory is a **partial** local copy of the per-version notes, not the source of truth.
+The latest local release note in this directory is `v0.28.0`. The packaged
+Windows desktop EXE distributed via [GitHub Releases](https://github.com/joaosantossgp/analisys/releases)
+is the authoritative distribution channel — this directory is a **partial**
+local copy of the per-version notes, not the source of truth.
 
 ## Current
 
 | Version | Notes |
 |---|---|
+| `v0.28.0` | [v0.28.0.md](v0.28.0.md) — latest local release note |
 | `v0.27.3` | [v0.27.3.md](v0.27.3.md) — Model Mapping performance optimization (95%+ load time reduction) |
 | `v0.27.2` | [v0.27.2.md](v0.27.2.md) — Automatic Model Mapping engine with override capabilities |
 | `v0.27.1` | [v0.27.1.md](v0.27.1.md) — Company Overview chart refinement and shared period selector |
@@ -55,6 +59,7 @@ Tagged releases that exist on GitHub but do **not** have a local `.md` file unde
 - `v0.9.0` — Phase 3E Excel export
 - `v0.12.0` — Phase 3H navigation polish + KPI charts
 - `v0.13.0` — Phase 3I statement export scope + updater UI
+- `v0.25.1` — tag present, local release note absent
 
 For these versions, the authoritative notes are on the corresponding [GitHub Release](https://github.com/joaosantossgp/analisys/releases) page. This directory is **milestone-only coverage** rather than a full release log. Backfilling from `git tag --format='%(contents)' <tag>` is an open decision — see `docs/reference/repository-map.md`.
 

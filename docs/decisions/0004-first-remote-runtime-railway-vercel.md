@@ -98,5 +98,5 @@ Confirmadas em 2026-04-16 apos conclusao das issues #33 (backend), #35 (frontend
 ## Referencias
 
 - [0002 - Stack recomendada para a V2 com GitHub Student Developer Pack](./0002-student-pack-v2-stack.md)
-- [docs/STUDENT_PACK_PLAN.md](../STUDENT_PACK_PLAN.md)
-- [docs/WEBAPP_TRANSFORMATION_PLAN.md](../WEBAPP_TRANSFORMATION_PLAN.md)
+- `docs/STUDENT_PACK_PLAN.md` (historical input, removed from active docs)
+- `docs/WEBAPP_TRANSFORMATION_PLAN.md` (historical input, removed from active docs)

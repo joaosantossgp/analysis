@@ -391,6 +391,119 @@ class EnergyBridgeMixin:
                 "refresh_source_id": None,
             }
 
+    def get_energy_mart_status(self, params=None) -> dict:
+        try:
+            payload = self._retry_energy_read(lambda: self._energy_svc().get_energy_mart_status())
+            rebuild_state = getattr(self, "_energy_mart_rebuild_state", {"status": "idle", "error": None})
+            payload["rebuild"] = rebuild_state
+            payload["write_mode"] = "read-write" if self._is_write_allowed() else "read-only"
+            return self._sanitize_for_json(payload)
+        except Exception as exc:
+            return self._sanitize_for_json({
+                "error": str(exc),
+                "rebuild": getattr(self, "_energy_mart_rebuild_state", {"status": "idle", "error": None}),
+                "write_mode": "read-write" if self._is_write_allowed() else "read-only",
+            })
+
+    def start_energy_mart_rebuild(self, params=None) -> dict:
+        if not self._is_write_allowed():
+            return self._sanitize_for_json(self._write_blocked_response("start_energy_mart_rebuild"))
+
+        params = params or {}
+        state = getattr(self, "_energy_mart_rebuild_state", {"status": "idle", "error": None})
+        if state.get("status") == "running":
+            return self._sanitize_for_json({
+                "status": "already_running",
+                "error": None,
+                "started_at": state.get("started_at"),
+                "reference_months": state.get("reference_months"),
+            })
+
+        reference_month = str(params.get("reference_month") or "").strip()
+        rebuild_all = bool(params.get("all"))
+        if rebuild_all:
+            expected = "REBUILD ENERGY MARTS"
+            if str(params.get("confirm") or "") != expected:
+                return self._sanitize_for_json({
+                    "status": "blocked",
+                    "error": f"Type {expected} to confirm a full Energy mart rebuild.",
+                    "status_reason_code": "confirmation_required",
+                    "is_retry_allowed": True,
+                })
+            reference_months = None
+        else:
+            if not reference_month:
+                return self._sanitize_for_json({
+                    "status": "blocked",
+                    "error": "Energy mart rebuild requires reference_month unless full rebuild is explicitly confirmed.",
+                    "status_reason_code": "reference_month_required",
+                    "is_retry_allowed": True,
+                })
+            reference_months = [reference_month]
+
+        rebuild_daily = bool(params.get("rebuild_daily", True))
+        rebuild_preview = bool(params.get("rebuild_preview", False))
+        rebuild_source_submarket = bool(params.get("rebuild_source_submarket", True))
+        if not rebuild_daily and not rebuild_preview and not rebuild_source_submarket:
+            return self._sanitize_for_json({
+                "status": "blocked",
+                "error": "Select at least one mart to rebuild.",
+                "status_reason_code": "empty_rebuild_scope",
+                "is_retry_allowed": True,
+            })
+
+        started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        rebuild_id = str(uuid.uuid4())
+        self._energy_mart_rebuild_state = {
+            "status": "running",
+            "error": None,
+            "rebuild_id": rebuild_id,
+            "started_at": started_at,
+            "finished_at": None,
+            "reference_months": reference_months,
+            "rebuild_daily": rebuild_daily,
+            "rebuild_preview": rebuild_preview,
+            "rebuild_source_submarket": rebuild_source_submarket,
+            "result": None,
+        }
+
+        def _run():
+            try:
+                from src.energy_kpi.plant_marts import rebuild_plant_hourly_marts  # noqa: PLC0415
+                from src.energy_kpi.schema import get_energy_kpi_engine  # noqa: PLC0415
+                from src.platform.settings import get_settings  # noqa: PLC0415
+
+                engine = get_energy_kpi_engine(get_settings())
+                with engine.begin() as conn:
+                    result = rebuild_plant_hourly_marts(
+                        conn,
+                        reference_months=reference_months,
+                        rebuild_daily=rebuild_daily,
+                        rebuild_preview=rebuild_preview,
+                        rebuild_source_submarket=rebuild_source_submarket,
+                    )
+                self._energy_mart_rebuild_state = {
+                    **self._energy_mart_rebuild_state,
+                    "status": "success",
+                    "error": None,
+                    "finished_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                    "result": result,
+                }
+            except Exception as exc:
+                logger.exception("Energy mart rebuild failed")
+                self._energy_mart_rebuild_state = {
+                    **self._energy_mart_rebuild_state,
+                    "status": "error",
+                    "error": str(exc),
+                    "finished_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                }
+            finally:
+                self._energy_read_service = None
+                self._clear_energy_indicator_caches()
+
+        threading.Thread(target=_run, name="energy-mart-rebuild", daemon=True).start()
+        return self._sanitize_for_json(self._energy_mart_rebuild_state)
+
     def get_plant_parcel_catalog(self, params=None) -> dict:
         params = params or {}
         try:
@@ -409,6 +522,29 @@ class EnergyBridgeMixin:
             )
         except Exception as exc:
             return {"error": str(exc), "records": [], "count": 0, "total": 0}
+
+    def get_plant_parcel_source_submarket_summary(self, params=None) -> dict:
+        params = params or {}
+        try:
+            return self._sanitize_for_json(
+                self._retry_energy_read(
+                    lambda: self._energy_svc().get_plant_parcel_source_submarket_summary(
+                        reference_month=params.get("reference_month"),
+                        generation_source=params.get("generation_source"),
+                        submarket=params.get("submarket"),
+                        limit=int(params.get("limit", 500) or 500),
+                        offset=int(params.get("offset", 0) or 0),
+                    )
+                )
+            )
+        except Exception as exc:
+            return {
+                "error": str(exc),
+                "records": [],
+                "count": 0,
+                "total": 0,
+                "data_source": "plant_parcel_source_submarket_monthly_mart",
+            }
 
     def get_plant_parcel_detail(self, params=None) -> dict:
         params = params or {}
@@ -434,6 +570,9 @@ class EnergyBridgeMixin:
                         entity_type=params.get("entity_type"),
                         frequency=str(params.get("frequency") or "monthly"),
                         year_month=params.get("year_month"),
+                        start_datetime=params.get("start_datetime"),
+                        end_datetime=params.get("end_datetime"),
+                        limit=params.get("limit"),
                     )
                 )
             )

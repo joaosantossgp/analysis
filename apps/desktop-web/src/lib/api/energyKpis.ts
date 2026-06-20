@@ -24,6 +24,9 @@ import type {
   PlantParcelSourceStatusResponse,
   PlantParcelChartDataParams,
   PlantParcelChartDataResponse,
+  EnergyMartStatusResponse,
+  EnergyMartRebuildState,
+  StartEnergyMartRebuildParams,
   PlantParcelFilePickerResult,
   PlantParcelManualImportParams,
   PlantParcelManualImportResult,
@@ -92,6 +95,14 @@ export type PlantParcelDetailResult =
 export type PlantParcelChartDataResult =
   | { mode: "desktop"; data: PlantParcelChartDataResponse }
   | { mode: "browser"; data: null; reason: string };
+
+export type EnergyMartStatusResult =
+  | { mode: "desktop"; status: EnergyMartStatusResponse }
+  | { mode: "browser"; status: null; reason: string };
+
+export type EnergyMartRebuildResult =
+  | { mode: "desktop"; result: EnergyMartRebuildState }
+  | { mode: "browser"; result: null; reason: string };
 
 export type PlantParcelRefreshResult_ =
   | { mode: "desktop"; result: PlantParcelRefreshResult }
@@ -355,4 +366,28 @@ export async function fetchPlantParcelChartData(
   );
   if (payload.error) throw new Error(payload.error);
   return { mode: "desktop", data: payload };
+}
+
+export async function fetchEnergyMartStatus(): Promise<EnergyMartStatusResult> {
+  const mode: BridgeMode = getBridgeMode();
+  if (mode === "browser") {
+    return { mode: "browser", status: null, reason: BROWSER_REASON };
+  }
+  const payload: EnergyMartStatusResponse = await callBridge("get_energy_mart_status", {});
+  if (payload.error) throw new Error(payload.error);
+  return { mode: "desktop", status: payload };
+}
+
+export async function startEnergyMartRebuild(
+  params: StartEnergyMartRebuildParams,
+): Promise<EnergyMartRebuildResult> {
+  const mode: BridgeMode = getBridgeMode();
+  if (mode === "browser") {
+    return { mode: "browser", result: null, reason: BROWSER_REASON };
+  }
+  const payload: EnergyMartRebuildState = await callBridge("start_energy_mart_rebuild", params);
+  if (payload.status === "error" || payload.status === "blocked") {
+    throw new Error(payload.error || "Energy mart rebuild could not start.");
+  }
+  return { mode: "desktop", result: payload };
 }
