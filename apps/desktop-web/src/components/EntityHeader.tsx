@@ -141,9 +141,16 @@ export function EntityHeader({
             </p>
           ) : null}
           <div className="flex flex-wrap gap-2">
-            <IdentifierBadge muted>{info.sector_name ?? info.setor_cvm ?? "sector n/a"}</IdentifierBadge>
+            <IdentifierBadge label="CVM Sector" muted>
+              {info.sector_name ?? info.setor_cvm ?? "sector n/a"}
+            </IdentifierBadge>
+            {info.gics_sector ? (
+              <IdentifierBadge label="GICS Sector" muted>
+                {info.gics_sector}
+              </IdentifierBadge>
+            ) : null}
             {info.gics_sub_industry ?? info.gics_industry ? (
-              <IdentifierBadge muted>
+              <IdentifierBadge label="GICS Sub-industry" muted>
                 {info.gics_sub_industry ?? info.gics_industry}
               </IdentifierBadge>
             ) : null}

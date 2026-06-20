@@ -15,7 +15,7 @@ import type {
 const BROWSER_REASON =
   "Running in browser mode — pywebview bridge is unavailable. Launch with python -m desktop.app --vite or the packaged exe.";
 
-export type SectorGroupBy = "sector" | "sub_sector";
+export type SectorGroupBy = "sector" | "sub_sector" | "cvm_sector";
 
 type FetchSectorsOptions = {
   includeSnapshots?: boolean;

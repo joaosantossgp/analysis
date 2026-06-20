@@ -897,21 +897,6 @@ const SECTOR_SLUGS = [
   { name: "Outros", slug: "outros", count: 1 },
 ];
 
-const MOCK_SECTORS: SectorDirectoryResponse = {
-  items: SECTOR_SLUGS.map((s) => ({
-    sector_name: s.name,
-    sector_slug: s.slug,
-    company_count: s.count,
-    latest_year: YEAR - 1,
-    snapshot: { roe: 12, mg_ebit: 18, mg_liq: 8 },
-    sub_industries: [],
-    sub_industry_breakdown: [],
-    group_type: "sector",
-    parent_sector_name: null,
-    parent_sector_slug: null,
-    companies: [],
-  })),
-};
 
 // ---------------------------------------------------------------------------
 // Company directory item helpers
@@ -931,11 +916,11 @@ function toDirectoryItem(c: FixtureCompany): CompanyDirectoryItem {
     has_financial_data: c.has_financial_data,
     coverage_rank: c.has_financial_data ? 1 : null,
     data_status: c.data_status,
-    gics_sector: null,
-    gics_sector_slug: null,
+    gics_sector: c.cd_cvm === 9512 ? "Energy" : c.cd_cvm === 14311 ? "Materials" : c.cd_cvm === 14673 ? "Consumer Staples" : null,
+    gics_sector_slug: c.cd_cvm === 9512 ? "energy" : c.cd_cvm === 14311 ? "materials" : c.cd_cvm === 14673 ? "consumer-staples" : null,
     gics_industry_group: null,
-    gics_industry: null,
-    gics_sub_industry: null,
+    gics_industry: c.cd_cvm === 9512 ? "Oil, Gas & Consumable Fuels" : null,
+    gics_sub_industry: c.cd_cvm === 9512 ? "Integrated Oil & Gas" : c.cd_cvm === 14311 ? "Steel" : c.cd_cvm === 14673 ? "Brewers" : null,
   };
 }
 
@@ -1836,6 +1821,11 @@ export function createMockBridge(): Partial<BridgeApi> {
           : null,
         read_availability_code: c.has_financial_data ? "readable" : "no_data",
         read_availability_message: c.has_financial_data ? "Data available" : "No financial data",
+        gics_sector: c.cd_cvm === 9512 ? "Energy" : c.cd_cvm === 14311 ? "Materials" : c.cd_cvm === 14673 ? "Consumer Staples" : null,
+        gics_sector_slug: c.cd_cvm === 9512 ? "energy" : c.cd_cvm === 14311 ? "materials" : c.cd_cvm === 14673 ? "consumer-staples" : null,
+        gics_industry_group: null,
+        gics_industry: c.cd_cvm === 9512 ? "Oil, Gas & Consumable Fuels" : null,
+        gics_sub_industry: c.cd_cvm === 9512 ? "Integrated Oil & Gas" : c.cd_cvm === 14311 ? "Steel" : c.cd_cvm === 14673 ? "Brewers" : null,
       } satisfies CompanyInfo;
     },
 
@@ -1894,8 +1884,75 @@ export function createMockBridge(): Partial<BridgeApi> {
         gics_sub_industry: null,
       })),
     } satisfies CompanyFiltersResponse),
+    get_sectors: async (params) => {
+      const p = params as Record<string, unknown>;
+      const groupBy = String(p?.group_by ?? "sector");
 
-    get_sectors: async () => MOCK_SECTORS,
+      if (groupBy === "sub_sector") {
+        const subSectors = [
+          { name: "Integrated Oil & Gas", slug: "integrated-oil-gas", parent: "Energy", parentSlug: "energy" },
+          { name: "Steel", slug: "steel", parent: "Materials", parentSlug: "materials" },
+          { name: "Brewers", slug: "brewers", parent: "Consumer Staples", parentSlug: "consumer-staples" },
+          { name: "Alternative Carriers", slug: "alternative-carriers", parent: "Communication Services", parentSlug: "communication-services" },
+        ];
+        return {
+          items: subSectors.map((s) => ({
+            sector_name: s.name,
+            sector_slug: s.slug,
+            company_count: 1,
+            latest_year: YEAR - 1,
+            snapshot: { roe: 10, mg_ebit: 15, mg_liq: 7 },
+            sub_industries: [],
+            sub_industry_breakdown: [],
+            group_type: "sub_sector",
+            parent_sector_name: s.parent,
+            parent_sector_slug: s.parentSlug,
+            companies: [],
+          })),
+        } satisfies SectorDirectoryResponse;
+      }
+
+      if (groupBy === "cvm_sector") {
+        return {
+          items: SECTOR_SLUGS.map((s) => ({
+            sector_name: s.name,
+            sector_slug: s.slug,
+            company_count: s.count,
+            latest_year: YEAR - 1,
+            snapshot: { roe: null, mg_ebit: null, mg_liq: null },
+            sub_industries: [],
+            sub_industry_breakdown: [],
+            group_type: "cvm_sector",
+            parent_sector_name: null,
+            parent_sector_slug: null,
+            companies: [],
+          })),
+        } satisfies SectorDirectoryResponse;
+      }
+
+      // Default to "sector" (GICS Sectors)
+      const gicsSectors = [
+        { name: "Energy", slug: "energy" },
+        { name: "Materials", slug: "materials" },
+        { name: "Consumer Staples", slug: "consumer-staples" },
+        { name: "Communication Services", slug: "communication-services" },
+      ];
+      return {
+        items: gicsSectors.map((s) => ({
+          sector_name: s.name,
+          sector_slug: s.slug,
+          company_count: 1,
+          latest_year: YEAR - 1,
+          snapshot: { roe: 12, mg_ebit: 18, mg_liq: 8 },
+          sub_industries: [],
+          sub_industry_breakdown: [],
+          group_type: "sector",
+          parent_sector_name: null,
+          parent_sector_slug: null,
+          companies: [],
+        })),
+      } satisfies SectorDirectoryResponse;
+    },
 
     get_sector_detail: async (params) => {
       const p = params as Record<string, unknown>;

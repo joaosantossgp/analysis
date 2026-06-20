@@ -100,7 +100,7 @@ export function TopBar({ onOpenPalette }: Props) {
           aria-label="Open command palette"
         >
           <span className="truncate">Search companies, sectors…</span>
-          <span className="hidden lg:inline-flex">
+          <span className="hidden shrink-0 lg:inline-flex">
             <Kbd>Ctrl K</Kbd>
           </span>
         </button>

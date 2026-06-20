@@ -8,7 +8,9 @@ import { PageHeader } from "@/components/PageHeader";
 import { StateBanner } from "@/components/feedback/StateBanner";
 
 function normalizeGroupBy(value: string | null): SectorGroupBy {
-  return value === "sub_sector" ? "sub_sector" : "sector";
+  if (value === "sub_sector") return "sub_sector";
+  if (value === "cvm_sector") return "cvm_sector";
+  return "sector";
 }
 
 export function SectorsPage() {
@@ -43,6 +45,7 @@ export function SectorsPage() {
   const setGroupBy = (next: SectorGroupBy) => {
     const params = new URLSearchParams(searchParams);
     if (next === "sub_sector") params.set("visao", "sub_sector");
+    else if (next === "cvm_sector") params.set("visao", "cvm_sector");
     else params.delete("visao");
     setSearchParams(params, { replace: true });
   };
@@ -67,6 +70,11 @@ export function SectorsPage() {
           active={groupBy === "sub_sector"}
           label="GICS Sub-industries"
           onClick={() => setGroupBy("sub_sector")}
+        />
+        <GroupTab
+          active={groupBy === "cvm_sector"}
+          label="CVM Sectors"
+          onClick={() => setGroupBy("cvm_sector")}
         />
       </div>
 
@@ -190,9 +198,9 @@ function SectorsTable({
             </th>
             {groupBy === "sub_sector" ? (
               <th scope="col" className="px-3 py-2 font-medium">Parent sector</th>
-            ) : (
+            ) : groupBy === "sector" ? (
               <th scope="col" className="px-3 py-2 font-medium">Sub-industries</th>
-            )}
+            ) : null}
             <th scope="col" className="px-3 py-2 text-right font-medium">Companies</th>
             {showLatestYear ? <th scope="col" className="px-3 py-2 text-right font-medium">Latest year</th> : null}
             <th scope="col" className="px-3 py-2 font-medium">Actions</th>
@@ -237,8 +245,10 @@ function SectorRow({
       ? item.parent_sector_slug && item.sector_slug
         ? `/setores/${item.parent_sector_slug}/${item.sector_slug}`
         : null
-      : item.sector_slug
-      ? `/setores/${item.sector_slug}`
+      : groupBy === "sector"
+      ? item.sector_slug
+        ? `/setores/${item.sector_slug}`
+        : null
       : null;
   const subIndustryCount = item.sub_industries?.length ?? 0;
   return (
@@ -259,13 +269,13 @@ function SectorRow({
         <td className="px-3 py-2 text-xs text-zinc-400">
           {item.parent_sector_name ?? "—"}
         </td>
-      ) : (
+      ) : groupBy === "sector" ? (
         <td className="px-3 py-2 text-xs text-zinc-500">
           {subIndustryCount > 0
             ? `${subIndustryCount.toLocaleString("en-US")} sub-industries`
             : "—"}
         </td>
-      )}
+      ) : null}
       <td className="px-3 py-2 text-right font-mono text-xs text-zinc-300">
         {item.company_count.toLocaleString("en-US")}
       </td>

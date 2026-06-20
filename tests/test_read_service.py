@@ -256,3 +256,25 @@ def test_get_sector_detail_defaults_to_latest_year_and_keeps_null_metrics(tmp_pa
     assert detail.companies[0].company_name == "SABESP"
     assert detail.companies[0].roe is None
 
+
+def test_list_sectors_by_group_by(tmp_path):
+    service = _seed_sector_read_service(tmp_path)
+
+    # test sub_sector grouping
+    dto_sub = service.list_sectors(group_by="sub_sector")
+    names_sub = [row.sector_name for row in dto_sub.items]
+    assert "Integrated Oil & Gas" in names_sub
+    assert "Water Utilities" in names_sub
+    sub_row = next(row for row in dto_sub.items if row.sector_name == "Integrated Oil & Gas")
+    assert sub_row.group_type == "sub_sector"
+    assert sub_row.parent_sector_name == "Energy"
+
+    # test cvm_sector grouping
+    dto_cvm = service.list_sectors(group_by="cvm_sector")
+    names_cvm = [row.sector_name for row in dto_cvm.items]
+    assert "Energia" in names_cvm
+    assert "Saneamento" in names_cvm
+    cvm_row = next(row for row in dto_cvm.items if row.sector_name == "Energia")
+    assert cvm_row.group_type == "cvm_sector"
+
+

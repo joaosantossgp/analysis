@@ -2411,6 +2411,17 @@ class ReadServiceCoverageMixin:
         for option in self.get_company_filters().sectors:
             if option.sector_slug == normalized_slug:
                 return option.sector_name
+        
+        # Fallback to CVM sectors
+        for item in self._list_company_universe_results_light():
+            if item.sector_name:
+                slug = sector_slugify(item.sector_name)
+                if slug == normalized_slug:
+                    return item.sector_name
+            if item.setor_cvm:
+                slug = sector_slugify(item.setor_cvm)
+                if slug == normalized_slug:
+                    return item.setor_cvm
         return None
 
     @staticmethod
@@ -2579,7 +2590,12 @@ class ReadServiceCoverageMixin:
             return
 
     def _sector_directory_cache_path(self, group_by: str) -> Path:
-        safe_group = "sub_sector" if group_by == "sub_sector" else "sector"
+        if group_by == "sub_sector":
+            safe_group = "sub_sector"
+        elif group_by == "cvm_sector":
+            safe_group = "cvm_sector"
+        else:
+            safe_group = "sector"
         return self.settings.paths.cache_dir / f"sector_directory_{safe_group}_v1.json"
 
     def _sector_directory_cache_signature(self) -> dict[str, Any] | None:

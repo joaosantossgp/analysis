@@ -1103,9 +1103,11 @@ class ReadServiceQueryMixin:
     def list_sectors(self, group_by: str = "sector", *, include_snapshots: bool = True) -> SectorDirectoryDTO:
         self._ensure_read_cache_fresh()
         normalized_group_by = str(group_by or "sector").strip().lower()
-        if normalized_group_by in {"subsector", "sub-sector", "sub_setor", "sub-setor"}:
+        if normalized_group_by in {"sub_sector", "subsector", "sub-sector", "sub_setor", "sub-setor"}:
             normalized_group_by = "sub_sector"
-        if normalized_group_by not in {"sector", "sub_sector"}:
+        elif normalized_group_by in {"cvm_sector", "cvm-sector", "cvm_setor", "cvm-setor", "cvm"}:
+            normalized_group_by = "cvm_sector"
+        else:
             normalized_group_by = "sector"
         cache_key = (normalized_group_by, bool(include_snapshots))
         cached = self._sector_directory_cache.get(cache_key)
@@ -1189,6 +1191,27 @@ class ReadServiceQueryMixin:
                         parent_sector_name=parent_sector_name,
                         parent_sector_slug=sector_slugify(parent_sector_name) if parent_sector_name else None,
                         companies=self._sector_company_preview(sub_items),
+                    )
+                )
+        elif normalized_group_by == "cvm_sector":
+            companies_by_cvm: dict[str, list[CompanySearchResult]] = defaultdict(list)
+            for item in company_items:
+                cvm_name = item.sector_name or item.setor_cvm or "Nao classificado"
+                companies_by_cvm[cvm_name].append(item)
+            for cvm_name, cvm_items in sorted(companies_by_cvm.items(), key=lambda x: x[0]):
+                items.append(
+                    SectorDirectoryItemDTO(
+                        sector_name=cvm_name,
+                        sector_slug=sector_slugify(cvm_name),
+                        company_count=len(cvm_items),
+                        latest_year=None,
+                        snapshot=SectorSnapshotDTO(
+                            roe=None,
+                            mg_ebit=None,
+                            mg_liq=None,
+                        ),
+                        group_type="cvm_sector",
+                        companies=self._sector_company_preview(cvm_items),
                     )
                 )
         else:
