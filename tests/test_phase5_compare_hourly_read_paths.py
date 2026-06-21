@@ -58,45 +58,58 @@ def _seed_energy_db(db_path: Path) -> None:
             f"CREATE INDEX idx_cppe_parcel_ref ON {HOURLY_TABLE}(plant_parcel_code, reference_datetime)"
         )
         conn.execute(f"CREATE INDEX idx_cppe_ref_month ON {HOURLY_TABLE}(reference_month)")
+        conn.execute(
+            """
+            CREATE TABLE ccee_plant_parcels (
+                plant_parcel_code TEXT PRIMARY KEY,
+                ceg TEXT
+            )
+            """
+        )
+        conn.executemany(
+            "INSERT INTO ccee_plant_parcels (plant_parcel_code, ceg) VALUES (?, ?)",
+            [("P1001", "CEG123"), ("P1002", "CEG123")],
+        )
         rows = []
         for month in ("2026-01", "2026-02"):
-            for day in (1, 2):
-                for period in (1, 2):
-                    value = float(day * 10 + period)
-                    rows.append(
-                        (
-                            f"{month}-{day:02d}T{period - 1:02d}:00:00",
-                            month,
-                            period,
-                            "P1001",
-                            "PLT",
-                            "hydro",
-                            "SE",
-                            "UHE",
-                            value,
-                            value,
-                            None,
-                            None,
-                            None,
-                            None,
-                            None,
-                            value / 10,
-                            None,
-                            None,
-                            value - 1,
-                            value + 1,
-                            None,
-                            None,
-                            None,
-                            None,
-                            None,
-                            None,
-                            "fixture",
-                            f"hash-{month}-{day}-{period}",
-                            "snap-1",
-                            "2026-06-21T00:00:00",
+            for parcel_idx, parcel_code in enumerate(("P1001", "P1002"), start=1):
+                for day in (1, 2):
+                    for period in (1, 2):
+                        value = float(parcel_idx * 100 + day * 10 + period)
+                        rows.append(
+                            (
+                                f"{month}-{day:02d}T{period - 1:02d}:00:00",
+                                month,
+                                period,
+                                parcel_code,
+                                "PLT",
+                                "hydro",
+                                "SE",
+                                "UHE",
+                                value,
+                                value,
+                                None,
+                                None,
+                                None,
+                                None,
+                                None,
+                                value / 10,
+                                None,
+                                None,
+                                value - 1,
+                                value + 1,
+                                None,
+                                None,
+                                None,
+                                None,
+                                None,
+                                None,
+                                "fixture",
+                                f"hash-{month}-{parcel_code}-{day}-{period}",
+                                "snap-1",
+                                "2026-06-21T00:00:00",
+                            )
                         )
-                    )
         placeholders = ", ".join("?" for _ in rows[0])
         conn.executemany(f"INSERT INTO {HOURLY_TABLE} VALUES ({placeholders})", rows)
         conn.commit()
@@ -131,6 +144,43 @@ def test_compare_hourly_read_paths_matches_hot_and_cold_full_months(tmp_path: Pa
     assert all(sample["match"] is True for sample in report["samples"])
     assert all(sample["raw"]["rows_hash"] == sample["candidate"]["rows_hash"] for sample in report["samples"])
     assert all(sample["window_mode"] == "month" for sample in report["samples"])
+
+
+def test_compare_hourly_read_paths_broadens_samples_and_aneel_aggregation(tmp_path: Path):
+    source_db = tmp_path / "energy_kpis.db"
+    prototype_dir = tmp_path / "prototype"
+    _seed_energy_db(source_db)
+
+    build_hot_cold_prototype(
+        database=source_db,
+        output_dir=prototype_dir,
+        hot_months=1,
+        cold_months=["2026-01"],
+        full_months=True,
+        chunk_size=2,
+    )
+
+    report = compare_hourly_read_paths(
+        manifest_path=prototype_dir / "manifest.json",
+        database=source_db,
+        runs=1,
+        samples_per_tier=2,
+        aneel_samples_per_tier=2,
+        include_aneel_aggregation=True,
+    )
+
+    assert report["summary"]["validation_ok"] is True
+    assert report["summary"]["sample_count"] == 6
+    assert report["summary"]["parcel_samples"] == 4
+    assert report["summary"]["aneel_plant_samples"] == 2
+    assert report["summary"]["hot_samples"] == 3
+    assert report["summary"]["cold_samples"] == 3
+    assert all(sample["match"] is True for sample in report["samples"])
+
+    aneel_samples = [sample for sample in report["samples"] if sample["entity_type"] == "aneel_plant"]
+    assert {sample["ceg"] for sample in aneel_samples} == {"CEG123"}
+    assert all(sample["plant_parcel_count"] == 2 for sample in aneel_samples)
+    assert all(sample["raw"]["row_count"] == sample["candidate"]["row_count"] == 4 for sample in aneel_samples)
 
 
 def test_compare_hourly_read_paths_uses_sample_window_for_bounded_manifest(tmp_path: Path):

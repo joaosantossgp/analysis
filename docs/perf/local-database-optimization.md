@@ -210,10 +210,19 @@ SQLite and cold Parquet artifacts, records row hashes and read timings, and
 keeps all SQLite inputs read-only. It does not change bridge methods, frontend
 contracts, live runtime routing, or source data.
 
-The real full one-month comparison passed with `--runs 3`: one hot full-month
-sample and one cold full-month sample matched the canonical raw SQLite row
-hashes, with the source DB signature unchanged. The JSON report is stored at
-`docs/diagnostics/phase5-hourly-read-path-comparison.json`.
+The real full one-month comparison passed with `--samples-per-tier 3`,
+`--aneel-samples-per-tier 1`, `--include-aneel-aggregation`, and `--runs 3`:
+three hot parcel samples, one hot ANEEL CEG aggregation sample, three cold
+parcel samples, and one cold ANEEL CEG aggregation sample all matched canonical
+raw SQLite row hashes, with the source DB signature unchanged. The JSON report
+is stored at `docs/diagnostics/phase5-hourly-read-path-comparison.json`.
+
+The broadened comparison also showed that the current raw SQLite CEG aggregation
+query is the next hot spot. Parcel windows are already bounded and fast after
+warm-up, but CEG-level hourly drill-downs repeatedly join the large raw hourly
+table to `ccee_plant_parcels`. A future runtime adapter should preserve the same
+values while avoiding that raw join when validated hot/cold artifacts are
+available.
 
 Future Phase 5 work should use this baseline before choosing between a runtime
 read adapter, additional exact `dbstat` profiling, broader hot/cold prototypes,

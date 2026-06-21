@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "mode": "phase5_hourly_read_path_comparison",
-  "generated_at_utc": "2026-06-21T21:33:36Z",
+  "generated_at_utc": "2026-06-21T21:54:34Z",
   "read_only_source": true,
   "manifest_path": "C:\\tmp\\cvma-phase5-hot-cold-full-one-month\\manifest.json",
   "source_database": "C:\\Users\\jadaojoao\\Documents\\CVMAnalytics\\db\\energy_kpis.db",
@@ -24,20 +24,29 @@
   },
   "parameters": {
     "tier": "all",
+    "entity_type": "ccee_plant_parcel",
+    "entity_id": null,
     "plant_parcel_code": null,
     "reference_month": null,
     "start_datetime": null,
     "end_datetime": null,
     "window_mode": "auto",
     "limit": 2000,
-    "runs": 3
+    "runs": 3,
+    "samples_per_tier": 3,
+    "aneel_samples_per_tier": 1,
+    "include_aneel_aggregation": true
   },
   "samples": [
     {
-      "label": "auto_hot_2026-04_1000672",
+      "label": "auto_hot_parcel_2026-04_1000672",
       "tier": "hot",
+      "entity_type": "ccee_plant_parcel",
+      "entity_id": "1000672",
       "reference_month": "2026-04",
       "plant_parcel_code": "1000672",
+      "ceg": null,
+      "plant_parcel_count": 0,
       "start_datetime": "2026-04-01T00:00:00",
       "end_datetime": "2026-04-30T23:59:59",
       "window_mode": "month",
@@ -45,22 +54,22 @@
       "raw": {
         "source": "raw_sqlite",
         "row_count": 720,
-        "elapsed_ms": 234.409,
+        "elapsed_ms": 227.33,
         "elapsed_runs_ms": [
-          234.409,
-          9.271,
-          8.868
+          227.33,
+          8.665,
+          8.007
         ],
         "rows_hash": "1a7f8098566660c0e9556854bed21cdfc8bf13ccbeb5eb5e71c030100934770f"
       },
       "candidate": {
         "source": "hot_sqlite",
         "row_count": 720,
-        "elapsed_ms": 60.473,
+        "elapsed_ms": 194.186,
         "elapsed_runs_ms": [
-          60.473,
-          9.529,
-          8.738
+          194.186,
+          7.977,
+          7.444
         ],
         "rows_hash": "1a7f8098566660c0e9556854bed21cdfc8bf13ccbeb5eb5e71c030100934770f"
       },
@@ -70,10 +79,134 @@
       "truncated": false
     },
     {
-      "label": "auto_cold_2024-03_20001",
+      "label": "auto_hot_parcel_2026-04_1000698",
+      "tier": "hot",
+      "entity_type": "ccee_plant_parcel",
+      "entity_id": "1000698",
+      "reference_month": "2026-04",
+      "plant_parcel_code": "1000698",
+      "ceg": null,
+      "plant_parcel_count": 0,
+      "start_datetime": "2026-04-01T00:00:00",
+      "end_datetime": "2026-04-30T23:59:59",
+      "window_mode": "month",
+      "limit": 2000,
+      "raw": {
+        "source": "raw_sqlite",
+        "row_count": 720,
+        "elapsed_ms": 116.742,
+        "elapsed_runs_ms": [
+          116.742,
+          7.714,
+          7.637
+        ],
+        "rows_hash": "1a7f8098566660c0e9556854bed21cdfc8bf13ccbeb5eb5e71c030100934770f"
+      },
+      "candidate": {
+        "source": "hot_sqlite",
+        "row_count": 720,
+        "elapsed_ms": 20.625,
+        "elapsed_runs_ms": [
+          20.625,
+          8.089,
+          7.715
+        ],
+        "rows_hash": "1a7f8098566660c0e9556854bed21cdfc8bf13ccbeb5eb5e71c030100934770f"
+      },
+      "match": true,
+      "difference_count": 0,
+      "differences": [],
+      "truncated": false
+    },
+    {
+      "label": "auto_hot_parcel_2026-04_1000788",
+      "tier": "hot",
+      "entity_type": "ccee_plant_parcel",
+      "entity_id": "1000788",
+      "reference_month": "2026-04",
+      "plant_parcel_code": "1000788",
+      "ceg": null,
+      "plant_parcel_count": 0,
+      "start_datetime": "2026-04-01T00:00:00",
+      "end_datetime": "2026-04-30T23:59:59",
+      "window_mode": "month",
+      "limit": 2000,
+      "raw": {
+        "source": "raw_sqlite",
+        "row_count": 720,
+        "elapsed_ms": 124.896,
+        "elapsed_runs_ms": [
+          124.896,
+          11.373,
+          11.892
+        ],
+        "rows_hash": "d899c8dfc86bef83db77cca49f2a498920a6ada9ec177696a5602cea0310b525"
+      },
+      "candidate": {
+        "source": "hot_sqlite",
+        "row_count": 720,
+        "elapsed_ms": 117.013,
+        "elapsed_runs_ms": [
+          117.013,
+          8.508,
+          8.105
+        ],
+        "rows_hash": "d899c8dfc86bef83db77cca49f2a498920a6ada9ec177696a5602cea0310b525"
+      },
+      "match": true,
+      "difference_count": 0,
+      "differences": [],
+      "truncated": false
+    },
+    {
+      "label": "auto_hot_aneel_2026-04_UFV.RS.MG.046579-8.01",
+      "tier": "hot",
+      "entity_type": "aneel_plant",
+      "entity_id": "UFV.RS.MG.046579-8.01",
+      "reference_month": "2026-04",
+      "plant_parcel_code": null,
+      "ceg": "UFV.RS.MG.046579-8.01",
+      "plant_parcel_count": 21,
+      "start_datetime": "2026-04-01T00:00:00",
+      "end_datetime": "2026-04-30T23:59:59",
+      "window_mode": "month",
+      "limit": 2000,
+      "raw": {
+        "source": "raw_sqlite",
+        "row_count": 720,
+        "elapsed_ms": 21002.965,
+        "elapsed_runs_ms": [
+          21002.965,
+          21065.553,
+          20996.098
+        ],
+        "rows_hash": "0077c2786b16bfce87cfed3f370f19c93541960443ebfa11af5a5bc4a5f71ea5"
+      },
+      "candidate": {
+        "source": "hot_sqlite",
+        "row_count": 720,
+        "elapsed_ms": 3935.304,
+        "elapsed_runs_ms": [
+          3935.304,
+          1587.7,
+          996.036
+        ],
+        "rows_hash": "0077c2786b16bfce87cfed3f370f19c93541960443ebfa11af5a5bc4a5f71ea5"
+      },
+      "match": true,
+      "difference_count": 0,
+      "differences": [],
+      "truncated": false
+    },
+    {
+      "label": "auto_cold_parcel_2024-03_20001",
       "tier": "cold",
+      "entity_type": "ccee_plant_parcel",
+      "entity_id": "20001",
       "reference_month": "2024-03",
       "plant_parcel_code": "20001",
+      "ceg": null,
+      "plant_parcel_count": 0,
       "start_datetime": "2024-03-01T00:00:00",
       "end_datetime": "2024-03-31T23:59:59",
       "window_mode": "month",
@@ -81,24 +214,144 @@
       "raw": {
         "source": "raw_sqlite",
         "row_count": 744,
-        "elapsed_ms": 214.025,
+        "elapsed_ms": 187.426,
         "elapsed_runs_ms": [
-          214.025,
-          8.166,
-          7.99
+          187.426,
+          7.367,
+          7.28
         ],
         "rows_hash": "08873759d62ff7081421a54c00f984ff698660b4fd368fb542a0bd85f615efdd"
       },
       "candidate": {
         "source": "cold_parquet",
         "row_count": 744,
-        "elapsed_ms": 87.343,
+        "elapsed_ms": 104.508,
         "elapsed_runs_ms": [
-          87.343,
-          24.772,
-          22.972
+          104.508,
+          22.996,
+          21.762
         ],
         "rows_hash": "08873759d62ff7081421a54c00f984ff698660b4fd368fb542a0bd85f615efdd"
+      },
+      "match": true,
+      "difference_count": 0,
+      "differences": [],
+      "truncated": false
+    },
+    {
+      "label": "auto_cold_parcel_2024-03_20003",
+      "tier": "cold",
+      "entity_type": "ccee_plant_parcel",
+      "entity_id": "20003",
+      "reference_month": "2024-03",
+      "plant_parcel_code": "20003",
+      "ceg": null,
+      "plant_parcel_count": 0,
+      "start_datetime": "2024-03-01T00:00:00",
+      "end_datetime": "2024-03-31T23:59:59",
+      "window_mode": "month",
+      "limit": 2000,
+      "raw": {
+        "source": "raw_sqlite",
+        "row_count": 744,
+        "elapsed_ms": 20.043,
+        "elapsed_runs_ms": [
+          20.043,
+          7.602,
+          7.488
+        ],
+        "rows_hash": "f60b1dae22f7b576300083bdb59364bdb54282ccac6f182a8f213974710f5c05"
+      },
+      "candidate": {
+        "source": "cold_parquet",
+        "row_count": 744,
+        "elapsed_ms": 22.404,
+        "elapsed_runs_ms": [
+          22.404,
+          24.185,
+          22.267
+        ],
+        "rows_hash": "f60b1dae22f7b576300083bdb59364bdb54282ccac6f182a8f213974710f5c05"
+      },
+      "match": true,
+      "difference_count": 0,
+      "differences": [],
+      "truncated": false
+    },
+    {
+      "label": "auto_cold_parcel_2024-03_20004",
+      "tier": "cold",
+      "entity_type": "ccee_plant_parcel",
+      "entity_id": "20004",
+      "reference_month": "2024-03",
+      "plant_parcel_code": "20004",
+      "ceg": null,
+      "plant_parcel_count": 0,
+      "start_datetime": "2024-03-01T00:00:00",
+      "end_datetime": "2024-03-31T23:59:59",
+      "window_mode": "month",
+      "limit": 2000,
+      "raw": {
+        "source": "raw_sqlite",
+        "row_count": 744,
+        "elapsed_ms": 17.962,
+        "elapsed_runs_ms": [
+          17.962,
+          7.646,
+          7.64
+        ],
+        "rows_hash": "6af56376b18ad137f68556ffea8461815754cb766f30aab48e21c02a4faa435f"
+      },
+      "candidate": {
+        "source": "cold_parquet",
+        "row_count": 744,
+        "elapsed_ms": 23.753,
+        "elapsed_runs_ms": [
+          23.753,
+          22.843,
+          22.571
+        ],
+        "rows_hash": "6af56376b18ad137f68556ffea8461815754cb766f30aab48e21c02a4faa435f"
+      },
+      "match": true,
+      "difference_count": 0,
+      "differences": [],
+      "truncated": false
+    },
+    {
+      "label": "auto_cold_aneel_2024-03_UTE.GN.RJ.001544-0.01",
+      "tier": "cold",
+      "entity_type": "aneel_plant",
+      "entity_id": "UTE.GN.RJ.001544-0.01",
+      "reference_month": "2024-03",
+      "plant_parcel_code": null,
+      "ceg": "UTE.GN.RJ.001544-0.01",
+      "plant_parcel_count": 8,
+      "start_datetime": "2024-03-01T00:00:00",
+      "end_datetime": "2024-03-31T23:59:59",
+      "window_mode": "month",
+      "limit": 2000,
+      "raw": {
+        "source": "raw_sqlite",
+        "row_count": 744,
+        "elapsed_ms": 17536.636,
+        "elapsed_runs_ms": [
+          17536.636,
+          2079.628,
+          2180.723
+        ],
+        "rows_hash": "d029de6dce8a74f12498cfa90c2edced340be5f8a7367ab4a0d1381767e3419a"
+      },
+      "candidate": {
+        "source": "cold_parquet",
+        "row_count": 744,
+        "elapsed_ms": 54.636,
+        "elapsed_runs_ms": [
+          54.636,
+          24.765,
+          24.467
+        ],
+        "rows_hash": "d029de6dce8a74f12498cfa90c2edced340be5f8a7367ab4a0d1381767e3419a"
       },
       "match": true,
       "difference_count": 0,
@@ -109,11 +362,13 @@
   "errors": [],
   "summary": {
     "validation_ok": true,
-    "sample_count": 2,
+    "sample_count": 8,
     "error_count": 0,
-    "matched": 2,
+    "matched": 8,
     "mismatched": 0,
-    "hot_samples": 1,
-    "cold_samples": 1
+    "hot_samples": 4,
+    "cold_samples": 4,
+    "parcel_samples": 6,
+    "aneel_plant_samples": 2
   }
 }

@@ -28,7 +28,10 @@ from scripts.diagnostics.phase5_hot_cold_hourly_prototype import HOURLY_TABLE  #
 SCHEMA_VERSION = 1
 DEFAULT_LIMIT = 2_000
 DEFAULT_RUNS = 1
+DEFAULT_SAMPLES_PER_TIER = 1
+DEFAULT_ANEEL_SAMPLES_PER_TIER = 1
 NUMERIC_TOLERANCE = 1e-9
+PLANT_PARCELS_TABLE = "ccee_plant_parcels"
 COMPARISON_COLUMNS = (
     "reference_datetime",
     "commercialization_period",
@@ -44,6 +47,7 @@ SOURCE_VALUE_COLUMNS = {
     "unavailability_mwh": "unavailability_mwh",
 }
 Tier = Literal["hot", "cold"]
+EntityType = Literal["ccee_plant_parcel", "aneel_plant"]
 WindowMode = Literal["auto", "month", "sample_datetime"]
 RowsReader = Callable[[], list[dict[str, Any]]]
 
@@ -75,7 +79,16 @@ def _source_signature(path: Path) -> dict[str, Any] | None:
 
 
 def _hash_rows(rows: list[dict[str, Any]]) -> str:
-    payload = json.dumps(rows, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    def canonical(value: Any) -> Any:
+        if isinstance(value, float):
+            return round(value, 9)
+        if isinstance(value, dict):
+            return {key: canonical(inner) for key, inner in value.items()}
+        if isinstance(value, list):
+            return [canonical(inner) for inner in value]
+        return value
+
+    payload = json.dumps(canonical(rows), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
@@ -133,6 +146,88 @@ def _rows_from_sqlite(
         LIMIT ?
         """,
         (plant_parcel_code, reference_month, start_datetime, end_datetime, limit),
+    ).fetchall()
+    return [_normalize_row(dict(row)) for row in rows]
+
+
+def _plant_parcel_codes_for_ceg(conn: sqlite3.Connection, ceg: str) -> list[str]:
+    rows = conn.execute(
+        f"""
+        SELECT plant_parcel_code
+        FROM {PLANT_PARCELS_TABLE}
+        WHERE ceg = ?
+        ORDER BY plant_parcel_code
+        """,
+        (ceg,),
+    ).fetchall()
+    return [str(row["plant_parcel_code"]) for row in rows if row["plant_parcel_code"]]
+
+
+def _rows_from_sqlite_aneel_plant(
+    conn: sqlite3.Connection,
+    *,
+    ceg: str,
+    reference_month: str,
+    start_datetime: str,
+    end_datetime: str,
+    limit: int,
+) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        f"""
+        SELECT
+            h.reference_datetime,
+            h.commercialization_period,
+            SUM(h.generation_center_of_gravity_mwh) AS generation_mwh,
+            SUM(h.verified_generation_ons_mwh) AS verified_generation_mwh,
+            SUM(h.verified_availability_mwh) AS verified_availability_mwh,
+            SUM(h.unavailability_mwh) AS unavailability_mwh
+        FROM {HOURLY_TABLE} h
+        JOIN {PLANT_PARCELS_TABLE} p ON p.plant_parcel_code = h.plant_parcel_code
+        WHERE p.ceg = ?
+          AND h.reference_month = ?
+          AND h.reference_datetime >= ?
+          AND h.reference_datetime <= ?
+        GROUP BY h.reference_datetime, h.commercialization_period
+        ORDER BY h.reference_datetime ASC, h.commercialization_period ASC
+        LIMIT ?
+        """,
+        (ceg, reference_month, start_datetime, end_datetime, limit),
+    ).fetchall()
+    return [_normalize_row(dict(row)) for row in rows]
+
+
+def _rows_from_sqlite_parcel_group(
+    conn: sqlite3.Connection,
+    *,
+    plant_parcel_codes: list[str],
+    reference_month: str,
+    start_datetime: str,
+    end_datetime: str,
+    limit: int,
+) -> list[dict[str, Any]]:
+    codes = [str(code) for code in plant_parcel_codes if str(code)]
+    if not codes:
+        return []
+    placeholders = ", ".join("?" for _ in codes)
+    rows = conn.execute(
+        f"""
+        SELECT
+            reference_datetime,
+            commercialization_period,
+            SUM(generation_center_of_gravity_mwh) AS generation_mwh,
+            SUM(verified_generation_ons_mwh) AS verified_generation_mwh,
+            SUM(verified_availability_mwh) AS verified_availability_mwh,
+            SUM(unavailability_mwh) AS unavailability_mwh
+        FROM {HOURLY_TABLE}
+        WHERE plant_parcel_code IN ({placeholders})
+          AND reference_month = ?
+          AND reference_datetime >= ?
+          AND reference_datetime <= ?
+        GROUP BY reference_datetime, commercialization_period
+        ORDER BY reference_datetime ASC, commercialization_period ASC
+        LIMIT ?
+        """,
+        (*codes, reference_month, start_datetime, end_datetime, limit),
     ).fetchall()
     return [_normalize_row(dict(row)) for row in rows]
 
@@ -279,23 +374,56 @@ def _cold_partitions(manifest: dict[str, Any]) -> dict[str, list[Path]]:
     return partitions
 
 
-def _first_sqlite_sample(conn: sqlite3.Connection, reference_month: str) -> dict[str, Any] | None:
-    row = conn.execute(
+def _sqlite_parcel_samples(
+    conn: sqlite3.Connection,
+    reference_month: str,
+    *,
+    limit: int,
+) -> list[dict[str, Any]]:
+    rows = conn.execute(
         f"""
-        SELECT plant_parcel_code, reference_month, reference_datetime
+        SELECT plant_parcel_code, reference_month, MIN(reference_datetime) AS reference_datetime
         FROM {HOURLY_TABLE}
         WHERE reference_month = ?
-        ORDER BY reference_datetime ASC, commercialization_period ASC, plant_parcel_code ASC
-        LIMIT 1
+        GROUP BY plant_parcel_code, reference_month
+        ORDER BY plant_parcel_code ASC
+        LIMIT ?
         """,
-        (reference_month,),
-    ).fetchone()
-    return dict(row) if row else None
+        (reference_month, max(1, int(limit))),
+    ).fetchall()
+    return [dict(row) for row in rows]
 
 
-def _first_cold_sample(part_paths: list[Path]) -> dict[str, Any] | None:
+def _sqlite_aneel_samples(
+    conn: sqlite3.Connection,
+    reference_month: str,
+    *,
+    limit: int,
+) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        f"""
+        SELECT
+            p.ceg,
+            h.reference_month,
+            MIN(h.reference_datetime) AS reference_datetime,
+            COUNT(DISTINCT h.plant_parcel_code) AS plant_parcel_count
+        FROM {HOURLY_TABLE} h
+        JOIN {PLANT_PARCELS_TABLE} p ON p.plant_parcel_code = h.plant_parcel_code
+        WHERE h.reference_month = ?
+          AND p.ceg IS NOT NULL
+          AND TRIM(p.ceg) <> ''
+        GROUP BY p.ceg, h.reference_month
+        ORDER BY plant_parcel_count DESC, p.ceg ASC
+        LIMIT ?
+        """,
+        (reference_month, max(1, int(limit))),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def _cold_parcel_samples(part_paths: list[Path], *, limit: int) -> list[dict[str, Any]]:
     if not part_paths:
-        return None
+        return []
     try:
         import polars as pl  # noqa: PLC0415
     except ImportError as exc:
@@ -303,32 +431,39 @@ def _first_cold_sample(part_paths: list[Path]) -> dict[str, Any] | None:
 
     frame = (
         pl.scan_parquet([str(path) for path in part_paths])
-        .select(["plant_parcel_code", "reference_month", "reference_datetime", "commercialization_period"])
-        .sort(["reference_datetime", "commercialization_period", "plant_parcel_code"])
-        .limit(1)
+        .select(["plant_parcel_code", "reference_month", "reference_datetime"])
+        .group_by(["plant_parcel_code", "reference_month"])
+        .agg(pl.col("reference_datetime").min().alias("reference_datetime"))
+        .sort(["plant_parcel_code", "reference_month"])
+        .limit(max(1, int(limit)))
         .collect()
     )
-    if frame.height == 0:
-        return None
-    return {
-        "plant_parcel_code": str(frame[0, "plant_parcel_code"]),
-        "reference_month": str(frame[0, "reference_month"]),
-        "reference_datetime": str(frame[0, "reference_datetime"]),
-    }
+    return [
+        {
+            "plant_parcel_code": str(row["plant_parcel_code"]),
+            "reference_month": str(row["reference_month"]),
+            "reference_datetime": str(row["reference_datetime"]),
+        }
+        for row in frame.to_dicts()
+    ]
 
 
 def _manual_sample(
     *,
     tier: Tier,
     reference_month: str,
-    plant_parcel_code: str,
+    entity_type: EntityType,
+    entity_id: str,
     sample_datetime: str | None,
 ) -> dict[str, Any]:
     return {
-        "label": f"manual_{tier}_{reference_month}_{plant_parcel_code}",
+        "label": f"manual_{tier}_{entity_type}_{reference_month}_{entity_id}",
         "tier": tier,
+        "entity_type": entity_type,
+        "entity_id": entity_id,
         "reference_month": reference_month,
-        "plant_parcel_code": plant_parcel_code,
+        "plant_parcel_code": entity_id if entity_type == "ccee_plant_parcel" else None,
+        "ceg": entity_id if entity_type == "aneel_plant" else None,
         "sample_datetime": sample_datetime,
     }
 
@@ -336,41 +471,82 @@ def _manual_sample(
 def _auto_samples(
     manifest: dict[str, Any],
     *,
+    raw_conn: sqlite3.Connection,
     hot_conn: sqlite3.Connection | None,
     cold_paths: dict[str, list[Path]],
     tier: str,
+    samples_per_tier: int,
+    aneel_samples_per_tier: int,
+    include_aneel_aggregation: bool,
 ) -> list[dict[str, Any]]:
     samples: list[dict[str, Any]] = []
     selected_hot = [str(month) for month in manifest.get("selection", {}).get("hot_months", [])]
     selected_cold = [str(month) for month in manifest.get("selection", {}).get("cold_months", [])]
+    per_tier = max(1, int(samples_per_tier or DEFAULT_SAMPLES_PER_TIER))
+    aneel_per_tier = max(1, int(aneel_samples_per_tier or DEFAULT_ANEEL_SAMPLES_PER_TIER))
+    full_months = bool(manifest.get("selection", {}).get("full_months"))
 
     if tier in {"all", "hot"} and hot_conn is not None:
         for month in selected_hot:
-            sample = _first_sqlite_sample(hot_conn, month)
-            if sample:
+            for sample in _sqlite_parcel_samples(hot_conn, month, limit=per_tier):
                 samples.append(
                     {
-                        "label": f"auto_hot_{month}_{sample['plant_parcel_code']}",
+                        "label": f"auto_hot_parcel_{month}_{sample['plant_parcel_code']}",
                         "tier": "hot",
+                        "entity_type": "ccee_plant_parcel",
+                        "entity_id": str(sample["plant_parcel_code"]),
                         "reference_month": month,
                         "plant_parcel_code": str(sample["plant_parcel_code"]),
+                        "ceg": None,
                         "sample_datetime": str(sample["reference_datetime"]),
                     }
                 )
+            if include_aneel_aggregation and full_months:
+                for sample in _sqlite_aneel_samples(raw_conn, month, limit=aneel_per_tier):
+                    samples.append(
+                        {
+                            "label": f"auto_hot_aneel_{month}_{sample['ceg']}",
+                            "tier": "hot",
+                            "entity_type": "aneel_plant",
+                            "entity_id": str(sample["ceg"]),
+                            "reference_month": month,
+                            "plant_parcel_code": None,
+                            "ceg": str(sample["ceg"]),
+                            "sample_datetime": str(sample["reference_datetime"]),
+                            "plant_parcel_count": int(sample["plant_parcel_count"] or 0),
+                        }
+                    )
 
     if tier in {"all", "cold"}:
         for month in selected_cold:
-            sample = _first_cold_sample(cold_paths.get(month, []))
-            if sample:
+            for sample in _cold_parcel_samples(cold_paths.get(month, []), limit=per_tier):
                 samples.append(
                     {
-                        "label": f"auto_cold_{month}_{sample['plant_parcel_code']}",
+                        "label": f"auto_cold_parcel_{month}_{sample['plant_parcel_code']}",
                         "tier": "cold",
+                        "entity_type": "ccee_plant_parcel",
+                        "entity_id": str(sample["plant_parcel_code"]),
                         "reference_month": month,
                         "plant_parcel_code": str(sample["plant_parcel_code"]),
+                        "ceg": None,
                         "sample_datetime": str(sample["reference_datetime"]),
                     }
                 )
+            if include_aneel_aggregation and full_months:
+                for sample in _sqlite_aneel_samples(raw_conn, month, limit=aneel_per_tier):
+                    samples.append(
+                        {
+                            "label": f"auto_cold_aneel_{month}_{sample['ceg']}",
+                            "tier": "cold",
+                            "entity_type": "aneel_plant",
+                            "entity_id": str(sample["ceg"]),
+                            "reference_month": month,
+                            "plant_parcel_code": None,
+                            "ceg": str(sample["ceg"]),
+                            "sample_datetime": str(sample["reference_datetime"]),
+                            "plant_parcel_count": int(sample["plant_parcel_count"] or 0),
+                        }
+                    )
 
     return samples
 
@@ -419,6 +595,69 @@ def _read_cold_rows(
     return [_normalize_row(row) for row in frame.to_dicts()]
 
 
+def _sum_like_sqlite(source_column: str, alias: str):
+    import polars as pl  # noqa: PLC0415
+
+    return (
+        pl.when(pl.col(source_column).is_not_null().any())
+        .then(pl.col(source_column).sum())
+        .otherwise(None)
+        .alias(alias)
+    )
+
+
+def _read_cold_aneel_rows(
+    part_paths: list[Path],
+    *,
+    plant_parcel_codes: list[str],
+    reference_month: str,
+    start_datetime: str,
+    end_datetime: str,
+    limit: int,
+) -> list[dict[str, Any]]:
+    if not part_paths:
+        raise FileNotFoundError(f"No cold Parquet parts found for reference_month={reference_month}")
+    codes = [str(code) for code in plant_parcel_codes if str(code)]
+    if not codes:
+        return []
+    missing = [str(path) for path in part_paths if not path.exists()]
+    if missing:
+        raise FileNotFoundError(f"Missing cold Parquet part(s): {', '.join(missing)}")
+    try:
+        import polars as pl  # noqa: PLC0415
+    except ImportError as exc:
+        raise RuntimeError("Cold Parquet comparison requires polars.") from exc
+
+    frame = (
+        pl.scan_parquet([str(path) for path in part_paths])
+        .filter(
+            (pl.col("plant_parcel_code").cast(pl.Utf8).is_in(codes))
+            & (pl.col("reference_month").cast(pl.Utf8) == str(reference_month))
+            & (pl.col("reference_datetime").cast(pl.Utf8) >= str(start_datetime))
+            & (pl.col("reference_datetime").cast(pl.Utf8) <= str(end_datetime))
+        )
+        .with_columns(
+            [
+                pl.col("reference_datetime").cast(pl.Utf8).alias("reference_datetime"),
+                pl.col("commercialization_period").cast(pl.Int64).alias("commercialization_period"),
+            ]
+        )
+        .group_by(["reference_datetime", "commercialization_period"])
+        .agg(
+            [
+                _sum_like_sqlite("generation_center_of_gravity_mwh", "generation_mwh"),
+                _sum_like_sqlite("verified_generation_ons_mwh", "verified_generation_mwh"),
+                _sum_like_sqlite("verified_availability_mwh", "verified_availability_mwh"),
+                _sum_like_sqlite("unavailability_mwh", "unavailability_mwh"),
+            ]
+        )
+        .sort(["reference_datetime", "commercialization_period"])
+        .limit(max(1, int(limit)))
+        .collect()
+    )
+    return [_normalize_row(row) for row in frame.to_dicts()]
+
+
 def _compare_sample(
     sample: dict[str, Any],
     *,
@@ -433,8 +672,11 @@ def _compare_sample(
     runs: int,
 ) -> dict[str, Any]:
     tier = str(sample["tier"])
+    entity_type = str(sample.get("entity_type") or "ccee_plant_parcel")
+    entity_id = str(sample.get("entity_id") or sample.get("plant_parcel_code") or sample.get("ceg") or "")
     reference_month = str(sample["reference_month"])
-    plant_parcel_code = str(sample["plant_parcel_code"])
+    plant_parcel_code = str(sample.get("plant_parcel_code") or "")
+    ceg = str(sample.get("ceg") or "")
     start_value, end_value, resolved_window_mode = _resolve_window(
         manifest=manifest,
         reference_month=reference_month,
@@ -444,41 +686,15 @@ def _compare_sample(
         window_mode=window_mode,
     )
     bounded_limit = max(1, int(limit or DEFAULT_LIMIT))
+    plant_parcel_codes: list[str] = []
+    if entity_type == "aneel_plant":
+        plant_parcel_codes = _plant_parcel_codes_for_ceg(raw_conn, ceg or entity_id)
 
-    raw = _timed_read(
-        lambda: _rows_from_sqlite(
-            raw_conn,
-            plant_parcel_code=plant_parcel_code,
-            reference_month=reference_month,
-            start_datetime=start_value,
-            end_datetime=end_value,
-            limit=bounded_limit,
-        ),
-        runs=runs,
-    )
-
-    if tier == "hot":
-        if hot_conn is None:
-            raise ValueError("Hot comparison requested but hot DB is unavailable.")
-        candidate_source = "hot_sqlite"
-        candidate = _timed_read(
-            lambda: _rows_from_sqlite(
-                hot_conn,
-                plant_parcel_code=plant_parcel_code,
-                reference_month=reference_month,
-                start_datetime=start_value,
-                end_datetime=end_value,
-                limit=bounded_limit,
-            ),
-            runs=runs,
-        )
-    elif tier == "cold":
-        candidate_source = "cold_parquet"
-        part_paths = cold_paths.get(reference_month, [])
-        candidate = _timed_read(
-            lambda: _read_cold_rows(
-                part_paths,
-                plant_parcel_code=plant_parcel_code,
+    if entity_type == "aneel_plant":
+        raw = _timed_read(
+            lambda: _rows_from_sqlite_aneel_plant(
+                raw_conn,
+                ceg=ceg or entity_id,
                 reference_month=reference_month,
                 start_datetime=start_value,
                 end_datetime=end_value,
@@ -487,14 +703,86 @@ def _compare_sample(
             runs=runs,
         )
     else:
+        raw = _timed_read(
+            lambda: _rows_from_sqlite(
+                raw_conn,
+                plant_parcel_code=plant_parcel_code or entity_id,
+                reference_month=reference_month,
+                start_datetime=start_value,
+                end_datetime=end_value,
+                limit=bounded_limit,
+            ),
+            runs=runs,
+        )
+
+    if tier == "hot":
+        if hot_conn is None:
+            raise ValueError("Hot comparison requested but hot DB is unavailable.")
+        candidate_source = "hot_sqlite"
+        if entity_type == "aneel_plant":
+            candidate = _timed_read(
+                lambda: _rows_from_sqlite_parcel_group(
+                    hot_conn,
+                    plant_parcel_codes=plant_parcel_codes,
+                    reference_month=reference_month,
+                    start_datetime=start_value,
+                    end_datetime=end_value,
+                    limit=bounded_limit,
+                ),
+                runs=runs,
+            )
+        else:
+            candidate = _timed_read(
+                lambda: _rows_from_sqlite(
+                    hot_conn,
+                    plant_parcel_code=plant_parcel_code or entity_id,
+                    reference_month=reference_month,
+                    start_datetime=start_value,
+                    end_datetime=end_value,
+                    limit=bounded_limit,
+                ),
+                runs=runs,
+            )
+    elif tier == "cold":
+        candidate_source = "cold_parquet"
+        part_paths = cold_paths.get(reference_month, [])
+        if entity_type == "aneel_plant":
+            candidate = _timed_read(
+                lambda: _read_cold_aneel_rows(
+                    part_paths,
+                    plant_parcel_codes=plant_parcel_codes,
+                    reference_month=reference_month,
+                    start_datetime=start_value,
+                    end_datetime=end_value,
+                    limit=bounded_limit,
+                ),
+                runs=runs,
+            )
+        else:
+            candidate = _timed_read(
+                lambda: _read_cold_rows(
+                    part_paths,
+                    plant_parcel_code=plant_parcel_code or entity_id,
+                    reference_month=reference_month,
+                    start_datetime=start_value,
+                    end_datetime=end_value,
+                    limit=bounded_limit,
+                ),
+                runs=runs,
+            )
+    else:
         raise ValueError(f"Unsupported sample tier: {tier}")
 
     comparison = _compare_rows(raw["rows"], candidate["rows"])
     return {
         "label": sample.get("label"),
         "tier": tier,
+        "entity_type": entity_type,
+        "entity_id": entity_id,
         "reference_month": reference_month,
-        "plant_parcel_code": plant_parcel_code,
+        "plant_parcel_code": plant_parcel_code or None,
+        "ceg": ceg or None,
+        "plant_parcel_count": int(sample.get("plant_parcel_count") or len(plant_parcel_codes) or 0),
         "start_datetime": start_value,
         "end_datetime": end_value,
         "window_mode": resolved_window_mode,
@@ -523,6 +811,8 @@ def compare_hourly_read_paths(
     prototype_dir: Path | None = None,
     database: Path | None = None,
     tier: str = "all",
+    entity_type: EntityType = "ccee_plant_parcel",
+    entity_id: str | None = None,
     plant_parcel_code: str | None = None,
     reference_month: str | None = None,
     start_datetime: str | None = None,
@@ -530,6 +820,9 @@ def compare_hourly_read_paths(
     window_mode: WindowMode = "auto",
     limit: int = DEFAULT_LIMIT,
     runs: int = DEFAULT_RUNS,
+    samples_per_tier: int = DEFAULT_SAMPLES_PER_TIER,
+    aneel_samples_per_tier: int = DEFAULT_ANEEL_SAMPLES_PER_TIER,
+    include_aneel_aggregation: bool = False,
 ) -> dict[str, Any]:
     resolved_manifest_path = _manifest_path(manifest_path, prototype_dir)
     manifest = _load_manifest(resolved_manifest_path)
@@ -544,33 +837,37 @@ def compare_hourly_read_paths(
     source_before = _source_signature(source_db)
     hot_path = _hot_db_path(manifest)
     cold_paths = _cold_partitions(manifest)
-    samples: list[dict[str, Any]]
-    if plant_parcel_code and reference_month:
-        manual_tiers = ["hot", "cold"] if tier == "all" else [tier]
-        samples = [
-            _manual_sample(
-                tier=sample_tier,  # type: ignore[arg-type]
-                reference_month=reference_month,
-                plant_parcel_code=plant_parcel_code,
-                sample_datetime=start_datetime,
-            )
-            for sample_tier in manual_tiers
-            if sample_tier in {"hot", "cold"}
-        ]
-    else:
-        with closing(_connect_readonly(hot_path)) as hot_conn:
-            samples = _auto_samples(
-                manifest,
-                hot_conn=hot_conn,
-                cold_paths=cold_paths,
-                tier=tier,
-            )
+    resolved_entity_id = entity_id or plant_parcel_code
 
     results: list[dict[str, Any]] = []
     errors: list[dict[str, Any]] = []
     with closing(_connect_readonly(source_db)) as raw_conn:
         hot_conn_ctx = closing(_connect_readonly(hot_path))
         with hot_conn_ctx as hot_conn:
+            if resolved_entity_id and reference_month:
+                manual_tiers = ["hot", "cold"] if tier == "all" else [tier]
+                samples = [
+                    _manual_sample(
+                        tier=sample_tier,  # type: ignore[arg-type]
+                        reference_month=reference_month,
+                        entity_type=entity_type,
+                        entity_id=resolved_entity_id,
+                        sample_datetime=start_datetime,
+                    )
+                    for sample_tier in manual_tiers
+                    if sample_tier in {"hot", "cold"}
+                ]
+            else:
+                samples = _auto_samples(
+                    manifest,
+                    raw_conn=raw_conn,
+                    hot_conn=hot_conn,
+                    cold_paths=cold_paths,
+                    tier=tier,
+                    samples_per_tier=samples_per_tier,
+                    aneel_samples_per_tier=aneel_samples_per_tier,
+                    include_aneel_aggregation=include_aneel_aggregation,
+                )
             for sample in samples:
                 try:
                     results.append(
@@ -592,8 +889,11 @@ def compare_hourly_read_paths(
                         {
                             "label": sample.get("label"),
                             "tier": sample.get("tier"),
+                            "entity_type": sample.get("entity_type"),
+                            "entity_id": sample.get("entity_id"),
                             "reference_month": sample.get("reference_month"),
                             "plant_parcel_code": sample.get("plant_parcel_code"),
+                            "ceg": sample.get("ceg"),
                             "error": str(exc),
                         }
                     )
@@ -619,6 +919,8 @@ def compare_hourly_read_paths(
         },
         "parameters": {
             "tier": tier,
+            "entity_type": entity_type,
+            "entity_id": entity_id,
             "plant_parcel_code": plant_parcel_code,
             "reference_month": reference_month,
             "start_datetime": start_datetime,
@@ -626,6 +928,9 @@ def compare_hourly_read_paths(
             "window_mode": window_mode,
             "limit": int(limit),
             "runs": int(runs),
+            "samples_per_tier": int(samples_per_tier),
+            "aneel_samples_per_tier": int(aneel_samples_per_tier),
+            "include_aneel_aggregation": bool(include_aneel_aggregation),
         },
         "samples": results,
         "errors": errors,
@@ -637,6 +942,8 @@ def compare_hourly_read_paths(
             "mismatched": mismatched,
             "hot_samples": sum(1 for result in results if result.get("tier") == "hot"),
             "cold_samples": sum(1 for result in results if result.get("tier") == "cold"),
+            "parcel_samples": sum(1 for result in results if result.get("entity_type") == "ccee_plant_parcel"),
+            "aneel_plant_samples": sum(1 for result in results if result.get("entity_type") == "aneel_plant"),
         },
     }
 
@@ -654,6 +961,13 @@ def parse_args() -> argparse.Namespace:
         default="all",
         help="Which prototype tier to compare.",
     )
+    parser.add_argument(
+        "--entity-type",
+        choices=("ccee_plant_parcel", "aneel_plant"),
+        default="ccee_plant_parcel",
+        help="Manual sample entity type. Ignored for automatic sampling.",
+    )
+    parser.add_argument("--entity-id", help="Manual sample entity ID. For aneel_plant, use CEG.")
     parser.add_argument("--plant-parcel-code", help="Manual plant parcel code sample.")
     parser.add_argument("--reference-month", help="Manual reference month sample, YYYY-MM.")
     parser.add_argument("--start-datetime", help="Manual window start datetime.")
@@ -666,6 +980,23 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--limit", type=int, default=DEFAULT_LIMIT, help="Row limit, matching the chart guardrail.")
     parser.add_argument("--runs", type=int, default=DEFAULT_RUNS, help="Read timing runs per sample.")
+    parser.add_argument(
+        "--samples-per-tier",
+        type=int,
+        default=DEFAULT_SAMPLES_PER_TIER,
+        help="Automatic parcel samples per selected hot/cold month.",
+    )
+    parser.add_argument(
+        "--aneel-samples-per-tier",
+        type=int,
+        default=DEFAULT_ANEEL_SAMPLES_PER_TIER,
+        help="Automatic ANEEL CEG aggregation samples per selected hot/cold month.",
+    )
+    parser.add_argument(
+        "--include-aneel-aggregation",
+        action="store_true",
+        help="Also auto-sample ANEEL CEG-level hourly aggregation cases for full-month prototypes.",
+    )
     parser.add_argument("--output", help="Optional JSON output path. Defaults to stdout only.")
     return parser.parse_args()
 
@@ -677,6 +1008,8 @@ def main() -> int:
         prototype_dir=Path(args.prototype_dir).expanduser().resolve() if args.prototype_dir else None,
         database=Path(args.database).expanduser().resolve() if args.database else None,
         tier=args.tier,
+        entity_type=args.entity_type,
+        entity_id=args.entity_id,
         plant_parcel_code=args.plant_parcel_code,
         reference_month=args.reference_month,
         start_datetime=args.start_datetime,
@@ -684,6 +1017,9 @@ def main() -> int:
         window_mode=args.window_mode,
         limit=args.limit,
         runs=args.runs,
+        samples_per_tier=args.samples_per_tier,
+        aneel_samples_per_tier=args.aneel_samples_per_tier,
+        include_aneel_aggregation=args.include_aneel_aggregation,
     )
     payload = json.dumps(report, indent=2, ensure_ascii=False)
     if args.output:

@@ -148,6 +148,9 @@ Optional examples:
 ```powershell
 python scripts/diagnostics/phase5_compare_hourly_read_paths.py `
   --manifest C:\tmp\cvma-phase5-hot-cold-full-one-month\manifest.json `
+  --samples-per-tier 3 `
+  --aneel-samples-per-tier 1 `
+  --include-aneel-aggregation `
   --runs 5 `
   --output docs/diagnostics/phase5-hourly-read-path-comparison.json
 
@@ -166,6 +169,7 @@ The comparison script:
 - opens the prototype hot SQLite DB with a SQLite read-only URI;
 - reads cold Parquet partitions with `polars`;
 - compares the hourly chart source rows row-for-row;
+- can compare both plant-parcel rows and ANEEL CEG-level aggregations;
 - records row hashes, elapsed read timings, source DB signatures, and
   mismatches;
 - writes JSON only when `--output` is provided.
@@ -177,20 +181,28 @@ artifact contains the full source month.
 
 Local comparison against
 `C:\tmp\cvma-phase5-hot-cold-full-one-month\manifest.json` passed with
-`--runs 3`:
+`--samples-per-tier 3 --aneel-samples-per-tier 1 --include-aneel-aggregation
+--runs 3`:
 
-- hot sample: `2026-04`, parcel `1000672`, 720 rows, raw and hot row hashes
-  matched;
-- cold sample: `2024-03`, parcel `20001`, 744 rows, raw and cold row hashes
-  matched;
+- hot parcel samples: 3 full-month samples for `2026-04`, all matched raw
+  SQLite row hashes;
+- hot ANEEL aggregation sample: 1 CEG-level full-month sample for `2026-04`,
+  matched raw SQLite row hashes;
+- cold parcel samples: 3 full-month samples for `2024-03`, all matched raw
+  SQLite row hashes;
+- cold ANEEL aggregation sample: 1 CEG-level full-month sample for `2024-03`,
+  matched raw SQLite row hashes;
 - source DB signature unchanged: yes;
 - report: `docs/diagnostics/phase5-hourly-read-path-comparison.json`.
 
+The broadened run also exposed the next performance target: raw SQLite CEG
+aggregation windows are much slower than parcel windows because the current
+runtime query joins `ccee_plant_parcel_hourly` to `ccee_plant_parcels` for each
+request. Any runtime adapter proposal should preserve the same values while
+avoiding that repeated raw join for CEG-level drill-downs.
+
 ## Next Decision Gate
 
-Broaden the read-path comparison across more parcels, months, and at least one
-ANEEL plant aggregation case before changing runtime routing. If those samples
-match the raw SQLite rows and timings are acceptable, the next implementation
-plan can introduce a backend read adapter behind the existing hourly chart
-method. That adapter must still keep raw SQLite as the canonical fallback and
-must ship behind equality tests before routing is changed.
+Plan a backend read adapter behind the existing hourly chart method. The plan
+must keep raw SQLite as the canonical fallback, preserve current bridge/frontend
+contracts, and add equality tests before routing is changed.
