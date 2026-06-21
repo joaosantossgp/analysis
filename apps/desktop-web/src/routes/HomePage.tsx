@@ -47,6 +47,7 @@ export function resolveLayout(items: LayoutItem[], movingItemId?: string): Layou
     // Clamp height constraints
     let h = item.h;
     if (h < 2) h = 2; // minimum height is 2 rows for expanded state
+    if (h > 6) h = 6; // safety maximum height
 
     // Ensure it fits within the 3-column boundary
     if (currentX + w > 3) {
@@ -58,12 +59,14 @@ export function resolveLayout(items: LayoutItem[], movingItemId?: string): Layou
     }
 
     // Keep shifting down until there are no 2D overlaps
-    while (true) {
+    let iterations = 0;
+    while (iterations < 100) {
+      iterations++;
       let hasOverlap = false;
-      const height = item.isMinimized ? 1 : h;
+      const height = Math.max(1, item.isMinimized ? 1 : h);
 
       for (const other of resolved) {
-        const otherHeight = other.isMinimized ? 1 : other.h;
+        const otherHeight = Math.max(1, other.isMinimized ? 1 : other.h);
         // Check overlap intersection
         const overlapX = currentX < other.x + other.w && currentX + w > other.x;
         const overlapY = currentY < other.y + otherHeight && currentY + height > other.y;
@@ -94,11 +97,11 @@ export function resolveLayout(items: LayoutItem[], movingItemId?: string): Layou
 
 function findFirstEmptySlot(items: LayoutItem[], w: number, h: number): { x: number; y: number } {
   let y = 0;
-  while (true) {
+  while (y < 500) {
     for (let x = 0; x <= 3 - w; x++) {
       let fits = true;
       for (const other of items) {
-        const otherHeight = other.isMinimized ? 1 : other.h;
+        const otherHeight = Math.max(1, other.isMinimized ? 1 : other.h);
         const overlapX = x < other.x + other.w && x + w > other.x;
         const overlapY = y < other.y + otherHeight && y + h > other.y;
         if (overlapX && overlapY) {
@@ -112,7 +115,84 @@ function findFirstEmptySlot(items: LayoutItem[], w: number, h: number): { x: num
     }
     y++;
   }
+  return { x: 0, y: 0 };
 }
+
+export function parseLayoutItems(saved: string | null): LayoutItem[] {
+  if (!saved) return [];
+  try {
+    const parsed = JSON.parse(saved);
+    if (!Array.isArray(parsed)) return [];
+    
+    const validItems: LayoutItem[] = [];
+    for (const item of parsed) {
+      if (!item || typeof item !== "object") continue;
+      const { id, x, y, w, h, isMinimized, isCompact } = item;
+      
+      // Ignore unknown/unregistered widget IDs
+      if (typeof id !== "string" || !WORKSPACE_REGISTRY[id]) {
+        continue;
+      }
+      
+      // Parse coordinates and sizes safely
+      const parsedX = typeof x === "number" && !Number.isNaN(x) ? x : 0;
+      const parsedY = typeof y === "number" && !Number.isNaN(y) ? y : 0;
+      const parsedW = typeof w === "number" && !Number.isNaN(w) ? w : 1;
+      const parsedH = typeof h === "number" && !Number.isNaN(h) ? h : 2;
+      
+      // Clamp coordinates and sizes
+      const clampedW = Math.min(3, Math.max(1, parsedW));
+      const clampedH = Math.min(6, Math.max(2, parsedH));
+      const clampedX = Math.min(3 - clampedW, Math.max(0, parsedX));
+      const clampedY = Math.max(0, parsedY);
+      
+      validItems.push({
+        id,
+        x: clampedX,
+        y: clampedY,
+        w: clampedW,
+        h: clampedH,
+        isMinimized: typeof isMinimized === "boolean" ? isMinimized : false,
+        isCompact: typeof isCompact === "boolean" ? isCompact : false,
+      });
+    }
+    return resolveLayout(validItems);
+  } catch (e) {
+    console.error("Failed to parse layout items", e);
+    return [];
+  }
+}
+
+export function parseCardConfigs(saved: string | null): Record<string, any> {
+  const defaults = {
+    watchlist: { companyIds: [], metric: "mg_ebit" },
+    "priority-queue": { universeId: "" },
+    "market-price": { cdCvm: 0, ticker: "", companyName: "" },
+  };
+  if (!saved) return defaults;
+  try {
+    const parsed = JSON.parse(saved);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return {
+        ...defaults,
+        ...parsed,
+      };
+    }
+    return defaults;
+  } catch (e) {
+    console.error("Failed to parse card configs", e);
+    return defaults;
+  }
+}
+
+export const RECOMMENDED_LAYOUT: LayoutItem[] = [
+  { id: "database-status", x: 0, y: 0, w: 3, h: 3, isMinimized: false, isCompact: false },
+  { id: "watchlist", x: 0, y: 3, w: 2, h: 2, isMinimized: false, isCompact: false },
+  { id: "market-price", x: 2, y: 3, w: 1, h: 2, isMinimized: false, isCompact: false },
+  { id: "priority-queue", x: 0, y: 5, w: 2, h: 2, isMinimized: false, isCompact: false },
+  { id: "top-news", x: 0, y: 7, w: 2, h: 2, isMinimized: false, isCompact: false },
+];
+
 
 export function HomePage() {
   const [bridgeReady, setBridgeReady] = useState(false);
@@ -130,7 +210,24 @@ export function HomePage() {
 
   const gridRef = useRef<HTMLDivElement>(null);
 
-  // 1. Initialize and load configuration from localStorage
+  // Keep track of active window listeners to avoid leaks if unmounted during interaction
+  const activeListenersRef = useRef<{
+    mousemove?: (e: MouseEvent) => void;
+    mouseup?: (e: MouseEvent) => void;
+  }>({});
+
+  const cleanupListeners = () => {
+    if (activeListenersRef.current.mousemove) {
+      window.removeEventListener("mousemove", activeListenersRef.current.mousemove);
+      activeListenersRef.current.mousemove = undefined;
+    }
+    if (activeListenersRef.current.mouseup) {
+      window.removeEventListener("mouseup", activeListenersRef.current.mouseup);
+      activeListenersRef.current.mouseup = undefined;
+    }
+  };
+
+  // 1. Initialize and load configuration from localStorage safely
   useEffect(() => {
     let cancelled = false;
     whenBridgeReady().then(() => {
@@ -139,29 +236,17 @@ export function HomePage() {
 
     try {
       const savedItems = localStorage.getItem(STORAGE_IDS_KEY);
-      if (savedItems) {
-        setActiveCards(JSON.parse(savedItems));
-      } else {
-        // Empty workspace by default on first access
-        setActiveCards([]);
-      }
+      setActiveCards(parseLayoutItems(savedItems));
 
       const savedConfigs = localStorage.getItem(STORAGE_CONFIG_KEY);
-      if (savedConfigs) {
-        setCardConfigs(JSON.parse(savedConfigs));
-      } else {
-        setCardConfigs({
-          watchlist: { companyIds: [], metric: "mg_ebit" },
-          "priority-queue": { universeId: "" },
-          "market-price": { cdCvm: 0, ticker: "", companyName: "" },
-        });
-      }
+      setCardConfigs(parseCardConfigs(savedConfigs));
     } catch (e) {
       console.error("Failed to load workspace layout", e);
     }
 
     return () => {
       cancelled = true;
+      cleanupListeners();
     };
   }, []);
 
@@ -302,6 +387,8 @@ export function HomePage() {
       setDragSnapPreview({ x: targetItem.x, y: targetItem.y });
     }
 
+    cleanupListeners();
+
     const handleMouseMove = (moveEvent: MouseEvent) => {
       const gEl = gridRef.current;
       if (!gEl) return;
@@ -328,8 +415,7 @@ export function HomePage() {
     };
 
     const handleMouseUp = (upEvent: MouseEvent) => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
+      cleanupListeners();
       document.body.style.cursor = "";
 
       const gEl = gridRef.current;
@@ -363,6 +449,9 @@ export function HomePage() {
       setDragSnapPreview(null);
     };
 
+    activeListenersRef.current.mousemove = handleMouseMove;
+    activeListenersRef.current.mouseup = handleMouseUp;
+
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("mouseup", handleMouseUp);
   };
@@ -380,6 +469,8 @@ export function HomePage() {
     const startX = mouseDownEvent.clientX;
     const gEl = gridRef.current;
     const gridColWidth = gEl ? gEl.getBoundingClientRect().width / 3 : 320;
+
+    cleanupListeners();
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
       const deltaX = moveEvent.clientX - startX;
@@ -399,10 +490,12 @@ export function HomePage() {
     };
 
     const handleMouseUp = () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
+      cleanupListeners();
       document.body.style.cursor = "";
     };
+
+    activeListenersRef.current.mousemove = handleMouseMove;
+    activeListenersRef.current.mouseup = handleMouseUp;
 
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("mouseup", handleMouseUp);
@@ -419,6 +512,8 @@ export function HomePage() {
 
     const startY = mouseDownEvent.clientY;
     const gridRowHeight = 136; // 120px height + 16px gap
+
+    cleanupListeners();
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
       const deltaY = moveEvent.clientY - startY;
@@ -438,10 +533,12 @@ export function HomePage() {
     };
 
     const handleMouseUp = () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
+      cleanupListeners();
       document.body.style.cursor = "";
     };
+
+    activeListenersRef.current.mousemove = handleMouseMove;
+    activeListenersRef.current.mouseup = handleMouseUp;
 
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("mouseup", handleMouseUp);
@@ -506,23 +603,84 @@ export function HomePage() {
 
       {/* Main Grid Area */}
       {activeCards.length === 0 ? (
-        <div className="flex flex-col items-center justify-center border border-dashed border-zinc-850 rounded-lg p-12 bg-zinc-900/5 text-center max-w-md mx-auto mt-12 font-mono">
-          <span className="text-orange-500 text-3xl mb-3" aria-hidden="true">⛭</span>
-          <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-200">
-            Empty Workspace
-          </h4>
-          <p className="text-2xs text-zinc-500 max-w-xs mt-2 leading-relaxed">
-            Customize your command center by adding widgets for watchlists, news feeds, priority queues, stock trend lines, and database updates.
-          </p>
-          <button
-            onClick={() => {
-              setIsConfigOpen(true);
-              setIsEditMode(true);
-            }}
-            className="mt-6 rounded-md bg-orange-500 px-4 py-2 text-xs font-semibold text-zinc-950 hover:bg-orange-400 transition-colors"
-          >
-            Add Widgets
-          </button>
+        <div className="border border-zinc-850 rounded-lg p-6 bg-zinc-900/10 max-w-2xl mx-auto mt-10 font-mono space-y-6">
+          <div className="text-center space-y-2">
+            <span className="text-orange-500 text-3xl block" aria-hidden="true">⛭</span>
+            <h4 className="text-sm font-semibold uppercase tracking-wider text-zinc-100">
+              Analyst Workspace Initial Setup
+            </h4>
+            <p className="text-2xs text-zinc-400 max-w-md mx-auto leading-relaxed">
+              Configure your financial terminal workspace to track Brazilian company updates, coverage priorities, stock trend charts, and news feeds.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 border-t border-b border-zinc-850/60 py-6">
+            <div className="border-r border-zinc-850/60 pr-4 flex flex-col justify-between space-y-4">
+              <div>
+                <h5 className="text-xs font-bold text-zinc-200 uppercase tracking-wide">Recommended Layout</h5>
+                <p className="text-3xs text-zinc-500 mt-1 leading-normal">
+                  Pre-populate your workspace with a balanced, multi-column dashboard containing:
+                </p>
+                <ul className="text-3xs text-zinc-400 mt-2 list-disc list-inside space-y-1">
+                  <li>Database synchronization status</li>
+                  <li>Watchlist with EBIT Margin KPI charts</li>
+                  <li>Target ticker quote Sparkline</li>
+                  <li>Active coverage prioritization queue</li>
+                  <li>CVM filings and news alerts</li>
+                </ul>
+              </div>
+              <button
+                onClick={() => {
+                  setActiveCards(resolveLayout(RECOMMENDED_LAYOUT));
+                }}
+                className="w-full text-center rounded bg-orange-500 hover:bg-orange-400 text-zinc-950 text-2xs py-2 font-semibold transition-colors uppercase tracking-wide cursor-pointer"
+              >
+                Load Recommended Layout
+              </button>
+            </div>
+
+            <div className="pl-4 flex flex-col justify-between space-y-4">
+              <div>
+                <h5 className="text-xs font-bold text-zinc-200 uppercase tracking-wide">Custom Workspace</h5>
+                <p className="text-3xs text-zinc-500 mt-1 leading-normal">
+                  Build your own custom layout from scratch. Pick and position individual cards manually based on your daily workflow.
+                </p>
+                <ul className="text-3xs text-zinc-400 mt-2 list-disc list-inside space-y-1">
+                  <li>Edit mode with free grid placement</li>
+                  <li>Drag-and-drop cards to snap anywhere</li>
+                  <li>Resize cards vertically and horizontally</li>
+                  <li>Toggle compact view modes</li>
+                </ul>
+              </div>
+              <button
+                onClick={() => {
+                  setIsConfigOpen(true);
+                  setIsEditMode(true);
+                }}
+                className="w-full text-center rounded border border-zinc-800 bg-zinc-950 hover:bg-zinc-900 text-zinc-300 text-2xs py-2 font-semibold transition-colors uppercase tracking-wide cursor-pointer"
+              >
+                Choose Widgets Manually
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-3xs font-semibold text-zinc-550 uppercase tracking-wider">Key Widget Integrations</p>
+            <div className="grid grid-cols-3 gap-3 text-3xs text-zinc-500">
+              <div className="bg-zinc-950/45 p-2 rounded border border-zinc-850/40">
+                <span className="font-semibold text-zinc-300 block mb-0.5">Database Monitor</span>
+                Tracks local CVM database updates, status checks, and data health percentages.
+              </div>
+              <div className="bg-zinc-950/45 p-2 rounded border border-zinc-850/40">
+                <span className="font-semibold text-zinc-300 block mb-0.5">Watchlist & KPIs</span>
+                Monitors custom corporate watchlists and visualizes margin and stock trend sparklines.
+              </div>
+              <div className="bg-zinc-950/45 p-2 rounded border border-zinc-850/40">
+                <span className="font-semibold text-zinc-300 block mb-0.5">Priority Queue</span>
+                Highlights gaps and priorities inside selected company sectors and tiers.
+              </div>
+            </div>
+          </div>
         </div>
       ) : (
         <div
