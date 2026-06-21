@@ -159,6 +159,11 @@ and records database size, WAL/SHM sidecars, page/freelist stats,
 `sqlite_master` inventory, optional `dbstat` object sizes, guarded row counts,
 and bounded folder sizes under the local data root.
 
+Phase 5.2 added an opt-in `--sqlite-cli` fallback for exact `dbstat` collection
+when a SQLite CLI with `ENABLE_DBSTAT_VTAB` is available. The default diagnostic
+run does not invoke an external CLI so it remains fast and avoids accidental
+full-object scans of the large energy database.
+
 Future Phase 5 work should use this baseline before choosing between exact
 `dbstat` profiling, copy-based hot/cold prototyping, or any backup-and-compact
 maintenance flow.

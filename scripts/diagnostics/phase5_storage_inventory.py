@@ -10,7 +10,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import sqlite3
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -217,12 +219,14 @@ def _collect_dbstat(conn: sqlite3.Connection) -> dict[str, Any]:
         return {
             "available": False,
             "error": str(exc),
+            "source": "python_sqlite",
             "objects": [],
         }
 
     return {
         "available": True,
         "error": None,
+        "source": "python_sqlite",
         "objects": [
             {
                 "name": row["name"],
@@ -233,6 +237,112 @@ def _collect_dbstat(conn: sqlite3.Connection) -> dict[str, Any]:
             }
             for row in rows
         ],
+    }
+
+
+def _resolve_sqlite_cli(sqlite_cli: str | None) -> str | None:
+    if not sqlite_cli:
+        return None
+    candidate = Path(sqlite_cli).expanduser()
+    if candidate.exists():
+        return str(candidate.resolve())
+    return shutil.which(sqlite_cli)
+
+
+def _collect_external_dbstat(
+    db_path: Path,
+    sqlite_cli: str | None,
+    *,
+    timeout_seconds: int,
+) -> dict[str, Any]:
+    sqlite_cli_path = _resolve_sqlite_cli(sqlite_cli)
+    if not sqlite_cli_path:
+        return {
+            "available": False,
+            "error": "sqlite_cli_unavailable",
+            "source": "external_sqlite_cli",
+            "sqlite_cli": sqlite_cli,
+            "objects": [],
+        }
+
+    query = """
+        SELECT name,
+               SUM(pgsize) AS bytes,
+               COUNT(*) AS pages,
+               SUM(payload) AS payload_bytes,
+               SUM(unused) AS unused_bytes
+        FROM dbstat
+        GROUP BY name
+        ORDER BY bytes DESC, name;
+    """
+    command = [
+        sqlite_cli_path,
+        "-batch",
+        "-readonly",
+        "-cmd",
+        "PRAGMA query_only = ON",
+        "-separator",
+        "\t",
+        _sqlite_readonly_uri(db_path),
+        query,
+    ]
+    try:
+        completed = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=max(1, int(timeout_seconds)),
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return {
+            "available": False,
+            "error": str(exc),
+            "source": "external_sqlite_cli",
+            "sqlite_cli": sqlite_cli_path,
+            "objects": [],
+        }
+
+    if completed.returncode != 0:
+        error = (completed.stderr or completed.stdout or "").strip()
+        return {
+            "available": False,
+            "error": error or f"sqlite_cli_exit_{completed.returncode}",
+            "source": "external_sqlite_cli",
+            "sqlite_cli": sqlite_cli_path,
+            "objects": [],
+        }
+
+    objects: list[dict[str, Any]] = []
+    for line in completed.stdout.splitlines():
+        if not line.strip():
+            continue
+        parts = line.rstrip("\r\n").split("\t")
+        if len(parts) != 5:
+            return {
+                "available": False,
+                "error": f"unexpected_sqlite_cli_output: {line!r}",
+                "source": "external_sqlite_cli",
+                "sqlite_cli": sqlite_cli_path,
+                "objects": [],
+            }
+        name, bytes_value, pages, payload_bytes, unused_bytes = parts
+        objects.append(
+            {
+                "name": name,
+                "bytes": int(bytes_value or 0),
+                "pages": int(pages or 0),
+                "payload_bytes": int(payload_bytes or 0),
+                "unused_bytes": int(unused_bytes or 0),
+            }
+        )
+
+    return {
+        "available": True,
+        "error": None,
+        "source": "external_sqlite_cli",
+        "sqlite_cli": sqlite_cli_path,
+        "objects": objects,
     }
 
 
@@ -298,6 +408,8 @@ def collect_database_inventory(
     db_path: Path,
     *,
     exact_counts: bool = False,
+    sqlite_cli: str | None = None,
+    sqlite_cli_timeout_seconds: int = 300,
 ) -> dict[str, Any]:
     db_path = db_path.expanduser().resolve()
     summary: dict[str, Any] = {
@@ -317,6 +429,7 @@ def collect_database_inventory(
         "dbstat": {
             "available": False,
             "error": None,
+            "source": None,
             "objects": [],
         },
         "row_counts": {},
@@ -331,6 +444,12 @@ def collect_database_inventory(
             summary["sqlite"] = _sqlite_page_stats(conn)
             summary["sqlite_master"] = _sqlite_master_inventory(conn)
             dbstat = _collect_dbstat(conn)
+            if not dbstat["available"] and sqlite_cli:
+                dbstat = _collect_external_dbstat(
+                    db_path,
+                    sqlite_cli,
+                    timeout_seconds=sqlite_cli_timeout_seconds,
+                )
             summary["dbstat_available"] = bool(dbstat["available"])
             summary["dbstat"] = dbstat
             summary["row_counts"] = _row_count_inventory(
@@ -399,6 +518,8 @@ def collect_inventory(
     exact_counts: bool = False,
     max_folder_files: int = DEFAULT_MAX_FOLDER_FILES,
     max_folder_depth: int = DEFAULT_MAX_FOLDER_DEPTH,
+    sqlite_cli: str | None = None,
+    sqlite_cli_timeout_seconds: int = 300,
 ) -> dict[str, Any]:
     resolved_data_dir, databases, folders = _resolve_paths(data_dir)
     return {
@@ -410,9 +531,16 @@ def collect_inventory(
         "limits": {
             "max_folder_files": int(max_folder_files),
             "max_folder_depth": int(max_folder_depth),
+            "sqlite_cli_timeout_seconds": int(sqlite_cli_timeout_seconds),
         },
         "databases": {
-            key: collect_database_inventory(key, path, exact_counts=exact_counts)
+            key: collect_database_inventory(
+                key,
+                path,
+                exact_counts=exact_counts,
+                sqlite_cli=sqlite_cli,
+                sqlite_cli_timeout_seconds=sqlite_cli_timeout_seconds,
+            )
             for key, path in databases.items()
         },
         "folders": {
@@ -444,6 +572,19 @@ def parse_args() -> argparse.Namespace:
         help="Count every table, including large raw tables such as ccee_plant_parcel_hourly.",
     )
     parser.add_argument(
+        "--sqlite-cli",
+        help=(
+            "Optional sqlite3 CLI path or command name used as a dbstat fallback. "
+            "When omitted, no external CLI dbstat scan is attempted."
+        ),
+    )
+    parser.add_argument(
+        "--sqlite-cli-timeout",
+        type=int,
+        default=300,
+        help="Timeout in seconds for each optional external sqlite3 dbstat scan.",
+    )
+    parser.add_argument(
         "--max-folder-files",
         type=int,
         default=DEFAULT_MAX_FOLDER_FILES,
@@ -465,6 +606,8 @@ def main() -> int:
         exact_counts=args.exact_counts,
         max_folder_files=max(1, int(args.max_folder_files)),
         max_folder_depth=max(0, int(args.max_folder_depth)),
+        sqlite_cli=args.sqlite_cli,
+        sqlite_cli_timeout_seconds=max(1, int(args.sqlite_cli_timeout)),
     )
     payload = json.dumps(inventory, indent=2, ensure_ascii=False)
     print(payload)

@@ -11,6 +11,13 @@ drop, runtime read-path change, DuckDB, or Parquet tier was implemented.
 python scripts/diagnostics/phase5_storage_inventory.py
 ```
 
+Optional exact SQLite object attribution, when a SQLite CLI with `dbstat` is
+available:
+
+```powershell
+python scripts/diagnostics/phase5_storage_inventory.py --sqlite-cli C:\path\to\sqlite3.exe
+```
+
 The script uses SQLite read-only URI connections with `mode=ro` and
 `PRAGMA query_only = ON`. It does not run `VACUUM`, `ANALYZE`, `REINDEX`,
 checkpoint, schema changes, deletes, inserts, or updates.
@@ -56,6 +63,10 @@ Top-level folder scan:
 - `dbstat` was not available in the Python SQLite build used for this run. The
   script records `dbstat_available=false`; exact per-object SQLite byte
   attribution should use a SQLite binary with `dbstat` if needed.
+- Follow-up check on this machine found no `sqlite3` CLI on `PATH`, and Python
+  SQLite reports `sqlite_compileoption_used('ENABLE_DBSTAT_VTAB') = 0`.
+  The diagnostic now supports an explicit `--sqlite-cli` fallback for future
+  exact `dbstat` runs without changing default behavior.
 
 ## Next Decision Gate
 

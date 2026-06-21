@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sqlite3
 import sys
 from pathlib import Path
@@ -74,6 +75,39 @@ def test_dbstat_unavailable_is_marked_false(tmp_path: Path, monkeypatch):
     assert db_report["dbstat"]["available"] is False
     assert db_report["dbstat"]["objects"] == []
     assert db_report["dbstat"]["error"]
+
+
+def test_external_sqlite_cli_dbstat_fallback_uses_read_only_uri(tmp_path: Path, monkeypatch):
+    db_path = tmp_path / "db" / "cvm_financials.db"
+    _init_db(db_path)
+    monkeypatch.setattr(inventory, "DBSTAT_TABLE", "__missing_dbstat__")
+    monkeypatch.setattr(inventory, "_resolve_sqlite_cli", lambda sqlite_cli: "sqlite3")
+    commands: list[list[str]] = []
+
+    def fake_run(command, **kwargs):
+        commands.append(list(command))
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout="companies\t4096\t1\t128\t64\nidx_companies_name\t4096\t1\t64\t32\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(inventory.subprocess, "run", fake_run)
+
+    db_report = inventory.collect_database_inventory(
+        "cvm_financials",
+        db_path,
+        sqlite_cli="sqlite3",
+    )
+
+    assert db_report["dbstat_available"] is True
+    assert db_report["dbstat"]["source"] == "external_sqlite_cli"
+    assert db_report["dbstat"]["sqlite_cli"] == "sqlite3"
+    assert db_report["dbstat"]["objects"][0]["name"] == "companies"
+    command = commands[0]
+    assert "-readonly" in command
+    assert any(str(arg).startswith("file:") and "mode=ro" in str(arg) for arg in command)
 
 
 def test_large_hourly_count_is_skipped_unless_exact_counts_requested(tmp_path: Path):
