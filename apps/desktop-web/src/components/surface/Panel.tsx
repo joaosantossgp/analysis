@@ -79,7 +79,22 @@ export function Panel({
           {actions ? <div className="shrink-0">{actions}</div> : null}
         </header>
       ) : null}
-      <div style={{ minWidth: 0, padding: dense ? "12px" : "16px" }}>{children}</div>
+      <div
+        style={{
+          minWidth: 0,
+          padding: dense ? "12px" : "16px",
+          ...(style?.display === "flex"
+            ? {
+                flex: 1,
+                minHeight: 0,
+                display: "flex",
+                flexDirection: "column",
+              }
+            : {}),
+        }}
+      >
+        {children}
+      </div>
       {footer ? (
         <footer
           style={{
