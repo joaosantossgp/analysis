@@ -201,8 +201,27 @@ runtime query joins `ccee_plant_parcel_hourly` to `ccee_plant_parcels` for each
 request. Any runtime adapter proposal should preserve the same values while
 avoiding that repeated raw join for CEG-level drill-downs.
 
+## Adapter Foundation
+
+`src/energy_kpi/hourly_read_adapter.py` now contains the backend read adapter
+foundation. It is deliberately not wired into `EnergyKPIReadService` yet.
+
+The adapter:
+
+- validates the hot/cold manifest against the current source DB signature;
+- opens hot SQLite artifacts with read-only URI connections;
+- reads cold Parquet partitions with `polars`;
+- supports plant-parcel rows and ANEEL CEG-level aggregation;
+- returns explicit fallback reasons for missing manifests, stale signatures,
+  missing cold parts, and unavailable artifacts.
+
+Focused tests prove adapter rows match canonical raw SQLite rows for parcel and
+CEG aggregation cases, including row order, limits, null handling, and numeric
+values.
+
 ## Next Decision Gate
 
-Plan a backend read adapter behind the existing hourly chart method. The plan
-must keep raw SQLite as the canonical fallback, preserve current bridge/frontend
-contracts, and add equality tests before routing is changed.
+Wire the adapter behind the existing hourly chart method only after a small
+runtime-routing patch is reviewed. That patch must keep raw SQLite as the
+canonical fallback, preserve current bridge/frontend contracts, and expose
+metadata for the selected read path and fallback reason.

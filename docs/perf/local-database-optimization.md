@@ -224,6 +224,13 @@ table to `ccee_plant_parcels`. A future runtime adapter should preserve the same
 values while avoiding that raw join when validated hot/cold artifacts are
 available.
 
+The backend adapter foundation now exists in
+`src/energy_kpi/hourly_read_adapter.py`, but it is not wired into runtime chart
+routing yet. It validates manifest/source signatures, reads hot SQLite with
+read-only URI connections, reads cold Parquet with `polars`, supports parcel and
+CEG aggregation rows, and returns explicit fallback reasons when artifacts
+cannot be used.
+
 Future Phase 5 work should use this baseline before choosing between a runtime
 read adapter, additional exact `dbstat` profiling, broader hot/cold prototypes,
 or any backup-and-compact maintenance flow.
