@@ -119,24 +119,46 @@ Do not drop these indexes on the live database without a timestamped backup,
 copied-DB equality checks, compact-copy validation, and packaged runtime smoke
 test.
 
-## Remaining phases
-
 ### Phase 4: Excel/export optimization
 
-Next step.
+Implemented in commit `6a7e6f9`.
 
-Goal: reduce repeated raw statement reads during Excel/export workflows without
-changing workbook values, formulas, layout, file names, or auditability.
+Excel/export workflows now load statement frames through one export read pack
+per call instead of repeating raw statement reads for each statement type.
+`CVMQueryLayer.get_statements()` batches statement matrix reads while still
+using raw `financial_reports` as the canonical audit source for workbook raw
+statement sheets.
 
-Required first:
+Workbook formula row resolution now uses a period-aware raw-sheet row index
+instead of scanning statement DataFrames repeatedly during model sheet
+generation. Equality guardrails cover sheet contracts, statement-scoped export,
+mapping preview values, batched read calls, and duplicate account-code rows.
 
-- profile current export read path;
-- add workbook/value equality tests;
-- test representative companies;
-- keep raw `financial_reports` as canonical audit source.
+Observed local PETR4 result after implementation:
+
+- one batched statement read for DRE/BPA/BPP/DFC/DMPL across 2021-2026;
+- total export smoke time about 527 ms;
+- period-specific raw-row resolver cost about 1.4 ms for about 2,000 calls.
+
+## Remaining phases
 
 ### Phase 5: Broader multi-source/cold-tier evaluation
 
-Future step. Consider only after SQLite marts, indexes, and export paths are
-stable and measured.
+Started with Phase 5.1 as a diagnostic-only storage inventory. This first slice
+does not migrate data, drop indexes, compact live databases, add DuckDB, add
+Parquet routing, or change runtime read paths.
 
+Implemented:
+
+- `scripts/diagnostics/phase5_storage_inventory.py`;
+- focused tests in `tests/test_phase5_storage_inventory.py`;
+- local run summary in `docs/diagnostics/phase5-storage-inventory.md`.
+
+The diagnostic inventory opens SQLite databases with read-only URI connections
+and records database size, WAL/SHM sidecars, page/freelist stats,
+`sqlite_master` inventory, optional `dbstat` object sizes, guarded row counts,
+and bounded folder sizes under the local data root.
+
+Future Phase 5 work should use this baseline before choosing between exact
+`dbstat` profiling, copy-based hot/cold prototyping, or any backup-and-compact
+maintenance flow.
