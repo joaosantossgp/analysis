@@ -198,6 +198,23 @@ successfully: the hot month `2026-04` copied 2,827,440 rows into a
 1,084,678,144-byte SQLite database, while the cold month `2024-03` exported
 2,310,864 rows into 113,633,074 bytes of Parquet.
 
-Future Phase 5 work should use this baseline before choosing between exact
-`dbstat` profiling, copy-based hot/cold prototyping, or any backup-and-compact
-maintenance flow.
+Phase 5.4 added a diagnostic-only read-path comparison tool:
+
+```powershell
+python scripts/diagnostics/phase5_compare_hourly_read_paths.py `
+  --manifest C:\tmp\cvma-phase5-hot-cold-full-one-month\manifest.json
+```
+
+It compares canonical raw SQLite hourly chart rows against the prototype hot
+SQLite and cold Parquet artifacts, records row hashes and read timings, and
+keeps all SQLite inputs read-only. It does not change bridge methods, frontend
+contracts, live runtime routing, or source data.
+
+The real full one-month comparison passed with `--runs 3`: one hot full-month
+sample and one cold full-month sample matched the canonical raw SQLite row
+hashes, with the source DB signature unchanged. The JSON report is stored at
+`docs/diagnostics/phase5-hourly-read-path-comparison.json`.
+
+Future Phase 5 work should use this baseline before choosing between a runtime
+read adapter, additional exact `dbstat` profiling, broader hot/cold prototypes,
+or any backup-and-compact maintenance flow.

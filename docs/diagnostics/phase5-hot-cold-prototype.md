@@ -134,9 +134,63 @@ Focused fixture tests cover:
 Manual validation also compiled the script and ran the bounded and full
 selected-month prototype commands above against the real local data root.
 
+## Read-Path Comparison
+
+Phase 5.4 adds a diagnostic-only comparison script:
+
+```powershell
+python scripts/diagnostics/phase5_compare_hourly_read_paths.py `
+  --manifest C:\tmp\cvma-phase5-hot-cold-full-one-month\manifest.json
+```
+
+Optional examples:
+
+```powershell
+python scripts/diagnostics/phase5_compare_hourly_read_paths.py `
+  --manifest C:\tmp\cvma-phase5-hot-cold-full-one-month\manifest.json `
+  --runs 5 `
+  --output docs/diagnostics/phase5-hourly-read-path-comparison.json
+
+python scripts/diagnostics/phase5_compare_hourly_read_paths.py `
+  --manifest C:\tmp\cvma-phase5-hot-cold-full-one-month\manifest.json `
+  --tier cold `
+  --plant-parcel-code 1001 `
+  --reference-month 2024-03 `
+  --start-datetime 2024-03-01T00:00:00 `
+  --end-datetime 2024-03-31T23:59:59
+```
+
+The comparison script:
+
+- opens the canonical source `energy_kpis.db` with a SQLite read-only URI;
+- opens the prototype hot SQLite DB with a SQLite read-only URI;
+- reads cold Parquet partitions with `polars`;
+- compares the hourly chart source rows row-for-row;
+- records row hashes, elapsed read timings, source DB signatures, and
+  mismatches;
+- writes JSON only when `--output` is provided.
+
+Automatic samples use full-month windows for `--full-months` prototypes. For
+bounded prototypes, automatic samples use the exact first exported timestamp so
+the comparison proves exported-row equality without pretending the bounded
+artifact contains the full source month.
+
+Local comparison against
+`C:\tmp\cvma-phase5-hot-cold-full-one-month\manifest.json` passed with
+`--runs 3`:
+
+- hot sample: `2026-04`, parcel `1000672`, 720 rows, raw and hot row hashes
+  matched;
+- cold sample: `2024-03`, parcel `20001`, 744 rows, raw and cold row hashes
+  matched;
+- source DB signature unchanged: yes;
+- report: `docs/diagnostics/phase5-hourly-read-path-comparison.json`.
+
 ## Next Decision Gate
 
-Plan a read-path design for CCEE hourly data before any migration proposal. The
-design should preserve the raw SQLite source as canonical, keep a rebuildable
-manifest, and prove equality/performance for the user-facing hourly drill-downs
-before changing runtime routing.
+Broaden the read-path comparison across more parcels, months, and at least one
+ANEEL plant aggregation case before changing runtime routing. If those samples
+match the raw SQLite rows and timings are acceptable, the next implementation
+plan can introduce a backend read adapter behind the existing hourly chart
+method. That adapter must still keep raw SQLite as the canonical fallback and
+must ship behind equality tests before routing is changed.

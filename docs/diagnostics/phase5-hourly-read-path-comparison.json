@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "mode": "phase5_hourly_read_path_comparison",
+  "generated_at_utc": "2026-06-21T21:33:36Z",
+  "read_only_source": true,
+  "manifest_path": "C:\\tmp\\cvma-phase5-hot-cold-full-one-month\\manifest.json",
+  "source_database": "C:\\Users\\jadaojoao\\Documents\\CVMAnalytics\\db\\energy_kpis.db",
+  "source_signature_before": {
+    "path": "C:\\Users\\jadaojoao\\Documents\\CVMAnalytics\\db\\energy_kpis.db",
+    "size_bytes": 30832099328,
+    "mtime_ns": 1781981674777008300
+  },
+  "source_signature_after": {
+    "path": "C:\\Users\\jadaojoao\\Documents\\CVMAnalytics\\db\\energy_kpis.db",
+    "size_bytes": 30832099328,
+    "mtime_ns": 1781981674777008300
+  },
+  "source_unchanged": true,
+  "prototype": {
+    "hot_sqlite_path": "C:\\tmp\\cvma-phase5-hot-cold-full-one-month\\hot\\energy_hot.sqlite",
+    "cold_partition_months": [
+      "2024-03"
+    ]
+  },
+  "parameters": {
+    "tier": "all",
+    "plant_parcel_code": null,
+    "reference_month": null,
+    "start_datetime": null,
+    "end_datetime": null,
+    "window_mode": "auto",
+    "limit": 2000,
+    "runs": 3
+  },
+  "samples": [
+    {
+      "label": "auto_hot_2026-04_1000672",
+      "tier": "hot",
+      "reference_month": "2026-04",
+      "plant_parcel_code": "1000672",
+      "start_datetime": "2026-04-01T00:00:00",
+      "end_datetime": "2026-04-30T23:59:59",
+      "window_mode": "month",
+      "limit": 2000,
+      "raw": {
+        "source": "raw_sqlite",
+        "row_count": 720,
+        "elapsed_ms": 234.409,
+        "elapsed_runs_ms": [
+          234.409,
+          9.271,
+          8.868
+        ],
+        "rows_hash": "1a7f8098566660c0e9556854bed21cdfc8bf13ccbeb5eb5e71c030100934770f"
+      },
+      "candidate": {
+        "source": "hot_sqlite",
+        "row_count": 720,
+        "elapsed_ms": 60.473,
+        "elapsed_runs_ms": [
+          60.473,
+          9.529,
+          8.738
+        ],
+        "rows_hash": "1a7f8098566660c0e9556854bed21cdfc8bf13ccbeb5eb5e71c030100934770f"
+      },
+      "match": true,
+      "difference_count": 0,
+      "differences": [],
+      "truncated": false
+    },
+    {
+      "label": "auto_cold_2024-03_20001",
+      "tier": "cold",
+      "reference_month": "2024-03",
+      "plant_parcel_code": "20001",
+      "start_datetime": "2024-03-01T00:00:00",
+      "end_datetime": "2024-03-31T23:59:59",
+      "window_mode": "month",
+      "limit": 2000,
+      "raw": {
+        "source": "raw_sqlite",
+        "row_count": 744,
+        "elapsed_ms": 214.025,
+        "elapsed_runs_ms": [
+          214.025,
+          8.166,
+          7.99
+        ],
+        "rows_hash": "08873759d62ff7081421a54c00f984ff698660b4fd368fb542a0bd85f615efdd"
+      },
+      "candidate": {
+        "source": "cold_parquet",
+        "row_count": 744,
+        "elapsed_ms": 87.343,
+        "elapsed_runs_ms": [
+          87.343,
+          24.772,
+          22.972
+        ],
+        "rows_hash": "08873759d62ff7081421a54c00f984ff698660b4fd368fb542a0bd85f615efdd"
+      },
+      "match": true,
+      "difference_count": 0,
+      "differences": [],
+      "truncated": false
+    }
+  ],
+  "errors": [],
+  "summary": {
+    "validation_ok": true,
+    "sample_count": 2,
+    "error_count": 0,
+    "matched": 2,
+    "mismatched": 0,
+    "hot_samples": 1,
+    "cold_samples": 1
+  }
+}
