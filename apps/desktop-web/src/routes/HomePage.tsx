@@ -642,12 +642,7 @@ export function HomePage() {
                 } ${isEditMode && !isDragging ? "border border-zinc-800/15 bg-zinc-950/20" : ""}`}
                 style={dragStyle}
               >
-                {/* Visual coordinate badge in edit mode */}
-                {isEditMode && (
-                  <div className="absolute top-2 left-2 z-drawer rounded bg-zinc-950/85 px-1.5 py-0.5 font-mono text-3xs text-zinc-550 border border-zinc-800 select-none">
-                    Pos: {item.x},{item.y} ({item.w}x{item.isMinimized ? 1 : item.h})
-                  </div>
-                )}
+
 
                 <CardComponent
                   config={config}
