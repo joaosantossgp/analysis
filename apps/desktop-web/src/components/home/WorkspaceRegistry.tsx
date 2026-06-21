@@ -236,6 +236,7 @@ function WatchlistCard({
   onRemove,
   isCompact = false,
   isMinimized = false,
+  isFocused = false,
   headerControls,
 }: {
   config?: WatchlistConfig;
@@ -243,9 +244,34 @@ function WatchlistCard({
   onRemove: () => void;
   isCompact?: boolean;
   isMinimized?: boolean;
+  isFocused?: boolean;
   headerControls?: React.ReactNode;
 }) {
   const [isConfiguring, setIsConfiguring] = useState(false);
+
+  const handleExportCSV = () => {
+    if (!config.companyIds || config.companyIds.length === 0) return;
+    const headers = ["Company Name", "CVM Code", "Ticker", "Metric"];
+    const rows = config.companyIds.map((c) => [
+      c.name.replace(/"/g, '""'),
+      c.cdCvm,
+      c.ticker || "",
+      config.metric === "mg_ebit" ? "EBIT Margin" : "Stock Price"
+    ]);
+    const csvContent = [
+      headers.join(","),
+      ...rows.map((row) => row.map((val) => `"${val}"`).join(","))
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", "watchlist_companies.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   const toggleMetric = () => {
     onConfigure({
@@ -292,6 +318,15 @@ function WatchlistCard({
               title="Configure watchlist"
             >
               ⚙
+            </button>
+          )}
+          {isFocused && (
+            <button
+              onClick={handleExportCSV}
+              className="text-orange-400 hover:text-orange-300 font-mono text-3xs border border-zinc-800 bg-zinc-900 rounded px-1.5 py-0.5 transition-colors mr-1"
+              title="Export Watchlist to CSV"
+            >
+              ⬇ CSV
             </button>
           )}
           {headerControls}
@@ -347,6 +382,29 @@ function WatchlistCard({
                 </Button>
               )}
             </div>
+          ) : isFocused ? (
+            <table className="w-full text-left font-mono text-xs border-collapse">
+              <thead>
+                <tr className="border-b border-zinc-800 text-zinc-555 text-3xs uppercase">
+                  <th className="py-2">Company</th>
+                  <th className="py-2">Ticker</th>
+                  <th className="py-2">Latest Val</th>
+                  <th className="py-2">Recent Years</th>
+                  <th className="py-2 text-right">Trend</th>
+                </tr>
+              </thead>
+              <tbody>
+                {config.companyIds.map((c) => (
+                  <WatchlistRow
+                    key={c.cdCvm}
+                    company={c}
+                    metric={config.metric}
+                    isCompact={isCompact}
+                    isFocused={true}
+                  />
+                ))}
+              </tbody>
+            </table>
           ) : (
             <div className={isCompact ? "space-y-1.5" : "space-y-2.5"}>
               {config.companyIds.map((c) => (
@@ -369,10 +427,12 @@ function WatchlistRow({
   company,
   metric,
   isCompact,
+  isFocused = false,
 }: {
   company: { cdCvm: number; name: string; ticker: string };
   metric: "mg_ebit" | "stock_price";
   isCompact: boolean;
+  isFocused?: boolean;
 }) {
   const { data, isLoading, error } = useQuery({
     queryKey: ["company-historical-indicators", company.cdCvm],
@@ -397,6 +457,43 @@ function WatchlistRow({
     }
     return `R$ ${val.toFixed(2)}`;
   };
+
+  if (isFocused) {
+    const years = data?.mode === "desktop" && data.data?.yearly_data ? data.data.yearly_data : [];
+    return (
+      <tr className="border-b border-zinc-850/80 hover:bg-zinc-900/35 text-xs font-mono text-zinc-300">
+        <td className="py-2.5 pr-4 font-semibold text-zinc-200 max-w-[220px] truncate">
+          <Link to={`/empresas/${company.cdCvm}`} className="hover:text-cyan-400 transition-colors">
+            {company.name}
+          </Link>
+        </td>
+        <td className="py-2.5 text-cyan-400">{company.ticker || `CVM ${company.cdCvm}`}</td>
+        {isLoading ? (
+          <td colSpan={3} className="py-2.5 text-3xs text-zinc-650">Loading...</td>
+        ) : error || data?.mode === "browser" ? (
+          <td colSpan={3} className="py-2.5 text-3xs text-zinc-650">Offline</td>
+        ) : (
+          <>
+            <td className="py-2.5 font-medium text-emerald-400">{fmtVal(latestVal)}</td>
+            <td className="py-2.5">
+              <div className="flex flex-wrap gap-1.5">
+                {years.slice(-4).map((y: any) => (
+                  <span key={y.year} className="text-3xs bg-zinc-900/80 border border-zinc-850 rounded px-1 py-0.5">
+                    {y.year}: <strong className="text-zinc-300">{fmtVal(y[metric])}</strong>
+                  </span>
+                ))}
+              </div>
+            </td>
+            <td className="py-2.5 text-right">
+              <div className="inline-flex bg-zinc-950/45 rounded border border-zinc-900 p-1">
+                <Sparkline values={values} width={80} height={16} />
+              </div>
+            </td>
+          </>
+        )}
+      </tr>
+    );
+  }
 
   return (
     <div className={`flex items-center justify-between border-b border-zinc-800/40 last:border-0 font-mono ${isCompact ? "pb-1.5" : "pb-2 last:pb-0"}`}>
@@ -443,6 +540,7 @@ function PriorityQueueCard({
   onRemove,
   isCompact = false,
   isMinimized = false,
+  isFocused = false,
   headerControls,
 }: {
   config?: PriorityQueueConfig;
@@ -450,6 +548,7 @@ function PriorityQueueCard({
   onRemove: () => void;
   isCompact?: boolean;
   isMinimized?: boolean;
+  isFocused?: boolean;
   headerControls?: React.ReactNode;
 }) {
   const [isConfiguring, setIsConfiguring] = useState(false);
@@ -473,12 +572,36 @@ function PriorityQueueCard({
   const topPriorities = useMemo(() => {
     return [...priorities]
       .sort((a, b) => (b.priority_score ?? 0) - (a.priority_score ?? 0))
-      .slice(0, isCompact ? 5 : 8);
-  }, [priorities, isCompact]);
+      .slice(0, isFocused ? 25 : isCompact ? 5 : 8);
+  }, [priorities, isCompact, isFocused]);
 
   const selectUniverse = (id: string) => {
     onConfigure({ universeId: id });
     setIsConfiguring(false);
+  };
+
+  const handleExportCSV = () => {
+    if (!priorities || priorities.length === 0) return;
+    const headers = ["Company Name", "CVM Code", "Tier", "Priority Score"];
+    const rows = priorities.map((item) => [
+      item.company_name.replace(/"/g, '""'),
+      item.cd_cvm,
+      item.tier || "—",
+      item.priority_score ?? 0
+    ]);
+    const csvContent = [
+      headers.join(","),
+      ...rows.map((row) => row.map((val) => `"${val}"`).join(","))
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `priority_queue_${config.universeId || "all"}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   return (
@@ -496,6 +619,15 @@ function PriorityQueueCard({
               title="Configure Universe"
             >
               ⚙
+            </button>
+          )}
+          {isFocused && (
+            <button
+              onClick={handleExportCSV}
+              className="text-orange-400 hover:text-orange-300 font-mono text-3xs border border-zinc-800 bg-zinc-900 rounded px-1.5 py-0.5 transition-colors mr-1"
+              title="Export Queue to CSV"
+            >
+              ⬇ CSV
             </button>
           )}
           {headerControls}
@@ -598,14 +730,16 @@ function TopNewsCard({
   onRemove,
   isCompact = false,
   isMinimized = false,
+  isFocused = false,
   headerControls,
 }: {
   onRemove: () => void;
   isCompact?: boolean;
   isMinimized?: boolean;
+  isFocused?: boolean;
   headerControls?: React.ReactNode;
 }) {
-  const limitCount = isCompact ? 5 : 10;
+  const limitCount = isFocused ? 20 : isCompact ? 5 : 10;
   const { data, isLoading, error } = useQuery({
     queryKey: ["news-latest", limitCount],
     queryFn: () => fetchNewsArticles({ limit: limitCount }),
@@ -617,6 +751,30 @@ function TopNewsCard({
 
   const items = data?.mode === "desktop" || data?.mode === "dev-http" ? data.items : [];
 
+  const handleExportCSV = () => {
+    if (!items || items.length === 0) return;
+    const headers = ["Source", "Published At", "Title", "URL"];
+    const rows = items.map((item) => [
+      item.source_name || "CVM Filings",
+      item.published_at || "",
+      item.title.replace(/"/g, '""'),
+      item.original_url || ""
+    ]);
+    const csvContent = [
+      headers.join(","),
+      ...rows.map((row) => row.map((val) => `"${val}"`).join(","))
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", "top_news_feed.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <Panel
       title="Top News Feed"
@@ -625,6 +783,15 @@ function TopNewsCard({
       style={{ height: "100%", display: "flex", flexDirection: "column" }}
       actions={
         <div className="flex items-center gap-1">
+          {isFocused && (
+            <button
+              onClick={handleExportCSV}
+              className="text-orange-400 hover:text-orange-300 font-mono text-3xs border border-zinc-800 bg-zinc-900 rounded px-1.5 py-0.5 transition-colors mr-1"
+              title="Export News to CSV"
+            >
+              ⬇ CSV
+            </button>
+          )}
           {headerControls}
           <button
             onClick={onRemove}
@@ -705,6 +872,7 @@ function MarketPriceCard({
   onRemove,
   isCompact = false,
   isMinimized = false,
+  isFocused = false,
   headerControls,
 }: {
   config?: MarketPriceConfig;
@@ -712,6 +880,7 @@ function MarketPriceCard({
   onRemove: () => void;
   isCompact?: boolean;
   isMinimized?: boolean;
+  isFocused?: boolean;
   headerControls?: React.ReactNode;
 }) {
   const [isConfiguring, setIsConfiguring] = useState(false);
@@ -744,6 +913,28 @@ function MarketPriceCard({
     setIsConfiguring(false);
   };
 
+  const handleExportCSV = () => {
+    if (!data?.data?.observations || data.data.observations.length === 0) return;
+    const headers = ["Date", "Close Price"];
+    const rows = data.data.observations.map((obs: any) => [
+      obs.date || "",
+      obs.close ?? ""
+    ]);
+    const csvContent = [
+      headers.join(","),
+      ...rows.map((row) => row.map((val) => `"${val}"`).join(","))
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `${config.ticker || "ticker"}_market_history.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <Panel
       title={config.ticker ? `${config.ticker} Performance` : "Stock Price Watch"}
@@ -759,6 +950,15 @@ function MarketPriceCard({
               title="Configure Ticker"
             >
               ⚙
+            </button>
+          )}
+          {isFocused && (
+            <button
+              onClick={handleExportCSV}
+              className="text-orange-400 hover:text-orange-300 font-mono text-3xs border border-zinc-800 bg-zinc-900 rounded px-1.5 py-0.5 transition-colors mr-1"
+              title="Export Price History to CSV"
+            >
+              ⬇ CSV
             </button>
           )}
           {headerControls}
@@ -806,24 +1006,44 @@ function MarketPriceCard({
               ) : prices.length === 0 ? (
                 <p className="py-4 text-center text-2xs text-zinc-500">No quotes available.</p>
               ) : (
-                <div className={isCompact ? "space-y-1.5" : "space-y-3"}>
-                  <div className="flex items-baseline justify-between">
-                    <span className={`${isCompact ? "text-sm" : "text-lg"} font-semibold text-zinc-100`}>
-                      R$ {stats.current ? stats.current.toFixed(2) : "—"}
-                    </span>
-                    <span className="text-2xs text-zinc-500">Last 30 Days</span>
-                  </div>
-
-                  <div className={`flex items-center justify-center bg-zinc-950/40 rounded border border-zinc-900/60 ${isCompact ? "py-1" : "py-2"}`}>
-                    <Sparkline values={prices} width={isCompact ? 220 : 280} height={isCompact ? 25 : 45} />
-                  </div>
-
-                  {!isCompact && (
-                    <div className="flex items-center justify-between text-2xs text-zinc-500 border-t border-zinc-800/40 pt-2">
-                      <span>MIN: R$ {stats.min?.toFixed(2)}</span>
-                      <span>MAX: R$ {stats.max?.toFixed(2)}</span>
+                <div className={isFocused ? "grid grid-cols-3 gap-6" : isCompact ? "space-y-1.5" : "space-y-3"}>
+                  <div className={isFocused ? "col-span-1 space-y-3" : ""}>
+                    <div className="flex items-baseline justify-between">
+                      <span className={`${isFocused ? "text-2xl" : isCompact ? "text-sm" : "text-lg"} font-semibold text-zinc-100`}>
+                        R$ {stats.current ? stats.current.toFixed(2) : "—"}
+                      </span>
+                      <span className="text-2xs text-zinc-500">{isFocused ? "Current Price" : "Last 30 Days"}</span>
                     </div>
-                  )}
+
+                    <div className="flex flex-col gap-1.5 text-2xs text-zinc-400 border-t border-zinc-850 pt-2 font-mono">
+                      <div className="flex justify-between">
+                        <span>MIN PRICE:</span>
+                        <span className="font-semibold text-zinc-200">R$ {stats.min?.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>MAX PRICE:</span>
+                        <span className="font-semibold text-zinc-200">R$ {stats.max?.toFixed(2)}</span>
+                      </div>
+                      {isFocused && data?.data?.observations && (
+                        <div className="flex justify-between">
+                          <span>QUOTES COUNT:</span>
+                          <span className="font-semibold text-zinc-200">{data.data.observations.length}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className={isFocused ? "col-span-2 flex flex-col gap-3" : ""}>
+                    <div className={`flex items-center justify-center bg-zinc-950/40 rounded border border-zinc-900/60 ${isFocused ? "py-4 flex-1 min-h-[140px]" : isCompact ? "py-1" : "py-2"}`}>
+                      <Sparkline values={prices} width={isFocused ? 580 : isCompact ? 220 : 280} height={isFocused ? 100 : isCompact ? 25 : 45} />
+                    </div>
+                    {!isFocused && !isCompact && (
+                      <div className="flex items-center justify-between text-2xs text-zinc-500 border-t border-zinc-800/40 pt-2">
+                        <span>MIN: R$ {stats.min?.toFixed(2)}</span>
+                        <span>MAX: R$ {stats.max?.toFixed(2)}</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </>
@@ -847,6 +1067,7 @@ export type CardDef = {
     onRemove: () => void;
     isCompact?: boolean;
     isMinimized?: boolean;
+    isFocused?: boolean;
     headerControls?: React.ReactNode;
   }>;
 };

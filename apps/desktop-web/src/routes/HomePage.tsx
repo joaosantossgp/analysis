@@ -120,6 +120,7 @@ export function HomePage() {
   const [cardConfigs, setCardConfigs] = useState<Record<string, any>>({});
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
+  const [focusedCardId, setFocusedCardId] = useState<string | null>(null);
 
   // Dragging states
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
@@ -599,6 +600,19 @@ export function HomePage() {
                 >
                   ☰
                 </button>
+                {!item.isMinimized && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setFocusedCardId(item.id);
+                    }}
+                    className="rounded border border-zinc-850 bg-zinc-900 px-1 py-0.5 hover:text-orange-400 transition-colors"
+                    title="Maximize Focus Mode"
+                  >
+                    ↗
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={(e) => {
@@ -637,6 +651,12 @@ export function HomePage() {
               <div
                 key={item.id}
                 onMouseDown={(e) => handleDragHeaderMouseDown(e, item.id)}
+                onDoubleClick={(e) => {
+                  const target = e.target as HTMLElement;
+                  if (target.closest("header") && !target.closest("button") && !target.closest("a") && !target.closest("input") && !target.closest("select")) {
+                    setFocusedCardId(item.id);
+                  }
+                }}
                 className={`relative group/card transition-all flex flex-col ${
                   isDragging ? "" : isEditMode ? "[&_header]:cursor-grab" : ""
                 } ${isEditMode && !isDragging ? "border border-zinc-800/15 bg-zinc-950/20" : ""}`}
@@ -687,6 +707,80 @@ export function HomePage() {
             );
           })}
         </div>
+      )}
+
+      {/* 10.4 Maximized Focus Mode Overlay Modal */}
+      {focusedCardId && (
+        (() => {
+          const item = activeCards.find((c) => c.id === focusedCardId);
+          if (!item) return null;
+          const cardDef = WORKSPACE_REGISTRY[item.id];
+          if (!cardDef) return null;
+          const CardComponent = cardDef.component;
+          const config = cardConfigs[item.id];
+
+          const focusHeaderControls = (
+            <div className="flex items-center gap-1.5 font-mono text-3xs text-zinc-550">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleToggleProperty(item.id, "isCompact");
+                }}
+                className={`rounded border px-1 py-0.5 transition-colors ${
+                  item.isCompact
+                    ? "border-orange-500 bg-orange-500/10 text-orange-400"
+                    : "border-zinc-850 bg-zinc-900 hover:text-zinc-350"
+                }`}
+                title="Toggle Compact Style"
+              >
+                ☰
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setFocusedCardId(null);
+                }}
+                className="rounded border border-zinc-850 bg-zinc-900 px-1.5 py-0.5 text-orange-400 hover:text-orange-300 hover:border-zinc-700 transition-colors"
+                title="Exit Focus Mode"
+              >
+                ↙
+              </button>
+            </div>
+          );
+
+          return (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/80 backdrop-blur-sm p-4 md:p-12 font-mono"
+              onClick={() => setFocusedCardId(null)}
+            >
+              <div
+                className="w-full max-w-5xl h-full max-h-[85vh] bg-zinc-950 border border-zinc-850 rounded-lg shadow-2xl flex flex-col p-2 overflow-hidden"
+                onClick={(e) => e.stopPropagation()}
+                onDoubleClick={(e) => {
+                  const target = e.target as HTMLElement;
+                  if (target.closest("header") && !target.closest("button") && !target.closest("a") && !target.closest("input") && !target.closest("select")) {
+                    setFocusedCardId(null);
+                  }
+                }}
+              >
+                <CardComponent
+                  config={config}
+                  onConfigure={(newCfg) => handleUpdateConfig(item.id, newCfg)}
+                  onRemove={() => {
+                    handleToggleCard(item.id);
+                    setFocusedCardId(null);
+                  }}
+                  isCompact={item.isCompact}
+                  isMinimized={false}
+                  isFocused={true}
+                  headerControls={focusHeaderControls}
+                />
+              </div>
+            </div>
+          );
+        })()
       )}
 
       {/* Slide-out Config drawer */}
