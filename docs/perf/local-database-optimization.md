@@ -164,6 +164,33 @@ when a SQLite CLI with `ENABLE_DBSTAT_VTAB` is available. The default diagnostic
 run does not invoke an external CLI so it remains fast and avoids accidental
 full-object scans of the large energy database.
 
+An exact `dbstat` run was then completed after validating the local SQLite tools
+archive. The largest `energy_kpis.db` objects are `ccee_plant_parcel_hourly`
+and its indexes:
+
+- `ccee_plant_parcel_hourly`: about 19.38 GB;
+- `sqlite_autoindex_ccee_plant_parcel_hourly_1`: about 2.58 GB;
+- `idx_cppe_parcel_ref`: about 2.38 GB;
+- `idx_cppe_ref_month`: about 1.14 GB.
+
+Together, the CCEE hourly table and these three indexes account for about
+25.49 GB, roughly 83% of `energy_kpis.db`.
+
+Phase 5.3 added a copy-based CCEE hourly hot/cold prototype tool:
+
+```powershell
+python scripts/diagnostics/phase5_hot_cold_hourly_prototype.py `
+  --output-dir C:\tmp\cvma-phase5-hot-cold `
+  --hot-months 1 `
+  --cold-month 2024-03 `
+  --max-rows-per-month 100000
+```
+
+The prototype opens the source `energy_kpis.db` read-only, copies selected
+recent months into a separate hot SQLite database, exports selected old months
+to partitioned Parquet, and writes a validation manifest. It is bounded by
+default and does not alter runtime routing or live data.
+
 Future Phase 5 work should use this baseline before choosing between exact
 `dbstat` profiling, copy-based hot/cold prototyping, or any backup-and-compact
 maintenance flow.

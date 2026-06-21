@@ -1,0 +1,3966 @@
+{
+  "schema_version": 1,
+  "generated_at_utc": "2026-06-21T20:50:28Z",
+  "mode": "read_only_diagnostic",
+  "data_dir": "C:\\Users\\jadaojoao\\Documents\\CVMAnalytics",
+  "exact_counts": false,
+  "limits": {
+    "max_folder_files": 50000,
+    "max_folder_depth": 8,
+    "sqlite_cli_timeout_seconds": 900
+  },
+  "databases": {
+    "cvm_financials": {
+      "path": "C:\\Users\\jadaojoao\\Documents\\CVMAnalytics\\db\\cvm_financials.db",
+      "exists": true,
+      "file": {
+        "path": "C:\\Users\\jadaojoao\\Documents\\CVMAnalytics\\db\\cvm_financials.db",
+        "exists": true,
+        "size_bytes": 480305152,
+        "mtime_utc": "2026-06-21T20:40:49Z"
+      },
+      "sidecars": {
+        "wal": {
+          "path": "C:\\Users\\jadaojoao\\Documents\\CVMAnalytics\\db\\cvm_financials.db-wal",
+          "exists": true,
+          "size_bytes": 74192,
+          "mtime_utc": "2026-06-21T20:42:43Z"
+        },
+        "shm": {
+          "path": "C:\\Users\\jadaojoao\\Documents\\CVMAnalytics\\db\\cvm_financials.db-shm",
+          "exists": true,
+          "size_bytes": 32768,
+          "mtime_utc": "2026-06-21T20:40:50Z"
+        },
+        "total_size_bytes": 106960
+      },
+      "read_only": true,
+      "sqlite": {
+        "page_size": 4096,
+        "page_count": 117262,
+        "freelist_count": 0,
+        "estimated_free_bytes": 0
+      },
+      "sqlite_master": {
+        "tables": [
+          {
+            "name": "app_settings",
+            "table": "app_settings",
+            "rootpage": 1967,
+            "sql": "CREATE TABLE app_settings (\n                key TEXT PRIMARY KEY,\n                value TEXT NOT NULL,\n                updated_at TEXT NOT NULL\n            )"
+          },
+          {
+            "name": "companies",
+            "table": "companies",
+            "rootpage": 6,
+            "sql": "CREATE TABLE companies (\n                cd_cvm          INTEGER PRIMARY KEY,\n                company_name    TEXT NOT NULL,\n                nome_comercial  TEXT,\n                cnpj            TEXT,\n                setor_cvm       TEXT,\n                setor_analitico TEXT,\n                gics_sector     TEXT,\n                gics_sector_slug TEXT,\n                gics_industry_group TEXT,\n                gics_industry   TEXT,\n                gics_sub_industry TEXT,\n                company_type    TEXT NOT NULL DEFAULT 'comercial',\n                ticker_b3       TEXT,\n                coverage_rank   INTEGER,\n                is_active       INTEGER NOT NULL DEFAULT 1,\n                updated_at      TEXT NOT NULL\n            )"
+          },
+          {
+            "name": "company_financial_directory_mart",
+            "table": "company_financial_directory_mart",
+            "rootpage": 113894,
+            "sql": "CREATE TABLE company_financial_directory_mart (\n            cd_cvm INTEGER PRIMARY KEY,\n            company_name TEXT,\n            ticker_b3 TEXT,\n            setor_analitico TEXT,\n            gics_sector TEXT,\n            company_type TEXT,\n            has_financial_data INTEGER NOT NULL DEFAULT 0,\n            financial_row_count INTEGER NOT NULL DEFAULT 0,\n            first_year INTEGER,\n            latest_year INTEGER,\n            latest_period_label TEXT,\n            latest_period_type TEXT,\n            complete_period_count INTEGER NOT NULL DEFAULT 0,\n            rebuilt_at TEXT NOT NULL,\n            build_version TEXT NOT NULL\n        )"
+          },
+          {
+            "name": "company_financial_period_mart",
+            "table": "company_financial_period_mart",
+            "rootpage": 113892,
+            "sql": "CREATE TABLE company_financial_period_mart (\n            cd_cvm INTEGER NOT NULL,\n            report_year INTEGER NOT NULL,\n            period_label TEXT NOT NULL,\n            period_type TEXT NOT NULL,\n            quarter INTEGER,\n            has_bpa INTEGER NOT NULL DEFAULT 0,\n            has_bpp INTEGER NOT NULL DEFAULT 0,\n            has_dre INTEGER NOT NULL DEFAULT 0,\n            has_dfc INTEGER NOT NULL DEFAULT 0,\n            is_complete_standard_period INTEGER NOT NULL DEFAULT 0,\n            source_row_count INTEGER NOT NULL DEFAULT 0,\n            first_source_report_id INTEGER,\n            last_source_report_id INTEGER,\n            rebuilt_at TEXT NOT NULL,\n            build_version TEXT NOT NULL,\n            PRIMARY KEY (cd_cvm, report_year, period_label)\n        )"
+          },
+          {
+            "name": "company_kpi_account_mart",
+            "table": "company_kpi_account_mart",
+            "rootpage": 113895,
+            "sql": "CREATE TABLE company_kpi_account_mart (\n            cd_cvm INTEGER NOT NULL,\n            report_year INTEGER NOT NULL,\n            period_label TEXT NOT NULL,\n            statement_type TEXT NOT NULL,\n            cd_conta TEXT NOT NULL,\n            value REAL,\n            source_row_count INTEGER NOT NULL DEFAULT 0,\n            first_source_report_id INTEGER,\n            last_source_report_id INTEGER,\n            rebuilt_at TEXT NOT NULL,\n            build_version TEXT NOT NULL,\n            PRIMARY KEY (cd_cvm, report_year, period_label, statement_type, cd_conta)\n        )"
+          },
+          {
+            "name": "company_refresh_status",
+            "table": "company_refresh_status",
+            "rootpage": 8,
+            "sql": "CREATE TABLE company_refresh_status (\n                cd_cvm INTEGER PRIMARY KEY,\n                company_name TEXT,\n                source_scope TEXT NOT NULL DEFAULT 'local',\n                last_attempt_at TEXT,\n                last_success_at TEXT,\n                last_status TEXT,\n                last_error TEXT,\n                last_start_year INTEGER,\n                last_end_year INTEGER,\n                last_rows_inserted INTEGER,\n                updated_at TEXT,\n                job_id TEXT,\n                stage TEXT,\n                queue_position INTEGER,\n                progress_current INTEGER,\n                progress_total INTEGER,\n                progress_message TEXT,\n                started_at TEXT,\n                heartbeat_at TEXT,\n                finished_at TEXT,\n                read_model_updated_at TEXT\n            , ignored INTEGER NOT NULL DEFAULT 0, ignored_at TEXT, ignored_reason TEXT)"
+          },
+          {
+            "name": "company_universe",
+            "table": "company_universe",
+            "rootpage": 1969,
+            "sql": "CREATE TABLE company_universe (\n                cd_cvm INTEGER NOT NULL,\n                ticker TEXT,\n                company_name TEXT NOT NULL,\n                market_cap REAL,\n                market_cap_rank INTEGER,\n                source TEXT NOT NULL,\n                source_date TEXT,\n                selected_preset TEXT NOT NULL,\n                created_at TEXT NOT NULL,\n                updated_at TEXT NOT NULL,\n                PRIMARY KEY (selected_preset, cd_cvm)\n            )"
+          },
+          {
+            "name": "company_views",
+            "table": "company_views",
+            "rootpage": 7,
+            "sql": "CREATE TABLE company_views (\n                cd_cvm         INTEGER PRIMARY KEY REFERENCES companies(cd_cvm) ON DELETE CASCADE,\n                view_count     INTEGER NOT NULL DEFAULT 0,\n                last_viewed_at TEXT NOT NULL\n            )"
+          },
+          {
+            "name": "coverage_capacity_scenarios",
+            "table": "coverage_capacity_scenarios",
+            "rootpage": 110697,
+            "sql": "CREATE TABLE coverage_capacity_scenarios (\n                id TEXT PRIMARY KEY,\n                universe_id TEXT NOT NULL,\n                name TEXT NOT NULL,\n                available_hours REAL NOT NULL,\n                tier_weights_json TEXT NOT NULL,\n                is_active INTEGER NOT NULL DEFAULT 0,\n                FOREIGN KEY (universe_id) REFERENCES coverage_universes(id) ON DELETE CASCADE\n            )"
+          },
+          {
+            "name": "coverage_checklists",
+            "table": "coverage_checklists",
+            "rootpage": 110694,
+            "sql": "CREATE TABLE coverage_checklists (\n                universe_id TEXT NOT NULL,\n                cd_cvm INTEGER NOT NULL,\n                item_key TEXT NOT NULL,\n                is_completed INTEGER NOT NULL DEFAULT 0,\n                completed_at TEXT,\n                comments TEXT,\n                PRIMARY KEY (universe_id, cd_cvm, item_key),\n                FOREIGN KEY (universe_id, cd_cvm) REFERENCES universe_companies(universe_id, cd_cvm) ON DELETE CASCADE\n            )"
+          },
+          {
+            "name": "coverage_decision_history",
+            "table": "coverage_decision_history",
+            "rootpage": 110696,
+            "sql": "CREATE TABLE coverage_decision_history (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                universe_id TEXT NOT NULL,\n                cd_cvm INTEGER NOT NULL,\n                event_type TEXT NOT NULL,\n                previous_value TEXT,\n                new_value TEXT,\n                rationale TEXT NOT NULL,\n                author TEXT,\n                timestamp TEXT NOT NULL,\n                FOREIGN KEY (universe_id) REFERENCES coverage_universes(id) ON DELETE CASCADE\n            )"
+          },
+          {
+            "name": "coverage_universes",
+            "table": "coverage_universes",
+            "rootpage": 110690,
+            "sql": "CREATE TABLE coverage_universes (\n                id TEXT PRIMARY KEY,\n                name TEXT NOT NULL,\n                purpose TEXT,\n                analysis_type TEXT NOT NULL,\n                benchmark TEXT,\n                status TEXT NOT NULL,\n                assumptions_json TEXT NOT NULL,\n                created_at TEXT NOT NULL,\n                updated_at TEXT NOT NULL\n            )"
+          },
+          {
+            "name": "excel_mapping_aliases",
+            "table": "excel_mapping_aliases",
+            "rootpage": 110510,
+            "sql": "CREATE TABLE excel_mapping_aliases (\n                target_id TEXT NOT NULL,\n                normalized_phrase TEXT NOT NULL,\n                match_type TEXT NOT NULL,\n                scope TEXT NOT NULL DEFAULT 'global',\n                PRIMARY KEY (target_id, normalized_phrase)\n            )"
+          },
+          {
+            "name": "excel_mapping_company_defaults",
+            "table": "excel_mapping_company_defaults",
+            "rootpage": 106654,
+            "sql": "CREATE TABLE excel_mapping_company_defaults (\n                cd_cvm INTEGER PRIMARY KEY,\n                preset_id TEXT NOT NULL,\n                updated_at TEXT NOT NULL\n            )"
+          },
+          {
+            "name": "excel_mapping_entries",
+            "table": "excel_mapping_entries",
+            "rootpage": 106650,
+            "sql": "CREATE TABLE excel_mapping_entries (\n                preset_id TEXT NOT NULL,\n                target_id TEXT NOT NULL,\n                target_label TEXT NOT NULL,\n                group_name TEXT NOT NULL,\n                statement_type TEXT NOT NULL,\n                display_order INTEGER NOT NULL,\n                indent_level INTEGER NOT NULL DEFAULT 0,\n                required INTEGER NOT NULL DEFAULT 0,\n                operation TEXT NOT NULL,\n                is_subtotal INTEGER NOT NULL DEFAULT 0,\n                PRIMARY KEY (preset_id, target_id)\n            )"
+          },
+          {
+            "name": "excel_mapping_overrides",
+            "table": "excel_mapping_overrides",
+            "rootpage": 110507,
+            "sql": "CREATE TABLE excel_mapping_overrides (\n                company_id INTEGER NOT NULL,\n                target_id TEXT NOT NULL,\n                period_label TEXT NOT NULL,\n                source_code TEXT NOT NULL,\n                source_desc TEXT,\n                sign INTEGER NOT NULL DEFAULT 1,\n                updated_at TEXT NOT NULL,\n                PRIMARY KEY (company_id, target_id, period_label)\n            )"
+          },
+          {
+            "name": "excel_mapping_presets",
+            "table": "excel_mapping_presets",
+            "rootpage": 106647,
+            "sql": "CREATE TABLE excel_mapping_presets (\n                preset_id TEXT PRIMARY KEY,\n                name TEXT NOT NULL,\n                description TEXT,\n                origin TEXT NOT NULL,\n                default_mapping_version TEXT NOT NULL,\n                sector_tags TEXT NOT NULL DEFAULT '[]',\n                notes TEXT,\n                validation_status TEXT,\n                created_at TEXT NOT NULL,\n                updated_at TEXT NOT NULL\n            )"
+          },
+          {
+            "name": "excel_mapping_sources",
+            "table": "excel_mapping_sources",
+            "rootpage": 106652,
+            "sql": "CREATE TABLE excel_mapping_sources (\n                preset_id TEXT NOT NULL,\n                target_id TEXT NOT NULL,\n                position INTEGER NOT NULL,\n                statement_type TEXT NOT NULL,\n                line_id_base TEXT NOT NULL,\n                cd_conta TEXT,\n                label_snapshot TEXT,\n                sign INTEGER NOT NULL DEFAULT 1,\n                PRIMARY KEY (preset_id, target_id, position)\n            )"
+          },
+          {
+            "name": "financial_mart_builds",
+            "table": "financial_mart_builds",
+            "rootpage": 113889,
+            "sql": "CREATE TABLE financial_mart_builds (\n            mart_name TEXT PRIMARY KEY,\n            build_version TEXT NOT NULL,\n            rebuilt_at TEXT NOT NULL,\n            source_table TEXT NOT NULL,\n            source_row_count INTEGER,\n            source_max_report_id INTEGER,\n            source_min_year INTEGER,\n            source_max_year INTEGER,\n            row_count INTEGER NOT NULL DEFAULT 0,\n            status TEXT NOT NULL,\n            error_message TEXT,\n            metadata_json TEXT\n        )"
+          },
+          {
+            "name": "financial_reports",
+            "table": "financial_reports",
+            "rootpage": 2,
+            "sql": "CREATE TABLE financial_reports (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                \"COMPANY_NAME\" TEXT,\n                \"CD_CVM\" INTEGER,\n                \"COMPANY_TYPE\" TEXT,\n                \"STATEMENT_TYPE\" TEXT,\n                \"REPORT_YEAR\" INTEGER,\n                \"PERIOD_LABEL\" TEXT,\n                \"LINE_ID_BASE\" TEXT,\n                \"CD_CONTA\" TEXT,\n                \"DS_CONTA\" TEXT,\n                \"STANDARD_NAME\" TEXT,\n                \"QA_CONFLICT\" BOOLEAN,\n                \"VL_CONTA\" REAL,\n                UNIQUE(\"CD_CVM\", \"STATEMENT_TYPE\", \"PERIOD_LABEL\", \"LINE_ID_BASE\")\n            )"
+          },
+          {
+            "name": "market_history",
+            "table": "market_history",
+            "rootpage": 108770,
+            "sql": "CREATE TABLE market_history (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                cd_cvm INTEGER NOT NULL,\n                ticker TEXT NOT NULL,\n                date TEXT NOT NULL,\n                open REAL,\n                high REAL,\n                low REAL,\n                close REAL,\n                adjusted_close REAL,\n                volume REAL,\n                dividend REAL DEFAULT 0.0,\n                split_ratio REAL DEFAULT 1.0,\n                source TEXT,\n                provider_status TEXT,\n                downloaded_at TEXT,\n                UNIQUE(cd_cvm, ticker, date)\n            )"
+          },
+          {
+            "name": "qa_logs",
+            "table": "qa_logs",
+            "rootpage": 5,
+            "sql": "CREATE TABLE qa_logs (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                \"COMPANY_NAME\" TEXT,\n                \"CD_CVM\" INTEGER,\n                \"ERROR_TYPE\" TEXT,\n                \"STATEMENT_TYPE\" TEXT,\n                \"PERIOD\" TEXT,\n                \"LINE_ID_BASE\" TEXT,\n                \"CD_CONTA\" TEXT,\n                \"DESCRIPTION\" TEXT,\n                \"ACTION\" TEXT\n            )"
+          },
+          {
+            "name": "refresh_jobs",
+            "table": "refresh_jobs",
+            "rootpage": 11,
+            "sql": "CREATE TABLE refresh_jobs (\n                id TEXT PRIMARY KEY,\n                cd_cvm INTEGER NOT NULL,\n                company_name TEXT,\n                source_scope TEXT NOT NULL DEFAULT 'on_demand',\n                start_year INTEGER NOT NULL,\n                end_year INTEGER NOT NULL,\n                state TEXT NOT NULL,\n                stage TEXT,\n                requested_at TEXT NOT NULL,\n                started_at TEXT,\n                heartbeat_at TEXT,\n                finished_at TEXT,\n                attempt_count INTEGER NOT NULL DEFAULT 0,\n                worker_id TEXT,\n                error_message TEXT,\n                progress_current INTEGER,\n                progress_total INTEGER,\n                progress_message TEXT,\n                baseline_read_model_fingerprint TEXT,\n                baseline_readable_years_count INTEGER,\n                baseline_latest_readable_year INTEGER\n            )"
+          },
+          {
+            "name": "sqlite_sequence",
+            "table": "sqlite_sequence",
+            "rootpage": 4,
+            "sql": "CREATE TABLE sqlite_sequence(name,seq)"
+          },
+          {
+            "name": "universe_companies",
+            "table": "universe_companies",
+            "rootpage": 110692,
+            "sql": "CREATE TABLE universe_companies (\n                universe_id TEXT NOT NULL,\n                cd_cvm INTEGER NOT NULL,\n                tier TEXT NOT NULL,\n                manual_score_override REAL,\n                owner_analyst TEXT,\n                holding_pct REAL DEFAULT 0.0,\n                updated_at TEXT NOT NULL,\n                PRIMARY KEY (universe_id, cd_cvm),\n                FOREIGN KEY (universe_id) REFERENCES coverage_universes(id) ON DELETE CASCADE\n            )"
+          }
+        ],
+        "indexes": [
+          {
+            "name": "idx_cfdm_latest",
+            "table": "company_financial_directory_mart",
+            "rootpage": 113899,
+            "sql": "CREATE INDEX idx_cfdm_latest ON company_financial_directory_mart(latest_year, latest_period_label)"
+          },
+          {
+            "name": "idx_cfpm_company_year",
+            "table": "company_financial_period_mart",
+            "rootpage": 113897,
+            "sql": "CREATE INDEX idx_cfpm_company_year ON company_financial_period_mart(cd_cvm, report_year)"
+          },
+          {
+            "name": "idx_cfpm_complete",
+            "table": "company_financial_period_mart",
+            "rootpage": 113898,
+            "sql": "CREATE INDEX idx_cfpm_complete ON company_financial_period_mart(cd_cvm, is_complete_standard_period, report_year)"
+          },
+          {
+            "name": "idx_ckam_account_period",
+            "table": "company_kpi_account_mart",
+            "rootpage": 113902,
+            "sql": "CREATE INDEX idx_ckam_account_period ON company_kpi_account_mart(cd_conta, period_label)"
+          },
+          {
+            "name": "idx_ckam_company_year",
+            "table": "company_kpi_account_mart",
+            "rootpage": 113901,
+            "sql": "CREATE INDEX idx_ckam_company_year ON company_kpi_account_mart(cd_cvm, report_year)"
+          },
+          {
+            "name": "idx_companies_setor",
+            "table": "companies",
+            "rootpage": 21,
+            "sql": "CREATE INDEX idx_companies_setor ON companies(setor_analitico)"
+          },
+          {
+            "name": "idx_companies_ticker",
+            "table": "companies",
+            "rootpage": 22,
+            "sql": "CREATE INDEX idx_companies_ticker ON companies(ticker_b3)"
+          },
+          {
+            "name": "idx_company_universe_preset_rank",
+            "table": "company_universe",
+            "rootpage": 1971,
+            "sql": "CREATE INDEX idx_company_universe_preset_rank\n            ON company_universe(selected_preset, market_cap_rank)\n            "
+          },
+          {
+            "name": "idx_company_views_count",
+            "table": "company_views",
+            "rootpage": 17,
+            "sql": "CREATE INDEX idx_company_views_count ON company_views(view_count DESC)"
+          },
+          {
+            "name": "idx_crs_job_id",
+            "table": "company_refresh_status",
+            "rootpage": 10,
+            "sql": "CREATE INDEX idx_crs_job_id\n            ON company_refresh_status(job_id)\n            "
+          },
+          {
+            "name": "idx_crs_status",
+            "table": "company_refresh_status",
+            "rootpage": 9,
+            "sql": "CREATE INDEX idx_crs_status\n            ON company_refresh_status(last_status)\n            "
+          },
+          {
+            "name": "idx_excel_mapping_aliases_target",
+            "table": "excel_mapping_aliases",
+            "rootpage": 110513,
+            "sql": "CREATE INDEX idx_excel_mapping_aliases_target\n            ON excel_mapping_aliases(target_id)\n            "
+          },
+          {
+            "name": "idx_excel_mapping_overrides_company",
+            "table": "excel_mapping_overrides",
+            "rootpage": 110512,
+            "sql": "CREATE INDEX idx_excel_mapping_overrides_company\n            ON excel_mapping_overrides(company_id)\n            "
+          },
+          {
+            "name": "idx_excel_mapping_presets_name",
+            "table": "excel_mapping_presets",
+            "rootpage": 106655,
+            "sql": "CREATE INDEX idx_excel_mapping_presets_name\n            ON excel_mapping_presets(name)\n            "
+          },
+          {
+            "name": "idx_excel_mapping_sources_line",
+            "table": "excel_mapping_sources",
+            "rootpage": 106656,
+            "sql": "CREATE INDEX idx_excel_mapping_sources_line\n            ON excel_mapping_sources(statement_type, line_id_base)\n            "
+          },
+          {
+            "name": "idx_fr_cd_conta",
+            "table": "financial_reports",
+            "rootpage": 20,
+            "sql": "CREATE INDEX idx_fr_cd_conta ON financial_reports(\"CD_CONTA\")"
+          },
+          {
+            "name": "idx_fr_cd_conta_period_label",
+            "table": "financial_reports",
+            "rootpage": 25,
+            "sql": "CREATE INDEX idx_fr_cd_conta_period_label ON financial_reports(\"CD_CONTA\", \"PERIOD_LABEL\")"
+          },
+          {
+            "name": "idx_fr_cd_cvm",
+            "table": "financial_reports",
+            "rootpage": 18,
+            "sql": "CREATE INDEX idx_fr_cd_cvm ON financial_reports(\"CD_CVM\")"
+          },
+          {
+            "name": "idx_fr_cd_cvm_period_label",
+            "table": "financial_reports",
+            "rootpage": 24,
+            "sql": "CREATE INDEX idx_fr_cd_cvm_period_label ON financial_reports(\"CD_CVM\", \"PERIOD_LABEL\")"
+          },
+          {
+            "name": "idx_fr_cd_cvm_stmt_year",
+            "table": "financial_reports",
+            "rootpage": 19,
+            "sql": "CREATE INDEX idx_fr_cd_cvm_stmt_year ON financial_reports(\"CD_CVM\", \"STATEMENT_TYPE\", \"REPORT_YEAR\")"
+          },
+          {
+            "name": "idx_fr_cvm_year",
+            "table": "financial_reports",
+            "rootpage": 342,
+            "sql": "CREATE INDEX idx_fr_cvm_year ON financial_reports(\"CD_CVM\", \"REPORT_YEAR\", \"PERIOD_LABEL\")"
+          },
+          {
+            "name": "idx_fr_period_label",
+            "table": "financial_reports",
+            "rootpage": 23,
+            "sql": "CREATE INDEX idx_fr_period_label ON financial_reports(\"PERIOD_LABEL\")"
+          },
+          {
+            "name": "idx_fr_year_period",
+            "table": "financial_reports",
+            "rootpage": 364,
+            "sql": "CREATE INDEX idx_fr_year_period ON financial_reports(\"REPORT_YEAR\", \"PERIOD_LABEL\")"
+          },
+          {
+            "name": "idx_market_history_cd_cvm_date",
+            "table": "market_history",
+            "rootpage": 108772,
+            "sql": "CREATE INDEX idx_market_history_cd_cvm_date ON market_history(cd_cvm, date)"
+          },
+          {
+            "name": "idx_market_history_ticker_date",
+            "table": "market_history",
+            "rootpage": 108773,
+            "sql": "CREATE INDEX idx_market_history_ticker_date ON market_history(ticker, date)"
+          },
+          {
+            "name": "idx_refresh_jobs_active_cd_cvm",
+            "table": "refresh_jobs",
+            "rootpage": 16,
+            "sql": "CREATE UNIQUE INDEX idx_refresh_jobs_active_cd_cvm\n            ON refresh_jobs(cd_cvm)\n            WHERE state IN ('queued', 'running')\n            "
+          },
+          {
+            "name": "idx_refresh_jobs_state_requested_at",
+            "table": "refresh_jobs",
+            "rootpage": 15,
+            "sql": "CREATE INDEX idx_refresh_jobs_state_requested_at\n            ON refresh_jobs(state, requested_at)\n            "
+          },
+          {
+            "name": "sqlite_autoindex_app_settings_1",
+            "table": "app_settings",
+            "rootpage": 1968,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_company_financial_period_mart_1",
+            "table": "company_financial_period_mart",
+            "rootpage": 113893,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_company_kpi_account_mart_1",
+            "table": "company_kpi_account_mart",
+            "rootpage": 113896,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_company_universe_1",
+            "table": "company_universe",
+            "rootpage": 1970,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_coverage_capacity_scenarios_1",
+            "table": "coverage_capacity_scenarios",
+            "rootpage": 110698,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_coverage_checklists_1",
+            "table": "coverage_checklists",
+            "rootpage": 110695,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_coverage_universes_1",
+            "table": "coverage_universes",
+            "rootpage": 110691,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_excel_mapping_aliases_1",
+            "table": "excel_mapping_aliases",
+            "rootpage": 110511,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_excel_mapping_entries_1",
+            "table": "excel_mapping_entries",
+            "rootpage": 106651,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_excel_mapping_overrides_1",
+            "table": "excel_mapping_overrides",
+            "rootpage": 110508,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_excel_mapping_presets_1",
+            "table": "excel_mapping_presets",
+            "rootpage": 106648,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_excel_mapping_sources_1",
+            "table": "excel_mapping_sources",
+            "rootpage": 106653,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_financial_mart_builds_1",
+            "table": "financial_mart_builds",
+            "rootpage": 113890,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_financial_reports_1",
+            "table": "financial_reports",
+            "rootpage": 3,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_market_history_1",
+            "table": "market_history",
+            "rootpage": 108771,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_refresh_jobs_1",
+            "table": "refresh_jobs",
+            "rootpage": 12,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_universe_companies_1",
+            "table": "universe_companies",
+            "rootpage": 110693,
+            "sql": null
+          }
+        ],
+        "views": [],
+        "triggers": []
+      },
+      "dbstat_available": true,
+      "dbstat": {
+        "available": true,
+        "error": null,
+        "source": "python_sqlite",
+        "objects": [
+          {
+            "name": "financial_reports",
+            "bytes": 169152512,
+            "pages": 41297,
+            "payload_bytes": 156805602,
+            "unused_bytes": 2403884
+          },
+          {
+            "name": "sqlite_autoindex_financial_reports_1",
+            "bytes": 52924416,
+            "pages": 12921,
+            "payload_bytes": 41222369,
+            "unused_bytes": 7002686
+          },
+          {
+            "name": "idx_fr_cd_conta_period_label",
+            "bytes": 40067072,
+            "pages": 9782,
+            "payload_bytes": 30618972,
+            "unused_bytes": 4786407
+          },
+          {
+            "name": "idx_fr_cvm_year",
+            "bytes": 33103872,
+            "pages": 8082,
+            "payload_bytes": 24206120,
+            "unused_bytes": 4256459
+          },
+          {
+            "name": "idx_fr_cd_conta",
+            "bytes": 31240192,
+            "pages": 7627,
+            "payload_bytes": 23045117,
+            "unused_bytes": 3559242
+          },
+          {
+            "name": "idx_fr_cd_cvm_stmt_year",
+            "bytes": 31211520,
+            "pages": 7620,
+            "payload_bytes": 22691349,
+            "unused_bytes": 3884422
+          },
+          {
+            "name": "idx_fr_cd_cvm_period_label",
+            "bytes": 27717632,
+            "pages": 6767,
+            "payload_bytes": 19661807,
+            "unused_bytes": 3430312
+          },
+          {
+            "name": "idx_fr_year_period",
+            "bytes": 27168768,
+            "pages": 6633,
+            "payload_bytes": 19661807,
+            "unused_bytes": 2883056
+          },
+          {
+            "name": "idx_fr_period_label",
+            "bytes": 22016000,
+            "pages": 5375,
+            "payload_bytes": 15117494,
+            "unused_bytes": 2289697
+          },
+          {
+            "name": "idx_fr_cd_cvm",
+            "bytes": 18784256,
+            "pages": 4586,
+            "payload_bytes": 12087952,
+            "unused_bytes": 2096963
+          },
+          {
+            "name": "market_history",
+            "bytes": 7565312,
+            "pages": 1847,
+            "payload_bytes": 7052528,
+            "unused_bytes": 125890
+          },
+          {
+            "name": "company_kpi_account_mart",
+            "bytes": 7352320,
+            "pages": 1795,
+            "payload_bytes": 6763623,
+            "unused_bytes": 85604
+          },
+          {
+            "name": "sqlite_autoindex_company_kpi_account_mart_1",
+            "bytes": 2568192,
+            "pages": 627,
+            "payload_bytes": 1990519,
+            "unused_bytes": 325413
+          },
+          {
+            "name": "sqlite_autoindex_market_history_1",
+            "bytes": 1835008,
+            "pages": 448,
+            "payload_bytes": 1465645,
+            "unused_bytes": 203776
+          },
+          {
+            "name": "idx_market_history_ticker_date",
+            "bytes": 1642496,
+            "pages": 401,
+            "payload_bytes": 1305430,
+            "unused_bytes": 172043
+          },
+          {
+            "name": "idx_ckam_account_period",
+            "bytes": 1622016,
+            "pages": 396,
+            "payload_bytes": 1174719,
+            "unused_bytes": 197809
+          },
+          {
+            "name": "idx_market_history_cd_cvm_date",
+            "bytes": 1290240,
+            "pages": 315,
+            "payload_bytes": 981922,
+            "unused_bytes": 144327
+          },
+          {
+            "name": "idx_ckam_company_year",
+            "bytes": 1277952,
+            "pages": 312,
+            "payload_bytes": 864485,
+            "unused_bytes": 164987
+          },
+          {
+            "name": "company_financial_period_mart",
+            "bytes": 610304,
+            "pages": 149,
+            "payload_bytes": 558563,
+            "unused_bytes": 17073
+          },
+          {
+            "name": "qa_logs",
+            "bytes": 520192,
+            "pages": 127,
+            "payload_bytes": 451839,
+            "unused_bytes": 22706
+          },
+          {
+            "name": "sqlite_autoindex_company_financial_period_mart_1",
+            "bytes": 135168,
+            "pages": 33,
+            "payload_bytes": 97147,
+            "unused_bytes": 18174
+          },
+          {
+            "name": "idx_cfpm_complete",
+            "bytes": 106496,
+            "pages": 26,
+            "payload_bytes": 71207,
+            "unused_bytes": 15526
+          },
+          {
+            "name": "idx_cfpm_company_year",
+            "bytes": 102400,
+            "pages": 25,
+            "payload_bytes": 64722,
+            "unused_bytes": 17927
+          },
+          {
+            "name": "companies",
+            "bytes": 28672,
+            "pages": 7,
+            "payload_bytes": 18443,
+            "unused_bytes": 9394
+          },
+          {
+            "name": "company_refresh_status",
+            "bytes": 28672,
+            "pages": 7,
+            "payload_bytes": 19491,
+            "unused_bytes": 8349
+          },
+          {
+            "name": "sqlite_schema",
+            "bytes": 28672,
+            "pages": 7,
+            "payload_bytes": 18838,
+            "unused_bytes": 9318
+          },
+          {
+            "name": "company_financial_directory_mart",
+            "bytes": 20480,
+            "pages": 5,
+            "payload_bytes": 14226,
+            "unused_bytes": 5496
+          },
+          {
+            "name": "refresh_jobs",
+            "bytes": 12288,
+            "pages": 3,
+            "payload_bytes": 5069,
+            "unused_bytes": 7104
+          },
+          {
+            "name": "app_settings",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 737,
+            "unused_bytes": 3302
+          },
+          {
+            "name": "company_universe",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 0,
+            "unused_bytes": 4088
+          },
+          {
+            "name": "company_views",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 0,
+            "unused_bytes": 4088
+          },
+          {
+            "name": "coverage_capacity_scenarios",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 660,
+            "unused_bytes": 3413
+          },
+          {
+            "name": "coverage_checklists",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 1495,
+            "unused_bytes": 2493
+          },
+          {
+            "name": "coverage_decision_history",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 544,
+            "unused_bytes": 3524
+          },
+          {
+            "name": "coverage_universes",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 722,
+            "unused_bytes": 3356
+          },
+          {
+            "name": "excel_mapping_aliases",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 0,
+            "unused_bytes": 4088
+          },
+          {
+            "name": "excel_mapping_company_defaults",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 0,
+            "unused_bytes": 4088
+          },
+          {
+            "name": "excel_mapping_entries",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 0,
+            "unused_bytes": 4088
+          },
+          {
+            "name": "excel_mapping_overrides",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 0,
+            "unused_bytes": 4088
+          },
+          {
+            "name": "excel_mapping_presets",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 0,
+            "unused_bytes": 4088
+          },
+          {
+            "name": "excel_mapping_sources",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 0,
+            "unused_bytes": 4088
+          },
+          {
+            "name": "financial_mart_builds",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 506,
+            "unused_bytes": 3568
+          },
+          {
+            "name": "idx_cfdm_latest",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 1320,
+            "unused_bytes": 2435
+          },
+          {
+            "name": "idx_companies_setor",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 555,
+            "unused_bytes": 3200
+          },
+          {
+            "name": "idx_companies_ticker",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 1074,
+            "unused_bytes": 2681
+          },
+          {
+            "name": "idx_company_universe_preset_rank",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 0,
+            "unused_bytes": 4088
+          },
+          {
+            "name": "idx_company_views_count",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 0,
+            "unused_bytes": 4088
+          },
+          {
+            "name": "idx_crs_job_id",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 833,
+            "unused_bytes": 2928
+          },
+          {
+            "name": "idx_crs_status",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 1308,
+            "unused_bytes": 2453
+          },
+          {
+            "name": "idx_excel_mapping_aliases_target",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 0,
+            "unused_bytes": 4088
+          },
+          {
+            "name": "idx_excel_mapping_overrides_company",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 0,
+            "unused_bytes": 4088
+          },
+          {
+            "name": "idx_excel_mapping_presets_name",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 0,
+            "unused_bytes": 4088
+          },
+          {
+            "name": "idx_excel_mapping_sources_line",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 0,
+            "unused_bytes": 4088
+          },
+          {
+            "name": "idx_refresh_jobs_active_cd_cvm",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 0,
+            "unused_bytes": 4088
+          },
+          {
+            "name": "idx_refresh_jobs_state_requested_at",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 703,
+            "unused_bytes": 3337
+          },
+          {
+            "name": "sqlite_autoindex_app_settings_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 314,
+            "unused_bytes": 3741
+          },
+          {
+            "name": "sqlite_autoindex_company_universe_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 0,
+            "unused_bytes": 4088
+          },
+          {
+            "name": "sqlite_autoindex_coverage_capacity_scenarios_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 119,
+            "unused_bytes": 3960
+          },
+          {
+            "name": "sqlite_autoindex_coverage_checklists_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 1469,
+            "unused_bytes": 2544
+          },
+          {
+            "name": "sqlite_autoindex_coverage_universes_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 79,
+            "unused_bytes": 4003
+          },
+          {
+            "name": "sqlite_autoindex_excel_mapping_aliases_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 0,
+            "unused_bytes": 4088
+          },
+          {
+            "name": "sqlite_autoindex_excel_mapping_entries_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 0,
+            "unused_bytes": 4088
+          },
+          {
+            "name": "sqlite_autoindex_excel_mapping_overrides_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 0,
+            "unused_bytes": 4088
+          },
+          {
+            "name": "sqlite_autoindex_excel_mapping_presets_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 0,
+            "unused_bytes": 4088
+          },
+          {
+            "name": "sqlite_autoindex_excel_mapping_sources_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 0,
+            "unused_bytes": 4088
+          },
+          {
+            "name": "sqlite_autoindex_financial_mart_builds_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 96,
+            "unused_bytes": 3983
+          },
+          {
+            "name": "sqlite_autoindex_refresh_jobs_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 575,
+            "unused_bytes": 3465
+          },
+          {
+            "name": "sqlite_autoindex_universe_companies_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 214,
+            "unused_bytes": 3859
+          },
+          {
+            "name": "sqlite_sequence",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 84,
+            "unused_bytes": 3988
+          },
+          {
+            "name": "universe_companies",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 393,
+            "unused_bytes": 3675
+          }
+        ]
+      },
+      "row_counts": {
+        "app_settings": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "companies": {
+          "row_count": 111,
+          "counted": true,
+          "reason": "safe_count"
+        },
+        "company_financial_directory_mart": {
+          "row_count": 111,
+          "counted": true,
+          "reason": "safe_count"
+        },
+        "company_financial_period_mart": {
+          "row_count": 6485,
+          "counted": true,
+          "reason": "safe_count"
+        },
+        "company_kpi_account_mart": {
+          "row_count": 81580,
+          "counted": true,
+          "reason": "safe_count"
+        },
+        "company_refresh_status": {
+          "row_count": 109,
+          "counted": true,
+          "reason": "safe_count"
+        },
+        "company_universe": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "company_views": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "coverage_capacity_scenarios": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "coverage_checklists": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "coverage_decision_history": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "coverage_universes": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "excel_mapping_aliases": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "excel_mapping_company_defaults": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "excel_mapping_entries": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "excel_mapping_overrides": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "excel_mapping_presets": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "excel_mapping_sources": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "financial_mart_builds": {
+          "row_count": 3,
+          "counted": true,
+          "reason": "safe_count"
+        },
+        "financial_reports": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "market_history": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "qa_logs": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "refresh_jobs": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "universe_companies": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        }
+      },
+      "errors": []
+    },
+    "energy_kpis": {
+      "path": "C:\\Users\\jadaojoao\\Documents\\CVMAnalytics\\db\\energy_kpis.db",
+      "exists": true,
+      "file": {
+        "path": "C:\\Users\\jadaojoao\\Documents\\CVMAnalytics\\db\\energy_kpis.db",
+        "exists": true,
+        "size_bytes": 30832099328,
+        "mtime_utc": "2026-06-20T18:54:34Z"
+      },
+      "sidecars": {
+        "wal": {
+          "path": "C:\\Users\\jadaojoao\\Documents\\CVMAnalytics\\db\\energy_kpis.db-wal",
+          "exists": true,
+          "size_bytes": 593312,
+          "mtime_utc": "2026-06-21T20:41:57Z"
+        },
+        "shm": {
+          "path": "C:\\Users\\jadaojoao\\Documents\\CVMAnalytics\\db\\energy_kpis.db-shm",
+          "exists": true,
+          "size_bytes": 32768,
+          "mtime_utc": "2026-06-21T20:41:57Z"
+        },
+        "total_size_bytes": 626080
+      },
+      "read_only": true,
+      "sqlite": {
+        "page_size": 4096,
+        "page_count": 7527368,
+        "freelist_count": 2,
+        "estimated_free_bytes": 8192
+      },
+      "sqlite_master": {
+        "tables": [
+          {
+            "name": "aneel_siga_plants",
+            "table": "aneel_siga_plants",
+            "rootpage": 27,
+            "sql": "CREATE TABLE aneel_siga_plants (\n            ceg                       TEXT PRIMARY KEY,\n            plant_name                TEXT,\n            ceg_core                  TEXT,\n            generation_type           TEXT,\n            generation_source         TEXT,\n            uf                        TEXT,\n            phase                     TEXT,\n            operation_start_date      TEXT,\n            grant_type                TEXT,\n            authorized_capacity_kw    REAL,\n            inspected_capacity_kw     REAL,\n            physical_guarantee_kw     REAL,\n            agent_name                TEXT,\n            ownership_description     TEXT,\n            source_updated_at         TEXT,\n            raw_payload_hash          TEXT NOT NULL,\n            snapshot_id               TEXT,\n            updated_at                TEXT NOT NULL DEFAULT (datetime('now'))\n        )"
+          },
+          {
+            "name": "ccee_discovered_resources",
+            "table": "ccee_discovered_resources",
+            "rootpage": 37,
+            "sql": "CREATE TABLE ccee_discovered_resources (\n            dataset_id                   TEXT NOT NULL,\n            resource_name                TEXT NOT NULL,\n            period_type                  TEXT NOT NULL,\n            year                         INTEGER NOT NULL,\n            month                        INTEGER,\n            format                       TEXT NOT NULL,\n            resource_url                 TEXT NOT NULL,\n            discovered_at                TEXT NOT NULL,\n            last_successful_download_at  TEXT,\n            checksum                     TEXT,\n            source_page_url              TEXT,\n            status                       TEXT NOT NULL DEFAULT 'discovered',\n            PRIMARY KEY (dataset_id, resource_name)\n        )"
+          },
+          {
+            "name": "ccee_plant_parcel_hourly",
+            "table": "ccee_plant_parcel_hourly",
+            "rootpage": 34,
+            "sql": "CREATE TABLE ccee_plant_parcel_hourly (\n            reference_datetime                         TEXT NOT NULL,\n            reference_month                            TEXT NOT NULL,\n            commercialization_period                   INTEGER NOT NULL,\n            plant_parcel_code                          TEXT NOT NULL,\n            plant_acronym                              TEXT,\n            generation_source                          TEXT,\n            submarket                                  TEXT,\n            plant_type                                 TEXT,\n            generation_center_of_gravity_mwmed         REAL,\n            generation_center_of_gravity_mwh           REAL,\n            internal_loss_factor_pct                   REAL,\n            loss_generation_apportionment_factor_mwh   REAL,\n            energy_security_generation_mwh             REAL,\n            constrained_on_generation_mwh              REAL,\n            adjusted_restriction_charge_energy_mwmed   REAL,\n            unavailability_mwh                         REAL,\n            declared_cost_mwh                          REAL,\n            hydraulic_displacement_factor_mwh          REAL,\n            verified_generation_ons_mwh                REAL,\n            verified_availability_mwh                  REAL,\n            inflexible_generation_mwmed                REAL,\n            substitute_unavailability_generation_mwh   REAL,\n            reserve_power_generation_mwh               REAL,\n            unit_commitment_generation_mwmed           REAL,\n            final_merit_order_generation_mwh           REAL,\n            adjusted_physical_guarantee_mwh            REAL,\n            source_dataset                             TEXT NOT NULL,\n            raw_payload_hash                           TEXT NOT NULL,\n            snapshot_id                                TEXT,\n            updated_at                                 TEXT NOT NULL DEFAULT (datetime('now')),\n            PRIMARY KEY (reference_datetime, commercialization_period, plant_parcel_code)\n        )"
+          },
+          {
+            "name": "ccee_plant_parcel_monthly",
+            "table": "ccee_plant_parcel_monthly",
+            "rootpage": 32,
+            "sql": "CREATE TABLE ccee_plant_parcel_monthly (\n            reference_month                      TEXT NOT NULL,\n            plant_parcel_code                    TEXT NOT NULL,\n            plant_parcel_acronym                 TEXT,\n            asset_code                           TEXT,\n            asset_acronym                        TEXT,\n            ceg                                  TEXT,\n            plant_name                           TEXT,\n            agent_code                           TEXT,\n            agent_profile                        TEXT,\n            agent_name                           TEXT,\n            dispatch_type                        TEXT,\n            loss_pooling_flag                    TEXT,\n            generation_source                    TEXT,\n            fuel                                 TEXT,\n            submarket                            TEXT,\n            uf                                   TEXT,\n            parcel_feature                       TEXT,\n            mre_flag                             TEXT,\n            quota_regime_flag                    TEXT,\n            commercial_operation_start_date      TEXT,\n            discount_percent                     REAL,\n            capacity_mw                          REAL,\n            physical_guarantee_mwmed             REAL,\n            commercial_operation_factor          REAL,\n            internal_loss_abatement_factor       REAL,\n            generation_center_of_gravity_mwmed   REAL,\n            test_generation_mwmed                REAL,\n            gf_center_of_gravity_mwmed           REAL,\n            energy_security_generation_mwmed     REAL,\n            constrained_on_generation_mwmed      REAL,\n            reserve_operation_generation_mwmed   REAL,\n            unit_commitment_generation_mwmed     REAL,\n            source_dataset                       TEXT NOT NULL,\n            raw_payload_hash                     TEXT NOT NULL,\n            snapshot_id                          TEXT,\n            updated_at                           TEXT NOT NULL DEFAULT (datetime('now')),\n            PRIMARY KEY (reference_month, plant_parcel_code)\n        )"
+          },
+          {
+            "name": "ccee_plant_parcels",
+            "table": "ccee_plant_parcels",
+            "rootpage": 29,
+            "sql": "CREATE TABLE ccee_plant_parcels (\n            plant_parcel_code        TEXT PRIMARY KEY,\n            plant_parcel_acronym     TEXT,\n            asset_code               TEXT,\n            asset_acronym            TEXT,\n            ceg                      TEXT,\n            plant_name               TEXT,\n            agent_name               TEXT,\n            agent_profile            TEXT,\n            submarket                TEXT,\n            generation_source        TEXT,\n            fuel                     TEXT,\n            uf                       TEXT,\n            dispatch_type            TEXT,\n            parcel_feature           TEXT,\n            capacity_mw              REAL,\n            physical_guarantee_mwmed REAL,\n            mre_flag                 TEXT,\n            quota_regime_flag        TEXT,\n            source_reference_month   TEXT,\n            source_updated_at        TEXT,\n            raw_payload_hash         TEXT NOT NULL,\n            snapshot_id              TEXT,\n            updated_at               TEXT NOT NULL DEFAULT (datetime('now'))\n        )"
+          },
+          {
+            "name": "conglomerate_asset_mappings",
+            "table": "conglomerate_asset_mappings",
+            "rootpage": 79,
+            "sql": "CREATE TABLE conglomerate_asset_mappings (\n            asset_id       TEXT NOT NULL,\n            asset_type     TEXT NOT NULL,\n            cd_cvm         INTEGER,\n            mapping_source TEXT NOT NULL DEFAULT 'auto',\n            review_notes   TEXT,\n            updated_at     TEXT NOT NULL DEFAULT (datetime('now')), custom_owner_name TEXT,\n            PRIMARY KEY (asset_id, asset_type)\n        )"
+          },
+          {
+            "name": "country_dimension",
+            "table": "country_dimension",
+            "rootpage": 4,
+            "sql": "CREATE TABLE country_dimension (\n            iso_code     TEXT PRIMARY KEY,\n            country_name TEXT NOT NULL,\n            region       TEXT,\n            is_v1_scope  INTEGER NOT NULL DEFAULT 0\n        )"
+          },
+          {
+            "name": "country_kpi_values",
+            "table": "country_kpi_values",
+            "rootpage": 6,
+            "sql": "CREATE TABLE country_kpi_values (\n            kpi_id              TEXT NOT NULL,\n            iso_code            TEXT NOT NULL,\n            period              INTEGER NOT NULL,\n            value               REAL,\n            value_owid          REAL,\n            value_ember         REAL,\n            unit                TEXT,\n            source              TEXT,\n            source_priority     INTEGER,\n            source_field        TEXT,\n            data_quality_status TEXT NOT NULL DEFAULT 'ok',\n            source_conflict     INTEGER NOT NULL DEFAULT 0,\n            fallback_used       INTEGER NOT NULL DEFAULT 0,\n            last_updated        TEXT,\n            snapshot_id         TEXT,\n            PRIMARY KEY (kpi_id, iso_code, period)\n        )"
+          },
+          {
+            "name": "data_quality_checks",
+            "table": "data_quality_checks",
+            "rootpage": 16,
+            "sql": "CREATE TABLE data_quality_checks (\n            check_id     TEXT PRIMARY KEY,\n            run_id       TEXT,\n            check_name   TEXT NOT NULL,\n            severity     TEXT NOT NULL DEFAULT 'info',\n            passed       INTEGER NOT NULL DEFAULT 1,\n            details_json TEXT,\n            created_at   TEXT NOT NULL DEFAULT (datetime('now'))\n        )"
+          },
+          {
+            "name": "distribution_annual_aggregates",
+            "table": "distribution_annual_aggregates",
+            "rootpage": 74,
+            "sql": "CREATE TABLE distribution_annual_aggregates (\n            aggregate_id           TEXT PRIMARY KEY,\n            distributor_id         TEXT NOT NULL REFERENCES distribution_distributors(distributor_id) ON DELETE CASCADE,\n            reference_year         INTEGER NOT NULL,\n            billed_energy_mwh      REAL,\n            revenue_brl            REAL,\n            measured_energy_mwh    REAL,\n            injected_energy_mwh    REAL,\n            losses_mwh             REAL,\n            losses_pct             REAL,\n            dec_actual             REAL,\n            fec_actual             REAL,\n            dec_limit              REAL,\n            fec_limit              REAL,\n            compensation_count     INTEGER,\n            compensation_value     REAL,\n            delinquency_pct        REAL,\n            mmgd_projects_count    INTEGER,\n            mmgd_capacity_kw       REAL,\n            created_at             TEXT NOT NULL DEFAULT (datetime('now'))\n        )"
+          },
+          {
+            "name": "distribution_continuity_compensations",
+            "table": "distribution_continuity_compensations",
+            "rootpage": 58,
+            "sql": "CREATE TABLE distribution_continuity_compensations (\n            compensation_id        TEXT PRIMARY KEY,\n            distributor_id         TEXT NOT NULL REFERENCES distribution_distributors(distributor_id) ON DELETE CASCADE,\n            set_id                 TEXT NOT NULL,\n            set_name               TEXT,\n            reference_month        TEXT NOT NULL,\n            compensation_count     INTEGER,\n            compensation_value     REAL,\n            source_row_hash        TEXT NOT NULL,\n            snapshot_id            TEXT,\n            created_at             TEXT NOT NULL DEFAULT (datetime('now'))\n        )"
+          },
+          {
+            "name": "distribution_continuity_facts",
+            "table": "distribution_continuity_facts",
+            "rootpage": 54,
+            "sql": "CREATE TABLE distribution_continuity_facts (\n            fact_id                TEXT PRIMARY KEY,\n            distributor_id         TEXT NOT NULL REFERENCES distribution_distributors(distributor_id) ON DELETE CASCADE,\n            set_id                 TEXT NOT NULL,\n            set_name               TEXT,\n            indicator_code         TEXT NOT NULL,\n            reference_month        TEXT NOT NULL,\n            actual_value           REAL,\n            source_row_hash        TEXT NOT NULL,\n            snapshot_id            TEXT,\n            created_at             TEXT NOT NULL DEFAULT (datetime('now'))\n        )"
+          },
+          {
+            "name": "distribution_continuity_limits",
+            "table": "distribution_continuity_limits",
+            "rootpage": 56,
+            "sql": "CREATE TABLE distribution_continuity_limits (\n            limit_id               TEXT PRIMARY KEY,\n            distributor_id         TEXT NOT NULL REFERENCES distribution_distributors(distributor_id) ON DELETE CASCADE,\n            set_id                 TEXT NOT NULL,\n            set_name               TEXT,\n            indicator_code         TEXT NOT NULL,\n            validity_year          INTEGER NOT NULL,\n            limit_value            REAL,\n            source_row_hash        TEXT NOT NULL,\n            snapshot_id            TEXT,\n            created_at             TEXT NOT NULL DEFAULT (datetime('now'))\n        )"
+          },
+          {
+            "name": "distribution_delinquency_facts",
+            "table": "distribution_delinquency_facts",
+            "rootpage": 63,
+            "sql": "CREATE TABLE distribution_delinquency_facts (\n            fact_id                TEXT PRIMARY KEY,\n            distributor_id         TEXT NOT NULL REFERENCES distribution_distributors(distributor_id) ON DELETE CASCADE,\n            reference_month        TEXT NOT NULL,\n            indicator_code         TEXT NOT NULL,\n            actual_value           REAL,\n            source_row_hash        TEXT NOT NULL,\n            snapshot_id            TEXT,\n            created_at             TEXT NOT NULL DEFAULT (datetime('now'))\n        )"
+          },
+          {
+            "name": "distribution_delinquency_indicators",
+            "table": "distribution_delinquency_indicators",
+            "rootpage": 65,
+            "sql": "CREATE TABLE distribution_delinquency_indicators (\n            indicator_code         TEXT PRIMARY KEY,\n            indicator_name         TEXT NOT NULL,\n            description            TEXT\n        , unit TEXT, analytical_category TEXT, publication_status TEXT, is_lead_kpi INTEGER NOT NULL DEFAULT 0)"
+          },
+          {
+            "name": "distribution_distributor_aliases",
+            "table": "distribution_distributor_aliases",
+            "rootpage": 45,
+            "sql": "CREATE TABLE distribution_distributor_aliases (\n            alias_id       TEXT PRIMARY KEY,\n            distributor_id TEXT NOT NULL REFERENCES distribution_distributors(distributor_id) ON DELETE CASCADE,\n            source         TEXT NOT NULL,\n            source_cnpj    TEXT,\n            source_name    TEXT,\n            normalized_name TEXT,\n            match_method   TEXT,\n            match_status   TEXT NOT NULL DEFAULT 'reviewed',\n            review_notes   TEXT,\n            created_at     TEXT NOT NULL DEFAULT (datetime('now')),\n            updated_at     TEXT NOT NULL DEFAULT (datetime('now'))\n        )"
+          },
+          {
+            "name": "distribution_distributors",
+            "table": "distribution_distributors",
+            "rootpage": 42,
+            "sql": "CREATE TABLE distribution_distributors (\n            distributor_id     TEXT PRIMARY KEY,\n            canonical_name     TEXT NOT NULL,\n            current_legal_name TEXT,\n            trade_name         TEXT,\n            normalized_cnpj    TEXT,\n            agent_code         TEXT,\n            distributor_code   TEXT,\n            concession_type   TEXT,\n            primary_uf         TEXT,\n            service_area       TEXT,\n            status             TEXT NOT NULL DEFAULT 'active',\n            created_at         TEXT NOT NULL DEFAULT (datetime('now')),\n            updated_at         TEXT NOT NULL DEFAULT (datetime('now'))\n        , classification TEXT NOT NULL DEFAULT 'distributor')"
+          },
+          {
+            "name": "distribution_economic_groups",
+            "table": "distribution_economic_groups",
+            "rootpage": 39,
+            "sql": "CREATE TABLE distribution_economic_groups (\n            economic_group_id TEXT PRIMARY KEY,\n            group_name        TEXT NOT NULL,\n            created_at        TEXT NOT NULL DEFAULT (datetime('now')),\n            updated_at        TEXT NOT NULL DEFAULT (datetime('now'))\n        )"
+          },
+          {
+            "name": "distribution_energy_balance_facts",
+            "table": "distribution_energy_balance_facts",
+            "rootpage": 52,
+            "sql": "CREATE TABLE distribution_energy_balance_facts (\n            fact_id                TEXT PRIMARY KEY,\n            distributor_id         TEXT NOT NULL REFERENCES distribution_distributors(distributor_id) ON DELETE CASCADE,\n            reference_month        TEXT NOT NULL,\n            balance_modality       TEXT,\n            energy_flow            TEXT,\n            balance_characteristic TEXT,\n            balance_detail         TEXT,\n            raw_value              REAL,\n            normalized_value       REAL,\n            original_unit          TEXT,\n            normalized_unit        TEXT,\n            source_row_hash        TEXT NOT NULL,\n            snapshot_id            TEXT,\n            created_at             TEXT NOT NULL DEFAULT (datetime('now'))\n        )"
+          },
+          {
+            "name": "distribution_listed_companies",
+            "table": "distribution_listed_companies",
+            "rootpage": 41,
+            "sql": "CREATE TABLE distribution_listed_companies (\n            cd_cvm       INTEGER PRIMARY KEY,\n            company_name TEXT NOT NULL,\n            ticker_b3    TEXT,\n            cnpj         TEXT,\n            created_at   TEXT NOT NULL DEFAULT (datetime('now')),\n            updated_at   TEXT NOT NULL DEFAULT (datetime('now'))\n        )"
+          },
+          {
+            "name": "distribution_market_facts",
+            "table": "distribution_market_facts",
+            "rootpage": 49,
+            "sql": "CREATE TABLE distribution_market_facts (\n            fact_id                     TEXT PRIMARY KEY,\n            distributor_id              TEXT NOT NULL REFERENCES distribution_distributors(distributor_id) ON DELETE CASCADE,\n            reference_month             TEXT NOT NULL,\n            market_type                 TEXT,\n            tariff_modality             TEXT,\n            tariff_subgroup             TEXT,\n            consumer_class              TEXT,\n            consumer_subclass           TEXT,\n            consumer_detail             TEXT,\n            tariff_period               TEXT,\n            energy_option               TEXT,\n            accessing_agent_cnpj        TEXT,\n            accessing_agent_name        TEXT,\n            metric_name                 TEXT NOT NULL,\n            raw_value                   REAL,\n            normalized_value            REAL,\n            original_unit               TEXT,\n            normalized_unit             TEXT,\n            source_row_hash             TEXT NOT NULL,\n            snapshot_id                 TEXT,\n            created_at                  TEXT NOT NULL DEFAULT (datetime('now'))\n        )"
+          },
+          {
+            "name": "distribution_mmgd_project_snapshots",
+            "table": "distribution_mmgd_project_snapshots",
+            "rootpage": 70,
+            "sql": "CREATE TABLE distribution_mmgd_project_snapshots (\n            snapshot_row_id        TEXT PRIMARY KEY,\n            project_id             TEXT NOT NULL REFERENCES distribution_mmgd_projects(project_id) ON DELETE CASCADE,\n            reference_month        TEXT NOT NULL,\n            installed_capacity_kw  REAL,\n            beneficiary_units_count INTEGER,\n            source_row_hash        TEXT NOT NULL,\n            snapshot_id            TEXT,\n            created_at             TEXT NOT NULL DEFAULT (datetime('now'))\n        )"
+          },
+          {
+            "name": "distribution_mmgd_projects",
+            "table": "distribution_mmgd_projects",
+            "rootpage": 67,
+            "sql": "CREATE TABLE distribution_mmgd_projects (\n            project_id             TEXT PRIMARY KEY,\n            distributor_id         TEXT NOT NULL REFERENCES distribution_distributors(distributor_id) ON DELETE CASCADE,\n            municipality           TEXT,\n            uf                     TEXT,\n            generation_type        TEXT,\n            generation_source      TEXT,\n            size_category          TEXT,\n            latitude               REAL,\n            longitude              REAL,\n            connection_date        TEXT,\n            created_at             TEXT NOT NULL DEFAULT (datetime('now'))\n        , status TEXT NOT NULL DEFAULT 'active', deactivated_at_month TEXT, deactivation_reason TEXT, deactivation_snapshot_id TEXT, source_row_hash TEXT)"
+          },
+          {
+            "name": "distribution_monthly_aggregates",
+            "table": "distribution_monthly_aggregates",
+            "rootpage": 72,
+            "sql": "CREATE TABLE distribution_monthly_aggregates (\n            aggregate_id           TEXT PRIMARY KEY,\n            distributor_id         TEXT NOT NULL REFERENCES distribution_distributors(distributor_id) ON DELETE CASCADE,\n            reference_month        TEXT NOT NULL,\n            billed_energy_mwh      REAL,\n            revenue_brl            REAL,\n            measured_energy_mwh    REAL,\n            injected_energy_mwh    REAL,\n            losses_mwh             REAL,\n            losses_pct             REAL,\n            dec_actual             REAL,\n            fec_actual             REAL,\n            dec_limit              REAL,\n            fec_limit              REAL,\n            compensation_count     INTEGER,\n            compensation_value     REAL,\n            delinquency_pct        REAL,\n            mmgd_projects_count    INTEGER,\n            mmgd_capacity_kw       REAL,\n            created_at             TEXT NOT NULL DEFAULT (datetime('now'))\n        )"
+          },
+          {
+            "name": "distribution_ownership_history",
+            "table": "distribution_ownership_history",
+            "rootpage": 47,
+            "sql": "CREATE TABLE distribution_ownership_history (\n            ownership_id                   TEXT PRIMARY KEY,\n            distributor_id                 TEXT NOT NULL REFERENCES distribution_distributors(distributor_id) ON DELETE CASCADE,\n            economic_group_id              TEXT REFERENCES distribution_economic_groups(economic_group_id) ON DELETE SET NULL,\n            cd_cvm                         INTEGER REFERENCES distribution_listed_companies(cd_cvm) ON DELETE SET NULL,\n            valid_from                     TEXT NOT NULL,\n            valid_to                       TEXT NOT NULL,\n            control_status                 TEXT,\n            ownership_percentage           REAL,\n            operational_consolidation_flag INTEGER NOT NULL DEFAULT 1,\n            mapping_source                 TEXT,\n            mapping_status                 TEXT NOT NULL DEFAULT 'reviewed',\n            review_notes                   TEXT,\n            created_at                     TEXT NOT NULL DEFAULT (datetime('now')),\n            updated_at                     TEXT NOT NULL DEFAULT (datetime('now'))\n        )"
+          },
+          {
+            "name": "distribution_tariff_conflicts",
+            "table": "distribution_tariff_conflicts",
+            "rootpage": 76,
+            "sql": "CREATE TABLE distribution_tariff_conflicts (\n            conflict_row_id       TEXT PRIMARY KEY,\n            business_key_hash     TEXT NOT NULL,\n            normalized_cnpj       TEXT,\n            raw_name              TEXT,\n            resolution_title      TEXT,\n            valid_from            TEXT,\n            valid_to              TEXT,\n            tariff_base           TEXT,\n            subgroup              TEXT,\n            modality              TEXT,\n            consumer_class        TEXT,\n            consumer_subclass     TEXT,\n            consumer_detail       TEXT,\n            tariff_period         TEXT,\n            accessing_agent       TEXT,\n            unit                  TEXT,\n            tusd_value            REAL,\n            te_value              REAL,\n            source_row_hash       TEXT NOT NULL,\n            snapshot_id           TEXT,\n            conflict_reason       TEXT NOT NULL,\n            created_at            TEXT NOT NULL DEFAULT (datetime('now'))\n        )"
+          },
+          {
+            "name": "distribution_tariff_facts",
+            "table": "distribution_tariff_facts",
+            "rootpage": 61,
+            "sql": "CREATE TABLE distribution_tariff_facts (\n            fact_id                TEXT PRIMARY KEY,\n            distributor_id         TEXT NOT NULL REFERENCES distribution_distributors(distributor_id) ON DELETE CASCADE,\n            resolution_title       TEXT,\n            valid_from             TEXT NOT NULL,\n            valid_to               TEXT NOT NULL,\n            tariff_base            TEXT,\n            subgroup               TEXT,\n            modality               TEXT,\n            consumer_class         TEXT,\n            consumer_subclass      TEXT,\n            consumer_detail        TEXT,\n            tariff_period          TEXT,\n            unit                   TEXT NOT NULL,\n            tusd_value             REAL,\n            te_value               REAL,\n            source_row_hash        TEXT NOT NULL,\n            snapshot_id            TEXT,\n            created_at             TEXT NOT NULL DEFAULT (datetime('now'))\n        , accessing_agent TEXT)"
+          },
+          {
+            "name": "energy_mart_builds",
+            "table": "energy_mart_builds",
+            "rootpage": 85,
+            "sql": "CREATE TABLE energy_mart_builds (\n            mart_name                  TEXT PRIMARY KEY,\n            build_version              TEXT NOT NULL,\n            rebuilt_at                 TEXT NOT NULL,\n            source_table               TEXT NOT NULL,\n            source_row_estimate        INTEGER,\n            source_max_rowid           INTEGER,\n            source_latest_reference    TEXT,\n            period_start               TEXT,\n            period_end                 TEXT,\n            row_count                  INTEGER,\n            status                     TEXT NOT NULL,\n            error_message              TEXT,\n            metadata_json              TEXT\n        )"
+          },
+          {
+            "name": "energy_source_refresh_log",
+            "table": "energy_source_refresh_log",
+            "rootpage": 24,
+            "sql": "CREATE TABLE energy_source_refresh_log (\n            refresh_id           TEXT PRIMARY KEY,\n            source_id            TEXT NOT NULL,\n            requested_by         TEXT,\n            started_at           TEXT NOT NULL,\n            finished_at          TEXT,\n            status               TEXT NOT NULL DEFAULT 'running',\n            period_start         TEXT,\n            period_end           TEXT,\n            rows_downloaded      INTEGER,\n            rows_inserted        INTEGER,\n            rows_updated         INTEGER,\n            error_message        TEXT,\n            local_file_path      TEXT,\n            checksum             TEXT,\n            source_snapshot_date TEXT\n        , requested_period TEXT, dataset_name TEXT, source_url TEXT, downloaded_bytes INTEGER, source_rows INTEGER, parsed_rows INTEGER, normalized_rows INTEGER, rows_skipped INTEGER, warning_message TEXT, detected_encoding TEXT, import_mode TEXT, original_file_name TEXT, file_size_bytes INTEGER, file_hash TEXT, file_type TEXT, detected_period TEXT, source_page_url TEXT, canonical_rows INTEGER, valid_domain_rows INTEGER, missing_key_rows INTEGER, invalid_value_rows INTEGER, unresolved_identity_rows INTEGER, non_distributor_entity_rows INTEGER, exact_duplicate_rows INTEGER, duplicate_groups INTEGER, conflicting_logical_keys INTEGER, conflict_rows INTEGER, quarantined_rows INTEGER, lead_kpi_rows INTEGER, supporting_detail_rows INTEGER, intentionally_excluded_rows INTEGER, rejected_rows INTEGER, rows_unchanged INTEGER, rows_removed_deactivated INTEGER, final_published_rows INTEGER, affected_periods TEXT, affected_distributors INTEGER, affected_non_distributors INTEGER, elapsed_download_ms INTEGER, elapsed_parse_ms INTEGER, elapsed_publish_ms INTEGER, elapsed_aggregate_ms INTEGER, parser_version TEXT, schema_fingerprint TEXT, snapshot_id TEXT, final_source_status TEXT, peak_rss_mb REAL, cpu_time_ms INTEGER, elapsed_lock_wait_ms INTEGER)"
+          },
+          {
+            "name": "energy_sources",
+            "table": "energy_sources",
+            "rootpage": 22,
+            "sql": "CREATE TABLE energy_sources (\n            source_id         TEXT PRIMARY KEY,\n            source_name       TEXT NOT NULL,\n            dataset_name      TEXT NOT NULL,\n            provider          TEXT NOT NULL,\n            official_url      TEXT,\n            refresh_frequency TEXT,\n            granularity       TEXT,\n            description       TEXT,\n            known_caveats     TEXT,\n            created_at        TEXT NOT NULL DEFAULT (datetime('now')),\n            updated_at        TEXT NOT NULL DEFAULT (datetime('now'))\n        )"
+          },
+          {
+            "name": "kpi_catalog",
+            "table": "kpi_catalog",
+            "rootpage": 2,
+            "sql": "CREATE TABLE kpi_catalog (\n            kpi_id                    TEXT PRIMARY KEY,\n            display_name              TEXT NOT NULL,\n            description               TEXT,\n            kpi_type                  TEXT,\n            macro_category            TEXT,\n            subsector                 TEXT,\n            sector                    TEXT NOT NULL DEFAULT 'Energy Utilities',\n            geography_type            TEXT NOT NULL DEFAULT 'country',\n            entity_type               TEXT NOT NULL DEFAULT 'country',\n            unit                      TEXT,\n            frequency                 TEXT NOT NULL DEFAULT 'annual',\n            primary_source            TEXT,\n            primary_source_field      TEXT,\n            fallback_source           TEXT,\n            fallback_source_field     TEXT,\n            calculation_method        TEXT,\n            v1_status                 TEXT,\n            dashboard_priority        TEXT,\n            excel_export_priority     TEXT,\n            source_verification_status TEXT,\n            higher_is_better          INTEGER,\n            source_caveats            TEXT,\n            audit_notes               TEXT,\n            owner_module              TEXT NOT NULL DEFAULT 'energy_kpi',\n            availability_status       TEXT NOT NULL DEFAULT 'available',\n            created_at                TEXT NOT NULL DEFAULT (datetime('now')),\n            updated_at                TEXT NOT NULL DEFAULT (datetime('now'))\n        )"
+          },
+          {
+            "name": "kpi_refresh_log",
+            "table": "kpi_refresh_log",
+            "rootpage": 12,
+            "sql": "CREATE TABLE kpi_refresh_log (\n            run_id         TEXT PRIMARY KEY,\n            started_at     TEXT NOT NULL,\n            finished_at    TEXT,\n            source         TEXT,\n            status         TEXT NOT NULL DEFAULT 'running',\n            rows_ingested  INTEGER,\n            rows_conflict  INTEGER,\n            error          TEXT,\n            triggered_by   TEXT\n        )"
+          },
+          {
+            "name": "kpi_sources",
+            "table": "kpi_sources",
+            "rootpage": 8,
+            "sql": "CREATE TABLE kpi_sources (\n            source            TEXT PRIMARY KEY,\n            display_name      TEXT NOT NULL,\n            base_url          TEXT,\n            license           TEXT,\n            default_priority  INTEGER,\n            cadence           TEXT,\n            retrieval_method  TEXT,\n            schema_version    TEXT,\n            notes             TEXT,\n            last_refresh_at   TEXT\n        )"
+          },
+          {
+            "name": "plant_parcel_daily_generation_mart",
+            "table": "plant_parcel_daily_generation_mart",
+            "rootpage": 81,
+            "sql": "CREATE TABLE plant_parcel_daily_generation_mart (\n            plant_parcel_code             TEXT NOT NULL,\n            reference_date                TEXT NOT NULL,\n            reference_month               TEXT NOT NULL,\n            generation_mwh                REAL,\n            verified_generation_mwh       REAL,\n            verified_availability_mwh     REAL,\n            unavailability_mwh            REAL,\n            hourly_observations           INTEGER NOT NULL DEFAULT 0,\n            first_reference_datetime      TEXT,\n            last_reference_datetime       TEXT,\n            source_dataset                TEXT,\n            first_snapshot_id             TEXT,\n            last_snapshot_id              TEXT,\n            rebuilt_at                    TEXT NOT NULL,\n            build_version                 TEXT NOT NULL,\n            PRIMARY KEY (plant_parcel_code, reference_date)\n        )"
+          },
+          {
+            "name": "plant_parcel_hourly_preview_mart",
+            "table": "plant_parcel_hourly_preview_mart",
+            "rootpage": 83,
+            "sql": "CREATE TABLE plant_parcel_hourly_preview_mart (\n            plant_parcel_code                  TEXT NOT NULL,\n            reference_datetime                 TEXT NOT NULL,\n            reference_month                    TEXT NOT NULL,\n            commercialization_period           INTEGER NOT NULL,\n            generation_center_of_gravity_mwh   REAL,\n            verified_generation_ons_mwh        REAL,\n            verified_availability_mwh          REAL,\n            unavailability_mwh                 REAL,\n            source_dataset                     TEXT,\n            snapshot_id                        TEXT,\n            rebuilt_at                         TEXT NOT NULL,\n            build_version                      TEXT NOT NULL,\n            PRIMARY KEY (plant_parcel_code, reference_datetime, commercialization_period)\n        )"
+          },
+          {
+            "name": "plant_parcel_source_submarket_monthly_mart",
+            "table": "plant_parcel_source_submarket_monthly_mart",
+            "rootpage": 88,
+            "sql": "CREATE TABLE plant_parcel_source_submarket_monthly_mart (\n            reference_month             TEXT NOT NULL,\n            generation_source           TEXT NOT NULL,\n            submarket                   TEXT NOT NULL,\n            plant_parcel_count          INTEGER NOT NULL,\n            hourly_observations         INTEGER NOT NULL,\n            generation_mwh              REAL,\n            verified_generation_mwh     REAL,\n            first_reference_datetime    TEXT,\n            last_reference_datetime     TEXT,\n            source_dataset              TEXT,\n            first_snapshot_id           TEXT,\n            last_snapshot_id            TEXT,\n            rebuilt_at                  TEXT NOT NULL,\n            build_version               TEXT NOT NULL,\n            PRIMARY KEY (reference_month, generation_source, submarket)\n        )"
+          },
+          {
+            "name": "source_snapshots",
+            "table": "source_snapshots",
+            "rootpage": 10,
+            "sql": "CREATE TABLE source_snapshots (\n            snapshot_id          TEXT PRIMARY KEY,\n            source               TEXT NOT NULL,\n            fetched_at           TEXT NOT NULL,\n            file_path            TEXT NOT NULL,\n            sha256               TEXT,\n            row_count            INTEGER,\n            source_version_label TEXT,\n            status               TEXT NOT NULL DEFAULT 'ok'\n        )"
+          },
+          {
+            "name": "subsystem_dimension",
+            "table": "subsystem_dimension",
+            "rootpage": 18,
+            "sql": "CREATE TABLE subsystem_dimension (\n            subsystem_code TEXT PRIMARY KEY,\n            display_name   TEXT NOT NULL,\n            source_aliases  TEXT,\n            sort_order      INTEGER NOT NULL\n        )"
+          },
+          {
+            "name": "subsystem_kpi_values",
+            "table": "subsystem_kpi_values",
+            "rootpage": 20,
+            "sql": "CREATE TABLE subsystem_kpi_values (\n            kpi_id              TEXT NOT NULL,\n            subsystem_code      TEXT NOT NULL,\n            reference_datetime  TEXT NOT NULL,\n            source_value        REAL,\n            normalized_value    REAL,\n            unit                TEXT,\n            source              TEXT NOT NULL,\n            source_dataset      TEXT NOT NULL,\n            source_field        TEXT,\n            source_hash         TEXT NOT NULL,\n            snapshot_id         TEXT,\n            ingestion_batch_id  TEXT,\n            data_quality_status TEXT NOT NULL DEFAULT 'ok',\n            created_at          TEXT NOT NULL DEFAULT (datetime('now')),\n            updated_at          TEXT NOT NULL DEFAULT (datetime('now')),\n            PRIMARY KEY (kpi_id, reference_datetime, subsystem_code)\n        )"
+          }
+        ],
+        "indexes": [
+          {
+            "name": "idx_aneel_siga_source",
+            "table": "aneel_siga_plants",
+            "rootpage": 99,
+            "sql": "CREATE INDEX idx_aneel_siga_source ON aneel_siga_plants(generation_source)"
+          },
+          {
+            "name": "idx_aneel_siga_uf",
+            "table": "aneel_siga_plants",
+            "rootpage": 98,
+            "sql": "CREATE INDEX idx_aneel_siga_uf ON aneel_siga_plants(uf)"
+          },
+          {
+            "name": "idx_cdr_dataset_period",
+            "table": "ccee_discovered_resources",
+            "rootpage": 112,
+            "sql": "CREATE INDEX idx_cdr_dataset_period ON ccee_discovered_resources(dataset_id, year, month)"
+          },
+          {
+            "name": "idx_ckv_iso_period",
+            "table": "country_kpi_values",
+            "rootpage": 91,
+            "sql": "CREATE INDEX idx_ckv_iso_period ON country_kpi_values(iso_code, period)"
+          },
+          {
+            "name": "idx_ckv_kpi_iso",
+            "table": "country_kpi_values",
+            "rootpage": 90,
+            "sql": "CREATE INDEX idx_ckv_kpi_iso ON country_kpi_values(kpi_id, iso_code)"
+          },
+          {
+            "name": "idx_ckv_snapshot",
+            "table": "country_kpi_values",
+            "rootpage": 92,
+            "sql": "CREATE INDEX idx_ckv_snapshot ON country_kpi_values(snapshot_id)"
+          },
+          {
+            "name": "idx_cpp_ceg",
+            "table": "ccee_plant_parcels",
+            "rootpage": 100,
+            "sql": "CREATE INDEX idx_cpp_ceg ON ccee_plant_parcels(ceg)"
+          },
+          {
+            "name": "idx_cpp_ref_month",
+            "table": "ccee_plant_parcels",
+            "rootpage": 103,
+            "sql": "CREATE INDEX idx_cpp_ref_month ON ccee_plant_parcels(source_reference_month)"
+          },
+          {
+            "name": "idx_cpp_source",
+            "table": "ccee_plant_parcels",
+            "rootpage": 102,
+            "sql": "CREATE INDEX idx_cpp_source ON ccee_plant_parcels(generation_source)"
+          },
+          {
+            "name": "idx_cpp_submarket",
+            "table": "ccee_plant_parcels",
+            "rootpage": 101,
+            "sql": "CREATE INDEX idx_cpp_submarket ON ccee_plant_parcels(submarket)"
+          },
+          {
+            "name": "idx_cppe_parcel_ref",
+            "table": "ccee_plant_parcel_hourly",
+            "rootpage": 110,
+            "sql": "CREATE INDEX idx_cppe_parcel_ref ON ccee_plant_parcel_hourly(plant_parcel_code, reference_datetime)"
+          },
+          {
+            "name": "idx_cppe_ref_month",
+            "table": "ccee_plant_parcel_hourly",
+            "rootpage": 111,
+            "sql": "CREATE INDEX idx_cppe_ref_month ON ccee_plant_parcel_hourly(reference_month)"
+          },
+          {
+            "name": "idx_cppm_ceg",
+            "table": "ccee_plant_parcel_monthly",
+            "rootpage": 104,
+            "sql": "CREATE INDEX idx_cppm_ceg ON ccee_plant_parcel_monthly(ceg)"
+          },
+          {
+            "name": "idx_cppm_parcel_ref",
+            "table": "ccee_plant_parcel_monthly",
+            "rootpage": 105,
+            "sql": "CREATE INDEX idx_cppm_parcel_ref ON ccee_plant_parcel_monthly(plant_parcel_code, reference_month)"
+          },
+          {
+            "name": "idx_cppm_ref",
+            "table": "ccee_plant_parcel_monthly",
+            "rootpage": 106,
+            "sql": "CREATE INDEX idx_cppm_ref ON ccee_plant_parcel_monthly(reference_month)"
+          },
+          {
+            "name": "idx_cppm_source",
+            "table": "ccee_plant_parcel_monthly",
+            "rootpage": 109,
+            "sql": "CREATE INDEX idx_cppm_source ON ccee_plant_parcel_monthly(generation_source)"
+          },
+          {
+            "name": "idx_cppm_submarket",
+            "table": "ccee_plant_parcel_monthly",
+            "rootpage": 107,
+            "sql": "CREATE INDEX idx_cppm_submarket ON ccee_plant_parcel_monthly(submarket)"
+          },
+          {
+            "name": "idx_dist_annual_agg",
+            "table": "distribution_annual_aggregates",
+            "rootpage": 119,
+            "sql": "CREATE INDEX idx_dist_annual_agg ON distribution_annual_aggregates(distributor_id, reference_year)"
+          },
+          {
+            "name": "idx_dist_bal_ref",
+            "table": "distribution_energy_balance_facts",
+            "rootpage": 114,
+            "sql": "CREATE INDEX idx_dist_bal_ref ON distribution_energy_balance_facts(distributor_id, reference_month)"
+          },
+          {
+            "name": "idx_dist_cont_indicator_ref",
+            "table": "distribution_continuity_facts",
+            "rootpage": 121,
+            "sql": "CREATE INDEX idx_dist_cont_indicator_ref ON distribution_continuity_facts(indicator_code, distributor_id, reference_month)"
+          },
+          {
+            "name": "idx_dist_cont_ref",
+            "table": "distribution_continuity_facts",
+            "rootpage": 115,
+            "sql": "CREATE INDEX idx_dist_cont_ref ON distribution_continuity_facts(distributor_id, set_id, reference_month)"
+          },
+          {
+            "name": "idx_dist_market_ref",
+            "table": "distribution_market_facts",
+            "rootpage": 113,
+            "sql": "CREATE INDEX idx_dist_market_ref ON distribution_market_facts(distributor_id, reference_month)"
+          },
+          {
+            "name": "idx_dist_mmgd_proj",
+            "table": "distribution_mmgd_projects",
+            "rootpage": 116,
+            "sql": "CREATE INDEX idx_dist_mmgd_proj ON distribution_mmgd_projects(distributor_id)"
+          },
+          {
+            "name": "idx_dist_mmgd_snap",
+            "table": "distribution_mmgd_project_snapshots",
+            "rootpage": 117,
+            "sql": "CREATE INDEX idx_dist_mmgd_snap ON distribution_mmgd_project_snapshots(project_id, reference_month)"
+          },
+          {
+            "name": "idx_dist_monthly_agg",
+            "table": "distribution_monthly_aggregates",
+            "rootpage": 118,
+            "sql": "CREATE INDEX idx_dist_monthly_agg ON distribution_monthly_aggregates(distributor_id, reference_month)"
+          },
+          {
+            "name": "idx_dist_tariff_series_lookup",
+            "table": "distribution_tariff_facts",
+            "rootpage": 120,
+            "sql": "CREATE INDEX idx_dist_tariff_series_lookup ON distribution_tariff_facts(distributor_id, subgroup, consumer_class, unit, valid_from, valid_to)"
+          },
+          {
+            "name": "idx_dqc_run",
+            "table": "data_quality_checks",
+            "rootpage": 93,
+            "sql": "CREATE INDEX idx_dqc_run ON data_quality_checks(run_id)"
+          },
+          {
+            "name": "idx_esrl_source_started",
+            "table": "energy_source_refresh_log",
+            "rootpage": 97,
+            "sql": "CREATE INDEX idx_esrl_source_started ON energy_source_refresh_log(source_id, started_at)"
+          },
+          {
+            "name": "idx_ppdgm_month_date",
+            "table": "plant_parcel_daily_generation_mart",
+            "rootpage": 123,
+            "sql": "CREATE INDEX idx_ppdgm_month_date ON plant_parcel_daily_generation_mart(reference_month, reference_date)"
+          },
+          {
+            "name": "idx_ppdgm_parcel_month_date",
+            "table": "plant_parcel_daily_generation_mart",
+            "rootpage": 122,
+            "sql": "CREATE INDEX idx_ppdgm_parcel_month_date ON plant_parcel_daily_generation_mart(plant_parcel_code, reference_month, reference_date)"
+          },
+          {
+            "name": "idx_pphpm_parcel_ref",
+            "table": "plant_parcel_hourly_preview_mart",
+            "rootpage": 124,
+            "sql": "CREATE INDEX idx_pphpm_parcel_ref ON plant_parcel_hourly_preview_mart(plant_parcel_code, reference_datetime)"
+          },
+          {
+            "name": "idx_ppssmm_source_month",
+            "table": "plant_parcel_source_submarket_monthly_mart",
+            "rootpage": 125,
+            "sql": "CREATE INDEX idx_ppssmm_source_month ON plant_parcel_source_submarket_monthly_mart(generation_source, reference_month)"
+          },
+          {
+            "name": "idx_ppssmm_submarket_month",
+            "table": "plant_parcel_source_submarket_monthly_mart",
+            "rootpage": 126,
+            "sql": "CREATE INDEX idx_ppssmm_submarket_month ON plant_parcel_source_submarket_monthly_mart(submarket, reference_month)"
+          },
+          {
+            "name": "idx_skv_dataset_ref",
+            "table": "subsystem_kpi_values",
+            "rootpage": 95,
+            "sql": "CREATE INDEX idx_skv_dataset_ref ON subsystem_kpi_values(source_dataset, reference_datetime)"
+          },
+          {
+            "name": "idx_skv_snapshot",
+            "table": "subsystem_kpi_values",
+            "rootpage": 96,
+            "sql": "CREATE INDEX idx_skv_snapshot ON subsystem_kpi_values(snapshot_id)"
+          },
+          {
+            "name": "idx_skv_subsystem_ref",
+            "table": "subsystem_kpi_values",
+            "rootpage": 94,
+            "sql": "CREATE INDEX idx_skv_subsystem_ref ON subsystem_kpi_values(subsystem_code, reference_datetime)"
+          },
+          {
+            "name": "sqlite_autoindex_aneel_siga_plants_1",
+            "table": "aneel_siga_plants",
+            "rootpage": 28,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_ccee_discovered_resources_1",
+            "table": "ccee_discovered_resources",
+            "rootpage": 38,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_ccee_plant_parcel_hourly_1",
+            "table": "ccee_plant_parcel_hourly",
+            "rootpage": 35,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_ccee_plant_parcel_monthly_1",
+            "table": "ccee_plant_parcel_monthly",
+            "rootpage": 33,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_ccee_plant_parcels_1",
+            "table": "ccee_plant_parcels",
+            "rootpage": 30,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_conglomerate_asset_mappings_1",
+            "table": "conglomerate_asset_mappings",
+            "rootpage": 80,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_country_dimension_1",
+            "table": "country_dimension",
+            "rootpage": 5,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_country_kpi_values_1",
+            "table": "country_kpi_values",
+            "rootpage": 7,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_data_quality_checks_1",
+            "table": "data_quality_checks",
+            "rootpage": 17,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_distribution_annual_aggregates_1",
+            "table": "distribution_annual_aggregates",
+            "rootpage": 75,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_distribution_continuity_compensations_1",
+            "table": "distribution_continuity_compensations",
+            "rootpage": 59,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_distribution_continuity_facts_1",
+            "table": "distribution_continuity_facts",
+            "rootpage": 55,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_distribution_continuity_limits_1",
+            "table": "distribution_continuity_limits",
+            "rootpage": 57,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_distribution_delinquency_facts_1",
+            "table": "distribution_delinquency_facts",
+            "rootpage": 64,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_distribution_delinquency_indicators_1",
+            "table": "distribution_delinquency_indicators",
+            "rootpage": 66,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_distribution_distributor_aliases_1",
+            "table": "distribution_distributor_aliases",
+            "rootpage": 46,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_distribution_distributors_1",
+            "table": "distribution_distributors",
+            "rootpage": 43,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_distribution_economic_groups_1",
+            "table": "distribution_economic_groups",
+            "rootpage": 40,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_distribution_energy_balance_facts_1",
+            "table": "distribution_energy_balance_facts",
+            "rootpage": 53,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_distribution_market_facts_1",
+            "table": "distribution_market_facts",
+            "rootpage": 50,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_distribution_mmgd_project_snapshots_1",
+            "table": "distribution_mmgd_project_snapshots",
+            "rootpage": 71,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_distribution_mmgd_projects_1",
+            "table": "distribution_mmgd_projects",
+            "rootpage": 68,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_distribution_monthly_aggregates_1",
+            "table": "distribution_monthly_aggregates",
+            "rootpage": 73,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_distribution_ownership_history_1",
+            "table": "distribution_ownership_history",
+            "rootpage": 48,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_distribution_tariff_conflicts_1",
+            "table": "distribution_tariff_conflicts",
+            "rootpage": 77,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_distribution_tariff_facts_1",
+            "table": "distribution_tariff_facts",
+            "rootpage": 62,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_energy_mart_builds_1",
+            "table": "energy_mart_builds",
+            "rootpage": 86,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_energy_source_refresh_log_1",
+            "table": "energy_source_refresh_log",
+            "rootpage": 25,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_energy_sources_1",
+            "table": "energy_sources",
+            "rootpage": 23,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_kpi_catalog_1",
+            "table": "kpi_catalog",
+            "rootpage": 3,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_kpi_refresh_log_1",
+            "table": "kpi_refresh_log",
+            "rootpage": 13,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_kpi_sources_1",
+            "table": "kpi_sources",
+            "rootpage": 9,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_plant_parcel_daily_generation_mart_1",
+            "table": "plant_parcel_daily_generation_mart",
+            "rootpage": 82,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_plant_parcel_hourly_preview_mart_1",
+            "table": "plant_parcel_hourly_preview_mart",
+            "rootpage": 84,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_plant_parcel_source_submarket_monthly_mart_1",
+            "table": "plant_parcel_source_submarket_monthly_mart",
+            "rootpage": 89,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_source_snapshots_1",
+            "table": "source_snapshots",
+            "rootpage": 11,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_subsystem_dimension_1",
+            "table": "subsystem_dimension",
+            "rootpage": 19,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_subsystem_kpi_values_1",
+            "table": "subsystem_kpi_values",
+            "rootpage": 21,
+            "sql": null
+          }
+        ],
+        "views": [],
+        "triggers": []
+      },
+      "dbstat_available": true,
+      "dbstat": {
+        "available": true,
+        "error": null,
+        "source": "python_sqlite",
+        "objects": [
+          {
+            "name": "ccee_plant_parcel_hourly",
+            "bytes": 19384406016,
+            "pages": 4732521,
+            "payload_bytes": 17990587550,
+            "unused_bytes": 774955106
+          },
+          {
+            "name": "sqlite_autoindex_ccee_plant_parcel_hourly_1",
+            "bytes": 2577227776,
+            "pages": 629206,
+            "payload_bytes": 2354640864,
+            "unused_bytes": 14877452
+          },
+          {
+            "name": "idx_cppe_parcel_ref",
+            "bytes": 2383978496,
+            "pages": 582026,
+            "payload_bytes": 2166181200,
+            "unused_bytes": 10653996
+          },
+          {
+            "name": "idx_cppe_ref_month",
+            "bytes": 1139814400,
+            "pages": 278275,
+            "payload_bytes": 934075296,
+            "unused_bytes": 2240816
+          },
+          {
+            "name": "distribution_mmgd_projects",
+            "bytes": 678322176,
+            "pages": 165606,
+            "payload_bytes": 633904823,
+            "unused_bytes": 12255963
+          },
+          {
+            "name": "plant_parcel_daily_generation_mart",
+            "bytes": 667238400,
+            "pages": 162900,
+            "payload_bytes": 621438189,
+            "unused_bytes": 22867818
+          },
+          {
+            "name": "distribution_mmgd_project_snapshots",
+            "bytes": 621105152,
+            "pages": 151637,
+            "payload_bytes": 582296953,
+            "unused_bytes": 6900468
+          },
+          {
+            "name": "distribution_market_facts",
+            "bytes": 513536000,
+            "pages": 125375,
+            "payload_bytes": 478550956,
+            "unused_bytes": 19907628
+          },
+          {
+            "name": "distribution_delinquency_facts",
+            "bytes": 303468544,
+            "pages": 74089,
+            "payload_bytes": 282874549,
+            "unused_bytes": 10360669
+          },
+          {
+            "name": "distribution_energy_balance_facts",
+            "bytes": 264859648,
+            "pages": 64663,
+            "payload_bytes": 247744075,
+            "unused_bytes": 8095407
+          },
+          {
+            "name": "subsystem_kpi_values",
+            "bytes": 227852288,
+            "pages": 55628,
+            "payload_bytes": 215210648,
+            "unused_bytes": 6978897
+          },
+          {
+            "name": "distribution_continuity_facts",
+            "bytes": 218476544,
+            "pages": 53339,
+            "payload_bytes": 203126820,
+            "unused_bytes": 5297197
+          },
+          {
+            "name": "sqlite_autoindex_distribution_mmgd_project_snapshots_1",
+            "bytes": 183099392,
+            "pages": 44702,
+            "payload_bytes": 170225375,
+            "unused_bytes": 568045
+          },
+          {
+            "name": "distribution_tariff_facts",
+            "bytes": 148377600,
+            "pages": 36225,
+            "payload_bytes": 138007746,
+            "unused_bytes": 7533335
+          },
+          {
+            "name": "idx_dist_mmgd_snap",
+            "bytes": 134045696,
+            "pages": 32726,
+            "payload_bytes": 121585809,
+            "unused_bytes": 297627
+          },
+          {
+            "name": "sqlite_autoindex_distribution_delinquency_facts_1",
+            "bytes": 108240896,
+            "pages": 26426,
+            "payload_bytes": 102869523,
+            "unused_bytes": 1716399
+          },
+          {
+            "name": "sqlite_autoindex_distribution_mmgd_projects_1",
+            "bytes": 102453248,
+            "pages": 25013,
+            "payload_bytes": 90200337,
+            "unused_bytes": 183207
+          },
+          {
+            "name": "distribution_continuity_compensations",
+            "bytes": 98328576,
+            "pages": 24006,
+            "payload_bytes": 91868261,
+            "unused_bytes": 2239453
+          },
+          {
+            "name": "idx_ppdgm_parcel_month_date",
+            "bytes": 93585408,
+            "pages": 22848,
+            "payload_bytes": 84664683,
+            "unused_bytes": 306595
+          },
+          {
+            "name": "idx_dist_mmgd_proj",
+            "bytes": 88616960,
+            "pages": 21635,
+            "payload_bytes": 76202746,
+            "unused_bytes": 385046
+          },
+          {
+            "name": "sqlite_autoindex_distribution_market_facts_1",
+            "bytes": 80388096,
+            "pages": 19626,
+            "payload_bytes": 74792742,
+            "unused_bytes": 551305
+          },
+          {
+            "name": "idx_ppdgm_month_date",
+            "bytes": 75464704,
+            "pages": 18424,
+            "payload_bytes": 66686769,
+            "unused_bytes": 216893
+          },
+          {
+            "name": "distribution_continuity_limits",
+            "bytes": 74395648,
+            "pages": 18163,
+            "payload_bytes": 69540447,
+            "unused_bytes": 1495736
+          },
+          {
+            "name": "sqlite_autoindex_plant_parcel_daily_generation_mart_1",
+            "bytes": 71106560,
+            "pages": 17360,
+            "payload_bytes": 62424795,
+            "unused_bytes": 133491
+          },
+          {
+            "name": "sqlite_autoindex_distribution_continuity_facts_1",
+            "bytes": 56938496,
+            "pages": 13901,
+            "payload_bytes": 52809023,
+            "unused_bytes": 361585
+          },
+          {
+            "name": "idx_dist_market_ref",
+            "bytes": 54231040,
+            "pages": 13240,
+            "payload_bytes": 48932178,
+            "unused_bytes": 331445
+          },
+          {
+            "name": "sqlite_autoindex_distribution_energy_balance_facts_1",
+            "bytes": 49156096,
+            "pages": 12001,
+            "payload_bytes": 45740409,
+            "unused_bytes": 325181
+          },
+          {
+            "name": "sqlite_autoindex_subsystem_kpi_values_1",
+            "bytes": 47702016,
+            "pages": 11646,
+            "payload_bytes": 45117740,
+            "unused_bytes": 422624
+          },
+          {
+            "name": "ccee_plant_parcel_monthly",
+            "bytes": 43749376,
+            "pages": 10681,
+            "payload_bytes": 40497392,
+            "unused_bytes": 2511967
+          },
+          {
+            "name": "idx_dist_cont_ref",
+            "bytes": 42598400,
+            "pages": 10400,
+            "payload_bytes": 38642004,
+            "unused_bytes": 230520
+          },
+          {
+            "name": "idx_dist_cont_indicator_ref",
+            "bytes": 41377792,
+            "pages": 10102,
+            "payload_bytes": 37443696,
+            "unused_bytes": 211796
+          },
+          {
+            "name": "idx_skv_dataset_ref",
+            "bytes": 36188160,
+            "pages": 8835,
+            "payload_bytes": 33865488,
+            "unused_bytes": 194752
+          },
+          {
+            "name": "idx_dist_bal_ref",
+            "bytes": 33812480,
+            "pages": 8255,
+            "payload_bytes": 30670353,
+            "unused_bytes": 96573
+          },
+          {
+            "name": "idx_skv_snapshot",
+            "bytes": 30715904,
+            "pages": 7499,
+            "payload_bytes": 28306656,
+            "unused_bytes": 297360
+          },
+          {
+            "name": "sqlite_autoindex_distribution_tariff_facts_1",
+            "bytes": 30326784,
+            "pages": 7404,
+            "payload_bytes": 28817210,
+            "unused_bytes": 468803
+          },
+          {
+            "name": "sqlite_autoindex_distribution_continuity_compensations_1",
+            "bytes": 25911296,
+            "pages": 6326,
+            "payload_bytes": 24026055,
+            "unused_bytes": 175158
+          },
+          {
+            "name": "idx_dist_tariff_series_lookup",
+            "bytes": 22302720,
+            "pages": 5445,
+            "payload_bytes": 21107054,
+            "unused_bytes": 178403
+          },
+          {
+            "name": "idx_skv_subsystem_ref",
+            "bytes": 21196800,
+            "pages": 5175,
+            "payload_bytes": 19039596,
+            "unused_bytes": 73204
+          },
+          {
+            "name": "sqlite_autoindex_distribution_continuity_limits_1",
+            "bytes": 20717568,
+            "pages": 5058,
+            "payload_bytes": 19218759,
+            "unused_bytes": 130540
+          },
+          {
+            "name": "aneel_siga_plants",
+            "bytes": 8798208,
+            "pages": 2148,
+            "payload_bytes": 8340079,
+            "unused_bytes": 244902
+          },
+          {
+            "name": "distribution_monthly_aggregates",
+            "bytes": 4124672,
+            "pages": 1007,
+            "payload_bytes": 3847459,
+            "unused_bytes": 81161
+          },
+          {
+            "name": "idx_cppm_ceg",
+            "bytes": 2449408,
+            "pages": 598,
+            "payload_bytes": 2181920,
+            "unused_bytes": 12942
+          },
+          {
+            "name": "country_kpi_values",
+            "bytes": 2019328,
+            "pages": 493,
+            "payload_bytes": 1884235,
+            "unused_bytes": 50155
+          },
+          {
+            "name": "ccee_plant_parcels",
+            "bytes": 1888256,
+            "pages": 461,
+            "payload_bytes": 1753127,
+            "unused_bytes": 103549
+          },
+          {
+            "name": "idx_cppm_parcel_ref",
+            "bytes": 1839104,
+            "pages": 449,
+            "payload_bytes": 1573744,
+            "unused_bytes": 12602
+          },
+          {
+            "name": "sqlite_autoindex_ccee_plant_parcel_monthly_1",
+            "bytes": 1839104,
+            "pages": 449,
+            "payload_bytes": 1573744,
+            "unused_bytes": 12602
+          },
+          {
+            "name": "idx_cppm_source",
+            "bytes": 1814528,
+            "pages": 443,
+            "payload_bytes": 1550652,
+            "unused_bytes": 11190
+          },
+          {
+            "name": "distribution_tariff_conflicts",
+            "bytes": 1343488,
+            "pages": 328,
+            "payload_bytes": 1237492,
+            "unused_bytes": 88570
+          },
+          {
+            "name": "idx_cppm_ref",
+            "bytes": 1302528,
+            "pages": 318,
+            "payload_bytes": 1039073,
+            "unused_bytes": 12269
+          },
+          {
+            "name": "idx_cppm_submarket",
+            "bytes": 1265664,
+            "pages": 309,
+            "payload_bytes": 1004446,
+            "unused_bytes": 10140
+          },
+          {
+            "name": "idx_dist_monthly_agg",
+            "bytes": 1093632,
+            "pages": 267,
+            "payload_bytes": 986407,
+            "unused_bytes": 15627
+          },
+          {
+            "name": "sqlite_autoindex_distribution_monthly_aggregates_1",
+            "bytes": 1093632,
+            "pages": 267,
+            "payload_bytes": 986407,
+            "unused_bytes": 15627
+          },
+          {
+            "name": "sqlite_autoindex_aneel_siga_plants_1",
+            "bytes": 737280,
+            "pages": 180,
+            "payload_bytes": 648989,
+            "unused_bytes": 10385
+          },
+          {
+            "name": "sqlite_autoindex_country_kpi_values_1",
+            "bytes": 696320,
+            "pages": 170,
+            "payload_bytes": 647815,
+            "unused_bytes": 11534
+          },
+          {
+            "name": "idx_ckv_kpi_iso",
+            "bytes": 663552,
+            "pages": 162,
+            "payload_bytes": 612880,
+            "unused_bytes": 13797
+          },
+          {
+            "name": "idx_aneel_siga_source",
+            "bytes": 630784,
+            "pages": 154,
+            "payload_bytes": 541117,
+            "unused_bytes": 12073
+          },
+          {
+            "name": "idx_ckv_snapshot",
+            "bytes": 528384,
+            "pages": 129,
+            "payload_bytes": 477445,
+            "unused_bytes": 14460
+          },
+          {
+            "name": "sqlite_autoindex_distribution_tariff_conflicts_1",
+            "bytes": 348160,
+            "pages": 85,
+            "payload_bytes": 327804,
+            "unused_bytes": 11116
+          },
+          {
+            "name": "distribution_annual_aggregates",
+            "bytes": 339968,
+            "pages": 83,
+            "payload_bytes": 313019,
+            "unused_bytes": 11858
+          },
+          {
+            "name": "plant_parcel_source_submarket_monthly_mart",
+            "bytes": 311296,
+            "pages": 76,
+            "payload_bytes": 285333,
+            "unused_bytes": 17645
+          },
+          {
+            "name": "idx_aneel_siga_uf",
+            "bytes": 278528,
+            "pages": 68,
+            "payload_bytes": 194489,
+            "unused_bytes": 7477
+          },
+          {
+            "name": "idx_ckv_iso_period",
+            "bytes": 167936,
+            "pages": 41,
+            "payload_bytes": 128095,
+            "unused_bytes": 4418
+          },
+          {
+            "name": "idx_cpp_ceg",
+            "bytes": 122880,
+            "pages": 30,
+            "payload_bytes": 104439,
+            "unused_bytes": 5977
+          },
+          {
+            "name": "idx_cpp_source",
+            "bytes": 94208,
+            "pages": 23,
+            "payload_bytes": 74609,
+            "unused_bytes": 7219
+          },
+          {
+            "name": "sqlite_autoindex_distribution_annual_aggregates_1",
+            "bytes": 94208,
+            "pages": 23,
+            "payload_bytes": 78731,
+            "unused_bytes": 7456
+          },
+          {
+            "name": "idx_dist_annual_agg",
+            "bytes": 86016,
+            "pages": 21,
+            "payload_bytes": 73565,
+            "unused_bytes": 4454
+          },
+          {
+            "name": "energy_source_refresh_log",
+            "bytes": 65536,
+            "pages": 16,
+            "payload_bytes": 54430,
+            "unused_bytes": 10261
+          },
+          {
+            "name": "idx_cpp_ref_month",
+            "bytes": 65536,
+            "pages": 16,
+            "payload_bytes": 48432,
+            "unused_bytes": 4808
+          },
+          {
+            "name": "idx_cpp_submarket",
+            "bytes": 65536,
+            "pages": 16,
+            "payload_bytes": 46700,
+            "unused_bytes": 6540
+          },
+          {
+            "name": "sqlite_autoindex_ccee_plant_parcels_1",
+            "bytes": 61440,
+            "pages": 15,
+            "payload_bytes": 42849,
+            "unused_bytes": 6307
+          },
+          {
+            "name": "sqlite_autoindex_plant_parcel_source_submarket_monthly_mart_1",
+            "bytes": 53248,
+            "pages": 13,
+            "payload_bytes": 45264,
+            "unused_bytes": 4208
+          },
+          {
+            "name": "sqlite_schema",
+            "bytes": 53248,
+            "pages": 13,
+            "payload_bytes": 41936,
+            "unused_bytes": 10514
+          },
+          {
+            "name": "idx_ppssmm_source_month",
+            "bytes": 45056,
+            "pages": 11,
+            "payload_bytes": 37016,
+            "unused_bytes": 4288
+          },
+          {
+            "name": "conglomerate_asset_mappings",
+            "bytes": 40960,
+            "pages": 10,
+            "payload_bytes": 33322,
+            "unused_bytes": 4280
+          },
+          {
+            "name": "distribution_distributors",
+            "bytes": 40960,
+            "pages": 10,
+            "payload_bytes": 32081,
+            "unused_bytes": 7778
+          },
+          {
+            "name": "idx_ppssmm_submarket_month",
+            "bytes": 32768,
+            "pages": 8,
+            "payload_bytes": 22616,
+            "unused_bytes": 6436
+          },
+          {
+            "name": "source_snapshots",
+            "bytes": 32768,
+            "pages": 8,
+            "payload_bytes": 23780,
+            "unused_bytes": 8523
+          },
+          {
+            "name": "distribution_delinquency_indicators",
+            "bytes": 20480,
+            "pages": 5,
+            "payload_bytes": 10886,
+            "unused_bytes": 9059
+          },
+          {
+            "name": "kpi_catalog",
+            "bytes": 20480,
+            "pages": 5,
+            "payload_bytes": 15190,
+            "unused_bytes": 5025
+          },
+          {
+            "name": "sqlite_autoindex_conglomerate_asset_mappings_1",
+            "bytes": 20480,
+            "pages": 5,
+            "payload_bytes": 11494,
+            "unused_bytes": 7004
+          },
+          {
+            "name": "data_quality_checks",
+            "bytes": 16384,
+            "pages": 4,
+            "payload_bytes": 7923,
+            "unused_bytes": 8256
+          },
+          {
+            "name": "distribution_ownership_history",
+            "bytes": 12288,
+            "pages": 3,
+            "payload_bytes": 4078,
+            "unused_bytes": 7996
+          },
+          {
+            "name": "idx_esrl_source_started",
+            "bytes": 12288,
+            "pages": 3,
+            "payload_bytes": 6315,
+            "unused_bytes": 5572
+          },
+          {
+            "name": "sqlite_autoindex_distribution_distributors_1",
+            "bytes": 12288,
+            "pages": 3,
+            "payload_bytes": 4751,
+            "unused_bytes": 6968
+          },
+          {
+            "name": "sqlite_autoindex_energy_source_refresh_log_1",
+            "bytes": 12288,
+            "pages": 3,
+            "payload_bytes": 4919,
+            "unused_bytes": 6968
+          },
+          {
+            "name": "ccee_discovered_resources",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 0,
+            "unused_bytes": 4088
+          },
+          {
+            "name": "country_dimension",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 168,
+            "unused_bytes": 3896
+          },
+          {
+            "name": "distribution_distributor_aliases",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 2651,
+            "unused_bytes": 1318
+          },
+          {
+            "name": "distribution_economic_groups",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 625,
+            "unused_bytes": 3413
+          },
+          {
+            "name": "distribution_listed_companies",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 737,
+            "unused_bytes": 3308
+          },
+          {
+            "name": "energy_mart_builds",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 431,
+            "unused_bytes": 3647
+          },
+          {
+            "name": "energy_sources",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 1297,
+            "unused_bytes": 2773
+          },
+          {
+            "name": "idx_cdr_dataset_period",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 0,
+            "unused_bytes": 4088
+          },
+          {
+            "name": "idx_dqc_run",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 1239,
+            "unused_bytes": 2756
+          },
+          {
+            "name": "idx_pphpm_parcel_ref",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 0,
+            "unused_bytes": 4088
+          },
+          {
+            "name": "kpi_refresh_log",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 1655,
+            "unused_bytes": 2406
+          },
+          {
+            "name": "kpi_sources",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 1199,
+            "unused_bytes": 2859
+          },
+          {
+            "name": "plant_parcel_hourly_preview_mart",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 0,
+            "unused_bytes": 4088
+          },
+          {
+            "name": "sqlite_autoindex_ccee_discovered_resources_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 0,
+            "unused_bytes": 4088
+          },
+          {
+            "name": "sqlite_autoindex_country_dimension_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 42,
+            "unused_bytes": 4028
+          },
+          {
+            "name": "sqlite_autoindex_data_quality_checks_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 1239,
+            "unused_bytes": 2756
+          },
+          {
+            "name": "sqlite_autoindex_distribution_delinquency_indicators_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 956,
+            "unused_bytes": 2892
+          },
+          {
+            "name": "sqlite_autoindex_distribution_distributor_aliases_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 426,
+            "unused_bytes": 3593
+          },
+          {
+            "name": "sqlite_autoindex_distribution_economic_groups_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 117,
+            "unused_bytes": 3941
+          },
+          {
+            "name": "sqlite_autoindex_distribution_ownership_history_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 587,
+            "unused_bytes": 3405
+          },
+          {
+            "name": "sqlite_autoindex_energy_mart_builds_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 83,
+            "unused_bytes": 3999
+          },
+          {
+            "name": "sqlite_autoindex_energy_sources_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 85,
+            "unused_bytes": 3994
+          },
+          {
+            "name": "sqlite_autoindex_kpi_catalog_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 1807,
+            "unused_bytes": 2161
+          },
+          {
+            "name": "sqlite_autoindex_kpi_refresh_log_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 239,
+            "unused_bytes": 3831
+          },
+          {
+            "name": "sqlite_autoindex_kpi_sources_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 47,
+            "unused_bytes": 4023
+          },
+          {
+            "name": "sqlite_autoindex_plant_parcel_hourly_preview_mart_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 0,
+            "unused_bytes": 4088
+          },
+          {
+            "name": "sqlite_autoindex_source_snapshots_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 2839,
+            "unused_bytes": 1036
+          },
+          {
+            "name": "sqlite_autoindex_subsystem_dimension_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 25,
+            "unused_bytes": 4051
+          },
+          {
+            "name": "subsystem_dimension",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 231,
+            "unused_bytes": 3841
+          }
+        ]
+      },
+      "row_counts": {
+        "aneel_siga_plants": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "ccee_discovered_resources": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "ccee_plant_parcel_hourly": {
+          "row_count": null,
+          "counted": false,
+          "reason": "requires_exact_counts_flag"
+        },
+        "ccee_plant_parcel_monthly": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "ccee_plant_parcels": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "conglomerate_asset_mappings": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "country_dimension": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "country_kpi_values": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "data_quality_checks": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "distribution_annual_aggregates": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "distribution_continuity_compensations": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "distribution_continuity_facts": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "distribution_continuity_limits": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "distribution_delinquency_facts": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "distribution_delinquency_indicators": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "distribution_distributor_aliases": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "distribution_distributors": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "distribution_economic_groups": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "distribution_energy_balance_facts": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "distribution_listed_companies": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "distribution_market_facts": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "distribution_mmgd_project_snapshots": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "distribution_mmgd_projects": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "distribution_monthly_aggregates": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "distribution_ownership_history": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "distribution_tariff_conflicts": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "distribution_tariff_facts": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "energy_mart_builds": {
+          "row_count": 2,
+          "counted": true,
+          "reason": "safe_count"
+        },
+        "energy_source_refresh_log": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "energy_sources": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "kpi_catalog": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "kpi_refresh_log": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "kpi_sources": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "plant_parcel_daily_generation_mart": {
+          "row_count": 2779986,
+          "counted": true,
+          "reason": "safe_count"
+        },
+        "plant_parcel_hourly_preview_mart": {
+          "row_count": 0,
+          "counted": true,
+          "reason": "safe_count"
+        },
+        "plant_parcel_source_submarket_monthly_mart": {
+          "row_count": 1208,
+          "counted": true,
+          "reason": "safe_count"
+        },
+        "source_snapshots": {
+          "row_count": 71,
+          "counted": true,
+          "reason": "safe_count"
+        },
+        "subsystem_dimension": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "subsystem_kpi_values": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        }
+      },
+      "errors": []
+    },
+    "news": {
+      "path": "C:\\Users\\jadaojoao\\Documents\\CVMAnalytics\\db\\news.db",
+      "exists": true,
+      "file": {
+        "path": "C:\\Users\\jadaojoao\\Documents\\CVMAnalytics\\db\\news.db",
+        "exists": true,
+        "size_bytes": 12451840,
+        "mtime_utc": "2026-06-21T20:04:31Z"
+      },
+      "sidecars": {
+        "wal": {
+          "path": "C:\\Users\\jadaojoao\\Documents\\CVMAnalytics\\db\\news.db-wal",
+          "exists": true,
+          "size_bytes": 4519672,
+          "mtime_utc": "2026-06-21T20:42:02Z"
+        },
+        "shm": {
+          "path": "C:\\Users\\jadaojoao\\Documents\\CVMAnalytics\\db\\news.db-shm",
+          "exists": true,
+          "size_bytes": 32768,
+          "mtime_utc": "2026-06-21T20:41:34Z"
+        },
+        "total_size_bytes": 4552440
+      },
+      "read_only": true,
+      "sqlite": {
+        "page_size": 4096,
+        "page_count": 3040,
+        "freelist_count": 433,
+        "estimated_free_bytes": 1773568
+      },
+      "sqlite_master": {
+        "tables": [
+          {
+            "name": "news_article_companies",
+            "table": "news_article_companies",
+            "rootpage": 14,
+            "sql": "CREATE TABLE news_article_companies (\n            article_id       TEXT NOT NULL REFERENCES news_articles(article_id) ON DELETE CASCADE,\n            cd_cvm           INTEGER NOT NULL,\n            match_method     TEXT NOT NULL,\n            match_reason     TEXT NOT NULL,\n            relevance_score  REAL,\n            rule_strength    REAL,\n            is_primary       INTEGER NOT NULL DEFAULT 0,\n            manually_reviewed INTEGER NOT NULL DEFAULT 0,\n            created_at       TEXT NOT NULL DEFAULT (datetime('now')),\n            PRIMARY KEY (article_id, cd_cvm, match_method, match_reason)\n        )"
+          },
+          {
+            "name": "news_article_content",
+            "table": "news_article_content",
+            "rootpage": 62,
+            "sql": "CREATE TABLE news_article_content (\n            article_id      TEXT PRIMARY KEY REFERENCES news_articles(article_id) ON DELETE CASCADE,\n            content_text    TEXT NOT NULL,\n            content_format  TEXT NOT NULL DEFAULT 'text',\n            source_policy   TEXT,\n            storage_bytes   INTEGER NOT NULL DEFAULT 0,\n            extracted_at    TEXT NOT NULL DEFAULT (datetime('now')),\n            created_at      TEXT NOT NULL DEFAULT (datetime('now')),\n            updated_at      TEXT NOT NULL DEFAULT (datetime('now'))\n        )"
+          },
+          {
+            "name": "news_article_event_types",
+            "table": "news_article_event_types",
+            "rootpage": 27,
+            "sql": "CREATE TABLE news_article_event_types (\n            article_id      TEXT NOT NULL REFERENCES news_articles(article_id) ON DELETE CASCADE,\n            event_type_id   TEXT NOT NULL REFERENCES news_event_types(event_type_id),\n            match_method    TEXT NOT NULL,\n            match_reason    TEXT NOT NULL,\n            relevance_score REAL,\n            created_at      TEXT NOT NULL DEFAULT (datetime('now')),\n            PRIMARY KEY (article_id, event_type_id, match_method)\n        )"
+          },
+          {
+            "name": "news_article_keyword_matches",
+            "table": "news_article_keyword_matches",
+            "rootpage": 31,
+            "sql": "CREATE TABLE news_article_keyword_matches (\n            article_id       TEXT NOT NULL REFERENCES news_articles(article_id) ON DELETE CASCADE,\n            keyword_rule_id  TEXT NOT NULL REFERENCES news_keyword_rules(keyword_rule_id),\n            matched_term     TEXT NOT NULL,\n            match_method     TEXT NOT NULL,\n            match_reason     TEXT NOT NULL,\n            relevance_score  REAL,\n            created_at       TEXT NOT NULL DEFAULT (datetime('now')),\n            PRIMARY KEY (article_id, keyword_rule_id, matched_term)\n        )"
+          },
+          {
+            "name": "news_article_scores",
+            "table": "news_article_scores",
+            "rootpage": 58,
+            "sql": "CREATE TABLE news_article_scores (\n            article_id      TEXT PRIMARY KEY REFERENCES news_articles(article_id) ON DELETE CASCADE,\n            total_score     REAL NOT NULL DEFAULT 0,\n            priority_level  TEXT NOT NULL DEFAULT 'Normal',\n            components_json TEXT NOT NULL,\n            reasons_json    TEXT NOT NULL,\n            updated_at      TEXT NOT NULL DEFAULT (datetime('now'))\n        )"
+          },
+          {
+            "name": "news_article_sectors",
+            "table": "news_article_sectors",
+            "rootpage": 16,
+            "sql": "CREATE TABLE news_article_sectors (\n            article_id       TEXT NOT NULL REFERENCES news_articles(article_id) ON DELETE CASCADE,\n            sector_slug      TEXT NOT NULL,\n            sector_name      TEXT NOT NULL,\n            match_method     TEXT NOT NULL,\n            match_reason     TEXT NOT NULL,\n            relevance_score  REAL,\n            rule_strength    REAL,\n            is_primary       INTEGER NOT NULL DEFAULT 0,\n            manually_reviewed INTEGER NOT NULL DEFAULT 0,\n            created_at       TEXT NOT NULL DEFAULT (datetime('now')), parent_sector_slug TEXT, parent_sector_name TEXT,\n            PRIMARY KEY (article_id, sector_slug, match_method, match_reason)\n        )"
+          },
+          {
+            "name": "news_article_topics",
+            "table": "news_article_topics",
+            "rootpage": 22,
+            "sql": "CREATE TABLE news_article_topics (\n            article_id      TEXT NOT NULL REFERENCES news_articles(article_id) ON DELETE CASCADE,\n            topic_id        TEXT NOT NULL REFERENCES news_topics(topic_id),\n            match_method    TEXT NOT NULL,\n            match_reason    TEXT NOT NULL,\n            relevance_score REAL,\n            created_at      TEXT NOT NULL DEFAULT (datetime('now')),\n            PRIMARY KEY (article_id, topic_id, match_method)\n        )"
+          },
+          {
+            "name": "news_articles",
+            "table": "news_articles",
+            "rootpage": 6,
+            "sql": "CREATE TABLE news_articles (\n            article_id       TEXT PRIMARY KEY,\n            source_id        TEXT NOT NULL REFERENCES news_sources(source_id) ON DELETE CASCADE,\n            source_item_id   TEXT,\n            title            TEXT NOT NULL,\n            source_name      TEXT NOT NULL,\n            original_url     TEXT NOT NULL,\n            canonical_url    TEXT NOT NULL,\n            published_at     TEXT,\n            discovered_at    TEXT NOT NULL,\n            fetched_at       TEXT,\n            extracted_at     TEXT,\n            summary          TEXT,\n            language         TEXT,\n            content_status   TEXT NOT NULL DEFAULT 'metadata_only',\n            paywall_status   TEXT,\n            created_at       TEXT NOT NULL DEFAULT (datetime('now')),\n            updated_at       TEXT NOT NULL DEFAULT (datetime('now')),\n            UNIQUE(canonical_url)\n        )"
+          },
+          {
+            "name": "news_articles_fts",
+            "table": "news_articles_fts",
+            "rootpage": 0,
+            "sql": "CREATE VIRTUAL TABLE news_articles_fts\n            USING fts5(article_id UNINDEXED, title, summary, tokenize='unicode61 remove_diacritics 2')"
+          },
+          {
+            "name": "news_articles_fts_config",
+            "table": "news_articles_fts_config",
+            "rootpage": 52,
+            "sql": "CREATE TABLE 'news_articles_fts_config'(k PRIMARY KEY, v) WITHOUT ROWID"
+          },
+          {
+            "name": "news_articles_fts_content",
+            "table": "news_articles_fts_content",
+            "rootpage": 55,
+            "sql": "CREATE TABLE 'news_articles_fts_content'(id INTEGER PRIMARY KEY, c0, c1, c2)"
+          },
+          {
+            "name": "news_articles_fts_data",
+            "table": "news_articles_fts_data",
+            "rootpage": 53,
+            "sql": "CREATE TABLE 'news_articles_fts_data'(id INTEGER PRIMARY KEY, block BLOB)"
+          },
+          {
+            "name": "news_articles_fts_docsize",
+            "table": "news_articles_fts_docsize",
+            "rootpage": 56,
+            "sql": "CREATE TABLE 'news_articles_fts_docsize'(id INTEGER PRIMARY KEY, sz BLOB)"
+          },
+          {
+            "name": "news_articles_fts_idx",
+            "table": "news_articles_fts_idx",
+            "rootpage": 54,
+            "sql": "CREATE TABLE 'news_articles_fts_idx'(segid, term, pgno, PRIMARY KEY(segid, term)) WITHOUT ROWID"
+          },
+          {
+            "name": "news_classification_corrections",
+            "table": "news_classification_corrections",
+            "rootpage": 36,
+            "sql": "CREATE TABLE news_classification_corrections (\n            correction_id       TEXT PRIMARY KEY,\n            article_id          TEXT NOT NULL REFERENCES news_articles(article_id) ON DELETE CASCADE,\n            target_type         TEXT NOT NULL,\n            target_id           TEXT NOT NULL,\n            original_value_json TEXT,\n            original_match_reason TEXT,\n            user_value_json     TEXT NOT NULL,\n            correction_action   TEXT NOT NULL,\n            rule_suggestion     TEXT,\n            created_at          TEXT NOT NULL DEFAULT (datetime('now'))\n        )"
+          },
+          {
+            "name": "news_collection_runs",
+            "table": "news_collection_runs",
+            "rootpage": 38,
+            "sql": "CREATE TABLE news_collection_runs (\n            run_id          TEXT PRIMARY KEY,\n            trigger         TEXT NOT NULL,\n            status          TEXT NOT NULL,\n            started_at      TEXT NOT NULL,\n            finished_at     TEXT,\n            source_count    INTEGER NOT NULL DEFAULT 0,\n            articles_seen   INTEGER NOT NULL DEFAULT 0,\n            articles_inserted INTEGER NOT NULL DEFAULT 0,\n            articles_updated INTEGER NOT NULL DEFAULT 0,\n            error_count     INTEGER NOT NULL DEFAULT 0,\n            error_message   TEXT\n        )"
+          },
+          {
+            "name": "news_company_scope_overrides",
+            "table": "news_company_scope_overrides",
+            "rootpage": 60,
+            "sql": "CREATE TABLE news_company_scope_overrides (\n            cd_cvm     INTEGER PRIMARY KEY,\n            action     TEXT NOT NULL CHECK(action IN ('include', 'exclude')),\n            reason     TEXT,\n            created_at TEXT NOT NULL DEFAULT (datetime('now')),\n            updated_at TEXT NOT NULL DEFAULT (datetime('now'))\n        )"
+          },
+          {
+            "name": "news_company_scope_settings",
+            "table": "news_company_scope_settings",
+            "rootpage": 476,
+            "sql": "CREATE TABLE news_company_scope_settings (\n            settings_id                  TEXT PRIMARY KEY DEFAULT 'default',\n            coverage_universe_id         TEXT,\n            created_at                   TEXT NOT NULL DEFAULT (datetime('now')),\n            updated_at                   TEXT NOT NULL DEFAULT (datetime('now'))\n        )"
+          },
+          {
+            "name": "news_event_articles",
+            "table": "news_event_articles",
+            "rootpage": 12,
+            "sql": "CREATE TABLE news_event_articles (\n            event_id   TEXT NOT NULL REFERENCES news_events(event_id) ON DELETE CASCADE,\n            article_id TEXT NOT NULL REFERENCES news_articles(article_id) ON DELETE CASCADE,\n            role       TEXT NOT NULL DEFAULT 'related',\n            created_at TEXT NOT NULL DEFAULT (datetime('now')),\n            PRIMARY KEY (event_id, article_id)\n        )"
+          },
+          {
+            "name": "news_event_types",
+            "table": "news_event_types",
+            "rootpage": 24,
+            "sql": "CREATE TABLE news_event_types (\n            event_type_id TEXT PRIMARY KEY,\n            category      TEXT NOT NULL,\n            sub_event     TEXT,\n            active        INTEGER NOT NULL DEFAULT 1,\n            UNIQUE(category, sub_event)\n        )"
+          },
+          {
+            "name": "news_events",
+            "table": "news_events",
+            "rootpage": 9,
+            "sql": "CREATE TABLE news_events (\n            event_id        TEXT PRIMARY KEY,\n            canonical_title TEXT NOT NULL,\n            event_key       TEXT NOT NULL UNIQUE,\n            main_article_id TEXT,\n            created_at      TEXT NOT NULL DEFAULT (datetime('now')),\n            updated_at      TEXT NOT NULL DEFAULT (datetime('now'))\n        )"
+          },
+          {
+            "name": "news_google_company_feed_settings",
+            "table": "news_google_company_feed_settings",
+            "rootpage": 120,
+            "sql": "CREATE TABLE news_google_company_feed_settings (\n            settings_id     TEXT PRIMARY KEY DEFAULT 'default',\n            enabled         INTEGER NOT NULL DEFAULT 0,\n            max_companies   INTEGER NOT NULL DEFAULT 50,\n            priority        INTEGER NOT NULL DEFAULT 140,\n            locale          TEXT NOT NULL DEFAULT 'pt-BR',\n            country         TEXT NOT NULL DEFAULT 'BR',\n            created_at      TEXT NOT NULL DEFAULT (datetime('now')),\n            updated_at      TEXT NOT NULL DEFAULT (datetime('now'))\n        )"
+          },
+          {
+            "name": "news_keyword_rules",
+            "table": "news_keyword_rules",
+            "rootpage": 29,
+            "sql": "CREATE TABLE news_keyword_rules (\n            keyword_rule_id TEXT PRIMARY KEY,\n            group_name      TEXT NOT NULL,\n            term            TEXT NOT NULL,\n            aliases_json    TEXT,\n            priority        INTEGER NOT NULL DEFAULT 100,\n            cd_cvm          INTEGER,\n            sector_slug     TEXT,\n            active          INTEGER NOT NULL DEFAULT 1,\n            user_defined    INTEGER NOT NULL DEFAULT 0,\n            created_at      TEXT NOT NULL DEFAULT (datetime('now')),\n            updated_at      TEXT NOT NULL DEFAULT (datetime('now'))\n        )"
+          },
+          {
+            "name": "news_retention_policy",
+            "table": "news_retention_policy",
+            "rootpage": 65,
+            "sql": "CREATE TABLE news_retention_policy (\n            policy_id                    TEXT PRIMARY KEY DEFAULT 'default',\n            metadata_retention_days       INTEGER NOT NULL DEFAULT 1825,\n            extracted_text_retention_days INTEGER NOT NULL DEFAULT 90,\n            total_storage_limit_mb        INTEGER NOT NULL DEFAULT 512,\n            preserve_saved                INTEGER NOT NULL DEFAULT 1,\n            preserve_official_documents   INTEGER NOT NULL DEFAULT 1,\n            updated_at                    TEXT NOT NULL DEFAULT (datetime('now'))\n        )"
+          },
+          {
+            "name": "news_schema_capabilities",
+            "table": "news_schema_capabilities",
+            "rootpage": 2,
+            "sql": "CREATE TABLE news_schema_capabilities (\n            key        TEXT PRIMARY KEY,\n            value      TEXT NOT NULL,\n            updated_at TEXT NOT NULL DEFAULT (datetime('now'))\n        )"
+          },
+          {
+            "name": "news_source_health",
+            "table": "news_source_health",
+            "rootpage": 40,
+            "sql": "CREATE TABLE news_source_health (\n            source_id          TEXT PRIMARY KEY REFERENCES news_sources(source_id) ON DELETE CASCADE,\n            last_attempt_at    TEXT,\n            last_success_at    TEXT,\n            last_status        TEXT,\n            last_error         TEXT,\n            last_http_status   INTEGER,\n            consecutive_failures INTEGER NOT NULL DEFAULT 0,\n            last_article_count INTEGER NOT NULL DEFAULT 0,\n            updated_at         TEXT NOT NULL DEFAULT (datetime('now'))\n        )"
+          },
+          {
+            "name": "news_sources",
+            "table": "news_sources",
+            "rootpage": 4,
+            "sql": "CREATE TABLE news_sources (\n            source_id        TEXT PRIMARY KEY,\n            name             TEXT NOT NULL,\n            source_type      TEXT NOT NULL,\n            reliability_layer TEXT NOT NULL,\n            feed_url         TEXT NOT NULL,\n            homepage_url     TEXT,\n            enabled          INTEGER NOT NULL DEFAULT 1,\n            priority         INTEGER NOT NULL DEFAULT 100,\n            user_defined     INTEGER NOT NULL DEFAULT 0,\n            etag             TEXT,\n            last_modified    TEXT,\n            created_at       TEXT NOT NULL DEFAULT (datetime('now')),\n            updated_at       TEXT NOT NULL DEFAULT (datetime('now'))\n        , allow_content_storage INTEGER NOT NULL DEFAULT 0)"
+          },
+          {
+            "name": "news_topics",
+            "table": "news_topics",
+            "rootpage": 20,
+            "sql": "CREATE TABLE news_topics (\n            topic_id   TEXT PRIMARY KEY,\n            label      TEXT NOT NULL,\n            topic_type TEXT NOT NULL,\n            active     INTEGER NOT NULL DEFAULT 1\n        )"
+          },
+          {
+            "name": "news_user_state",
+            "table": "news_user_state",
+            "rootpage": 34,
+            "sql": "CREATE TABLE news_user_state (\n            article_id TEXT PRIMARY KEY REFERENCES news_articles(article_id) ON DELETE CASCADE,\n            read       INTEGER NOT NULL DEFAULT 0,\n            saved      INTEGER NOT NULL DEFAULT 0,\n            hidden     INTEGER NOT NULL DEFAULT 0,\n            read_later INTEGER NOT NULL DEFAULT 0,\n            notes      TEXT,\n            created_at TEXT NOT NULL DEFAULT (datetime('now')),\n            updated_at TEXT NOT NULL DEFAULT (datetime('now'))\n        )"
+          }
+        ],
+        "indexes": [
+          {
+            "name": "idx_news_article_companies_cd_cvm",
+            "table": "news_article_companies",
+            "rootpage": 46,
+            "sql": "CREATE INDEX idx_news_article_companies_cd_cvm ON news_article_companies(cd_cvm, article_id)"
+          },
+          {
+            "name": "idx_news_article_content_extracted",
+            "table": "news_article_content",
+            "rootpage": 67,
+            "sql": "CREATE INDEX idx_news_article_content_extracted ON news_article_content(extracted_at, storage_bytes)"
+          },
+          {
+            "name": "idx_news_article_scores_priority",
+            "table": "news_article_scores",
+            "rootpage": 61,
+            "sql": "CREATE INDEX idx_news_article_scores_priority ON news_article_scores(priority_level, total_score DESC)"
+          },
+          {
+            "name": "idx_news_article_sectors_slug",
+            "table": "news_article_sectors",
+            "rootpage": 48,
+            "sql": "CREATE INDEX idx_news_article_sectors_slug ON news_article_sectors(sector_slug, article_id)"
+          },
+          {
+            "name": "idx_news_articles_canonical_url",
+            "table": "news_articles",
+            "rootpage": 45,
+            "sql": "CREATE INDEX idx_news_articles_canonical_url ON news_articles(canonical_url)"
+          },
+          {
+            "name": "idx_news_articles_discovered",
+            "table": "news_articles",
+            "rootpage": 44,
+            "sql": "CREATE INDEX idx_news_articles_discovered ON news_articles(discovered_at DESC)"
+          },
+          {
+            "name": "idx_news_articles_published",
+            "table": "news_articles",
+            "rootpage": 43,
+            "sql": "CREATE INDEX idx_news_articles_published ON news_articles(published_at DESC)"
+          },
+          {
+            "name": "idx_news_articles_source_published",
+            "table": "news_articles",
+            "rootpage": 42,
+            "sql": "CREATE INDEX idx_news_articles_source_published ON news_articles(source_id, published_at DESC)"
+          },
+          {
+            "name": "idx_news_company_scope_overrides_action",
+            "table": "news_company_scope_overrides",
+            "rootpage": 57,
+            "sql": "CREATE INDEX idx_news_company_scope_overrides_action ON news_company_scope_overrides(action, cd_cvm)"
+          },
+          {
+            "name": "idx_news_keyword_active",
+            "table": "news_keyword_rules",
+            "rootpage": 51,
+            "sql": "CREATE INDEX idx_news_keyword_active ON news_keyword_rules(active, group_name)"
+          },
+          {
+            "name": "idx_news_user_state_hidden",
+            "table": "news_user_state",
+            "rootpage": 50,
+            "sql": "CREATE INDEX idx_news_user_state_hidden ON news_user_state(hidden, article_id)"
+          },
+          {
+            "name": "idx_news_user_state_saved",
+            "table": "news_user_state",
+            "rootpage": 49,
+            "sql": "CREATE INDEX idx_news_user_state_saved ON news_user_state(saved, article_id)"
+          },
+          {
+            "name": "sqlite_autoindex_news_article_companies_1",
+            "table": "news_article_companies",
+            "rootpage": 15,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_news_article_content_1",
+            "table": "news_article_content",
+            "rootpage": 64,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_news_article_event_types_1",
+            "table": "news_article_event_types",
+            "rootpage": 28,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_news_article_keyword_matches_1",
+            "table": "news_article_keyword_matches",
+            "rootpage": 32,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_news_article_scores_1",
+            "table": "news_article_scores",
+            "rootpage": 59,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_news_article_sectors_1",
+            "table": "news_article_sectors",
+            "rootpage": 17,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_news_article_topics_1",
+            "table": "news_article_topics",
+            "rootpage": 23,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_news_articles_1",
+            "table": "news_articles",
+            "rootpage": 7,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_news_articles_2",
+            "table": "news_articles",
+            "rootpage": 8,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_news_classification_corrections_1",
+            "table": "news_classification_corrections",
+            "rootpage": 37,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_news_collection_runs_1",
+            "table": "news_collection_runs",
+            "rootpage": 39,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_news_company_scope_settings_1",
+            "table": "news_company_scope_settings",
+            "rootpage": 479,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_news_event_articles_1",
+            "table": "news_event_articles",
+            "rootpage": 13,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_news_event_types_1",
+            "table": "news_event_types",
+            "rootpage": 25,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_news_event_types_2",
+            "table": "news_event_types",
+            "rootpage": 26,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_news_events_1",
+            "table": "news_events",
+            "rootpage": 10,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_news_events_2",
+            "table": "news_events",
+            "rootpage": 11,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_news_google_company_feed_settings_1",
+            "table": "news_google_company_feed_settings",
+            "rootpage": 162,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_news_keyword_rules_1",
+            "table": "news_keyword_rules",
+            "rootpage": 30,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_news_retention_policy_1",
+            "table": "news_retention_policy",
+            "rootpage": 66,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_news_schema_capabilities_1",
+            "table": "news_schema_capabilities",
+            "rootpage": 3,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_news_source_health_1",
+            "table": "news_source_health",
+            "rootpage": 41,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_news_sources_1",
+            "table": "news_sources",
+            "rootpage": 5,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_news_topics_1",
+            "table": "news_topics",
+            "rootpage": 21,
+            "sql": null
+          },
+          {
+            "name": "sqlite_autoindex_news_user_state_1",
+            "table": "news_user_state",
+            "rootpage": 35,
+            "sql": null
+          }
+        ],
+        "views": [],
+        "triggers": []
+      },
+      "dbstat_available": true,
+      "dbstat": {
+        "available": true,
+        "error": null,
+        "source": "python_sqlite",
+        "objects": [
+          {
+            "name": "news_articles",
+            "bytes": 3862528,
+            "pages": 943,
+            "payload_bytes": 2927516,
+            "unused_bytes": 911373
+          },
+          {
+            "name": "news_articles_fts_content",
+            "bytes": 1564672,
+            "pages": 382,
+            "payload_bytes": 1383655,
+            "unused_bytes": 166281
+          },
+          {
+            "name": "news_article_content",
+            "bytes": 913408,
+            "pages": 223,
+            "payload_bytes": 829024,
+            "unused_bytes": 80494
+          },
+          {
+            "name": "news_articles_fts_data",
+            "bytes": 827392,
+            "pages": 202,
+            "payload_bytes": 796127,
+            "unused_bytes": 25168
+          },
+          {
+            "name": "news_article_scores",
+            "bytes": 704512,
+            "pages": 172,
+            "payload_bytes": 650875,
+            "unused_bytes": 41568
+          },
+          {
+            "name": "idx_news_articles_canonical_url",
+            "bytes": 532480,
+            "pages": 130,
+            "payload_bytes": 404659,
+            "unused_bytes": 120335
+          },
+          {
+            "name": "sqlite_autoindex_news_articles_2",
+            "bytes": 532480,
+            "pages": 130,
+            "payload_bytes": 404659,
+            "unused_bytes": 120335
+          },
+          {
+            "name": "news_article_sectors",
+            "bytes": 212992,
+            "pages": 52,
+            "payload_bytes": 177711,
+            "unused_bytes": 29750
+          },
+          {
+            "name": "sqlite_autoindex_news_article_sectors_1",
+            "bytes": 159744,
+            "pages": 39,
+            "payload_bytes": 132681,
+            "unused_bytes": 23447
+          },
+          {
+            "name": "news_article_keyword_matches",
+            "bytes": 126976,
+            "pages": 31,
+            "payload_bytes": 97572,
+            "unused_bytes": 25440
+          },
+          {
+            "name": "idx_news_articles_source_published",
+            "bytes": 110592,
+            "pages": 27,
+            "payload_bytes": 85172,
+            "unused_bytes": 20366
+          },
+          {
+            "name": "idx_news_articles_discovered",
+            "bytes": 98304,
+            "pages": 24,
+            "payload_bytes": 47212,
+            "unused_bytes": 46074
+          },
+          {
+            "name": "news_article_topics",
+            "bytes": 86016,
+            "pages": 21,
+            "payload_bytes": 70642,
+            "unused_bytes": 12415
+          },
+          {
+            "name": "sqlite_autoindex_news_article_scores_1",
+            "bytes": 81920,
+            "pages": 20,
+            "payload_bytes": 64570,
+            "unused_bytes": 12380
+          },
+          {
+            "name": "sqlite_autoindex_news_articles_1",
+            "bytes": 81920,
+            "pages": 20,
+            "payload_bytes": 64570,
+            "unused_bytes": 12380
+          },
+          {
+            "name": "news_article_companies",
+            "bytes": 77824,
+            "pages": 19,
+            "payload_bytes": 54263,
+            "unused_bytes": 21100
+          },
+          {
+            "name": "idx_news_articles_published",
+            "bytes": 61440,
+            "pages": 15,
+            "payload_bytes": 47212,
+            "unused_bytes": 9318
+          },
+          {
+            "name": "idx_news_article_sectors_slug",
+            "bytes": 57344,
+            "pages": 14,
+            "payload_bytes": 44155,
+            "unused_bytes": 10661
+          },
+          {
+            "name": "sqlite_autoindex_news_article_companies_1",
+            "bytes": 57344,
+            "pages": 14,
+            "payload_bytes": 44859,
+            "unused_bytes": 11051
+          },
+          {
+            "name": "news_article_event_types",
+            "bytes": 49152,
+            "pages": 12,
+            "payload_bytes": 30569,
+            "unused_bytes": 17326
+          },
+          {
+            "name": "sqlite_autoindex_news_article_keyword_matches_1",
+            "bytes": 49152,
+            "pages": 12,
+            "payload_bytes": 38330,
+            "unused_bytes": 8939
+          },
+          {
+            "name": "idx_news_article_scores_priority",
+            "bytes": 45056,
+            "pages": 11,
+            "payload_bytes": 31176,
+            "unused_bytes": 9018
+          },
+          {
+            "name": "sqlite_autoindex_news_article_topics_1",
+            "bytes": 40960,
+            "pages": 10,
+            "payload_bytes": 32282,
+            "unused_bytes": 7242
+          },
+          {
+            "name": "idx_news_article_companies_cd_cvm",
+            "bytes": 28672,
+            "pages": 7,
+            "payload_bytes": 18603,
+            "unused_bytes": 8720
+          },
+          {
+            "name": "news_articles_fts_docsize",
+            "bytes": 28672,
+            "pages": 7,
+            "payload_bytes": 9513,
+            "unused_bytes": 11296
+          },
+          {
+            "name": "news_collection_runs",
+            "bytes": 28672,
+            "pages": 7,
+            "payload_bytes": 22107,
+            "unused_bytes": 5619
+          },
+          {
+            "name": "sqlite_schema",
+            "bytes": 24576,
+            "pages": 6,
+            "payload_bytes": 16928,
+            "unused_bytes": 7163
+          },
+          {
+            "name": "sqlite_autoindex_news_article_content_1",
+            "bytes": 20480,
+            "pages": 5,
+            "payload_bytes": 12377,
+            "unused_bytes": 7132
+          },
+          {
+            "name": "sqlite_autoindex_news_article_event_types_1",
+            "bytes": 20480,
+            "pages": 5,
+            "payload_bytes": 14156,
+            "unused_bytes": 5728
+          },
+          {
+            "name": "idx_news_article_content_extracted",
+            "bytes": 16384,
+            "pages": 4,
+            "payload_bytes": 9731,
+            "unused_bytes": 5694
+          },
+          {
+            "name": "sqlite_autoindex_news_collection_runs_1",
+            "bytes": 16384,
+            "pages": 4,
+            "payload_bytes": 7867,
+            "unused_bytes": 7888
+          },
+          {
+            "name": "news_source_health",
+            "bytes": 12288,
+            "pages": 3,
+            "payload_bytes": 4770,
+            "unused_bytes": 7417
+          },
+          {
+            "name": "news_sources",
+            "bytes": 12288,
+            "pages": 3,
+            "payload_bytes": 4524,
+            "unused_bytes": 7649
+          },
+          {
+            "name": "idx_news_company_scope_overrides_action",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 0,
+            "unused_bytes": 4088
+          },
+          {
+            "name": "idx_news_keyword_active",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 225,
+            "unused_bytes": 3821
+          },
+          {
+            "name": "idx_news_user_state_hidden",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 942,
+            "unused_bytes": 3077
+          },
+          {
+            "name": "idx_news_user_state_saved",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 942,
+            "unused_bytes": 3077
+          },
+          {
+            "name": "news_articles_fts_config",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 11,
+            "unused_bytes": 4074
+          },
+          {
+            "name": "news_articles_fts_idx",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 2856,
+            "unused_bytes": 653
+          },
+          {
+            "name": "news_classification_corrections",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 0,
+            "unused_bytes": 4088
+          },
+          {
+            "name": "news_company_scope_overrides",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 0,
+            "unused_bytes": 4088
+          },
+          {
+            "name": "news_company_scope_settings",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 92,
+            "unused_bytes": 3992
+          },
+          {
+            "name": "news_event_articles",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 0,
+            "unused_bytes": 4088
+          },
+          {
+            "name": "news_event_types",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 420,
+            "unused_bytes": 3632
+          },
+          {
+            "name": "news_events",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 0,
+            "unused_bytes": 4088
+          },
+          {
+            "name": "news_google_company_feed_settings",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 70,
+            "unused_bytes": 4014
+          },
+          {
+            "name": "news_keyword_rules",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 1977,
+            "unused_bytes": 2045
+          },
+          {
+            "name": "news_retention_policy",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 39,
+            "unused_bytes": 4045
+          },
+          {
+            "name": "news_schema_capabilities",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 28,
+            "unused_bytes": 4055
+          },
+          {
+            "name": "news_topics",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 354,
+            "unused_bytes": 3698
+          },
+          {
+            "name": "news_user_state",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 2185,
+            "unused_bytes": 1811
+          },
+          {
+            "name": "sqlite_autoindex_news_classification_corrections_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 0,
+            "unused_bytes": 4088
+          },
+          {
+            "name": "sqlite_autoindex_news_company_scope_settings_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 10,
+            "unused_bytes": 4075
+          },
+          {
+            "name": "sqlite_autoindex_news_event_articles_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 0,
+            "unused_bytes": 4088
+          },
+          {
+            "name": "sqlite_autoindex_news_event_types_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 235,
+            "unused_bytes": 3826
+          },
+          {
+            "name": "sqlite_autoindex_news_event_types_2",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 219,
+            "unused_bytes": 3842
+          },
+          {
+            "name": "sqlite_autoindex_news_events_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 0,
+            "unused_bytes": 4088
+          },
+          {
+            "name": "sqlite_autoindex_news_events_2",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 0,
+            "unused_bytes": 4088
+          },
+          {
+            "name": "sqlite_autoindex_news_google_company_feed_settings_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 10,
+            "unused_bytes": 4075
+          },
+          {
+            "name": "sqlite_autoindex_news_keyword_rules_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 332,
+            "unused_bytes": 3714
+          },
+          {
+            "name": "sqlite_autoindex_news_retention_policy_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 10,
+            "unused_bytes": 4075
+          },
+          {
+            "name": "sqlite_autoindex_news_schema_capabilities_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 9,
+            "unused_bytes": 4076
+          },
+          {
+            "name": "sqlite_autoindex_news_source_health_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 403,
+            "unused_bytes": 3637
+          },
+          {
+            "name": "sqlite_autoindex_news_sources_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 403,
+            "unused_bytes": 3637
+          },
+          {
+            "name": "sqlite_autoindex_news_topics_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 207,
+            "unused_bytes": 3854
+          },
+          {
+            "name": "sqlite_autoindex_news_user_state_1",
+            "bytes": 4096,
+            "pages": 1,
+            "payload_bytes": 919,
+            "unused_bytes": 3100
+          }
+        ]
+      },
+      "row_counts": {
+        "news_article_companies": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "news_article_content": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "news_article_event_types": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "news_article_keyword_matches": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "news_article_scores": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "news_article_sectors": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "news_article_topics": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "news_articles": {
+          "row_count": 1578,
+          "counted": true,
+          "reason": "safe_count"
+        },
+        "news_articles_fts": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "news_articles_fts_config": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "news_articles_fts_content": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "news_articles_fts_data": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "news_articles_fts_docsize": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "news_articles_fts_idx": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "news_classification_corrections": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "news_collection_runs": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "news_company_scope_overrides": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "news_company_scope_settings": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "news_event_articles": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "news_event_types": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "news_events": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "news_google_company_feed_settings": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "news_keyword_rules": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "news_retention_policy": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "news_schema_capabilities": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "news_source_health": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "news_sources": {
+          "row_count": 16,
+          "counted": true,
+          "reason": "safe_count"
+        },
+        "news_topics": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        },
+        "news_user_state": {
+          "row_count": null,
+          "counted": false,
+          "reason": "not_in_safe_count_set"
+        }
+      },
+      "errors": []
+    }
+  },
+  "folders": {
+    "data_root": {
+      "path": "C:\\Users\\jadaojoao\\Documents\\CVMAnalytics",
+      "exists": true,
+      "size_bytes": 41237123179,
+      "file_count": 531,
+      "dir_count": 132,
+      "max_depth": 8,
+      "max_files": 50000,
+      "truncated": false,
+      "errors": []
+    },
+    "db": {
+      "path": "C:\\Users\\jadaojoao\\Documents\\CVMAnalytics\\db",
+      "exists": true,
+      "size_bytes": 31330141800,
+      "file_count": 9,
+      "dir_count": 0,
+      "max_depth": 8,
+      "max_files": 50000,
+      "truncated": false,
+      "errors": []
+    },
+    "input_raw": {
+      "path": "C:\\Users\\jadaojoao\\Documents\\CVMAnalytics\\input\\raw",
+      "exists": true,
+      "size_bytes": 590338576,
+      "file_count": 33,
+      "dir_count": 0,
+      "max_depth": 8,
+      "max_files": 50000,
+      "truncated": false,
+      "errors": []
+    },
+    "input_processed": {
+      "path": "C:\\Users\\jadaojoao\\Documents\\CVMAnalytics\\input\\processed",
+      "exists": true,
+      "size_bytes": 5941044460,
+      "file_count": 231,
+      "dir_count": 0,
+      "max_depth": 8,
+      "max_files": 50000,
+      "truncated": false,
+      "errors": []
+    },
+    "raw": {
+      "path": "C:\\Users\\jadaojoao\\Documents\\CVMAnalytics\\raw",
+      "exists": true,
+      "size_bytes": 3359654939,
+      "file_count": 89,
+      "dir_count": 120,
+      "max_depth": 8,
+      "max_files": 50000,
+      "truncated": false,
+      "errors": []
+    },
+    "cache": {
+      "path": "C:\\Users\\jadaojoao\\Documents\\CVMAnalytics\\cache",
+      "exists": true,
+      "size_bytes": 4893905,
+      "file_count": 6,
+      "dir_count": 0,
+      "max_depth": 8,
+      "max_files": 50000,
+      "truncated": false,
+      "errors": []
+    },
+    "metadata": {
+      "path": "C:\\Users\\jadaojoao\\Documents\\CVMAnalytics\\metadata",
+      "exists": true,
+      "size_bytes": 79293,
+      "file_count": 2,
+      "dir_count": 0,
+      "max_depth": 8,
+      "max_files": 50000,
+      "truncated": false,
+      "errors": []
+    },
+    "output": {
+      "path": "C:\\Users\\jadaojoao\\Documents\\CVMAnalytics\\output",
+      "exists": true,
+      "size_bytes": 2634152,
+      "file_count": 108,
+      "dir_count": 1,
+      "max_depth": 8,
+      "max_files": 50000,
+      "truncated": false,
+      "errors": []
+    },
+    "logs": {
+      "path": "C:\\Users\\jadaojoao\\Documents\\CVMAnalytics\\logs",
+      "exists": true,
+      "size_bytes": 147404,
+      "file_count": 11,
+      "dir_count": 0,
+      "max_depth": 8,
+      "max_files": 50000,
+      "truncated": false,
+      "errors": []
+    }
+  }
+}
