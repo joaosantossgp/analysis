@@ -76,6 +76,51 @@ The manifest includes:
 - Output cannot be the source DB path or its DB directory.
 - Parquet export requires `polars`, already listed in project requirements.
 
+## Local Run Results
+
+The prototype was run against the real local `energy_kpis.db` on 2026-06-21.
+Both runs kept the source DB size/mtime unchanged and produced a valid manifest.
+
+Bounded smoke run:
+
+```powershell
+python scripts/diagnostics/phase5_hot_cold_hourly_prototype.py `
+  --output-dir C:\tmp\cvma-phase5-hot-cold-bounded `
+  --replace-output `
+  --hot-months 1 `
+  --cold-month 2024-03 `
+  --max-rows-per-month 100000
+```
+
+Results:
+
+- hot SQLite: 100,000 rows, 37,908,480 bytes;
+- cold Parquet: 100,000 rows, 4,803,375 bytes;
+- validation: OK;
+- source unchanged: yes.
+
+Full selected-month run:
+
+```powershell
+python scripts/diagnostics/phase5_hot_cold_hourly_prototype.py `
+  --output-dir C:\tmp\cvma-phase5-hot-cold-full-one-month `
+  --replace-output `
+  --hot-months 1 `
+  --cold-month 2024-03 `
+  --full-months
+```
+
+Results:
+
+- hot month `2026-04`: 2,827,440 rows, 1,084,678,144 bytes;
+- cold month `2024-03`: 2,310,864 rows, 113,633,074 bytes;
+- validation: OK;
+- source unchanged: yes.
+
+This confirms that cold Parquet is materially smaller for older hourly data,
+but it does not prove runtime query behavior yet. The next design step should
+measure read patterns before proposing any live routing or migration.
+
 ## Validation
 
 Focused fixture tests cover:
@@ -86,13 +131,12 @@ Focused fixture tests cover:
 - generated hot SQLite `quick_check`;
 - existing-output refusal.
 
-Manual validation in this Codex sandbox compiled the script and executed those
-test functions directly because the sandbox Python runtime does not include
-`pytest` or `polars`.
+Manual validation also compiled the script and ran the bounded and full
+selected-month prototype commands above against the real local data root.
 
 ## Next Decision Gate
 
-Run the bounded prototype against the real Documents data root in a normal
-project Python environment with `polars` installed. If the manifest validates,
-use the measured hot SQLite and cold Parquet sizes to decide whether a real
-hot/cold migration design is worth planning.
+Plan a read-path design for CCEE hourly data before any migration proposal. The
+design should preserve the raw SQLite source as canonical, keep a rebuildable
+manifest, and prove equality/performance for the user-facing hourly drill-downs
+before changing runtime routing.

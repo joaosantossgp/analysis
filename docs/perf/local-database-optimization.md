@@ -191,6 +191,13 @@ recent months into a separate hot SQLite database, exports selected old months
 to partitioned Parquet, and writes a validation manifest. It is bounded by
 default and does not alter runtime routing or live data.
 
+The real local bounded run validated successfully with the source DB unchanged:
+100,000 hot rows produced a 37,908,480-byte SQLite copy, and 100,000 cold rows
+produced 4,803,375 bytes of Parquet. A full selected-month run also validated
+successfully: the hot month `2026-04` copied 2,827,440 rows into a
+1,084,678,144-byte SQLite database, while the cold month `2024-03` exported
+2,310,864 rows into 113,633,074 bytes of Parquet.
+
 Future Phase 5 work should use this baseline before choosing between exact
 `dbstat` profiling, copy-based hot/cold prototyping, or any backup-and-compact
 maintenance flow.

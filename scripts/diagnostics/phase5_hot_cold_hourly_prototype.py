@@ -306,7 +306,12 @@ def _default_parquet_writer(
         )
     ):
         tuples = [tuple(row[column] for column in columns) for row in rows]
-        frame = pl.DataFrame(tuples, schema=columns, orient="row")
+        frame = pl.DataFrame(
+            tuples,
+            schema=columns,
+            orient="row",
+            infer_schema_length=None,
+        )
         part_path = month_dir / f"part-{part_idx:04d}.parquet"
         frame.write_parquet(part_path)
         written += len(rows)
