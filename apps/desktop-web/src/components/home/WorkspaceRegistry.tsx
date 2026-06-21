@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 
 // API imports
@@ -9,8 +9,6 @@ import {
   fetchDatabaseDiagnostics,
   fetchRefreshJobs,
   isActiveRefreshJob,
-  startBaseRefresh,
-  refreshProgress,
 } from "@/lib/api/updateBase";
 import {
   fetchCompanies,
@@ -108,21 +106,6 @@ function DatabaseStatusCard({
   headerControls?: React.ReactNode;
 }) {
   const defaults = useMemo(() => defaultRefreshWindow(), []);
-  const queryClient = useQueryClient();
-
-  const startUpdateMutation = useMutation({
-    mutationFn: () =>
-      startBaseRefresh({
-        mode: "missing",
-        limit: 50,
-        startYear: defaults.startYear,
-        endYear: defaults.endYear,
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["refresh-jobs"] });
-    },
-  });
-
   const jobsQuery = useQuery({
     queryKey: ["refresh-jobs"],
     queryFn: fetchRefreshJobs,
@@ -226,39 +209,12 @@ function DatabaseStatusCard({
             </p>
           </div>
 
-          {isRunning && activeJob && (
-            <div className="space-y-1.5 border-t border-zinc-850 pt-2.5">
-              <div className="flex items-center justify-between text-3xs font-mono text-zinc-500 uppercase">
-                <span>Phase: {activeJob.stage || "planning"}</span>
-                <span>{refreshProgress(activeJob)}%</span>
-              </div>
-              <div className="w-full bg-zinc-950 rounded-full h-1 overflow-hidden border border-zinc-900">
-                <div
-                  className="bg-orange-500 h-1 transition-all duration-300 rounded-full"
-                  style={{ width: `${refreshProgress(activeJob)}%` }}
-                />
-              </div>
-              <p className="text-3xs text-zinc-500 font-mono">
-                Processed {activeJob.processed || 0} / {activeJob.queued || 0} companies
-              </p>
-            </div>
-          )}
-
-          <div className="flex gap-2 pt-2">
-            {!isRunning && (
-              <button
-                onClick={() => startUpdateMutation.mutate()}
-                disabled={startUpdateMutation.isPending}
-                className="flex-1 flex items-center justify-center rounded bg-zinc-900 border border-zinc-800 hover:bg-zinc-850 text-center text-2xs text-orange-400 py-1 transition-colors disabled:opacity-50 cursor-pointer font-mono font-semibold"
-              >
-                {startUpdateMutation.isPending ? "Starting..." : "🔄 Sync (Missing)"}
-              </button>
-            )}
+          <div className={isCompact ? "pt-1" : "pt-2"}>
             <Link
               to="/settings/updates"
-              className="flex-1 flex items-center justify-center rounded bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-center text-2xs text-zinc-400 py-1 transition-colors font-mono"
+              className="flex w-full items-center justify-center rounded bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-center text-xs text-zinc-300 py-1 transition-colors"
             >
-              {isRunning ? "View Job →" : "Manage →"}
+              {isRunning ? "View active job →" : "Manage updates →"}
             </Link>
           </div>
         </div>
