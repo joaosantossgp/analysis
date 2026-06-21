@@ -4,7 +4,7 @@ import functools
 import json
 import time
 from collections import Counter, defaultdict
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from statistics import median
@@ -96,6 +96,16 @@ from src.financials.read_service_refresh_selection import (
     resolve_refresh_batch_selection,
     resolve_refresh_year_range,
 )
+
+
+@dataclass(frozen=True)
+class ExcelExportReadPack:
+    company_info: dict[str, Any]
+    years: list[int]
+    period_window: tuple[int, int]
+    scope_label: str
+    itr_only_years: list[int]
+    statements: dict[str, pd.DataFrame]
 
 
 class ReadServiceExportMixin:
@@ -567,15 +577,89 @@ class ReadServiceExportMixin:
         years: list[int] = scope["all_export_years"]
         if not years:
             return {}
-        all_stmts = {
-            stmt_type: self.get_statement_dataframe(cd_cvm, years, stmt_type)
-            for stmt_type in EXPORT_STATEMENT_TYPES
-        }
+        all_stmts = self._load_statement_frames_for_years(
+            cd_cvm,
+            years,
+            EXPORT_STATEMENT_TYPES,
+        )
         return {
             stmt_type: df
             for stmt_type, df in all_stmts.items()
             if df is not None and not df.empty
         }
+
+    def _load_statement_frames_for_years(
+        self,
+        cd_cvm: int,
+        years: list[int],
+        stmt_types: tuple[str, ...] | list[str],
+    ) -> dict[str, pd.DataFrame]:
+        normalized_stmt_types = tuple(
+            dict.fromkeys(
+                str(stmt_type).upper()
+                for stmt_type in stmt_types
+                if str(stmt_type).strip()
+            )
+        )
+        if not years or not normalized_stmt_types:
+            return {}
+        get_statements = getattr(self.query_layer, "get_statements", None)
+        if callable(get_statements):
+            return get_statements(
+                cd_cvm=cd_cvm,
+                years=years,
+                stmt_types=normalized_stmt_types,
+            )
+        return {
+            stmt_type: self.get_statement_dataframe(cd_cvm, years, stmt_type)
+            for stmt_type in normalized_stmt_types
+        }
+
+    def _build_excel_export_read_pack(
+        self,
+        cd_cvm: int,
+        period_scope: str,
+        statement_type: Optional[str] = None,
+    ) -> ExcelExportReadPack:
+        if period_scope not in self.VALID_PERIOD_SCOPES:
+            raise ValueError(
+                f"Invalid period_scope: {period_scope!r}. "
+                f"Must be one of: {', '.join(sorted(self.VALID_PERIOD_SCOPES))}"
+            )
+
+        company_info = self.get_company_info_dict(cd_cvm)
+        if not company_info:
+            raise ValueError(f"Empresa {cd_cvm} nao encontrada.")
+
+        scope = self.resolve_excel_export_scope(cd_cvm, period_scope)
+        years: list[int] = scope["all_export_years"]
+        if not years:
+            raise ValueError(
+                f"Empresa {cd_cvm} nao possui periodos disponiveis para exportacao."
+            )
+
+        stmt_types = (
+            (str(statement_type).upper(),)
+            if statement_type
+            else EXPORT_STATEMENT_TYPES
+        )
+        statements = {
+            stmt_type: df
+            for stmt_type, df in self._load_statement_frames_for_years(
+                cd_cvm,
+                years,
+                stmt_types,
+            ).items()
+            if df is not None and not df.empty
+        }
+        return ExcelExportReadPack(
+            company_info=company_info,
+            years=years,
+            period_window=scope["period_window"],
+            scope_label=scope["scope_label"],
+            itr_only_years=scope["itr_only_years"],
+            statements=statements,
+        )
 
     @staticmethod
     def _mapping_preview_periods(
@@ -845,44 +929,21 @@ class ReadServiceExportMixin:
             User mapping preset id.  When omitted, the company default preset
             is used if one exists; otherwise the system default mapping is used.
         """
-        if period_scope not in self.VALID_PERIOD_SCOPES:
-            raise ValueError(
-                f"Invalid period_scope: {period_scope!r}. "
-                f"Must be one of: {', '.join(sorted(self.VALID_PERIOD_SCOPES))}"
-            )
-
-        company_info = self.get_company_info_dict(cd_cvm)
-        if not company_info:
-            raise ValueError(f"Empresa {cd_cvm} nao encontrada.")
-
-        scope = self.resolve_excel_export_scope(cd_cvm, period_scope)
-        years: list[int] = scope["all_export_years"]
-        period_window: tuple[int, int] = scope["period_window"]
-        scope_label: str = scope["scope_label"]
-        itr_only_years: list[int] = scope["itr_only_years"]
-
-        if not years:
-            raise ValueError(
-                f"Empresa {cd_cvm} nao possui periodos disponiveis para exportacao."
-            )
+        statement_type = str(statement_type).upper() if statement_type else None
+        read_pack = self._build_excel_export_read_pack(
+            cd_cvm,
+            period_scope,
+            statement_type=statement_type,
+        )
+        company_info = read_pack.company_info
+        years = read_pack.years
 
         if statement_type:
-            df = self.get_statement_dataframe(cd_cvm, years, statement_type)
-            exportable_statements = {
-                statement_type: df
-            } if df is not None and not df.empty else {}
+            exportable_statements = read_pack.statements
             extra_sheets = [statement_type] if statement_type == "DMPL" else []
             kpis_df = pd.DataFrame()
         else:
-            all_stmts = {
-                stmt_type: self.get_statement_dataframe(cd_cvm, years, stmt_type)
-                for stmt_type in EXPORT_STATEMENT_TYPES
-            }
-            exportable_statements = {
-                stmt_type: df
-                for stmt_type, df in all_stmts.items()
-                if df is not None and not df.empty
-            }
+            exportable_statements = read_pack.statements
             extra_sheets = [
                 stmt_type
                 for stmt_type in ("DMPL",)
@@ -911,9 +972,9 @@ class ReadServiceExportMixin:
             kpis_df=kpis_df,
             extra_sheets=extra_sheets,
             statement_type=statement_type,
-            period_window=period_window,
-            period_scope_label=scope_label,
-            itr_only_years=itr_only_years,
+            period_window=read_pack.period_window,
+            period_scope_label=read_pack.scope_label,
+            itr_only_years=read_pack.itr_only_years,
             model_mapping=model_mapping,
             mapping_validation_issues=mapping_issues,
             engine=self.engine,

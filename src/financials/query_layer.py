@@ -1493,6 +1493,78 @@ class CVMQueryLayer:
         if df.empty:
             return df
 
+        return self._pivot_statement_rows(df)
+
+    @slow_query_warn(threshold_ms=200)
+    def get_statements(
+        self,
+        cd_cvm: int,
+        years: list[int],
+        stmt_types: list[str] | tuple[str, ...],
+        exclude_conflicts: bool = True,
+    ) -> dict[str, _pd().DataFrame]:
+        """Return multiple statement matrices with one raw financial_reports read.
+
+        The per-statement pivoting intentionally mirrors ``get_statement`` so
+        Excel exports keep using raw ``financial_reports`` values as the
+        canonical audit source.
+        """
+        normalized_stmt_types = tuple(
+            dict.fromkeys(
+                str(stmt_type).upper()
+                for stmt_type in stmt_types
+                if str(stmt_type).strip()
+            )
+        )
+        empty_by_stmt = {
+            stmt_type: _pd().DataFrame()
+            for stmt_type in normalized_stmt_types
+        }
+        if not years or not normalized_stmt_types:
+            return empty_by_stmt
+
+        years_int = [int(year) for year in years]
+        placeholders_y = ", ".join(f":y{i}" for i in range(len(years_int)))
+        placeholders_s = ", ".join(
+            f":s{i}" for i in range(len(normalized_stmt_types))
+        )
+        params: dict = {f"y{i}": year for i, year in enumerate(years_int)}
+        params.update(
+            {f"s{i}": stmt_type for i, stmt_type in enumerate(normalized_stmt_types)}
+        )
+        params["cd_cvm"] = int(cd_cvm)
+
+        conflict_clause = 'AND "QA_CONFLICT" = false' if exclude_conflicts else ""
+        sql = text(
+            f"""
+            SELECT "STATEMENT_TYPE", "CD_CONTA", "DS_CONTA", "STANDARD_NAME",
+                   "LINE_ID_BASE",
+                   "PERIOD_LABEL", "VL_CONTA"
+            FROM financial_reports
+            WHERE "CD_CVM" = :cd_cvm
+              AND "STATEMENT_TYPE" IN ({placeholders_s})
+              AND "REPORT_YEAR" IN ({placeholders_y})
+              {conflict_clause}
+            """
+        )
+
+        df = _pd().read_sql(sql, self.engine, params=params)
+        if df.empty:
+            return empty_by_stmt
+
+        result = dict(empty_by_stmt)
+        for stmt_type, group in df.groupby("STATEMENT_TYPE", sort=False):
+            stmt_key = str(stmt_type).upper()
+            result[stmt_key] = self._pivot_statement_rows(
+                group.drop(columns=["STATEMENT_TYPE"])
+            )
+        return result
+
+    @staticmethod
+    def _pivot_statement_rows(df: _pd().DataFrame) -> _pd().DataFrame:
+        if df.empty:
+            return df
+
         df["STANDARD_NAME"] = df["STANDARD_NAME"].fillna("")
         pivot = df.pivot_table(
             index=["CD_CONTA", "DS_CONTA", "STANDARD_NAME", "LINE_ID_BASE"],

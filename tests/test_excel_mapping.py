@@ -152,6 +152,65 @@ def test_custom_mapping_generates_signed_raw_sheet_formula_and_audit_sheet():
     assert "raw_DRE" in revenue_audit[7]
 
 
+def test_mapping_formula_uses_period_specific_duplicate_source_row():
+    statements = _statements()
+    statements["DRE"] = pd.DataFrame(
+        [
+            {
+                "CD_CONTA": "3.01",
+                "DS_CONTA": "Revenue 2023",
+                "STANDARD_NAME": "Revenue",
+                "LINE_ID_BASE": "dre-revenue-a",
+                "2023": 1_000_000.0,
+                "2024": None,
+            },
+            {
+                "CD_CONTA": "3.01",
+                "DS_CONTA": "Revenue 2024",
+                "STANDARD_NAME": "Revenue",
+                "LINE_ID_BASE": "dre-revenue-b",
+                "2023": None,
+                "2024": 2_000_000.0,
+            },
+            {
+                "CD_CONTA": "3.05",
+                "DS_CONTA": "EBIT",
+                "STANDARD_NAME": "EBIT",
+                "LINE_ID_BASE": "3.05",
+                "2023": 200_000.0,
+                "2024": 250_000.0,
+            },
+            {
+                "CD_CONTA": "3.11",
+                "DS_CONTA": "Net Income",
+                "STANDARD_NAME": "Net Income",
+                "LINE_ID_BASE": "3.11",
+                "2023": 140_000.0,
+                "2024": 150_000.0,
+            },
+        ]
+    )
+    exporter = ExcelExporter(
+        company_info=_company(),
+        statements=statements,
+        kpis_df=pd.DataFrame(),
+        model_mapping=build_default_model_mapping(_company()),
+    )
+
+    payload = exporter.export()
+    wb = openpyxl.load_workbook(io.BytesIO(payload), data_only=False)
+
+    ws = wb["Model"]
+    revenue_row = _find_model_row(ws, "Revenue (=)")
+    formulas = [
+        str(ws.cell(row=revenue_row, column=col).value)
+        for col in range(1, ws.max_column + 1)
+        if isinstance(ws.cell(row=revenue_row, column=col).value, str)
+    ]
+    assert any("'raw_DRE'!E2/1000" in formula for formula in formulas)
+    assert any("'raw_DRE'!F3/1000" in formula for formula in formulas)
+
+
 def test_mapping_repository_persists_presets_and_company_defaults(tmp_path):
     engine = create_engine(f"sqlite:///{tmp_path / 'mapping.db'}")
     repository = ExcelMappingRepository(engine)

@@ -1011,6 +1011,8 @@ class ExcelExporter:
         cd_to_row: dict[str, int] = {}
         line_id_to_row: dict[str, int] = {}
         std_name_to_row: dict[str, int] = {}
+        first_row_by_code: dict[str, int] = {}
+        period_row_by_code: dict[tuple[str, str], int] = {}
         period_to_col: dict[str, int] = {}
         for c_idx, p in enumerate(period_cols, start=len(id_cols)):
             period_to_col[str(p)] = c_idx
@@ -1020,12 +1022,20 @@ class ExcelExporter:
             line_id = str(row.get("LINE_ID_BASE", "") or "").strip()
             std = str(row.get("STANDARD_NAME", "") or "").strip()
             is_sub = cd in subtotals
+            excel_row = r_idx + 1
             if cd:
-                cd_to_row[cd] = r_idx + 1  # 1-indexed Excel row
+                cd_to_row[cd] = excel_row  # 1-indexed Excel row
             if line_id:
-                line_id_to_row[line_id] = r_idx + 1
+                line_id_to_row[line_id] = excel_row
             if std and std not in std_name_to_row:
-                std_name_to_row[std] = r_idx + 1
+                std_name_to_row[std] = excel_row
+            codes = tuple(dict.fromkeys(code for code in (cd, line_id) if code))
+            for code in codes:
+                first_row_by_code.setdefault(code, excel_row)
+                for period in period_cols:
+                    key = (code, str(period))
+                    if key not in period_row_by_code and _is_safe_number(row.get(period)):
+                        period_row_by_code[key] = excel_row
 
             ws.set_row(r_idx, 15)
             for c_idx, col in enumerate(all_cols):
@@ -1058,6 +1068,8 @@ class ExcelExporter:
             "cd_to_row": cd_to_row,
             "line_id_to_row": line_id_to_row,
             "std_name_to_row": std_name_to_row,
+            "first_row_by_code": first_row_by_code,
+            "period_row_by_code": period_row_by_code,
             "period_to_col": period_to_col,
             "id_cols_count": len(id_cols),
             "n_rows": len(df),
@@ -1543,6 +1555,17 @@ class ExcelExporter:
         Handles description changes / duplicate codes dynamically by picking the row
         containing a safe number for the target period.
         """
+        idx = self._raw_index.get(stmt_type)
+        code_key = str(code or "").strip()
+        if idx is not None and code_key:
+            period_row_by_code = idx.get("period_row_by_code")
+            first_row_by_code = idx.get("first_row_by_code")
+            if period_row_by_code is not None and first_row_by_code is not None:
+                row = period_row_by_code.get((code_key, str(period)))
+                if row is not None:
+                    return row
+                return first_row_by_code.get(code_key)
+
         df = self.stmts.get(stmt_type)
         if df is None or df.empty:
             return None

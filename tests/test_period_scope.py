@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import sqlite3
 import sys
+import io
 from pathlib import Path
 
+import openpyxl
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -93,29 +95,34 @@ def _seed_db(tmp_path: Path) -> CVMReadService:
         # PETROBRAS: DFP years 2021–2025 + ITR-only 1Q26, 2Q26
         petr_rows = []
         core_lines = {
-            "BPA": ("1", "Ativo Total", "Ativo Total"),
-            "BPP": ("2", "Passivo Total", "Passivo Total"),
-            "DRE": ("3.01", "Receita", "Receita"),
-            "DFC": ("6.01", "Fluxo de Caixa Operacional", "Fluxo de Caixa Operacional"),
+            "BPA": [("1", "Ativo Total", "Ativo Total")],
+            "BPP": [("2", "Passivo Total", "Passivo Total")],
+            "DRE": [
+                ("3.01", "Receita", "Receita"),
+                ("3.05", "Resultado Operacional", "Resultado Operacional"),
+                ("3.11", "Lucro Liquido", "Lucro Liquido"),
+            ],
+            "DFC": [("6.01", "Fluxo de Caixa Operacional", "Fluxo de Caixa Operacional")],
         }
 
         def add_package(rows, company, cd_cvm, year, period, value, qa_conflict=0):
-            for stmt, (cd_conta, ds_conta, standard_name) in core_lines.items():
-                rows.append(
-                    (
-                        company,
-                        cd_cvm,
-                        stmt,
-                        year,
-                        period,
-                        f"{stmt.lower()}-{cd_conta}",
-                        cd_conta,
-                        ds_conta,
-                        standard_name,
-                        qa_conflict,
-                        float(value),
+            for stmt, lines in core_lines.items():
+                for cd_conta, ds_conta, standard_name in lines:
+                    rows.append(
+                        (
+                            company,
+                            cd_cvm,
+                            stmt,
+                            year,
+                            period,
+                            f"{stmt.lower()}-{cd_conta}",
+                            cd_conta,
+                            ds_conta,
+                            standard_name,
+                            qa_conflict,
+                            float(value),
+                        )
                     )
-                )
 
         for year in (2021, 2022, 2023, 2024, 2025):
             # Annual DFP package
@@ -304,3 +311,180 @@ def test_model_mapping_preview_includes_latest_itr_periods(tmp_path):
     assert "1Q26" in workspace["preview_periods"]
     assert "2Q26" in workspace["preview_periods"]
     assert workspace["company"]["latest_financial_period_display"] == "2Q26"
+
+
+def _workbook(payload: bytes, *, data_only: bool = False):
+    return openpyxl.load_workbook(io.BytesIO(payload), data_only=data_only)
+
+
+def test_company_excel_export_contract_from_seeded_database(tmp_path):
+    svc = _seed_db(tmp_path)
+
+    filename, payload = svc.build_company_excel_export(
+        9512,
+        period_scope="last_5_years",
+    )
+    wb = _workbook(payload, data_only=False)
+
+    assert filename.startswith("PETR4_")
+    assert wb.sheetnames[:2] == ["Model", "README"]
+    hidden_sheet_names = (
+        "raw_DRE",
+        "raw_BPA",
+        "raw_BPP",
+        "raw_DFC",
+        "raw_KPIs",
+        "metadata",
+        "mapping_audit",
+    )
+    for sheet_name in hidden_sheet_names:
+        assert sheet_name in wb.sheetnames
+    for sheet_name in hidden_sheet_names:
+        assert wb[sheet_name].sheet_state == "hidden"
+    for sheet_name in wb.sheetnames:
+        assert list(wb[sheet_name].merged_cells.ranges) == []
+
+    raw_dre = wb["raw_DRE"]
+    headers = [
+        raw_dre.cell(row=1, column=col).value
+        for col in range(1, raw_dre.max_column + 1)
+    ]
+    assert headers[:4] == ["CD_CONTA", "DS_CONTA", "STANDARD_NAME", "LINE_ID_BASE"]
+    period_col = headers.index("2Q26") + 1
+    assert raw_dre.cell(row=2, column=period_col).value == 295_000.0
+
+    model = wb["Model"]
+    formula_values = [
+        cell.value
+        for row in model.iter_rows()
+        for cell in row
+        if isinstance(cell.value, str) and cell.value.startswith("=")
+    ]
+    assert any("'raw_DRE'!" in formula for formula in formula_values)
+    assert any("/1000" in formula for formula in formula_values)
+
+    metadata = wb["metadata"]
+    fields = [
+        metadata.cell(row=row, column=1).value
+        for row in range(1, metadata.max_row + 1)
+    ]
+    assert "Export scope" in fields
+
+
+def test_company_excel_export_loads_statement_frames_in_one_batch(tmp_path, monkeypatch):
+    svc = _seed_db(tmp_path)
+    calls: list[tuple[int, tuple[int, ...], tuple[str, ...]]] = []
+    original = svc.query_layer.get_statements
+
+    def spy_get_statements(*, cd_cvm, years, stmt_types, exclude_conflicts=True):
+        calls.append((
+            int(cd_cvm),
+            tuple(int(year) for year in years),
+            tuple(stmt_types),
+        ))
+        return original(
+            cd_cvm=cd_cvm,
+            years=years,
+            stmt_types=stmt_types,
+            exclude_conflicts=exclude_conflicts,
+        )
+
+    monkeypatch.setattr(svc.query_layer, "get_statements", spy_get_statements)
+
+    svc.build_company_excel_export(9512, period_scope="last_5_years")
+
+    assert calls == [
+        (
+            9512,
+            (2021, 2022, 2023, 2024, 2025, 2026),
+            ("DRE", "BPA", "BPP", "DFC", "DMPL"),
+        )
+    ]
+
+
+def test_statement_scoped_excel_export_contract_from_seeded_database(tmp_path):
+    svc = _seed_db(tmp_path)
+
+    filename, payload = svc.build_company_excel_export(
+        9512,
+        statement_type="DRE",
+        period_scope="last_5_years",
+    )
+    wb = _workbook(payload, data_only=False)
+
+    assert filename.startswith("PETR4_DRE_")
+    assert "raw_DRE" in wb.sheetnames
+    assert "metadata" in wb.sheetnames
+    assert "Model" not in wb.sheetnames
+    assert "README" not in wb.sheetnames
+
+    raw_dre = wb["raw_DRE"]
+    headers = [
+        raw_dre.cell(row=1, column=col).value
+        for col in range(1, raw_dre.max_column + 1)
+    ]
+    period_col = headers.index("2Q26") + 1
+    assert raw_dre.cell(row=2, column=period_col).value == 295_000.0
+
+
+def test_statement_scoped_excel_export_loads_only_requested_statement(tmp_path, monkeypatch):
+    svc = _seed_db(tmp_path)
+    calls: list[tuple[str, ...]] = []
+    original = svc.query_layer.get_statements
+
+    def spy_get_statements(*, cd_cvm, years, stmt_types, exclude_conflicts=True):
+        calls.append(tuple(stmt_types))
+        return original(
+            cd_cvm=cd_cvm,
+            years=years,
+            stmt_types=stmt_types,
+            exclude_conflicts=exclude_conflicts,
+        )
+
+    monkeypatch.setattr(svc.query_layer, "get_statements", spy_get_statements)
+
+    svc.build_company_excel_export(
+        9512,
+        statement_type="DRE",
+        period_scope="last_5_years",
+    )
+
+    assert calls == [("DRE",)]
+
+
+def test_model_mapping_workspace_preview_values_match_seeded_raw_data(tmp_path):
+    svc = _seed_db(tmp_path)
+
+    workspace = svc.get_excel_mapping_workspace(9512, period_scope="last_5_years")
+    revenue = next(
+        row for row in workspace["model_preview_rows"]
+        if row["target_id"] == "DRE:3.01"
+    )
+    raw_revenue = next(
+        line for line in workspace["raw_lines"]
+        if line["statement_type"] == "DRE" and line["line_id_base"] == "dre-3.01"
+    )
+
+    assert revenue["values_by_period"]["2Q26"] == 295.0
+    assert raw_revenue["sample_values_by_period"]["2Q26"] == 295.0
+
+
+def test_model_mapping_workspace_loads_statement_frames_in_one_batch(tmp_path, monkeypatch):
+    svc = _seed_db(tmp_path)
+    calls: list[tuple[str, ...]] = []
+    original = svc.query_layer.get_statements
+
+    def spy_get_statements(*, cd_cvm, years, stmt_types, exclude_conflicts=True):
+        calls.append(tuple(stmt_types))
+        return original(
+            cd_cvm=cd_cvm,
+            years=years,
+            stmt_types=stmt_types,
+            exclude_conflicts=exclude_conflicts,
+        )
+
+    monkeypatch.setattr(svc.query_layer, "get_statements", spy_get_statements)
+
+    svc.get_excel_mapping_workspace(9512, period_scope="last_5_years")
+
+    assert calls == [("DRE", "BPA", "BPP", "DFC", "DMPL")]
