@@ -1,10 +1,13 @@
 # Phase 5.3 CCEE Hourly Hot/Cold Prototype
 
 Date: 2026-06-21
+Updated: 2026-06-22
 
-Status: prototype tooling only. No live database maintenance, runtime routing,
-schema migration, index drop, source deletion, or packaged-app behavior change
-was implemented.
+Status: prototype tooling plus conservative runtime routing. No live database
+maintenance, schema migration, index drop, source deletion, or packaged-app
+behavior change was implemented. Runtime hourly charts may use validated
+hot/cold artifacts for ANEEL CEG aggregation only; parcel-level hourly charts
+remain raw SQLite by default.
 
 ## Why This Exists
 
@@ -203,8 +206,17 @@ avoiding that repeated raw join for CEG-level drill-downs.
 
 ## Adapter Foundation
 
-`src/energy_kpi/hourly_read_adapter.py` now contains the backend read adapter
-foundation. It is deliberately not wired into `EnergyKPIReadService` yet.
+`src/energy_kpi/hourly_read_adapter.py` contains the backend read adapter
+foundation. `EnergyKPIReadService.get_plant_parcel_chart_data` now has a small
+routing policy around it:
+
+- ANEEL CEG hourly aggregation can attempt hot/cold reads when
+  `CVM_ENERGY_HOURLY_HOT_COLD_MANIFEST` is configured;
+- CCEE parcel-level hourly reads stay on canonical raw SQLite by default;
+- parcel-level hot/cold reads require explicit opt-in through
+  `CVM_ENERGY_HOURLY_HOT_COLD_ENABLE_PARCELS=1`;
+- missing, invalid, stale, or incomplete artifacts fall back to raw SQLite with
+  explicit `metadata.hourly_read_path` fields.
 
 The adapter:
 
@@ -217,11 +229,16 @@ The adapter:
 
 Focused tests prove adapter rows match canonical raw SQLite rows for parcel and
 CEG aggregation cases, including row order, limits, null handling, and numeric
-values.
+values. Runtime-routing tests also prove valid CEG requests use the adapter,
+parcel requests stay raw by default, and missing/stale manifests fall back to
+raw SQLite without changing chart values or response shape.
 
 ## Next Decision Gate
 
-Wire the adapter behind the existing hourly chart method only after a small
-runtime-routing patch is reviewed. That patch must keep raw SQLite as the
-canonical fallback, preserve current bridge/frontend contracts, and expose
-metadata for the selected read path and fallback reason.
+Do not broaden hot/cold routing to all parcel-level hourly reads yet. The
+current evidence supports CEG-level aggregation as the first runtime target,
+because raw SQLite parcel windows are already bounded while CEG windows pay a
+repeated large-table join cost. Any broader rollout should first expand the
+benchmark sample set, keep raw SQLite as the canonical fallback, preserve
+bridge/frontend contracts, and keep explicit selected-path and fallback
+metadata.

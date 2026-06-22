@@ -1,6 +1,7 @@
 """Tests for plant and plant-parcel energy indicator paths."""
 from __future__ import annotations
 
+import os
 import sqlite3
 import threading
 import time
@@ -1098,14 +1099,14 @@ def _seed_file_backed_hourly_chart_fixture(tmp_path: Path):
     return settings, tmp_path / "hourly_hot_cold" / "manifest.json"
 
 
-def test_hourly_chart_uses_hot_cold_adapter_when_manifest_valid(tmp_path: Path, monkeypatch):
+def test_hourly_chart_routes_ceg_to_hot_cold_adapter_when_manifest_valid(tmp_path: Path, monkeypatch):
     settings, manifest_path = _seed_file_backed_hourly_chart_fixture(tmp_path)
     monkeypatch.setenv("CVM_ENERGY_HOURLY_HOT_COLD_MANIFEST", str(manifest_path))
 
     svc = EnergyKPIReadService(settings)
     hot_chart = svc.get_plant_parcel_chart_data(
-        entity_id="1001",
-        entity_type="ccee_plant_parcel",
+        entity_id="CEG123",
+        entity_type="aneel_plant",
         frequency="hourly",
         year_month="2026-02",
         start_datetime="2026-02-01T00:00:00",
@@ -1121,8 +1122,8 @@ def test_hourly_chart_uses_hot_cold_adapter_when_manifest_valid(tmp_path: Path, 
     assert hot_chart["series"][0]["points"] == [10.0, 12.0]
 
     cold_chart = svc.get_plant_parcel_chart_data(
-        entity_id="1001",
-        entity_type="ccee_plant_parcel",
+        entity_id="CEG123",
+        entity_type="aneel_plant",
         frequency="hourly",
         year_month="2026-01",
         start_datetime="2026-01-01T00:00:00",
@@ -1138,9 +1139,9 @@ def test_hourly_chart_uses_hot_cold_adapter_when_manifest_valid(tmp_path: Path, 
     assert cold_chart["series"][0]["points"] == [5.0]
 
 
-def test_hourly_chart_falls_back_to_raw_sqlite_when_manifest_missing(tmp_path: Path, monkeypatch):
-    settings, _manifest_path = _seed_file_backed_hourly_chart_fixture(tmp_path)
-    monkeypatch.setenv("CVM_ENERGY_HOURLY_HOT_COLD_MANIFEST", str(tmp_path / "missing_manifest.json"))
+def test_hourly_chart_keeps_parcel_on_raw_sqlite_by_default_when_manifest_valid(tmp_path: Path, monkeypatch):
+    settings, manifest_path = _seed_file_backed_hourly_chart_fixture(tmp_path)
+    monkeypatch.setenv("CVM_ENERGY_HOURLY_HOT_COLD_MANIFEST", str(manifest_path))
 
     svc = EnergyKPIReadService(settings)
     chart = svc.get_plant_parcel_chart_data(
@@ -1154,8 +1155,58 @@ def test_hourly_chart_falls_back_to_raw_sqlite_when_manifest_missing(tmp_path: P
     metadata = chart["metadata"]["hourly_read_path"]
 
     assert chart["metadata"]["data_source"] == "ccee_plant_parcel_hourly"
+    assert metadata["attempted"] is False
+    assert metadata["selected"] == "raw_sqlite"
+    assert metadata["fallback_reason"] == "parcel_raw_sqlite_default"
+    assert metadata["manifest_path"] == str(manifest_path)
+    assert chart["periods"] == ["00h", "01h"]
+    assert chart["series"][0]["points"] == [10.0, 12.0]
+
+
+def test_hourly_chart_falls_back_to_raw_sqlite_when_manifest_missing(tmp_path: Path, monkeypatch):
+    settings, _manifest_path = _seed_file_backed_hourly_chart_fixture(tmp_path)
+    monkeypatch.setenv("CVM_ENERGY_HOURLY_HOT_COLD_MANIFEST", str(tmp_path / "missing_manifest.json"))
+
+    svc = EnergyKPIReadService(settings)
+    chart = svc.get_plant_parcel_chart_data(
+        entity_id="CEG123",
+        entity_type="aneel_plant",
+        frequency="hourly",
+        year_month="2026-02",
+        start_datetime="2026-02-01T00:00:00",
+        end_datetime="2026-02-01T23:59:59",
+    )
+    metadata = chart["metadata"]["hourly_read_path"]
+
+    assert chart["metadata"]["data_source"] == "ccee_plant_parcel_hourly"
     assert metadata["attempted"] is True
     assert metadata["selected"] == "raw_sqlite"
     assert metadata["fallback_reason"] == "manifest_missing"
+    assert chart["periods"] == ["00h", "01h"]
+    assert chart["series"][0]["points"] == [10.0, 12.0]
+
+
+def test_hourly_chart_falls_back_to_raw_sqlite_when_manifest_stale(tmp_path: Path, monkeypatch):
+    settings, manifest_path = _seed_file_backed_hourly_chart_fixture(tmp_path)
+    future = time.time() + 10
+    os.utime(settings.paths.energy_kpi_db_path, (future, future))
+    monkeypatch.setenv("CVM_ENERGY_HOURLY_HOT_COLD_MANIFEST", str(manifest_path))
+
+    svc = EnergyKPIReadService(settings)
+    chart = svc.get_plant_parcel_chart_data(
+        entity_id="CEG123",
+        entity_type="aneel_plant",
+        frequency="hourly",
+        year_month="2026-02",
+        start_datetime="2026-02-01T00:00:00",
+        end_datetime="2026-02-01T23:59:59",
+    )
+    metadata = chart["metadata"]["hourly_read_path"]
+
+    assert chart["metadata"]["data_source"] == "ccee_plant_parcel_hourly"
+    assert metadata["attempted"] is True
+    assert metadata["selected"] == "raw_sqlite"
+    assert metadata["fallback_reason"] == "source_signature_mismatch"
+    assert metadata["source_signature_ok"] is False
     assert chart["periods"] == ["00h", "01h"]
     assert chart["series"][0]["points"] == [10.0, 12.0]

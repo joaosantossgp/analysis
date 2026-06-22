@@ -198,7 +198,7 @@ successfully: the hot month `2026-04` copied 2,827,440 rows into a
 1,084,678,144-byte SQLite database, while the cold month `2024-03` exported
 2,310,864 rows into 113,633,074 bytes of Parquet.
 
-Phase 5.4 added a diagnostic-only read-path comparison tool:
+Phase 5.4 added a diagnostic read-path comparison tool:
 
 ```powershell
 python scripts/diagnostics/phase5_compare_hourly_read_paths.py `
@@ -208,7 +208,7 @@ python scripts/diagnostics/phase5_compare_hourly_read_paths.py `
 It compares canonical raw SQLite hourly chart rows against the prototype hot
 SQLite and cold Parquet artifacts, records row hashes and read timings, and
 keeps all SQLite inputs read-only. It does not change bridge methods, frontend
-contracts, live runtime routing, or source data.
+contracts, or source data.
 
 The real full one-month comparison passed with `--samples-per-tier 3`,
 `--aneel-samples-per-tier 1`, `--include-aneel-aggregation`, and `--runs 3`:
@@ -220,17 +220,18 @@ is stored at `docs/diagnostics/phase5-hourly-read-path-comparison.json`.
 The broadened comparison also showed that the current raw SQLite CEG aggregation
 query is the next hot spot. Parcel windows are already bounded and fast after
 warm-up, but CEG-level hourly drill-downs repeatedly join the large raw hourly
-table to `ccee_plant_parcels`. A future runtime adapter should preserve the same
-values while avoiding that raw join when validated hot/cold artifacts are
-available.
+table to `ccee_plant_parcels`.
 
 The backend adapter foundation now exists in
-`src/energy_kpi/hourly_read_adapter.py`, but it is not wired into runtime chart
-routing yet. It validates manifest/source signatures, reads hot SQLite with
-read-only URI connections, reads cold Parquet with `polars`, supports parcel and
-CEG aggregation rows, and returns explicit fallback reasons when artifacts
-cannot be used.
+`src/energy_kpi/hourly_read_adapter.py`, and
+`EnergyKPIReadService.get_plant_parcel_chart_data` has conservative runtime
+routing around it. ANEEL CEG hourly aggregation may use validated hot/cold
+artifacts when `CVM_ENERGY_HOURLY_HOT_COLD_MANIFEST` is configured. Parcel-level
+hourly charts stay on raw SQLite by default, unless
+`CVM_ENERGY_HOURLY_HOT_COLD_ENABLE_PARCELS=1` is set explicitly. Unsafe or
+unavailable artifacts fall back to raw SQLite with explicit
+`metadata.hourly_read_path` fields.
 
 Future Phase 5 work should use this baseline before choosing between a runtime
-read adapter, additional exact `dbstat` profiling, broader hot/cold prototypes,
-or any backup-and-compact maintenance flow.
+read adapter expansion, additional exact `dbstat` profiling, broader hot/cold
+prototypes, or any backup-and-compact maintenance flow.

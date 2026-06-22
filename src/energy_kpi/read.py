@@ -49,6 +49,8 @@ logger = logging.getLogger(__name__)
 _STALE_THRESHOLD_DAYS = 90
 _PLANT_SOURCE_STATUS_ORDER = (SOURCE_ANEEL_SIGA, SOURCE_CCEE_MONTHLY, SOURCE_CCEE_HOURLY)
 _HOURLY_HOT_COLD_MANIFEST_ENV = "CVM_ENERGY_HOURLY_HOT_COLD_MANIFEST"
+_HOURLY_HOT_COLD_ENABLE_PARCELS_ENV = "CVM_ENERGY_HOURLY_HOT_COLD_ENABLE_PARCELS"
+_TRUE_ENV_VALUES = {"1", "true", "yes", "on"}
 
 
 def _normalize_plant_source_ids(source_ids: list[str] | None) -> list[str]:
@@ -63,6 +65,19 @@ def _hourly_hot_cold_manifest_path() -> Path | None:
     if not value or not value.strip():
         return None
     return Path(value.strip()).expanduser()
+
+
+def _hourly_hot_cold_parcel_opt_in_enabled() -> bool:
+    value = os.getenv(_HOURLY_HOT_COLD_ENABLE_PARCELS_ENV)
+    return str(value or "").strip().lower() in _TRUE_ENV_VALUES
+
+
+def _hourly_hot_cold_skip_reason(resolved_type: str) -> str | None:
+    if resolved_type == "aneel_plant":
+        return None
+    if _hourly_hot_cold_parcel_opt_in_enabled():
+        return None
+    return "parcel_raw_sqlite_default"
 
 
 def _plant_source_status_rows(
@@ -1662,34 +1677,49 @@ class EnergyKPIReadService:
                         "limit": row_limit,
                     }
                     manifest_path = _hourly_hot_cold_manifest_path()
-                    adapter_result = read_hourly_from_hot_cold(
-                        source_db_path=Path(self._settings.paths.energy_kpi_db_path),
-                        manifest_path=manifest_path,
-                        request=HourlyReadRequest(
-                            entity_id=entity_id,
-                            entity_type=(
-                                "aneel_plant" if resolved_type == "aneel_plant" else "ccee_plant_parcel"
-                            ),
-                            reference_month=year_month_val,
-                            start_datetime=start_value,
-                            end_datetime=end_value,
-                            limit=row_limit,
-                        ),
-                    )
+                    hot_cold_skip_reason = _hourly_hot_cold_skip_reason(resolved_type)
                     hourly_read_path = {
-                        "attempted": manifest_path is not None,
-                        "selected": adapter_result.read_path or "raw_sqlite",
-                        "fallback_reason": adapter_result.fallback_reason,
-                        "manifest_path": adapter_result.manifest_path
-                        or (str(manifest_path) if manifest_path is not None else None),
-                        "artifact_path": adapter_result.artifact_path,
-                        "source_signature_ok": adapter_result.source_signature_ok,
+                        "attempted": False,
+                        "selected": "raw_sqlite",
+                        "fallback_reason": hot_cold_skip_reason,
+                        "manifest_path": str(manifest_path) if manifest_path is not None else None,
+                        "artifact_path": None,
+                        "source_signature_ok": None,
                     }
                     rows: Any
-                    if adapter_result.ok:
-                        rows = adapter_result.rows
-                        data_source = adapter_result.read_path or data_source
+                    if hot_cold_skip_reason is None:
+                        adapter_result = read_hourly_from_hot_cold(
+                            source_db_path=Path(self._settings.paths.energy_kpi_db_path),
+                            manifest_path=manifest_path,
+                            request=HourlyReadRequest(
+                                entity_id=entity_id,
+                                entity_type=(
+                                    "aneel_plant" if resolved_type == "aneel_plant" else "ccee_plant_parcel"
+                                ),
+                                reference_month=year_month_val,
+                                start_datetime=start_value,
+                                end_datetime=end_value,
+                                limit=row_limit,
+                            ),
+                        )
+                        hourly_read_path = {
+                            "attempted": manifest_path is not None,
+                            "selected": adapter_result.read_path or "raw_sqlite",
+                            "fallback_reason": adapter_result.fallback_reason,
+                            "manifest_path": adapter_result.manifest_path
+                            or (str(manifest_path) if manifest_path is not None else None),
+                            "artifact_path": adapter_result.artifact_path,
+                            "source_signature_ok": adapter_result.source_signature_ok,
+                        }
+                        if adapter_result.ok:
+                            rows = adapter_result.rows
+                            data_source = adapter_result.read_path or data_source
+                        else:
+                            rows = None
                     else:
+                        rows = None
+
+                    if rows is None:
                         data_source = "ccee_plant_parcel_hourly"
                         if resolved_type == "aneel_plant":
                             sql = """
