@@ -5,13 +5,19 @@ All methods query local SQLite. No network calls on the read path.
 from __future__ import annotations
 
 import logging
+import os
 import re
 import unicodedata
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import bindparam, text
 
+from src.energy_kpi.hourly_read_adapter import (
+    HourlyReadRequest,
+    read_hourly_from_hot_cold,
+)
 from src.platform.contracts import (
     CountryKPIValueDTO,
     EnergyKPIHealthDTO,
@@ -42,6 +48,7 @@ logger = logging.getLogger(__name__)
 
 _STALE_THRESHOLD_DAYS = 90
 _PLANT_SOURCE_STATUS_ORDER = (SOURCE_ANEEL_SIGA, SOURCE_CCEE_MONTHLY, SOURCE_CCEE_HOURLY)
+_HOURLY_HOT_COLD_MANIFEST_ENV = "CVM_ENERGY_HOURLY_HOT_COLD_MANIFEST"
 
 
 def _normalize_plant_source_ids(source_ids: list[str] | None) -> list[str]:
@@ -49,6 +56,13 @@ def _normalize_plant_source_ids(source_ids: list[str] | None) -> list[str]:
         return list(_PLANT_SOURCE_STATUS_ORDER)
     requested = {str(source_id) for source_id in source_ids}
     return [source_id for source_id in _PLANT_SOURCE_STATUS_ORDER if source_id in requested]
+
+
+def _hourly_hot_cold_manifest_path() -> Path | None:
+    value = os.getenv(_HOURLY_HOT_COLD_MANIFEST_ENV)
+    if not value or not value.strip():
+        return None
+    return Path(value.strip()).expanduser()
 
 
 def _plant_source_status_rows(
@@ -1442,6 +1456,7 @@ class EnergyKPIReadService:
             series_data: dict[str, dict[str, Any]] = {}
             data_source = "unknown"
             guardrails: dict[str, Any] = {}
+            hourly_read_path: dict[str, Any] | None = None
 
             def init_series(name: str, label: str, unit: str, axis: str, chart_type: str = "line", color: str = "") -> None:
                 series_data[name] = {
@@ -1646,52 +1661,82 @@ class EnergyKPIReadService:
                         "max_window_days": 31,
                         "limit": row_limit,
                     }
-                    if resolved_type == "aneel_plant":
-                        sql = """
-                            SELECT 
-                                h.reference_datetime,
-                                h.commercialization_period,
-                                SUM(h.generation_center_of_gravity_mwh) AS generation_mwh,
-                                SUM(h.verified_generation_ons_mwh) AS verified_generation_mwh,
-                                SUM(h.verified_availability_mwh) AS verified_availability_mwh,
-                                SUM(h.unavailability_mwh) AS unavailability_mwh
-                            FROM ccee_plant_parcel_hourly h
-                            JOIN ccee_plant_parcels p ON p.plant_parcel_code = h.plant_parcel_code
-                            WHERE p.ceg = :entity_id
-                              AND h.reference_month = :year_month
-                              AND h.reference_datetime >= :start_datetime
-                              AND h.reference_datetime <= :end_datetime
-                            GROUP BY h.reference_datetime, h.commercialization_period
-                            ORDER BY h.reference_datetime ASC, h.commercialization_period ASC
-                            LIMIT :limit
-                        """
+                    manifest_path = _hourly_hot_cold_manifest_path()
+                    adapter_result = read_hourly_from_hot_cold(
+                        source_db_path=Path(self._settings.paths.energy_kpi_db_path),
+                        manifest_path=manifest_path,
+                        request=HourlyReadRequest(
+                            entity_id=entity_id,
+                            entity_type=(
+                                "aneel_plant" if resolved_type == "aneel_plant" else "ccee_plant_parcel"
+                            ),
+                            reference_month=year_month_val,
+                            start_datetime=start_value,
+                            end_datetime=end_value,
+                            limit=row_limit,
+                        ),
+                    )
+                    hourly_read_path = {
+                        "attempted": manifest_path is not None,
+                        "selected": adapter_result.read_path or "raw_sqlite",
+                        "fallback_reason": adapter_result.fallback_reason,
+                        "manifest_path": adapter_result.manifest_path
+                        or (str(manifest_path) if manifest_path is not None else None),
+                        "artifact_path": adapter_result.artifact_path,
+                        "source_signature_ok": adapter_result.source_signature_ok,
+                    }
+                    rows: Any
+                    if adapter_result.ok:
+                        rows = adapter_result.rows
+                        data_source = adapter_result.read_path or data_source
                     else:
-                        sql = """
-                            SELECT 
-                                reference_datetime,
-                                commercialization_period,
-                                generation_center_of_gravity_mwh AS generation_mwh,
-                                verified_generation_ons_mwh AS verified_generation_mwh,
-                                verified_availability_mwh AS verified_availability_mwh,
-                                unavailability_mwh AS unavailability_mwh
-                            FROM ccee_plant_parcel_hourly
-                            WHERE plant_parcel_code = :entity_id
-                              AND reference_month = :year_month
-                              AND reference_datetime >= :start_datetime
-                              AND reference_datetime <= :end_datetime
-                            ORDER BY reference_datetime ASC, commercialization_period ASC
-                            LIMIT :limit
-                        """
-                    rows = conn.execute(
-                        text(sql),
-                        {
-                            "entity_id": entity_id,
-                            "year_month": year_month_val,
-                            "start_datetime": start_value,
-                            "end_datetime": end_value,
-                            "limit": row_limit,
-                        },
-                    ).mappings().all()
+                        data_source = "ccee_plant_parcel_hourly"
+                        if resolved_type == "aneel_plant":
+                            sql = """
+                                SELECT
+                                    h.reference_datetime,
+                                    h.commercialization_period,
+                                    SUM(h.generation_center_of_gravity_mwh) AS generation_mwh,
+                                    SUM(h.verified_generation_ons_mwh) AS verified_generation_mwh,
+                                    SUM(h.verified_availability_mwh) AS verified_availability_mwh,
+                                    SUM(h.unavailability_mwh) AS unavailability_mwh
+                                FROM ccee_plant_parcel_hourly h
+                                JOIN ccee_plant_parcels p ON p.plant_parcel_code = h.plant_parcel_code
+                                WHERE p.ceg = :entity_id
+                                  AND h.reference_month = :year_month
+                                  AND h.reference_datetime >= :start_datetime
+                                  AND h.reference_datetime <= :end_datetime
+                                GROUP BY h.reference_datetime, h.commercialization_period
+                                ORDER BY h.reference_datetime ASC, h.commercialization_period ASC
+                                LIMIT :limit
+                            """
+                        else:
+                            sql = """
+                                SELECT
+                                    reference_datetime,
+                                    commercialization_period,
+                                    generation_center_of_gravity_mwh AS generation_mwh,
+                                    verified_generation_ons_mwh AS verified_generation_mwh,
+                                    verified_availability_mwh AS verified_availability_mwh,
+                                    unavailability_mwh AS unavailability_mwh
+                                FROM ccee_plant_parcel_hourly
+                                WHERE plant_parcel_code = :entity_id
+                                  AND reference_month = :year_month
+                                  AND reference_datetime >= :start_datetime
+                                  AND reference_datetime <= :end_datetime
+                                ORDER BY reference_datetime ASC, commercialization_period ASC
+                                LIMIT :limit
+                            """
+                        rows = conn.execute(
+                            text(sql),
+                            {
+                                "entity_id": entity_id,
+                                "year_month": year_month_val,
+                                "start_datetime": start_value,
+                                "end_datetime": end_value,
+                                "limit": row_limit,
+                            },
+                        ).mappings().all()
                     for row in rows:
                         dt = row["reference_datetime"]
                         p = row["commercialization_period"]
@@ -1714,17 +1759,21 @@ class EnergyKPIReadService:
                 valid = [v for v in s["points"] if v is not None]
                 s["latest"] = valid[-1] if valid else None
 
+            metadata = {
+                "data_source": data_source,
+                "guardrails": guardrails,
+                "mart_status": get_plant_hourly_mart_status(conn),
+            }
+            if hourly_read_path is not None:
+                metadata["hourly_read_path"] = hourly_read_path
+
             return {
                 "series": list(series_data.values()),
                 "periods": periods,
                 "frequency": frequency,
                 "entity_type": resolved_type,
                 "entity_id": entity_id,
-                "metadata": {
-                    "data_source": data_source,
-                    "guardrails": guardrails,
-                    "mart_status": get_plant_hourly_mart_status(conn),
-                },
+                "metadata": metadata,
             }
 
 

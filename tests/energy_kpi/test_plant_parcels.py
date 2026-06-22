@@ -10,6 +10,7 @@ import pandas as pd
 import pytest
 from sqlalchemy import create_engine, event, text
 
+from scripts.diagnostics.phase5_hot_cold_hourly_prototype import build_hot_cold_prototype
 from src.energy_kpi.metrics import (
     capacity_factor,
     hours_in_month,
@@ -1027,3 +1028,134 @@ def test_get_plant_parcel_chart_data(tmp_path: Path, db_engine, monkeypatch):
     )
     assert hourly_chart["frequency"] == "hourly"
     assert len(hourly_chart["periods"]) == 2
+
+
+def _seed_file_backed_hourly_chart_fixture(tmp_path: Path):
+    settings = build_settings(project_root=tmp_path)
+    engine = get_energy_kpi_engine(settings)
+    monthly_path = _write_csv(
+        tmp_path / "monthly_for_adapter.csv",
+        [
+            "MES_REFERENCIA",
+            "COD_PARCELA_USINA",
+            "SIGLA_PARCELA_USINA",
+            "CEG",
+            "NOME_EMPRESARIAL",
+            "SUBMERCADO",
+            "FONTE_ENERGIA_PRIMARIA",
+            "ESTADO_UF",
+            "CAP_T",
+            "GARANTIA_FISICA",
+            "GERACAO_CENTRO_GRAVIDADE",
+        ],
+        [
+            ["2026-01", "1001", "PLT1", "CEG123", "Utility SA", "SE/CO", "Hidraulica", "SP", "100", "50", "40"],
+            ["2026-02", "1001", "PLT1", "CEG123", "Utility SA", "SE/CO", "Hidraulica", "SP", "100", "50", "45"],
+        ],
+    )
+    hourly_path = _write_csv(
+        tmp_path / "hourly_for_adapter.csv",
+        [
+            "MES_REFERENCIA",
+            "DATA",
+            "PERIODO_COMERCIALIZACAO",
+            "CODIGO_PARCELA_USINA",
+            "SIGLA_USINA",
+            "FONTE_PRIMARIA",
+            "SUBMERCADO",
+            "GERACAO_CENTRO_GRAVIDADE",
+            "GERACAO_VERIFICADA_ONS",
+            "DISPONIBILIDADE_VERIFICADA_UG",
+            "INDISPONIBILIDADE_UTE_ORDEM_MERITO_ECONOMICO",
+        ],
+        [
+            ["202601", "01/01/2026", 1, "1001", "PLT1", "Hidraulica", "SE/CO", "5", "4", "3", "0"],
+            ["202602", "01/02/2026", 1, "1001", "PLT1", "Hidraulica", "SE/CO", "10", "9", "8", "0"],
+            ["202602", "01/02/2026", 2, "1001", "PLT1", "Hidraulica", "SE/CO", "12", "10", "9", "0"],
+        ],
+    )
+
+    with engine.begin() as conn:
+        seed_plant_sources(conn)
+        upsert_ccee_monthly(
+            conn,
+            parse_ccee_monthly(_snapshot(monthly_path, SOURCE_CCEE_MONTHLY, "CCEE", "PARCELA_USINA_MONTANTE_MENSAL")),
+        )
+        upsert_ccee_hourly(
+            conn,
+            parse_ccee_hourly(_snapshot(hourly_path, SOURCE_CCEE_HOURLY, "CCEE", "GERACAO_HORARIA_USINA")),
+        )
+        rebuild_plant_hourly_marts(conn, reference_months=["2026-01", "2026-02"])
+
+    build_hot_cold_prototype(
+        database=settings.paths.energy_kpi_db_path,
+        output_dir=tmp_path / "hourly_hot_cold",
+        hot_months=1,
+        cold_months=["2026-01"],
+        full_months=True,
+        chunk_size=2,
+    )
+    return settings, tmp_path / "hourly_hot_cold" / "manifest.json"
+
+
+def test_hourly_chart_uses_hot_cold_adapter_when_manifest_valid(tmp_path: Path, monkeypatch):
+    settings, manifest_path = _seed_file_backed_hourly_chart_fixture(tmp_path)
+    monkeypatch.setenv("CVM_ENERGY_HOURLY_HOT_COLD_MANIFEST", str(manifest_path))
+
+    svc = EnergyKPIReadService(settings)
+    hot_chart = svc.get_plant_parcel_chart_data(
+        entity_id="1001",
+        entity_type="ccee_plant_parcel",
+        frequency="hourly",
+        year_month="2026-02",
+        start_datetime="2026-02-01T00:00:00",
+        end_datetime="2026-02-01T23:59:59",
+    )
+    hot_metadata = hot_chart["metadata"]["hourly_read_path"]
+
+    assert hot_chart["metadata"]["data_source"] == "hot_sqlite"
+    assert hot_metadata["attempted"] is True
+    assert hot_metadata["selected"] == "hot_sqlite"
+    assert hot_metadata["fallback_reason"] is None
+    assert hot_chart["periods"] == ["00h", "01h"]
+    assert hot_chart["series"][0]["points"] == [10.0, 12.0]
+
+    cold_chart = svc.get_plant_parcel_chart_data(
+        entity_id="1001",
+        entity_type="ccee_plant_parcel",
+        frequency="hourly",
+        year_month="2026-01",
+        start_datetime="2026-01-01T00:00:00",
+        end_datetime="2026-01-01T23:59:59",
+    )
+    cold_metadata = cold_chart["metadata"]["hourly_read_path"]
+
+    assert cold_chart["metadata"]["data_source"] == "cold_parquet"
+    assert cold_metadata["attempted"] is True
+    assert cold_metadata["selected"] == "cold_parquet"
+    assert cold_metadata["fallback_reason"] is None
+    assert cold_chart["periods"] == ["00h"]
+    assert cold_chart["series"][0]["points"] == [5.0]
+
+
+def test_hourly_chart_falls_back_to_raw_sqlite_when_manifest_missing(tmp_path: Path, monkeypatch):
+    settings, _manifest_path = _seed_file_backed_hourly_chart_fixture(tmp_path)
+    monkeypatch.setenv("CVM_ENERGY_HOURLY_HOT_COLD_MANIFEST", str(tmp_path / "missing_manifest.json"))
+
+    svc = EnergyKPIReadService(settings)
+    chart = svc.get_plant_parcel_chart_data(
+        entity_id="1001",
+        entity_type="ccee_plant_parcel",
+        frequency="hourly",
+        year_month="2026-02",
+        start_datetime="2026-02-01T00:00:00",
+        end_datetime="2026-02-01T23:59:59",
+    )
+    metadata = chart["metadata"]["hourly_read_path"]
+
+    assert chart["metadata"]["data_source"] == "ccee_plant_parcel_hourly"
+    assert metadata["attempted"] is True
+    assert metadata["selected"] == "raw_sqlite"
+    assert metadata["fallback_reason"] == "manifest_missing"
+    assert chart["periods"] == ["00h", "01h"]
+    assert chart["series"][0]["points"] == [10.0, 12.0]
