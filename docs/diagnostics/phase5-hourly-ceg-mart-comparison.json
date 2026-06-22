@@ -1,0 +1,708 @@
+{
+  "schema_version": 1,
+  "mode": "phase5_hourly_read_path_comparison",
+  "generated_at_utc": "2026-06-22T16:06:27Z",
+  "read_only_source": true,
+  "manifest_path": "C:\\tmp\\cvma-phase5-hot-cold-full-two-two\\manifest.json",
+  "source_database": "C:\\Users\\jadaojoao\\Documents\\CVMAnalytics\\db\\energy_kpis.db",
+  "ceg_mart_path": "C:\\tmp\\cvma-phase5-ceg-hourly-mart-two-two.sqlite",
+  "source_signature_before": {
+    "path": "C:\\Users\\jadaojoao\\Documents\\CVMAnalytics\\db\\energy_kpis.db",
+    "size_bytes": 30832099328,
+    "mtime_ns": 1781981674777008300
+  },
+  "source_signature_after": {
+    "path": "C:\\Users\\jadaojoao\\Documents\\CVMAnalytics\\db\\energy_kpis.db",
+    "size_bytes": 30832099328,
+    "mtime_ns": 1781981674777008300
+  },
+  "source_unchanged": true,
+  "prototype": {
+    "hot_sqlite_path": "C:\\tmp\\cvma-phase5-hot-cold-full-two-two\\hot\\energy_hot.sqlite",
+    "cold_partition_months": [
+      "2024-03",
+      "2024-04"
+    ]
+  },
+  "parameters": {
+    "tier": "all",
+    "entity_type": "ccee_plant_parcel",
+    "entity_id": null,
+    "plant_parcel_code": null,
+    "reference_month": null,
+    "start_datetime": null,
+    "end_datetime": null,
+    "window_mode": "month",
+    "limit": 2000,
+    "runs": 2,
+    "samples_per_tier": 1,
+    "aneel_samples_per_tier": 3,
+    "include_aneel_aggregation": false,
+    "auto_entity_type": "aneel_plant"
+  },
+  "samples": [
+    {
+      "label": "auto_hot_aneel_2026-03_UFV.RS.MG.046579-8.01",
+      "tier": "hot",
+      "entity_type": "aneel_plant",
+      "entity_id": "UFV.RS.MG.046579-8.01",
+      "reference_month": "2026-03",
+      "plant_parcel_code": null,
+      "ceg": "UFV.RS.MG.046579-8.01",
+      "plant_parcel_count": 21,
+      "start_datetime": "2026-03-01T00:00:00",
+      "end_datetime": "2026-03-31T23:59:59",
+      "window_mode": "month",
+      "limit": 2000,
+      "raw": {
+        "source": "raw_sqlite",
+        "row_count": 744,
+        "elapsed_ms": 22778.309,
+        "elapsed_runs_ms": [
+          22778.309,
+          2692.196
+        ],
+        "rows_hash": "5f0ac95bea33a7167e77e349c5f988fae73fde88c2d6339447c3c278409edf7d"
+      },
+      "candidate": {
+        "source": "hot_sqlite",
+        "row_count": 744,
+        "elapsed_ms": 4107.722,
+        "elapsed_runs_ms": [
+          4107.722,
+          1022.03
+        ],
+        "rows_hash": "5f0ac95bea33a7167e77e349c5f988fae73fde88c2d6339447c3c278409edf7d"
+      },
+      "match": true,
+      "difference_count": 0,
+      "differences": [],
+      "truncated": false,
+      "ceg_mart": {
+        "source": "ceg_sqlite_mart",
+        "row_count": 744,
+        "elapsed_ms": 6.219,
+        "elapsed_runs_ms": [
+          6.219,
+          2.013
+        ],
+        "rows_hash": "5f0ac95bea33a7167e77e349c5f988fae73fde88c2d6339447c3c278409edf7d"
+      },
+      "ceg_mart_comparison": {
+        "match": true,
+        "difference_count": 0,
+        "differences": [],
+        "truncated": false
+      }
+    },
+    {
+      "label": "auto_hot_aneel_2026-03_EOL.CV.BA.051787-9.01",
+      "tier": "hot",
+      "entity_type": "aneel_plant",
+      "entity_id": "EOL.CV.BA.051787-9.01",
+      "reference_month": "2026-03",
+      "plant_parcel_code": null,
+      "ceg": "EOL.CV.BA.051787-9.01",
+      "plant_parcel_count": 19,
+      "start_datetime": "2026-03-01T00:00:00",
+      "end_datetime": "2026-03-31T23:59:59",
+      "window_mode": "month",
+      "limit": 2000,
+      "raw": {
+        "source": "raw_sqlite",
+        "row_count": 744,
+        "elapsed_ms": 18579.1,
+        "elapsed_runs_ms": [
+          18579.1,
+          2681.56
+        ],
+        "rows_hash": "e7e23e6701000e086394aa0a718996a8c3cb252bcd6da77c1d1014e826ebcf9e"
+      },
+      "candidate": {
+        "source": "hot_sqlite",
+        "row_count": 744,
+        "elapsed_ms": 996.395,
+        "elapsed_runs_ms": [
+          996.395,
+          994.989
+        ],
+        "rows_hash": "e7e23e6701000e086394aa0a718996a8c3cb252bcd6da77c1d1014e826ebcf9e"
+      },
+      "match": true,
+      "difference_count": 0,
+      "differences": [],
+      "truncated": false,
+      "ceg_mart": {
+        "source": "ceg_sqlite_mart",
+        "row_count": 744,
+        "elapsed_ms": 6.45,
+        "elapsed_runs_ms": [
+          6.45,
+          2.005
+        ],
+        "rows_hash": "e7e23e6701000e086394aa0a718996a8c3cb252bcd6da77c1d1014e826ebcf9e"
+      },
+      "ceg_mart_comparison": {
+        "match": true,
+        "difference_count": 0,
+        "differences": [],
+        "truncated": false
+      }
+    },
+    {
+      "label": "auto_hot_aneel_2026-03_EOL.CV.BA.051788-7.01",
+      "tier": "hot",
+      "entity_type": "aneel_plant",
+      "entity_id": "EOL.CV.BA.051788-7.01",
+      "reference_month": "2026-03",
+      "plant_parcel_code": null,
+      "ceg": "EOL.CV.BA.051788-7.01",
+      "plant_parcel_count": 19,
+      "start_datetime": "2026-03-01T00:00:00",
+      "end_datetime": "2026-03-31T23:59:59",
+      "window_mode": "month",
+      "limit": 2000,
+      "raw": {
+        "source": "raw_sqlite",
+        "row_count": 744,
+        "elapsed_ms": 2667.285,
+        "elapsed_runs_ms": [
+          2667.285,
+          2729.911
+        ],
+        "rows_hash": "ad06a194b8f9c67bc8ddf41361fec53a8ae93d118188bb951de5d17a44c85bc4"
+      },
+      "candidate": {
+        "source": "hot_sqlite",
+        "row_count": 744,
+        "elapsed_ms": 1002.893,
+        "elapsed_runs_ms": [
+          1002.893,
+          1012.669
+        ],
+        "rows_hash": "ad06a194b8f9c67bc8ddf41361fec53a8ae93d118188bb951de5d17a44c85bc4"
+      },
+      "match": true,
+      "difference_count": 0,
+      "differences": [],
+      "truncated": false,
+      "ceg_mart": {
+        "source": "ceg_sqlite_mart",
+        "row_count": 744,
+        "elapsed_ms": 9.361,
+        "elapsed_runs_ms": [
+          9.361,
+          1.998
+        ],
+        "rows_hash": "ad06a194b8f9c67bc8ddf41361fec53a8ae93d118188bb951de5d17a44c85bc4"
+      },
+      "ceg_mart_comparison": {
+        "match": true,
+        "difference_count": 0,
+        "differences": [],
+        "truncated": false
+      }
+    },
+    {
+      "label": "auto_hot_aneel_2026-04_UFV.RS.MG.046579-8.01",
+      "tier": "hot",
+      "entity_type": "aneel_plant",
+      "entity_id": "UFV.RS.MG.046579-8.01",
+      "reference_month": "2026-04",
+      "plant_parcel_code": null,
+      "ceg": "UFV.RS.MG.046579-8.01",
+      "plant_parcel_count": 21,
+      "start_datetime": "2026-04-01T00:00:00",
+      "end_datetime": "2026-04-30T23:59:59",
+      "window_mode": "month",
+      "limit": 2000,
+      "raw": {
+        "source": "raw_sqlite",
+        "row_count": 720,
+        "elapsed_ms": 21189.716,
+        "elapsed_runs_ms": [
+          21189.716,
+          2601.184
+        ],
+        "rows_hash": "0077c2786b16bfce87cfed3f370f19c93541960443ebfa11af5a5bc4a5f71ea5"
+      },
+      "candidate": {
+        "source": "hot_sqlite",
+        "row_count": 720,
+        "elapsed_ms": 3906.318,
+        "elapsed_runs_ms": [
+          3906.318,
+          1008.064
+        ],
+        "rows_hash": "0077c2786b16bfce87cfed3f370f19c93541960443ebfa11af5a5bc4a5f71ea5"
+      },
+      "match": true,
+      "difference_count": 0,
+      "differences": [],
+      "truncated": false,
+      "ceg_mart": {
+        "source": "ceg_sqlite_mart",
+        "row_count": 720,
+        "elapsed_ms": 7.194,
+        "elapsed_runs_ms": [
+          7.194,
+          1.966
+        ],
+        "rows_hash": "0077c2786b16bfce87cfed3f370f19c93541960443ebfa11af5a5bc4a5f71ea5"
+      },
+      "ceg_mart_comparison": {
+        "match": true,
+        "difference_count": 0,
+        "differences": [],
+        "truncated": false
+      }
+    },
+    {
+      "label": "auto_hot_aneel_2026-04_EOL.CV.BA.051787-9.01",
+      "tier": "hot",
+      "entity_type": "aneel_plant",
+      "entity_id": "EOL.CV.BA.051787-9.01",
+      "reference_month": "2026-04",
+      "plant_parcel_code": null,
+      "ceg": "EOL.CV.BA.051787-9.01",
+      "plant_parcel_count": 19,
+      "start_datetime": "2026-04-01T00:00:00",
+      "end_datetime": "2026-04-30T23:59:59",
+      "window_mode": "month",
+      "limit": 2000,
+      "raw": {
+        "source": "raw_sqlite",
+        "row_count": 720,
+        "elapsed_ms": 3430.712,
+        "elapsed_runs_ms": [
+          3430.712,
+          2598.259
+        ],
+        "rows_hash": "d27358340f1d9ff1491450a6f1e8c07db68e779de52cb150626d00eb2db9d67a"
+      },
+      "candidate": {
+        "source": "hot_sqlite",
+        "row_count": 720,
+        "elapsed_ms": 976.737,
+        "elapsed_runs_ms": [
+          976.737,
+          974.542
+        ],
+        "rows_hash": "d27358340f1d9ff1491450a6f1e8c07db68e779de52cb150626d00eb2db9d67a"
+      },
+      "match": true,
+      "difference_count": 0,
+      "differences": [],
+      "truncated": false,
+      "ceg_mart": {
+        "source": "ceg_sqlite_mart",
+        "row_count": 720,
+        "elapsed_ms": 5.632,
+        "elapsed_runs_ms": [
+          5.632,
+          1.906
+        ],
+        "rows_hash": "d27358340f1d9ff1491450a6f1e8c07db68e779de52cb150626d00eb2db9d67a"
+      },
+      "ceg_mart_comparison": {
+        "match": true,
+        "difference_count": 0,
+        "differences": [],
+        "truncated": false
+      }
+    },
+    {
+      "label": "auto_hot_aneel_2026-04_EOL.CV.BA.051788-7.01",
+      "tier": "hot",
+      "entity_type": "aneel_plant",
+      "entity_id": "EOL.CV.BA.051788-7.01",
+      "reference_month": "2026-04",
+      "plant_parcel_code": null,
+      "ceg": "EOL.CV.BA.051788-7.01",
+      "plant_parcel_count": 19,
+      "start_datetime": "2026-04-01T00:00:00",
+      "end_datetime": "2026-04-30T23:59:59",
+      "window_mode": "month",
+      "limit": 2000,
+      "raw": {
+        "source": "raw_sqlite",
+        "row_count": 720,
+        "elapsed_ms": 2575.065,
+        "elapsed_runs_ms": [
+          2575.065,
+          2583.279
+        ],
+        "rows_hash": "8e02bd8bd9e4e59ef9863568d334c6a5701a2bdcee9c2ca35ee3bb30fcc6ca6b"
+      },
+      "candidate": {
+        "source": "hot_sqlite",
+        "row_count": 720,
+        "elapsed_ms": 977.345,
+        "elapsed_runs_ms": [
+          977.345,
+          978.085
+        ],
+        "rows_hash": "8e02bd8bd9e4e59ef9863568d334c6a5701a2bdcee9c2ca35ee3bb30fcc6ca6b"
+      },
+      "match": true,
+      "difference_count": 0,
+      "differences": [],
+      "truncated": false,
+      "ceg_mart": {
+        "source": "ceg_sqlite_mart",
+        "row_count": 720,
+        "elapsed_ms": 7.131,
+        "elapsed_runs_ms": [
+          7.131,
+          1.955
+        ],
+        "rows_hash": "8e02bd8bd9e4e59ef9863568d334c6a5701a2bdcee9c2ca35ee3bb30fcc6ca6b"
+      },
+      "ceg_mart_comparison": {
+        "match": true,
+        "difference_count": 0,
+        "differences": [],
+        "truncated": false
+      }
+    },
+    {
+      "label": "auto_cold_aneel_2024-03_UTE.GN.RJ.001544-0.01",
+      "tier": "cold",
+      "entity_type": "aneel_plant",
+      "entity_id": "UTE.GN.RJ.001544-0.01",
+      "reference_month": "2024-03",
+      "plant_parcel_code": null,
+      "ceg": "UTE.GN.RJ.001544-0.01",
+      "plant_parcel_count": 8,
+      "start_datetime": "2024-03-01T00:00:00",
+      "end_datetime": "2024-03-31T23:59:59",
+      "window_mode": "month",
+      "limit": 2000,
+      "raw": {
+        "source": "raw_sqlite",
+        "row_count": 744,
+        "elapsed_ms": 17554.548,
+        "elapsed_runs_ms": [
+          17554.548,
+          2089.216
+        ],
+        "rows_hash": "d029de6dce8a74f12498cfa90c2edced340be5f8a7367ab4a0d1381767e3419a"
+      },
+      "candidate": {
+        "source": "cold_parquet",
+        "row_count": 744,
+        "elapsed_ms": 612.713,
+        "elapsed_runs_ms": [
+          612.713,
+          26.568
+        ],
+        "rows_hash": "d029de6dce8a74f12498cfa90c2edced340be5f8a7367ab4a0d1381767e3419a"
+      },
+      "match": true,
+      "difference_count": 0,
+      "differences": [],
+      "truncated": false,
+      "ceg_mart": {
+        "source": "ceg_sqlite_mart",
+        "row_count": 744,
+        "elapsed_ms": 6.29,
+        "elapsed_runs_ms": [
+          6.29,
+          2.297
+        ],
+        "rows_hash": "d029de6dce8a74f12498cfa90c2edced340be5f8a7367ab4a0d1381767e3419a"
+      },
+      "ceg_mart_comparison": {
+        "match": true,
+        "difference_count": 0,
+        "differences": [],
+        "truncated": false
+      }
+    },
+    {
+      "label": "auto_cold_aneel_2024-03_UFV.RS.MG.040869-7.01",
+      "tier": "cold",
+      "entity_type": "aneel_plant",
+      "entity_id": "UFV.RS.MG.040869-7.01",
+      "reference_month": "2024-03",
+      "plant_parcel_code": null,
+      "ceg": "UFV.RS.MG.040869-7.01",
+      "plant_parcel_count": 6,
+      "start_datetime": "2024-03-01T00:00:00",
+      "end_datetime": "2024-03-31T23:59:59",
+      "window_mode": "month",
+      "limit": 2000,
+      "raw": {
+        "source": "raw_sqlite",
+        "row_count": 744,
+        "elapsed_ms": 2106.528,
+        "elapsed_runs_ms": [
+          2106.528,
+          2129.652
+        ],
+        "rows_hash": "2e1c4320108870a938e4b98ff13e1b9285d4737fd5310d66eded8462fc0dc320"
+      },
+      "candidate": {
+        "source": "cold_parquet",
+        "row_count": 744,
+        "elapsed_ms": 25.684,
+        "elapsed_runs_ms": [
+          25.684,
+          27.273
+        ],
+        "rows_hash": "2e1c4320108870a938e4b98ff13e1b9285d4737fd5310d66eded8462fc0dc320"
+      },
+      "match": true,
+      "difference_count": 0,
+      "differences": [],
+      "truncated": false,
+      "ceg_mart": {
+        "source": "ceg_sqlite_mart",
+        "row_count": 744,
+        "elapsed_ms": 6.308,
+        "elapsed_runs_ms": [
+          6.308,
+          2.078
+        ],
+        "rows_hash": "2e1c4320108870a938e4b98ff13e1b9285d4737fd5310d66eded8462fc0dc320"
+      },
+      "ceg_mart_comparison": {
+        "match": true,
+        "difference_count": 0,
+        "differences": [],
+        "truncated": false
+      }
+    },
+    {
+      "label": "auto_cold_aneel_2024-03_CGH.PH.SC.029800-0.01",
+      "tier": "cold",
+      "entity_type": "aneel_plant",
+      "entity_id": "CGH.PH.SC.029800-0.01",
+      "reference_month": "2024-03",
+      "plant_parcel_code": null,
+      "ceg": "CGH.PH.SC.029800-0.01",
+      "plant_parcel_count": 4,
+      "start_datetime": "2024-03-01T00:00:00",
+      "end_datetime": "2024-03-31T23:59:59",
+      "window_mode": "month",
+      "limit": 2000,
+      "raw": {
+        "source": "raw_sqlite",
+        "row_count": 744,
+        "elapsed_ms": 2133.199,
+        "elapsed_runs_ms": [
+          2133.199,
+          2304.888
+        ],
+        "rows_hash": "7248c2b1dcb46170884d917a2776417ea98b71dc2f08566326b6cf627cc7c474"
+      },
+      "candidate": {
+        "source": "cold_parquet",
+        "row_count": 744,
+        "elapsed_ms": 25.136,
+        "elapsed_runs_ms": [
+          25.136,
+          23.75
+        ],
+        "rows_hash": "7248c2b1dcb46170884d917a2776417ea98b71dc2f08566326b6cf627cc7c474"
+      },
+      "match": true,
+      "difference_count": 0,
+      "differences": [],
+      "truncated": false,
+      "ceg_mart": {
+        "source": "ceg_sqlite_mart",
+        "row_count": 744,
+        "elapsed_ms": 6.078,
+        "elapsed_runs_ms": [
+          6.078,
+          1.991
+        ],
+        "rows_hash": "7248c2b1dcb46170884d917a2776417ea98b71dc2f08566326b6cf627cc7c474"
+      },
+      "ceg_mart_comparison": {
+        "match": true,
+        "difference_count": 0,
+        "differences": [],
+        "truncated": false
+      }
+    },
+    {
+      "label": "auto_cold_aneel_2024-04_UTE.GN.RJ.001544-0.01",
+      "tier": "cold",
+      "entity_type": "aneel_plant",
+      "entity_id": "UTE.GN.RJ.001544-0.01",
+      "reference_month": "2024-04",
+      "plant_parcel_code": null,
+      "ceg": "UTE.GN.RJ.001544-0.01",
+      "plant_parcel_count": 8,
+      "start_datetime": "2024-04-01T00:00:00",
+      "end_datetime": "2024-04-30T23:59:59",
+      "window_mode": "month",
+      "limit": 2000,
+      "raw": {
+        "source": "raw_sqlite",
+        "row_count": 720,
+        "elapsed_ms": 18358.929,
+        "elapsed_runs_ms": [
+          18358.929,
+          2409.679
+        ],
+        "rows_hash": "99322985b98bb5b4c91c63609298de13d0af8ae5184da90609cb7186b93d5ddf"
+      },
+      "candidate": {
+        "source": "cold_parquet",
+        "row_count": 720,
+        "elapsed_ms": 54.513,
+        "elapsed_runs_ms": [
+          54.513,
+          32.973
+        ],
+        "rows_hash": "99322985b98bb5b4c91c63609298de13d0af8ae5184da90609cb7186b93d5ddf"
+      },
+      "match": true,
+      "difference_count": 0,
+      "differences": [],
+      "truncated": false,
+      "ceg_mart": {
+        "source": "ceg_sqlite_mart",
+        "row_count": 720,
+        "elapsed_ms": 5.907,
+        "elapsed_runs_ms": [
+          5.907,
+          2.228
+        ],
+        "rows_hash": "99322985b98bb5b4c91c63609298de13d0af8ae5184da90609cb7186b93d5ddf"
+      },
+      "ceg_mart_comparison": {
+        "match": true,
+        "difference_count": 0,
+        "differences": [],
+        "truncated": false
+      }
+    },
+    {
+      "label": "auto_cold_aneel_2024-04_UFV.RS.MG.040869-7.01",
+      "tier": "cold",
+      "entity_type": "aneel_plant",
+      "entity_id": "UFV.RS.MG.040869-7.01",
+      "reference_month": "2024-04",
+      "plant_parcel_code": null,
+      "ceg": "UFV.RS.MG.040869-7.01",
+      "plant_parcel_count": 6,
+      "start_datetime": "2024-04-01T00:00:00",
+      "end_datetime": "2024-04-30T23:59:59",
+      "window_mode": "month",
+      "limit": 2000,
+      "raw": {
+        "source": "raw_sqlite",
+        "row_count": 720,
+        "elapsed_ms": 2321.742,
+        "elapsed_runs_ms": [
+          2321.742,
+          2214.187
+        ],
+        "rows_hash": "612be45f0f7d4e365f460685653fabc574116aa5ebc8f3b484a7a63a71245880"
+      },
+      "candidate": {
+        "source": "cold_parquet",
+        "row_count": 720,
+        "elapsed_ms": 24.108,
+        "elapsed_runs_ms": [
+          24.108,
+          22.561
+        ],
+        "rows_hash": "612be45f0f7d4e365f460685653fabc574116aa5ebc8f3b484a7a63a71245880"
+      },
+      "match": true,
+      "difference_count": 0,
+      "differences": [],
+      "truncated": false,
+      "ceg_mart": {
+        "source": "ceg_sqlite_mart",
+        "row_count": 720,
+        "elapsed_ms": 7.188,
+        "elapsed_runs_ms": [
+          7.188,
+          2.043
+        ],
+        "rows_hash": "612be45f0f7d4e365f460685653fabc574116aa5ebc8f3b484a7a63a71245880"
+      },
+      "ceg_mart_comparison": {
+        "match": true,
+        "difference_count": 0,
+        "differences": [],
+        "truncated": false
+      }
+    },
+    {
+      "label": "auto_cold_aneel_2024-04_CGH.PH.SC.029800-0.01",
+      "tier": "cold",
+      "entity_type": "aneel_plant",
+      "entity_id": "CGH.PH.SC.029800-0.01",
+      "reference_month": "2024-04",
+      "plant_parcel_code": null,
+      "ceg": "CGH.PH.SC.029800-0.01",
+      "plant_parcel_count": 4,
+      "start_datetime": "2024-04-01T00:00:00",
+      "end_datetime": "2024-04-30T23:59:59",
+      "window_mode": "month",
+      "limit": 2000,
+      "raw": {
+        "source": "raw_sqlite",
+        "row_count": 720,
+        "elapsed_ms": 2189.334,
+        "elapsed_runs_ms": [
+          2189.334,
+          2295.195
+        ],
+        "rows_hash": "5e5fe12561a759b9d7f8e341db3ea177a11d8d30154f0b3bb09c3d76532114e3"
+      },
+      "candidate": {
+        "source": "cold_parquet",
+        "row_count": 720,
+        "elapsed_ms": 25.475,
+        "elapsed_runs_ms": [
+          25.475,
+          23.517
+        ],
+        "rows_hash": "5e5fe12561a759b9d7f8e341db3ea177a11d8d30154f0b3bb09c3d76532114e3"
+      },
+      "match": true,
+      "difference_count": 0,
+      "differences": [],
+      "truncated": false,
+      "ceg_mart": {
+        "source": "ceg_sqlite_mart",
+        "row_count": 720,
+        "elapsed_ms": 4.75,
+        "elapsed_runs_ms": [
+          4.75,
+          1.938
+        ],
+        "rows_hash": "5e5fe12561a759b9d7f8e341db3ea177a11d8d30154f0b3bb09c3d76532114e3"
+      },
+      "ceg_mart_comparison": {
+        "match": true,
+        "difference_count": 0,
+        "differences": [],
+        "truncated": false
+      }
+    }
+  ],
+  "errors": [],
+  "summary": {
+    "validation_ok": true,
+    "sample_count": 12,
+    "error_count": 0,
+    "matched": 12,
+    "mismatched": 0,
+    "ceg_mart_samples": 12,
+    "ceg_mart_matched": 12,
+    "ceg_mart_mismatched": 0,
+    "hot_samples": 6,
+    "cold_samples": 6,
+    "parcel_samples": 0,
+    "aneel_plant_samples": 12
+  }
+}

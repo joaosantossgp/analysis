@@ -14,7 +14,7 @@ import json
 import sqlite3
 import sys
 import time
-from contextlib import closing
+from contextlib import ExitStack, closing
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Literal
@@ -32,6 +32,7 @@ DEFAULT_SAMPLES_PER_TIER = 1
 DEFAULT_ANEEL_SAMPLES_PER_TIER = 1
 NUMERIC_TOLERANCE = 1e-9
 PLANT_PARCELS_TABLE = "ccee_plant_parcels"
+CEG_MART_TABLE = "ceg_hourly_generation_mart"
 COMPARISON_COLUMNS = (
     "reference_datetime",
     "commercialization_period",
@@ -190,6 +191,37 @@ def _rows_from_sqlite_aneel_plant(
           AND h.reference_datetime <= ?
         GROUP BY h.reference_datetime, h.commercialization_period
         ORDER BY h.reference_datetime ASC, h.commercialization_period ASC
+        LIMIT ?
+        """,
+        (ceg, reference_month, start_datetime, end_datetime, limit),
+    ).fetchall()
+    return [_normalize_row(dict(row)) for row in rows]
+
+
+def _rows_from_ceg_mart(
+    conn: sqlite3.Connection,
+    *,
+    ceg: str,
+    reference_month: str,
+    start_datetime: str,
+    end_datetime: str,
+    limit: int,
+) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        f"""
+        SELECT
+            reference_datetime,
+            commercialization_period,
+            generation_mwh,
+            verified_generation_mwh,
+            verified_availability_mwh,
+            unavailability_mwh
+        FROM {CEG_MART_TABLE}
+        WHERE ceg = ?
+          AND reference_month = ?
+          AND reference_datetime >= ?
+          AND reference_datetime <= ?
+        ORDER BY reference_datetime ASC, commercialization_period ASC
         LIMIT ?
         """,
         (ceg, reference_month, start_datetime, end_datetime, limit),
@@ -672,6 +704,7 @@ def _compare_sample(
     manifest: dict[str, Any],
     raw_conn: sqlite3.Connection,
     hot_conn: sqlite3.Connection | None,
+    ceg_mart_conn: sqlite3.Connection | None,
     cold_paths: dict[str, list[Path]],
     start_datetime: str | None,
     end_datetime: str | None,
@@ -782,7 +815,7 @@ def _compare_sample(
         raise ValueError(f"Unsupported sample tier: {tier}")
 
     comparison = _compare_rows(raw["rows"], candidate["rows"])
-    return {
+    result = {
         "label": sample.get("label"),
         "tier": tier,
         "entity_type": entity_type,
@@ -811,6 +844,27 @@ def _compare_sample(
         },
         **comparison,
     }
+    if entity_type == "aneel_plant" and ceg_mart_conn is not None:
+        ceg_mart = _timed_read(
+            lambda: _rows_from_ceg_mart(
+                ceg_mart_conn,
+                ceg=ceg or entity_id,
+                reference_month=reference_month,
+                start_datetime=start_value,
+                end_datetime=end_value,
+                limit=bounded_limit,
+            ),
+            runs=runs,
+        )
+        result["ceg_mart"] = {
+            "source": "ceg_sqlite_mart",
+            "row_count": len(ceg_mart["rows"]),
+            "elapsed_ms": ceg_mart["elapsed_ms"],
+            "elapsed_runs_ms": ceg_mart["elapsed_runs_ms"],
+            "rows_hash": ceg_mart["rows_hash"],
+        }
+        result["ceg_mart_comparison"] = _compare_rows(raw["rows"], ceg_mart["rows"])
+    return result
 
 
 def compare_hourly_read_paths(
@@ -818,6 +872,7 @@ def compare_hourly_read_paths(
     manifest_path: Path | None = None,
     prototype_dir: Path | None = None,
     database: Path | None = None,
+    ceg_mart_path: Path | None = None,
     tier: str = "all",
     entity_type: EntityType = "ccee_plant_parcel",
     entity_id: str | None = None,
@@ -846,13 +901,21 @@ def compare_hourly_read_paths(
     source_before = _source_signature(source_db)
     hot_path = _hot_db_path(manifest)
     cold_paths = _cold_partitions(manifest)
+    resolved_ceg_mart_path = ceg_mart_path.expanduser().resolve() if ceg_mart_path is not None else None
+    if resolved_ceg_mart_path is not None and not resolved_ceg_mart_path.exists():
+        raise FileNotFoundError(f"CEG mart database does not exist: {resolved_ceg_mart_path}")
     resolved_entity_id = entity_id or plant_parcel_code
 
     results: list[dict[str, Any]] = []
     errors: list[dict[str, Any]] = []
     with closing(_connect_readonly(source_db)) as raw_conn:
-        hot_conn_ctx = closing(_connect_readonly(hot_path))
-        with hot_conn_ctx as hot_conn:
+        with ExitStack() as stack:
+            hot_conn = stack.enter_context(closing(_connect_readonly(hot_path)))
+            ceg_mart_conn = (
+                stack.enter_context(closing(_connect_readonly(resolved_ceg_mart_path)))
+                if resolved_ceg_mart_path is not None
+                else None
+            )
             if resolved_entity_id and reference_month:
                 manual_tiers = ["hot", "cold"] if tier == "all" else [tier]
                 samples = [
@@ -886,6 +949,7 @@ def compare_hourly_read_paths(
                             manifest=manifest,
                             raw_conn=raw_conn,
                             hot_conn=hot_conn,
+                            ceg_mart_conn=ceg_mart_conn,
                             cold_paths=cold_paths,
                             start_datetime=start_datetime,
                             end_datetime=end_datetime,
@@ -912,7 +976,18 @@ def compare_hourly_read_paths(
     source_unchanged = source_before == source_after
     matched = sum(1 for result in results if result.get("match") is True)
     mismatched = sum(1 for result in results if result.get("match") is False)
-    validation_ok = bool(results and matched == len(results) and not errors and source_unchanged)
+    ceg_mart_comparisons = [
+        result["ceg_mart_comparison"]
+        for result in results
+        if result.get("ceg_mart_comparison") is not None
+    ]
+    ceg_mart_matched = sum(1 for comparison in ceg_mart_comparisons if comparison.get("match") is True)
+    ceg_mart_mismatched = sum(1 for comparison in ceg_mart_comparisons if comparison.get("match") is False)
+    ceg_mart_ok = (
+        not ceg_mart_comparisons
+        or (ceg_mart_matched == len(ceg_mart_comparisons) and ceg_mart_mismatched == 0)
+    )
+    validation_ok = bool(results and matched == len(results) and ceg_mart_ok and not errors and source_unchanged)
     return {
         "schema_version": SCHEMA_VERSION,
         "mode": "phase5_hourly_read_path_comparison",
@@ -920,6 +995,7 @@ def compare_hourly_read_paths(
         "read_only_source": True,
         "manifest_path": str(resolved_manifest_path),
         "source_database": str(source_db),
+        "ceg_mart_path": str(resolved_ceg_mart_path) if resolved_ceg_mart_path else None,
         "source_signature_before": source_before,
         "source_signature_after": source_after,
         "source_unchanged": source_unchanged,
@@ -951,6 +1027,9 @@ def compare_hourly_read_paths(
             "error_count": len(errors),
             "matched": matched,
             "mismatched": mismatched,
+            "ceg_mart_samples": len(ceg_mart_comparisons),
+            "ceg_mart_matched": ceg_mart_matched,
+            "ceg_mart_mismatched": ceg_mart_mismatched,
             "hot_samples": sum(1 for result in results if result.get("tier") == "hot"),
             "cold_samples": sum(1 for result in results if result.get("tier") == "cold"),
             "parcel_samples": sum(1 for result in results if result.get("entity_type") == "ccee_plant_parcel"),
@@ -966,6 +1045,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--manifest", help="Path to a hot/cold prototype manifest.json.")
     parser.add_argument("--prototype-dir", help="Prototype output directory containing manifest.json.")
     parser.add_argument("--database", help="Canonical source energy_kpis.db. Defaults to manifest source_database.")
+    parser.add_argument("--ceg-mart", help="Optional diagnostic CEG hourly mart SQLite database to compare.")
     parser.add_argument(
         "--tier",
         choices=("all", "hot", "cold"),
@@ -1027,6 +1107,7 @@ def main() -> int:
         manifest_path=Path(args.manifest).expanduser().resolve() if args.manifest else None,
         prototype_dir=Path(args.prototype_dir).expanduser().resolve() if args.prototype_dir else None,
         database=Path(args.database).expanduser().resolve() if args.database else None,
+        ceg_mart_path=Path(args.ceg_mart).expanduser().resolve() if args.ceg_mart else None,
         tier=args.tier,
         entity_type=args.entity_type,
         entity_id=args.entity_id,

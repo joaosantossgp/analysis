@@ -250,6 +250,18 @@ hourly charts stay on raw SQLite by default, unless
 unavailable artifacts fall back to raw SQLite with explicit
 `metadata.hourly_read_path` fields.
 
+A dedicated CEG aggregation mart prototype was also benchmarked against the same
+two-hot/two-cold month selection. The separate SQLite mart aggregated 9,298,128
+CEG-hourly rows into a `1,601,024,000`-byte artifact in about 17.1 minutes,
+with `PRAGMA quick_check` returning `ok` and the source DB signature unchanged.
+On the same 12 CEG samples, the CEG mart matched raw SQLite row hashes for all
+samples. Median first-run timing was about `6.790` ms for hot-month CEG samples
+and `6.184` ms for cold-month CEG samples, faster than both raw SQLite and the
+copy-based hot/cold paths. The build/storage cost is therefore explicit, but the
+read-path result is materially stronger for CEG drill-downs. The JSON reports
+are stored at `docs/diagnostics/phase5-ceg-hourly-mart-prototype.json` and
+`docs/diagnostics/phase5-hourly-ceg-mart-comparison.json`.
+
 Future Phase 5 work should use this baseline before choosing between a runtime
 read adapter expansion, additional exact `dbstat` profiling, broader hot/cold
 prototypes, or any backup-and-compact maintenance flow.

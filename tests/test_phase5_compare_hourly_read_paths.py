@@ -8,6 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from scripts.diagnostics.phase5_compare_hourly_read_paths import compare_hourly_read_paths
+from scripts.diagnostics.phase5_ceg_hourly_mart_prototype import build_ceg_hourly_mart_prototype
 from scripts.diagnostics.phase5_hot_cold_hourly_prototype import (
     HOURLY_TABLE,
     build_hot_cold_prototype,
@@ -213,6 +214,44 @@ def test_compare_hourly_read_paths_can_auto_sample_aneel_only(tmp_path: Path):
     assert {sample["entity_type"] for sample in report["samples"]} == {"aneel_plant"}
     assert all(sample["plant_parcel_count"] == 2 for sample in report["samples"])
     assert all(sample["match"] is True for sample in report["samples"])
+
+
+def test_compare_hourly_read_paths_can_compare_ceg_mart(tmp_path: Path):
+    source_db = tmp_path / "energy_kpis.db"
+    prototype_dir = tmp_path / "prototype"
+    ceg_mart_path = tmp_path / "ceg_hourly_mart.sqlite"
+    _seed_energy_db(source_db)
+
+    build_hot_cold_prototype(
+        database=source_db,
+        output_dir=prototype_dir,
+        hot_months=1,
+        cold_months=["2026-01"],
+        full_months=True,
+        chunk_size=2,
+    )
+    mart_manifest = build_ceg_hourly_mart_prototype(
+        database=source_db,
+        output_path=ceg_mart_path,
+        reference_months=["2026-01", "2026-02"],
+    )
+
+    report = compare_hourly_read_paths(
+        manifest_path=prototype_dir / "manifest.json",
+        database=source_db,
+        ceg_mart_path=ceg_mart_path,
+        runs=1,
+        aneel_samples_per_tier=2,
+        auto_entity_type="aneel_plant",
+    )
+
+    assert mart_manifest["validation"]["ok"] is True
+    assert report["summary"]["validation_ok"] is True
+    assert report["summary"]["ceg_mart_samples"] == 2
+    assert report["summary"]["ceg_mart_matched"] == 2
+    assert report["summary"]["ceg_mart_mismatched"] == 0
+    assert all(sample["ceg_mart"]["rows_hash"] == sample["raw"]["rows_hash"] for sample in report["samples"])
+    assert all(sample["ceg_mart_comparison"]["match"] is True for sample in report["samples"])
 
 
 def test_compare_hourly_read_paths_uses_sample_window_for_bounded_manifest(tmp_path: Path):

@@ -270,6 +270,54 @@ The wider CEG-only run compared 6 hot CEG samples and 6 cold CEG samples:
   `186.88x`;
 - report: `docs/diagnostics/phase5-hourly-ceg-read-path-comparison-wide.json`.
 
+Dedicated CEG aggregation mart prototype on 2026-06-22:
+
+```powershell
+python scripts/diagnostics/phase5_ceg_hourly_mart_prototype.py `
+  --manifest C:\tmp\cvma-phase5-hot-cold-full-two-two\manifest.json `
+  --output C:\tmp\cvma-phase5-ceg-hourly-mart-two-two.sqlite `
+  --replace-output
+```
+
+The CEG mart prototype writes a separate SQLite artifact with rows already
+aggregated by CEG, reference month, reference datetime, and commercialization
+period. It does not modify the source database.
+
+- selected months: `2026-03`, `2026-04`, `2024-03`, `2024-04`;
+- rows: 9,298,128;
+- artifact size: `1,601,024,000` bytes;
+- build time: `1,024,071.9` ms;
+- quick check: `ok`;
+- source DB signature unchanged: yes;
+- manifest: `docs/diagnostics/phase5-ceg-hourly-mart-prototype.json`.
+
+Combined CEG benchmark against raw SQLite, hot/cold, and the CEG mart:
+
+```powershell
+python scripts/diagnostics/phase5_compare_hourly_read_paths.py `
+  --manifest C:\tmp\cvma-phase5-hot-cold-full-two-two\manifest.json `
+  --database C:\Users\jadaojoao\Documents\CVMAnalytics\db\energy_kpis.db `
+  --ceg-mart C:\tmp\cvma-phase5-ceg-hourly-mart-two-two.sqlite `
+  --tier all `
+  --window-mode month `
+  --runs 2 `
+  --auto-entity-type aneel_plant `
+  --aneel-samples-per-tier 3 `
+  --output docs\diagnostics\phase5-hourly-ceg-mart-comparison.json
+```
+
+The combined run compared the same 12 CEG samples:
+
+- hot/cold candidate: 12/12 matched raw SQLite row hashes;
+- CEG mart: 12/12 matched raw SQLite row hashes;
+- 0 mismatches and 0 errors;
+- source DB signature unchanged: yes;
+- hot-month CEG mart median first-run timing: `6.790` ms, about `1744.81x`
+  faster than raw SQLite and about `163.95x` faster than hot SQLite;
+- cold-month CEG mart median first-run timing: `6.184` ms, about `405.94x`
+  faster than raw SQLite and about `4.75x` faster than cold Parquet;
+- report: `docs/diagnostics/phase5-hourly-ceg-mart-comparison.json`.
+
 The broadened run also exposed the next performance target: raw SQLite CEG
 aggregation windows are much slower than parcel windows because the current
 runtime query joins `ccee_plant_parcel_hourly` to `ccee_plant_parcels` for each

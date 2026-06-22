@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "mode": "phase5_ceg_hourly_mart_prototype",
+  "generated_at_utc": "2026-06-22T16:01:52Z",
+  "read_only_source": true,
+  "source_database": "C:\\Users\\jadaojoao\\Documents\\CVMAnalytics\\db\\energy_kpis.db",
+  "source_signature_before": {
+    "path": "C:\\Users\\jadaojoao\\Documents\\CVMAnalytics\\db\\energy_kpis.db",
+    "size_bytes": 30832099328,
+    "mtime_ns": 1781981674777008300
+  },
+  "source_signature_after": {
+    "path": "C:\\Users\\jadaojoao\\Documents\\CVMAnalytics\\db\\energy_kpis.db",
+    "size_bytes": 30832099328,
+    "mtime_ns": 1781981674777008300
+  },
+  "source_unchanged": true,
+  "artifact": {
+    "path": "C:\\tmp\\cvma-phase5-ceg-hourly-mart-two-two.sqlite",
+    "size_bytes": 1601024000,
+    "months": [
+      "2026-03",
+      "2026-04",
+      "2024-03",
+      "2024-04"
+    ],
+    "row_counts": {
+      "2026-03": 2545224,
+      "2026-04": 2469600,
+      "2024-03": 2165784,
+      "2024-04": 2117520
+    },
+    "total_rows": 9298128,
+    "quick_check": "ok",
+    "elapsed_ms": 1024071.9,
+    "ok": true,
+    "manifest_path": "C:\\tmp\\cvma-phase5-ceg-hourly-mart-two-two.manifest.json"
+  },
+  "validation": {
+    "ok": true,
+    "source_unchanged": true,
+    "artifact_ok": true
+  }
+}
