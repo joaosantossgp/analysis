@@ -217,6 +217,14 @@ parcel samples, and one cold ANEEL CEG aggregation sample all matched canonical
 raw SQLite row hashes, with the source DB signature unchanged. The JSON report
 is stored at `docs/diagnostics/phase5-hourly-read-path-comparison.json`.
 
+A CEG-only follow-up run used `--auto-entity-type aneel_plant`,
+`--aneel-samples-per-tier 3`, and `--runs 2`. It compared three hot CEG samples
+and three cold CEG samples, with 6/6 row-hash matches, zero mismatches, and the
+source DB signature unchanged. Median first-run timing was about `5.43x` faster
+for hot SQLite CEG aggregation and about `82.84x` faster for cold Parquet CEG
+aggregation. The JSON report is stored at
+`docs/diagnostics/phase5-hourly-ceg-read-path-comparison.json`.
+
 The broadened comparison also showed that the current raw SQLite CEG aggregation
 query is the next hot spot. Parcel windows are already bounded and fast after
 warm-up, but CEG-level hourly drill-downs repeatedly join the large raw hourly

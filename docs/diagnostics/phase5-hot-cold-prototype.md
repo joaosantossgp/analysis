@@ -198,6 +198,31 @@ Local comparison against
 - source DB signature unchanged: yes;
 - report: `docs/diagnostics/phase5-hourly-read-path-comparison.json`.
 
+CEG-only follow-up benchmark on 2026-06-22:
+
+```powershell
+python scripts/diagnostics/phase5_compare_hourly_read_paths.py `
+  --manifest C:\tmp\cvma-phase5-hot-cold-full-one-month\manifest.json `
+  --database C:\Users\jadaojoao\Documents\CVMAnalytics\db\energy_kpis.db `
+  --tier all `
+  --window-mode month `
+  --runs 2 `
+  --auto-entity-type aneel_plant `
+  --aneel-samples-per-tier 3 `
+  --output docs\diagnostics\phase5-hourly-ceg-read-path-comparison.json
+```
+
+The CEG-only run compared 3 hot CEG samples and 3 cold CEG samples:
+
+- 6/6 samples matched raw SQLite row hashes;
+- 0 mismatches and 0 errors;
+- source DB signature unchanged: yes;
+- hot CEG median first-run timing: raw SQLite `21202.207` ms vs hot SQLite
+  `3901.487` ms, about `5.43x` faster;
+- cold CEG median first-run timing: raw SQLite `2080.434` ms vs cold Parquet
+  `24.960` ms, about `82.84x` faster;
+- report: `docs/diagnostics/phase5-hourly-ceg-read-path-comparison.json`.
+
 The broadened run also exposed the next performance target: raw SQLite CEG
 aggregation windows are much slower than parcel windows because the current
 runtime query joins `ccee_plant_parcel_hourly` to `ccee_plant_parcels` for each
@@ -217,6 +242,9 @@ routing policy around it:
   `CVM_ENERGY_HOURLY_HOT_COLD_ENABLE_PARCELS=1`;
 - missing, invalid, stale, or incomplete artifacts fall back to raw SQLite with
   explicit `metadata.hourly_read_path` fields.
+
+The comparison diagnostic also supports `--auto-entity-type aneel_plant` for
+CEG-only automatic samples.
 
 The adapter:
 

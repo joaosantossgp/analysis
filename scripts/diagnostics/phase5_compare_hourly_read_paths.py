@@ -48,6 +48,7 @@ SOURCE_VALUE_COLUMNS = {
 }
 Tier = Literal["hot", "cold"]
 EntityType = Literal["ccee_plant_parcel", "aneel_plant"]
+AutoEntityType = Literal["all", "ccee_plant_parcel", "aneel_plant"]
 WindowMode = Literal["auto", "month", "sample_datetime"]
 RowsReader = Callable[[], list[dict[str, Any]]]
 
@@ -478,6 +479,7 @@ def _auto_samples(
     samples_per_tier: int,
     aneel_samples_per_tier: int,
     include_aneel_aggregation: bool,
+    auto_entity_type: AutoEntityType,
 ) -> list[dict[str, Any]]:
     samples: list[dict[str, Any]] = []
     selected_hot = [str(month) for month in manifest.get("selection", {}).get("hot_months", [])]
@@ -485,23 +487,28 @@ def _auto_samples(
     per_tier = max(1, int(samples_per_tier or DEFAULT_SAMPLES_PER_TIER))
     aneel_per_tier = max(1, int(aneel_samples_per_tier or DEFAULT_ANEEL_SAMPLES_PER_TIER))
     full_months = bool(manifest.get("selection", {}).get("full_months"))
+    include_parcel_samples = auto_entity_type in {"all", "ccee_plant_parcel"}
+    include_aneel_samples = full_months and (
+        auto_entity_type == "aneel_plant" or (auto_entity_type == "all" and include_aneel_aggregation)
+    )
 
     if tier in {"all", "hot"} and hot_conn is not None:
         for month in selected_hot:
-            for sample in _sqlite_parcel_samples(hot_conn, month, limit=per_tier):
-                samples.append(
-                    {
-                        "label": f"auto_hot_parcel_{month}_{sample['plant_parcel_code']}",
-                        "tier": "hot",
-                        "entity_type": "ccee_plant_parcel",
-                        "entity_id": str(sample["plant_parcel_code"]),
-                        "reference_month": month,
-                        "plant_parcel_code": str(sample["plant_parcel_code"]),
-                        "ceg": None,
-                        "sample_datetime": str(sample["reference_datetime"]),
-                    }
-                )
-            if include_aneel_aggregation and full_months:
+            if include_parcel_samples:
+                for sample in _sqlite_parcel_samples(hot_conn, month, limit=per_tier):
+                    samples.append(
+                        {
+                            "label": f"auto_hot_parcel_{month}_{sample['plant_parcel_code']}",
+                            "tier": "hot",
+                            "entity_type": "ccee_plant_parcel",
+                            "entity_id": str(sample["plant_parcel_code"]),
+                            "reference_month": month,
+                            "plant_parcel_code": str(sample["plant_parcel_code"]),
+                            "ceg": None,
+                            "sample_datetime": str(sample["reference_datetime"]),
+                        }
+                    )
+            if include_aneel_samples:
                 for sample in _sqlite_aneel_samples(raw_conn, month, limit=aneel_per_tier):
                     samples.append(
                         {
@@ -519,20 +526,21 @@ def _auto_samples(
 
     if tier in {"all", "cold"}:
         for month in selected_cold:
-            for sample in _cold_parcel_samples(cold_paths.get(month, []), limit=per_tier):
-                samples.append(
-                    {
-                        "label": f"auto_cold_parcel_{month}_{sample['plant_parcel_code']}",
-                        "tier": "cold",
-                        "entity_type": "ccee_plant_parcel",
-                        "entity_id": str(sample["plant_parcel_code"]),
-                        "reference_month": month,
-                        "plant_parcel_code": str(sample["plant_parcel_code"]),
-                        "ceg": None,
-                        "sample_datetime": str(sample["reference_datetime"]),
-                    }
-                )
-            if include_aneel_aggregation and full_months:
+            if include_parcel_samples:
+                for sample in _cold_parcel_samples(cold_paths.get(month, []), limit=per_tier):
+                    samples.append(
+                        {
+                            "label": f"auto_cold_parcel_{month}_{sample['plant_parcel_code']}",
+                            "tier": "cold",
+                            "entity_type": "ccee_plant_parcel",
+                            "entity_id": str(sample["plant_parcel_code"]),
+                            "reference_month": month,
+                            "plant_parcel_code": str(sample["plant_parcel_code"]),
+                            "ceg": None,
+                            "sample_datetime": str(sample["reference_datetime"]),
+                        }
+                    )
+            if include_aneel_samples:
                 for sample in _sqlite_aneel_samples(raw_conn, month, limit=aneel_per_tier):
                     samples.append(
                         {
@@ -823,6 +831,7 @@ def compare_hourly_read_paths(
     samples_per_tier: int = DEFAULT_SAMPLES_PER_TIER,
     aneel_samples_per_tier: int = DEFAULT_ANEEL_SAMPLES_PER_TIER,
     include_aneel_aggregation: bool = False,
+    auto_entity_type: AutoEntityType = "all",
 ) -> dict[str, Any]:
     resolved_manifest_path = _manifest_path(manifest_path, prototype_dir)
     manifest = _load_manifest(resolved_manifest_path)
@@ -867,6 +876,7 @@ def compare_hourly_read_paths(
                     samples_per_tier=samples_per_tier,
                     aneel_samples_per_tier=aneel_samples_per_tier,
                     include_aneel_aggregation=include_aneel_aggregation,
+                    auto_entity_type=auto_entity_type,
                 )
             for sample in samples:
                 try:
@@ -931,6 +941,7 @@ def compare_hourly_read_paths(
             "samples_per_tier": int(samples_per_tier),
             "aneel_samples_per_tier": int(aneel_samples_per_tier),
             "include_aneel_aggregation": bool(include_aneel_aggregation),
+            "auto_entity_type": auto_entity_type,
         },
         "samples": results,
         "errors": errors,
@@ -997,6 +1008,15 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Also auto-sample ANEEL CEG-level hourly aggregation cases for full-month prototypes.",
     )
+    parser.add_argument(
+        "--auto-entity-type",
+        choices=("all", "ccee_plant_parcel", "aneel_plant"),
+        default="all",
+        help=(
+            "Automatic sample entity type. Use aneel_plant for CEG-only "
+            "aggregation benchmarks on full-month prototypes."
+        ),
+    )
     parser.add_argument("--output", help="Optional JSON output path. Defaults to stdout only.")
     return parser.parse_args()
 
@@ -1020,6 +1040,7 @@ def main() -> int:
         samples_per_tier=args.samples_per_tier,
         aneel_samples_per_tier=args.aneel_samples_per_tier,
         include_aneel_aggregation=args.include_aneel_aggregation,
+        auto_entity_type=args.auto_entity_type,
     )
     payload = json.dumps(report, indent=2, ensure_ascii=False)
     if args.output:

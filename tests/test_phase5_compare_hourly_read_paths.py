@@ -183,6 +183,38 @@ def test_compare_hourly_read_paths_broadens_samples_and_aneel_aggregation(tmp_pa
     assert all(sample["raw"]["row_count"] == sample["candidate"]["row_count"] == 4 for sample in aneel_samples)
 
 
+def test_compare_hourly_read_paths_can_auto_sample_aneel_only(tmp_path: Path):
+    source_db = tmp_path / "energy_kpis.db"
+    prototype_dir = tmp_path / "prototype"
+    _seed_energy_db(source_db)
+
+    build_hot_cold_prototype(
+        database=source_db,
+        output_dir=prototype_dir,
+        hot_months=1,
+        cold_months=["2026-01"],
+        full_months=True,
+        chunk_size=2,
+    )
+
+    report = compare_hourly_read_paths(
+        manifest_path=prototype_dir / "manifest.json",
+        database=source_db,
+        runs=1,
+        aneel_samples_per_tier=2,
+        auto_entity_type="aneel_plant",
+    )
+
+    assert report["summary"]["validation_ok"] is True
+    assert report["summary"]["sample_count"] == 2
+    assert report["summary"]["parcel_samples"] == 0
+    assert report["summary"]["aneel_plant_samples"] == 2
+    assert {sample["tier"] for sample in report["samples"]} == {"hot", "cold"}
+    assert {sample["entity_type"] for sample in report["samples"]} == {"aneel_plant"}
+    assert all(sample["plant_parcel_count"] == 2 for sample in report["samples"])
+    assert all(sample["match"] is True for sample in report["samples"])
+
+
 def test_compare_hourly_read_paths_uses_sample_window_for_bounded_manifest(tmp_path: Path):
     source_db = tmp_path / "energy_kpis.db"
     prototype_dir = tmp_path / "prototype"
