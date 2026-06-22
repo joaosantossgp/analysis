@@ -262,6 +262,13 @@ read-path result is materially stronger for CEG drill-downs. The JSON reports
 are stored at `docs/diagnostics/phase5-ceg-hourly-mart-prototype.json` and
 `docs/diagnostics/phase5-hourly-ceg-mart-comparison.json`.
 
+Phase 5 then promoted the CEG aggregation result into a rebuildable local mart,
+`plant_ceg_hourly_generation_mart`, and wired hourly CEG chart reads to try that
+mart before hot/cold artifacts or raw SQLite. The mart is additive and rebuilt
+from canonical raw hourly facts; raw SQLite remains the final fallback with
+explicit `metadata.hourly_read_path` fields. Parcel-level hourly reads still
+stay on raw SQLite by default unless explicitly opted in to hot/cold routing.
+
 Future Phase 5 work should use this baseline before choosing between a runtime
 read adapter expansion, additional exact `dbstat` profiling, broader hot/cold
 prototypes, or any backup-and-compact maintenance flow.

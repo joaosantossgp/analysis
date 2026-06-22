@@ -20,7 +20,7 @@ from src.energy_kpi.metrics import (
     mwh_to_twh,
     mwmed_to_mwh,
 )
-from src.energy_kpi.plant_marts import rebuild_plant_hourly_marts
+from src.energy_kpi.plant_marts import CEG_HOURLY_MART_NAME, rebuild_plant_hourly_marts
 from src.energy_kpi.plant_parcel_ingest import (
     SOURCE_ANEEL_SIGA,
     SOURCE_CCEE_HOURLY,
@@ -314,14 +314,26 @@ def test_plant_daily_chart_uses_rebuilt_mart_not_raw_hourly_scan(tmp_path: Path,
 
     assert mart_result["daily_rows"] == 1
     assert mart_result["preview_rows"] == 2
+    assert mart_result["ceg_hourly_rows"] == 2
     assert mart_result["source_submarket_rows"] == 1
     with db_engine.connect() as conn:
+        ceg_rows = conn.execute(text(f"""
+            SELECT ceg, reference_datetime, commercialization_period, generation_mwh,
+                   verified_generation_mwh, plant_parcel_count
+            FROM {CEG_HOURLY_MART_NAME}
+            ORDER BY reference_datetime, commercialization_period
+        """)).mappings().all()
         summary = conn.execute(text("""
             SELECT reference_month, generation_source, submarket,
                    plant_parcel_count, hourly_observations, generation_mwh,
                    verified_generation_mwh
             FROM plant_parcel_source_submarket_monthly_mart
         """)).mappings().one()
+    assert [row["ceg"] for row in ceg_rows] == ["CEG123", "CEG123"]
+    assert [row["commercialization_period"] for row in ceg_rows] == [1, 2]
+    assert [row["generation_mwh"] for row in ceg_rows] == [pytest.approx(10.0), pytest.approx(12.0)]
+    assert [row["verified_generation_mwh"] for row in ceg_rows] == [pytest.approx(9.0), pytest.approx(11.0)]
+    assert [row["plant_parcel_count"] for row in ceg_rows] == [1, 1]
     assert summary["reference_month"] == "2026-02"
     assert summary["generation_source"] == "Hidraulica"
     assert summary["submarket"] == "SE/CO"
@@ -375,6 +387,23 @@ def test_hourly_chart_requires_explicit_bounded_window(db_engine, monkeypatch):
 
 
 def test_energy_mart_status_uses_fast_hourly_estimate(tmp_path: Path, db_engine, monkeypatch):
+    monthly_path = _write_csv(
+        tmp_path / "monthly.csv",
+        [
+            "MES_REFERENCIA",
+            "COD_PARCELA_USINA",
+            "SIGLA_PARCELA_USINA",
+            "CEG",
+            "NOME_EMPRESARIAL",
+            "SUBMERCADO",
+            "FONTE_ENERGIA_PRIMARIA",
+            "ESTADO_UF",
+            "CAP_T",
+            "GARANTIA_FISICA",
+            "GERACAO_CENTRO_GRAVIDADE",
+        ],
+        [["2026-02", "1001", "PLT1", "CEG123", "Utility SA", "SE/CO", "Hidraulica", "SP", "100", "50", "40"]],
+    )
     hourly_path = _write_csv(
         tmp_path / "hourly.csv",
         [
@@ -397,6 +426,10 @@ def test_energy_mart_status_uses_fast_hourly_estimate(tmp_path: Path, db_engine,
     )
     with db_engine.begin() as conn:
         seed_plant_sources(conn)
+        upsert_ccee_monthly(
+            conn,
+            parse_ccee_monthly(_snapshot(monthly_path, SOURCE_CCEE_MONTHLY, "CCEE", "PARCELA_USINA_MONTANTE_MENSAL")),
+        )
         upsert_ccee_hourly(
             conn,
             parse_ccee_hourly(_snapshot(hourly_path, SOURCE_CCEE_HOURLY, "CCEE", "GERACAO_HORARIA_USINA")),
@@ -424,6 +457,11 @@ def test_energy_mart_status_uses_fast_hourly_estimate(tmp_path: Path, db_engine,
     assert daily["row_count_current"] == 1
     assert daily["source_observations_current"] == 2
     assert daily["is_current_for_latest_source_month"] is True
+    ceg_hourly = status["marts"][CEG_HOURLY_MART_NAME]
+    assert ceg_hourly["row_count_current"] == 2
+    assert ceg_hourly["period_count_current"] == 1
+    assert ceg_hourly["ceg_count_current"] == 1
+    assert ceg_hourly["grouped_parcel_count_current"] == 2
     source_submarket = status["marts"]["plant_parcel_source_submarket_monthly_mart"]
     assert source_submarket["row_count_current"] == 1
     assert source_submarket["generation_source_count_current"] == 1
@@ -465,6 +503,7 @@ def test_source_submarket_summary_reads_mart_not_hourly(tmp_path: Path, db_engin
             reference_months=["2026-02"],
             rebuild_daily=False,
             rebuild_preview=False,
+            rebuild_ceg_hourly=False,
             rebuild_source_submarket=True,
         )
 
@@ -1031,7 +1070,7 @@ def test_get_plant_parcel_chart_data(tmp_path: Path, db_engine, monkeypatch):
     assert len(hourly_chart["periods"]) == 2
 
 
-def _seed_file_backed_hourly_chart_fixture(tmp_path: Path):
+def _seed_file_backed_hourly_chart_fixture(tmp_path: Path, *, rebuild_ceg_hourly: bool = True):
     settings = build_settings(project_root=tmp_path)
     engine = get_energy_kpi_engine(settings)
     monthly_path = _write_csv(
@@ -1086,7 +1125,11 @@ def _seed_file_backed_hourly_chart_fixture(tmp_path: Path):
             conn,
             parse_ccee_hourly(_snapshot(hourly_path, SOURCE_CCEE_HOURLY, "CCEE", "GERACAO_HORARIA_USINA")),
         )
-        rebuild_plant_hourly_marts(conn, reference_months=["2026-01", "2026-02"])
+        rebuild_plant_hourly_marts(
+            conn,
+            reference_months=["2026-01", "2026-02"],
+            rebuild_ceg_hourly=rebuild_ceg_hourly,
+        )
 
     build_hot_cold_prototype(
         database=settings.paths.energy_kpi_db_path,
@@ -1099,8 +1142,46 @@ def _seed_file_backed_hourly_chart_fixture(tmp_path: Path):
     return settings, tmp_path / "hourly_hot_cold" / "manifest.json"
 
 
+def test_hourly_chart_uses_ceg_mart_when_available(tmp_path: Path, monkeypatch):
+    settings, _manifest_path = _seed_file_backed_hourly_chart_fixture(tmp_path)
+
+    svc = EnergyKPIReadService(settings)
+
+    statements: list[str] = []
+
+    def capture_statement(_conn, _cursor, statement, _parameters, _context, _executemany):
+        statements.append(" ".join(str(statement).split()))
+
+    engine = get_energy_kpi_engine(settings)
+    event.listen(engine, "before_cursor_execute", capture_statement)
+    try:
+        chart = svc.get_plant_parcel_chart_data(
+            entity_id="CEG123",
+            entity_type="aneel_plant",
+            frequency="hourly",
+            year_month="2026-02",
+            start_datetime="2026-02-01T00:00:00",
+            end_datetime="2026-02-01T23:59:59",
+        )
+    finally:
+        event.remove(engine, "before_cursor_execute", capture_statement)
+
+    metadata = chart["metadata"]["hourly_read_path"]
+
+    assert chart["metadata"]["data_source"] == CEG_HOURLY_MART_NAME
+    assert metadata["attempted"] is False
+    assert metadata["selected"] == CEG_HOURLY_MART_NAME
+    assert metadata["fallback_reason"] is None
+    assert metadata["ceg_mart_attempted"] is True
+    assert metadata["ceg_mart_fallback_reason"] is None
+    assert chart["periods"] == ["00h", "01h"]
+    assert chart["series"][0]["points"] == [10.0, 12.0]
+    assert any(f"FROM {CEG_HOURLY_MART_NAME}" in stmt for stmt in statements)
+    assert not any("FROM ccee_plant_parcel_hourly h JOIN ccee_plant_parcels" in stmt for stmt in statements)
+
+
 def test_hourly_chart_routes_ceg_to_hot_cold_adapter_when_manifest_valid(tmp_path: Path, monkeypatch):
-    settings, manifest_path = _seed_file_backed_hourly_chart_fixture(tmp_path)
+    settings, manifest_path = _seed_file_backed_hourly_chart_fixture(tmp_path, rebuild_ceg_hourly=False)
     monkeypatch.setenv("CVM_ENERGY_HOURLY_HOT_COLD_MANIFEST", str(manifest_path))
 
     svc = EnergyKPIReadService(settings)
@@ -1164,7 +1245,7 @@ def test_hourly_chart_keeps_parcel_on_raw_sqlite_by_default_when_manifest_valid(
 
 
 def test_hourly_chart_falls_back_to_raw_sqlite_when_manifest_missing(tmp_path: Path, monkeypatch):
-    settings, _manifest_path = _seed_file_backed_hourly_chart_fixture(tmp_path)
+    settings, _manifest_path = _seed_file_backed_hourly_chart_fixture(tmp_path, rebuild_ceg_hourly=False)
     monkeypatch.setenv("CVM_ENERGY_HOURLY_HOT_COLD_MANIFEST", str(tmp_path / "missing_manifest.json"))
 
     svc = EnergyKPIReadService(settings)
@@ -1187,7 +1268,7 @@ def test_hourly_chart_falls_back_to_raw_sqlite_when_manifest_missing(tmp_path: P
 
 
 def test_hourly_chart_falls_back_to_raw_sqlite_when_manifest_stale(tmp_path: Path, monkeypatch):
-    settings, manifest_path = _seed_file_backed_hourly_chart_fixture(tmp_path)
+    settings, manifest_path = _seed_file_backed_hourly_chart_fixture(tmp_path, rebuild_ceg_hourly=False)
     future = time.time() + 10
     os.utime(settings.paths.energy_kpi_db_path, (future, future))
     monkeypatch.setenv("CVM_ENERGY_HOURLY_HOT_COLD_MANIFEST", str(manifest_path))

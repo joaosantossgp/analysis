@@ -9,11 +9,13 @@ from typing import Any
 
 from sqlalchemy import bindparam, text
 
-MART_BUILD_VERSION = "plant_hourly_marts_v1"
+MART_BUILD_VERSION = "plant_hourly_marts_v2"
 DAILY_MART_NAME = "plant_parcel_daily_generation_mart"
 HOURLY_PREVIEW_MART_NAME = "plant_parcel_hourly_preview_mart"
+CEG_HOURLY_MART_NAME = "plant_ceg_hourly_generation_mart"
 SOURCE_SUBMARKET_MART_NAME = "plant_parcel_source_submarket_monthly_mart"
 SOURCE_TABLE_NAME = "ccee_plant_parcel_hourly"
+PLANT_PARCELS_TABLE_NAME = "ccee_plant_parcels"
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +40,7 @@ def rebuild_plant_hourly_marts(
     reference_months: list[str] | tuple[str, ...] | set[str] | None = None,
     rebuild_daily: bool = True,
     rebuild_preview: bool = True,
+    rebuild_ceg_hourly: bool = True,
     rebuild_source_submarket: bool = True,
 ) -> dict[str, Any]:
     """Rebuild plant-parcel marts from local hourly facts.
@@ -54,6 +57,7 @@ def rebuild_plant_hourly_marts(
         "reference_months": months,
         "daily_rows": None,
         "preview_rows": None,
+        "ceg_hourly_rows": None,
         "source_submarket_rows": None,
         "elapsed_ms": None,
     }
@@ -78,6 +82,17 @@ def rebuild_plant_hourly_marts(
                 mart_name=HOURLY_PREVIEW_MART_NAME,
                 rebuilt_at=rebuilt_at,
                 row_count=int(result["preview_rows"] or 0),
+                source_stats=source_stats,
+                status="success",
+                metadata={"reference_months": months, "scope": "monthly" if months else "full"},
+            )
+        if rebuild_ceg_hourly:
+            result["ceg_hourly_rows"] = _rebuild_ceg_hourly_mart(conn, months, rebuilt_at)
+            _record_mart_build(
+                conn,
+                mart_name=CEG_HOURLY_MART_NAME,
+                rebuilt_at=rebuilt_at,
+                row_count=int(result["ceg_hourly_rows"] or 0),
                 source_stats=source_stats,
                 status="success",
                 metadata={"reference_months": months, "scope": "monthly" if months else "full"},
@@ -119,11 +134,12 @@ def get_plant_hourly_mart_status(conn) -> dict[str, Any]:
                period_start, period_end, row_count, status, error_message,
                metadata_json
         FROM energy_mart_builds
-        WHERE mart_name IN (:daily, :preview, :source_submarket)
+        WHERE mart_name IN (:daily, :preview, :ceg_hourly, :source_submarket)
         ORDER BY mart_name
     """), {
         "daily": DAILY_MART_NAME,
         "preview": HOURLY_PREVIEW_MART_NAME,
+        "ceg_hourly": CEG_HOURLY_MART_NAME,
         "source_submarket": SOURCE_SUBMARKET_MART_NAME,
     }).mappings().all()
     return {str(row["mart_name"]): dict(row) for row in rows}
@@ -268,6 +284,65 @@ def _rebuild_hourly_preview_mart(conn, months: list[str] | None, rebuilt_at: str
         {"rebuilt_at": rebuilt_at, "build_version": MART_BUILD_VERSION},
     )
     return _scoped_preview_count(conn)
+
+
+def _rebuild_ceg_hourly_mart(conn, months: list[str] | None, rebuilt_at: str) -> int:
+    if months:
+        conn.execute(
+            text(f"DELETE FROM {CEG_HOURLY_MART_NAME} WHERE reference_month IN :reference_months").bindparams(
+                bindparam("reference_months", expanding=True)
+            ),
+            {"reference_months": months},
+        )
+        return _insert_ceg_hourly_mart_months(conn, months, rebuilt_at)
+
+    conn.execute(text(f"DELETE FROM {CEG_HOURLY_MART_NAME}"))
+    total_rows = 0
+    for reference_month in _source_reference_months(conn):
+        logger.info("Rebuilding %s for reference_month=%s", CEG_HOURLY_MART_NAME, reference_month)
+        total_rows += _insert_ceg_hourly_mart_months(conn, [reference_month], rebuilt_at)
+    return total_rows
+
+
+def _insert_ceg_hourly_mart_months(conn, months: list[str], rebuilt_at: str) -> int:
+    stmt = text(f"""
+        INSERT INTO {CEG_HOURLY_MART_NAME} (
+            ceg, reference_datetime, reference_month, commercialization_period,
+            generation_mwh, verified_generation_mwh, verified_availability_mwh,
+            unavailability_mwh, plant_parcel_count, source_dataset,
+            first_snapshot_id, last_snapshot_id, rebuilt_at, build_version
+        )
+        SELECT
+            p.ceg AS ceg,
+            h.reference_datetime AS reference_datetime,
+            h.reference_month AS reference_month,
+            h.commercialization_period AS commercialization_period,
+            SUM(h.generation_center_of_gravity_mwh) AS generation_mwh,
+            SUM(h.verified_generation_ons_mwh) AS verified_generation_mwh,
+            SUM(h.verified_availability_mwh) AS verified_availability_mwh,
+            SUM(h.unavailability_mwh) AS unavailability_mwh,
+            COUNT(DISTINCT h.plant_parcel_code) AS plant_parcel_count,
+            MIN(h.source_dataset) AS source_dataset,
+            MIN(h.snapshot_id) AS first_snapshot_id,
+            MAX(h.snapshot_id) AS last_snapshot_id,
+            :rebuilt_at AS rebuilt_at,
+            :build_version AS build_version
+        FROM {SOURCE_TABLE_NAME} h
+        JOIN {PLANT_PARCELS_TABLE_NAME} p ON p.plant_parcel_code = h.plant_parcel_code
+        WHERE h.reference_month IN :reference_months
+          AND p.ceg IS NOT NULL
+          AND TRIM(p.ceg) <> ''
+        GROUP BY p.ceg, h.reference_month, h.reference_datetime, h.commercialization_period
+    """).bindparams(bindparam("reference_months", expanding=True))
+    conn.execute(
+        stmt,
+        {
+            "reference_months": months,
+            "rebuilt_at": rebuilt_at,
+            "build_version": MART_BUILD_VERSION,
+        },
+    )
+    return _scoped_mart_count(conn, CEG_HOURLY_MART_NAME, months)
 
 
 def _rebuild_source_submarket_mart(conn, months: list[str] | None, rebuilt_at: str) -> int:

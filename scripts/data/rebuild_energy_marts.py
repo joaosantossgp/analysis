@@ -64,6 +64,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Only rebuild the monthly source/submarket summary mart.",
     )
+    parser.add_argument(
+        "--ceg-hourly-only",
+        action="store_true",
+        help="Only rebuild the CEG hourly aggregation mart.",
+    )
     return parser.parse_args()
 
 
@@ -73,17 +78,21 @@ def main() -> int:
         raise SystemExit("--all cannot be combined with --reference-month")
     if not args.all and not args.reference_month:
         raise SystemExit("Pass at least one --reference-month or use --all explicitly.")
-    only_flags = [args.daily_only, args.preview_only, args.source_submarket_only]
+    only_flags = [args.daily_only, args.preview_only, args.source_submarket_only, args.ceg_hourly_only]
     if sum(1 for flag in only_flags if flag) > 1:
-        raise SystemExit("--daily-only, --preview-only and --source-submarket-only are mutually exclusive")
+        raise SystemExit(
+            "--daily-only, --preview-only, --source-submarket-only and --ceg-hourly-only are mutually exclusive"
+        )
 
     _prefer_documents_data_root()
     settings = build_settings(project_root=ROOT)
     engine = get_energy_kpi_engine(settings)
     reference_months = None if args.all else args.reference_month
-    rebuild_daily = args.daily_only or not (args.preview_only or args.source_submarket_only)
-    rebuild_preview = args.preview_only or not (args.daily_only or args.source_submarket_only)
-    rebuild_source_submarket = args.source_submarket_only or not (args.daily_only or args.preview_only)
+    only_mode = any(only_flags)
+    rebuild_daily = args.daily_only or not only_mode
+    rebuild_preview = args.preview_only or not only_mode
+    rebuild_ceg_hourly = args.ceg_hourly_only or not only_mode
+    rebuild_source_submarket = args.source_submarket_only or not only_mode
 
     log.info("Energy DB: %s", settings.paths.energy_kpi_db_path)
     log.info("Rebuild scope: %s", "all months" if reference_months is None else ", ".join(reference_months))
@@ -93,6 +102,7 @@ def main() -> int:
             reference_months=reference_months,
             rebuild_daily=rebuild_daily,
             rebuild_preview=rebuild_preview,
+            rebuild_ceg_hourly=rebuild_ceg_hourly,
             rebuild_source_submarket=rebuild_source_submarket,
         )
     log.info("Rebuild complete: %s", result)

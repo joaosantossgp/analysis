@@ -3,11 +3,11 @@
 Date: 2026-06-21
 Updated: 2026-06-22
 
-Status: prototype tooling plus conservative runtime routing. No live database
-maintenance, schema migration, index drop, source deletion, or packaged-app
-behavior change was implemented. Runtime hourly charts may use validated
-hot/cold artifacts for ANEEL CEG aggregation only; parcel-level hourly charts
-remain raw SQLite by default.
+Status: prototype tooling plus conservative runtime routing. No source deletion,
+index drop, compaction, or packaged-app rebuild was implemented. Runtime hourly
+charts now prefer the rebuildable CEG hourly mart for ANEEL CEG aggregation when
+rows exist; hot/cold artifacts remain an opt-in fallback for CEG requests, and
+parcel-level hourly charts remain raw SQLite by default.
 
 ## Why This Exists
 
@@ -324,19 +324,27 @@ runtime query joins `ccee_plant_parcel_hourly` to `ccee_plant_parcels` for each
 request. Any runtime adapter proposal should preserve the same values while
 avoiding that repeated raw join for CEG-level drill-downs.
 
-## Adapter Foundation
+## Runtime Foundation
 
-`src/energy_kpi/hourly_read_adapter.py` contains the backend read adapter
-foundation. `EnergyKPIReadService.get_plant_parcel_chart_data` now has a small
-routing policy around it:
+`plant_ceg_hourly_generation_mart` is now a rebuildable in-database mart for
+ANEEL CEG hourly aggregation. It groups canonical `ccee_plant_parcel_hourly`
+rows by CEG, reference month, reference datetime, and commercialization period,
+using the same CCEE parcel-to-CEG mapping already used by the raw CEG chart
+query. The raw hourly table remains canonical and is still the final fallback.
 
-- ANEEL CEG hourly aggregation can attempt hot/cold reads when
-  `CVM_ENERGY_HOURLY_HOT_COLD_MANIFEST` is configured;
+`src/energy_kpi/hourly_read_adapter.py` contains the hot/cold read adapter
+foundation. `EnergyKPIReadService.get_plant_parcel_chart_data` now applies this
+routing order for hourly charts:
+
+- ANEEL CEG hourly aggregation first tries `plant_ceg_hourly_generation_mart`;
+- if the CEG mart has no rows for the bounded request, CEG aggregation can
+  attempt hot/cold reads when `CVM_ENERGY_HOURLY_HOT_COLD_MANIFEST` is
+  configured;
 - CCEE parcel-level hourly reads stay on canonical raw SQLite by default;
 - parcel-level hot/cold reads require explicit opt-in through
   `CVM_ENERGY_HOURLY_HOT_COLD_ENABLE_PARCELS=1`;
-- missing, invalid, stale, or incomplete artifacts fall back to raw SQLite with
-  explicit `metadata.hourly_read_path` fields.
+- missing mart rows and missing, invalid, stale, or incomplete artifacts fall
+  back to raw SQLite with explicit `metadata.hourly_read_path` fields.
 
 The comparison diagnostic also supports `--auto-entity-type aneel_plant` for
 CEG-only automatic samples.
@@ -352,9 +360,11 @@ The adapter:
 
 Focused tests prove adapter rows match canonical raw SQLite rows for parcel and
 CEG aggregation cases, including row order, limits, null handling, and numeric
-values. Runtime-routing tests also prove valid CEG requests use the adapter,
-parcel requests stay raw by default, and missing/stale manifests fall back to
-raw SQLite without changing chart values or response shape.
+values. Runtime-routing tests also prove CEG requests use the CEG mart when it
+has rows, can still use the adapter when the mart is unavailable and a valid
+manifest exists, parcel requests stay raw by default, and missing/stale
+manifests fall back to raw SQLite without changing chart values or response
+shape.
 
 ## Next Decision Gate
 

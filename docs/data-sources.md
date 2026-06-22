@@ -98,14 +98,17 @@ hot UI path:
 
 - `plant_parcel_daily_generation_mart` serves daily plant/parcel charts.
 - `plant_parcel_hourly_preview_mart` serves compact detail previews.
+- `plant_ceg_hourly_generation_mart` serves CEG-level hourly drill-downs.
 - `plant_parcel_source_submarket_monthly_mart` serves compact diagnostics and
   future filters at source/submarket/month grain.
 - `energy_mart_builds` records rebuild version, timestamp, source high-water
   marks, period coverage, row count, and status.
 
 Hourly drill-down remains available only for explicit entity + reference-month +
-date-window requests. Broader daily/monthly views should use marts or the
-existing monthly CCEE table. Rebuild existing local hourly marts with:
+date-window requests. CEG hourly drill-downs use the CEG mart when rebuilt and
+fall back to canonical raw SQLite when needed. Broader daily/monthly views
+should use marts or the existing monthly CCEE table. Rebuild existing local
+hourly marts with:
 
 ```powershell
 python scripts/data/rebuild_energy_marts.py --reference-month 2026-04

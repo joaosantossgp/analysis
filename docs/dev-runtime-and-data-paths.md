@@ -270,6 +270,12 @@ To rebuild only the compact source/submarket monthly summary:
 python scripts/data/rebuild_energy_marts.py --reference-month 2026-04 --source-submarket-only
 ```
 
+To rebuild only the CEG hourly aggregation mart:
+
+```powershell
+python scripts/data/rebuild_energy_marts.py --reference-month 2026-04 --ceg-hourly-only
+```
+
 From Settings -> Diagnostics, use "Rebuild daily YYYY-MM" to rebuild only the
 latest source month's daily mart plus the source/submarket summary mart. The UI
 action is intentionally scoped and does not expose a one-click full historical

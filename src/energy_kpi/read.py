@@ -39,7 +39,7 @@ from src.energy_kpi.plant_parcel_ingest import (
     SOURCE_CCEE_HOURLY,
     SOURCE_CCEE_MONTHLY,
 )
-from src.energy_kpi.plant_marts import get_plant_hourly_mart_status
+from src.energy_kpi.plant_marts import CEG_HOURLY_MART_NAME, get_plant_hourly_mart_status
 from src.energy_kpi.schema import get_energy_kpi_engine
 from src.energy_kpi.sin_catalog import SIN_KPI_CATALOG
 from src.platform.settings import AppSettings
@@ -125,6 +125,10 @@ class EnergyKPIReadService:
                 conn.execute(text("SELECT COUNT(*) FROM plant_parcel_hourly_preview_mart")).scalar()
                 or 0
             )
+            ceg_hourly_rows = int(
+                conn.execute(text(f"SELECT COUNT(*) FROM {CEG_HOURLY_MART_NAME}")).scalar()
+                or 0
+            )
             daily_coverage = conn.execute(text("""
                 SELECT MIN(reference_month) AS period_start,
                        MAX(reference_month) AS period_end,
@@ -138,6 +142,14 @@ class EnergyKPIReadService:
                        MAX(reference_month) AS period_end,
                        COUNT(DISTINCT plant_parcel_code) AS parcel_count
                 FROM plant_parcel_hourly_preview_mart
+            """)).mappings().first() or {}
+            ceg_hourly_coverage = conn.execute(text(f"""
+                SELECT MIN(reference_month) AS period_start,
+                       MAX(reference_month) AS period_end,
+                       COUNT(DISTINCT reference_month) AS period_count,
+                       COUNT(DISTINCT ceg) AS ceg_count,
+                       SUM(plant_parcel_count) AS grouped_parcel_count
+                FROM {CEG_HOURLY_MART_NAME}
             """)).mappings().first() or {}
             source_submarket_rows = int(
                 conn.execute(text("SELECT COUNT(*) FROM plant_parcel_source_submarket_monthly_mart")).scalar()
@@ -187,6 +199,15 @@ class EnergyKPIReadService:
                     "period_start_current": preview_coverage.get("period_start"),
                     "period_end_current": preview_coverage.get("period_end"),
                     "parcel_count_current": int(preview_coverage.get("parcel_count") or 0),
+                },
+                CEG_HOURLY_MART_NAME: {
+                    **dict(mart_status.get(CEG_HOURLY_MART_NAME) or {}),
+                    "row_count_current": ceg_hourly_rows,
+                    "period_start_current": ceg_hourly_coverage.get("period_start"),
+                    "period_end_current": ceg_hourly_coverage.get("period_end"),
+                    "period_count_current": int(ceg_hourly_coverage.get("period_count") or 0),
+                    "ceg_count_current": int(ceg_hourly_coverage.get("ceg_count") or 0),
+                    "grouped_parcel_count_current": int(ceg_hourly_coverage.get("grouped_parcel_count") or 0),
                 },
                 "plant_parcel_source_submarket_monthly_mart": {
                     **dict(mart_status.get("plant_parcel_source_submarket_monthly_mart") or {}),
@@ -1685,9 +1706,47 @@ class EnergyKPIReadService:
                         "manifest_path": str(manifest_path) if manifest_path is not None else None,
                         "artifact_path": None,
                         "source_signature_ok": None,
+                        "ceg_mart_attempted": resolved_type == "aneel_plant",
+                        "ceg_mart_fallback_reason": None,
                     }
                     rows: Any
-                    if hot_cold_skip_reason is None:
+                    if resolved_type == "aneel_plant":
+                        rows = conn.execute(
+                            text(f"""
+                                SELECT
+                                    reference_datetime,
+                                    commercialization_period,
+                                    generation_mwh,
+                                    verified_generation_mwh,
+                                    verified_availability_mwh,
+                                    unavailability_mwh
+                                FROM {CEG_HOURLY_MART_NAME}
+                                WHERE ceg = :entity_id
+                                  AND reference_month = :year_month
+                                  AND reference_datetime >= :start_datetime
+                                  AND reference_datetime <= :end_datetime
+                                ORDER BY reference_datetime ASC, commercialization_period ASC
+                                LIMIT :limit
+                            """),
+                            {
+                                "entity_id": entity_id,
+                                "year_month": year_month_val,
+                                "start_datetime": start_value,
+                                "end_datetime": end_value,
+                                "limit": row_limit,
+                            },
+                        ).mappings().all()
+                        if rows:
+                            data_source = CEG_HOURLY_MART_NAME
+                            hourly_read_path["selected"] = CEG_HOURLY_MART_NAME
+                            hourly_read_path["fallback_reason"] = None
+                        else:
+                            hourly_read_path["ceg_mart_fallback_reason"] = "ceg_mart_missing"
+                            rows = None
+                    else:
+                        rows = None
+
+                    if rows is None and hot_cold_skip_reason is None:
                         adapter_result = read_hourly_from_hot_cold(
                             source_db_path=Path(self._settings.paths.energy_kpi_db_path),
                             manifest_path=manifest_path,
@@ -1710,14 +1769,14 @@ class EnergyKPIReadService:
                             or (str(manifest_path) if manifest_path is not None else None),
                             "artifact_path": adapter_result.artifact_path,
                             "source_signature_ok": adapter_result.source_signature_ok,
+                            "ceg_mart_attempted": resolved_type == "aneel_plant",
+                            "ceg_mart_fallback_reason": hourly_read_path.get("ceg_mart_fallback_reason"),
                         }
                         if adapter_result.ok:
                             rows = adapter_result.rows
                             data_source = adapter_result.read_path or data_source
                         else:
                             rows = None
-                    else:
-                        rows = None
 
                     if rows is None:
                         data_source = "ccee_plant_parcel_hourly"

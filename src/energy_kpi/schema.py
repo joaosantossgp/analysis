@@ -576,6 +576,34 @@ def ensure_energy_kpi_tables_for_connection(conn, *, enable_wal: bool = True) ->
     ))
 
     conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS plant_ceg_hourly_generation_mart (
+            ceg                         TEXT NOT NULL,
+            reference_datetime          TEXT NOT NULL,
+            reference_month             TEXT NOT NULL,
+            commercialization_period    INTEGER NOT NULL,
+            generation_mwh              REAL,
+            verified_generation_mwh     REAL,
+            verified_availability_mwh   REAL,
+            unavailability_mwh          REAL,
+            plant_parcel_count          INTEGER NOT NULL DEFAULT 0,
+            source_dataset              TEXT,
+            first_snapshot_id           TEXT,
+            last_snapshot_id            TEXT,
+            rebuilt_at                  TEXT NOT NULL,
+            build_version               TEXT NOT NULL,
+            PRIMARY KEY (ceg, reference_datetime, commercialization_period)
+        )
+    """))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_pcghgm_ceg_month_ref ON "
+        "plant_ceg_hourly_generation_mart(ceg, reference_month, reference_datetime)"
+    ))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_pcghgm_month_ceg ON "
+        "plant_ceg_hourly_generation_mart(reference_month, ceg)"
+    ))
+
+    conn.execute(text("""
         CREATE TABLE IF NOT EXISTS energy_mart_builds (
             mart_name                  TEXT PRIMARY KEY,
             build_version              TEXT NOT NULL,
