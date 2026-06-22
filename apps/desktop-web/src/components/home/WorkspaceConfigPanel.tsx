@@ -7,6 +7,29 @@ type Props = {
   onToggleCard: (id: string) => void;
 };
 
+const CATEGORIES = [
+  {
+    name: "Data Health",
+    cardIds: ["database-status"],
+  },
+  {
+    name: "Coverage & Analysis",
+    cardIds: ["watchlist", "priority-queue"],
+  },
+  {
+    name: "Market & News",
+    cardIds: ["market-price", "top-news"],
+  },
+];
+
+const DEPENDENCY_NOTES: Record<string, string> = {
+  "database-status": "Requires local bridge connection (bridge.py) to sync CVM data.",
+  watchlist: "Requires database sync and active ticker watchlist.",
+  "priority-queue": "Requires local CVM database files to evaluate priority logic.",
+  "top-news": "Requires network connectivity to pull live filings and RSS feeds.",
+  "market-price": "Requires network connectivity to query historical B3 prices.",
+};
+
 export function WorkspaceConfigPanel({
   isOpen,
   onClose,
@@ -30,59 +53,98 @@ export function WorkspaceConfigPanel({
         </button>
       </header>
 
-      <div className="flex-1 overflow-y-auto py-4 space-y-4">
-        <p className="text-2xs font-mono text-zinc-500 uppercase">
+      <div className="flex-1 overflow-y-auto py-4 space-y-6">
+        <p className="text-2xs font-mono text-zinc-500 uppercase tracking-wider">
           Toggle Analyst Cards
         </p>
 
-        <div className="space-y-3">
-          {Object.values(WORKSPACE_REGISTRY).map((card) => {
-            const isActive = activeCardIds.includes(card.id);
-            return (
-              <div
-                key={card.id}
-                onClick={() => onToggleCard(card.id)}
-                className={`group flex cursor-pointer items-start justify-between rounded-lg border p-3 font-mono transition-all duration-150 ${
-                  isActive
-                    ? "border-orange-500/50 bg-orange-500/5"
-                    : "border-zinc-850 bg-zinc-900/30 hover:border-zinc-700"
-                }`}
-              >
-                <div className="min-w-0 flex-1 pr-2">
-                  <p className="text-xs font-medium text-zinc-200 group-hover:text-white">
-                    {card.title}
-                  </p>
-                  <p className="mt-1 text-2xs text-zinc-500 leading-normal">
-                    {card.description}
-                  </p>
-                  <span className="mt-2 inline-block rounded bg-zinc-900 px-1 py-0.5 text-3xs text-zinc-400 border border-zinc-850">
-                    {card.defaultSize.toUpperCase()}
-                  </span>
-                </div>
+        <div className="space-y-6">
+          {CATEGORIES.map((category) => {
+            // Only render category if it has defined cards
+            const categoryCards = category.cardIds
+              .map((id) => WORKSPACE_REGISTRY[id])
+              .filter(Boolean);
 
-                <div className="shrink-0 pt-0.5">
-                  <div
-                    className={`flex h-4 w-4 items-center justify-center rounded border transition-colors ${
-                      isActive
-                        ? "border-orange-500 bg-orange-500 text-zinc-950"
-                        : "border-zinc-700 bg-zinc-950 group-hover:border-zinc-500"
-                    }`}
-                  >
-                    {isActive && (
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 16 16"
-                        fill="currentColor"
-                        className="h-3 w-3"
+            if (categoryCards.length === 0) return null;
+
+            return (
+              <div key={category.name} className="space-y-2.5">
+                <h4 className="text-3xs font-bold text-orange-500/80 uppercase tracking-wider font-mono border-b border-zinc-900 pb-1">
+                  // {category.name}
+                </h4>
+
+                <div className="space-y-3">
+                  {categoryCards.map((card) => {
+                    const isActive = activeCardIds.includes(card.id);
+                    const depNote = DEPENDENCY_NOTES[card.id];
+
+                    return (
+                      <div
+                        key={card.id}
+                        onClick={() => onToggleCard(card.id)}
+                        className={`group flex flex-col cursor-pointer rounded-lg border p-3 font-mono transition-all duration-150 ${
+                          isActive
+                            ? "border-orange-500/50 bg-orange-500/5 hover:border-orange-500"
+                            : "border-zinc-850 bg-zinc-900/30 hover:border-zinc-700"
+                        }`}
                       >
-                        <path
-                          fillRule="evenodd"
-                          d="M12.416 3.376a.75.75 0 0 1 .208 1.04l-5 7.5a.75.75 0 0 1-1.154.114l-3-3a.75.75 0 0 1 1.06-1.06l2.353 2.353 4.493-6.74a.75.75 0 0 1 1.04-.207z"
-                          clipRule="evenodd"
-                        />
-                      </svg>
-                    )}
-                  </div>
+                        <div className="flex items-start justify-between">
+                          <div className="min-w-0 flex-1 pr-2">
+                            <div className="flex items-center gap-1.5">
+                              <p className={`text-xs font-medium ${isActive ? "text-orange-400" : "text-zinc-200"} group-hover:text-white`}>
+                                {card.title}
+                              </p>
+                              <span className={`text-[8px] font-bold px-1 rounded-sm border uppercase leading-none ${
+                                isActive
+                                  ? "bg-orange-500/10 text-orange-400 border-orange-500/20"
+                                  : "bg-zinc-850 text-zinc-500 border-zinc-800"
+                              }`}>
+                                {isActive ? "Active" : "Inactive"}
+                              </span>
+                            </div>
+                            <p className="mt-1.5 text-3xs text-zinc-400 leading-normal">
+                              {card.description}
+                            </p>
+                          </div>
+
+                          <div className="shrink-0 pt-0.5">
+                            <div
+                              className={`flex h-4 w-4 items-center justify-center rounded border transition-colors ${
+                                isActive
+                                  ? "border-orange-500 bg-orange-500 text-zinc-950"
+                                  : "border-zinc-700 bg-zinc-950 group-hover:border-zinc-500"
+                              }`}
+                            >
+                              {isActive && (
+                                <svg
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  viewBox="0 0 16 16"
+                                  fill="currentColor"
+                                  className="h-3 w-3"
+                                >
+                                  <path
+                                    fillRule="evenodd"
+                                    d="M12.416 3.376a.75.75 0 0 1 .208 1.04l-5 7.5a.75.75 0 0 1-1.154.114l-3-3a.75.75 0 0 1 1.06-1.06l2.353 2.353 4.493-6.74a.75.75 0 0 1 1.04-.207z"
+                                    clipRule="evenodd"
+                                  />
+                                </svg>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Dependency Note and size badge */}
+                        <div className="mt-2.5 pt-2 border-t border-zinc-900/60 flex items-center justify-between gap-2 text-[9px]">
+                          <span className="text-zinc-550 leading-normal flex-1 italic truncate" title={depNote}>
+                            {depNote}
+                          </span>
+                          <span className="shrink-0 rounded bg-zinc-950 px-1 py-0.5 text-[8px] text-zinc-400 border border-zinc-850">
+                            {card.defaultSize.toUpperCase()}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             );
@@ -91,10 +153,11 @@ export function WorkspaceConfigPanel({
       </div>
 
       <footer className="border-t border-zinc-900 pt-3 text-center">
-        <p className="text-3xs text-zinc-600 font-mono">
+        <p className="text-3xs text-zinc-650 font-mono">
           Drag cards by their headers to rearrange your workspace layout.
         </p>
       </footer>
     </div>
   );
 }
+

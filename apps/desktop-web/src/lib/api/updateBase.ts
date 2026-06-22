@@ -1,3 +1,5 @@
+import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { callBridge, getBridgeMode } from "../bridge/adapter";
 import type {
   BaseHealthSnapshot,
@@ -369,4 +371,52 @@ export async function fetchDatabaseDiagnostics(params?: { summaryOnly?: boolean 
     { summary_only: params?.summaryOnly ?? false },
   )) as DatabaseDiagnostics;
   return { mode: "desktop", diagnostics };
+}
+
+export function useWorkspaceStatus(bridgeReady = true) {
+  const defaults = useMemo(() => defaultRefreshWindow(), []);
+
+  const jobsQuery = useQuery({
+    queryKey: ["refresh-jobs"],
+    queryFn: fetchRefreshJobs,
+    enabled: bridgeReady,
+    refetchInterval: 15_000,
+  });
+  const jobs = jobsQuery.data?.mode === "desktop" ? jobsQuery.data.items : [];
+  const activeJob = jobs.find(isActiveRefreshJob) ?? null;
+  const isRunning = Boolean(activeJob);
+
+  const healthQuery = useQuery({
+    queryKey: ["base-health", defaults.startYear, defaults.endYear],
+    queryFn: () =>
+      fetchBaseHealth({
+        startYear: defaults.startYear,
+        endYear: defaults.endYear,
+        forceRefresh: false,
+      }),
+    enabled: bridgeReady,
+    refetchInterval: isRunning ? 10_000 : false,
+  });
+  const health = healthQuery.data?.mode === "desktop" ? healthQuery.data.snapshot : null;
+
+  const diagQuery = useQuery({
+    queryKey: ["db-diagnostics", { summaryOnly: true }],
+    queryFn: () => fetchDatabaseDiagnostics({ summaryOnly: true }),
+    enabled: bridgeReady,
+    refetchInterval: isRunning ? 10_000 : 60_000,
+  });
+  const diagnostics = diagQuery.data?.mode === "desktop" ? diagQuery.data.diagnostics : null;
+  const browserReason = diagQuery.data?.mode === "browser" ? diagQuery.data.reason : null;
+  const mode = diagQuery.data?.mode || "offline";
+
+  return {
+    defaults,
+    activeJob,
+    isRunning,
+    health,
+    diagnostics,
+    browserReason,
+    mode,
+    isLoading: jobsQuery.isLoading || healthQuery.isLoading || diagQuery.isLoading,
+  };
 }

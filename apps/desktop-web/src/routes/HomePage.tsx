@@ -1,9 +1,8 @@
 import { useState, useEffect, useRef } from "react";
-import { useQuery } from "@tanstack/react-query";
 
 import { whenBridgeReady } from "@/lib/bridge/adapter";
 import { StateBanner } from "@/components/feedback/StateBanner";
-import { fetchDatabaseDiagnostics } from "@/lib/api/updateBase";
+import { useWorkspaceStatus } from "@/lib/api/updateBase";
 
 // Configurable Workspace imports
 import { WORKSPACE_REGISTRY } from "@/components/home/WorkspaceRegistry";
@@ -271,15 +270,8 @@ export function HomePage() {
     }
   }, [cardConfigs, bridgeReady]);
 
-  // 3. Status checks for top-level warning banner (Browser fallback mode check)
-  const diagQuery = useQuery({
-    queryKey: ["db-diagnostics-summary"],
-    queryFn: () => fetchDatabaseDiagnostics({ summaryOnly: true }),
-    enabled: bridgeReady,
-  });
-
-  const browserReason =
-    diagQuery.data?.mode === "browser" ? diagQuery.data.reason : null;
+  // 3. Status checks and diagnostics summary using the shared status hook
+  const { activeJob, isRunning, health, diagnostics: diag, mode, browserReason } = useWorkspaceStatus(bridgeReady);
 
   // 4. Toggle Card Visibility (places in the first available gap)
   const handleToggleCard = (id: string) => {
@@ -574,6 +566,45 @@ export function HomePage() {
               : "Lock status: widgets locked. Click Edit Layout to customize"}
           </p>
         </div>
+
+        {/* Status Dashboard Summary */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-3xs text-zinc-400 font-mono bg-zinc-950/30 border border-zinc-900 rounded-md px-3 py-1.5">
+          <div className="flex items-center gap-1">
+            <span className="text-zinc-555">MODE:</span>
+            <span className={`font-bold uppercase ${mode === "browser" ? "text-amber-400" : "text-emerald-400"}`}>
+              {mode === "browser" ? "MOCK · BROWSER" : "LIVE · DESKTOP"}
+            </span>
+          </div>
+          <div className="h-3 w-px bg-zinc-900" />
+          <div className="flex items-center gap-1">
+            <span className="text-zinc-555">COVERAGE:</span>
+            <span className="text-zinc-200 font-bold">{health ? `${health.pct.toFixed(1)}%` : "—"}</span>
+          </div>
+          <div className="h-3 w-px bg-zinc-900" />
+          <div className="flex items-center gap-1">
+            <span className="text-zinc-555">SYNC TIME:</span>
+            <span className="text-zinc-200 font-bold">
+              {diag?.latest_success_at 
+                ? new Date(diag.latest_success_at).toLocaleDateString("en-US", { month: "short", day: "2-digit" }) + " " + new Date(diag.latest_success_at).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false })
+                : "NEVER"}
+            </span>
+          </div>
+          <div className="h-3 w-px bg-zinc-900" />
+          <div className="flex items-center gap-1">
+            <span className="text-zinc-555">GAPS:</span>
+            <span className="text-zinc-200 font-bold">{health ? health.missing_cells : "—"}</span>
+          </div>
+          {isRunning && activeJob && (
+            <>
+              <div className="h-3 w-px bg-zinc-900" />
+              <div className="flex items-center gap-1.5 text-orange-400 animate-pulse">
+                <span className="h-1.5 w-1.5 rounded-full bg-orange-500" />
+                <span className="font-bold uppercase">JOB ACTIVE: {activeJob.stage}</span>
+              </div>
+            </>
+          )}
+        </div>
+
         <div className="flex items-center gap-2">
           <button
             onClick={() => setIsEditMode(!isEditMode)}
@@ -617,16 +648,18 @@ export function HomePage() {
           <div className="grid grid-cols-2 gap-4 border-t border-b border-zinc-850/60 py-6">
             <div className="border-r border-zinc-850/60 pr-4 flex flex-col justify-between space-y-4">
               <div>
-                <h5 className="text-xs font-bold text-zinc-200 uppercase tracking-wide">Recommended Layout</h5>
+                <h5 className="text-xs font-bold text-zinc-200 uppercase tracking-wide flex items-center gap-1.5">
+                  <span className="text-orange-500">◆</span> Recommended Terminal Layout
+                </h5>
                 <p className="text-3xs text-zinc-500 mt-1 leading-normal">
-                  Pre-populate your workspace with a balanced, multi-column dashboard containing:
+                  Deploy a pre-configured workspace mapping core database health monitors, liquidity/priority tracking metrics, and financial trend lines:
                 </p>
                 <ul className="text-3xs text-zinc-400 mt-2 list-disc list-inside space-y-1">
-                  <li>Database synchronization status</li>
-                  <li>Watchlist with EBIT Margin KPI charts</li>
-                  <li>Target ticker quote Sparkline</li>
-                  <li>Active coverage prioritization queue</li>
-                  <li>CVM filings and news alerts</li>
+                  <li>**Database Health**: Monitor CVM data sync progress and check diagnostics.</li>
+                  <li>**Watchlist & KPIs**: Visual indicator charts of EBIT margins and historical prices.</li>
+                  <li>**Performance Sparkline**: Standalone price trend tracking for selected tickers.</li>
+                  <li>**Priority Queue**: Local coverage gap rankings based on sector metrics.</li>
+                  <li>**Top News Feed**: Live RSS and official CVM/B3 corporate event logging.</li>
                 </ul>
               </div>
               <button
@@ -808,6 +841,7 @@ export function HomePage() {
             return (
               <div
                 key={item.id}
+                data-card-id={item.id}
                 onMouseDown={(e) => handleDragHeaderMouseDown(e, item.id)}
                 onDoubleClick={(e) => {
                   const target = e.target as HTMLElement;

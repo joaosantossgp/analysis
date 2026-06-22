@@ -7,7 +7,6 @@ import {
   fetchCoveragePriorityScores,
 } from "@/lib/api/coverage";
 import { Panel } from "@/components/surface/Panel";
-import { Button } from "@/components/ui/Button";
 import { downloadCsvFile } from "./shared/csvExport";
 import { PriorityQueueConfig, WidgetCommonProps } from "./shared/widgetTypes";
 
@@ -26,6 +25,8 @@ export function PriorityQueueCard({
   headerControls,
 }: PriorityQueueCardProps) {
   const [isConfiguring, setIsConfiguring] = useState(false);
+  const [selectedTier, setSelectedTier] = useState<string>("ALL");
+  const [selectedSector, setSelectedSector] = useState<string>("ALL");
 
   const universesQuery = useQuery({
     queryKey: ["coverage-universes"],
@@ -42,26 +43,49 @@ export function PriorityQueueCard({
   });
   const priorities = priorityQuery.data || [];
 
-  // Sort by priority score (high to low)
+  // Extract unique sectors dynamically from the priorities dataset
+  const uniqueSectors = useMemo(() => {
+    const sectors = new Set<string>();
+    priorities.forEach((p: any) => {
+      const s = p.gics_sector || p.setor_analitico;
+      if (s && s !== "Unknown") sectors.add(s);
+    });
+    return Array.from(sectors).sort();
+  }, [priorities]);
+
+  const filteredPriorities = useMemo(() => {
+    return priorities.filter((item: any) => {
+      const matchTier = selectedTier === "ALL" || item.tier === selectedTier;
+      const sector = item.gics_sector || item.setor_analitico;
+      const matchSector = selectedSector === "ALL" || sector === selectedSector;
+      return matchTier && matchSector;
+    });
+  }, [priorities, selectedTier, selectedSector]);
+
+  // Sort by final_score (high to low)
   const topPriorities = useMemo(() => {
-    return [...priorities]
-      .sort((a, b) => (b.priority_score ?? 0) - (a.priority_score ?? 0))
+    return [...filteredPriorities]
+      .sort((a, b) => (b.final_score ?? 0) - (a.final_score ?? 0))
       .slice(0, isFocused ? 25 : isCompact ? 5 : 8);
-  }, [priorities, isCompact, isFocused]);
+  }, [filteredPriorities, isCompact, isFocused]);
 
   const selectUniverse = (id: string) => {
     onConfigure({ universeId: id });
     setIsConfiguring(false);
+    setSelectedTier("ALL");
+    setSelectedSector("ALL");
   };
 
   const handleExportCSV = () => {
     if (!priorities || priorities.length === 0) return;
-    const headers = ["Company Name", "CVM Code", "Tier", "Priority Score"];
+    const headers = ["Company Name", "CVM Code", "Ticker", "Tier", "Priority Score", "Pending Gaps"];
     const rows = priorities.map((item) => [
       item.company_name,
       item.cd_cvm,
+      item.ticker_b3 || "",
       item.tier || "—",
-      item.priority_score ?? 0,
+      item.final_score ?? 0,
+      item.missing_factors?.join("; ") || "None",
     ]);
     downloadCsvFile({
       filename: `priority_queue_${config.universeId || "all"}.csv`,
@@ -72,8 +96,17 @@ export function PriorityQueueCard({
 
   return (
     <Panel
-      title="Priority Queue"
-      subtitle={isMinimized ? undefined : activeUniverse ? `Universe: ${activeUniverse.name}` : "Identify coverage gaps"}
+      title={
+        <div className="flex items-center gap-2">
+          <span>Priority Queue</span>
+          {activeUniverse && (
+            <span className="text-[9px] font-bold bg-zinc-900 border border-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded leading-none uppercase font-mono">
+              {activeUniverse.name}
+            </span>
+          )}
+        </div>
+      }
+      subtitle={isMinimized ? undefined : "Operational coverage priorities and action list"}
       dense={isCompact}
       style={{ height: "100%", display: "flex", flexDirection: "column" }}
       actions={
@@ -81,7 +114,7 @@ export function PriorityQueueCard({
           {!isMinimized && (
             <button
               onClick={() => setIsConfiguring(!isConfiguring)}
-              className="text-zinc-550 hover:text-zinc-300 font-mono text-2xs transition-colors px-1"
+              className="text-zinc-555 hover:text-zinc-300 font-mono text-2xs transition-colors px-1"
               title="Configure Universe"
             >
               ⚙
@@ -99,7 +132,7 @@ export function PriorityQueueCard({
           {headerControls}
           <button
             onClick={onRemove}
-            className="text-zinc-550 hover:text-zinc-300 font-mono text-2xs transition-colors px-1"
+            className="text-zinc-555 hover:text-zinc-300 font-mono text-2xs transition-colors px-1"
             title="Remove Card"
           >
             ✕
@@ -109,8 +142,8 @@ export function PriorityQueueCard({
     >
       {!isMinimized && (
         <div
-          className="space-y-3"
-          style={{ flex: 1, minHeight: 0, overflow: "auto" }}
+          className="space-y-2.5 flex flex-col"
+          style={{ flex: 1, minHeight: 0, overflow: config.universeId ? "auto" : "hidden" }}
         >
           {isConfiguring && (
             <div className="border-b border-zinc-850 pb-3 space-y-2">
@@ -134,55 +167,136 @@ export function PriorityQueueCard({
           )}
 
           {!config.universeId ? (
-            <div className={`${isCompact ? "py-3" : "py-6"} text-center space-y-2`}>
-              <p className="text-xs font-mono text-zinc-555">No universe selected.</p>
+            <div className="flex flex-col items-center justify-center p-3 py-3.5 border border-dashed border-zinc-850 rounded-md bg-zinc-900/5 text-center font-mono space-y-2">
+              <span className="text-zinc-500 text-sm">⚙</span>
+              <div>
+                <p className="text-2xs font-bold text-zinc-300">No coverage universe selected</p>
+                <p className="text-3xs text-zinc-550 max-w-xs leading-normal mt-0.5">
+                  Select a universe to view priority rankings based on market cap, volume, and coverage gaps.
+                </p>
+              </div>
               {!isConfiguring && (
-                <Button onClick={() => setIsConfiguring(true)} size="xs" variant="secondary">
+                <button
+                  onClick={() => setIsConfiguring(true)}
+                  className="rounded border border-zinc-800 hover:border-zinc-700 bg-zinc-950 px-2 py-1 text-3xs font-bold text-orange-400 hover:text-orange-300 transition-colors uppercase tracking-wider"
+                >
                   Select Universe
-                </Button>
+                </button>
               )}
             </div>
           ) : priorityQuery.isLoading ? (
             <p className="py-4 text-center font-mono text-2xs text-zinc-600">Loading priority rankings...</p>
-          ) : topPriorities.length === 0 ? (
-            <p className="py-4 text-center font-mono text-2xs text-zinc-555">No priority tasks available in this universe.</p>
           ) : (
-            <div className="space-y-1.5 font-mono text-xs">
-              <div className="flex items-center justify-between border-b border-zinc-900 pb-1 text-3xs text-zinc-555 uppercase">
-                <span>Company</span>
-                <div className="flex gap-4">
-                  <span>Tier</span>
-                  <span className="w-10 text-right">Score</span>
-                </div>
-              </div>
-              {topPriorities.map((item) => (
-                <div key={item.cd_cvm} className="flex items-center justify-between border-b border-zinc-900/60 py-1.5 last:border-0">
-                  <Link
-                    to={`/empresas/${item.cd_cvm}`}
-                    className="truncate text-zinc-300 hover:text-cyan-400 transition-colors mr-2 max-w-44"
-                    title={item.company_name}
+            <>
+              {/* Filter Controls Row */}
+              {!isConfiguring && (
+                <div className="flex flex-wrap items-center gap-2 text-3xs border-b border-zinc-900 pb-2 mb-0.5 font-mono">
+                  <span className="text-zinc-555 uppercase">Filters:</span>
+                  <select
+                    value={selectedTier}
+                    onChange={(e) => setSelectedTier(e.target.value)}
+                    className="bg-zinc-950 border border-zinc-850 rounded px-1 py-0.5 text-zinc-400 hover:text-zinc-200 outline-none cursor-pointer text-4xs uppercase"
                   >
-                    {item.company_name}
-                  </Link>
-                  <div className="flex items-center gap-4 shrink-0 text-2xs">
-                    <span className="text-zinc-555 font-semibold">{item.tier}</span>
-                    <span className="w-10 text-right text-orange-400 font-bold">
-                      {item.priority_score ?? 0}
-                    </span>
-                  </div>
+                    <option value="ALL">All Tiers</option>
+                    <option value="Tier 1">Tier 1</option>
+                    <option value="Tier 2">Tier 2</option>
+                    <option value="Tier 3">Tier 3</option>
+                  </select>
+                  
+                  <select
+                    value={selectedSector}
+                    onChange={(e) => setSelectedSector(e.target.value)}
+                    className="bg-zinc-950 border border-zinc-850 rounded px-1 py-0.5 text-zinc-400 hover:text-zinc-200 outline-none cursor-pointer max-w-[120px] truncate text-4xs uppercase"
+                  >
+                    <option value="ALL">All Sectors</option>
+                    {uniqueSectors.map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
                 </div>
-              ))}
+              )}
+
+              {topPriorities.length === 0 ? (
+                <p className="py-4 text-center font-mono text-2xs text-zinc-555">No priority tasks match current filters.</p>
+              ) : (
+                <div className="flex-1 overflow-auto">
+                  <table className="w-full text-left font-mono text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-zinc-850 text-zinc-650 text-3xs uppercase">
+                        <th className="py-2">Company</th>
+                        <th className="py-2">Tier</th>
+                        <th className="py-2 text-right">Score</th>
+                        <th className="py-2 pl-4">Next Action / Reason</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {topPriorities.map((item) => {
+                        const hasChecklistGaps = item.total_checklist_count > 0 && item.completed_checklist_count < item.total_checklist_count;
+                        const pendingItem = item.next_pending_item;
+                        
+                        let nextAction = "—";
+                        let actionColor = "text-zinc-550";
+                        if (pendingItem) {
+                          nextAction = pendingItem;
+                          actionColor = "text-orange-400 font-medium";
+                        } else if (hasChecklistGaps) {
+                          nextAction = `${item.completed_checklist_count}/${item.total_checklist_count} Checklist`;
+                          actionColor = "text-amber-400";
+                        } else if (item.score_status === "blocked") {
+                          nextAction = "Resolve Gaps";
+                          actionColor = "text-red-400";
+                        } else {
+                          nextAction = "Ready";
+                          actionColor = "text-emerald-400";
+                        }
+
+                        // Build a concise reason from missing factors
+                        const missing = item.missing_factors || [];
+                        const reason = missing.length > 0 
+                          ? `Missing: ${missing.join(", ").replace(/_/g, " ")}`
+                          : "Score components complete";
+
+                        return (
+                          <tr key={item.cd_cvm} className="border-b border-zinc-850 hover:bg-zinc-900/35 text-xs font-mono text-zinc-300">
+                            <td className="py-2 pr-2 font-semibold text-zinc-200 max-w-[120px] truncate" title={item.company_name}>
+                              <Link to={`/empresas/${item.cd_cvm}`} className="hover:text-cyan-400 transition-colors">
+                                {item.company_name}
+                              </Link>
+                              <span className="block text-4xs text-zinc-555 font-normal mt-0.5">
+                                {item.ticker_b3 || `CVM ${item.cd_cvm}`}
+                              </span>
+                            </td>
+                            <td className="py-2 text-zinc-400 text-2xs">{item.tier || "—"}</td>
+                            <td className="py-2 text-right text-orange-400 font-bold pr-2">
+                              {item.final_score ?? 0}
+                            </td>
+                            <td className="py-2 pl-4">
+                              <span className={`text-[10px] block truncate max-w-[180px] ${actionColor}`} title={nextAction}>
+                                {nextAction}
+                              </span>
+                              <span className="block text-4xs text-zinc-555 truncate max-w-[180px]" title={reason}>
+                                {reason}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
               {!isCompact && (
-                <div className="pt-2 text-center border-t border-zinc-900/60">
+                <div className="pt-2 text-center border-t border-zinc-900/60 font-mono text-2xs shrink-0">
                   <Link
                     to="/coverage/prioritization"
-                    className="text-2xs text-cyan-400 hover:text-cyan-300 hover:underline"
+                    className="text-cyan-400 hover:text-cyan-300 hover:underline"
                   >
-                    Go to full prioritization queue →
+                    Go to full prioritization dashboard →
                   </Link>
                 </div>
               )}
-            </div>
+            </>
           )}
         </div>
       )}

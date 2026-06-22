@@ -327,3 +327,29 @@ body {
     justify-self: start;
   }
 }
+
+/* Custom scrollbars for a clean dark terminal layout */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-strong, #3a3a3a);
+  border-radius: var(--radius-sm, 2px);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-action-primary, #ff7a1a);
+}
+
+/* For Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-strong, #3a3a3a) transparent;
+}
+
