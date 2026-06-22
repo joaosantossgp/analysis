@@ -223,6 +223,53 @@ The CEG-only run compared 3 hot CEG samples and 3 cold CEG samples:
   `24.960` ms, about `82.84x` faster;
 - report: `docs/diagnostics/phase5-hourly-ceg-read-path-comparison.json`.
 
+Wider two-hot/two-cold full-month prototype on 2026-06-22:
+
+```powershell
+python scripts/diagnostics/phase5_hot_cold_hourly_prototype.py `
+  --database C:\Users\jadaojoao\Documents\CVMAnalytics\db\energy_kpis.db `
+  --output-dir C:\tmp\cvma-phase5-hot-cold-full-two-two `
+  --hot-months 2 `
+  --cold-month 2024-03 `
+  --cold-month 2024-04 `
+  --full-months `
+  --replace-output
+```
+
+This prototype selected hot months `2026-03` and `2026-04`, and cold months
+`2024-03` and `2024-04`:
+
+- hot SQLite: 5,732,760 rows, `2,200,080,384` bytes;
+- cold Parquet: 4,556,544 rows, `225,443,218` bytes;
+- source DB signature unchanged: yes.
+
+Wider CEG-only benchmark against that prototype:
+
+```powershell
+python scripts/diagnostics/phase5_compare_hourly_read_paths.py `
+  --manifest C:\tmp\cvma-phase5-hot-cold-full-two-two\manifest.json `
+  --database C:\Users\jadaojoao\Documents\CVMAnalytics\db\energy_kpis.db `
+  --tier all `
+  --window-mode month `
+  --runs 2 `
+  --auto-entity-type aneel_plant `
+  --aneel-samples-per-tier 3 `
+  --output docs\diagnostics\phase5-hourly-ceg-read-path-comparison-wide.json
+```
+
+The wider CEG-only run compared 6 hot CEG samples and 6 cold CEG samples:
+
+- 12/12 samples matched raw SQLite row hashes;
+- 0 mismatches and 0 errors;
+- source DB signature unchanged: yes;
+- hot CEG median first-run timing: raw SQLite `2656.727` ms vs hot SQLite
+  `992.447` ms, about `2.71x` faster, with sample speedups from `2.64x` to
+  `5.39x`;
+- cold CEG median first-run timing: raw SQLite `2104.146` ms vs cold Parquet
+  `27.370` ms, about `83.43x` faster, with sample speedups from `29.53x` to
+  `186.88x`;
+- report: `docs/diagnostics/phase5-hourly-ceg-read-path-comparison-wide.json`.
+
 The broadened run also exposed the next performance target: raw SQLite CEG
 aggregation windows are much slower than parcel windows because the current
 runtime query joins `ccee_plant_parcel_hourly` to `ccee_plant_parcels` for each

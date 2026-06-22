@@ -225,6 +225,16 @@ for hot SQLite CEG aggregation and about `82.84x` faster for cold Parquet CEG
 aggregation. The JSON report is stored at
 `docs/diagnostics/phase5-hourly-ceg-read-path-comparison.json`.
 
+A wider two-hot/two-cold full-month prototype then selected hot months
+`2026-03` and `2026-04`, and cold months `2024-03` and `2024-04`. It copied
+5,732,760 hot rows into a `2,200,080,384`-byte SQLite database and exported
+4,556,544 cold rows into `225,443,218` bytes of Parquet, with the source DB
+signature unchanged. The wider CEG-only comparison produced 12/12 row-hash
+matches, zero mismatches, and median first-run speedups of about `2.71x` for hot
+SQLite CEG aggregation and about `83.43x` for cold Parquet CEG aggregation. The
+JSON report is stored at
+`docs/diagnostics/phase5-hourly-ceg-read-path-comparison-wide.json`.
+
 The broadened comparison also showed that the current raw SQLite CEG aggregation
 query is the next hot spot. Parcel windows are already bounded and fast after
 warm-up, but CEG-level hourly drill-downs repeatedly join the large raw hourly
