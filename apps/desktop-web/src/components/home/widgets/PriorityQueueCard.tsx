@@ -143,15 +143,15 @@ export function PriorityQueueCard({
       {!isMinimized && (
         <div
           className="space-y-2.5 flex flex-col"
-          style={{ flex: 1, minHeight: 0, overflow: config.universeId ? "auto" : "hidden" }}
+          style={{ flex: 1, minHeight: 0, overflow: isConfiguring ? "auto" : (config.universeId ? "auto" : "hidden") }}
         >
-          {isConfiguring && (
-            <div className="border-b border-zinc-850 pb-3 space-y-2">
-              <p className="text-2xs font-mono text-zinc-555 uppercase">Select Coverage Universe</p>
+          {isConfiguring ? (
+            <div className="space-y-2 flex flex-col flex-1 min-h-0">
+              <p className="text-2xs font-mono text-zinc-555 uppercase shrink-0">Select Coverage Universe</p>
               {universes.length === 0 ? (
-                <p className="text-2xs font-mono text-zinc-650">No universes available.</p>
+                <p className="text-2xs font-mono text-zinc-650 shrink-0">No universes available.</p>
               ) : (
-                <div className="max-h-28 overflow-y-auto space-y-1 font-mono text-2xs">
+                <div className="flex-1 min-h-0 overflow-y-auto space-y-1 font-mono text-2xs border-t border-zinc-900 mt-2">
                   {universes.map((u) => (
                     <button
                       key={u.id}
@@ -163,11 +163,17 @@ export function PriorityQueueCard({
                   ))}
                 </div>
               )}
+              {config.universeId && (
+                <button
+                  onClick={() => setIsConfiguring(false)}
+                  className="w-full text-center py-1 text-2xs font-mono text-orange-400 hover:text-orange-300 underline shrink-0 mt-2"
+                >
+                  Done selecting
+                </button>
+              )}
             </div>
-          )}
-
-          {!config.universeId ? (
-            <div className="flex flex-col items-center justify-center p-3 py-3.5 border border-dashed border-zinc-850 rounded-md bg-zinc-900/5 text-center font-mono space-y-2">
+          ) : !config.universeId ? (
+            <div className="flex flex-col items-center justify-center p-3 py-3.5 border border-dashed border-zinc-850 rounded-md bg-zinc-900/5 text-center font-mono space-y-2 flex-1 min-h-0">
               <span className="text-zinc-500 text-sm">⚙</span>
               <div>
                 <p className="text-2xs font-bold text-zinc-300">No coverage universe selected</p>
@@ -175,46 +181,42 @@ export function PriorityQueueCard({
                   Select a universe to view priority rankings based on market cap, volume, and coverage gaps.
                 </p>
               </div>
-              {!isConfiguring && (
-                <button
-                  onClick={() => setIsConfiguring(true)}
-                  className="rounded border border-zinc-800 hover:border-zinc-700 bg-zinc-950 px-2 py-1 text-3xs font-bold text-orange-400 hover:text-orange-300 transition-colors uppercase tracking-wider"
-                >
-                  Select Universe
-                </button>
-              )}
+              <button
+                onClick={() => setIsConfiguring(true)}
+                className="rounded border border-zinc-800 hover:border-zinc-700 bg-zinc-950 px-2 py-1 text-3xs font-bold text-orange-400 hover:text-orange-300 transition-colors uppercase tracking-wider"
+              >
+                Select Universe
+              </button>
             </div>
           ) : priorityQuery.isLoading ? (
-            <p className="py-4 text-center font-mono text-2xs text-zinc-600">Loading priority rankings...</p>
+            <p className="py-4 text-center font-mono text-2xs text-zinc-600 shrink-0">Loading priority rankings...</p>
           ) : (
             <>
               {/* Filter Controls Row */}
-              {!isConfiguring && (
-                <div className="flex flex-wrap items-center gap-2 text-3xs border-b border-zinc-900 pb-2 mb-0.5 font-mono">
-                  <span className="text-zinc-555 uppercase">Filters:</span>
-                  <select
-                    value={selectedTier}
-                    onChange={(e) => setSelectedTier(e.target.value)}
-                    className="bg-zinc-950 border border-zinc-850 rounded px-1 py-0.5 text-zinc-400 hover:text-zinc-200 outline-none cursor-pointer text-4xs uppercase"
-                  >
-                    <option value="ALL">All Tiers</option>
-                    <option value="Tier 1">Tier 1</option>
-                    <option value="Tier 2">Tier 2</option>
-                    <option value="Tier 3">Tier 3</option>
-                  </select>
-                  
-                  <select
-                    value={selectedSector}
-                    onChange={(e) => setSelectedSector(e.target.value)}
-                    className="bg-zinc-950 border border-zinc-850 rounded px-1 py-0.5 text-zinc-400 hover:text-zinc-200 outline-none cursor-pointer max-w-[120px] truncate text-4xs uppercase"
-                  >
-                    <option value="ALL">All Sectors</option>
-                    {uniqueSectors.map(s => (
-                      <option key={s} value={s}>{s}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
+              <div className="flex flex-wrap items-center gap-2 text-3xs border-b border-zinc-900 pb-2 mb-0.5 font-mono">
+                <span className="text-zinc-555 uppercase">Filters:</span>
+                <select
+                  value={selectedTier}
+                  onChange={(e) => setSelectedTier(e.target.value)}
+                  className="bg-zinc-950 border border-zinc-850 rounded px-1 py-0.5 text-zinc-400 hover:text-zinc-200 outline-none cursor-pointer text-4xs uppercase"
+                >
+                  <option value="ALL">All Tiers</option>
+                  <option value="Tier 1">Tier 1</option>
+                  <option value="Tier 2">Tier 2</option>
+                  <option value="Tier 3">Tier 3</option>
+                </select>
+                
+                <select
+                  value={selectedSector}
+                  onChange={(e) => setSelectedSector(e.target.value)}
+                  className="bg-zinc-950 border border-zinc-850 rounded px-1 py-0.5 text-zinc-400 hover:text-zinc-200 outline-none cursor-pointer max-w-[120px] truncate text-4xs uppercase"
+                >
+                  <option value="ALL">All Sectors</option>
+                  {uniqueSectors.map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
 
               {topPriorities.length === 0 ? (
                 <p className="py-4 text-center font-mono text-2xs text-zinc-555">No priority tasks match current filters.</p>

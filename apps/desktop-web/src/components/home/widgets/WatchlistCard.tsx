@@ -128,21 +128,23 @@ export function WatchlistCard({
     >
       {!isMinimized && (
         <div
-          className="space-y-3"
-          style={{ flex: 1, minHeight: 0, overflow: config.companyIds.length === 0 ? "hidden" : "auto" }}
+          className="space-y-3 flex flex-col"
+          style={{ flex: 1, minHeight: 0, overflow: isConfiguring ? "auto" : (config.companyIds.length === 0 ? "hidden" : "auto") }}
         >
-          {isConfiguring && (
-            <div className="border-b border-zinc-850 pb-3 space-y-2">
-              <p className="text-2xs font-mono text-zinc-555 uppercase">Manage Watchlist</p>
-              <CompanySelector onSelect={addCompany} />
+          {isConfiguring ? (
+            <div className="space-y-2 flex flex-col flex-1 min-h-0">
+              <p className="text-2xs font-mono text-zinc-555 uppercase shrink-0">Manage Watchlist</p>
+              <div className="shrink-0">
+                <CompanySelector onSelect={addCompany} />
+              </div>
               {config.companyIds.length > 0 && (
-                <div className="max-h-24 overflow-y-auto space-y-1 pt-1 font-mono text-2xs">
+                <div className="flex-1 min-h-0 overflow-y-auto space-y-1 pt-1 font-mono text-2xs border-t border-zinc-900 mt-2">
                   {config.companyIds.map((c) => (
                     <div key={c.cdCvm} className="flex items-center justify-between bg-zinc-950/45 p-1 rounded border border-zinc-850">
                       <span className="truncate text-zinc-350 mr-2">{c.name} ({c.ticker || `CVM ${c.cdCvm}`})</span>
                       <button
                         onClick={() => removeCompany(c.cdCvm)}
-                        className="text-red-400 hover:text-red-300 hover:underline"
+                        className="text-red-400 hover:text-red-300 hover:underline shrink-0"
                       >
                         Remove
                       </button>
@@ -152,15 +154,13 @@ export function WatchlistCard({
               )}
               <button
                 onClick={() => setIsConfiguring(false)}
-                className="w-full text-center py-1 text-2xs font-mono text-orange-400 hover:text-orange-300 underline"
+                className="w-full text-center py-1 text-2xs font-mono text-orange-400 hover:text-orange-300 underline shrink-0 mt-2"
               >
                 Done configuring
               </button>
             </div>
-          )}
-
-          {config.companyIds.length === 0 ? (
-            <div className="flex flex-col items-center justify-center p-3 py-3.5 border border-dashed border-zinc-850 rounded-md bg-zinc-900/5 text-center font-mono space-y-2">
+          ) : config.companyIds.length === 0 ? (
+            <div className="flex flex-col items-center justify-center p-3 py-3.5 border border-dashed border-zinc-850 rounded-md bg-zinc-900/5 text-center font-mono space-y-2 flex-1 min-h-0">
               <span className="text-zinc-500 text-sm">★</span>
               <div>
                 <p className="text-2xs font-bold text-zinc-300">Watchlist is empty</p>
@@ -168,14 +168,12 @@ export function WatchlistCard({
                   Favorite companies to track annual KPIs (EBIT Margin, ROE, Prices) side-by-side.
                 </p>
               </div>
-              {!isConfiguring && (
-                <button 
-                  onClick={() => setIsConfiguring(true)}
-                  className="rounded border border-zinc-800 hover:border-zinc-700 bg-zinc-950 px-2 py-1 text-3xs font-bold text-orange-400 hover:text-orange-300 transition-colors uppercase tracking-wider"
-                >
-                  Add Favorite Companies
-                </button>
-              )}
+              <button 
+                onClick={() => setIsConfiguring(true)}
+                className="rounded border border-zinc-800 hover:border-zinc-700 bg-zinc-950 px-2 py-1 text-3xs font-bold text-orange-400 hover:text-orange-300 transition-colors uppercase tracking-wider"
+              >
+                Add Favorite Companies
+              </button>
             </div>
           ) : (
             <table className="w-full text-left font-mono text-xs border-collapse">

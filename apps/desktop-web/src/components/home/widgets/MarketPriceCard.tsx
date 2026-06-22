@@ -178,18 +178,26 @@ export function MarketPriceCard({
     >
       {!isMinimized && (
         <div
-          className="space-y-3 font-mono"
-          style={{ flex: 1, minHeight: 0, overflow: !config.cdCvm ? "hidden" : "auto" }}
+          className="space-y-3 font-mono flex flex-col"
+          style={{ flex: 1, minHeight: 0, overflow: isConfiguring ? "auto" : (!config.cdCvm ? "hidden" : "auto") }}
         >
-          {isConfiguring && (
-            <div className="border-b border-zinc-850 pb-3 space-y-2">
-              <p className="text-2xs text-zinc-555 uppercase">Select Target Ticker</p>
-              <CompanySelector onSelect={selectCompany} placeholder="Search ticker (e.g. PETR4)..." />
+          {isConfiguring ? (
+            <div className="space-y-2 flex flex-col flex-1 min-h-0">
+              <p className="text-2xs text-zinc-555 uppercase shrink-0">Select Target Ticker</p>
+              <div className="shrink-0">
+                <CompanySelector onSelect={selectCompany} placeholder="Search ticker (e.g. PETR4)..." />
+              </div>
+              {config.cdCvm > 0 && (
+                <button
+                  onClick={() => setIsConfiguring(false)}
+                  className="w-full text-center py-1 text-2xs font-mono text-orange-400 hover:text-orange-300 underline shrink-0 mt-2"
+                >
+                  Done configuring
+                </button>
+              )}
             </div>
-          )}
-
-          {!config.cdCvm ? (
-            <div className="flex flex-col items-center justify-center p-3 py-3.5 border border-dashed border-zinc-850 rounded-md bg-zinc-900/5 text-center font-mono space-y-2">
+          ) : !config.cdCvm ? (
+            <div className="flex flex-col items-center justify-center p-3 py-3.5 border border-dashed border-zinc-850 rounded-md bg-zinc-900/5 text-center font-mono space-y-2 flex-1 min-h-0">
               <span className="text-zinc-500 text-sm">📈</span>
               <div>
                 <p className="text-2xs font-bold text-zinc-300">No ticker selected</p>
@@ -197,14 +205,12 @@ export function MarketPriceCard({
                   Select a B3 company ticker to monitor its daily price close sparkline.
                 </p>
               </div>
-              {!isConfiguring && (
-                <button
-                  onClick={() => setIsConfiguring(true)}
-                  className="rounded border border-zinc-800 hover:border-zinc-700 bg-zinc-950 px-2 py-1 text-3xs font-bold text-orange-400 hover:text-orange-300 transition-colors uppercase tracking-wider"
-                >
-                  Choose Ticker
-                </button>
-              )}
+              <button
+                onClick={() => setIsConfiguring(true)}
+                className="rounded border border-zinc-800 hover:border-zinc-700 bg-zinc-950 px-2 py-1 text-3xs font-bold text-orange-400 hover:text-orange-300 transition-colors uppercase tracking-wider"
+              >
+                Choose Ticker
+              </button>
             </div>
           ) : (
             <>
