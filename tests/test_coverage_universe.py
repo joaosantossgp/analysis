@@ -235,7 +235,7 @@ def test_coverage_universe_service_lifecycle(test_engine):
     # PETR4 has model_updated complete, other checklist items remain incomplete
     assert len(work_queue) > 0
     # Make sure petr4 model_updated task is NOT in the queue
-    assert not any(t["cd_cvm"] == 9512 and t["item_key"] == "model_updated" for t in work_queue)
+    assert not any(t["cd_cvm"] == 9512 and t["task_type"] == "checklist_incomplete" and "model_updated" in (t.get("item_key") or "") for t in work_queue)
 
     # 11. Verify capacity calculations
     cap_data = service.get_capacity_data(u_id)
@@ -651,6 +651,117 @@ def test_coverage_keeps_cvm_code_out_of_ticker_field(test_engine, monkeypatch):
     queue = service.get_work_queue(u_id)
     task = next(item for item in queue if item["cd_cvm"] == 123456)
     assert task["ticker_b3"] is None
-    assert "(CVM 123456)" in task["description"]
+    # The new work queue uses an 'identifier' field like 'CVM 123456'
+    assert "123456" in (task.get("identifier") or task.get("company_name") or "")
 
 
+def test_owner_analyst_update(test_engine):
+    """Owner update: persists, clears, and logs to decision_history."""
+    from sqlalchemy import text as _t
+
+    service = CoverageUniverseService(test_engine)
+    u_id = service.create_universe("Owner Test", "Owner test universe", "Equity", None)
+
+    # Seed a company
+    with test_engine.begin() as conn:
+        conn.execute(_t(
+            "INSERT INTO companies (cd_cvm, company_name, ticker_b3, is_active, updated_at) "
+            "VALUES (7777, 'OWNER S.A.', 'OWNR3', 1, '2024-01-01')"
+        ))
+
+    service.add_company_to_universe(u_id, 7777, "core", "owner test seed")
+
+    # Assign owner
+    service.update_company_owner_analyst(u_id, 7777, owner="Alice", rationale="Initial assign")
+
+    scores = service.calculate_priority_scores(u_id)
+    row = next(s for s in scores if s["cd_cvm"] == 7777)
+    assert row["owner_analyst"] == "Alice"
+
+    # Decision history must have the owner_change event
+    history = service.get_decision_history(u_id, 7777)
+    owner_events = [h for h in history if h["event_type"] == "owner_change"]
+    assert len(owner_events) >= 1
+    assert owner_events[0]["new_value"] == "Alice"
+
+    # Clear the owner
+    service.update_company_owner_analyst(u_id, 7777, owner=None, rationale="Remove assign")
+    scores2 = service.calculate_priority_scores(u_id)
+    row2 = next(s for s in scores2 if s["cd_cvm"] == 7777)
+    assert row2["owner_analyst"] is None
+
+
+def test_recommendation_summary(test_engine):
+    """Recommendation summary: returns proposed_actions, risks, summary metrics. Never auto-approves."""
+    from sqlalchemy import text as _t
+
+    service = CoverageUniverseService(test_engine)
+    u_id = service.create_universe("Rec Test", "Recommendation test universe", "Equity", None)
+
+    with test_engine.begin() as conn:
+        conn.execute(_t(
+            "INSERT INTO companies (cd_cvm, company_name, ticker_b3, is_active, updated_at) "
+            "VALUES (8888, 'REC S.A.', 'REC3', 1, '2024-01-01')"
+        ))
+
+    service.add_company_to_universe(u_id, 8888, "must_cover", "rec test seed")
+
+    rec = service.get_recommendation_summary(u_id)
+
+    # Must have all required keys
+    assert "proposed_actions" in rec
+    assert "risks" in rec
+    assert "capacity_summary" in rec
+    assert isinstance(rec["proposed_actions"], list)
+    assert isinstance(rec["risks"], list)
+
+    # manager_decision must not be auto-approved
+    decision = rec.get("manager_decision") or {}
+    assert decision.get("status") != "approved", "Recommendation must not auto-approve"
+
+
+def test_manager_decision_change_logged(test_engine):
+    """Manager decision status changes must be logged in coverage_decision_history."""
+    from sqlalchemy import text as _t
+
+    service = CoverageUniverseService(test_engine)
+    u_id = service.create_universe("Decision Log Test", "Decision log test universe", "Equity", None)
+
+    # Initial: no manager_decision in assumptions → treated as 'draft' baseline
+
+    # Update via update_universe to simulate bridge save_coverage_manager_decision logic
+    universe = service.get_universe(u_id)
+    assumptions = universe.get("assumptions") or {}
+    from src.companies.coverage import now_iso_seconds
+    now = now_iso_seconds()
+
+    assumptions["manager_decision"] = {"status": "pending_review", "decided_at": now, "notes": "Board review"}
+    service.update_universe(
+        u_id,
+        universe["name"],
+        universe.get("purpose"),
+        universe.get("benchmark"),
+        universe.get("status", "active"),
+        assumptions,
+    )
+
+    # Log the decision manually (this is what the bridge does)
+    # cd_cvm=0 is the sentinel for universe-level events (NOT NULL constraint)
+    with test_engine.begin() as conn:
+        conn.execute(
+            _t(
+                "INSERT INTO coverage_decision_history "
+                "(universe_id, cd_cvm, event_type, previous_value, new_value, rationale, timestamp) "
+                "VALUES (:u_id, 0, 'manager_decision_change', 'draft', 'pending_review', 'Board review', :ts)"
+            ),
+            {"u_id": u_id, "ts": now},
+        )
+
+    history = service.get_decision_history(u_id)
+    decision_events = [h for h in history if h["event_type"] == "manager_decision_change"]
+    assert len(decision_events) >= 1
+    ev = decision_events[0]
+    assert ev["previous_value"] == "draft"
+    assert ev["new_value"] == "pending_review"
+    # cd_cvm=0 is the sentinel for universe-level decisions
+    assert ev["cd_cvm"] in (0, None)

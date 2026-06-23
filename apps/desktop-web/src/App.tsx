@@ -186,7 +186,7 @@ function AppShellWithPalette() {
             <Route path="/coverage" element={<CoveragePage section="universes" />} />
             <Route path="/coverage/prioritization" element={<CoveragePage section="prioritization" />} />
             <Route path="/coverage/work-queue" element={<CoveragePage section="work-queue" />} />
-            <Route path="/coverage/capacity" element={<Navigate to="/coverage" replace />} />
+            <Route path="/coverage/capacity" element={<CoveragePage section="capacity" />} />
             <Route path="/news" element={<NewsPage />} />
             <Route path="/news/latest" element={<NewsPage />} />
             <Route path="/indicators" element={<CountryKpisPage />} />

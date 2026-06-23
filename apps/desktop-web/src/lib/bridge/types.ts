@@ -1664,6 +1664,9 @@ export interface BridgeApi {
   save_coverage_capacity_scenario(params: { universe_id: string; available_hours: number; tier_hours: Record<string, number> }): Promise<{ success?: boolean; error?: string }>;
   get_coverage_decision_history(params: { universe_id: string; cd_cvm?: number }): Promise<{ items?: any[]; error?: string }>;
   download_coverage_universe_excel(params: { universe_id: string }): Promise<{ filename?: string; mime_type?: string; content_base64?: string; error?: string }>;
+  update_company_owner_analyst(params: { universe_id: string; cd_cvm: number; owner: string | null; rationale: string }): Promise<{ success?: boolean; error?: string }>;
+  get_coverage_recommendation(params: { universe_id: string }): Promise<any>;
+  save_coverage_manager_decision(params: { universe_id: string; status: string; notes?: string }): Promise<{ success?: boolean; status?: string; decided_at?: string; error?: string }>;
 }
 
 declare global {

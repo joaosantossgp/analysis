@@ -31,7 +31,9 @@ DEFAULT_TIER_HOURS = {
     "inappropriate": 5.0,
 }
 
-COMPLEX_SECTORS = ["Utilidade Pública", "Intermediários Financeiros", "Energia Elétrica", "Petróleo, Gás e Biocombustíveis"]
+# Canonical GICS slugs considered high-complexity for capacity estimation.
+# Do NOT use Portuguese sector names — use gics_sector_slug from the companies table.
+COMPLEX_GICS_SLUGS = frozenset({"utilities", "financials", "energy"})
 
 MIN_LIQUIDITY_OBSERVATIONS = 5
 
@@ -661,6 +663,242 @@ class CoverageUniverseService:
                 {"u_id": universe_id, "cd_cvm": cd_cvm, "key": item}
             )
 
+    def update_company_owner_analyst(self, universe_id: str, cd_cvm: int, owner: str | None, rationale: str) -> None:
+        """Set or clear the owner_analyst for a company in a universe. Logs to decision history."""
+        self._ensure_schema()
+        now = now_iso_seconds()
+        with self.engine.begin() as conn:
+            existing = conn.execute(
+                text("SELECT owner_analyst FROM universe_companies WHERE universe_id = :u_id AND cd_cvm = :cd_cvm"),
+                {"u_id": universe_id, "cd_cvm": cd_cvm}
+            ).fetchone()
+            if not existing:
+                raise ValueError("Company not in universe")
+            prev_owner = existing[0]
+            conn.execute(
+                text(
+                    """
+                    UPDATE universe_companies
+                    SET owner_analyst = :owner, updated_at = :updated_at
+                    WHERE universe_id = :u_id AND cd_cvm = :cd_cvm
+                    """
+                ),
+                {"u_id": universe_id, "cd_cvm": cd_cvm, "owner": owner, "updated_at": now}
+            )
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO coverage_decision_history
+                        (universe_id, cd_cvm, event_type, previous_value, new_value, rationale, timestamp)
+                    VALUES (:u_id, :cd_cvm, 'owner_change', :prev, :new, :rationale, :timestamp)
+                    """
+                ),
+                {
+                    "u_id": universe_id,
+                    "cd_cvm": cd_cvm,
+                    "prev": prev_owner or "Unassigned",
+                    "new": owner or "Unassigned",
+                    "rationale": rationale,
+                    "timestamp": now,
+                }
+            )
+
+    def _get_news_workload_for_universe(self, universe_id: str) -> dict[int, dict[str, Any]]:
+        """
+        Returns per-cd_cvm news workload from the local news database.
+        Uses a separate news engine; always local/offline — no network calls.
+        Falls back gracefully if tables do not exist or news DB is unavailable.
+
+        Returns:
+            dict mapping cd_cvm -> {article_count_30d, article_count_60d, article_count_90d,
+                                     latest_article_date, mapping_available}
+            On failure: {"_unavailable": True, "reason": str}
+        """
+        try:
+            from src.platform.settings import get_settings  # noqa: PLC0415
+            from src.news.schema import get_news_engine  # noqa: PLC0415
+            settings = get_settings()
+            news_engine = get_news_engine(settings)
+        except Exception as exc:
+            return {"_unavailable": True, "reason": f"news engine unavailable: {exc}"}
+
+        # Fetch all cd_cvm values in this universe to scope the news query
+        try:
+            with self.engine.connect() as conn:
+                cvm_rows = conn.execute(
+                    text("SELECT cd_cvm FROM universe_companies WHERE universe_id = :u_id"),
+                    {"u_id": universe_id}
+                ).fetchall()
+        except Exception as exc:
+            return {"_unavailable": True, "reason": f"failed reading universe companies: {exc}"}
+
+        if not cvm_rows:
+            return {}
+
+        cd_cvms = [row[0] for row in cvm_rows]
+        placeholders = ", ".join(str(c) for c in cd_cvms)
+
+        # Query news DB directly — separate SQLite file, no cross-DB join
+        # news_article_companies: (article_id, cd_cvm, match_method, match_reason, ...)
+        # news_articles: (article_id, published_at, ...)
+        try:
+            with news_engine.connect() as nconn:
+                rows = nconn.execute(
+                    text(
+                        f"""
+                        SELECT
+                            nac.cd_cvm,
+                            COUNT(DISTINCT CASE WHEN a.published_at >= datetime('now', '-30 days')
+                                               THEN a.article_id END) AS count_30d,
+                            COUNT(DISTINCT CASE WHEN a.published_at >= datetime('now', '-60 days')
+                                               THEN a.article_id END) AS count_60d,
+                            COUNT(DISTINCT CASE WHEN a.published_at >= datetime('now', '-90 days')
+                                               THEN a.article_id END) AS count_90d,
+                            MAX(a.published_at) AS latest_article_date
+                        FROM news_article_companies nac
+                        JOIN news_articles a ON a.article_id = nac.article_id
+                        WHERE nac.cd_cvm IN ({placeholders})
+                        GROUP BY nac.cd_cvm
+                        """
+                    )
+                ).fetchall()
+        except Exception as exc:
+            return {"_unavailable": True, "reason": f"news query failed: {exc}"}
+
+        result: dict[int, dict[str, Any]] = {}
+        for cd_cvm in cd_cvms:
+            result[cd_cvm] = {
+                "article_count_30d": 0,
+                "article_count_60d": 0,
+                "article_count_90d": 0,
+                "latest_article_date": None,
+                "mapping_available": False,
+            }
+        for row in rows:
+            cd_cvm = row[0]
+            if cd_cvm in result:
+                result[cd_cvm] = {
+                    "article_count_30d": row[1] or 0,
+                    "article_count_60d": row[2] or 0,
+                    "article_count_90d": row[3] or 0,
+                    "latest_article_date": row[4],
+                    "mapping_available": True,
+                }
+        return result
+
+    def get_recommendation_summary(self, universe_id: str) -> dict[str, Any]:
+        """
+        Derives a recommendation package from existing priority scores.
+        Does NOT auto-approve based on score. Returns proposed actions and risks
+        for manager review. Decision status stored in universe assumptions_json.
+        """
+        self._ensure_schema()
+        universe = self.get_universe(universe_id)
+        if not universe:
+            return {"error": "Universe not found"}
+
+        scores = self.calculate_priority_scores(universe_id)
+        capacity = self.get_capacity_data(universe_id)
+
+        keep: list[dict[str, Any]] = []
+        review: list[dict[str, Any]] = []
+        blocked: list[dict[str, Any]] = []
+        excluded_tiers: list[dict[str, Any]] = []
+
+        missing_market_cap = 0
+        missing_gics = 0
+        unassigned_owner = 0
+
+        for s in scores:
+            short = {
+                "cd_cvm": s["cd_cvm"],
+                "company_name": s.get("company_name"),
+                "ticker_b3": s.get("ticker_b3"),
+                "tier": s.get("tier"),
+                "score_status": s.get("score_status"),
+                "final_score": s.get("final_score"),
+                "missing_factors": s.get("missing_factors", []),
+                "owner": s.get("owner_analyst"),
+            }
+            if s.get("market_cap") is None:
+                missing_market_cap += 1
+            if not s.get("gics_sector") or s.get("gics_sector") == "Unknown":
+                missing_gics += 1
+            if not s.get("owner_analyst"):
+                unassigned_owner += 1
+
+            tier = s.get("tier", "")
+            if tier in ("excluded", "inappropriate"):
+                excluded_tiers.append(short)
+            elif s.get("score_status") == "blocked":
+                blocked.append(short)
+            elif isinstance(s.get("final_score"), (int, float)) and s["final_score"] >= 50:
+                keep.append(short)
+            else:
+                review.append(short)
+
+        # Proposed actions — never auto-approve
+        proposed_actions: list[str] = []
+        if missing_market_cap > 0:
+            proposed_actions.append(
+                f"Resolve market cap for {missing_market_cap} company(ies) before finalizing priorities."
+            )
+        if missing_gics > 0:
+            proposed_actions.append(
+                f"Classify GICS sector for {missing_gics} company(ies) to enable complexity-adjusted capacity."
+            )
+        if unassigned_owner > 0:
+            proposed_actions.append(
+                f"Assign analyst owner to {unassigned_owner} unassigned company(ies)."
+            )
+        if blocked:
+            proposed_actions.append(
+                f"Review {len(blocked)} blocked company(ies): data gaps prevent scoring."
+            )
+        if capacity.get("capacity_utilization_pct", 0) > 90:
+            proposed_actions.append(
+                "Capacity utilization >90%. Consider reducing universe scope or increasing hours."
+            )
+
+        # Risks
+        risks: list[str] = []
+        if missing_market_cap > 0:
+            risks.append(f"Market cap missing for {missing_market_cap} company(ies) — scores may be underweighted.")
+        if missing_gics > 0:
+            risks.append(f"GICS classification absent for {missing_gics} company(ies) — capacity estimate is understated.")
+        if blocked:
+            risks.append(f"{len(blocked)} company(ies) blocked — not ranked in prioritization.")
+
+        # Manager decision status from assumptions_json
+        assumptions = universe.get("assumptions", {})
+        manager_decision = assumptions.get("manager_decision", {
+            "status": "draft",
+            "decided_at": None,
+            "notes": None,
+        })
+
+        return {
+            "universe_id": universe_id,
+            "company_count": len(scores),
+            "keep": keep,
+            "review": review,
+            "blocked": blocked,
+            "excluded": excluded_tiers,
+            "missing_data_risks": {
+                "missing_market_cap_count": missing_market_cap,
+                "missing_gics_count": missing_gics,
+                "unassigned_owner_count": unassigned_owner,
+            },
+            "proposed_actions": proposed_actions,
+            "risks": risks,
+            "capacity_summary": {
+                "available_hours": capacity.get("available_hours"),
+                "required_hours": capacity.get("required_hours"),
+                "utilization_pct": capacity.get("capacity_utilization_pct"),
+            },
+            "manager_decision": manager_decision,
+        }
+
     # --- Prioritization Scoring
     def calculate_priority_scores(self, universe_id: str) -> list[dict[str, Any]]:
         self._ensure_schema()
@@ -1194,44 +1432,232 @@ class CoverageUniverseService:
             )
 
     def get_work_queue(self, universe_id: str) -> list[dict[str, Any]]:
+        """
+        Returns derived + checklist-based action tasks for a universe.
+        Batch reads — no N+1 per-company queries.
+
+        Performance note: For universes of ~500 companies this runs 4 SQL queries
+        (company data batch, checklist batch, market cap batch, news batch) plus
+        in-memory derivation. Expect ~200-500ms depending on disk speed.
+        """
         self._ensure_schema()
-        query = """
-            SELECT cc.cd_cvm, cc.item_key, cc.comments, uc.tier, c.company_name, c.ticker_b3
-            FROM coverage_checklists cc
-            JOIN universe_companies uc ON cc.universe_id = uc.universe_id AND cc.cd_cvm = uc.cd_cvm
-            LEFT JOIN companies c ON cc.cd_cvm = c.cd_cvm
-            WHERE cc.universe_id = :u_id AND cc.is_completed = 0
+
+        # --- 1. Batch: fetch all universe companies with key fields ---
+        company_query = """
+            SELECT
+                uc.cd_cvm, uc.tier, uc.owner_analyst,
+                c.company_name, c.ticker_b3, c.gics_sector, c.gics_sector_slug
+            FROM universe_companies uc
+            LEFT JOIN companies c ON uc.cd_cvm = c.cd_cvm
+            WHERE uc.universe_id = :u_id
             ORDER BY uc.tier, c.company_name
         """
+
+        # --- 2. Batch: incomplete checklist items ---
+        checklist_query = """
+            SELECT cc.cd_cvm, cc.item_key, cc.comments
+            FROM coverage_checklists cc
+            WHERE cc.universe_id = :u_id AND cc.is_completed = 0
+        """
+
+        # --- 3. Batch: market cap availability from DB cache ---
+        mcap_query = """
+            SELECT cd_cvm, MAX(market_cap) as market_cap
+            FROM company_universe
+            WHERE cd_cvm IN (
+                SELECT cd_cvm FROM universe_companies WHERE universe_id = :u_id
+            ) AND market_cap IS NOT NULL AND market_cap > 0
+            GROUP BY cd_cvm
+        """
+
+        # --- 4. Batch: liquidity observation counts (last 30 days) ---
+        liquidity_query = """
+            SELECT cd_cvm, COUNT(DISTINCT date) as obs_count
+            FROM market_history
+            WHERE cd_cvm IN (
+                SELECT cd_cvm FROM universe_companies WHERE universe_id = :u_id
+            ) AND date >= date('now', '-30 days')
+            AND volume IS NOT NULL AND volume > 0
+            AND close IS NOT NULL AND close > 0
+            GROUP BY cd_cvm
+        """
+
         with self.engine.connect() as conn:
-            rows = conn.execute(text(query), {"u_id": universe_id}).fetchall()
-            
-            tasks = []
-            for row in rows:
-                item = dict(row._mapping)
-                item_key = item["item_key"]
-                
-                if not item.get("company_name"):
-                    item["company_name"] = f"CVM {item['cd_cvm']}"
-                if not item.get("ticker_b3"):
-                    from src.companies.identity import CompanyIdentityResolver
-                    identity = CompanyIdentityResolver().resolve(item['cd_cvm'])
-                    item["ticker_b3"] = _clean_b3_ticker(identity.ticker_b3 if identity else None)
-                
-                title = f"Complete required task: {item_key.replace('_', ' ').title()}"
-                identifier = item["ticker_b3"] or f"CVM {item['cd_cvm']}"
-                desc = f"Company {item['company_name']} ({identifier}) in tier '{item['tier']}' is missing: {item_key}."
-                
-                item.update({
-                    "title": title,
-                    "description": desc,
+            companies = conn.execute(text(company_query), {"u_id": universe_id}).fetchall()
+            checklists = conn.execute(text(checklist_query), {"u_id": universe_id}).fetchall()
+
+            # market cap and liquidity may not exist in all installs
+            try:
+                mcap_rows = conn.execute(text(mcap_query), {"u_id": universe_id}).fetchall()
+                mcap_set = {row[0] for row in mcap_rows if row[1]}
+            except Exception:
+                mcap_set = set()
+
+            try:
+                liq_rows = conn.execute(text(liquidity_query), {"u_id": universe_id}).fetchall()
+                liq_map = {row[0]: row[1] for row in liq_rows}
+            except Exception:
+                liq_map = {}
+
+        # --- 5. News workload batch (separate DB, local-only) ---
+        news_map = self._get_news_workload_for_universe(universe_id)
+        news_unavailable = isinstance(news_map, dict) and news_map.get("_unavailable") is True
+        if news_unavailable:
+            news_map = {}
+
+        # --- 6. Build checklist task index: cd_cvm -> list of item_keys ---
+        from collections import defaultdict  # noqa: PLC0415
+        checklist_gaps: dict[int, list[str]] = defaultdict(list)
+        for chk in checklists:
+            checklist_gaps[chk[0]].append(chk[1])
+
+        # --- 7. Derive tasks in memory ---
+        tasks: list[dict[str, Any]] = []
+        TIER_SEVERITY = {
+            "must_cover": "high",
+            "core": "high",
+            "watchlist": "medium",
+            "opportunistic": "medium",
+            "excluded": "low",
+            "inappropriate": "low",
+        }
+
+        for comp in companies:
+            cd_cvm = comp[0]
+            tier = comp[1]
+            owner = comp[2]
+            company_name = comp[3] or f"CVM {cd_cvm}"
+            ticker_b3 = _clean_b3_ticker(comp[4]) or None
+            gics_sector = comp[5]
+            gics_sector_slug = comp[6]
+
+            identifier = ticker_b3 or f"CVM {cd_cvm}"
+            tier_sev = TIER_SEVERITY.get(tier, "low")
+
+            def _task(reason: str, severity: str, task_type: str, suggested_action: str) -> dict[str, Any]:
+                return {
+                    "cd_cvm": cd_cvm,
+                    "company_name": company_name,
+                    "ticker_b3": ticker_b3,
+                    "identifier": identifier,
+                    "tier": tier,
+                    "owner": owner,
+                    "reason": reason,
+                    "severity": severity,
+                    "task_type": task_type,
+                    "suggested_action": suggested_action,
+                    "source": "derived",
+                }
+
+            # Blocked score (no market cap and no liquidity)
+            has_mcap = cd_cvm in mcap_set
+            liq_obs = liq_map.get(cd_cvm, 0)
+
+            if not has_mcap:
+                sev = "high" if tier_sev == "high" else "medium"
+                tasks.append(_task(
+                    reason="Market cap unavailable — score may be blocked or partial.",
+                    severity=sev,
+                    task_type="missing_market_cap",
+                    suggested_action="Import or refresh market cap data for this company.",
+                ))
+
+            if liq_obs < MIN_LIQUIDITY_OBSERVATIONS:
+                tasks.append(_task(
+                    reason=f"Liquidity: only {liq_obs} trading day(s) in last 30 days (min: {MIN_LIQUIDITY_OBSERVATIONS}).",
+                    severity="medium",
+                    task_type="missing_liquidity",
+                    suggested_action="Download market history or verify ticker mapping.",
+                ))
+
+            if not gics_sector or gics_sector == "Unknown" or not gics_sector_slug:
+                tasks.append(_task(
+                    reason="GICS sector not classified.",
+                    severity="medium",
+                    task_type="missing_gics",
+                    suggested_action="Assign GICS sector via manual mapping or refresh company metadata.",
+                ))
+
+            if not owner:
+                tasks.append(_task(
+                    reason="No analyst owner assigned.",
+                    severity="low",
+                    task_type="unassigned_owner",
+                    suggested_action="Assign an owner analyst to this company in the universe.",
+                ))
+
+            # Incomplete checklist items
+            for item_key in checklist_gaps.get(cd_cvm, []):
+                tasks.append({
+                    "cd_cvm": cd_cvm,
+                    "company_name": company_name,
+                    "ticker_b3": ticker_b3,
+                    "identifier": identifier,
+                    "tier": tier,
+                    "owner": owner,
+                    "reason": f"Checklist item incomplete: {item_key.replace('_', ' ').title()}.",
+                    "severity": "low",
+                    "task_type": "incomplete_checklist",
+                    "suggested_action": f"Complete required coverage task: {item_key}.",
+                    "source": "checklist",
                 })
-                tasks.append(item)
-            return tasks
+
+            # News workload (local only, no network call)
+            if not news_unavailable:
+                news = news_map.get(cd_cvm, {})
+                if not news.get("mapping_available"):
+                    tasks.append(_task(
+                        reason="Company not yet mapped to any local news articles.",
+                        severity="low",
+                        task_type="news_mapping_unavailable",
+                        suggested_action="Review news mapping configuration for this company.",
+                    ))
+                elif news.get("article_count_30d", 0) == 0 and tier in ("must_cover", "core"):
+                    tasks.append(_task(
+                        reason="No local news articles in the last 30 days for a high-priority company.",
+                        severity="medium",
+                        task_type="news_gap",
+                        suggested_action="Verify news sources cover this company or check RSS configuration.",
+                    ))
+
+        # If news DB was entirely unavailable, add a single banner task
+        if news_unavailable and any(True for comp in companies):
+            tasks.append({
+                "cd_cvm": None,
+                "company_name": None,
+                "ticker_b3": None,
+                "identifier": None,
+                "tier": None,
+                "owner": None,
+                "reason": "News workload unavailable — local news database could not be read.",
+                "severity": "low",
+                "task_type": "news_db_unavailable",
+                "suggested_action": "Check news database path and ensure news has been collected.",
+                "source": "system",
+            })
+
+        # Sort: high severity first, then medium, then low; within severity by tier then company name
+        severity_order = {"high": 0, "medium": 1, "low": 2}
+        tasks.sort(key=lambda t: (
+            severity_order.get(t.get("severity", "low"), 2),
+            t.get("tier") or "",
+            t.get("company_name") or "",
+        ))
+        return tasks
 
     # --- Capacity Planning ---
 
     def get_capacity_data(self, universe_id: str) -> dict[str, Any]:
+        """
+        Returns capacity estimates for a universe.
+
+        Complexity multiplier uses canonical GICS slugs (gics_sector_slug column).
+        If gics_sector_slug is NULL or not in COMPLEX_GICS_SLUGS, no multiplier is applied
+        and the company is flagged as gics_unknown=True — uncertainty is exposed, never hidden.
+
+        Performance note: For ~500 companies this is 3 SQL queries + in-memory aggregation.
+        Expect ~50-150ms on typical SQLite.
+        """
         self._ensure_schema()
         universe = self.get_universe(universe_id)
         if not universe:
@@ -1240,62 +1666,122 @@ class CoverageUniverseService:
         assumptions = universe.get("assumptions", {})
         tier_hours = assumptions.get("tier_hours", DEFAULT_TIER_HOURS)
 
-        query = """
-            SELECT tier, COUNT(*) as count
-            FROM universe_companies
-            WHERE universe_id = :u_id
-            GROUP BY tier
-        """
-        
-        complexity_query = """
-            SELECT uc.tier, c.gics_sector
+        # Single query: get all companies with tier, owner, and GICS slug
+        company_query = """
+            SELECT uc.cd_cvm, uc.tier, uc.owner_analyst,
+                   c.company_name, c.ticker_b3, c.gics_sector_slug, c.gics_sector
             FROM universe_companies uc
             LEFT JOIN companies c ON uc.cd_cvm = c.cd_cvm
             WHERE uc.universe_id = :u_id
         """
 
         with self.engine.connect() as conn:
-            counts_rows = conn.execute(text(query), {"u_id": universe_id}).fetchall()
-            counts = {row[0]: row[1] for row in counts_rows}
-            
-            comp_rows = conn.execute(text(complexity_query), {"u_id": universe_id}).fetchall()
-            
+            comp_rows = conn.execute(text(company_query), {"u_id": universe_id}).fetchall()
+
             scen_row = conn.execute(
                 text("SELECT available_hours, tier_weights_json FROM coverage_capacity_scenarios WHERE universe_id = :u_id AND is_active = 1"),
                 {"u_id": universe_id}
             ).fetchone()
-            
-            available_hours = scen_row[0] if scen_row else 1600.0
-            custom_tier_hours = json.loads(scen_row[1]) if scen_row else tier_hours
 
-            total_hours = 0.0
-            tier_hours_breakdown = {}
-            for row in comp_rows:
-                tier = row[0]
-                sector = row[1]
-                
-                base_hours = custom_tier_hours.get(tier, DEFAULT_TIER_HOURS.get(tier, 5.0))
-                
-                mult = 1.0
-                if sector in COMPLEX_SECTORS:
-                    mult *= 1.2
-                if tier in ("must_cover", "core"):
-                    mult *= 1.1
-                
-                item_hours = base_hours * mult
-                total_hours += item_hours
-                
-                tier_hours_breakdown[tier] = tier_hours_breakdown.get(tier, 0.0) + item_hours
+        available_hours = scen_row[0] if scen_row else 1600.0
+        custom_tier_hours = json.loads(scen_row[1]) if scen_row else tier_hours
 
-            return {
-                "universe_id": universe_id,
-                "available_hours": available_hours,
-                "required_hours": round(total_hours, 1),
-                "capacity_utilization_pct": round((total_hours / available_hours) * 100.0, 1) if available_hours > 0 else 0,
-                "tier_counts": counts,
-                "tier_hours": tier_hours_breakdown,
-                "tier_hours_assumptions": custom_tier_hours,
-            }
+        total_hours = 0.0
+        tier_counts: dict[str, int] = {}
+        tier_hours_breakdown: dict[str, float] = {}
+        gics_unknown_companies: list[dict[str, Any]] = []
+        by_owner: dict[str, dict[str, Any]] = {}
+        top_hour_consumers: list[dict[str, Any]] = []
+
+        for row in comp_rows:
+            cd_cvm = row[0]
+            tier = row[1]
+            owner = row[2] or "Unassigned"
+            company_name = row[3] or f"CVM {cd_cvm}"
+            ticker_b3 = _clean_b3_ticker(row[4]) or None
+            gics_slug = row[5]  # canonical slug from DB — may be None
+            gics_sector = row[6]
+
+            base_hours = custom_tier_hours.get(tier, DEFAULT_TIER_HOURS.get(tier, 5.0))
+
+            # Complexity: use GICS slug, never Portuguese strings
+            is_complex = gics_slug in COMPLEX_GICS_SLUGS if gics_slug else False
+            gics_known = bool(gics_slug) and gics_slug != "unknown"
+
+            mult = 1.0
+            if is_complex:
+                mult *= 1.2
+            if tier in ("must_cover", "core"):
+                mult *= 1.1
+
+            item_hours = base_hours * mult
+            total_hours += item_hours
+
+            # Tier aggregation
+            tier_counts[tier] = tier_counts.get(tier, 0) + 1
+            tier_hours_breakdown[tier] = tier_hours_breakdown.get(tier, 0.0) + item_hours
+
+            # Unknown GICS flag
+            if not gics_known:
+                gics_unknown_companies.append({
+                    "cd_cvm": cd_cvm,
+                    "company_name": company_name,
+                    "ticker_b3": ticker_b3,
+                    "tier": tier,
+                    "gics_sector_slug": gics_slug,
+                })
+
+            # Per-owner aggregation
+            if owner not in by_owner:
+                by_owner[owner] = {"company_count": 0, "required_hours": 0.0, "tier_counts": {}}
+            by_owner[owner]["company_count"] += 1
+            by_owner[owner]["required_hours"] = round(by_owner[owner]["required_hours"] + item_hours, 1)
+            by_owner[owner]["tier_counts"][tier] = by_owner[owner]["tier_counts"].get(tier, 0) + 1
+
+            top_hour_consumers.append({
+                "cd_cvm": cd_cvm,
+                "company_name": company_name,
+                "ticker_b3": ticker_b3,
+                "tier": tier,
+                "estimated_hours": round(item_hours, 1),
+                "complexity_multiplier": round(mult, 2),
+                "gics_sector": gics_sector,
+                "gics_sector_slug": gics_slug,
+                "gics_unknown": not gics_known,
+                "owner": owner,
+            })
+
+        # Sort top consumers desc
+        top_hour_consumers.sort(key=lambda x: -x["estimated_hours"])
+
+        # Capacity warnings
+        utilization_pct = round((total_hours / available_hours) * 100.0, 1) if available_hours > 0 else 0.0
+        warnings: list[str] = []
+        if utilization_pct > 100:
+            warnings.append(f"Over capacity: {utilization_pct}% utilization — reduce universe scope or increase available hours.")
+        elif utilization_pct > 90:
+            warnings.append(f"Near capacity: {utilization_pct}% utilization.")
+        if gics_unknown_companies:
+            warnings.append(
+                f"{len(gics_unknown_companies)} company(ies) have unknown GICS sector — capacity estimate excludes their complexity multiplier."
+            )
+        unassigned_count = by_owner.get("Unassigned", {}).get("company_count", 0)
+        if unassigned_count > 0:
+            warnings.append(f"{unassigned_count} company(ies) have no assigned analyst owner.")
+
+        return {
+            "universe_id": universe_id,
+            "available_hours": available_hours,
+            "required_hours": round(total_hours, 1),
+            "capacity_utilization_pct": utilization_pct,
+            "tier_counts": tier_counts,
+            "tier_hours": {k: round(v, 1) for k, v in tier_hours_breakdown.items()},
+            "tier_hours_assumptions": custom_tier_hours,
+            "by_owner": by_owner,
+            "gics_unknown_companies": gics_unknown_companies,
+            "top_hour_consumers": top_hour_consumers[:20],
+            "warnings": warnings,
+        }
 
     def save_capacity_scenario(self, universe_id: str, available_hours: float, tier_hours: dict[str, float]) -> None:
         self._ensure_schema()
@@ -1346,9 +1832,28 @@ class CoverageUniverseService:
                 results.append(item)
             return results
 
-    def export_coverage_universe_excel(self, universe_id: str) -> bytes:
+    def export_coverage_universe_excel(self, universe_id: str) -> bytes:  # noqa: PLR0912,PLR0915
+        """
+        Exports a 7-sheet audit-grade Coverage workbook.
+
+        Sheets: Summary, Priorities, Priority Factors, Work Queue, Capacity, Decision History, Methodology.
+        Rules:
+        - No merged cells.
+        - Freeze panes (row 1) on all table sheets.
+        - Autofilter on all table sheets.
+        - Blocked scores: separate Score Status column with 'Blocked'; numeric score columns show '-'.
+        - Partial scores: Score Status = 'Partial'; numeric columns remain numeric.
+        - Missing values: displayed as '-' (not 0 or blank).
+        - Negatives in parentheses where applicable.
+        - Workbook opens with openpyxl and Excel without repair.
+
+        Performance note: For ~500 companies this calls calculate_priority_scores once
+        (~300-800ms), get_work_queue once (~200-400ms), get_capacity_data once (~50-150ms),
+        get_decision_history once (~50ms), then writes all sheets. Total ~1-2s.
+        """
         import openpyxl
         from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        from openpyxl.utils import get_column_letter
         import io
 
         self._ensure_schema()
@@ -1356,148 +1861,467 @@ class CoverageUniverseService:
         if not universe:
             raise ValueError("Universe not found")
 
-        wb = openpyxl.Workbook()
-        
-        # Style guidelines
+        # ---- Styles ----
         font_family = "Segoe UI"
-        font_title = Font(name=font_family, size=16, bold=True, color="1F497D")
-        font_section = Font(name=font_family, size=12, bold=True, color="1F497D")
-        font_header = Font(name=font_family, size=10, bold=True, color="FFFFFF")
-        font_body = Font(name=font_family, size=10)
-        font_bold = Font(name=font_family, size=10, bold=True)
-        
-        fill_header = PatternFill(start_color="1F497D", end_color="1F497D", fill_type="solid")
-        fill_zebra = PatternFill(start_color="F2F5F8", end_color="F2F5F8", fill_type="solid")
-        
+        f_title   = Font(name=font_family, size=14, bold=True, color="1F3864")
+        f_section = Font(name=font_family, size=11, bold=True, color="1F3864")
+        f_header  = Font(name=font_family, size=9,  bold=True, color="FFFFFF")
+        f_body    = Font(name=font_family, size=9)
+        f_bold    = Font(name=font_family, size=9,  bold=True)
+        f_warn    = Font(name=font_family, size=9,  bold=True, color="C0392B")
+        f_note    = Font(name=font_family, size=9,  italic=True, color="7F8C8D")
+
+        fill_header  = PatternFill(start_color="1F3864", end_color="1F3864", fill_type="solid")
+        fill_zebra   = PatternFill(start_color="F5F7FA", end_color="F5F7FA", fill_type="solid")
+        fill_warn    = PatternFill(start_color="FDEDED", end_color="FDEDED", fill_type="solid")
+        fill_partial = PatternFill(start_color="FFF8E1", end_color="FFF8E1", fill_type="solid")
+
         border_thin = Border(
-            left=Side(style='thin', color='D9D9D9'),
-            right=Side(style='thin', color='D9D9D9'),
-            top=Side(style='thin', color='D9D9D9'),
-            bottom=Side(style='thin', color='D9D9D9')
+            left=Side(style="thin", color="D0D7DE"),
+            right=Side(style="thin", color="D0D7DE"),
+            top=Side(style="thin", color="D0D7DE"),
+            bottom=Side(style="thin", color="D0D7DE"),
         )
 
-        # 1. Summary Sheet
+        NUM_FMT_SCORE  = "0.0"
+        NUM_FMT_PCT    = "0.0%"
+        NUM_FMT_HOURS  = '#,##0.0'
+        NUM_FMT_INT    = "#,##0"
+        DASH = "-"
+
+        def _set_header_row(ws, headers: list[str], col_widths: list[int] | None = None) -> None:
+            """Write a frozen, autofiltered header row."""
+            for col_idx, h in enumerate(headers, 1):
+                cell = ws.cell(row=1, column=col_idx, value=h)
+                cell.font = f_header
+                cell.fill = fill_header
+                cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=False)
+                cell.border = border_thin
+            ws.row_dimensions[1].height = 22
+            ws.freeze_panes = "A2"
+            ws.auto_filter.ref = ws.dimensions
+            if col_widths:
+                for i, w in enumerate(col_widths, 1):
+                    ws.column_dimensions[get_column_letter(i)].width = w
+
+        def _auto_width(ws, min_w: int = 10, max_w: int = 50) -> None:
+            for col in ws.columns:
+                max_len = max((len(str(c.value or "")) for c in col), default=0)
+                col_letter = get_column_letter(col[0].column)
+                ws.column_dimensions[col_letter].width = min(max(max_len + 3, min_w), max_w)
+
+        def _body_cell(ws, row_idx: int, col_idx: int, value, fmt: str | None = None,
+                       bold: bool = False, warn: bool = False, zebra: bool = False,
+                       fill_override=None) -> None:
+            cell = ws.cell(row=row_idx, column=col_idx, value=value)
+            cell.font = f_bold if bold else (f_warn if warn else f_body)
+            cell.border = border_thin
+            cell.alignment = Alignment(horizontal="left", vertical="center")
+            if fill_override:
+                cell.fill = fill_override
+            elif warn:
+                cell.fill = fill_warn
+            elif zebra:
+                cell.fill = fill_zebra
+            if fmt:
+                cell.number_format = fmt
+
+        # ---- Fetch data once ----
+        scores   = self.calculate_priority_scores(universe_id)
+        cap      = self.get_capacity_data(universe_id)
+        wq       = self.get_work_queue(universe_id)
+        history  = self.get_decision_history(universe_id)
+
+        # ========================================================
+        # Sheet 1 — Summary
+        # ========================================================
+        wb = openpyxl.Workbook()
         ws_sum = wb.active
         ws_sum.title = "Summary"
-        ws_sum.views.sheetView[0].showGridLines = True
-        
-        ws_sum.cell(row=1, column=1, value="COVERAGE UNIVERSE SUMMARY").font = font_title
-        ws_sum.cell(row=3, column=1, value="Universe Details").font = font_section
-        
-        details = [
-            ("Universe Name", universe["name"]),
-            ("Purpose", universe["purpose"]),
-            ("Analysis Type", universe["analysis_type"]),
-            ("Benchmark", universe["benchmark"]),
-            ("Status", universe["status"].upper()),
-            ("Created Date", universe["created_at"][:10]),
-            ("Last Review Date", universe["updated_at"][:10]),
+        ws_sum.column_dimensions["A"].width = 30
+        ws_sum.column_dimensions["B"].width = 40
+
+        ws_sum.cell(row=1, column=1, value=f"Coverage Universe: {universe['name']}").font = f_title
+        ws_sum.cell(row=2, column=1, value=f"Exported: {now_iso_seconds()[:10]}").font = f_note
+
+        universe_rows = [
+            ("Universe Name",   universe["name"]),
+            ("Purpose",         universe.get("purpose") or DASH),
+            ("Analysis Type",   universe.get("analysis_type", DASH)),
+            ("Benchmark",       universe.get("benchmark") or DASH),
+            ("Status",          universe.get("status", "").upper()),
+            ("Created",         universe.get("created_at", "")[:10]),
+            ("Last Updated",    universe.get("updated_at", "")[:10]),
         ]
-        
-        r = 5
-        for k, v in details:
-            cell_k = ws_sum.cell(row=r, column=1, value=k)
-            cell_k.font = font_bold
-            cell_k.border = border_thin
-            cell_v = ws_sum.cell(row=r, column=2, value=v)
-            cell_v.font = font_body
-            cell_v.border = border_thin
+        r = 4
+        ws_sum.cell(row=r, column=1, value="Universe Details").font = f_section
+        r += 1
+        for k, v in universe_rows:
+            ws_sum.cell(row=r, column=1, value=k).font = f_bold
+            ws_sum.cell(row=r, column=2, value=v).font = f_body
             r += 1
 
-        # Add Capacity Info
-        r += 2
-        ws_sum.cell(row=r, column=1, value="Capacity Summary").font = font_section
-        r += 2
-        cap = self.get_capacity_data(universe_id)
-        cap_details = [
-            ("Available Analyst Hours", cap.get("available_hours", 0)),
-            ("Required Workload Hours", cap.get("required_hours", 0)),
-            ("Capacity Utilization", f"{cap.get('capacity_utilization_pct', 0)}%"),
+        r += 1
+        ws_sum.cell(row=r, column=1, value="Coverage Summary").font = f_section
+        r += 1
+        total_co = len(scores)
+        blocked_co = sum(1 for s in scores if s.get("score_status") == "blocked")
+        partial_co = sum(1 for s in scores if s.get("score_status") == "partial")
+        scored_co  = sum(1 for s in scores if s.get("score_status") == "complete")
+        summary_rows = [
+            ("Total Companies",          total_co),
+            ("Scored (Complete)",         scored_co),
+            ("Scored (Partial)",          partial_co),
+            ("Blocked (Insufficient Data)", blocked_co),
         ]
-        for k, v in cap_details:
-            cell_k = ws_sum.cell(row=r, column=1, value=k)
-            cell_k.font = font_bold
-            cell_k.border = border_thin
-            cell_v = ws_sum.cell(row=r, column=2, value=v)
-            cell_v.font = font_body
-            cell_v.border = border_thin
+        for k, v in summary_rows:
+            ws_sum.cell(row=r, column=1, value=k).font = f_bold
+            ws_sum.cell(row=r, column=2, value=v).font = f_body
             r += 1
 
-        # 2. Priorities Sheet
-        ws_prio = wb.create_sheet(title="Priorities & Rankings")
-        ws_prio.views.sheetView[0].showGridLines = True
-        
-        headers = ["Ticker", "Company Name", "Sector", "Tier", "Holding %", "Calculated Score", "Manual Override", "Final Score", "Checklist Done", "Checklist Total"]
-        for col_idx, h in enumerate(headers, 1):
-            cell = ws_prio.cell(row=1, column=col_idx, value=h)
-            cell.font = font_header
-            cell.fill = fill_header
-            cell.alignment = Alignment(horizontal="center" if col_idx > 4 else "left")
-            ws_prio.row_dimensions[1].height = 25
-            
-        scores = self.calculate_priority_scores(universe_id)
+        r += 1
+        ws_sum.cell(row=r, column=1, value="Capacity Summary").font = f_section
+        r += 1
+        cap_rows = [
+            ("Available Analyst Hours (BRL)",   cap.get("available_hours", 0)),
+            ("Required Workload Hours",           cap.get("required_hours", 0)),
+            ("Capacity Utilization",              f"{cap.get('capacity_utilization_pct', 0):.1f}%"),
+            ("GICS-Unknown Companies",            len(cap.get("gics_unknown_companies", []))),
+        ]
+        for k, v in cap_rows:
+            ws_sum.cell(row=r, column=1, value=k).font = f_bold
+            ws_sum.cell(row=r, column=2, value=v).font = f_body
+            r += 1
+
+        if cap.get("warnings"):
+            r += 1
+            ws_sum.cell(row=r, column=1, value="Capacity Warnings").font = f_section
+            r += 1
+            for w_text in cap["warnings"]:
+                ws_sum.cell(row=r, column=1, value=w_text).font = f_warn
+                ws_sum.cell(row=r, column=1).fill = fill_warn
+                r += 1
+
+        # ========================================================
+        # Sheet 2 — Priorities
+        # Numeric score columns stay numeric OR DASH. Score Status is a SEPARATE column.
+        # Blocked/Partial appear only in the Score Status column.
+        # ========================================================
+        ws_prio = wb.create_sheet(title="Priorities")
+        prio_headers = [
+            "Ticker", "CVM Code", "Company Name", "GICS Sector", "Tier",
+            "Owner", "Holding %",
+            "Score Status",          # Blocked / Partial / Complete
+            "Calculated Score",       # numeric or DASH (never 'Blocked')
+            "Manual Override",        # numeric or DASH
+            "Final Score",            # numeric or DASH
+            "Checklist Done", "Checklist Total",
+            "Missing Factors",
+        ]
+        _set_header_row(ws_prio, prio_headers)
+
         for row_idx, s in enumerate(scores, 2):
-            ws_prio.cell(row=row_idx, column=1, value=s.get("ticker_b3") or f"CVM:{s['cd_cvm']}").font = font_bold
-            ws_prio.cell(row=row_idx, column=2, value=s.get("company_name")).font = font_body
-            ws_prio.cell(row=row_idx, column=3, value=s.get("gics_sector")).font = font_body
-            ws_prio.cell(row=row_idx, column=4, value=s.get("tier").upper()).font = font_body
-            ws_prio.cell(row=row_idx, column=5, value=s.get("holding_pct", 0.0) / 100.0).number_format = '0.0%'
-            ws_prio.cell(row=row_idx, column=6, value=s.get("calculated_score", 0.0)).number_format = '0.0'
-            ws_prio.cell(row=row_idx, column=7, value=s.get("manual_score_override")).number_format = '0.0'
-            ws_prio.cell(row=row_idx, column=8, value=s.get("final_score", 0.0)).number_format = '0.0'
-            ws_prio.cell(row=row_idx, column=9, value=s.get("completed_checklist_count", 0)).number_format = '#,##0'
-            ws_prio.cell(row=row_idx, column=10, value=s.get("total_checklist_count", 0)).number_format = '#,##0'
-            
-            # Formatting and borders
-            for col_idx in range(1, 11):
-                c = ws_prio.cell(row=row_idx, column=col_idx)
-                c.border = border_thin
-                if row_idx % 2 == 0:
-                    c.fill = fill_zebra
-                if col_idx > 4:
-                    c.alignment = Alignment(horizontal="right")
-            ws_prio.row_dimensions[row_idx].height = 20
+            status = s.get("score_status", "blocked")
+            is_blocked = (status == "blocked")
+            is_partial = (status == "partial")
+            zebra = (row_idx % 2 == 0)
+            fill_ov = fill_warn if is_blocked else (fill_partial if is_partial else None)
 
-        # Auto-adjust column widths
-        for ws in (ws_sum, ws_prio):
-            for col in ws.columns:
-                max_len = max(len(str(cell.value or '')) for cell in col)
-                col_letter = openpyxl.utils.get_column_letter(col[0].column)
-                ws.column_dimensions[col_letter].width = max(max_len + 3, 12)
+            # Numeric score values — NEVER 'Blocked' or 'Partial' in these cells
+            calc_val   = s.get("calculated_score")  # None when blocked
+            manual_val = s.get("manual_score_override")
+            final_val  = s.get("final_score")       # None when blocked
 
-        # 3. Decision Log Sheet
+            vals = [
+                s.get("ticker_b3") or DASH,
+                s.get("cd_cvm"),
+                s.get("company_name") or DASH,
+                s.get("gics_sector") or DASH,
+                (s.get("tier") or "").upper(),
+                s.get("owner_analyst") or "Unassigned",
+                (s.get("holding_pct") or 0.0) / 100.0,  # stored as pct, display as fraction
+                status.title(),                           # Score Status — textual label here
+                calc_val,   # numeric or None → DASH below
+                manual_val, # numeric or None
+                final_val,  # numeric or None
+                s.get("completed_checklist_count", 0),
+                s.get("total_checklist_count", 0),
+                ", ".join(s.get("missing_factors", [])) or DASH,
+            ]
+            fmts = [
+                None, None, None, None, None, None,
+                NUM_FMT_PCT,
+                None,
+                NUM_FMT_SCORE, NUM_FMT_SCORE, NUM_FMT_SCORE,
+                NUM_FMT_INT, NUM_FMT_INT,
+                None,
+            ]
+
+            for col_idx, (v, fmt) in enumerate(zip(vals, fmts), 1):
+                # Replace None numeric score with DASH string
+                display_v = v
+                if v is None and col_idx in (9, 10, 11):  # score columns
+                    display_v = DASH
+                    fmt = None
+                _body_cell(ws_prio, row_idx, col_idx, display_v, fmt=fmt,
+                           bold=(col_idx == 1), zebra=zebra, fill_override=fill_ov)
+
+        _auto_width(ws_prio)
+
+        # ========================================================
+        # Sheet 3 — Priority Factors
+        # One row per company × factor. No blocked/partial in score cols.
+        # ========================================================
+        ws_fac = wb.create_sheet(title="Priority Factors")
+        fac_headers = [
+            "Ticker", "CVM Code", "Company Name", "Tier",
+            "Factor", "Original Weight", "Effective Weight",
+            "Raw Value", "Factor Score", "Contribution",
+            "Missing", "Disabled",
+        ]
+        _set_header_row(ws_fac, fac_headers)
+
+        fac_row = 2
+        FACTOR_ORDER = ["market_cap", "volume", "holding_pct", "sector_complexity"]
+        for s in scores:
+            details = s.get("factor_details", {})
+            for factor_key in FACTOR_ORDER:
+                fd = details.get(factor_key)
+                if fd is None:
+                    continue
+                zebra = (fac_row % 2 == 0)
+                raw_v = fd.get("raw_value")
+                score_v = fd.get("score")  # numeric or None
+                fac_vals = [
+                    s.get("ticker_b3") or DASH,
+                    s.get("cd_cvm"),
+                    s.get("company_name") or DASH,
+                    (s.get("tier") or "").upper(),
+                    fd.get("name", factor_key),
+                    fd.get("original_weight"),
+                    fd.get("effective_weight"),
+                    str(round(raw_v, 2)) if isinstance(raw_v, float) else (str(raw_v) if raw_v is not None else DASH),
+                    score_v,
+                    fd.get("contribution"),
+                    "Yes" if fd.get("missing") else "No",
+                    "Yes" if fd.get("original_weight", 1) == 0 else "No",
+                ]
+                fac_fmts = [
+                    None, None, None, None, None,
+                    "0.00", "0.00",  # weights
+                    None,            # raw value (string)
+                    NUM_FMT_SCORE,   # factor score
+                    NUM_FMT_SCORE,   # contribution
+                    None, None,
+                ]
+                for col_idx, (v, fmt) in enumerate(zip(fac_vals, fac_fmts), 1):
+                    display_v = DASH if (v is None and col_idx in (9, 10)) else v
+                    fmt_use = fmt if display_v != DASH else None
+                    _body_cell(ws_fac, fac_row, col_idx, display_v, fmt=fmt_use, zebra=zebra)
+                fac_row += 1
+
+        _auto_width(ws_fac)
+
+        # ========================================================
+        # Sheet 4 — Work Queue
+        # ========================================================
+        ws_wq = wb.create_sheet(title="Work Queue")
+        wq_headers = [
+            "Severity", "Task Type", "Ticker", "CVM Code", "Company Name",
+            "Tier", "Owner", "Reason", "Suggested Action", "Source",
+        ]
+        _set_header_row(ws_wq, wq_headers)
+
+        SEV_FILL = {"high": fill_warn, "medium": fill_partial, "low": None}
+        for row_idx, task in enumerate(wq, 2):
+            sev = task.get("severity", "low")
+            zebra = (row_idx % 2 == 0)
+            fill_ov = SEV_FILL.get(sev)
+            wq_vals = [
+                (sev or "").title(),
+                task.get("task_type") or DASH,
+                task.get("ticker_b3") or DASH,
+                task.get("cd_cvm") or DASH,
+                task.get("company_name") or DASH,
+                (task.get("tier") or "").upper() or DASH,
+                task.get("owner") or "Unassigned",
+                task.get("reason") or DASH,
+                task.get("suggested_action") or DASH,
+                task.get("source") or DASH,
+            ]
+            for col_idx, v in enumerate(wq_vals, 1):
+                _body_cell(ws_wq, row_idx, col_idx, v, bold=(col_idx == 1),
+                           zebra=zebra, fill_override=fill_ov)
+
+        _auto_width(ws_wq)
+
+        # ========================================================
+        # Sheet 5 — Capacity
+        # ========================================================
+        ws_cap = wb.create_sheet(title="Capacity")
+        ws_cap.column_dimensions["A"].width = 28
+        ws_cap.column_dimensions["B"].width = 20
+
+        ws_cap.cell(row=1, column=1, value="Capacity Planning").font = f_title
+        r = 3
+        ws_cap.cell(row=r, column=1, value="Scenario Summary").font = f_section
+        r += 1
+        cap_meta = [
+            ("Available Analyst Hours",  cap.get("available_hours")),
+            ("Required Workload Hours",   cap.get("required_hours")),
+            ("Capacity Utilization (%)",  cap.get("capacity_utilization_pct")),
+        ]
+        for k, v in cap_meta:
+            ws_cap.cell(row=r, column=1, value=k).font = f_bold
+            c = ws_cap.cell(row=r, column=2, value=v)
+            c.font = f_body
+            c.number_format = NUM_FMT_HOURS
+            r += 1
+
+        r += 1
+        ws_cap.cell(row=r, column=1, value="By Tier").font = f_section
+        r += 1
+        ws_cap.cell(row=r, column=1, value="Tier").font = f_bold
+        ws_cap.cell(row=r, column=2, value="# Companies").font = f_bold
+        ws_cap.cell(row=r, column=3, value="Est. Hours").font = f_bold
+        ws_cap.cell(row=r, column=4, value="Hours / Company Assumption").font = f_bold
+        r += 1
+        tier_assumptions = cap.get("tier_hours_assumptions", {})
+        for tier, count in sorted(cap.get("tier_counts", {}).items()):
+            ws_cap.cell(row=r, column=1, value=tier.upper()).font = f_body
+            ws_cap.cell(row=r, column=2, value=count).font = f_body
+            hrs = cap.get("tier_hours", {}).get(tier, 0)
+            ws_cap.cell(row=r, column=3, value=hrs).font = f_body
+            ws_cap.cell(row=r, column=3).number_format = NUM_FMT_HOURS
+            ws_cap.cell(row=r, column=4, value=tier_assumptions.get(tier, DASH)).font = f_body
+            r += 1
+
+        r += 1
+        ws_cap.cell(row=r, column=1, value="By Owner").font = f_section
+        r += 1
+        ws_cap.cell(row=r, column=1, value="Owner").font = f_bold
+        ws_cap.cell(row=r, column=2, value="# Companies").font = f_bold
+        ws_cap.cell(row=r, column=3, value="Est. Hours").font = f_bold
+        r += 1
+        for owner_name, od in sorted(cap.get("by_owner", {}).items()):
+            ws_cap.cell(row=r, column=1, value=owner_name).font = f_body
+            ws_cap.cell(row=r, column=2, value=od["company_count"]).font = f_body
+            ws_cap.cell(row=r, column=3, value=od["required_hours"]).font = f_body
+            ws_cap.cell(row=r, column=3).number_format = NUM_FMT_HOURS
+            r += 1
+
+        gics_unknown = cap.get("gics_unknown_companies", [])
+        if gics_unknown:
+            r += 1
+            ws_cap.cell(row=r, column=1, value=f"GICS Unknown ({len(gics_unknown)} co.)").font = f_warn
+            r += 1
+            ws_cap.cell(row=r, column=1, value="Ticker").font = f_bold
+            ws_cap.cell(row=r, column=2, value="Company").font = f_bold
+            ws_cap.cell(row=r, column=3, value="Tier").font = f_bold
+            r += 1
+            for gc in gics_unknown[:30]:
+                ws_cap.cell(row=r, column=1, value=gc.get("ticker_b3") or DASH).font = f_body
+                ws_cap.cell(row=r, column=2, value=gc.get("company_name") or DASH).font = f_body
+                ws_cap.cell(row=r, column=3, value=(gc.get("tier") or "").upper()).font = f_body
+                r += 1
+
+        for cap_warning in cap.get("warnings", []):
+            r += 1
+            c = ws_cap.cell(row=r, column=1, value=f"⚠ {cap_warning}")
+            c.font = f_warn
+            c.fill = fill_warn
+
+        # ========================================================
+        # Sheet 6 — Decision History
+        # ========================================================
         ws_log = wb.create_sheet(title="Decision History")
-        ws_log.views.sheetView[0].showGridLines = True
-        log_headers = ["Timestamp", "Ticker", "Company Name", "Event Type", "Prev Value", "New Value", "Rationale"]
-        for col_idx, h in enumerate(log_headers, 1):
-            cell = ws_log.cell(row=1, column=col_idx, value=h)
-            cell.font = font_header
-            cell.fill = fill_header
-            cell.alignment = Alignment(horizontal="left")
-            
-        history = self.get_decision_history(universe_id)
+        log_headers = [
+            "Timestamp (UTC)", "Ticker", "CVM Code", "Company Name",
+            "Event Type", "Previous Value", "New Value", "Rationale",
+        ]
+        _set_header_row(ws_log, log_headers)
+
         for row_idx, h in enumerate(history, 2):
-            ws_log.cell(row=row_idx, column=1, value=h.get("timestamp")[:16].replace("T", " ")).font = font_body
-            ws_log.cell(row=row_idx, column=2, value=h.get("ticker_b3") or "N/A").font = font_bold
-            ws_log.cell(row=row_idx, column=3, value=h.get("company_name")).font = font_body
-            ws_log.cell(row=row_idx, column=4, value=h.get("event_type").upper()).font = font_body
-            ws_log.cell(row=row_idx, column=5, value=str(h.get("previous_value") or '')).font = font_body
-            ws_log.cell(row=row_idx, column=6, value=str(h.get("new_value") or '')).font = font_body
-            ws_log.cell(row=row_idx, column=7, value=h.get("rationale")).font = font_body
-            
-            for col_idx in range(1, 8):
-                c = ws_log.cell(row=row_idx, column=col_idx)
-                c.border = border_thin
-                if row_idx % 2 == 0:
-                    c.fill = fill_zebra
-            ws_log.row_dimensions[row_idx].height = 20
+            ts_raw = h.get("timestamp") or ""
+            ts_display = ts_raw[:16].replace("T", " ") if ts_raw else DASH
+            log_vals = [
+                ts_display,
+                h.get("ticker_b3") or DASH,
+                h.get("cd_cvm"),
+                h.get("company_name") or DASH,
+                (h.get("event_type") or "").upper(),
+                str(h.get("previous_value") or DASH),
+                str(h.get("new_value") or DASH),
+                h.get("rationale") or DASH,
+            ]
+            zebra = (row_idx % 2 == 0)
+            for col_idx, v in enumerate(log_vals, 1):
+                _body_cell(ws_log, row_idx, col_idx, v, bold=(col_idx in (2, 5)), zebra=zebra)
 
-        # Auto-adjust column widths for log
-        for col in ws_log.columns:
-            max_len = max(len(str(cell.value or '')) for cell in col)
-            col_letter = openpyxl.utils.get_column_letter(col[0].column)
-            ws_log.column_dimensions[col_letter].width = min(max(max_len + 3, 12), 40)
+        _auto_width(ws_log)
 
+        # ========================================================
+        # Sheet 7 — Methodology
+        # Plain text reference; no tables/autofilter needed.
+        # ========================================================
+        ws_meth = wb.create_sheet(title="Methodology")
+        ws_meth.column_dimensions["A"].width = 100
+
+        meth_lines = [
+            ("Coverage Universe — Methodology & Caveats", f_title),
+            ("", f_body),
+            ("SCORING", f_section),
+            ("Priority scores are computed per company using a weighted factor model (0–100 scale).", f_body),
+            ("Default weights: Market Cap 30%, Volume 30%, Holdings 20%, Sector Complexity 20%.", f_body),
+            ("Weights are customizable per universe. Disabled factors (weight=0) are excluded from the denominator.", f_body),
+            ("Market Cap score: log10(cap_brl) normalized between 10M and 50B BRL.", f_body),
+            ("Volume score: log10(avg_daily_traded_brl) normalized between 10k and 100M BRL (last 30 days).", f_body),
+            ("Holdings score: raw portfolio weight (0–100%), capped at 100.", f_body),
+            ("Sector Complexity score: 100 if GICS slug is utilities/financials/energy, else 50.", f_body),
+            ("", f_body),
+            ("BLOCKED STATUS", f_section),
+            ("A company is Blocked when: total active weight is 0, OR available factor weight < 50%, OR", f_body),
+            ("only sector_complexity is available. Blocked companies appear in this workbook with Score Status = 'Blocked'", f_body),
+            ("and no numeric score in calculated/final columns. Blocked scores are NOT exported as 0.0.", f_body),
+            ("", f_body),
+            ("PARTIAL STATUS", f_section),
+            ("A company is Partial when it has enough factors to score but at least one factor is missing.", f_body),
+            ("Partial scores are numeric. The missing factor(s) are listed in the Missing Factors column.", f_body),
+            ("", f_body),
+            ("CAPACITY", f_section),
+            ("Capacity is estimated as: SUM(base_tier_hours * complexity_mult * priority_mult) per company.", f_body),
+            ("Complexity multiplier (1.2×) applies ONLY when gics_sector_slug is 'utilities', 'financials', or 'energy'.", f_body),
+            ("If GICS slug is unknown/missing, NO multiplier is applied and company is flagged as GICS-Unknown.", f_body),
+            ("Priority multiplier (1.1×) applies for must_cover and core tiers.", f_body),
+            ("Capacity is a planning estimate, not a billing or contractual figure.", f_body),
+            ("", f_body),
+            ("MARKET CAP SOURCE PRIORITY", f_section),
+            ("official_b3 > official_cvm > imported_official > yahoo_finance > imported_user_data > unknown", f_body),
+            ("Market cap conflicts (same source+date, different values) are exposed as missing — not silently resolved.", f_body),
+            ("", f_body),
+            ("NEWS WORKLOAD", f_section),
+            ("News workload is derived from local cached news only. No live network calls are made.", f_body),
+            ("Source: news_article_companies table in news.db, joined to news_articles.published_at.", f_body),
+            ("If news database is unavailable or company-to-article mapping is absent, this is shown explicitly.", f_body),
+            ("", f_body),
+            ("DATA CAVEATS", f_section),
+            ("Market cap from Yahoo Finance is unofficial and may lag or differ from B3 official data.", f_body),
+            ("Volume/liquidity data depends on market_history table being populated via refresh.", f_body),
+            ("GICS classification is manually curated where automatic detection fails.", f_body),
+            ("", f_body),
+            ("PLANNED (NOT YET IMPLEMENTED)", f_section),
+            ("- Stock correlation matrix", f_note),
+            ("- Peers / value-chain graph", f_note),
+            ("- Supplier-customer network", f_note),
+            ("- ONS/ANEEL/CCEE operational integration", f_note),
+            ("- Full analyst user management / authentication", f_note),
+        ]
+        for mrow, (line, font) in enumerate(meth_lines, 1):
+            c = ws_meth.cell(row=mrow, column=1, value=line)
+            c.font = font
+            c.alignment = Alignment(wrap_text=False)
+
+        # ---- Final: save ----
         out = io.BytesIO()
         wb.save(out)
         return out.getvalue()

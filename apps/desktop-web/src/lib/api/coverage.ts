@@ -198,3 +198,33 @@ export async function downloadCoverageUniverseExcel(universeId: string): Promise
     content_base64: res.content_base64!,
   };
 }
+
+export async function updateCompanyOwnerAnalyst(params: {
+  universe_id: string;
+  cd_cvm: number;
+  owner: string | null;
+  rationale: string;
+}): Promise<boolean> {
+  const res = await callBridge("update_company_owner_analyst", params);
+  if (res.error) throw new Error(res.error);
+  return !!res.success;
+}
+
+export async function fetchCoverageRecommendation(universe_id: string): Promise<any> {
+  const mode = getBridgeMode();
+  if (mode === "browser") return null;
+  const res = await callBridge("get_coverage_recommendation", { universe_id });
+  if (res.error) throw new Error(res.error);
+  return res;
+}
+
+export async function saveCoverageManagerDecision(params: {
+  universe_id: string;
+  status: "draft" | "pending_review" | "approved" | "rejected";
+  notes?: string;
+}): Promise<{ success: boolean; status: string; decided_at: string }> {
+  const res = await callBridge("save_coverage_manager_decision", params);
+  if (res.error) throw new Error(res.error);
+  return { success: true, status: res.status!, decided_at: res.decided_at! };
+}
+

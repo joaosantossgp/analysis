@@ -333,3 +333,109 @@ class CoverageBridgeMixin:
         except Exception as exc:
             logger.exception("Error in download_coverage_universe_excel")
             return {"error": str(exc)}
+
+    def update_company_owner_analyst(self, params=None) -> dict[str, Any]:
+        p = params or {}
+        u_id = p.get("universe_id")
+        cd_cvm = p.get("cd_cvm")
+        owner = p.get("owner")  # None = clear owner
+        rationale = p.get("rationale", "")
+        if not u_id or cd_cvm is None:
+            return {"error": "Missing universe_id or cd_cvm parameter"}
+        try:
+            self._coverage_svc().update_company_owner_analyst(
+                universe_id=str(u_id),
+                cd_cvm=int(cd_cvm),
+                owner=str(owner).strip() if owner else None,
+                rationale=str(rationale),
+            )
+            return {"success": True}
+        except ValueError as exc:
+            return {"error": str(exc)}
+        except Exception as exc:
+            logger.exception("Error in update_company_owner_analyst")
+            return {"error": str(exc)}
+
+    def get_coverage_recommendation(self, params=None) -> dict[str, Any]:
+        p = params or {}
+        u_id = p.get("universe_id") or p.get("id")
+        if not u_id:
+            return {"error": "Missing universe_id parameter"}
+        try:
+            data = self._coverage_svc().get_recommendation_summary(str(u_id))
+            return self._sanitize_for_json(data)
+        except Exception as exc:
+            logger.exception("Error in get_coverage_recommendation")
+            return {"error": str(exc)}
+
+    def save_coverage_manager_decision(self, params=None) -> dict[str, Any]:
+        """
+        Persists manager decision status in universe assumptions_json.
+        Every status change is also logged in coverage_decision_history
+        with event_type='manager_decision_change'.
+        Valid statuses: draft, pending_review, approved, rejected.
+        """
+        p = params or {}
+        u_id = p.get("universe_id")
+        status = p.get("status")
+        notes = p.get("notes")
+        VALID_STATUSES = {"draft", "pending_review", "approved", "rejected"}
+        if not u_id or not status:
+            return {"error": "Missing universe_id or status parameter"}
+        if status not in VALID_STATUSES:
+            return {"error": f"Invalid status '{status}'. Must be one of: {sorted(VALID_STATUSES)}"}
+        try:
+            svc = self._coverage_svc()
+            universe = svc.get_universe(str(u_id))
+            if not universe:
+                return {"error": "Universe not found"}
+
+            assumptions = universe.get("assumptions") or {}
+            prev_decision = assumptions.get("manager_decision", {})
+            prev_status = prev_decision.get("status", "draft")
+
+            from src.companies.coverage import now_iso_seconds  # noqa: PLC0415
+            now = now_iso_seconds()
+
+            new_decision = {
+                "status": status,
+                "decided_at": now,
+                "notes": str(notes).strip() if notes else prev_decision.get("notes"),
+            }
+            assumptions["manager_decision"] = new_decision
+
+            svc.update_universe({
+                "id": str(u_id),
+                "name": universe["name"],
+                "purpose": universe.get("purpose"),
+                "benchmark": universe.get("benchmark"),
+                "status": universe.get("status", "active"),
+                "assumptions": assumptions,
+            })
+
+            # Log every status change to decision history
+            if prev_status != status:
+                from sqlalchemy import text as _text  # noqa: PLC0415
+                with svc.engine.begin() as conn:
+                    conn.execute(
+                        _text(
+                            """
+                            INSERT INTO coverage_decision_history
+                                (universe_id, cd_cvm, event_type, previous_value, new_value, rationale, timestamp)
+                            VALUES (:u_id, 0, 'manager_decision_change', :prev, :new, :notes, :timestamp)
+                            """
+                        ),
+                        {
+                            "u_id": str(u_id),
+                            "prev": prev_status,
+                            "new": status,
+                            "notes": str(notes).strip() if notes else "",
+                            "timestamp": now,
+                        }
+                    )
+
+            return {"success": True, "status": status, "decided_at": now}
+        except Exception as exc:
+            logger.exception("Error in save_coverage_manager_decision")
+            return {"error": str(exc)}
+

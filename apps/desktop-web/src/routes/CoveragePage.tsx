@@ -19,6 +19,9 @@ import {
   fetchCoverageDecisionHistory,
   fetchCompanyCoverageChecklists,
   updateCompanyCoverageChecklistItem,
+  updateCompanyOwnerAnalyst,
+  fetchCoverageRecommendation,
+  saveCoverageManagerDecision,
   type CoverageUniverse,
 } from "@/lib/api/coverage";
 import { fetchCompanies, fetchCompanyFilters, type CompanyFiltersResult } from "@/lib/api/companies";
@@ -287,6 +290,16 @@ export function CoveragePage({ section }: Props) {
 
             {section === "work-queue" && currentUniverseId && (
               <WorkQueueSection
+                universeId={currentUniverseId}
+                onOpenMethodology={(tab) => {
+                  setMethodologyTab(tab);
+                  setIsMethodologyOpen(true);
+                }}
+              />
+            )}
+
+            {section === "capacity" && currentUniverseId && (
+              <CapacitySection
                 universeId={currentUniverseId}
                 onOpenMethodology={(tab) => {
                   setMethodologyTab(tab);
@@ -1224,7 +1237,192 @@ function UniverseSummarySection({
           )}
         </Panel>
       </div>
+
+      {/* 3. Full-width Row: Recommendation Package */}
+      <div className="lg:col-span-3">
+        <RecommendationSection universe={universe} />
+      </div>
     </div>
+  );
+}
+
+// --- Recommendation Section ---
+function RecommendationSection({ universe }: { universe: CoverageUniverse }) {
+  const queryClient = useQueryClient();
+  const [decisionStatus, setDecisionStatus] = useState<"draft" | "pending_review" | "approved" | "rejected">("draft");
+  const [decisionNotes, setDecisionNotes] = useState("");
+  const [showHistory, setShowHistory] = useState(false);
+
+  const recQuery = useQuery({
+    queryKey: ["coverage-recommendation", universe.id],
+    queryFn: () => fetchCoverageRecommendation(universe.id),
+    enabled: !!universe.id,
+  });
+
+  const historyQuery = useQuery({
+    queryKey: ["coverage-decision-history", universe.id],
+    queryFn: () => fetchCoverageDecisionHistory(universe.id),
+    enabled: showHistory && !!universe.id,
+  });
+
+  const decisionMutation = useMutation({
+    mutationFn: () => saveCoverageManagerDecision({
+      universe_id: universe.id,
+      status: decisionStatus,
+      notes: decisionNotes,
+    }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["coverage-recommendation", universe.id] });
+      void queryClient.invalidateQueries({ queryKey: ["coverage-decision-history", universe.id] });
+    },
+    onError: (err) => alert(String(err)),
+  });
+
+  const rec = recQuery.data;
+  const currentDecision = rec?.manager_decision;
+
+  const STATUS_LABELS: Record<string, { label: string; color: string }> = {
+    draft: { label: "Draft", color: "text-zinc-400 border-zinc-700" },
+    pending_review: { label: "Pending Review", color: "text-amber-400 border-amber-700" },
+    approved: { label: "Approved", color: "text-emerald-400 border-emerald-700" },
+    rejected: { label: "Rejected", color: "text-red-400 border-red-700" },
+  };
+
+  // Sync form with current decision
+  useEffect(() => {
+    if (currentDecision?.status) {
+      setDecisionStatus(currentDecision.status);
+      setDecisionNotes(currentDecision.notes || "");
+    }
+  }, [currentDecision]);
+
+  return (
+    <Panel title="Recommendation Package" subtitle="Manager review — proposed actions and risks. Not auto-approved.">
+      <div className="space-y-4 font-mono text-xs">
+        {recQuery.isLoading && <StateBanner variant="loading" title="Loading recommendation..." />}
+
+        {!recQuery.isLoading && rec && (
+          <>
+            {/* Current decision status badge */}
+            <div className="flex items-center gap-3 pb-3 border-b border-[var(--color-border-subtle)]">
+              <span className="text-3xs text-[var(--color-text-tertiary)] uppercase tracking-wider">Current Status:</span>
+              {currentDecision ? (
+                <span className={`px-2 py-0.5 rounded border text-2xs font-bold ${STATUS_LABELS[currentDecision.status]?.color || "text-zinc-400 border-zinc-700"}`}>
+                  {STATUS_LABELS[currentDecision.status]?.label ?? currentDecision.status}
+                </span>
+              ) : (
+                <span className="text-zinc-600 italic">No decision recorded</span>
+              )}
+              {currentDecision?.decided_at && (
+                <span className="text-3xs text-zinc-600">{currentDecision.decided_at.slice(0, 10)}</span>
+              )}
+            </div>
+
+            {/* Proposed actions */}
+            {rec.proposed_actions?.length > 0 && (
+              <div className="space-y-1">
+                <span className="block text-3xs text-[var(--color-text-tertiary)] uppercase tracking-wider">Proposed Actions</span>
+                <ul className="space-y-1">
+                  {rec.proposed_actions.map((action: string, i: number) => (
+                    <li key={i} className="flex items-start gap-2 text-zinc-300">
+                      <span className="text-cyan-600 shrink-0 mt-0.5">→</span>
+                      <span>{action}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Risks */}
+            {rec.risks?.length > 0 && (
+              <div className="space-y-1">
+                <span className="block text-3xs text-[var(--color-text-tertiary)] uppercase tracking-wider">Risks to Review</span>
+                <ul className="space-y-1">
+                  {rec.risks.map((risk: string, i: number) => (
+                    <li key={i} className="flex items-start gap-2 text-amber-400/80">
+                      <span className="shrink-0 mt-0.5">⚠</span>
+                      <span>{risk}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Coverage summary metrics */}
+            {rec.summary && (
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 pt-2 border-t border-[var(--color-border-subtle)]">
+                {Object.entries(rec.summary as Record<string, any>).slice(0, 8).map(([k, v]) => (
+                  <div key={k} className="bg-[var(--color-surface-2)] px-2 py-1.5 rounded border border-[var(--color-border-subtle)]">
+                    <span className="block text-3xs text-[var(--color-text-tertiary)] uppercase tracking-wider">{k.replace(/_/g, " ")}</span>
+                    <span className="font-bold text-zinc-200">{String(v)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Manager decision form */}
+            <div className="pt-3 border-t border-[var(--color-border-subtle)] space-y-3">
+              <span className="block text-3xs text-[var(--color-text-tertiary)] uppercase tracking-wider">Record Manager Decision</span>
+              <div className="flex flex-wrap items-center gap-3">
+                <select
+                  value={decisionStatus}
+                  onChange={(e) => setDecisionStatus(e.target.value as any)}
+                  className="bg-[var(--color-surface-2)] border border-[var(--color-border-default)] rounded px-2 py-1 focus:outline-none text-xs"
+                >
+                  <option value="draft">Draft</option>
+                  <option value="pending_review">Pending Review</option>
+                  <option value="approved">Approved</option>
+                  <option value="rejected">Rejected</option>
+                </select>
+                <input
+                  type="text"
+                  placeholder="Notes (optional)..."
+                  value={decisionNotes}
+                  onChange={(e) => setDecisionNotes(e.target.value)}
+                  className="flex-1 min-w-[200px] bg-[var(--color-surface-2)] border border-[var(--color-border-default)] rounded px-2 py-1 focus:outline-none text-xs"
+                />
+                <Button
+                  onClick={() => decisionMutation.mutate()}
+                  disabled={decisionMutation.isPending}
+                >
+                  {decisionMutation.isPending ? "Saving..." : "Save Decision"}
+                </Button>
+              </div>
+              <p className="text-3xs text-zinc-600">Every status change is logged to the decision audit trail.</p>
+            </div>
+
+            {/* Decision history toggle */}
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => setShowHistory(!showHistory)}
+                className="text-2xs text-zinc-600 hover:text-zinc-400 underline transition-colors"
+              >
+                {showHistory ? "Hide" : "Show"} Decision History
+              </button>
+              {showHistory && (
+                <div className="mt-2 space-y-1 max-h-40 overflow-y-auto">
+                  {historyQuery.isLoading && <span className="text-zinc-600">Loading...</span>}
+                  {(historyQuery.data || []).length === 0 && !historyQuery.isLoading && (
+                    <span className="text-zinc-700 italic">No history entries.</span>
+                  )}
+                  {(historyQuery.data || []).map((h: any, i: number) => (
+                    <div key={i} className="flex items-center gap-3 py-1 border-b border-[var(--color-border-subtle)]/30 text-3xs">
+                      <span className="text-zinc-600">{h.timestamp?.slice(0, 16)}</span>
+                      <span className="text-zinc-500 uppercase">{h.event_type}</span>
+                      {h.previous_value && <span className="text-zinc-600">{h.previous_value}</span>}
+                      {h.previous_value && <span className="text-zinc-700">→</span>}
+                      <span className="text-zinc-300">{h.new_value}</span>
+                      {h.rationale && <span className="text-zinc-600 italic">{h.rationale}</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </Panel>
   );
 }
 
@@ -1976,8 +2174,10 @@ function PrioritizationSection({ universeId, onOpenBulkModal, onOpenMethodology 
   const [search, setSearch] = useState("");
   const [sector, setSector] = useState("");
   const [tierFilter, setTierFilter] = useState("");
+  const [ownerFilter, setOwnerFilter] = useState("");
   const [sortField, setSortField] = useState<string>("final_score");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [ownerEditCompany, setOwnerEditCompany] = useState<any | null>(null);
 
   const scoresQuery = useQuery({
     queryKey: ["coverage-scores", universeId],
@@ -2016,12 +2216,31 @@ function PrioritizationSection({ universeId, onOpenBulkModal, onOpenMethodology 
     onError: (err) => alert(String(err))
   });
 
+  const ownerMutation = useMutation({
+    mutationFn: ({ cd_cvm, owner, rationale }: { cd_cvm: number; owner: string | null; rationale: string }) =>
+      updateCompanyOwnerAnalyst({ universe_id: universeId, cd_cvm, owner, rationale }),
+    onSuccess: () => {
+      setOwnerEditCompany(null);
+      void queryClient.invalidateQueries({ queryKey: ["coverage-scores", universeId] });
+      void queryClient.invalidateQueries({ queryKey: ["coverage-capacity", universeId] });
+    },
+    onError: (err) => alert(String(err)),
+  });
+
   // Sector filters query
   const filtersQuery = useQuery<CompanyFiltersResult>({
     queryKey: ["company-filters"],
     queryFn: fetchCompanyFilters,
   });
   const sectors = filtersQuery.data?.mode === "desktop" ? filtersQuery.data.sectors : [];
+
+  // Derive unique owners from scores for filter dropdown
+  const scoresData = scoresQuery.data || [];
+  const uniqueOwners = useMemo(() => {
+    const owners = new Set<string>();
+    scoresData.forEach((s: any) => { if (s.owner) owners.add(s.owner); });
+    return Array.from(owners).sort();
+  }, [scoresData]);
 
   if (scoresQuery.isLoading) return <StateBanner variant="loading" title="Calculating priority rankings..." />;
   const scores = scoresQuery.data || [];
@@ -2075,6 +2294,14 @@ function PrioritizationSection({ universeId, onOpenBulkModal, onOpenMethodology 
 
     if (tierFilter) {
       list = list.filter((s) => s.tier === tierFilter);
+    }
+
+    if (ownerFilter) {
+      if (ownerFilter === "__unassigned__") {
+        list = list.filter((s) => !s.owner);
+      } else {
+        list = list.filter((s) => s.owner === ownerFilter);
+      }
     }
 
     list.sort((a, b) => {
@@ -2194,10 +2421,10 @@ function PrioritizationSection({ universeId, onOpenBulkModal, onOpenMethodology 
           </select>
         </div>
 
-        {(search || sector || tierFilter) && (
+        {(search || sector || tierFilter || ownerFilter) && (
           <button
             type="button"
-            onClick={() => { setSearch(""); setSector(""); setTierFilter(""); }}
+            onClick={() => { setSearch(""); setSector(""); setTierFilter(""); setOwnerFilter(""); }}
             className="px-3 py-1.5 border border-zinc-700 bg-zinc-800 hover:bg-zinc-700 text-2xs rounded text-zinc-400 cursor-pointer transition-colors"
           >
             Reset
@@ -2212,6 +2439,43 @@ function PrioritizationSection({ universeId, onOpenBulkModal, onOpenMethodology 
           {filteredScores.length} stocks
         </div>
       </div>
+
+      {/* Owner filter bar (shown only if owners exist) */}
+      {uniqueOwners.length > 0 && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-[var(--color-surface-2)] border border-[var(--color-border-subtle)] rounded font-mono text-xs">
+          <span className="text-3xs text-[var(--color-text-tertiary)] uppercase tracking-wider shrink-0">Owner:</span>
+          <button
+            type="button"
+            onClick={() => setOwnerFilter("")}
+            className={`px-2 py-0.5 rounded border text-2xs transition-all ${
+              ownerFilter === "" ? "border-cyan-700 bg-cyan-950/40 text-cyan-400" : "border-zinc-700/60 bg-zinc-900/20 text-zinc-500 hover:border-zinc-600"
+            }`}
+          >
+            All
+          </button>
+          {uniqueOwners.map((o) => (
+            <button
+              key={o}
+              type="button"
+              onClick={() => setOwnerFilter(o)}
+              className={`px-2 py-0.5 rounded border text-2xs transition-all ${
+                ownerFilter === o ? "border-cyan-700 bg-cyan-950/40 text-cyan-400" : "border-zinc-700/60 bg-zinc-900/20 text-zinc-500 hover:border-zinc-600"
+              }`}
+            >
+              {o}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => setOwnerFilter("__unassigned__")}
+            className={`px-2 py-0.5 rounded border text-2xs transition-all ${
+              ownerFilter === "__unassigned__" ? "border-amber-700 bg-amber-950/40 text-amber-400" : "border-zinc-700/60 bg-zinc-900/20 text-zinc-500 hover:border-zinc-600"
+            }`}
+          >
+            Unassigned
+          </button>
+        </div>
+      )}
 
       {/* Prioritization Table */}
       <div className="overflow-x-auto border border-[var(--color-border-default)] rounded bg-[var(--color-surface-1)]">
@@ -2230,6 +2494,9 @@ function PrioritizationSection({ universeId, onOpenBulkModal, onOpenMethodology 
               </th>
               <th className="px-3 py-2.5 text-left cursor-pointer hover:text-[var(--color-text-primary)] transition-colors" onClick={() => handleSort("tier")}>
                 Tier{renderSortIndicator("tier")}
+              </th>
+              <th className="px-3 py-2.5 text-left cursor-pointer hover:text-[var(--color-text-primary)] transition-colors" onClick={() => handleSort("owner")}>
+                Owner{renderSortIndicator("owner")}
               </th>
               <th className="px-3 py-2.5 text-center w-44">
                 <div className="flex items-center justify-center gap-1 select-none">
@@ -2268,7 +2535,7 @@ function PrioritizationSection({ universeId, onOpenBulkModal, onOpenMethodology 
                 if (row.type === "group") {
                   return (
                     <tr key={`group-${row.tier}`} className="bg-[var(--color-surface-2)] border-y border-[var(--color-border-subtle)]">
-                      <td colSpan={8} className="px-4 py-1.5">
+                      <td colSpan={9} className="px-4 py-1.5">
                         <span className="text-2xs font-bold uppercase tracking-widest text-[var(--color-text-tertiary)]">
                           {TIER_LABELS[row.tier] ?? row.tier}
                         </span>
@@ -2322,6 +2589,28 @@ function PrioritizationSection({ universeId, onOpenBulkModal, onOpenMethodology 
                       >
                         {s.tier.replace(/_/g, " ")}
                       </button>
+                    </td>
+
+                    {/* Owner — inline edit popover */}
+                    <td className="px-3 py-2.5 relative">
+                      <button
+                        type="button"
+                        onClick={() => setOwnerEditCompany(ownerEditCompany?.cd_cvm === s.cd_cvm ? null : s)}
+                        className="text-2xs text-zinc-400 hover:text-cyan-400 transition-colors truncate max-w-[80px] block text-left"
+                        title={s.owner || "Click to assign owner"}
+                      >
+                        {s.owner ? s.owner : <span className="text-zinc-700 italic">unassigned</span>}
+                      </button>
+                      {ownerEditCompany?.cd_cvm === s.cd_cvm && (
+                        <OwnerEditPopover
+                          company={s}
+                          onSave={(owner, rationale) => {
+                            ownerMutation.mutate({ cd_cvm: s.cd_cvm, owner, rationale });
+                          }}
+                          onClose={() => setOwnerEditCompany(null)}
+                          saving={ownerMutation.isPending}
+                        />
+                      )}
                     </td>
 
                     {/* Score bar + delta */}
@@ -2513,49 +2802,402 @@ function PrioritizationSection({ universeId, onOpenBulkModal, onOpenMethodology 
 
 
 // --- Work Queue / Gaps list tab ---
+const SEV_COLORS: Record<string, string> = {
+  high: "border-red-800/60 bg-red-950/20 text-red-400",
+  medium: "border-amber-800/60 bg-amber-950/20 text-amber-400",
+  low: "border-zinc-700/40 bg-zinc-900/10 text-zinc-500",
+};
+
 function WorkQueueSection({ universeId, onOpenMethodology }: { universeId: string; onOpenMethodology: (tab: "scoring" | "capacity") => void }) {
+  const [severityFilter, setSeverityFilter] = useState<"all" | "high" | "medium" | "low">("all");
+
   const queueQuery = useQuery({
     queryKey: ["coverage-work-queue", universeId],
     queryFn: () => fetchCoverageWorkQueue(universeId),
   });
 
-  if (queueQuery.isLoading) return <StateBanner variant="loading" title="Compiling coverage gaps..." />;
-  const tasks = queueQuery.data || [];
+  if (queueQuery.isLoading) return <StateBanner variant="loading" title="Compiling coverage tasks..." />;
+  const allTasks = queueQuery.data || [];
+
+  // News DB unavailable banner (single system task with type=news_db_unavailable)
+  const newsBannerTask = allTasks.find((t: any) => t.task_type === "news_db_unavailable");
+  const visibleTasks = allTasks.filter((t: any) => t.task_type !== "news_db_unavailable");
+
+  const filteredTasks = severityFilter === "all"
+    ? visibleTasks
+    : visibleTasks.filter((t: any) => t.severity === severityFilter);
+
+  const countBySev = (sev: string) => visibleTasks.filter((t: any) => t.severity === sev).length;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 font-mono text-xs">
       <CapacityWidget universeId={universeId} onOpenMethodology={onOpenMethodology} />
 
-      <Panel title="Active Tasks" subtitle="Dynamic checklist items missing from covered stocks in this universe.">
-        <div className="space-y-2">
-          {tasks.length === 0 ? (
-            <StateBanner variant="empty" title="All up-to-date" message="No pending coverage gaps found in this universe!" />
+      {/* News unavailable banner */}
+      {newsBannerTask && (
+        <div className="flex items-start gap-2 p-3 border border-amber-800/40 bg-amber-950/10 rounded text-amber-400 text-xs">
+          <span className="font-bold shrink-0">⚠ News Workload:</span>
+          <span>{newsBannerTask.reason}</span>
+          <span className="text-amber-600 ml-auto shrink-0">{newsBannerTask.suggested_action}</span>
+        </div>
+      )}
+
+      <Panel title="Active Tasks" subtitle={`${visibleTasks.length} task(s) — data-quality, checklist, and news workload gaps`}>
+        {/* Filter chips */}
+        <div className="flex items-center gap-2 mb-3">
+          {(["all", "high", "medium", "low"] as const).map((f) => (
+            <button
+              key={f}
+              type="button"
+              onClick={() => setSeverityFilter(f)}
+              className={`px-2 py-0.5 rounded border text-2xs uppercase tracking-wider transition-all ${
+                severityFilter === f
+                  ? "border-cyan-700 bg-cyan-950/40 text-cyan-400"
+                  : "border-zinc-700/60 bg-zinc-900/20 text-zinc-500 hover:border-zinc-600"
+              }`}
+            >
+              {f === "all" ? `All (${visibleTasks.length})` : `${f} (${countBySev(f)})`}
+            </button>
+          ))}
+        </div>
+
+        <div className="space-y-1.5">
+          {filteredTasks.length === 0 ? (
+            <StateBanner
+              variant="empty"
+              title={severityFilter === "all" ? "All up-to-date" : `No ${severityFilter}-severity tasks`}
+              message={severityFilter === "all" ? "No pending coverage tasks found in this universe." : undefined}
+            />
           ) : (
-            tasks.map((t: any, i: number) => (
+            filteredTasks.map((t: any, i: number) => (
               <div
                 key={i}
-                className="flex items-center justify-between p-3 border border-[var(--color-border-subtle)] bg-[var(--color-surface-2)] rounded font-mono text-xs hover:border-[var(--color-action-primary)]"
+                className="flex items-start justify-between gap-4 p-2.5 border border-[var(--color-border-subtle)] bg-[var(--color-surface-2)] rounded hover:border-zinc-600 transition-colors"
               >
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-[var(--color-id-ticker)]">{formatB3OrCvm(t)}</span>
-                    <span className="text-[var(--color-text-secondary)]">({t.company_name})</span>
+                <div className="flex items-start gap-2 min-w-0">
+                  {/* Severity badge */}
+                  <span className={`shrink-0 mt-0.5 px-1.5 py-0.5 rounded text-3xs border font-bold uppercase tracking-wider ${SEV_COLORS[t.severity] || SEV_COLORS.low}`}>
+                    {t.severity}
+                  </span>
+                  <div className="space-y-0.5 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {t.ticker_b3 && (
+                        <span className="font-bold text-[var(--color-id-ticker)]">{t.ticker_b3}</span>
+                      )}
+                      {t.company_name && (
+                        <span className="text-[var(--color-text-secondary)] truncate">{t.company_name}</span>
+                      )}
+                      {t.tier && (
+                        <span className="text-3xs uppercase text-zinc-600 border border-zinc-800 px-1 rounded">{t.tier}</span>
+                      )}
+                      {t.owner && (
+                        <span className="text-3xs text-zinc-500">{t.owner}</span>
+                      )}
+                    </div>
+                    <p className="text-[var(--color-text-tertiary)] text-2xs">{t.reason}</p>
+                    <p className="text-zinc-600 text-2xs">{t.suggested_action}</p>
                   </div>
-                  <p className="text-[var(--color-text-tertiary)]">{t.description}</p>
                 </div>
-                <div>
-                  <Link
-                    to={`/empresas/${t.cd_cvm}/coverage`}
-                    className="px-2 py-1 bg-[var(--color-surface-3)] border border-[var(--color-border-default)] rounded text-2xs hover:border-[var(--color-action-primary)]"
-                  >
-                    Solve
-                  </Link>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-3xs text-zinc-700 uppercase">{t.task_type?.replace(/_/g, " ")}</span>
+                  {t.cd_cvm && (
+                    <Link
+                      to={`/empresas/${t.cd_cvm}/coverage`}
+                      className="px-2 py-0.5 bg-[var(--color-surface-3)] border border-[var(--color-border-default)] rounded text-2xs hover:border-[var(--color-action-primary)] transition-colors"
+                    >
+                      Solve
+                    </Link>
+                  )}
                 </div>
               </div>
             ))
           )}
         </div>
       </Panel>
+    </div>
+  );
+}
+
+
+// --- Owner Edit Popover ---
+function OwnerEditPopover({
+  company,
+  onSave,
+  onClose,
+  saving,
+}: {
+  company: any;
+  onSave: (owner: string | null, rationale: string) => void;
+  onClose: () => void;
+  saving: boolean;
+}) {
+  const [ownerInput, setOwnerInput] = useState<string>(company.owner || "");
+  const [rationale, setRationale] = useState("");
+
+  return (
+    <div className="absolute left-0 top-full mt-1 z-50 bg-[var(--color-surface-1)] border border-[var(--color-border-default)] rounded shadow-xl p-3 space-y-2 font-mono text-xs w-64">
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-2xs font-bold text-[var(--color-text-tertiary)] uppercase tracking-wider">Assign Owner</span>
+        <button type="button" onClick={onClose} className="text-zinc-600 hover:text-zinc-300 text-sm leading-none">×</button>
+      </div>
+      <input
+        type="text"
+        autoFocus
+        placeholder="Analyst name (blank to clear)"
+        value={ownerInput}
+        onChange={(e) => setOwnerInput(e.target.value)}
+        className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border-default)] rounded px-2 py-1 focus:outline-none text-xs"
+      />
+      <input
+        type="text"
+        placeholder="Rationale (required)"
+        value={rationale}
+        onChange={(e) => setRationale(e.target.value)}
+        className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border-default)] rounded px-2 py-1 focus:outline-none text-xs"
+      />
+      <div className="flex items-center gap-2 pt-1">
+        <Button
+          onClick={() => {
+            if (!rationale.trim()) { alert("Rationale is required for audit log."); return; }
+            onSave(ownerInput.trim() || null, rationale.trim());
+          }}
+          disabled={saving || !rationale.trim()}
+        >
+          {saving ? "Saving..." : "Save"}
+        </Button>
+        <button
+          type="button"
+          onClick={onClose}
+          className="text-2xs text-zinc-500 hover:text-zinc-300 transition-colors"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// --- Capacity Section --- 
+function CapacitySection({ universeId, onOpenMethodology }: { universeId: string; onOpenMethodology: (tab: "scoring" | "capacity") => void }) {
+  const queryClient = useQueryClient();
+  const [scenarioHours, setScenarioHours] = useState<number>(1600);
+  const [scenarioTierHours, setScenarioTierHours] = useState<Record<string, number>>({ ...DEFAULT_TIER_HOURS });
+  const [scenarioEdited, setScenarioEdited] = useState(false);
+
+  const capacityQuery = useQuery({
+    queryKey: ["coverage-capacity", universeId],
+    queryFn: () => fetchCoverageCapacityData(universeId),
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: () => saveCoverageCapacityScenario({
+      universe_id: universeId,
+      available_hours: scenarioHours,
+      tier_hours: scenarioTierHours,
+    }),
+    onSuccess: () => {
+      setScenarioEdited(false);
+      void queryClient.invalidateQueries({ queryKey: ["coverage-capacity", universeId] });
+    },
+    onError: (err) => alert(String(err)),
+  });
+
+  const cap = capacityQuery.data;
+
+  // Sync scenario state from loaded capacity data
+  useEffect(() => {
+    if (cap && !scenarioEdited) {
+      setScenarioHours(cap.available_hours ?? 1600);
+      setScenarioTierHours(cap.tier_hours_assumptions ?? { ...DEFAULT_TIER_HOURS });
+    }
+  }, [cap, scenarioEdited]);
+
+  if (capacityQuery.isLoading) return <StateBanner variant="loading" title="Computing capacity..." />;
+  if (capacityQuery.isError) return <StateBanner variant="error" title="Failed to load capacity" message={String(capacityQuery.error)} onRetry={() => void capacityQuery.refetch()} />;
+  if (!cap) return <StateBanner variant="empty" title="No capacity data" message="Add companies to this universe first." />;
+
+  const utilizationPct = cap.capacity_utilization_pct ?? 0;
+  const utilizationColor = utilizationPct > 100 ? "text-red-400" : utilizationPct > 90 ? "text-amber-400" : "text-emerald-400";
+  const tierOrder = ["must_cover", "core", "watchlist", "opportunistic", "excluded", "inappropriate"];
+
+  return (
+    <div className="space-y-6 font-mono text-xs">
+      {/* Capacity warnings */}
+      {cap.warnings?.map((w: string, i: number) => (
+        <div key={i} className="flex items-start gap-2 p-3 border border-amber-800/40 bg-amber-950/10 rounded text-amber-400">
+          <span className="font-bold shrink-0">⚠</span>
+          <span>{w}</span>
+        </div>
+      ))}
+
+      {/* KPI row */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="bg-[var(--color-surface-2)] p-3 rounded border border-[var(--color-border-subtle)] space-y-1">
+          <span className="block text-3xs text-[var(--color-text-tertiary)] uppercase tracking-wider">Available Hours</span>
+          <span className="text-xl font-bold text-[var(--color-id-ticker)]">{cap.available_hours?.toLocaleString()}</span>
+        </div>
+        <div className="bg-[var(--color-surface-2)] p-3 rounded border border-[var(--color-border-subtle)] space-y-1">
+          <span className="block text-3xs text-[var(--color-text-tertiary)] uppercase tracking-wider">Required Hours</span>
+          <span className="text-xl font-bold text-zinc-200">{cap.required_hours?.toLocaleString()}</span>
+        </div>
+        <div className="bg-[var(--color-surface-2)] p-3 rounded border border-[var(--color-border-subtle)] space-y-1">
+          <span className="block text-3xs text-[var(--color-text-tertiary)] uppercase tracking-wider">Utilization</span>
+          <span className={`text-xl font-bold ${utilizationColor}`}>{utilizationPct.toFixed(1)}%</span>
+        </div>
+        <div className="bg-[var(--color-surface-2)] p-3 rounded border border-[var(--color-border-subtle)] space-y-1">
+          <span className="block text-3xs text-[var(--color-text-tertiary)] uppercase tracking-wider">GICS Unknown</span>
+          <span className={`text-xl font-bold ${(cap.gics_unknown_companies?.length ?? 0) > 0 ? "text-amber-400" : "text-zinc-500"}`}>
+            {cap.gics_unknown_companies?.length ?? 0}
+          </span>
+        </div>
+      </div>
+
+      {/* Tier breakdown */}
+      <Panel title="Tier Breakdown" subtitle="Estimated hours per coverage tier">
+        <table className="w-full">
+          <thead>
+            <tr className="text-left text-3xs text-[var(--color-text-tertiary)] uppercase tracking-wider border-b border-[var(--color-border-subtle)]">
+              <th className="pb-2 pr-4">Tier</th>
+              <th className="pb-2 pr-4 text-right"># Companies</th>
+              <th className="pb-2 pr-4 text-right">Est. Hours</th>
+              <th className="pb-2 text-right">Hours / Co. (Assumption)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {tierOrder.filter(t => (cap.tier_counts?.[t] ?? 0) > 0 || (cap.tier_hours?.[t] ?? 0) > 0).map((tier) => (
+              <tr key={tier} className="border-b border-[var(--color-border-subtle)]/40 hover:bg-[var(--color-surface-2)]">
+                <td className="py-1.5 pr-4 font-bold uppercase text-2xs tracking-wider text-zinc-300">{tier.replace(/_/g, " ")}</td>
+                <td className="py-1.5 pr-4 text-right text-zinc-400">{cap.tier_counts?.[tier] ?? 0}</td>
+                <td className="py-1.5 pr-4 text-right text-zinc-200">{(cap.tier_hours?.[tier] ?? 0).toFixed(1)}</td>
+                <td className="py-1.5 text-right text-zinc-500">{cap.tier_hours_assumptions?.[tier] ?? "-"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Panel>
+
+      {/* By-owner breakdown */}
+      {cap.by_owner && Object.keys(cap.by_owner).length > 0 && (
+        <Panel title="By Analyst Owner" subtitle="Coverage load distribution across assigned analysts">
+          <table className="w-full">
+            <thead>
+              <tr className="text-left text-3xs text-[var(--color-text-tertiary)] uppercase tracking-wider border-b border-[var(--color-border-subtle)]">
+                <th className="pb-2 pr-4">Owner</th>
+                <th className="pb-2 pr-4 text-right"># Companies</th>
+                <th className="pb-2 text-right">Est. Hours</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(cap.by_owner as Record<string, any>)
+                .sort(([, a], [, b]) => b.required_hours - a.required_hours)
+                .map(([owner, od]) => (
+                  <tr key={owner} className={`border-b border-[var(--color-border-subtle)]/40 hover:bg-[var(--color-surface-2)] ${owner === "Unassigned" ? "text-amber-400/70" : ""}` }>
+                    <td className="py-1.5 pr-4 font-medium">{owner}</td>
+                    <td className="py-1.5 pr-4 text-right">{od.company_count}</td>
+                    <td className="py-1.5 text-right">{od.required_hours.toFixed(1)}</td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </Panel>
+      )}
+
+      {/* GICS unknown callout */}
+      {(cap.gics_unknown_companies?.length ?? 0) > 0 && (
+        <Panel
+          title={`GICS Unknown (${cap.gics_unknown_companies.length})`}
+          subtitle="Complexity multiplier NOT applied — uncertainty exposed, not hidden"
+        >
+          <div className="space-y-1">
+            {cap.gics_unknown_companies.slice(0, 15).map((co: any) => (
+              <div key={co.cd_cvm} className="flex items-center gap-3 py-1 border-b border-[var(--color-border-subtle)]/30">
+                <span className="font-bold text-amber-400 w-20 truncate">{co.ticker_b3 || `CVM ${co.cd_cvm}`}</span>
+                <span className="text-zinc-400 flex-1 truncate">{co.company_name}</span>
+                <span className="text-zinc-600 text-3xs uppercase">{co.tier}</span>
+                <Link to={`/empresas/${co.cd_cvm}/coverage`} className="text-2xs text-cyan-600 hover:text-cyan-400">Fix GICS</Link>
+              </div>
+            ))}
+            {cap.gics_unknown_companies.length > 15 && (
+              <p className="text-zinc-600 text-2xs pt-1">… and {cap.gics_unknown_companies.length - 15} more</p>
+            )}
+          </div>
+        </Panel>
+      )}
+
+      {/* Scenario Input form */}
+      <Panel title="Scenario Settings" subtitle="Adjust hours to model different capacity scenarios">
+        <div className="space-y-4">
+          <div className="space-y-1">
+            <label className="block text-[var(--color-text-secondary)]">Available Analyst Hours / Year</label>
+            <input
+              type="number"
+              min={0}
+              step={40}
+              value={scenarioHours}
+              onChange={(e) => { setScenarioHours(Number(e.target.value)); setScenarioEdited(true); }}
+              className="w-full max-w-xs bg-[var(--color-surface-2)] border border-[var(--color-border-default)] rounded px-2 py-1 focus:outline-none"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <span className="block text-[var(--color-text-secondary)] text-2xs uppercase tracking-wider">Hours per Company by Tier (Base, before complexity)</span>
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+              {tierOrder.map((tier) => (
+                <div key={tier} className="space-y-0.5">
+                  <label className="block text-3xs text-zinc-500 uppercase">{tier.replace(/_/g, " ")}</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={5}
+                    value={scenarioTierHours[tier] ?? DEFAULT_TIER_HOURS[tier]}
+                    onChange={(e) => {
+                      setScenarioTierHours(prev => ({ ...prev, [tier]: Number(e.target.value) }));
+                      setScenarioEdited(true);
+                    }}
+                    className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border-default)] rounded px-2 py-1 focus:outline-none text-xs"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {scenarioEdited && (
+            <div className="flex items-center gap-2 pt-1">
+              <Button
+                onClick={() => saveMutation.mutate()}
+                disabled={saveMutation.isPending}
+                loading={saveMutation.isPending}
+              >
+                Apply Scenario
+              </Button>
+              <button
+                type="button"
+                onClick={() => {
+                  setScenarioEdited(false);
+                  if (cap) {
+                    setScenarioHours(cap.available_hours ?? 1600);
+                    setScenarioTierHours(cap.tier_hours_assumptions ?? { ...DEFAULT_TIER_HOURS });
+                  }
+                }}
+                className="text-2xs text-zinc-500 hover:text-zinc-300 transition-colors"
+              >
+                Reset
+              </button>
+            </div>
+          )}
+        </div>
+      </Panel>
+
+      {/* Methodology help */}
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() => onOpenMethodology("capacity")}
+          className="text-2xs text-zinc-600 hover:text-zinc-400 underline transition-colors"
+        >
+          View capacity methodology
+        </button>
+      </div>
     </div>
   );
 }
