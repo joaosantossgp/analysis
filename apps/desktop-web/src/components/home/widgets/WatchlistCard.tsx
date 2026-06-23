@@ -8,6 +8,7 @@ import { Sparkline } from "@/components/data/Sparkline";
 import { CompanySelector } from "./shared/CompanySelector";
 import { downloadCsvFile } from "./shared/csvExport";
 import { WatchlistConfig, WidgetCommonProps } from "./shared/widgetTypes";
+import { resolveBridgeMode, resolveWidgetDataState, getBridgeBadgeStyles, getDataStateBadgeStyles } from "@/lib/bridge/badgeResolver";
 
 interface WatchlistCardProps extends WidgetCommonProps {
   config?: WatchlistConfig;
@@ -25,6 +26,18 @@ export function WatchlistCard({
 }: WatchlistCardProps) {
   const [isConfiguring, setIsConfiguring] = useState(false);
 
+  const bridgeEnvMode = resolveBridgeMode();
+  const bridgeBadge = getBridgeBadgeStyles(bridgeEnvMode);
+
+  const hasData = config.companyIds.length > 0;
+  const dataState = resolveWidgetDataState({
+    isLoading: false,
+    error: null,
+    hasData,
+    isOffline: bridgeEnvMode === "browser",
+  });
+  const dataStateBadge = getDataStateBadgeStyles(dataState);
+
   const handleExportCSV = () => {
     if (!config.companyIds || config.companyIds.length === 0) return;
     const headers = ["Company Name", "CVM Code", "Ticker", "Metric"];
@@ -38,7 +51,7 @@ export function WatchlistCard({
           ? "Net Margin"
           : config.metric === "roe"
             ? "ROE"
-            : "Stock Price",
+            : "Stock Price (Annual Close)",
     ]);
     downloadCsvFile({
       filename: "watchlist_companies.csv",
@@ -71,7 +84,7 @@ export function WatchlistCard({
       case "roe":
         return "ROE";
       case "stock_price":
-        return "Stock Price";
+        return "Stock Price (Annual Close)";
       default:
         return "Metric";
     }
@@ -79,7 +92,19 @@ export function WatchlistCard({
 
   return (
     <Panel
-      title="Watchlist & KPIs"
+      title={
+        <div className="flex items-center gap-1.5">
+          <span>Watchlist & KPIs</span>
+          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border leading-none uppercase tracking-wider font-mono ${bridgeBadge.className}`}>
+            {bridgeBadge.text}
+          </span>
+          {dataStateBadge && (
+            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border leading-none uppercase tracking-wider font-mono ${dataStateBadge.className}`}>
+              {dataStateBadge.text}
+            </span>
+          )}
+        </div>
+      }
       subtitle={isMinimized ? undefined : `Tracking annual ${metricLabel} trends`}
       dense={isCompact}
       style={{ height: "100%", display: "flex", flexDirection: "column" }}
@@ -94,7 +119,7 @@ export function WatchlistCard({
               <option value="mg_ebit">EBIT Margin</option>
               <option value="mg_liq">Net Margin</option>
               <option value="roe">ROE</option>
-              <option value="stock_price">Stock Price</option>
+              <option value="stock_price">Stock Price (Annual Close)</option>
             </select>
           )}
           {!isMinimized && (

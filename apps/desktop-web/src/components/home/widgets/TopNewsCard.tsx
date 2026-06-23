@@ -5,6 +5,7 @@ import { fetchNewsArticles } from "@/lib/api/news";
 import { Panel } from "@/components/surface/Panel";
 import { downloadCsvFile } from "./shared/csvExport";
 import { WidgetCommonProps } from "./shared/widgetTypes";
+import { resolveBridgeMode, resolveWidgetDataState, getBridgeBadgeStyles, getDataStateBadgeStyles } from "@/lib/bridge/badgeResolver";
 
 export function TopNewsCard({
   onRemove,
@@ -20,10 +21,19 @@ export function TopNewsCard({
     refetchInterval: 60_000,
   });
 
-  const mode = data?.mode;
-  const isOffline = mode === "browser";
+  const items = data?.mode === "desktop" || data?.mode === "dev-http" || data?.mode === "mock" ? data.items : [];
 
-  const items = data?.mode === "desktop" || data?.mode === "dev-http" ? data.items : [];
+  const bridgeEnvMode = resolveBridgeMode();
+  const bridgeBadge = getBridgeBadgeStyles(bridgeEnvMode);
+
+  const hasData = items.length > 0;
+  const dataState = resolveWidgetDataState({
+    isLoading,
+    error,
+    hasData,
+    isOffline: bridgeEnvMode === "browser",
+  });
+  const dataStateBadge = getDataStateBadgeStyles(dataState);
 
   const handleExportCSV = () => {
     if (!items || items.length === 0) return;
@@ -44,7 +54,7 @@ export function TopNewsCard({
   };
 
   const renderEmptyState = () => {
-    if (isOffline) {
+    if (bridgeEnvMode === "browser") {
       return (
         <div className="flex flex-col items-center justify-center p-4 border border-dashed border-zinc-850 rounded-md bg-zinc-900/5 text-center font-mono space-y-2.5">
           <span className="text-zinc-555 text-lg">⚠️</span>
@@ -92,15 +102,16 @@ export function TopNewsCard({
   return (
     <Panel
       title={
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <span>Top News Feed</span>
-          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border leading-none uppercase tracking-wider font-mono ${
-            isOffline
-              ? "bg-amber-500/10 text-amber-400 border-amber-500/25"
-              : "bg-emerald-500/10 text-emerald-400 border-emerald-500/25"
-          }`}>
-            {isOffline ? "MOCK" : "LIVE"}
+          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border leading-none uppercase tracking-wider font-mono ${bridgeBadge.className}`}>
+            {bridgeBadge.text}
           </span>
+          {dataStateBadge && (
+            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border leading-none uppercase tracking-wider font-mono ${dataStateBadge.className}`}>
+              {dataStateBadge.text}
+            </span>
+          )}
         </div>
       }
       subtitle={isMinimized ? undefined : "Aggregated filings and market alerts"}

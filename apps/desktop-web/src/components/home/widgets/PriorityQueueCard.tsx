@@ -9,6 +9,7 @@ import {
 import { Panel } from "@/components/surface/Panel";
 import { downloadCsvFile } from "./shared/csvExport";
 import { PriorityQueueConfig, WidgetCommonProps } from "./shared/widgetTypes";
+import { resolveBridgeMode, resolveWidgetDataState, getBridgeBadgeStyles, getDataStateBadgeStyles } from "@/lib/bridge/badgeResolver";
 
 interface PriorityQueueCardProps extends WidgetCommonProps {
   config?: PriorityQueueConfig;
@@ -42,6 +43,18 @@ export function PriorityQueueCard({
     enabled: Boolean(config.universeId),
   });
   const priorities = priorityQuery.data || [];
+
+  const bridgeEnvMode = resolveBridgeMode();
+  const bridgeBadge = getBridgeBadgeStyles(bridgeEnvMode);
+
+  const hasData = config.universeId !== "" && priorities.length > 0;
+  const dataState = resolveWidgetDataState({
+    isLoading: priorityQuery.isLoading,
+    error: priorityQuery.error,
+    hasData,
+    isOffline: bridgeEnvMode === "browser",
+  });
+  const dataStateBadge = getDataStateBadgeStyles(dataState);
 
   // Extract unique sectors dynamically from the priorities dataset
   const uniqueSectors = useMemo(() => {
@@ -97,8 +110,16 @@ export function PriorityQueueCard({
   return (
     <Panel
       title={
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <span>Priority Queue</span>
+          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border leading-none uppercase tracking-wider font-mono ${bridgeBadge.className}`}>
+            {bridgeBadge.text}
+          </span>
+          {dataStateBadge && (
+            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border leading-none uppercase tracking-wider font-mono ${dataStateBadge.className}`}>
+              {dataStateBadge.text}
+            </span>
+          )}
           {activeUniverse && (
             <span className="text-[9px] font-bold bg-zinc-900 border border-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded leading-none uppercase font-mono">
               {activeUniverse.name}
@@ -227,6 +248,15 @@ export function PriorityQueueCard({
                       <tr className="border-b border-zinc-850 text-zinc-650 text-3xs uppercase">
                         <th className="py-2">Company</th>
                         <th className="py-2">Tier</th>
+                        {isFocused && (
+                          <>
+                            <th className="py-2 text-right">Mcap</th>
+                            <th className="py-2 text-right">Liquidity</th>
+                            <th className="py-2 text-right">Holdings</th>
+                            <th className="py-2 text-right">Sector</th>
+                            <th className="py-2 text-center">Checklist</th>
+                          </>
+                        )}
                         <th className="py-2 text-right">Score</th>
                         <th className="py-2 pl-4">Next Action / Reason</th>
                       </tr>
@@ -237,7 +267,7 @@ export function PriorityQueueCard({
                         const pendingItem = item.next_pending_item;
                         
                         let nextAction = "—";
-                        let actionColor = "text-zinc-550";
+                        let actionColor = "text-zinc-555";
                         if (pendingItem) {
                           nextAction = pendingItem;
                           actionColor = "text-orange-400 font-medium";
@@ -269,6 +299,15 @@ export function PriorityQueueCard({
                               </span>
                             </td>
                             <td className="py-2 text-zinc-400 text-2xs">{item.tier || "—"}</td>
+                            {isFocused && (
+                              <>
+                                <td className="py-2 text-right text-zinc-400">{item.cap_score !== null && item.cap_score !== undefined ? item.cap_score : "—"}</td>
+                                <td className="py-2 text-right text-zinc-400">{item.vol_score !== null && item.vol_score !== undefined ? item.vol_score : "—"}</td>
+                                <td className="py-2 text-right text-zinc-400">{item.holding_score !== null && item.holding_score !== undefined ? item.holding_score : "—"}</td>
+                                <td className="py-2 text-right text-zinc-400">{item.sector_score !== null && item.sector_score !== undefined ? item.sector_score : "—"}</td>
+                                <td className="py-2 text-center text-zinc-400">{item.total_checklist_count > 0 ? `${item.completed_checklist_count}/${item.total_checklist_count}` : "—"}</td>
+                              </>
+                            )}
                             <td className="py-2 text-right text-orange-400 font-bold pr-2">
                               {item.final_score ?? 0}
                             </td>

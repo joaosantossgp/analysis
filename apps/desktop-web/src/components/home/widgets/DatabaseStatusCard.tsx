@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { Panel } from "@/components/surface/Panel";
 import { WidgetCommonProps } from "./shared/widgetTypes";
 import { useWorkspaceStatus, refreshProgress } from "@/lib/api/updateBase";
+import { resolveBridgeMode, resolveWidgetDataState, getBridgeBadgeStyles, getDataStateBadgeStyles } from "@/lib/bridge/badgeResolver";
 
 export function DatabaseStatusCard({
   onRemove,
@@ -9,7 +10,19 @@ export function DatabaseStatusCard({
   isMinimized = false,
   headerControls,
 }: WidgetCommonProps) {
-  const { activeJob, isRunning, health, diagnostics: diag, mode } = useWorkspaceStatus();
+  const { activeJob, isRunning, health, diagnostics: diag } = useWorkspaceStatus();
+  
+  const bridgeEnvMode = resolveBridgeMode();
+  const bridgeBadge = getBridgeBadgeStyles(bridgeEnvMode);
+
+  const hasData = Boolean(health);
+  const dataState = resolveWidgetDataState({
+    isLoading: !health && !diag,
+    error: null,
+    hasData,
+    isOffline: bridgeEnvMode === "browser",
+  });
+  const dataStateBadge = getDataStateBadgeStyles(dataState);
 
   const pct = health ? health.pct : 0;
   const tone = pct > 80 ? "good" : pct > 0 ? "warn" : "neutral";
@@ -23,15 +36,16 @@ export function DatabaseStatusCard({
   return (
     <Panel
       title={
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <span>Database Health</span>
-          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border leading-none uppercase tracking-wider font-mono ${
-            mode === "browser"
-              ? "bg-amber-500/10 text-amber-400 border-amber-500/25"
-              : "bg-emerald-500/10 text-emerald-400 border-emerald-500/25"
-          }`}>
-            {mode === "browser" ? "MOCK" : "DESKTOP"}
+          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border leading-none uppercase tracking-wider font-mono ${bridgeBadge.className}`}>
+            {bridgeBadge.text}
           </span>
+          {dataStateBadge && (
+            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border leading-none uppercase tracking-wider font-mono ${dataStateBadge.className}`}>
+              {dataStateBadge.text}
+            </span>
+          )}
         </div>
       }
       subtitle={isMinimized ? undefined : "Local CVM synchronization and diagnostics"}
@@ -119,6 +133,29 @@ export function DatabaseStatusCard({
               <p className="text-[9px] text-zinc-555 mt-0.5 uppercase">Pending</p>
             </div>
           </div>
+
+          {/* Detailed Coverage by Year */}
+          {!isCompact && health?.per_year && health.per_year.length > 0 && (
+            <div className="space-y-1.5 border-b border-zinc-850/60 pb-3">
+              <span className="text-[9px] text-zinc-500 uppercase tracking-wider block font-semibold">Annual Coverage Gaps</span>
+              <div className="grid grid-cols-4 gap-2 text-2xs font-mono">
+                {health.per_year.map((y) => (
+                  <div key={y.year} className="bg-zinc-950/45 border border-zinc-900 rounded p-1 text-center">
+                    <span className="text-zinc-500 block text-3xs font-semibold">{y.year}</span>
+                    <span className="text-zinc-200 font-bold">{y.pct.toFixed(0)}%</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Latest Sync Failure Message */}
+          {!isCompact && diag?.latest_error && (
+            <div className="rounded border border-red-950/30 bg-red-950/10 p-2 text-[10px] text-red-400 space-y-1 font-mono">
+              <span className="font-bold block uppercase text-3xs tracking-wider">⚠️ Latest Sync Failure</span>
+              <p className="line-clamp-2 leading-relaxed">{diag.latest_error}</p>
+            </div>
+          )}
 
           <div className={isCompact ? "pt-0.5" : "pt-1"}>
             <Link

@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from "react";
+import { Link } from "react-router-dom";
 
 import { whenBridgeReady } from "@/lib/bridge/adapter";
+import { resolveBridgeMode, getBridgeBadgeStyles } from "@/lib/bridge/badgeResolver";
 import { StateBanner } from "@/components/feedback/StateBanner";
 import { useWorkspaceStatus } from "@/lib/api/updateBase";
 
@@ -200,6 +202,16 @@ export function HomePage() {
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [focusedCardId, setFocusedCardId] = useState<string | null>(null);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [windowWidth, setWindowWidth] = useState(typeof window !== "undefined" ? window.innerWidth : 1024);
+
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  const isSmallScreen = windowWidth < 768;
 
   // Dragging states
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
@@ -271,7 +283,7 @@ export function HomePage() {
   }, [cardConfigs, bridgeReady]);
 
   // 3. Status checks and diagnostics summary using the shared status hook
-  const { activeJob, isRunning, health, diagnostics: diag, mode, browserReason } = useWorkspaceStatus(bridgeReady);
+  const { activeJob, isRunning, health, diagnostics: diag, browserReason } = useWorkspaceStatus(bridgeReady);
 
   // 4. Toggle Card Visibility (places in the first available gap)
   const handleToggleCard = (id: string) => {
@@ -318,13 +330,19 @@ export function HomePage() {
   };
 
   // 7. Reset Workspace Layout
-  const handleResetLayout = () => {
+  const handleClearLayoutOnly = () => {
+    setActiveCards([]);
+    setShowClearConfirm(false);
+  };
+
+  const handleClearLayoutAndConfigs = () => {
     setActiveCards([]);
     setCardConfigs({
       watchlist: { companyIds: [], metric: "mg_ebit" },
       "priority-queue": { universeId: "" },
       "market-price": { cdCvm: 0, ticker: "", companyName: "" },
     });
+    setShowClearConfirm(false);
   };
 
   // 8. Custom Mouse-based drag-and-drop repositioning
@@ -332,7 +350,7 @@ export function HomePage() {
     mouseDownEvent: React.MouseEvent,
     id: string
   ) => {
-    if (!isEditMode) return;
+    if (!isEditMode || isSmallScreen) return;
 
     const target = mouseDownEvent.target as HTMLElement;
     
@@ -569,38 +587,38 @@ export function HomePage() {
 
         {/* Status Dashboard Summary */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-3xs text-zinc-400 font-mono bg-zinc-950/30 border border-zinc-900 rounded-md px-3 py-1.5">
-          <div className="flex items-center gap-1">
-            <span className="text-zinc-555">MODE:</span>
-            <span className={`font-bold uppercase ${mode === "browser" ? "text-amber-400" : "text-emerald-400"}`}>
-              {mode === "browser" ? "MOCK · BROWSER" : "LIVE · DESKTOP"}
+          <Link to="/settings/diagnostics" className="flex items-center gap-1 hover:text-zinc-200 transition-colors">
+            <span className="text-zinc-500">MODE:</span>
+            <span className={`font-bold uppercase ${resolveBridgeMode() === "browser" ? "text-amber-400" : resolveBridgeMode() === "mock" ? "text-purple-400" : "text-emerald-400"}`}>
+              {getBridgeBadgeStyles(resolveBridgeMode()).text}
             </span>
-          </div>
+          </Link>
           <div className="h-3 w-px bg-zinc-900" />
-          <div className="flex items-center gap-1">
-            <span className="text-zinc-555">COVERAGE:</span>
+          <Link to="/settings/coverage" className="flex items-center gap-1 hover:text-zinc-200 transition-colors">
+            <span className="text-zinc-500">COVERAGE:</span>
             <span className="text-zinc-200 font-bold">{health ? `${health.pct.toFixed(1)}%` : "—"}</span>
-          </div>
+          </Link>
           <div className="h-3 w-px bg-zinc-900" />
-          <div className="flex items-center gap-1">
-            <span className="text-zinc-555">SYNC TIME:</span>
+          <Link to="/settings/updates" className="flex items-center gap-1 hover:text-zinc-200 transition-colors">
+            <span className="text-zinc-500">SYNC TIME:</span>
             <span className="text-zinc-200 font-bold">
               {diag?.latest_success_at 
                 ? new Date(diag.latest_success_at).toLocaleDateString("en-US", { month: "short", day: "2-digit" }) + " " + new Date(diag.latest_success_at).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false })
                 : "NEVER"}
             </span>
-          </div>
+          </Link>
           <div className="h-3 w-px bg-zinc-900" />
-          <div className="flex items-center gap-1">
-            <span className="text-zinc-555">GAPS:</span>
+          <Link to="/coverage/prioritization" className="flex items-center gap-1 hover:text-zinc-200 transition-colors">
+            <span className="text-zinc-500">GAPS:</span>
             <span className="text-zinc-200 font-bold">{health ? health.missing_cells : "—"}</span>
-          </div>
+          </Link>
           {isRunning && activeJob && (
             <>
               <div className="h-3 w-px bg-zinc-900" />
-              <div className="flex items-center gap-1.5 text-orange-400 animate-pulse">
+              <Link to="/settings/updates" className="flex items-center gap-1.5 text-orange-400 animate-pulse hover:text-orange-300 transition-colors">
                 <span className="h-1.5 w-1.5 rounded-full bg-orange-500" />
                 <span className="font-bold uppercase">JOB ACTIVE: {activeJob.stage}</span>
-              </div>
+              </Link>
             </>
           )}
         </div>
@@ -623,7 +641,7 @@ export function HomePage() {
             Widgets
           </button>
           <button
-            onClick={handleResetLayout}
+            onClick={() => setShowClearConfirm(true)}
             className="inline-flex items-center rounded-md border border-zinc-850 bg-zinc-955 px-3 py-1.5 text-xs text-zinc-650 hover:border-zinc-800 hover:text-zinc-400 transition-all"
             title="Reset workspace"
           >
@@ -655,11 +673,11 @@ export function HomePage() {
                   Deploy a pre-configured workspace mapping core database health monitors, liquidity/priority tracking metrics, and financial trend lines:
                 </p>
                 <ul className="text-3xs text-zinc-400 mt-2 list-disc list-inside space-y-1">
-                  <li>**Database Health**: Monitor CVM data sync progress and check diagnostics.</li>
-                  <li>**Watchlist & KPIs**: Visual indicator charts of EBIT margins and historical prices.</li>
-                  <li>**Performance Sparkline**: Standalone price trend tracking for selected tickers.</li>
-                  <li>**Priority Queue**: Local coverage gap rankings based on sector metrics.</li>
-                  <li>**Top News Feed**: Live RSS and official CVM/B3 corporate event logging.</li>
+                  <li><strong className="text-zinc-200">Database Health</strong>: Monitor CVM data sync progress and check diagnostics.</li>
+                  <li><strong className="text-zinc-200">Watchlist & KPIs</strong>: Visual indicator charts of EBIT margins and historical prices.</li>
+                  <li><strong className="text-zinc-200">Performance Sparkline</strong>: Standalone price trend tracking for selected tickers.</li>
+                  <li><strong className="text-zinc-200">Priority Queue</strong>: Local coverage gap rankings based on sector metrics.</li>
+                  <li><strong className="text-zinc-200">Top News Feed</strong>: Live RSS and official CVM/B3 corporate event logging.</li>
                 </ul>
               </div>
               <button
@@ -831,12 +849,17 @@ export function HomePage() {
                   opacity: 0.8,
                   boxShadow: "var(--shadow-overlay)",
                 }
-              : {
-                  gridColumnStart: item.x + 1,
-                  gridColumnEnd: item.x + 1 + item.w,
-                  gridRowStart: item.y + 1,
-                  gridRowEnd: item.y + 1 + (item.isMinimized ? 1 : item.h),
-                };
+              : isSmallScreen
+                ? {
+                    gridColumn: "span 3",
+                    height: item.isMinimized ? "40px" : `${(item.isMinimized ? 1 : item.h) * 120 + ((item.isMinimized ? 1 : item.h) - 1) * 16}px`,
+                  }
+                : {
+                    gridColumnStart: item.x + 1,
+                    gridColumnEnd: item.x + 1 + item.w,
+                    gridRowStart: item.y + 1,
+                    gridRowEnd: item.y + 1 + (item.isMinimized ? 1 : item.h),
+                  };
 
             return (
               <div
@@ -866,7 +889,7 @@ export function HomePage() {
                 />
 
                 {/* 2D Resize handles (Visible only in Edit Mode) */}
-                {isEditMode && !isDragging && (
+                {isEditMode && !isDragging && !isSmallScreen && (
                   <>
                     {/* Width Resize Handle (Right border) */}
                     <div
@@ -982,6 +1005,47 @@ export function HomePage() {
         activeCardIds={activeCardIds}
         onToggleCard={handleToggleCard}
       />
+
+      {showClearConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/80 backdrop-blur-sm p-4 font-mono">
+          <div className="w-full max-w-md bg-zinc-950 border border-zinc-850 rounded-lg shadow-2xl p-5 space-y-4">
+            <h3 className="text-sm font-semibold uppercase tracking-wider text-zinc-100 border-b border-zinc-900 pb-2">
+              ⚠️ Confirm Clear Workspace
+            </h3>
+            <p className="text-2xs text-zinc-400 leading-relaxed">
+              Choose what configurations you would like to reset:
+            </p>
+            <div className="space-y-2 border-y border-zinc-900 py-3 text-3xs text-zinc-550">
+              <div>
+                <strong className="text-zinc-300">Clear Layout Only</strong>: Wipes layout coordinates (returning to setup card). Keeps favorite watchlist companies, ticker selections, and universe settings intact.
+              </div>
+              <div>
+                <strong className="text-zinc-300">Clear Layout & Configs</strong>: Full reset. Wipes layout coordinates AND deletes all watchlist selections, active tickers, and filters.
+              </div>
+            </div>
+            <div className="flex flex-col gap-2 pt-2">
+              <button
+                onClick={handleClearLayoutOnly}
+                className="w-full text-center rounded border border-zinc-800 hover:border-zinc-700 bg-zinc-900 hover:text-white text-zinc-300 text-2xs py-2 font-semibold transition-colors uppercase tracking-wide cursor-pointer"
+              >
+                Clear Layout Only
+              </button>
+              <button
+                onClick={handleClearLayoutAndConfigs}
+                className="w-full text-center rounded bg-red-950 border border-red-900/40 hover:bg-red-900 hover:text-white text-red-450 text-2xs py-2 font-semibold transition-colors uppercase tracking-wide cursor-pointer"
+              >
+                Clear Layout & Configs
+              </button>
+              <button
+                onClick={() => setShowClearConfirm(false)}
+                className="w-full text-center rounded border border-zinc-850 hover:border-zinc-800 bg-zinc-950 text-zinc-500 text-2xs py-2 font-semibold transition-colors uppercase tracking-wide cursor-pointer mt-1"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

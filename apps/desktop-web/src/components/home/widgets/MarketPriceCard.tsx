@@ -11,6 +11,7 @@ import { Sparkline } from "@/components/data/Sparkline";
 import { CompanySelector } from "./shared/CompanySelector";
 import { downloadCsvFile } from "./shared/csvExport";
 import { MarketPriceConfig, WidgetCommonProps } from "./shared/widgetTypes";
+import { resolveBridgeMode, resolveWidgetDataState, getBridgeBadgeStyles, getDataStateBadgeStyles } from "@/lib/bridge/badgeResolver";
 
 interface MarketPriceCardProps extends WidgetCommonProps {
   config?: MarketPriceConfig;
@@ -28,6 +29,7 @@ export function MarketPriceCard({
 }: MarketPriceCardProps) {
   const [isConfiguring, setIsConfiguring] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
   const selectedPeriod = config.period || "30d";
@@ -50,6 +52,20 @@ export function MarketPriceCard({
     return data.data.observations.map((p: any) => p.close).reverse();
   }, [data]);
 
+  const bridgeEnvMode = resolveBridgeMode();
+  const bridgeBadge = getBridgeBadgeStyles(bridgeEnvMode);
+
+  const hasData = config.cdCvm > 0 && prices.length > 0;
+  const isStale = Boolean(statusInfo?.last_downloaded_at && (Date.now() - new Date(statusInfo.last_downloaded_at).getTime() > 24 * 60 * 60 * 1000));
+  const dataState = resolveWidgetDataState({
+    isLoading,
+    error,
+    hasData,
+    isOffline: bridgeEnvMode === "browser",
+    isStale,
+  });
+  const dataStateBadge = getDataStateBadgeStyles(dataState);
+
   const stats = useMemo(() => {
     if (prices.length === 0) return { current: null, min: null, max: null };
     const valid = prices.filter((p: number | null | undefined): p is number => typeof p === "number" && !Number.isNaN(p));
@@ -70,8 +86,6 @@ export function MarketPriceCard({
     return ((latest - prev) / prev) * 100;
   }, [prices]);
 
-  const isOffline = data?.mode === "browser" || error;
-
   const selectCompany = (cdCvm: number, name: string, ticker: string) => {
     onConfigure({ cdCvm, companyName: name, ticker, period: selectedPeriod });
     setIsConfiguring(false);
@@ -84,6 +98,7 @@ export function MarketPriceCard({
   const handleRefresh = async () => {
     if (!config.cdCvm) return;
     setIsRefreshing(true);
+    setRefreshError(null);
     try {
       await triggerMarketHistoryRefresh(config.cdCvm, config.ticker);
       await Promise.all([
@@ -92,6 +107,7 @@ export function MarketPriceCard({
       ]);
     } catch (e) {
       console.error("Refresh failed:", e);
+      setRefreshError(e instanceof Error ? e.message : String(e));
     } finally {
       setIsRefreshing(false);
     }
@@ -114,15 +130,14 @@ export function MarketPriceCard({
   return (
     <Panel
       title={
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <span>{config.ticker ? `${config.ticker} Price` : "Stock Price Watch"}</span>
-          {config.ticker && (
-            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border leading-none uppercase tracking-wider font-mono ${
-              isOffline
-                ? "bg-amber-500/10 text-amber-400 border-amber-500/25"
-                : "bg-emerald-500/10 text-emerald-400 border-emerald-500/25"
-            }`}>
-              {isOffline ? "MOCK" : "LIVE"}
+          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border leading-none uppercase tracking-wider font-mono ${bridgeBadge.className}`}>
+            {bridgeBadge.text}
+          </span>
+          {dataStateBadge && (
+            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border leading-none uppercase tracking-wider font-mono ${dataStateBadge.className}`}>
+              {dataStateBadge.text}
             </span>
           )}
         </div>
@@ -214,6 +229,18 @@ export function MarketPriceCard({
             </div>
           ) : (
             <>
+              {refreshError && (
+                <div className="rounded border border-red-950/30 bg-red-950/10 p-2 text-[10px] text-red-400 flex items-center justify-between font-mono shrink-0 mb-2">
+                  <span>⚠️ Refresh failed: {refreshError}</span>
+                  <button 
+                    onClick={handleRefresh}
+                    disabled={isRefreshing}
+                    className="underline text-red-300 hover:text-red-200 font-bold uppercase tracking-wider ml-2 shrink-0 cursor-pointer"
+                  >
+                    {isRefreshing ? "Retrying..." : "Retry"}
+                  </button>
+                </div>
+              )}
               {error ? (
                 <div className="rounded border border-red-900/30 bg-red-955/20 p-2 text-2xs text-red-400 space-y-1.5">
                   <p>⚠️ Error loading quotes: {error.message || String(error)}</p>
@@ -234,7 +261,7 @@ export function MarketPriceCard({
                     disabled={isRefreshing}
                     className="rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-3xs font-bold text-orange-400 hover:text-orange-300 uppercase tracking-wider"
                   >
-                    {isRefreshing ? "Refreshing..." : "Trigger Fetch / Refresh"}
+                    {isRefreshing ? "Refreshing..." : "Refresh Local Price Cache"}
                   </button>
                 </div>
               ) : (
@@ -280,7 +307,7 @@ export function MarketPriceCard({
                     </div>
                     {!isFocused && !isCompact && (
                       <div className="flex items-center justify-between text-4xs text-zinc-555 border-t border-zinc-850/40 pt-1">
-                        <span>SOURCE: {isOffline ? "MOCK CACHE" : "YAHOO FINANCE"}</span>
+                        <span>SOURCE: {bridgeEnvMode !== "desktop" ? "MOCK CACHE" : "YAHOO FINANCE"}</span>
                         <button
                           onClick={handleRefresh}
                           disabled={isRefreshing}
