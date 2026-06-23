@@ -122,6 +122,10 @@ describe("Analyst Workspace Logic Helpers", () => {
       const browserStyles = getBridgeBadgeStyles("browser");
       expect(browserStyles.text).toBe("BROWSER · FALLBACK");
       expect(browserStyles.className).toContain("text-amber-400");
+
+      const desktopStyles = getBridgeBadgeStyles("desktop");
+      expect(desktopStyles.text).toBe("DESKTOP · LOCAL");
+      expect(desktopStyles.className).toContain("text-emerald-400");
     });
 
     it("should resolve widget data readiness state based on queries status", () => {

@@ -45,7 +45,7 @@ export function getBridgeBadgeStyles(mode: RuntimeBridgeMode): { className: stri
     case "desktop":
       return {
         className: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-        text: "LIVE · DESKTOP",
+        text: "DESKTOP · LOCAL",
       };
     case "offline":
     default:
