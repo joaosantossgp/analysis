@@ -765,3 +765,111 @@ def test_manager_decision_change_logged(test_engine):
     assert ev["new_value"] == "pending_review"
     # cd_cvm=0 is the sentinel for universe-level decisions
     assert ev["cd_cvm"] in (0, None)
+
+
+def test_bridge_coverage_operations(test_engine):
+    """Test bridge operations for manager decisions and owner changes calling the actual bridge class."""
+    from desktop.bridge import CVMBridge
+    from types import SimpleNamespace
+    from src.companies.coverage import CoverageUniverseService
+
+    class MockCVMBridge(CVMBridge):
+        def __init__(self, engine):
+            super().__init__()
+            self._service = SimpleNamespace(engine=engine)
+
+    bridge = MockCVMBridge(test_engine)
+    service = CoverageUniverseService(test_engine)
+
+    # 1. Setup a universe
+    u_id = service.create_universe("Bridge Test", "Bridge test universe", "Equity", None)
+
+    # Seed a company
+    with test_engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO companies (cd_cvm, company_name, ticker_b3, is_active, updated_at) "
+                "VALUES (9999, 'BRIDGE CO S.A.', 'BRDG3', 1, '2024-01-01')"
+            )
+        )
+    service.add_company_to_universe(u_id, 9999, "watchlist", "seed")
+
+    # 2. Test update_company_owner_analyst via bridge
+    # Check that empty rationale is rejected
+    res = bridge.update_company_owner_analyst({
+        "universe_id": u_id,
+        "cd_cvm": 9999,
+        "owner": "Bob",
+        "rationale": ""
+    })
+    assert "error" in res
+    assert "Rationale is required" in res["error"]
+
+    res_whitespace = bridge.update_company_owner_analyst({
+        "universe_id": u_id,
+        "cd_cvm": 9999,
+        "owner": "Bob",
+        "rationale": "   "
+    })
+    assert "error" in res_whitespace
+
+    # Check success
+    res_success = bridge.update_company_owner_analyst({
+        "universe_id": u_id,
+        "cd_cvm": 9999,
+        "owner": "  Bob  ",
+        "rationale": "Assigning Bob"
+    })
+    assert res_success.get("success") is True
+
+    # Verify persisted in database
+    scores = service.calculate_priority_scores(u_id)
+    row = next(s for s in scores if s["cd_cvm"] == 9999)
+    assert row["owner_analyst"] == "Bob"
+
+    # Check clear owner
+    res_clear = bridge.update_company_owner_analyst({
+        "universe_id": u_id,
+        "cd_cvm": 9999,
+        "owner": "",
+        "rationale": "Clearing owner"
+    })
+    assert res_clear.get("success") is True
+    scores = service.calculate_priority_scores(u_id)
+    row = next(s for s in scores if s["cd_cvm"] == 9999)
+    assert row["owner_analyst"] is None
+
+    # 3. Test save_coverage_manager_decision via bridge
+    # Check that empty rationale is rejected on status change
+    res_mgr_err = bridge.save_coverage_manager_decision({
+        "universe_id": u_id,
+        "status": "pending_review",
+        "notes": ""
+    })
+    assert "error" in res_mgr_err
+    assert "Rationale is required" in res_mgr_err["error"]
+
+    # Check success
+    res_mgr_ok = bridge.save_coverage_manager_decision({
+        "universe_id": u_id,
+        "status": "pending_review",
+        "notes": "Sending to board review"
+    })
+    assert res_mgr_ok.get("success") is True
+    assert res_mgr_ok.get("status") == "pending_review"
+
+    # Verify persisted in universe assumptions
+    u = service.get_universe(u_id)
+    assumptions = u.get("assumptions") or {}
+    mgr_decision = assumptions.get("manager_decision") or {}
+    assert mgr_decision.get("status") == "pending_review"
+    assert mgr_decision.get("notes") == "Sending to board review"
+
+    # Verify history logs contain manager_decision_change
+    history = service.get_decision_history(u_id)
+    events = [h for h in history if h["event_type"] == "manager_decision_change"]
+    assert len(events) >= 1
+    assert events[0]["previous_value"] == "draft"
+    assert events[0]["new_value"] == "pending_review"
+    assert events[0]["rationale"] == "Sending to board review"
+

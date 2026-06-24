@@ -48,6 +48,26 @@ When documenting planned workflows:
   workflow implemented;
 - keep future methodology templates separate from active user instructions.
 
+## Coverage Best Practices (v1)
+
+The CVMAnalytics Coverage module implements the Coverage Best Practices v1 workflow:
+
+### Implemented Features (v1)
+- **Coverage Universes**: Create, update, duplicate, and delete custom universes of Brazilian public companies.
+- **Prioritization Grid**: Dense prioritization scoring based on market cap, liquidity, GICS tier, and status.
+- **Work Queue**: Automatically derives and ranks tasks for data-quality, checklist items, and owner assignments.
+- **Capacity Simulator**: Models analyst hours and workload distribution using GICS sector slug complexities.
+- **Owner Responsibility**: Assign coverage owners to companies in a universe with audit-grade rationales.
+- **Local News Workload Gaps**: Surface news coverage latency using the local news database.
+- **Recommendation Package / Manager Decision**: Propose list actions and track manager review status (`draft`, `pending_review`, `approved`, `rejected`) in the decision history.
+- **Audit-Grade Excel Export**: Comprehensive 7-sheet export with Summary, Priorities, Priority Factors, Work Queue, Capacity, Decision History, and Methodology.
+
+### Planned features (v2 / Proposed)
+- **Stock Correlation Matrix**: Statistical correlation of prices.
+- **Peers & Value-Chain Graph**: Interactive supplier/customer networks and competitor flows.
+- **ONS/ANEEL/CCEE Integration**: Auto-import energy regulator data feeds.
+- **Analyst Authentication / Multi-user Auth**: Local-first analyst credentials.
+
 ## Coverage Universe Principles
 
 Coverage workflows should help analysts decide what to refresh or analyze next.
@@ -73,3 +93,4 @@ Good analyst workflows should expose:
 
 Avoid marketing language and avoid presenting dashboard visuals without source,
 period, and caveat context.
+

@@ -103,3 +103,18 @@ For release candidates, also validate:
   standard.
 - Forecast/projected-period modeling is not documented as implemented in the
   active financial exporter.
+
+## Coverage Universe Excel Export
+
+The coverage universe export produces a comprehensive, audit-grade workbook with 7 sheets:
+
+- **Summary**: High-level universe parameters, company counts, and overall capacity metrics.
+- **Priorities**: The priority list of all companies in the universe, including their score, owner, score status, and any missing data flags. Blocked scores are exported as the string `"Blocked"` (never `0.0`), and partial scores as `"Partial"`. Missing numbers are exported as `"-"`.
+- **Priority Factors**: Granular breakdown mapping each company against every priority scoring factor (raw value, weight, contribution, and missing flags).
+- **Work Queue**: Active data-quality, news, checklist, and owner assignment tasks.
+- **Capacity**: Tier load breakdown, hours by analyst owner, and scenario assumptions.
+- **Decision History**: Audit trail of analyst assignments, score overrides, and manager decisions.
+- **Methodology**: Documentation of prioritization scoring rules, weights, capacity multipliers, and caveats.
+
+All sheets are generated with autofilters, frozen top rows, and no merged cells, ensuring they are fully database-compatible and readable by external analysis scripts.
+

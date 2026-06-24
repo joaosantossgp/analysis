@@ -34,6 +34,7 @@ function subNavFor(pathname: string, params: Record<string, string | undefined>,
       { to: "/coverage", label: "Universes", end: true },
       { to: "/coverage/prioritization", label: "Prioritization" },
       { to: "/coverage/work-queue", label: "Work Queue" },
+      { to: "/coverage/capacity", label: "Capacity" },
     ];
   }
 
@@ -71,6 +72,10 @@ export function SubNav() {
   const [activeUniverseId, setActiveUniverseId] = useState<string | null>(() => {
     return localStorage.getItem("active_coverage_universe_id");
   });
+
+  useEffect(() => {
+    setActiveUniverseId(localStorage.getItem("active_coverage_universe_id"));
+  }, [pathname]);
 
   useEffect(() => {
     const handleStorage = () => {

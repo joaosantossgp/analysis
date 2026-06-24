@@ -3055,11 +3055,11 @@ export function createMockBridge(): Partial<BridgeApi> {
 
     get_company_coverage_checklists: async (_params: any) => {
       const items = [
-        { item_key: "annual_report_reviewed", is_completed: true, comments: "DFP 2025 lida e checada.", rationale: "Obrigatório" },
-        { item_key: "earnings_call_listened", is_completed: true, comments: "Call do 4T25 anotada.", rationale: "Fator qualitativo" },
-        { item_key: "financial_model_updated", is_completed: false, comments: "Falta projeção de capex.", rationale: "Modelo V2" },
-        { item_key: "competitor_benchmarking", is_completed: false, comments: "Aguardando números dos pares.", rationale: "Comparativo" },
-        { item_key: "investment_thesis_drafted", is_completed: false, comments: "", rationale: "Sumário executivo" }
+        { item_key: "annual_report_reviewed", is_completed: true, comments: "Annual report (DFP) 2025 read and checked.", rationale: "Mandatory" },
+        { item_key: "earnings_call_listened", is_completed: true, comments: "4Q25 earnings call listened.", rationale: "Qualitative factor" },
+        { item_key: "financial_model_updated", is_completed: false, comments: "Missing capex projection.", rationale: "Model V2" },
+        { item_key: "competitor_benchmarking", is_completed: false, comments: "Awaiting peers benchmarking.", rationale: "Comparative" },
+        { item_key: "investment_thesis_drafted", is_completed: false, comments: "", rationale: "Executive summary" }
       ];
       return { items };
     },
@@ -3072,10 +3072,10 @@ export function createMockBridge(): Partial<BridgeApi> {
           ticker_b3: "PETR4",
           tier: "must_cover",
           owner: "Thiago",
-          reason: "Falta atualizar modelo financeiro com premissas de refino.",
+          reason: "Missing financial model update with refining assumptions.",
           severity: "high",
           task_type: "checklist_gap",
-          suggested_action: "Completar item 'financial_model_updated' no checklist de cobertura."
+          suggested_action: "Complete 'financial_model_updated' checklist item."
         },
         {
           cd_cvm: 14311,
@@ -3083,10 +3083,10 @@ export function createMockBridge(): Partial<BridgeApi> {
           ticker_b3: "VALE3",
           tier: "must_cover",
           owner: "Thiago",
-          reason: "Benchmarking setorial desatualizado.",
+          reason: "Sector benchmarking is outdated.",
           severity: "high",
           task_type: "checklist_gap",
-          suggested_action: "Completar item 'competitor_benchmarking' no checklist."
+          suggested_action: "Complete 'competitor_benchmarking' checklist item."
         },
         {
           cd_cvm: 4170,
@@ -3094,10 +3094,10 @@ export function createMockBridge(): Partial<BridgeApi> {
           ticker_b3: "OIBR3",
           tier: "watchlist",
           owner: null,
-          reason: "Nenhum analista responsável atribuído a esta empresa.",
+          reason: "No analyst assigned to cover this company.",
           severity: "low",
           task_type: "unassigned_owner",
-          suggested_action: "Atribuir um analista de cobertura para OI SA."
+          suggested_action: "Assign a coverage analyst for OI SA."
         },
         {
           cd_cvm: 5258,
@@ -3105,10 +3105,10 @@ export function createMockBridge(): Partial<BridgeApi> {
           ticker_b3: "XPBR31",
           tier: "watchlist",
           owner: "Felipe",
-          reason: "Falta carregar série histórica de market cap (Score Bloqueado).",
+          reason: "Missing market cap historical series (Score Blocked).",
           severity: "medium",
           task_type: "missing_market_cap",
-          suggested_action: "Importar cotações ou rodar refresh manual de XP INC."
+          suggested_action: "Import market cap data or refresh XP INC manually."
         }
       ];
       return { items };
@@ -3120,7 +3120,7 @@ export function createMockBridge(): Partial<BridgeApi> {
         required_hours: 1040,
         capacity_utilization_pct: 65.0,
         warnings: [
-          "XP INC (XPBR31) possui classificação setorial GICS ausente ou inválida. Complexidade de cobertura marcada como desconhecida."
+          "XP INC (XPBR31) has missing or invalid GICS classification. Complexity marked as unknown."
         ],
         tier_counts: {
           must_cover: 2,
@@ -3179,13 +3179,13 @@ export function createMockBridge(): Partial<BridgeApi> {
           unassigned_owner_count: 1
         },
         proposed_actions: [
-          "Carregar dados de cotação/market cap para XP INC.",
-          "Atribuir analista responsável para OI SA.",
-          "Completar o checklist qualitativo de Vale e Petrobras."
+          "Import market cap or quotes data for XP INC.",
+          "Assign coverage analyst for OI SA.",
+          "Complete the qualitative checklist for Vale and Petrobras."
         ],
         risks: [
-          "XP INC (XPBR31) está bloqueada por falta de dados financeiros básicos.",
-          "Falta de classificação GICS para XP INC impede estimativa de complexidade setorial correta."
+          "XP INC (XPBR31) is blocked due to missing basic financial data.",
+          "Missing GICS classification for XP INC prevents accurate sector complexity estimation."
         ]
       };
     },
@@ -3198,7 +3198,7 @@ export function createMockBridge(): Partial<BridgeApi> {
             event_type: "manager_decision_change",
             previous_value: "draft",
             new_value: "approved",
-            rationale: "Fim da revisão do trimestre. Portfólio aprovado para execução.",
+            rationale: "Quarterly review finalized. Portfolio approved for execution.",
             timestamp: "2026-06-18T10:00:00Z",
             author: "Manager",
             company_name: "All",
@@ -3210,7 +3210,7 @@ export function createMockBridge(): Partial<BridgeApi> {
             event_type: "owner_change",
             previous_value: null,
             new_value: "Thiago",
-            rationale: "Thiago assume as grandes produtoras de commodities.",
+            rationale: "Thiago takes over major commodities producers.",
             timestamp: "2026-06-17T11:30:00Z",
             author: "Manager",
             company_name: "VALE ON",
@@ -3222,7 +3222,7 @@ export function createMockBridge(): Partial<BridgeApi> {
             event_type: "override_change",
             previous_value: null,
             new_value: "95.0",
-            rationale: "Relevância estratégica de energia no portfólio.",
+            rationale: "Strategic relevance of energy sector in the portfolio.",
             timestamp: "2026-06-17T11:25:00Z",
             author: "Manager",
             company_name: "PETROBRAS PN",

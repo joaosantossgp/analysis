@@ -338,16 +338,21 @@ class CoverageBridgeMixin:
         p = params or {}
         u_id = p.get("universe_id")
         cd_cvm = p.get("cd_cvm")
-        owner = p.get("owner")  # None = clear owner
+        owner = p.get("owner")
         rationale = p.get("rationale", "")
         if not u_id or cd_cvm is None:
             return {"error": "Missing universe_id or cd_cvm parameter"}
+        if not rationale or not str(rationale).strip():
+            return {"error": "Rationale is required when updating company owner"}
         try:
+            trimmed_owner = str(owner).strip() if owner is not None else None
+            if trimmed_owner == "":
+                trimmed_owner = None
             self._coverage_svc().update_company_owner_analyst(
                 universe_id=str(u_id),
                 cd_cvm=int(cd_cvm),
-                owner=str(owner).strip() if owner else None,
-                rationale=str(rationale),
+                owner=trimmed_owner,
+                rationale=str(rationale).strip(),
             )
             return {"success": True}
         except ValueError as exc:
@@ -394,6 +399,10 @@ class CoverageBridgeMixin:
             prev_decision = assumptions.get("manager_decision", {})
             prev_status = prev_decision.get("status", "draft")
 
+            if prev_status != status:
+                if not notes or not str(notes).strip():
+                    return {"error": "Rationale is required when changing manager decision status"}
+
             from src.companies.coverage import now_iso_seconds  # noqa: PLC0415
             now = now_iso_seconds()
 
@@ -404,14 +413,14 @@ class CoverageBridgeMixin:
             }
             assumptions["manager_decision"] = new_decision
 
-            svc.update_universe({
-                "id": str(u_id),
-                "name": universe["name"],
-                "purpose": universe.get("purpose"),
-                "benchmark": universe.get("benchmark"),
-                "status": universe.get("status", "active"),
-                "assumptions": assumptions,
-            })
+            svc.update_universe(
+                universe_id=str(u_id),
+                name=universe["name"],
+                purpose=universe.get("purpose"),
+                benchmark=universe.get("benchmark"),
+                status=universe.get("status", "active"),
+                assumptions=assumptions,
+            )
 
             # Log every status change to decision history
             if prev_status != status:
@@ -438,4 +447,5 @@ class CoverageBridgeMixin:
         except Exception as exc:
             logger.exception("Error in save_coverage_manager_decision")
             return {"error": str(exc)}
+
 

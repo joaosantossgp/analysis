@@ -928,7 +928,7 @@ function UniverseSummarySection({
             </button>
           </div>
           <div className="flex items-center justify-between text-2xs">
-            <span className="text-[var(--color-text-secondary)]">{capData.required_hours || 0} / {capData.available_hours || 0} h</span>
+            <span className="text-[var(--color-text-secondary)]">{(capData.required_hours || 0).toLocaleString()} / {(capData.available_hours || 0).toLocaleString()} h</span>
             <span className={`font-semibold uppercase ${capacityPct > 100 ? "text-[var(--color-state-err)]" : "text-[var(--color-state-ok)]"}`}>
               {capacityPct}%
             </span>
@@ -1722,7 +1722,7 @@ function CapacityWidget({ universeId, onOpenMethodology }: { universeId: string;
               <span className={`text-sm font-bold uppercase ${isOverloaded ? "text-[var(--color-state-err)] animate-pulse" : "text-[var(--color-state-ok)]"}`}>
                 {capacityPct}%
               </span>
-              <span className="text-3xs text-[var(--color-text-secondary)]">({cap.required_hours || 0} / {cap.available_hours || 0} hrs)</span>
+              <span className="text-3xs text-[var(--color-text-secondary)]">({(cap.required_hours || 0).toLocaleString()} / {(cap.available_hours || 0).toLocaleString()} h)</span>
             </div>
           </div>
           <div className="flex-1 max-w-xs h-2 bg-[var(--color-surface-3)] rounded border border-[var(--color-border-subtle)] overflow-hidden">
@@ -2869,48 +2869,74 @@ function WorkQueueSection({ universeId, onOpenMethodology }: { universeId: strin
               message={severityFilter === "all" ? "No pending coverage tasks found in this universe." : undefined}
             />
           ) : (
-            filteredTasks.map((t: any, i: number) => (
-              <div
-                key={i}
-                className="flex items-start justify-between gap-4 p-2.5 border border-[var(--color-border-subtle)] bg-[var(--color-surface-2)] rounded hover:border-zinc-600 transition-colors"
-              >
-                <div className="flex items-start gap-2 min-w-0">
-                  {/* Severity badge */}
-                  <span className={`shrink-0 mt-0.5 px-1.5 py-0.5 rounded text-3xs border font-bold uppercase tracking-wider ${SEV_COLORS[t.severity] || SEV_COLORS.low}`}>
-                    {t.severity}
-                  </span>
-                  <div className="space-y-0.5 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {t.ticker_b3 && (
-                        <span className="font-bold text-[var(--color-id-ticker)]">{t.ticker_b3}</span>
-                      )}
-                      {t.company_name && (
-                        <span className="text-[var(--color-text-secondary)] truncate">{t.company_name}</span>
-                      )}
-                      {t.tier && (
-                        <span className="text-3xs uppercase text-zinc-600 border border-zinc-800 px-1 rounded">{t.tier}</span>
-                      )}
-                      {t.owner && (
-                        <span className="text-3xs text-zinc-500">{t.owner}</span>
-                      )}
+            filteredTasks.map((t: any, i: number) => {
+              const getTaskAction = (taskType: string, cdCvm: any) => {
+                switch (taskType) {
+                  case "missing_market_cap":
+                    return { label: "Import Market Cap", to: cdCvm ? `/empresas/${cdCvm}/coverage` : "/settings/updates" };
+                  case "missing_liquidity":
+                    return { label: "Refresh Prices", to: cdCvm ? `/empresas/${cdCvm}/coverage` : "/settings/updates" };
+                  case "missing_gics":
+                    return { label: "Fix GICS", to: cdCvm ? `/empresas/${cdCvm}/coverage` : "/settings/diagnostics" };
+                  case "unassigned_owner":
+                    return { label: "Assign Owner", to: "/coverage/prioritization" };
+                  case "incomplete_checklist":
+                  case "checklist_gap":
+                    return { label: "Open Checklist", to: cdCvm ? `/empresas/${cdCvm}/coverage` : "/coverage" };
+                  case "news_gap":
+                    return { label: "Review News", to: "/news" };
+                  case "news_mapping_unavailable":
+                    return { label: "Configure News", to: "/settings/sources" };
+                  case "news_db_unavailable":
+                    return { label: "Open News", to: "/news" };
+                  default:
+                    return { label: "Open Details", to: cdCvm ? `/empresas/${cdCvm}` : "/coverage" };
+                }
+              };
+              const action = getTaskAction(t.task_type, t.cd_cvm);
+              return (
+                <div
+                  key={i}
+                  className="flex items-start justify-between gap-4 p-2.5 border border-[var(--color-border-subtle)] bg-[var(--color-surface-2)] rounded hover:border-zinc-600 transition-colors"
+                >
+                  <div className="flex items-start gap-2 min-w-0">
+                    {/* Severity badge */}
+                    <span className={`shrink-0 mt-0.5 px-1.5 py-0.5 rounded text-3xs border font-bold uppercase tracking-wider ${SEV_COLORS[t.severity] || SEV_COLORS.low}`}>
+                      {t.severity}
+                    </span>
+                    <div className="space-y-0.5 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {t.ticker_b3 && (
+                          <span className="font-bold text-[var(--color-id-ticker)]">{t.ticker_b3}</span>
+                        )}
+                        {t.company_name && (
+                          <span className="text-[var(--color-text-secondary)] truncate">{t.company_name}</span>
+                        )}
+                        {t.tier && (
+                          <span className="text-3xs uppercase text-zinc-500 border border-zinc-800 px-1 rounded">{t.tier}</span>
+                        )}
+                        {t.owner ? (
+                          <span className="text-3xs text-zinc-400">Owner: {t.owner}</span>
+                        ) : (
+                          <span className="text-3xs text-yellow-600/80 font-bold uppercase">Unassigned</span>
+                        )}
+                      </div>
+                      <p className="text-[var(--color-text-secondary)] text-2xs font-medium">{t.reason}</p>
+                      <p className="text-zinc-400 text-2xs font-normal">{t.suggested_action}</p>
                     </div>
-                    <p className="text-[var(--color-text-tertiary)] text-2xs">{t.reason}</p>
-                    <p className="text-zinc-600 text-2xs">{t.suggested_action}</p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-3xs text-zinc-500 font-mono uppercase">{t.task_type?.replace(/_/g, " ")}</span>
+                    <Link
+                      to={action.to}
+                      className="px-2 py-0.5 bg-[var(--color-surface-3)] border border-[var(--color-border-default)] rounded text-2xs hover:border-[var(--color-action-primary)] transition-colors text-[var(--color-text-primary)] font-medium"
+                    >
+                      {action.label}
+                    </Link>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <span className="text-3xs text-zinc-700 uppercase">{t.task_type?.replace(/_/g, " ")}</span>
-                  {t.cd_cvm && (
-                    <Link
-                      to={`/empresas/${t.cd_cvm}/coverage`}
-                      className="px-2 py-0.5 bg-[var(--color-surface-3)] border border-[var(--color-border-default)] rounded text-2xs hover:border-[var(--color-action-primary)] transition-colors"
-                    >
-                      Solve
-                    </Link>
-                  )}
-                </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </Panel>
@@ -3034,11 +3060,15 @@ function CapacitySection({ universeId, onOpenMethodology }: { universeId: string
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="bg-[var(--color-surface-2)] p-3 rounded border border-[var(--color-border-subtle)] space-y-1">
           <span className="block text-3xs text-[var(--color-text-tertiary)] uppercase tracking-wider">Available Hours</span>
-          <span className="text-xl font-bold text-[var(--color-id-ticker)]">{cap.available_hours?.toLocaleString()}</span>
+          <span className="text-xl font-bold text-[var(--color-id-ticker)]">
+            {cap.available_hours ? `${cap.available_hours.toLocaleString()} h` : "-"}
+          </span>
         </div>
         <div className="bg-[var(--color-surface-2)] p-3 rounded border border-[var(--color-border-subtle)] space-y-1">
           <span className="block text-3xs text-[var(--color-text-tertiary)] uppercase tracking-wider">Required Hours</span>
-          <span className="text-xl font-bold text-zinc-200">{cap.required_hours?.toLocaleString()}</span>
+          <span className="text-xl font-bold text-zinc-200">
+            {cap.required_hours ? `${cap.required_hours.toLocaleString()} h` : "-"}
+          </span>
         </div>
         <div className="bg-[var(--color-surface-2)] p-3 rounded border border-[var(--color-border-subtle)] space-y-1">
           <span className="block text-3xs text-[var(--color-text-tertiary)] uppercase tracking-wider">Utilization</span>
@@ -3068,8 +3098,10 @@ function CapacitySection({ universeId, onOpenMethodology }: { universeId: string
               <tr key={tier} className="border-b border-[var(--color-border-subtle)]/40 hover:bg-[var(--color-surface-2)]">
                 <td className="py-1.5 pr-4 font-bold uppercase text-2xs tracking-wider text-zinc-300">{tier.replace(/_/g, " ")}</td>
                 <td className="py-1.5 pr-4 text-right text-zinc-400">{cap.tier_counts?.[tier] ?? 0}</td>
-                <td className="py-1.5 pr-4 text-right text-zinc-200">{(cap.tier_hours?.[tier] ?? 0).toFixed(1)}</td>
-                <td className="py-1.5 text-right text-zinc-500">{cap.tier_hours_assumptions?.[tier] ?? "-"}</td>
+                <td className="py-1.5 pr-4 text-right text-zinc-200">{Number((cap.tier_hours?.[tier] ?? 0).toFixed(1)).toLocaleString()} h</td>
+                <td className="py-1.5 text-right text-zinc-500">
+                  {cap.tier_hours_assumptions?.[tier] ? `${cap.tier_hours_assumptions[tier].toLocaleString()} h` : "-"}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -3094,7 +3126,7 @@ function CapacitySection({ universeId, onOpenMethodology }: { universeId: string
                   <tr key={owner} className={`border-b border-[var(--color-border-subtle)]/40 hover:bg-[var(--color-surface-2)] ${owner === "Unassigned" ? "text-amber-400/70" : ""}` }>
                     <td className="py-1.5 pr-4 font-medium">{owner}</td>
                     <td className="py-1.5 pr-4 text-right">{od.company_count}</td>
-                    <td className="py-1.5 text-right">{od.required_hours.toFixed(1)}</td>
+                    <td className="py-1.5 text-right">{Number(od.required_hours.toFixed(1)).toLocaleString()} h</td>
                   </tr>
                 ))}
             </tbody>
