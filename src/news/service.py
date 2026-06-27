@@ -515,7 +515,7 @@ class NewsCollectionService:
             return
         if _is_google_news_url(entry.url):
             return
-        eligible = priority_level in {"High", "Critical"}
+        eligible = priority_level in {"High", "Critical"} or int(source.priority or 0) >= 100
         if not eligible:
             return
         fetched = self.fetcher.fetch_article_text(entry.url)
