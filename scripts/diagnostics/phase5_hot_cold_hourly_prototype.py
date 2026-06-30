@@ -37,6 +37,17 @@ ORDER_COLUMNS = (
     "commercialization_period",
     "plant_parcel_code",
 )
+HOT_STORE_EXTRA_INDEXES = (
+    """
+    CREATE INDEX IF NOT EXISTS idx_cppe_hot_parcel_month_datetime
+    ON ccee_plant_parcel_hourly (
+        plant_parcel_code,
+        reference_month,
+        reference_datetime,
+        commercialization_period
+    )
+    """,
+)
 ParquetWriter = Callable[
     [sqlite3.Connection, str, list[str], Path, int | None, int],
     dict[str, Any],
@@ -257,6 +268,8 @@ def _copy_hot_months(
                 copied += len(rows)
             counts[month] = copied
         for sql in index_sql:
+            hot_conn.execute(sql)
+        for sql in HOT_STORE_EXTRA_INDEXES:
             hot_conn.execute(sql)
         hot_conn.commit()
         quick_check = str(hot_conn.execute("PRAGMA quick_check").fetchone()[0])

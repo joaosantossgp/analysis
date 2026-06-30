@@ -173,6 +173,8 @@ def test_hot_cold_prototype_is_bounded_and_read_only(tmp_path: Path):
     hot_db = Path(manifest["artifacts"]["hot"]["path"])
     with closing(sqlite3.connect(hot_db)) as conn:
         assert conn.execute(f"SELECT COUNT(*) FROM {HOURLY_TABLE}").fetchone()[0] == 2
+        indexes = {row[1] for row in conn.execute(f"PRAGMA index_list({HOURLY_TABLE})").fetchall()}
+        assert "idx_cppe_hot_parcel_month_datetime" in indexes
         assert conn.execute("PRAGMA quick_check").fetchone()[0] == "ok"
 
     manifest_path = output_dir / "manifest.json"
