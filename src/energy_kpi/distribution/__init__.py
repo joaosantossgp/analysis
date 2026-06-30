@@ -21,7 +21,10 @@ from src.energy_kpi.distribution.ingest import (
     upsert_mmgd_facts,
     DistributionSnapshotRecord,
 )
-from src.energy_kpi.distribution.aggregates import rebuild_distribution_aggregates
+from src.energy_kpi.distribution.aggregates import (
+    rebuild_distribution_aggregate_slices,
+    rebuild_distribution_aggregates,
+)
 from src.energy_kpi.distribution.read import DistributionReadService
 
 __all__ = [
@@ -46,8 +49,8 @@ __all__ = [
     "parse_mmgd",
     "upsert_mmgd_facts",
     "rebuild_distribution_aggregates",
+    "rebuild_distribution_aggregate_slices",
     "DistributionReadService",
     "ANEEL_RESOURCES",
     "DistributionSnapshotRecord",
 ]
-

@@ -415,7 +415,7 @@ class DistributionBridgeMixin:
                     parse_mmgd,
                     upsert_mmgd_facts,
                 )
-                from src.energy_kpi.distribution.aggregates import rebuild_distribution_aggregates
+                from src.energy_kpi.distribution.aggregates import rebuild_distribution_aggregate_slices
                 
                 settings = get_settings()
                 engine = get_energy_kpi_engine(settings)
@@ -434,6 +434,7 @@ class DistributionBridgeMixin:
                 
                 rows_inserted = 0
                 step_idx = 0
+                aggregate_slices: list[str] = []
                 
                 # 1. Consolidated SAMP Balanco
                 step_idx += 1
@@ -446,6 +447,7 @@ class DistributionBridgeMixin:
                     engine, settings, "samp_balanco", "samp_balanco", None,
                     parse_samp_balanco, upsert_samp_balanco_facts, force=params.get("force", False)
                 )
+                aggregate_slices.append("balance")
                 
                 # 2. Annual SAMP Mercado files
                 failed_years = []
@@ -461,6 +463,8 @@ class DistributionBridgeMixin:
                             engine, settings, f"samp_mercado_{year}", "samp_mercado", year,
                             parse_samp_mercado, upsert_samp_mercado_facts, force=params.get("force", False)
                         )
+                        if "market" not in aggregate_slices:
+                            aggregate_slices.append("market")
                     except Exception as exc:
                         logger.error("Failed to process ANEEL SAMP Mercado for year %s: %s", year, exc, exc_info=True)
                         failed_years.append(year)
@@ -476,6 +480,7 @@ class DistributionBridgeMixin:
                     engine, settings, "continuity_limits", "continuity_limits", None,
                     parse_continuity_limits, upsert_continuity_limits_facts, force=params.get("force", False)
                 )
+                aggregate_slices.append("continuity")
 
                 # 4. Continuity actuals (by decade)
                 for key in actuals_keys:
@@ -489,6 +494,8 @@ class DistributionBridgeMixin:
                         engine, settings, f"continuity_actuals_{key}", "continuity_actuals", key,
                         parse_continuity_actuals, upsert_continuity_actuals_facts, force=params.get("force", False)
                     )
+                    if "continuity" not in aggregate_slices:
+                        aggregate_slices.append("continuity")
 
                 # 5. Continuity compensations
                 step_idx += 1
@@ -501,6 +508,7 @@ class DistributionBridgeMixin:
                     engine, settings, "continuity_compensation", "continuity_compensation", None,
                     parse_continuity_compensations, upsert_continuity_compensations_facts, force=params.get("force", False)
                 )
+                aggregate_slices.append("compensation")
 
                 # 6. Homologated tariffs
                 step_idx += 1
@@ -513,6 +521,7 @@ class DistributionBridgeMixin:
                     engine, settings, "tariffs", "tariffs", None,
                     parse_tariffs, upsert_tariffs_facts, force=params.get("force", False)
                 )
+                aggregate_slices.append("tariff")
 
                 # 7. Delinquency
                 step_idx += 1
@@ -525,6 +534,7 @@ class DistributionBridgeMixin:
                     engine, settings, "delinquency", "delinquency", None,
                     parse_delinquency, upsert_delinquency_facts, force=params.get("force", False)
                 )
+                aggregate_slices.append("delinquency")
                 
                 # 8. MMGD
                 step_idx += 1
@@ -544,6 +554,7 @@ class DistributionBridgeMixin:
                     ),
                     force=params.get("force", False)
                 )
+                aggregate_slices.append("mmgd")
                 
                 # 9. Rebuild aggregates
                 step_idx += 1
@@ -557,7 +568,7 @@ class DistributionBridgeMixin:
                 t0 = time.time()
                 try:
                     with engine.begin() as conn:
-                        rebuild_distribution_aggregates(conn)
+                        rebuild_distribution_aggregate_slices(conn, aggregate_slices)
                     status = "success"
                     error_msg = None
                 except Exception as exc:

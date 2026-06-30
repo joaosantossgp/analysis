@@ -261,6 +261,7 @@ def test_distribution_bridge_refresh(mock_get, db_conn, tmp_path):
 
     # Mock settings
     mock_settings = MagicMock()
+    mock_settings.paths.data_dir = tmp_path
     mock_settings.paths.energy_kpi_raw_dir = tmp_path / "raw"
     mock_settings.paths.energy_kpi_raw_dir.mkdir(parents=True, exist_ok=True)
     mock_settings.paths.energy_kpi_sqlite_url = "sqlite:///:memory:"
@@ -359,6 +360,7 @@ def test_distribution_refresh_prevents_duplicates_and_settings_stays_readable(db
     seed_distribution_static_data(db_conn)
 
     mock_settings = MagicMock()
+    mock_settings.paths.data_dir = tmp_path
     mock_settings.paths.energy_kpi_raw_dir = tmp_path / "raw"
     mock_settings.paths.energy_kpi_raw_dir.mkdir(parents=True, exist_ok=True)
     mock_settings.paths.energy_kpi_sqlite_url = "sqlite:///:memory:"
@@ -406,6 +408,7 @@ def test_distribution_refresh_prevents_duplicates_and_settings_stays_readable(db
 
 def test_distribution_refresh_step_logs_lock_wait_and_resource_diagnostics(db_conn, tmp_path):
     mock_settings = MagicMock()
+    mock_settings.paths.data_dir = tmp_path
     mock_settings.paths.energy_kpi_raw_dir = tmp_path / "raw"
     mock_settings.paths.energy_kpi_raw_dir.mkdir(parents=True, exist_ok=True)
     mock_settings.paths.energy_kpi_sqlite_url = "sqlite:///:memory:"
@@ -500,6 +503,7 @@ def test_distribution_refresh_status_years(db_conn):
 
 def test_distribution_refresh_resilience_multi_year(db_conn, tmp_path):
     mock_settings = MagicMock()
+    mock_settings.paths.data_dir = tmp_path
     mock_settings.paths.energy_kpi_raw_dir = tmp_path / "raw"
     mock_settings.paths.energy_kpi_raw_dir.mkdir(parents=True, exist_ok=True)
     mock_settings.paths.energy_kpi_sqlite_url = "sqlite:///:memory:"
@@ -529,9 +533,18 @@ def test_distribution_refresh_resilience_multi_year(db_conn, tmp_path):
         target_fn = mock_thread.call_args[1]["target"]
         
         # Run the target function synchronously in test thread
-        with patch("src.energy_kpi.distribution.aggregates.rebuild_distribution_aggregates") as mock_rebuild:
+        with patch("src.energy_kpi.distribution.aggregates.rebuild_distribution_aggregate_slices") as mock_rebuild:
             target_fn()
             assert mock_rebuild.called
+            assert mock_rebuild.call_args.args[1] == [
+                "balance",
+                "market",
+                "continuity",
+                "compensation",
+                "tariff",
+                "delinquency",
+                "mmgd",
+            ]
 
     status = bridge.get_distribution_refresh_status()
     assert status["status"] == "success"
@@ -675,5 +688,3 @@ def test_conglomerate_asset_mapping_endpoints(db_conn):
     assert state_grid["is_listed"] is False
     assert state_grid["distributors_count"] == 1
     assert state_grid["cd_cvm"] is None
-
-

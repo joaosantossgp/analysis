@@ -902,6 +902,47 @@ def test_distribution_aggregates_use_mmgd_monthly_mart_without_detail_tables(db_
     assert annual == (2, 85.5)
 
 
+def test_distribution_aggregate_slices_refresh_only_requested_metrics(db_conn):
+    from src.energy_kpi.distribution.aggregates import rebuild_distribution_aggregate_slices
+
+    seed_distribution_static_data(db_conn)
+    db_conn.execute(text("""
+        INSERT INTO distribution_market_facts (
+            fact_id, distributor_id, reference_month, metric_name, raw_value,
+            normalized_value, original_unit, normalized_unit, source_row_hash, snapshot_id
+        )
+        VALUES (
+            'market-cpfl-2026-06', 'cpfl_paulista', '2026-06', 'revenue',
+            1000.0, 1000.0, 'R$', 'BRL', 'market-hash', 'snap-market'
+        )
+    """))
+    db_conn.execute(text("""
+        INSERT INTO distribution_mmgd_monthly_mart (
+            distributor_id, reference_month, mmgd_projects_count, mmgd_capacity_kw,
+            source_snapshot_id, source_row_count
+        )
+        VALUES ('cpfl_paulista', '2026-06', 2, 85.5, 'snap-mmgd-managed', 2)
+    """))
+
+    rebuild_distribution_aggregate_slices(db_conn, ["mmgd"])
+
+    monthly = db_conn.execute(text("""
+        SELECT revenue_brl, mmgd_projects_count, mmgd_capacity_kw
+        FROM distribution_monthly_aggregates
+        WHERE distributor_id = 'cpfl_paulista' AND reference_month = '2026-06'
+    """)).fetchone()
+    assert monthly == (None, 2, 85.5)
+
+    rebuild_distribution_aggregate_slices(db_conn, ["market"])
+
+    monthly = db_conn.execute(text("""
+        SELECT revenue_brl, mmgd_projects_count, mmgd_capacity_kw
+        FROM distribution_monthly_aggregates
+        WHERE distributor_id = 'cpfl_paulista' AND reference_month = '2026-06'
+    """)).fetchone()
+    assert monthly == (1000.0, 2, 85.5)
+
+
 def test_group_series_consolidation(db_conn):
     # 1. Seed static master data
     seed_distribution_static_data(db_conn)
