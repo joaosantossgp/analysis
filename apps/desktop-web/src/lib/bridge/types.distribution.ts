@@ -67,6 +67,42 @@ export interface DistributionSeriesEntry {
   tusd_homologated: number | null;
 }
 
+export interface MmgdProjectEntry {
+  project_id: string;
+  distributor_id: string;
+  municipality: string | null;
+  uf: string | null;
+  consumer_class?: string | null;
+  tariff_subgroup?: string | null;
+  project_modality?: string | null;
+  enabled_modality?: string | null;
+  generation_type: string | null;
+  generation_source: string | null;
+  size_category: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  connection_date: string | null;
+  reference_month: string;
+  installed_capacity_kw: number | null;
+  beneficiary_units_count: number | null;
+  source_row_hash?: string | null;
+  snapshot_id?: string | null;
+}
+
+export interface DistributionMmgdProjectsResponse {
+  source?: "managed_parquet" | "legacy_sqlite";
+  dataset_id?: string;
+  manifest_path?: string;
+  distributor_id?: string;
+  reference_month?: string;
+  rows: MmgdProjectEntry[];
+  count: number;
+  total_matching_rows: number;
+  truncated: boolean;
+  managed_store_error?: string;
+  error?: string;
+}
+
 export interface DistributionRefreshStatus {
   status: "idle" | "running" | "success" | "error";
   error: string | null;

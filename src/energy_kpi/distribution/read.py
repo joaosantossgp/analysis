@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 from sqlalchemy import text
 
+from src.energy_kpi.distribution.mmgd_store import read_mmgd_project_detail
 from src.energy_kpi.schema import get_energy_kpi_engine
 from src.platform.settings import AppSettings
 
@@ -454,6 +455,115 @@ class DistributionReadService:
             return series
             
         return []
+
+    def get_mmgd_projects(
+        self,
+        *,
+        distributor_id: str | None,
+        reference_month: str | None,
+        limit: int | None = 500,
+    ) -> dict[str, Any]:
+        """Read bounded MMGD project detail for one distributor/month."""
+        distributor = str(distributor_id or "").strip()
+        month = str(reference_month or "").strip()
+        if not distributor or not month:
+            raise ValueError("MMGD detail reads require distributor_id and reference_month")
+        try:
+            return read_mmgd_project_detail(
+                data_dir=self.settings.paths.data_dir,
+                distributor_id=distributor,
+                reference_month=month,
+                limit=limit,
+            )
+        except (FileNotFoundError, ValueError) as managed_error:
+            fallback = self._read_mmgd_projects_from_legacy_sqlite(
+                distributor_id=distributor,
+                reference_month=month,
+                limit=limit,
+            )
+            if fallback["total_matching_rows"] > 0:
+                fallback["managed_store_error"] = str(managed_error)
+                return fallback
+            raise managed_error
+
+    def _read_mmgd_projects_from_legacy_sqlite(
+        self,
+        *,
+        distributor_id: str,
+        reference_month: str,
+        limit: int | None,
+    ) -> dict[str, Any]:
+        bounded_limit = max(1, min(int(limit or 500), 5_000))
+        query = """
+            SELECT
+                p.project_id,
+                p.distributor_id,
+                p.municipality,
+                p.uf,
+                p.generation_type,
+                p.generation_source,
+                p.size_category,
+                p.latitude,
+                p.longitude,
+                p.connection_date,
+                s.reference_month,
+                s.installed_capacity_kw,
+                s.beneficiary_units_count,
+                s.source_row_hash,
+                s.snapshot_id
+            FROM distribution_mmgd_project_snapshots s
+            JOIN distribution_mmgd_projects p ON s.project_id = p.project_id
+            WHERE p.distributor_id = :distributor_id
+              AND s.reference_month = :reference_month
+            ORDER BY p.project_id
+            LIMIT :limit
+        """
+        count_query = """
+            SELECT COUNT(*)
+            FROM distribution_mmgd_project_snapshots s
+            JOIN distribution_mmgd_projects p ON s.project_id = p.project_id
+            WHERE p.distributor_id = :distributor_id
+              AND s.reference_month = :reference_month
+        """
+        params = {
+            "distributor_id": distributor_id,
+            "reference_month": reference_month,
+            "limit": bounded_limit,
+        }
+        with self._engine().connect() as conn:
+            total_matching = int(conn.execute(text(count_query), params).scalar() or 0)
+            rows = conn.execute(text(query), params).fetchall()
+
+        items = [
+            {
+                "project_id": row[0],
+                "distributor_id": row[1],
+                "municipality": row[2],
+                "uf": row[3],
+                "generation_type": row[4],
+                "generation_source": row[5],
+                "size_category": row[6],
+                "latitude": row[7],
+                "longitude": row[8],
+                "connection_date": row[9],
+                "reference_month": row[10],
+                "installed_capacity_kw": row[11],
+                "beneficiary_units_count": row[12],
+                "source_row_hash": row[13],
+                "snapshot_id": row[14],
+            }
+            for row in rows
+        ]
+        return {
+            "source": "legacy_sqlite",
+            "dataset_id": "distribution_mmgd_projects",
+            "distributor_id": distributor_id,
+            "reference_month": reference_month,
+            "rows": items,
+            "count": len(items),
+            "total_matching_rows": total_matching,
+            "truncated": total_matching > len(items),
+        }
 
     def _apply_group_tariffs(self, group_id: str, series: list[dict[str, Any]]) -> None:
         if not series:

@@ -2822,6 +2822,42 @@ export function createMockBridge(): Partial<BridgeApi> {
       return { series, count: series.length };
     },
 
+    get_distribution_mmgd_projects: async (params) => {
+      const rows = [
+        {
+          project_id: "GD-MOCK-1",
+          distributor_id: params?.distributor_id || "cpfl_paulista",
+          municipality: "Campinas",
+          uf: "SP",
+          consumer_class: "Residential",
+          tariff_subgroup: "B1",
+          project_modality: "Local generation",
+          enabled_modality: "Self-consumption",
+          generation_type: "Solar",
+          generation_source: "Solar radiation",
+          size_category: "Microgeneration",
+          latitude: -22.9,
+          longitude: -47.06,
+          connection_date: "2025-01-15",
+          reference_month: params?.reference_month || "2025-02",
+          installed_capacity_kw: 10.5,
+          beneficiary_units_count: 1,
+          source_row_hash: "mock-hash-1",
+          snapshot_id: "mock-snapshot",
+        },
+      ];
+      return {
+        source: "managed_parquet" as const,
+        dataset_id: "distribution_mmgd_projects",
+        distributor_id: params?.distributor_id || "cpfl_paulista",
+        reference_month: params?.reference_month || "2025-02",
+        rows,
+        count: rows.length,
+        total_matching_rows: rows.length,
+        truncated: false,
+      };
+    },
+
     get_distribution_refresh_status: async () => ({
       status: "idle",
       error: null,

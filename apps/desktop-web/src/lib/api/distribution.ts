@@ -9,6 +9,7 @@ import type {
   DistributorEntry,
   DistributorDetail,
   DistributionSeriesEntry,
+  DistributionMmgdProjectsResponse,
   DistributionRefreshStatus,
   EconomicGroupEntry,
   EconomicGroupDetail,
@@ -32,6 +33,10 @@ export type DistributionDistributorDetailResult =
 export type DistributionSeriesResult =
   | { mode: "desktop" | "mock"; series: DistributionSeriesEntry[]; count: number }
   | { mode: "browser"; series: []; count: 0; reason: string };
+
+export type DistributionMmgdProjectsResult =
+  | { mode: "desktop" | "mock"; detail: DistributionMmgdProjectsResponse }
+  | { mode: "browser"; detail: null; reason: string };
 
 export type DistributionRefreshStatusResult =
   | { mode: "desktop" | "mock"; status: DistributionRefreshStatus }
@@ -81,6 +86,20 @@ export async function fetchDistributionSeries(params: {
   const payload = await callBridge("get_distribution_series", params);
   if (payload.error) throw new Error(payload.error);
   return { mode, series: payload.series ?? [], count: payload.count ?? 0 };
+}
+
+export async function fetchDistributionMmgdProjects(params: {
+  distributor_id: string;
+  reference_month: string;
+  limit?: number;
+}): Promise<DistributionMmgdProjectsResult> {
+  const mode: BridgeMode = getBridgeMode();
+  if (mode === "browser") {
+    return { mode: "browser", detail: null, reason: BROWSER_REASON };
+  }
+  const payload = await callBridge("get_distribution_mmgd_projects", params);
+  if (payload.error) throw new Error(payload.error);
+  return { mode, detail: payload };
 }
 
 export async function fetchDistributionRefreshStatus(): Promise<DistributionRefreshStatusResult> {

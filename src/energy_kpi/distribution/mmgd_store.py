@@ -14,6 +14,7 @@ from src.platform.managed_ingestion_contract import (
     DEFAULT_LINEAGE_FIELDS,
     ManagedDatasetContract,
     managed_store_paths,
+    validate_manifest_contract,
     validate_contract,
 )
 
@@ -208,4 +209,84 @@ def persist_mmgd_snapshot_to_managed_store(
         "manifest_path": str(paths.manifest_path),
         "row_count": int(frame.height),
         "partitions": partitions,
+    }
+
+
+def _require_bounded_detail(distributor_id: str | None, reference_month: str | None) -> tuple[str, str]:
+    distributor = str(distributor_id or "").strip()
+    month = str(reference_month or "").strip()
+    if not distributor or not month:
+        raise ValueError("MMGD detail reads require distributor_id and reference_month")
+    return distributor, month
+
+
+def _read_valid_manifest(data_dir: Path) -> dict[str, Any]:
+    paths = managed_store_paths(data_dir, domain=MMGD_CONTRACT.domain, dataset_id=MMGD_CONTRACT.dataset_id)
+    if not paths.manifest_path.exists():
+        raise FileNotFoundError(f"MMGD managed manifest not found: {paths.manifest_path}")
+    manifest = json.loads(paths.manifest_path.read_text(encoding="utf-8"))
+    validate_manifest_contract(manifest, MMGD_CONTRACT)
+    if manifest.get("dataset_id") != MMGD_DATASET_ID:
+        raise ValueError(f"Unexpected MMGD manifest dataset_id: {manifest.get('dataset_id')!r}")
+    validation = manifest.get("validation")
+    if not isinstance(validation, dict) or validation.get("ok") is not True:
+        raise ValueError("MMGD managed manifest validation is not ok")
+    return manifest
+
+
+def _safe_limit(limit: int | None) -> int:
+    if limit is None:
+        return 500
+    return max(1, min(int(limit), 5_000))
+
+
+def read_mmgd_project_detail(
+    *,
+    data_dir: Path,
+    distributor_id: str | None,
+    reference_month: str | None,
+    limit: int | None = 500,
+) -> dict[str, Any]:
+    """Read bounded MMGD project detail from managed Parquet partitions."""
+    distributor, month = _require_bounded_detail(distributor_id, reference_month)
+    bounded_limit = _safe_limit(limit)
+    manifest = _read_valid_manifest(Path(data_dir))
+    partitions = [
+        partition
+        for partition in manifest.get("partitions", [])
+        if isinstance(partition, dict) and str(partition.get("reference_month")) == month
+    ]
+    parquet_paths = [str(partition.get("path")) for partition in partitions if partition.get("path")]
+    existing_paths = [path for path in parquet_paths if Path(path).exists()]
+    if not existing_paths:
+        return {
+            "source": "managed_parquet",
+            "dataset_id": MMGD_DATASET_ID,
+            "manifest_path": str(managed_store_paths(Path(data_dir), domain=MMGD_CONTRACT.domain, dataset_id=MMGD_CONTRACT.dataset_id).manifest_path),
+            "distributor_id": distributor,
+            "reference_month": month,
+            "rows": [],
+            "count": 0,
+            "total_matching_rows": 0,
+            "truncated": False,
+        }
+
+    scan = pl.scan_parquet(existing_paths).filter(pl.col("distributor_id") == distributor)
+    total_matching = int(scan.select(pl.len()).collect().item())
+    frame = scan.sort("project_id").limit(bounded_limit).collect()
+    sensitive_columns = {"normalized_cnpj", "raw_name"}
+    rows = [
+        {key: value for key, value in row.items() if key not in sensitive_columns}
+        for row in frame.to_dicts()
+    ]
+    return {
+        "source": "managed_parquet",
+        "dataset_id": MMGD_DATASET_ID,
+        "manifest_path": str(managed_store_paths(Path(data_dir), domain=MMGD_CONTRACT.domain, dataset_id=MMGD_CONTRACT.dataset_id).manifest_path),
+        "distributor_id": distributor,
+        "reference_month": month,
+        "rows": rows,
+        "count": len(rows),
+        "total_matching_rows": total_matching,
+        "truncated": total_matching > len(rows),
     }

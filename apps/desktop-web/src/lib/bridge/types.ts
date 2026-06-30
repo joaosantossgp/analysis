@@ -35,6 +35,7 @@ import type {
   DistributorEntry,
   DistributorDetail,
   DistributionSeriesEntry,
+  DistributionMmgdProjectsResponse,
   DistributionRefreshStatus,
   EconomicGroupEntry,
   EconomicGroupDetail,
@@ -81,6 +82,7 @@ export type {
   DistributorEntry,
   DistributorDetail,
   DistributionSeriesEntry,
+  DistributionMmgdProjectsResponse,
   DistributionRefreshStatus,
   EconomicGroupEntry,
   EconomicGroupDetail,
@@ -1559,6 +1561,7 @@ export interface BridgeApi {
   get_distribution_distributors(params?: { search?: string; economic_group_id?: string; uf?: string }): Promise<{ items: DistributorEntry[]; count: number; error?: string }>;
   get_distribution_distributor_detail(params: { distributor_id: string }): Promise<DistributorDetail | { error: string }>;
   get_distribution_series(params: { entity_type: string; entity_id: string; frequency?: string }): Promise<{ series: DistributionSeriesEntry[]; count: number; error?: string }>;
+  get_distribution_mmgd_projects(params: { distributor_id?: string; reference_month?: string; limit?: number }): Promise<DistributionMmgdProjectsResponse>;
   get_distribution_refresh_status(params?: Record<string, unknown>): Promise<DistributionRefreshStatus>;
   refresh_distribution_data(params?: { years?: number[]; force?: boolean }): Promise<{ status: string; error: string | null }>;
   get_distribution_groups(params?: Record<string, unknown>): Promise<{ items: EconomicGroupEntry[]; count: number; error?: string }>;
@@ -1646,6 +1649,7 @@ export interface BridgeApi {
   get_distribution_distributors(params?: { search?: string; economic_group_id?: string; uf?: string }): Promise<{ items: DistributorEntry[]; count: number; error?: string }>;
   get_distribution_distributor_detail(params: { distributor_id: string }): Promise<DistributorDetail | { error: string }>;
   get_distribution_series(params: { entity_type: string; entity_id: string; frequency?: string }): Promise<{ series: DistributionSeriesEntry[]; count: number; error?: string }>;
+  get_distribution_mmgd_projects(params: { distributor_id?: string; reference_month?: string; limit?: number }): Promise<DistributionMmgdProjectsResponse>;
   get_distribution_refresh_status(params?: Record<string, unknown>): Promise<DistributionRefreshStatus>;
   refresh_distribution_data(params?: { years?: number[]; force?: boolean }): Promise<{ status: string; error: string | null }>;
   get_distribution_groups(params?: Record<string, unknown>): Promise<{ items: EconomicGroupEntry[]; count: number; error?: string }>;

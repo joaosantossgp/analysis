@@ -122,6 +122,51 @@ def test_distribution_bridge_read_endpoints(db_conn):
     assert res_series["series"][0]["revenue_brl"] == 1000.0
 
 
+def test_distribution_bridge_mmgd_detail_requires_bounded_managed_read(db_conn, tmp_path):
+    seed_distribution_static_data(db_conn)
+
+    from src.energy_kpi.distribution.ingest import upsert_mmgd_facts
+
+    frame = pl.DataFrame(
+        {
+            "normalized_cnpj": ["33050196000188", "33050196000188"],
+            "raw_name": ["CPFL PAULISTA S.A.", "CPFL PAULISTA S.A."],
+            "project_id": ["GD-1", "GD-2"],
+            "municipality": ["Campinas", "Campinas"],
+            "uf": ["SP", "SP"],
+            "generation_type": ["Solar", "Solar"],
+            "generation_source": ["Radiacao solar", "Radiacao solar"],
+            "size_category": ["Microgeracao", "Minigeracao"],
+            "latitude": [-22.9, -22.8],
+            "longitude": [-47.06, -47.05],
+            "connection_date": ["2025-01-15", "2025-01-20"],
+            "reference_month": ["2026-06", "2026-06"],
+            "installed_capacity_kw": [10.5, 75.0],
+            "beneficiary_units_count": [1, 3],
+            "source_row_hash": ["hash-1", "hash-2"],
+        }
+    )
+    upsert_mmgd_facts(db_conn, frame, "snap-mmgd-managed", managed_data_dir=tmp_path)
+
+    mock_settings = MagicMock()
+    mock_settings.paths.data_dir = tmp_path
+    mock_settings.paths.energy_kpi_sqlite_url = "sqlite:///:memory:"
+    bridge = MockBridge(mock_settings, db_conn)
+
+    bounded = bridge.get_distribution_mmgd_projects(
+        {"distributor_id": "cpfl_paulista", "reference_month": "2026-06", "limit": 1}
+    )
+    assert bounded["count"] == 1
+    assert bounded["total_matching_rows"] == 2
+    assert bounded["truncated"] is True
+    assert bounded["rows"][0]["project_id"] == "GD-1"
+    assert "normalized_cnpj" not in bounded["rows"][0]
+
+    unbounded = bridge.get_distribution_mmgd_projects({"distributor_id": "cpfl_paulista"})
+    assert "error" in unbounded
+    assert "MMGD detail reads require distributor_id and reference_month" in unbounded["error"]
+
+
 @patch("src.energy_kpi.distribution.ingest.requests.get")
 def test_distribution_bridge_refresh(mock_get, db_conn, tmp_path):
     # Seed static master data

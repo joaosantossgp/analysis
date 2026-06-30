@@ -4,10 +4,12 @@ import json
 from pathlib import Path
 
 import polars as pl
+import pytest
 from sqlalchemy import text
 
 from src.energy_kpi.distribution import seed_distribution_static_data
 from src.energy_kpi.distribution.ingest import upsert_mmgd_facts
+from src.energy_kpi.distribution.mmgd_store import read_mmgd_project_detail
 
 
 def _mmgd_frame() -> pl.DataFrame:
@@ -84,3 +86,32 @@ def test_mmgd_managed_ingestion_writes_manifest_mart_and_no_sqlite_detail(tmp_pa
     assert parquet_path.exists()
     stored = pl.read_parquet(parquet_path)
     assert stored.select("project_id").to_series().to_list() == ["GD-1", "GD-2"]
+
+
+def test_mmgd_managed_detail_reads_require_bounds_and_filter_partition(tmp_path: Path, db_conn):
+    seed_distribution_static_data(db_conn)
+    upsert_mmgd_facts(
+        db_conn,
+        _mmgd_frame(),
+        "snap-mmgd-managed",
+        managed_data_dir=tmp_path,
+    )
+
+    result = read_mmgd_project_detail(
+        data_dir=tmp_path,
+        distributor_id="cpfl_paulista",
+        reference_month="2026-06",
+        limit=1,
+    )
+
+    assert result["source"] == "managed_parquet"
+    assert result["count"] == 1
+    assert result["total_matching_rows"] == 2
+    assert result["truncated"] is True
+    assert result["rows"][0]["project_id"] == "GD-1"
+    assert result["rows"][0]["distributor_id"] == "cpfl_paulista"
+    assert "normalized_cnpj" not in result["rows"][0]
+    assert "raw_name" not in result["rows"][0]
+
+    with pytest.raises(ValueError, match="require distributor_id and reference_month"):
+        read_mmgd_project_detail(data_dir=tmp_path, distributor_id="cpfl_paulista", reference_month=None)

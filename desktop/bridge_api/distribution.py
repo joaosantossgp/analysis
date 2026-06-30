@@ -119,6 +119,27 @@ class DistributionBridgeMixin:
             logger.error("Error in get_distribution_series: %s", exc, exc_info=True)
             return {"error": str(exc), "series": [], "count": 0}
 
+    def get_distribution_mmgd_projects(self, params=None) -> dict:
+        params = params or {}
+        try:
+            result = self._retry_dist_read(
+                lambda: self._dist_svc().get_mmgd_projects(
+                    distributor_id=params.get("distributor_id"),
+                    reference_month=params.get("reference_month"),
+                    limit=params.get("limit", 500),
+                )
+            )
+            return self._sanitize_for_json(result)
+        except Exception as exc:
+            logger.error("Error in get_distribution_mmgd_projects: %s", exc, exc_info=True)
+            return {
+                "error": str(exc),
+                "rows": [],
+                "count": 0,
+                "total_matching_rows": 0,
+                "truncated": False,
+            }
+
     def _log_resource_refresh(
         self,
         conn,
