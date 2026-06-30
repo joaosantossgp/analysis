@@ -325,6 +325,7 @@ def ensure_energy_kpi_tables_for_connection(conn, *, enable_wal: bool = True) ->
             "schema_fingerprint": "TEXT",
             "snapshot_id": "TEXT",
             "final_source_status": "TEXT",
+            "storage_telemetry_json": "TEXT",
         },
     )
     conn.execute(text(
