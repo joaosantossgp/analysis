@@ -7,6 +7,87 @@ from sqlalchemy import text
 logger = logging.getLogger(__name__)
 
 
+def _table_has_rows(conn, table_name: str) -> bool:
+    exists = conn.execute(
+        text("SELECT 1 FROM sqlite_master WHERE type='table' AND name=:name"),
+        {"name": table_name},
+    ).fetchone()
+    if not exists:
+        return False
+    return conn.execute(text(f"SELECT 1 FROM {table_name} LIMIT 1")).fetchone() is not None
+
+
+def rebuild_distribution_mmgd_aggregates(conn) -> None:
+    """Refresh only MMGD aggregate columns from the compact mart or legacy detail."""
+    if _table_has_rows(conn, "distribution_mmgd_monthly_mart"):
+        monthly_mmgd_query = """
+            INSERT INTO distribution_monthly_aggregates (
+                aggregate_id, distributor_id, reference_month, mmgd_projects_count, mmgd_capacity_kw
+            )
+            SELECT
+                distributor_id || '_' || reference_month AS aggregate_id,
+                distributor_id,
+                reference_month,
+                mmgd_projects_count,
+                mmgd_capacity_kw
+            FROM distribution_mmgd_monthly_mart
+            WHERE 1 = 1
+            ON CONFLICT(aggregate_id) DO UPDATE SET
+                mmgd_projects_count = excluded.mmgd_projects_count,
+                mmgd_capacity_kw = excluded.mmgd_capacity_kw,
+                created_at = datetime('now')
+        """
+    else:
+        monthly_mmgd_query = """
+            INSERT INTO distribution_monthly_aggregates (
+                aggregate_id, distributor_id, reference_month, mmgd_projects_count, mmgd_capacity_kw
+            )
+            SELECT
+                p.distributor_id || '_' || s.reference_month AS aggregate_id,
+                p.distributor_id,
+                s.reference_month,
+                COUNT(DISTINCT s.project_id) AS mmgd_projects_count,
+                SUM(s.installed_capacity_kw) AS mmgd_capacity_kw
+            FROM distribution_mmgd_project_snapshots s
+            JOIN distribution_mmgd_projects p ON s.project_id = p.project_id
+            GROUP BY p.distributor_id, s.reference_month
+            ON CONFLICT(aggregate_id) DO UPDATE SET
+                mmgd_projects_count = excluded.mmgd_projects_count,
+                mmgd_capacity_kw = excluded.mmgd_capacity_kw,
+                created_at = datetime('now')
+        """
+    conn.execute(text(monthly_mmgd_query))
+
+    annual_mmgd_query = """
+        INSERT INTO distribution_annual_aggregates (
+            aggregate_id, distributor_id, reference_year, mmgd_projects_count, mmgd_capacity_kw
+        )
+        SELECT
+            m.distributor_id || '_' || CAST(SUBSTR(m.reference_month, 1, 4) AS INTEGER) AS aggregate_id,
+            m.distributor_id,
+            CAST(SUBSTR(m.reference_month, 1, 4) AS INTEGER) AS reference_year,
+            m.mmgd_projects_count,
+            m.mmgd_capacity_kw
+        FROM distribution_monthly_aggregates m
+        JOIN (
+            SELECT
+                distributor_id,
+                CAST(SUBSTR(reference_month, 1, 4) AS INTEGER) AS ref_year,
+                MAX(reference_month) AS max_month
+            FROM distribution_monthly_aggregates
+            WHERE mmgd_projects_count IS NOT NULL
+            GROUP BY distributor_id, ref_year
+        ) latest
+          ON m.distributor_id = latest.distributor_id
+         AND m.reference_month = latest.max_month
+        ON CONFLICT(aggregate_id) DO UPDATE SET
+            mmgd_projects_count = excluded.mmgd_projects_count,
+            mmgd_capacity_kw = excluded.mmgd_capacity_kw,
+            created_at = datetime('now')
+    """
+    conn.execute(text(annual_mmgd_query))
+
+
 def rebuild_distribution_aggregates(conn) -> None:
     """Rebuild precomputed monthly and annual aggregates for distributors from facts tables."""
     logger.info("Rebuilding electricity distribution aggregates...")
@@ -317,56 +398,7 @@ def rebuild_distribution_aggregates(conn) -> None:
     """
     conn.execute(text(annual_delinquency_query))
 
-    # 11. Update/insert monthly aggregates for MMGD
-    monthly_mmgd_query = """
-        INSERT INTO distribution_monthly_aggregates (
-            aggregate_id, distributor_id, reference_month, mmgd_projects_count, mmgd_capacity_kw
-        )
-        SELECT
-            p.distributor_id || '_' || s.reference_month AS aggregate_id,
-            p.distributor_id,
-            s.reference_month,
-            COUNT(DISTINCT s.project_id) AS mmgd_projects_count,
-            SUM(s.installed_capacity_kw) AS mmgd_capacity_kw
-        FROM distribution_mmgd_project_snapshots s
-        JOIN distribution_mmgd_projects p ON s.project_id = p.project_id
-        GROUP BY p.distributor_id, s.reference_month
-        ON CONFLICT(aggregate_id) DO UPDATE SET
-            mmgd_projects_count = excluded.mmgd_projects_count,
-            mmgd_capacity_kw = excluded.mmgd_capacity_kw,
-            created_at = datetime('now')
-    """
-    conn.execute(text(monthly_mmgd_query))
-
-    # 12. Update/insert annual aggregates for MMGD (end-of-period stock)
-    annual_mmgd_query = """
-        INSERT INTO distribution_annual_aggregates (
-            aggregate_id, distributor_id, reference_year, mmgd_projects_count, mmgd_capacity_kw
-        )
-        SELECT
-            m.distributor_id || '_' || CAST(SUBSTR(m.reference_month, 1, 4) AS INTEGER) AS aggregate_id,
-            m.distributor_id,
-            CAST(SUBSTR(m.reference_month, 1, 4) AS INTEGER) AS reference_year,
-            m.mmgd_projects_count,
-            m.mmgd_capacity_kw
-        FROM distribution_monthly_aggregates m
-        JOIN (
-            -- Find latest reference_month of each year for each distributor with MMGD data
-            SELECT 
-                distributor_id,
-                CAST(SUBSTR(reference_month, 1, 4) AS INTEGER) AS ref_year,
-                MAX(reference_month) AS max_month
-            FROM distribution_monthly_aggregates
-            WHERE mmgd_projects_count IS NOT NULL
-            GROUP BY distributor_id, ref_year
-        ) latest
-          ON m.distributor_id = latest.distributor_id
-         AND m.reference_month = latest.max_month
-        ON CONFLICT(aggregate_id) DO UPDATE SET
-            mmgd_projects_count = excluded.mmgd_projects_count,
-            mmgd_capacity_kw = excluded.mmgd_capacity_kw,
-            created_at = datetime('now')
-    """
-    conn.execute(text(annual_mmgd_query))
+    # 11-12. Update/insert monthly and annual aggregates for MMGD
+    rebuild_distribution_mmgd_aggregates(conn)
 
     logger.info("Successfully rebuilt distribution aggregates.")

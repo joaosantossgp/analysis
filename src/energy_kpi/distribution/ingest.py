@@ -2326,7 +2326,13 @@ class IngestionResult(int):
         return obj
 
 
-def upsert_mmgd_facts(conn, df: pl.DataFrame, snapshot_id: str, is_full_snapshot: bool = True) -> int:
+def upsert_mmgd_facts(
+    conn,
+    df: pl.DataFrame,
+    snapshot_id: str,
+    is_full_snapshot: bool = True,
+    managed_data_dir: Path | str | None = None,
+) -> int:
     """Upsert parsed MMGD projects and snapshots, resolving distributor identities."""
     if df.height == 0:
         return IngestionResult(0, {"source_rows": 0, "parsed_rows": 0, "final_published_rows": 0})
@@ -2365,6 +2371,29 @@ def upsert_mmgd_facts(conn, df: pl.DataFrame, snapshot_id: str, is_full_snapshot
     total_input_rows = df_with_dist.height
     df_deduped = df_with_dist.unique(subset=["project_id"], keep="first")
     exact_duplicates = total_input_rows - df_deduped.height
+
+    if managed_data_dir is not None:
+        from src.energy_kpi.distribution.mmgd_store import persist_mmgd_snapshot_to_managed_store
+
+        managed_result = persist_mmgd_snapshot_to_managed_store(
+            data_dir=Path(managed_data_dir),
+            conn=conn,
+            frame=df_deduped,
+            snapshot_id=snapshot_id,
+        )
+        stats = {
+            "source_rows": total_input_rows,
+            "parsed_rows": total_input_rows,
+            "canonical_rows": df_deduped.height,
+            "exact_duplicate_rows": exact_duplicates,
+            "rows_inserted": 0,
+            "rows_updated": 0,
+            "rows_unchanged": 0,
+            "rows_removed_deactivated": 0,
+            "final_published_rows": int(managed_result["row_count"]),
+            "managed_store": managed_result,
+        }
+        return IngestionResult(int(managed_result["row_count"]), stats)
 
     # Load existing project IDs and hashes from database
     df_existing = pl.read_database(

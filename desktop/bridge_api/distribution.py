@@ -535,7 +535,14 @@ class DistributionBridgeMixin:
                 })
                 rows_inserted += self._run_and_log_step(
                     engine, settings, "mmgd_projects", "mmgd_projects", None,
-                    parse_mmgd, upsert_mmgd_facts, force=params.get("force", False)
+                    parse_mmgd,
+                    lambda conn, frame, snapshot_id: upsert_mmgd_facts(
+                        conn,
+                        frame,
+                        snapshot_id,
+                        managed_data_dir=settings.paths.data_dir,
+                    ),
+                    force=params.get("force", False)
                 )
                 
                 # 9. Rebuild aggregates

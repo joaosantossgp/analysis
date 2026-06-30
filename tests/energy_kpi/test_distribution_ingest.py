@@ -864,6 +864,44 @@ def test_mmgd_unchanged_new_reference_month_does_not_duplicate_history(tmp_path,
     assert changed_count == 2
 
 
+def test_distribution_aggregates_use_mmgd_monthly_mart_without_detail_tables(db_conn):
+    db_conn.execute(
+        text(
+            """
+            INSERT INTO distribution_mmgd_monthly_mart (
+                distributor_id, reference_month, mmgd_projects_count, mmgd_capacity_kw,
+                source_snapshot_id, source_row_count
+            )
+            VALUES ('cpfl_paulista', '2026-06', 2, 85.5, 'snap-mmgd-managed', 2)
+            """
+        )
+    )
+
+    rebuild_distribution_aggregates(db_conn)
+
+    monthly = db_conn.execute(
+        text(
+            """
+            SELECT mmgd_projects_count, mmgd_capacity_kw
+            FROM distribution_monthly_aggregates
+            WHERE distributor_id = 'cpfl_paulista' AND reference_month = '2026-06'
+            """
+        )
+    ).fetchone()
+    assert monthly == (2, 85.5)
+
+    annual = db_conn.execute(
+        text(
+            """
+            SELECT mmgd_projects_count, mmgd_capacity_kw
+            FROM distribution_annual_aggregates
+            WHERE distributor_id = 'cpfl_paulista' AND reference_year = 2026
+            """
+        )
+    ).fetchone()
+    assert annual == (2, 85.5)
+
+
 def test_group_series_consolidation(db_conn):
     # 1. Seed static master data
     seed_distribution_static_data(db_conn)

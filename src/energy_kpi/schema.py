@@ -999,6 +999,32 @@ def ensure_energy_kpi_tables_for_connection(conn, *, enable_wal: bool = True) ->
     """))
 
     conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS managed_dataset_catalog (
+            dataset_id       TEXT PRIMARY KEY,
+            domain           TEXT NOT NULL,
+            manifest_path    TEXT NOT NULL,
+            base_path        TEXT NOT NULL,
+            row_count        INTEGER NOT NULL,
+            partition_count  INTEGER NOT NULL,
+            contract_json    TEXT NOT NULL,
+            updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """))
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS distribution_mmgd_monthly_mart (
+            distributor_id       TEXT NOT NULL,
+            reference_month      TEXT NOT NULL,
+            mmgd_projects_count  INTEGER NOT NULL,
+            mmgd_capacity_kw     REAL,
+            source_snapshot_id   TEXT,
+            source_row_count     INTEGER NOT NULL,
+            updated_at           TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (distributor_id, reference_month)
+        )
+    """))
+
+    conn.execute(text("""
         CREATE TABLE IF NOT EXISTS distribution_monthly_aggregates (
             aggregate_id           TEXT PRIMARY KEY,
             distributor_id         TEXT NOT NULL REFERENCES distribution_distributors(distributor_id) ON DELETE CASCADE,
