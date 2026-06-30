@@ -1170,6 +1170,19 @@ export type StorageLargestItem = {
   modified_at?: string | null;
 };
 
+export type StorageBackupCandidate = {
+  id: string;
+  label: string;
+  path: string;
+  logical_bytes: number;
+  file_count: number;
+  modified_at?: string | null;
+  reclaimable_bytes: number;
+  requires_confirmation: boolean;
+  destructive: boolean;
+  reason: string;
+};
+
 export type StorageGrowthInfo = {
   available: boolean;
   reason?: string;
@@ -1200,6 +1213,7 @@ export type StorageInventory = {
   categories: StorageAggregateRow[];
   segments: StorageAggregateRow[];
   databases: StorageDatabaseInfo[];
+  backup_candidates?: StorageBackupCandidate[];
   largest_items: StorageLargestItem[];
   growth: StorageGrowthInfo;
   warnings: string[];

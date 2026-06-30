@@ -112,12 +112,13 @@ Measurement semantics:
 
 Storage roots come from resolved `AppPaths` values, including data, input/raw,
 processed, output/reports, logs, cache, metadata, database directory, CVM
-financial database, Energy KPI database, and Energy raw source directory.
+financial database, Energy KPI database, analytical stores, rollback backups,
+and Energy raw source directory.
 Physical roots are canonicalized and nested duplicates are excluded from
 scanning to prevent double counting. Files are still classified using the most
 specific known path owner, so scanning the data root can attribute nested files
-to databases, raw sources, processed data, cache, logs, exports, metadata, or
-uncategorized managed data.
+to databases, analytical stores, rollback backups, raw sources, processed data,
+cache, logs, exports, metadata, or uncategorized managed data.
 
 Storage health uses categorical thresholds:
 
@@ -133,6 +134,21 @@ footprint, main volume free space, largest category, growth when history exists,
 and last measured time. Opening `/settings/storage` displays detailed category,
 segment, database, largest-item, warning, and measurement-note tables.
 
+`/settings/storage` also shows a tiered local storage summary:
+
+- main SQLite databases;
+- managed analytical stores;
+- raw sources;
+- retained rollback backups.
+
+When rollback backups exist, the inventory includes
+`backup_candidates?: StorageBackupCandidate[]`. Each candidate reports the path,
+logical bytes, file count, modified time, reclaimable bytes, and destructive
+confirmation flags. The Settings UI shows these in the Rollback Backup Plan
+panel so users can see reclaimable storage after migration validation. This is
+diagnostic only: Settings does not expose a delete or move action in the current
+contract.
+
 ## Known Limits
 
 - Market data health is currently conservative and reports `unknown` in the
@@ -143,6 +159,6 @@ segment, database, largest-item, warning, and measurement-note tables.
   state.
 - Mock mode uses fixture data and should not be used to validate local database
   behavior.
-- Storage inventory does not estimate deduplication, compression, or safe
-  cleanup savings. It only identifies measured storage candidates for later
-  optimization phases.
+- Storage inventory does not estimate deduplication or compression. It reports
+  measured rollback backup candidates as reclaimable only after explicit
+  validation; it does not clean them up automatically.

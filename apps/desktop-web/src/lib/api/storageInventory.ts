@@ -63,6 +63,7 @@ function browserStorageInventory(): StorageInventory {
     categories: [],
     segments: [],
     databases: [],
+    backup_candidates: [],
     largest_items: [],
     growth: { available: false, reason: BROWSER_REASON },
     warnings: [],
