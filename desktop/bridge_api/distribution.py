@@ -127,6 +127,7 @@ class DistributionBridgeMixin:
                     distributor_id=params.get("distributor_id"),
                     reference_month=params.get("reference_month"),
                     limit=params.get("limit", 500),
+                    offset=params.get("offset", 0),
                 )
             )
             return self._sanitize_for_json(result)
@@ -137,6 +138,8 @@ class DistributionBridgeMixin:
                 "rows": [],
                 "count": 0,
                 "total_matching_rows": 0,
+                "limit": int(params.get("limit", 500) or 500),
+                "offset": int(params.get("offset", 0) or 0),
                 "truncated": False,
             }
 

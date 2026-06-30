@@ -2852,8 +2852,11 @@ export function createMockBridge(): Partial<BridgeApi> {
         distributor_id: params?.distributor_id || "cpfl_paulista",
         reference_month: params?.reference_month || "2025-02",
         rows,
+        projects: rows,
         count: rows.length,
         total_matching_rows: rows.length,
+        limit: params?.limit || 50,
+        offset: params?.offset || 0,
         truncated: false,
       };
     },

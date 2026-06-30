@@ -240,16 +240,24 @@ def _safe_limit(limit: int | None) -> int:
     return max(1, min(int(limit), 5_000))
 
 
+def _safe_offset(offset: int | None) -> int:
+    if offset is None:
+        return 0
+    return max(0, int(offset))
+
+
 def read_mmgd_project_detail(
     *,
     data_dir: Path,
     distributor_id: str | None,
     reference_month: str | None,
     limit: int | None = 500,
+    offset: int | None = 0,
 ) -> dict[str, Any]:
     """Read bounded MMGD project detail from managed Parquet partitions."""
     distributor, month = _require_bounded_detail(distributor_id, reference_month)
     bounded_limit = _safe_limit(limit)
+    bounded_offset = _safe_offset(offset)
     manifest = _read_valid_manifest(Path(data_dir))
     partitions = [
         partition
@@ -268,12 +276,14 @@ def read_mmgd_project_detail(
             "rows": [],
             "count": 0,
             "total_matching_rows": 0,
+            "limit": bounded_limit,
+            "offset": bounded_offset,
             "truncated": False,
         }
 
     scan = pl.scan_parquet(existing_paths).filter(pl.col("distributor_id") == distributor)
     total_matching = int(scan.select(pl.len()).collect().item())
-    frame = scan.sort("project_id").limit(bounded_limit).collect()
+    frame = scan.sort("project_id").slice(bounded_offset, bounded_limit).collect()
     sensitive_columns = {"normalized_cnpj", "raw_name"}
     rows = [
         {key: value for key, value in row.items() if key not in sensitive_columns}
@@ -288,5 +298,7 @@ def read_mmgd_project_detail(
         "rows": rows,
         "count": len(rows),
         "total_matching_rows": total_matching,
-        "truncated": total_matching > len(rows),
+        "limit": bounded_limit,
+        "offset": bounded_offset,
+        "truncated": bounded_offset + len(rows) < total_matching,
     }

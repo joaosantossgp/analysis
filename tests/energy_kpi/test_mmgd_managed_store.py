@@ -113,5 +113,15 @@ def test_mmgd_managed_detail_reads_require_bounds_and_filter_partition(tmp_path:
     assert "normalized_cnpj" not in result["rows"][0]
     assert "raw_name" not in result["rows"][0]
 
+    second_page = read_mmgd_project_detail(
+        data_dir=tmp_path,
+        distributor_id="cpfl_paulista",
+        reference_month="2026-06",
+        limit=1,
+        offset=1,
+    )
+    assert second_page["offset"] == 1
+    assert second_page["rows"][0]["project_id"] == "GD-2"
+
     with pytest.raises(ValueError, match="require distributor_id and reference_month"):
         read_mmgd_project_detail(data_dir=tmp_path, distributor_id="cpfl_paulista", reference_month=None)

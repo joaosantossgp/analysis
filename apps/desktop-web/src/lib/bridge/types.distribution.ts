@@ -96,8 +96,11 @@ export interface DistributionMmgdProjectsResponse {
   distributor_id?: string;
   reference_month?: string;
   rows: MmgdProjectEntry[];
+  projects?: MmgdProjectEntry[];
   count: number;
   total_matching_rows: number;
+  limit?: number;
+  offset?: number;
   truncated: boolean;
   managed_store_error?: string;
   error?: string;

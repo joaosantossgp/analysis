@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/Input";
 import {
   fetchDistributionDistributors,
   fetchDistributionDistributorDetail,
+  fetchDistributionMmgdProjects,
   fetchDistributionSeries,
   fetchDistributionRefreshStatus,
   triggerDistributionRefresh,
@@ -32,9 +33,16 @@ import type {
   DistributorEntry,
   DistributorDetail,
   DistributionSeriesEntry,
+  DistributionMmgdProjectsResponse,
+  MmgdProjectEntry,
   EconomicGroupEntry,
   EconomicGroupDetail,
 } from "@/lib/bridge/types";
+import {
+  getMmgdDetailMonths,
+  resolveMmgdDetailMonth,
+  resolveMmgdPageOffset,
+} from "./mmgdDrilldown";
 
 export function DistributorExplorer({ bridgeReady }: { bridgeReady: boolean }) {
   const [viewMode, setViewMode] = useState<"distributors" | "groups">("distributors");
@@ -49,6 +57,9 @@ export function DistributorExplorer({ bridgeReady }: { bridgeReady: boolean }) {
   const [detailTab, setDetailTab] = useState<"market" | "balance" | "quality" | "tariffs" | "delinquency" | "mmgd">("market");
   const [exporting, setExporting] = useState(false);
   const [exportMessage, setExportMessage] = useState<string | null>(null);
+  const [selectedMmgdMonth, setSelectedMmgdMonth] = useState<string | null>(null);
+  const [mmgdLimit, setMmgdLimit] = useState(50);
+  const [mmgdOffset, setMmgdOffset] = useState(0);
 
   const queryClient = useQueryClient();
 
@@ -155,6 +166,61 @@ export function DistributorExplorer({ bridgeReady }: { bridgeReady: boolean }) {
 
   const groupSeries = groupSeriesQuery.data?.mode !== "browser" ? groupSeriesQuery.data?.series ?? [] : [];
 
+  const isGroup = viewMode === "groups";
+  const activeSeries = isGroup ? groupSeries : series;
+  const filteredSeries = activeSeries
+    .filter((row) => {
+      const metrics = TREND_METRICS[detailTab];
+      return metrics.some((metric) => {
+        const val = metric.value(row);
+        return val !== null && Number.isFinite(val);
+      });
+    })
+    .sort((a, b) => a.period.localeCompare(b.period));
+
+  const mmgdMonths = useMemo(() => getMmgdDetailMonths(series), [series]);
+
+  useEffect(() => {
+    if (isGroup || detailTab !== "mmgd") return;
+    const nextMonth = resolveMmgdDetailMonth(series, selectedMmgdMonth);
+    if (nextMonth !== selectedMmgdMonth) {
+      setSelectedMmgdMonth(nextMonth);
+      setMmgdOffset(0);
+    }
+  }, [detailTab, isGroup, selectedMmgdMonth, series]);
+
+  useEffect(() => {
+    setMmgdOffset(0);
+  }, [selected?.distributor_id, selectedMmgdMonth, mmgdLimit]);
+
+  const mmgdProjectsQuery = useQuery({
+    queryKey: [
+      "distribution-mmgd-projects",
+      selected?.distributor_id,
+      selectedMmgdMonth,
+      mmgdLimit,
+      mmgdOffset,
+    ],
+    queryFn: () =>
+      fetchDistributionMmgdProjects({
+        distributor_id: selected?.distributor_id ?? "",
+        reference_month: selectedMmgdMonth ?? "",
+        limit: mmgdLimit,
+        offset: mmgdOffset,
+      }),
+    enabled:
+      bridgeReady &&
+      !isGroup &&
+      detailTab === "mmgd" &&
+      !!selected?.distributor_id &&
+      !!selectedMmgdMonth,
+    staleTime: 30_000,
+    placeholderData: keepPreviousData,
+  });
+
+  const mmgdProjects =
+    mmgdProjectsQuery.data?.mode !== "browser" ? mmgdProjectsQuery.data?.detail ?? null : null;
+
   const handleExcelExport = async () => {
     const entityType = viewMode === "distributors" ? "distributor" : "group";
     const entityId = viewMode === "distributors" ? selected?.distributor_id : selectedGroupEntry?.economic_group_id;
@@ -207,18 +273,6 @@ export function DistributorExplorer({ bridgeReady }: { bridgeReady: boolean }) {
       />
     );
   }
-
-  const isGroup = viewMode === "groups";
-  const activeSeries = isGroup ? groupSeries : series;
-  const filteredSeries = activeSeries
-    .filter((row) => {
-      const metrics = TREND_METRICS[detailTab];
-      return metrics.some((metric) => {
-        const val = metric.value(row);
-        return val !== null && Number.isFinite(val);
-      });
-    })
-    .sort((a, b) => a.period.localeCompare(b.period));
 
   return (
     <div className="space-y-4">
@@ -775,6 +829,33 @@ export function DistributorExplorer({ bridgeReady }: { bridgeReady: boolean }) {
                   </div>
                 )}
               </div>
+
+              {detailTab === "mmgd" && (
+                <MmgdProjectsPanel
+                  months={mmgdMonths}
+                  selectedMonth={selectedMmgdMonth}
+                  onMonthChange={(month) => {
+                    setSelectedMmgdMonth(month);
+                    setMmgdOffset(0);
+                  }}
+                  limit={mmgdLimit}
+                  onLimitChange={(limit) => {
+                    setMmgdLimit(limit);
+                    setMmgdOffset(0);
+                  }}
+                  offset={mmgdOffset}
+                  onOffsetChange={setMmgdOffset}
+                  query={{
+                    isLoading: mmgdProjectsQuery.isLoading || mmgdProjectsQuery.isFetching,
+                    isError: mmgdProjectsQuery.isError,
+                    error: mmgdProjectsQuery.error,
+                    data: mmgdProjects,
+                    refetch: () => {
+                      void mmgdProjectsQuery.refetch();
+                    },
+                  }}
+                />
+              )}
             </div>
           )}
 
@@ -1088,6 +1169,214 @@ export function DistributorExplorer({ bridgeReady }: { bridgeReady: boolean }) {
   );
 }
 
+function MmgdProjectsPanel({
+  months,
+  selectedMonth,
+  onMonthChange,
+  limit,
+  onLimitChange,
+  offset,
+  onOffsetChange,
+  query,
+}: {
+  months: string[];
+  selectedMonth: string | null;
+  onMonthChange: (month: string) => void;
+  limit: number;
+  onLimitChange: (limit: number) => void;
+  offset: number;
+  onOffsetChange: (offset: number) => void;
+  query: {
+    isLoading: boolean;
+    isError: boolean;
+    error: unknown;
+    data: DistributionMmgdProjectsResponse | null;
+    refetch: () => void;
+  };
+}) {
+  const totalRows = query.data?.total_matching_rows ?? 0;
+  const rows = query.data?.rows ?? [];
+  const safeOffset = resolveMmgdPageOffset({ requestedOffset: offset, limit, totalRows });
+  const pageStart = totalRows === 0 ? 0 : safeOffset + 1;
+  const pageEnd = safeOffset + rows.length;
+  const canPrevious = safeOffset > 0;
+  const canNext = safeOffset + rows.length < totalRows;
+
+  useEffect(() => {
+    if (safeOffset !== offset) onOffsetChange(safeOffset);
+  }, [offset, onOffsetChange, safeOffset]);
+
+  if (months.length === 0) {
+    return (
+      <div className="rounded border border-zinc-800 bg-zinc-950/40 p-3 text-xs text-zinc-500">
+        No MMGD project months are available for this distributor.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3 rounded border border-zinc-800 bg-zinc-950/40 p-3">
+      <div className="flex flex-col gap-3 border-b border-zinc-800/60 pb-3">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+              MMGD project drill-down
+            </div>
+            <div className="text-[10px] font-mono text-zinc-600">
+              Managed detail store · bounded by distributor and month
+            </div>
+          </div>
+          <div className="flex items-end gap-2">
+            <label className="space-y-1">
+              <span className="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Month</span>
+              <select
+                value={selectedMonth ?? ""}
+                onChange={(event) => onMonthChange(event.target.value)}
+                className="h-8 rounded border border-zinc-800 bg-zinc-900 px-2 text-xs text-zinc-200 outline-none focus:border-amber-500"
+              >
+                {months.map((month) => (
+                  <option key={month} value={month}>
+                    {month}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1">
+              <span className="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Rows</span>
+              <select
+                value={limit}
+                onChange={(event) => onLimitChange(Number(event.target.value))}
+                className="h-8 rounded border border-zinc-800 bg-zinc-900 px-2 text-xs text-zinc-200 outline-none focus:border-amber-500"
+              >
+                {[25, 50, 100, 250].map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-[11px] text-zinc-500">
+            {query.data ? (
+              <>
+                Showing <span className="font-mono text-zinc-300">{pageStart}</span>
+                {"-"}
+                <span className="font-mono text-zinc-300">{pageEnd}</span> of{" "}
+                <span className="font-mono text-zinc-300">{totalRows.toLocaleString("pt-BR")}</span>
+              </>
+            ) : (
+              "Select a month to inspect project-level rows."
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              size="xs"
+              variant="ghost"
+              disabled={!canPrevious || query.isLoading}
+              onClick={() =>
+                onOffsetChange(resolveMmgdPageOffset({ requestedOffset: safeOffset - limit, limit, totalRows }))
+              }
+            >
+              Previous
+            </Button>
+            <Button
+              size="xs"
+              variant="ghost"
+              disabled={!canNext || query.isLoading}
+              onClick={() =>
+                onOffsetChange(resolveMmgdPageOffset({ requestedOffset: safeOffset + limit, limit, totalRows }))
+              }
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {query.isLoading && (
+        <div className="rounded border border-zinc-800 bg-zinc-950/60 p-3 text-xs text-zinc-500">
+          Loading bounded MMGD project rows...
+        </div>
+      )}
+
+      {query.isError && (
+        <div className="rounded border border-red-900/40 bg-red-950/20 p-3 text-xs text-red-300">
+          <div className="font-semibold">Could not load MMGD project rows</div>
+          <div className="mt-1 text-red-300/80">
+            {query.error instanceof Error ? query.error.message : String(query.error)}
+          </div>
+          <Button size="xs" variant="ghost" className="mt-2" onClick={query.refetch}>
+            Retry
+          </Button>
+        </div>
+      )}
+
+      {!query.isLoading && !query.isError && rows.length === 0 && (
+        <div className="rounded border border-zinc-800 bg-zinc-950/60 p-3 text-xs text-zinc-500">
+          No MMGD project rows found for this distributor and month.
+        </div>
+      )}
+
+      {!query.isLoading && !query.isError && rows.length > 0 && (
+        <div className="max-h-[260px] overflow-auto rounded border border-zinc-800">
+          <table className="min-w-[900px] w-full text-[11px]">
+            <thead className="sticky top-0 bg-zinc-950 text-zinc-500 font-mono">
+              <tr className="border-b border-zinc-800">
+                <Th className="py-1 px-2">Project</Th>
+                <Th className="py-1 px-2">Municipality</Th>
+                <Th className="py-1 px-2" align="center">UF</Th>
+                <Th className="py-1 px-2">Source</Th>
+                <Th className="py-1 px-2">Size</Th>
+                <Th className="py-1 px-2" align="right">Capacity (kW)</Th>
+                <Th className="py-1 px-2" align="right">Beneficiary Units</Th>
+                <Th className="py-1 px-2">Connection</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <MmgdProjectRow key={`${row.project_id}-${row.reference_month}`} row={row} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MmgdProjectRow({ row }: { row: MmgdProjectEntry }) {
+  return (
+    <tr className="border-t border-zinc-800 hover:bg-zinc-800/20">
+      <Td className="py-1 px-2 font-mono text-zinc-300" mono>
+        {row.project_id}
+      </Td>
+      <Td className="py-1 px-2">{row.municipality ?? "—"}</Td>
+      <Td className="py-1 px-2 text-center" mono>
+        {row.uf ?? "—"}
+      </Td>
+      <Td className="py-1 px-2">{row.generation_source ?? row.generation_type ?? "—"}</Td>
+      <Td className="py-1 px-2">{row.size_category ?? "—"}</Td>
+      <Td className="py-1 px-2" align="right" mono>
+        {row.installed_capacity_kw !== null
+          ? row.installed_capacity_kw.toLocaleString("pt-BR", {
+              minimumFractionDigits: 1,
+              maximumFractionDigits: 1,
+            })
+          : "—"}
+      </Td>
+      <Td className="py-1 px-2" align="right" mono>
+        {row.beneficiary_units_count !== null ? row.beneficiary_units_count.toLocaleString("pt-BR") : "—"}
+      </Td>
+      <Td className="py-1 px-2 font-mono text-zinc-400" mono>
+        {row.connection_date ?? "—"}
+      </Td>
+    </tr>
+  );
+}
+
 function RefreshBanner({ queryClient }: { queryClient: any }) {
   const [years, setYears] = useState<number[]>([2024, 2025, 2026]);
   const [triggering, setTriggering] = useState(false);
@@ -1127,6 +1416,7 @@ function RefreshBanner({ queryClient }: { queryClient: any }) {
       void queryClient.invalidateQueries({ queryKey: ["distribution-group-detail"] });
       void queryClient.invalidateQueries({ queryKey: ["distribution-series"] });
       void queryClient.invalidateQueries({ queryKey: ["distribution-group-series"] });
+      void queryClient.invalidateQueries({ queryKey: ["distribution-mmgd-projects"] });
       void queryClient.invalidateQueries({ queryKey: ["distribution-health"] });
       void statusQuery.refetch();
     }

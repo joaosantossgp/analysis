@@ -92,6 +92,7 @@ export async function fetchDistributionMmgdProjects(params: {
   distributor_id: string;
   reference_month: string;
   limit?: number;
+  offset?: number;
 }): Promise<DistributionMmgdProjectsResult> {
   const mode: BridgeMode = getBridgeMode();
   if (mode === "browser") {

@@ -160,7 +160,15 @@ def test_distribution_bridge_mmgd_detail_requires_bounded_managed_read(db_conn, 
     assert bounded["total_matching_rows"] == 2
     assert bounded["truncated"] is True
     assert bounded["rows"][0]["project_id"] == "GD-1"
-    assert "normalized_cnpj" not in bounded["rows"][0]
+    assert bounded["projects"][0]["project_id"] == "GD-1"
+    assert "normalized_cnpj" not in bounded["projects"][0]
+
+    second_page = bridge.get_distribution_mmgd_projects(
+        {"distributor_id": "cpfl_paulista", "reference_month": "2026-06", "limit": 1, "offset": 1}
+    )
+    assert second_page["offset"] == 1
+    assert second_page["rows"][0]["project_id"] == "GD-2"
+    assert second_page["projects"][0]["project_id"] == "GD-2"
 
     unbounded = bridge.get_distribution_mmgd_projects({"distributor_id": "cpfl_paulista"})
     assert "error" in unbounded

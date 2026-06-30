@@ -462,6 +462,7 @@ class DistributionReadService:
         distributor_id: str | None,
         reference_month: str | None,
         limit: int | None = 500,
+        offset: int | None = 0,
     ) -> dict[str, Any]:
         """Read bounded MMGD project detail for one distributor/month."""
         distributor = str(distributor_id or "").strip()
@@ -469,17 +470,21 @@ class DistributionReadService:
         if not distributor or not month:
             raise ValueError("MMGD detail reads require distributor_id and reference_month")
         try:
-            return read_mmgd_project_detail(
+            managed = read_mmgd_project_detail(
                 data_dir=self.settings.paths.data_dir,
                 distributor_id=distributor,
                 reference_month=month,
                 limit=limit,
+                offset=offset,
             )
+            managed["projects"] = managed.get("rows", [])
+            return managed
         except (FileNotFoundError, ValueError) as managed_error:
             fallback = self._read_mmgd_projects_from_legacy_sqlite(
                 distributor_id=distributor,
                 reference_month=month,
                 limit=limit,
+                offset=offset,
             )
             if fallback["total_matching_rows"] > 0:
                 fallback["managed_store_error"] = str(managed_error)
@@ -492,8 +497,10 @@ class DistributionReadService:
         distributor_id: str,
         reference_month: str,
         limit: int | None,
+        offset: int | None,
     ) -> dict[str, Any]:
         bounded_limit = max(1, min(int(limit or 500), 5_000))
+        bounded_offset = max(0, int(offset or 0))
         query = """
             SELECT
                 p.project_id,
@@ -517,6 +524,7 @@ class DistributionReadService:
               AND s.reference_month = :reference_month
             ORDER BY p.project_id
             LIMIT :limit
+            OFFSET :offset
         """
         count_query = """
             SELECT COUNT(*)
@@ -529,6 +537,7 @@ class DistributionReadService:
             "distributor_id": distributor_id,
             "reference_month": reference_month,
             "limit": bounded_limit,
+            "offset": bounded_offset,
         }
         with self._engine().connect() as conn:
             total_matching = int(conn.execute(text(count_query), params).scalar() or 0)
@@ -560,9 +569,12 @@ class DistributionReadService:
             "distributor_id": distributor_id,
             "reference_month": reference_month,
             "rows": items,
+            "projects": items,
             "count": len(items),
             "total_matching_rows": total_matching,
-            "truncated": total_matching > len(items),
+            "limit": bounded_limit,
+            "offset": bounded_offset,
+            "truncated": bounded_offset + len(items) < total_matching,
         }
 
     def _apply_group_tariffs(self, group_id: str, series: list[dict[str, Any]]) -> None:
