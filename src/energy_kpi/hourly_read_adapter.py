@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import hashlib
 from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,6 +16,8 @@ from typing import Any, Literal
 
 HOURLY_TABLE = "ccee_plant_parcel_hourly"
 PLANT_PARCELS_TABLE = "ccee_plant_parcels"
+EXTERNAL_HOURLY_STORE_CATALOG = "external_hourly_store_catalog"
+EXTERNAL_HOURLY_DATASET = HOURLY_TABLE
 NUMERIC_COLUMNS = (
     "generation_mwh",
     "verified_generation_mwh",
@@ -157,12 +160,114 @@ def _source_signature(path: Path) -> dict[str, Any]:
 def _source_signature_matches(source_db_path: Path, manifest: dict[str, Any]) -> bool:
     current = _source_signature(source_db_path)
     expected = manifest.get("source_signature_after") or manifest.get("source_signature_before")
-    if not isinstance(expected, dict):
-        return False
-    return (
+    if isinstance(expected, dict) and (
         int(expected.get("size_bytes") or -1) == current["size_bytes"]
         and int(expected.get("mtime_ns") or -1) == current["mtime_ns"]
+    ):
+        return True
+    return _compact_source_metadata_matches(source_db_path, manifest)
+
+
+def _manifest_fingerprint(manifest: dict[str, Any]) -> str:
+    payload = json.dumps(manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _expected_month_counts(manifest: dict[str, Any]) -> dict[str, int] | None:
+    selection = manifest.get("selection") if isinstance(manifest.get("selection"), dict) else {}
+    if selection.get("full_months") is not True:
+        return None
+    available_months = selection.get("available_months")
+    if not isinstance(available_months, list) or not available_months:
+        return None
+    expected_by_month: dict[str, int] = {}
+    for row in available_months:
+        if not isinstance(row, dict):
+            return None
+        month = str(row.get("reference_month") or "").strip()
+        if not month:
+            return None
+        expected_by_month[month] = int(row.get("row_count") or 0)
+    return expected_by_month or None
+
+
+def _catalog_matches(conn: sqlite3.Connection, manifest: dict[str, Any], expected_by_month: dict[str, int]) -> bool | None:
+    catalog_exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        (EXTERNAL_HOURLY_STORE_CATALOG,),
+    ).fetchone()
+    if catalog_exists is None:
+        return None
+
+    row = conn.execute(
+        f"""
+        SELECT manifest_fingerprint, full_months, manifest_row_count, available_months_json
+        FROM {EXTERNAL_HOURLY_STORE_CATALOG}
+        WHERE dataset = ?
+        """,
+        (EXTERNAL_HOURLY_DATASET,),
+    ).fetchone()
+    if row is None:
+        return False
+    try:
+        catalog_counts = json.loads(str(row["available_months_json"] or "{}"))
+    except json.JSONDecodeError:
+        return False
+    normalized_counts = {str(month): int(count or 0) for month, count in dict(catalog_counts).items()}
+    return (
+        str(row["manifest_fingerprint"]) == _manifest_fingerprint(manifest)
+        and int(row["full_months"] or 0) == 1
+        and int(row["manifest_row_count"] or 0) == sum(expected_by_month.values())
+        and normalized_counts == expected_by_month
     )
+
+
+def _compact_source_metadata_matches(source_db_path: Path, manifest: dict[str, Any]) -> bool:
+    """Accept compact DBs after raw hourly rows are externalized.
+
+    Once ccee_plant_parcel_hourly rows are removed from energy_kpis.db, the
+    database file signature necessarily changes. Some SQLite compaction paths
+    preserve an empty table shell for compatibility, so reject only databases
+    that still contain raw hourly rows. New compact DBs include a small audit
+    catalog with the hourly store manifest fingerprint and month-level row
+    counts. Older candidates fall back to scanning the daily mart.
+    """
+    expected_by_month = _expected_month_counts(manifest)
+    if expected_by_month is None:
+        return False
+
+    try:
+        with closing(_connect_readonly(source_db_path)) as conn:
+            hourly_exists = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                (HOURLY_TABLE,),
+            ).fetchone()
+            if hourly_exists is not None:
+                raw_hourly_row = conn.execute(f"SELECT 1 FROM {HOURLY_TABLE} LIMIT 1").fetchone()
+                if raw_hourly_row is not None:
+                    return False
+            catalog_match = _catalog_matches(conn, manifest, expected_by_month)
+            if catalog_match is not None:
+                return catalog_match
+            mart_exists = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                ("plant_parcel_daily_generation_mart",),
+            ).fetchone()
+            if mart_exists is None:
+                return False
+            rows = conn.execute(
+                """
+                SELECT reference_month, SUM(hourly_observations) AS row_count
+                FROM plant_parcel_daily_generation_mart
+                GROUP BY reference_month
+                ORDER BY reference_month
+                """
+            ).fetchall()
+    except Exception:
+        return False
+
+    actual_by_month = {str(row["reference_month"]): int(row["row_count"] or 0) for row in rows}
+    return actual_by_month == expected_by_month
 
 
 def _hot_db_path(manifest: dict[str, Any]) -> Path | None:

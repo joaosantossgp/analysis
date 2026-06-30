@@ -308,6 +308,95 @@ def test_hourly_adapter_stale_source_signature_returns_fallback_reason(tmp_path:
     assert result.source_signature_ok is False
 
 
+def test_hourly_adapter_accepts_compact_db_with_empty_hourly_shell(tmp_path: Path):
+    _source_db, manifest = _build_fixture(tmp_path)
+    compact_db = tmp_path / "energy_kpis.compact.db"
+    with closing(sqlite3.connect(compact_db)) as conn:
+        conn.execute(
+            f"""
+            CREATE TABLE {HOURLY_TABLE} (
+                reference_datetime TEXT NOT NULL,
+                reference_month TEXT NOT NULL,
+                commercialization_period INTEGER NOT NULL,
+                plant_parcel_code TEXT NOT NULL,
+                plant_acronym TEXT,
+                generation_source TEXT,
+                submarket TEXT,
+                plant_type TEXT,
+                generation_center_of_gravity_mwmed REAL,
+                generation_center_of_gravity_mwh REAL,
+                internal_loss_factor_pct REAL,
+                loss_generation_apportionment_factor_mwh REAL,
+                energy_security_generation_mwh REAL,
+                constrained_on_generation_mwh REAL,
+                adjusted_restriction_charge_energy_mwmed REAL,
+                unavailability_mwh REAL,
+                declared_cost_mwh REAL,
+                hydraulic_displacement_factor_mwh REAL,
+                verified_generation_ons_mwh REAL,
+                verified_availability_mwh REAL,
+                inflexible_generation_mwmed REAL,
+                substitute_unavailability_generation_mwh REAL,
+                reserve_power_generation_mwh REAL,
+                unit_commitment_generation_mwmed REAL,
+                final_merit_order_generation_mwh REAL,
+                adjusted_physical_guarantee_mwh REAL,
+                source_dataset TEXT NOT NULL,
+                raw_payload_hash TEXT NOT NULL,
+                snapshot_id TEXT,
+                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                PRIMARY KEY (reference_datetime, commercialization_period, plant_parcel_code)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE ccee_plant_parcels (
+                plant_parcel_code TEXT PRIMARY KEY,
+                ceg TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE plant_parcel_daily_generation_mart (
+                plant_parcel_code TEXT NOT NULL,
+                reference_date TEXT NOT NULL,
+                reference_month TEXT NOT NULL,
+                hourly_observations INTEGER NOT NULL,
+                PRIMARY KEY(plant_parcel_code, reference_date)
+            )
+            """
+        )
+        conn.executemany(
+            "INSERT INTO ccee_plant_parcels (plant_parcel_code, ceg) VALUES (?, ?)",
+            [("P1001", "CEG123"), ("P1002", "CEG123")],
+        )
+        conn.executemany(
+            """
+            INSERT INTO plant_parcel_daily_generation_mart
+                (plant_parcel_code, reference_date, reference_month, hourly_observations)
+            VALUES (?, ?, ?, ?)
+            """,
+            [("P1001", "2026-01-01", "2026-01", 6), ("P1001", "2026-02-01", "2026-02", 6)],
+        )
+        conn.commit()
+
+    result = read_hourly_from_hot_cold(
+        source_db_path=compact_db,
+        manifest_path=manifest,
+        request=_request("P1001", "ccee_plant_parcel", "2026-02", limit=2),
+    )
+
+    assert result.ok is True
+    assert result.read_path == "hot_sqlite"
+    assert result.source_signature_ok is True
+    assert [row["reference_datetime"] for row in result.rows] == [
+        "2026-02-01T00:00:00",
+        "2026-02-01T01:00:00",
+    ]
+
+
 def test_hourly_adapter_missing_cold_part_returns_fallback_reason(tmp_path: Path):
     source_db, manifest = _build_fixture(tmp_path)
     cold_part = next((tmp_path / "prototype" / "cold").rglob("*.parquet"))

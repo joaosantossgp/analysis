@@ -91,6 +91,42 @@ def test_storage_inventory_reports_news_db_as_separate_readable_database(tmp_pat
     assert databases["news"]["sqlite"]["page_size"] > 0
 
 
+def test_storage_inventory_classifies_analytical_stores_and_backups(tmp_path):
+    settings = _settings(tmp_path)
+    paths = settings.paths
+    hourly_store = paths.data_dir / "analytics" / "energy" / "ccee_plant_generation_hourly"
+    backup_dir = paths.data_dir / "backup" / "energy_kpis_swap_20260629T142611Z"
+    hourly_store.mkdir(parents=True)
+    backup_dir.mkdir(parents=True)
+    hourly_store.joinpath("manifest.json").write_bytes(b"a" * 10)
+    hourly_store.joinpath("energy_hot.sqlite").write_bytes(b"b" * 20)
+    backup_dir.joinpath("energy_kpis.db").write_bytes(b"c" * 30)
+
+    manager = StorageInventoryManager(settings)
+    inventory = manager.scan()
+
+    categories = {row["id"]: row for row in inventory["categories"]}
+    segments = {row["id"]: row for row in inventory["segments"]}
+    assert categories["analytical_stores"]["logical_bytes"] == 30
+    assert categories["backups"]["logical_bytes"] == 30
+    assert segments["energy_macro"]["logical_bytes"] == 30
+    assert segments["local_backups"]["logical_bytes"] == 30
+    assert inventory["backup_candidates"] == [
+        {
+            "id": "energy_kpis_swap_20260629T142611Z",
+            "label": "Energy KPI rollback backup",
+            "path": str(backup_dir),
+            "logical_bytes": 30,
+            "file_count": 1,
+            "modified_at": inventory["backup_candidates"][0]["modified_at"],
+            "reclaimable_bytes": 30,
+            "requires_confirmation": True,
+            "destructive": True,
+            "reason": "Rollback backup retained after a storage migration. Remove only after current data has been validated.",
+        }
+    ]
+
+
 def test_storage_inventory_persists_latest_snapshot_and_bounded_history(tmp_path):
     settings = _settings(tmp_path)
     settings.paths.data_dir.mkdir(parents=True)

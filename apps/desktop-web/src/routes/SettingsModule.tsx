@@ -416,7 +416,12 @@ function SettingsStorage({
         ) : null}
       </Panel>
 
-      {inventory ? <StorageInventoryDetails inventory={inventory} /> : null}
+      {inventory ? (
+        <>
+          <StorageArchitectureSnapshot inventory={inventory} />
+          <StorageInventoryDetails inventory={inventory} />
+        </>
+      ) : null}
 
       <Panel title="Managed Paths" subtitle="Resolved Settings paths and safe open-folder actions.">
         {paths.length === 0 ? (
@@ -458,6 +463,31 @@ function SettingsStorage({
         ) : null}
       </Panel>
     </>
+  );
+}
+
+function StorageArchitectureSnapshot({ inventory }: { inventory: StorageInventory }) {
+  const category = (id: string) => inventory.categories.find((row) => row.id === id);
+  const databases = category("databases");
+  const analytical = category("analytical_stores");
+  const backups = category("backups");
+  const raw = category("raw_sources");
+  const backupBytes = backups?.logical_bytes ?? 0;
+  return (
+    <Panel
+      title="Tiered Local Storage"
+      subtitle="Main SQLite files, managed analytical stores, raw sources, and rollback backups are tracked separately."
+    >
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <Metric label="Main databases" value={formatBytes(databases?.logical_bytes)} status="healthy" />
+        <Metric label="Analytical stores" value={formatBytes(analytical?.logical_bytes)} status={analytical ? "healthy" : "unknown"} />
+        <Metric label="Raw sources" value={formatBytes(raw?.logical_bytes)} />
+        <Metric label="Rollback backups" value={formatBytes(backupBytes)} status={backupBytes > 0 ? "degraded" : "healthy"} />
+      </div>
+      <p className="mt-4 text-xs leading-5 text-zinc-500">
+        Backups are retained for rollback and are not deleted automatically. Analytical stores hold externalized high-frequency facts used by bounded drill-down reads.
+      </p>
+    </Panel>
   );
 }
 
@@ -506,6 +536,7 @@ function StorageInventoryDetails({ inventory }: { inventory: StorageInventory })
           </div>
         </Panel>
       ) : null}
+      <RollbackBackupPlan inventory={inventory} />
       <div className="grid gap-5 xl:grid-cols-2">
         <StorageAggregatePanel title="Storage by Category" rows={inventory.categories} />
         <StorageAggregatePanel title="Storage by Data Segment" rows={inventory.segments} />
@@ -568,6 +599,42 @@ function StorageInventoryDetails({ inventory }: { inventory: StorageInventory })
         </ul>
       </Panel>
     </>
+  );
+}
+
+function RollbackBackupPlan({ inventory }: { inventory: StorageInventory }) {
+  const candidates = inventory.backup_candidates ?? [];
+  if (candidates.length === 0) {
+    return null;
+  }
+  const reclaimableBytes = candidates.reduce((total, item) => total + (item.reclaimable_bytes ?? item.logical_bytes ?? 0), 0);
+  return (
+    <Panel
+      title="Rollback Backup Plan"
+      subtitle="Migration backups that can reclaim disk space after validation."
+    >
+      <div className="grid gap-3 md:grid-cols-3">
+        <Metric label="Reclaimable" value={formatBytes(reclaimableBytes)} status="degraded" />
+        <Metric label="Backup sets" value={formatNumber(candidates.length)} />
+        <Metric label="Files" value={formatNumber(candidates.reduce((total, item) => total + (item.file_count ?? 0), 0))} />
+      </div>
+      <div className="mt-4 divide-y divide-zinc-800 rounded border border-zinc-800">
+        {candidates.slice(0, 5).map((item) => (
+          <div key={item.path} className="grid gap-3 p-3 lg:grid-cols-[minmax(0,1fr)_9rem_8rem] lg:items-start">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-zinc-100">{item.label}</p>
+              <p className="break-all font-mono text-[11px] text-zinc-500">{item.path}</p>
+              <p className="mt-1 text-xs leading-5 text-zinc-500">{item.reason}</p>
+            </div>
+            <p className="font-mono text-sm text-zinc-200 lg:text-right">{formatBytes(item.logical_bytes)}</p>
+            <p className="text-xs text-zinc-500 lg:text-right">{formatDate(item.modified_at)}</p>
+          </div>
+        ))}
+      </div>
+      <p className="mt-3 text-xs leading-5 text-amber-100">
+        Cleanup is intentionally manual for now. Delete or move these backups only after the compact database and analytical store have been validated.
+      </p>
+    </Panel>
   );
 }
 

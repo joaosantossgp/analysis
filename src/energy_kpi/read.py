@@ -4,6 +4,7 @@ All methods query local SQLite. No network calls on the read path.
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -49,8 +50,7 @@ logger = logging.getLogger(__name__)
 _STALE_THRESHOLD_DAYS = 90
 _PLANT_SOURCE_STATUS_ORDER = (SOURCE_ANEEL_SIGA, SOURCE_CCEE_MONTHLY, SOURCE_CCEE_HOURLY)
 _HOURLY_HOT_COLD_MANIFEST_ENV = "CVM_ENERGY_HOURLY_HOT_COLD_MANIFEST"
-_HOURLY_HOT_COLD_ENABLE_PARCELS_ENV = "CVM_ENERGY_HOURLY_HOT_COLD_ENABLE_PARCELS"
-_TRUE_ENV_VALUES = {"1", "true", "yes", "on"}
+_DEFAULT_HOURLY_STORE_MANIFEST = Path("analytics") / "energy" / "ccee_plant_generation_hourly" / "manifest.json"
 
 
 def _normalize_plant_source_ids(source_ids: list[str] | None) -> list[str]:
@@ -60,24 +60,26 @@ def _normalize_plant_source_ids(source_ids: list[str] | None) -> list[str]:
     return [source_id for source_id in _PLANT_SOURCE_STATUS_ORDER if source_id in requested]
 
 
-def _hourly_hot_cold_manifest_path() -> Path | None:
+def _is_runtime_eligible_hourly_manifest(path: Path) -> bool:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    if payload.get("runtime_eligible") is True:
+        return True
+    return bool(
+        payload.get("validation", {}).get("ok") is True
+        and payload.get("selection", {}).get("full_months") is True
+        and payload.get("source_unchanged") is True
+    )
+
+
+def _hourly_hot_cold_manifest_path(settings: AppSettings) -> Path | None:
     value = os.getenv(_HOURLY_HOT_COLD_MANIFEST_ENV)
     if not value or not value.strip():
-        return None
+        default_path = Path(settings.paths.data_dir) / _DEFAULT_HOURLY_STORE_MANIFEST
+        return default_path if default_path.exists() and _is_runtime_eligible_hourly_manifest(default_path) else None
     return Path(value.strip()).expanduser()
-
-
-def _hourly_hot_cold_parcel_opt_in_enabled() -> bool:
-    value = os.getenv(_HOURLY_HOT_COLD_ENABLE_PARCELS_ENV)
-    return str(value or "").strip().lower() in _TRUE_ENV_VALUES
-
-
-def _hourly_hot_cold_skip_reason(resolved_type: str) -> str | None:
-    if resolved_type == "aneel_plant":
-        return None
-    if _hourly_hot_cold_parcel_opt_in_enabled():
-        return None
-    return "parcel_raw_sqlite_default"
 
 
 def _plant_source_status_rows(
@@ -1697,12 +1699,11 @@ class EnergyKPIReadService:
                         "max_window_days": 31,
                         "limit": row_limit,
                     }
-                    manifest_path = _hourly_hot_cold_manifest_path()
-                    hot_cold_skip_reason = _hourly_hot_cold_skip_reason(resolved_type)
+                    manifest_path = _hourly_hot_cold_manifest_path(self._settings)
                     hourly_read_path = {
                         "attempted": False,
                         "selected": "raw_sqlite",
-                        "fallback_reason": hot_cold_skip_reason,
+                        "fallback_reason": None,
                         "manifest_path": str(manifest_path) if manifest_path is not None else None,
                         "artifact_path": None,
                         "source_signature_ok": None,
@@ -1746,7 +1747,7 @@ class EnergyKPIReadService:
                     else:
                         rows = None
 
-                    if rows is None and hot_cold_skip_reason is None:
+                    if rows is None:
                         adapter_result = read_hourly_from_hot_cold(
                             source_db_path=Path(self._settings.paths.energy_kpi_db_path),
                             manifest_path=manifest_path,

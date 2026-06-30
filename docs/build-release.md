@@ -86,12 +86,52 @@ Before publishing:
 ```powershell
 npm --prefix apps/desktop-web run typecheck
 npm --prefix apps/desktop-web run build
+python scripts/data/check_storage_budget.py
 python -m py_compile desktop/app.py desktop/bridge.py
 pytest tests -q
 ```
 
 Also run `pytest apps/api/tests -q` if `apps/api` or shared API contracts
 changed.
+
+The storage budget guardrail fails if local data regresses toward a monolithic
+main database layout. Default budgets are:
+
+- any one main SQLite database: 12 GiB;
+- all main SQLite databases: 16 GiB;
+- active local storage excluding rollback backups: 32 GiB.
+
+Retained rollback backups are warnings by default, not failures. Use
+`python scripts/data/check_storage_budget.py --fail-on-backups` only when the
+release policy explicitly requires no local rollback backups.
+
+For releases that touch CCEE hourly ingestion or the managed hot/cold store,
+run a sandbox ingestion smoke test with a real CCEE hourly snapshot:
+
+```powershell
+python scripts/data/smoke_ccee_hourly_managed_ingestion.py `
+  --source-file "<Documents>\CVMAnalytics\raw\energy\plant_parcels\ccee_plant_generation_hourly\<snapshot>\geracao_horaria_usina_YYYYMM.csv.gz" `
+  --reference-month YYYY-MM
+```
+
+The default smoke test copies the compact `energy_kpis.db` and the managed hot
+SQLite artifact into a temporary sandbox, removes duplicate import-log rows only
+inside that sandbox, and verifies that ingestion updates the managed store and
+marts while `ccee_plant_parcel_hourly` in the main database remains empty. Do
+not use `--apply` unless the release operator intentionally wants to import into
+the live Documents data root.
+
+The managed hourly store keeps a bounded hot SQLite window. Ingestion defaults
+to two hot months unless `selection.max_hot_months` is set in the manifest; when
+that limit is exceeded, older hot months are exported to cold Parquet partitions
+and removed from hot SQLite. The smoke report therefore reconciles total managed
+rows for the imported month across hot and cold storage.
+
+Managed hourly imports also write `storage_telemetry_json` to
+`energy_source_refresh_log`. It records before/after main DB bytes, hot SQLite
+bytes, cold Parquet bytes, manifest row counts, hot/cold month lists, and mart
+rebuild row counts. Use this field when reviewing storage impact after a heavy
+import.
 
 Manual packaged validation:
 

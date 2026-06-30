@@ -258,6 +258,7 @@ class StorageInventoryManager:
 
         database_payloads = [self._database_payload(spec) for spec in databases]
         volumes = self._volume_payloads([root.path for root in roots])
+        backup_candidates = self._backup_candidates()
         elapsed_ms = int((time.perf_counter() - start) * 1000)
         total = int(totals["logical_bytes"])
         category_rows = _aggregate_rows(categories, total)
@@ -288,6 +289,7 @@ class StorageInventoryManager:
             "categories": category_rows,
             "segments": segment_rows,
             "databases": database_payloads,
+            "backup_candidates": backup_candidates,
             "largest_items": largest_items,
             "growth": growth,
             "history": history,
@@ -363,6 +365,9 @@ class StorageInventoryManager:
             RootSpec("logs", "Logs", Path(p.logs_dir), "logs", "Logs", "shared_metadata", "Shared metadata", "logs"),
             RootSpec("cache", "Cache", Path(p.cache_dir), "cache", "Cache", "market_data", "Market data", "cache"),
             RootSpec("metadata", "Metadata", Path(p.metadata_dir), "metadata", "Metadata", "shared_metadata", "Shared metadata", "files"),
+            RootSpec("analytics", "Analytical stores", Path(p.data_dir) / "analytics", "analytical_stores", "Analytical stores", "analytical_stores", "Local analytical stores", "mixed"),
+            RootSpec("energy_hourly_store", "Energy hourly hot/cold store", Path(p.data_dir) / "analytics" / "energy" / "ccee_plant_generation_hourly", "analytical_stores", "Analytical stores", "energy_macro", "Energy macro / SIN / CCEE / Distribution", "mixed"),
+            RootSpec("backup", "Backups and rollback", Path(p.data_dir) / "backup", "backups", "Backups and rollback", "local_backups", "Local backups", "files"),
             RootSpec("energy_raw", "Energy raw sources", Path(p.energy_kpi_raw_dir), "raw_sources", "Raw sources", "energy_macro", "Energy macro", "files"),
         ]
 
@@ -571,12 +576,63 @@ class StorageInventoryManager:
             "segments": [],
             "databases": [],
             "largest_items": [],
+            "backup_candidates": [],
             "growth": {"available": False, "reason": "No storage inventory has been created."},
             "history": [],
             "warnings": ["No storage inventory snapshot is available yet."],
             "errors": [],
             "measurement_notes": ["Open Storage and refresh inventory to create the first snapshot."],
         }
+
+    def _backup_candidates(self) -> list[dict[str, Any]]:
+        backup_root = Path(self.settings.paths.data_dir) / "backup"
+        if not backup_root.exists():
+            return []
+
+        candidates: list[dict[str, Any]] = []
+        try:
+            entries = sorted(backup_root.iterdir(), key=lambda item: item.name.casefold())
+        except OSError:
+            return []
+
+        for entry in entries:
+            if entry.is_symlink() or not entry.exists():
+                continue
+            total = 0
+            files = 0
+            modified_at: str | None = _mtime_iso(entry)
+            if entry.is_file():
+                total = _file_size(entry)
+                files = 1
+            elif entry.is_dir():
+                for file_info in self._iter_files(entry, []):
+                    if file_info.get("type") != "file":
+                        continue
+                    path = Path(file_info["path"])
+                    size = int(file_info.get("size") or 0)
+                    total += size
+                    files += 1
+                    item_mtime = _mtime_iso(path)
+                    if item_mtime and (modified_at is None or item_mtime > modified_at):
+                        modified_at = item_mtime
+            else:
+                continue
+
+            candidates.append({
+                "id": entry.name,
+                "label": _backup_candidate_label(entry.name),
+                "path": str(entry),
+                "logical_bytes": total,
+                "file_count": files,
+                "modified_at": modified_at,
+                "reclaimable_bytes": total,
+                "requires_confirmation": True,
+                "destructive": True,
+                "reason": "Rollback backup retained after a storage migration. Remove only after current data has been validated.",
+            })
+
+        candidates.sort(key=lambda row: int(row.get("logical_bytes") or 0), reverse=True)
+        return candidates
 
     @staticmethod
     def _is_stale(scanned_at: Any) -> bool:
@@ -618,6 +674,12 @@ def _mtime_iso(path: Path) -> str | None:
         return datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     except OSError:
         return None
+
+
+def _backup_candidate_label(name: str) -> str:
+    if name.startswith("energy_kpis_swap_"):
+        return "Energy KPI rollback backup"
+    return name.replace("_", " ").strip() or "Rollback backup"
 
 
 def _add_aggregate(rows: dict[str, dict[str, Any]], row_id: str, label: str, size: int, root_id: str, storage_type: str) -> None:

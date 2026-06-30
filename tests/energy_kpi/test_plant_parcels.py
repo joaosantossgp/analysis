@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import os
+import json
+import hashlib
 import sqlite3
 import threading
 import time
@@ -12,6 +14,8 @@ import pytest
 from sqlalchemy import create_engine, event, text
 
 from scripts.diagnostics.phase5_hot_cold_hourly_prototype import build_hot_cold_prototype
+from src.energy_kpi.hourly_read_adapter import HOURLY_TABLE as EXTERNAL_HOURLY_TABLE
+from src.energy_kpi.hourly_read_adapter import HourlyReadRequest, read_hourly_from_hot_cold
 from src.energy_kpi.metrics import (
     capacity_factor,
     hours_in_month,
@@ -35,7 +39,7 @@ from src.energy_kpi.plant_parcel_ingest import (
     upsert_ccee_monthly,
 )
 from src.energy_kpi.plant_parcel_refresh import PlantParcelRefreshJob
-from src.energy_kpi.read import EnergyKPIReadService
+from src.energy_kpi.read import EnergyKPIReadService, _hourly_hot_cold_manifest_path
 from src.energy_kpi.schema import (
     _build_energy_kpi_engine,
     ensure_energy_kpi_tables_for_connection,
@@ -74,6 +78,53 @@ def _write_csv_encoded(
 ) -> Path:
     pd.DataFrame(rows, columns=columns).to_csv(path, index=False, sep=sep, encoding=encoding)
     return path
+
+
+def _manifest_fingerprint(manifest: dict) -> str:
+    payload = json.dumps(manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _manifest_counts(manifest: dict) -> dict[str, int]:
+    return {
+        str(row["reference_month"]): int(row["row_count"])
+        for row in manifest.get("selection", {}).get("available_months", [])
+    }
+
+
+def _seed_external_hourly_catalog(conn, manifest_path: Path) -> None:
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    counts = _manifest_counts(manifest)
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS external_hourly_store_catalog (
+            dataset TEXT PRIMARY KEY,
+            manifest_path TEXT NOT NULL,
+            manifest_fingerprint TEXT NOT NULL,
+            source_database TEXT NOT NULL,
+            full_months INTEGER NOT NULL,
+            manifest_row_count INTEGER NOT NULL,
+            available_months_json TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """))
+    conn.execute(
+        text("""
+            INSERT OR REPLACE INTO external_hourly_store_catalog
+                (dataset, manifest_path, manifest_fingerprint, source_database, full_months,
+                 manifest_row_count, available_months_json)
+            VALUES
+                (:dataset, :manifest_path, :manifest_fingerprint, :source_database, 1,
+                 :manifest_row_count, :available_months_json)
+        """),
+        {
+            "dataset": EXTERNAL_HOURLY_TABLE,
+            "manifest_path": str(manifest_path),
+            "manifest_fingerprint": _manifest_fingerprint(manifest),
+            "source_database": str(manifest.get("source_database") or ""),
+            "manifest_row_count": sum(counts.values()),
+            "available_months_json": json.dumps(counts, sort_keys=True, separators=(",", ":")),
+        },
+    )
 
 
 def test_energy_metric_conversions_handle_units_and_leap_years():
@@ -908,6 +959,304 @@ def test_manual_ccee_hourly_import_accepts_gzip_and_rejects_period_mismatch(tmp_
         assert conn.execute(text("SELECT COUNT(*) FROM ccee_plant_parcel_hourly")).scalar() == 1
 
 
+def test_manual_ccee_hourly_import_uses_external_store_when_compacted(tmp_path: Path):
+    settings = build_settings(project_root=tmp_path)
+    engine = get_energy_kpi_engine(settings)
+    monthly_path = _write_csv(
+        tmp_path / "monthly.csv",
+        [
+            "MES_REFERENCIA",
+            "COD_PARCELA_USINA",
+            "SIGLA_PARCELA_USINA",
+            "CEG",
+            "NOME_EMPRESARIAL",
+            "SUBMERCADO",
+            "FONTE_ENERGIA_PRIMARIA",
+            "ESTADO_UF",
+            "CAP_T",
+            "GARANTIA_FISICA",
+            "GERACAO_CENTRO_GRAVIDADE",
+        ],
+        [["2026-02", "1001", "PLT1", "CEG123", "Utility SA", "SE/CO", "Hidraulica", "SP", "100", "50", "40"]],
+    )
+    seed_hourly_path = _write_csv(
+        tmp_path / "geracao_horaria_usina_202601.csv",
+        [
+            "MES_REFERENCIA",
+            "DATA",
+            "PERIODO_COMERCIALIZACAO",
+            "CODIGO_PARCELA_USINA",
+            "SIGLA_USINA",
+            "FONTE_PRIMARIA",
+            "SUBMERCADO",
+            "GERACAO_CENTRO_GRAVIDADE",
+            "GERACAO_VERIFICADA_ONS",
+            "DISPONIBILIDADE_VERIFICADA_UG",
+            "INDISPONIBILIDADE_UTE_ORDEM_MERITO_ECONOMICO",
+        ],
+        [["202601", "01/01/2026", 1, "1001", "PLT1", "Hidraulica", "SE/CO", "5", "4", "3", "0"]],
+    )
+    import_hourly_path = _write_csv(
+        tmp_path / "geracao_horaria_usina_202602.csv",
+        [
+            "MES_REFERENCIA",
+            "DATA",
+            "PERIODO_COMERCIALIZACAO",
+            "CODIGO_PARCELA_USINA",
+            "SIGLA_USINA",
+            "FONTE_PRIMARIA",
+            "SUBMERCADO",
+            "GERACAO_CENTRO_GRAVIDADE",
+            "GERACAO_VERIFICADA_ONS",
+            "DISPONIBILIDADE_VERIFICADA_UG",
+            "INDISPONIBILIDADE_UTE_ORDEM_MERITO_ECONOMICO",
+        ],
+        [["202602", "02/02/2026", 1, "1001", "PLT1", "Hidraulica", "SE/CO", "10", "9", "8", "1"]],
+    )
+
+    with engine.begin() as conn:
+        seed_plant_sources(conn)
+        upsert_ccee_monthly(
+            conn,
+            parse_ccee_monthly(_snapshot(monthly_path, SOURCE_CCEE_MONTHLY, "CCEE", "PARCELA_USINA_MONTANTE_MENSAL")),
+        )
+        upsert_ccee_hourly(
+            conn,
+            parse_ccee_hourly(_snapshot(seed_hourly_path, SOURCE_CCEE_HOURLY, "CCEE", "GERACAO_HORARIA_USINA")),
+        )
+
+    output_dir = settings.paths.data_dir / "analytics" / "energy" / "ccee_plant_generation_hourly"
+    manifest = build_hot_cold_prototype(
+        database=settings.paths.energy_kpi_db_path,
+        output_dir=output_dir,
+        hot_months=1,
+        cold_months=[],
+        full_months=True,
+    )
+    manifest_path = Path(manifest["artifacts"]["manifest_path"])
+
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM ccee_plant_parcel_hourly"))
+        _seed_external_hourly_catalog(conn, manifest_path)
+
+    result = PlantParcelRefreshJob(settings).run_manual_file_import(
+        source_id=SOURCE_CCEE_HOURLY,
+        file_path=import_hourly_path,
+        triggered_by="test",
+        expected_period="2026-02",
+    )
+
+    assert result["status"] == "success"
+    assert result["rows_inserted"] == 1
+    telemetry = result["storage_telemetry"]
+    assert telemetry["mode"] == "managed_hourly_store"
+    assert telemetry["before"]["main_database_bytes"] > 0
+    assert telemetry["after"]["main_database_bytes"] > 0
+    assert telemetry["after"]["hot_sqlite_bytes"] > 0
+    assert telemetry["after"]["manifest_row_count"] == 2
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT COUNT(*) FROM ccee_plant_parcel_hourly")).scalar() == 0
+        daily = conn.execute(text("""
+            SELECT generation_mwh, verified_generation_mwh, verified_availability_mwh, unavailability_mwh
+            FROM plant_parcel_daily_generation_mart
+            WHERE reference_month = '2026-02' AND plant_parcel_code = '1001'
+        """)).mappings().one()
+        catalog = conn.execute(text("""
+            SELECT manifest_fingerprint, manifest_row_count, available_months_json
+            FROM external_hourly_store_catalog
+            WHERE dataset = :dataset
+        """), {"dataset": EXTERNAL_HOURLY_TABLE}).mappings().one()
+        log_telemetry = conn.execute(text("""
+            SELECT storage_telemetry_json
+            FROM energy_source_refresh_log
+            WHERE refresh_id = :refresh_id
+        """), {"refresh_id": result["refresh_id"]}).scalar()
+    assert daily["generation_mwh"] == pytest.approx(10.0)
+    assert daily["verified_generation_mwh"] == pytest.approx(9.0)
+    assert daily["verified_availability_mwh"] == pytest.approx(8.0)
+    assert daily["unavailability_mwh"] == pytest.approx(1.0)
+
+    updated_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    counts = _manifest_counts(updated_manifest)
+    assert counts == {"2026-01": 1, "2026-02": 1}
+    assert updated_manifest["contract"]["dataset_id"] == "ccee_plant_generation_hourly"
+    assert updated_manifest["contract"]["detail_reads_require_bounds"] is True
+    assert updated_manifest["selection"]["hot_months"] == ["2026-01", "2026-02"]
+    assert int(catalog["manifest_row_count"]) == 2
+    assert json.loads(catalog["available_months_json"]) == counts
+    assert catalog["manifest_fingerprint"] == _manifest_fingerprint(updated_manifest)
+    assert json.loads(log_telemetry) == telemetry
+
+    hot_db = Path(updated_manifest["artifacts"]["hot"]["path"])
+    with sqlite3.connect(hot_db) as hot_conn:
+        hot_counts = dict(hot_conn.execute("""
+            SELECT reference_month, COUNT(*)
+            FROM ccee_plant_parcel_hourly
+            GROUP BY reference_month
+            ORDER BY reference_month
+        """).fetchall())
+    assert hot_counts == {"2026-01": 1, "2026-02": 1}
+
+
+def test_manual_ccee_hourly_import_rolls_old_hot_month_to_cold_parquet(tmp_path: Path):
+    settings = build_settings(project_root=tmp_path)
+    engine = get_energy_kpi_engine(settings)
+    monthly_path = _write_csv(
+        tmp_path / "monthly.csv",
+        [
+            "MES_REFERENCIA",
+            "COD_PARCELA_USINA",
+            "SIGLA_PARCELA_USINA",
+            "CEG",
+            "NOME_EMPRESARIAL",
+            "SUBMERCADO",
+            "FONTE_ENERGIA_PRIMARIA",
+            "ESTADO_UF",
+            "CAP_T",
+            "GARANTIA_FISICA",
+            "GERACAO_CENTRO_GRAVIDADE",
+        ],
+        [["2026-03", "1001", "PLT1", "CEG123", "Utility SA", "SE/CO", "Hidraulica", "SP", "100", "50", "40"]],
+    )
+    columns = [
+        "MES_REFERENCIA",
+        "DATA",
+        "PERIODO_COMERCIALIZACAO",
+        "CODIGO_PARCELA_USINA",
+        "SIGLA_USINA",
+        "FONTE_PRIMARIA",
+        "SUBMERCADO",
+        "GERACAO_CENTRO_GRAVIDADE",
+        "GERACAO_VERIFICADA_ONS",
+        "DISPONIBILIDADE_VERIFICADA_UG",
+        "INDISPONIBILIDADE_UTE_ORDEM_MERITO_ECONOMICO",
+    ]
+    hourly_202601 = _write_csv(
+        tmp_path / "geracao_horaria_usina_202601.csv",
+        columns,
+        [["202601", "01/01/2026", 1, "1001", "PLT1", "Hidraulica", "SE/CO", "5", "4", "3", "0"]],
+    )
+    hourly_202602 = _write_csv(
+        tmp_path / "geracao_horaria_usina_202602.csv",
+        columns,
+        [["202602", "01/02/2026", 1, "1001", "PLT1", "Hidraulica", "SE/CO", "6", "5", "4", "0"]],
+    )
+    hourly_202603 = _write_csv(
+        tmp_path / "geracao_horaria_usina_202603.csv",
+        columns,
+        [["202603", "01/03/2026", 1, "1001", "PLT1", "Hidraulica", "SE/CO", "7", "6", "5", "0"]],
+    )
+    hourly_202512 = _write_csv(
+        tmp_path / "geracao_horaria_usina_202512.csv",
+        columns,
+        [["202512", "01/12/2025", 1, "1001", "PLT1", "Hidraulica", "SE/CO", "4", "3", "2", "0"]],
+    )
+
+    with engine.begin() as conn:
+        seed_plant_sources(conn)
+        upsert_ccee_monthly(
+            conn,
+            parse_ccee_monthly(_snapshot(monthly_path, SOURCE_CCEE_MONTHLY, "CCEE", "PARCELA_USINA_MONTANTE_MENSAL")),
+        )
+        for path in (hourly_202601, hourly_202602):
+            upsert_ccee_hourly(
+                conn,
+                parse_ccee_hourly(_snapshot(path, SOURCE_CCEE_HOURLY, "CCEE", "GERACAO_HORARIA_USINA")),
+            )
+
+    output_dir = settings.paths.data_dir / "analytics" / "energy" / "ccee_plant_generation_hourly"
+    manifest = build_hot_cold_prototype(
+        database=settings.paths.energy_kpi_db_path,
+        output_dir=output_dir,
+        hot_months=2,
+        cold_months=[],
+        full_months=True,
+    )
+    manifest_path = Path(manifest["artifacts"]["manifest_path"])
+    manifest["selection"]["max_hot_months"] = 2
+    manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM ccee_plant_parcel_hourly"))
+        _seed_external_hourly_catalog(conn, manifest_path)
+
+    result = PlantParcelRefreshJob(settings).run_manual_file_import(
+        source_id=SOURCE_CCEE_HOURLY,
+        file_path=hourly_202603,
+        triggered_by="test",
+        expected_period="2026-03",
+    )
+
+    assert result["status"] == "success"
+    updated_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert updated_manifest["selection"]["hot_months"] == ["2026-02", "2026-03"]
+    assert updated_manifest["selection"]["cold_months"] == ["2026-01"]
+    cold_partition = next(
+        partition
+        for partition in updated_manifest["artifacts"]["cold"]["partitions"]
+        if partition["reference_month"] == "2026-01"
+    )
+    assert cold_partition["ok"] is True
+    assert cold_partition["row_count"] == 1
+    assert Path(cold_partition["parts"][0]["path"]).exists()
+
+    hot_db = Path(updated_manifest["artifacts"]["hot"]["path"])
+    with sqlite3.connect(hot_db) as hot_conn:
+        hot_counts = dict(hot_conn.execute("""
+            SELECT reference_month, COUNT(*)
+            FROM ccee_plant_parcel_hourly
+            GROUP BY reference_month
+            ORDER BY reference_month
+        """).fetchall())
+    assert hot_counts == {"2026-02": 1, "2026-03": 1}
+
+    cold_read = read_hourly_from_hot_cold(
+        source_db_path=settings.paths.energy_kpi_db_path,
+        manifest_path=manifest_path,
+        request=HourlyReadRequest(
+            entity_id="1001",
+            entity_type="ccee_plant_parcel",
+            reference_month="2026-01",
+            start_datetime="2026-01-01T00:00:00",
+            end_datetime="2026-01-01T23:59:59",
+            limit=5,
+        ),
+    )
+    assert cold_read.ok is True
+    assert cold_read.read_path == "cold_parquet"
+    assert cold_read.rows[0]["generation_mwh"] == pytest.approx(5.0)
+
+    older_result = PlantParcelRefreshJob(settings).run_manual_file_import(
+        source_id=SOURCE_CCEE_HOURLY,
+        file_path=hourly_202512,
+        triggered_by="test",
+        expected_period="2025-12",
+    )
+
+    assert older_result["status"] == "success"
+    updated_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    counts = _manifest_counts(updated_manifest)
+    assert counts["2025-12"] == 1
+    assert updated_manifest["selection"]["hot_months"] == ["2026-02", "2026-03"]
+    assert "2025-12" in updated_manifest["selection"]["cold_months"]
+
+    older_cold_read = read_hourly_from_hot_cold(
+        source_db_path=settings.paths.energy_kpi_db_path,
+        manifest_path=manifest_path,
+        request=HourlyReadRequest(
+            entity_id="1001",
+            entity_type="ccee_plant_parcel",
+            reference_month="2025-12",
+            start_datetime="2025-12-01T00:00:00",
+            end_datetime="2025-12-01T23:59:59",
+            limit=5,
+        ),
+    )
+    assert older_cold_read.ok is True
+    assert older_cold_read.read_path == "cold_parquet"
+    assert older_cold_read.rows[0]["generation_mwh"] == pytest.approx(4.0)
+
+
 def test_manual_ccee_import_rejects_invalid_extension_and_missing_columns(tmp_path: Path):
     settings = build_settings(project_root=tmp_path)
     txt_path = tmp_path / "parcela_usina_montante_mensal_2026.txt"
@@ -1142,6 +1491,32 @@ def _seed_file_backed_hourly_chart_fixture(tmp_path: Path, *, rebuild_ceg_hourly
     return settings, tmp_path / "hourly_hot_cold" / "manifest.json"
 
 
+def test_hourly_hot_cold_manifest_defaults_to_managed_store(tmp_path: Path, monkeypatch):
+    settings = build_settings(project_root=tmp_path)
+    monkeypatch.delenv("CVM_ENERGY_HOURLY_HOT_COLD_MANIFEST", raising=False)
+
+    assert _hourly_hot_cold_manifest_path(settings) is None
+
+    manifest_path = (
+        Path(settings.paths.data_dir)
+        / "analytics"
+        / "energy"
+        / "ccee_plant_generation_hourly"
+        / "manifest.json"
+    )
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text('{"validation":{"ok":true},"selection":{"full_months":false}}\n', encoding="utf-8")
+
+    assert _hourly_hot_cold_manifest_path(settings) is None
+
+    manifest_path.write_text(
+        '{"validation":{"ok":true},"selection":{"full_months":true},"source_unchanged":true}\n',
+        encoding="utf-8",
+    )
+
+    assert _hourly_hot_cold_manifest_path(settings) == manifest_path
+
+
 def test_hourly_chart_uses_ceg_mart_when_available(tmp_path: Path, monkeypatch):
     settings, _manifest_path = _seed_file_backed_hourly_chart_fixture(tmp_path)
 
@@ -1220,7 +1595,7 @@ def test_hourly_chart_routes_ceg_to_hot_cold_adapter_when_manifest_valid(tmp_pat
     assert cold_chart["series"][0]["points"] == [5.0]
 
 
-def test_hourly_chart_keeps_parcel_on_raw_sqlite_by_default_when_manifest_valid(tmp_path: Path, monkeypatch):
+def test_hourly_chart_routes_parcel_to_hot_cold_adapter_when_manifest_valid(tmp_path: Path, monkeypatch):
     settings, manifest_path = _seed_file_backed_hourly_chart_fixture(tmp_path)
     monkeypatch.setenv("CVM_ENERGY_HOURLY_HOT_COLD_MANIFEST", str(manifest_path))
 
@@ -1235,10 +1610,10 @@ def test_hourly_chart_keeps_parcel_on_raw_sqlite_by_default_when_manifest_valid(
     )
     metadata = chart["metadata"]["hourly_read_path"]
 
-    assert chart["metadata"]["data_source"] == "ccee_plant_parcel_hourly"
-    assert metadata["attempted"] is False
-    assert metadata["selected"] == "raw_sqlite"
-    assert metadata["fallback_reason"] == "parcel_raw_sqlite_default"
+    assert chart["metadata"]["data_source"] == "hot_sqlite"
+    assert metadata["attempted"] is True
+    assert metadata["selected"] == "hot_sqlite"
+    assert metadata["fallback_reason"] is None
     assert metadata["manifest_path"] == str(manifest_path)
     assert chart["periods"] == ["00h", "01h"]
     assert chart["series"][0]["points"] == [10.0, 12.0]
