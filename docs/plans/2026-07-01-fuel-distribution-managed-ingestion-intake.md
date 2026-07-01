@@ -26,7 +26,8 @@ No new heavy importer may write high-cardinality detail rows into
 
 ## Implementation Order
 
-1. Official source discovery and size profiling.
+1. Official source discovery and size profiling. Done:
+   `docs/reference/fuel-distribution-source-intake.md`.
    - Capture source URL/path, access method, cadence, file sizes, expected row
      counts, keys, entity identifiers, date coverage, units, and licensing or
      use constraints.

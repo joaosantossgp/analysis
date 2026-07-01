@@ -42,6 +42,7 @@ def test_registered_managed_dataset_contracts_are_unique_and_valid():
     assert fuel_registration.status == "planned"
     assert fuel_registration.manifest_required is False
     assert fuel_registration.contract.domain == "energy"
+    assert fuel_registration.contract.fact_grain == "fuel-sales source-geography-product-period detail"
     assert "cold_parquet" in fuel_registration.contract.storage_layers
 
 

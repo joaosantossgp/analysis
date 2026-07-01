@@ -90,7 +90,7 @@ Workflow files under `.github/workflows/` are active unless explicitly removed:
 | UI implementation rules | `docs/skills/CVMANALYTICS_VITE_UI_SKILL.md` |
 | GICS import | `docs/reference/gics-import.md` |
 | Indicators | `docs/reference/indicators-module.md` |
-| Energy references | `docs/reference/energy-utilities-sin-kpis.md`, `docs/reference/energy-utilities-distribution.md` |
+| Energy references | `docs/reference/energy-utilities-sin-kpis.md`, `docs/reference/energy-utilities-distribution.md`, `docs/reference/fuel-distribution-source-intake.md` |
 
 `docs/COMO_RODAR.md` remains a Portuguese operational guide. The canonical
 English command map is `docs/development.md`.

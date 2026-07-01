@@ -37,7 +37,7 @@ class ManagedDatasetRegistration:
 FUEL_DISTRIBUTION_INTAKE_CONTRACT = ManagedDatasetContract(
     domain="energy",
     dataset_id="fuel_distribution_sector_intake",
-    fact_grain="fuel-distribution entity-period detail",
+    fact_grain="fuel-sales source-geography-product-period detail",
     storage_layers=("metadata_sqlite", "raw_snapshot", "cold_parquet", "mart_sqlite"),
     lineage_fields=DEFAULT_LINEAGE_FIELDS,
     detail_reads_require_bounds=True,

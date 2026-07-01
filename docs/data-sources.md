@@ -85,6 +85,7 @@ Relevant code/docs include:
 - `src/energy_kpi/distribution/`;
 - `docs/reference/energy-utilities-sin-kpis.md`;
 - `docs/reference/energy-utilities-distribution.md`;
+- `docs/reference/fuel-distribution-source-intake.md`;
 - `docs/reference/indicators-module.md`.
 
 These sources are optional segments in Settings health. Missing optional
@@ -122,6 +123,13 @@ Use `--all` only for planned maintenance because it scans the full local hourly
 table. The daily mart full rebuild is processed month by month for progress
 visibility, but large databases should still be benchmarked on a copy first.
 Raw files and `source_snapshots` are not deleted by mart rebuilds.
+
+Fuel Distribution is a planned Energy managed-ingestion pilot, not an
+implemented importer. Its current source dossier is
+`docs/reference/fuel-distribution-source-intake.md`. New fuel-sector ingestion
+must use raw snapshots, managed analytical detail storage, explicit lineage,
+and compact SQLite marts; it must not add high-cardinality detail rows directly
+to the main app databases.
 
 The standalone `idx_cppe_ref(reference_datetime)` index is intentionally not
 created by the current schema. The raw table primary key already starts with
