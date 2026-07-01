@@ -1,7 +1,7 @@
 # Fuel Distribution Source Intake
 
-Active source dossier for the planned Energy / Fuel Distribution managed
-ingestion pilot.
+Active source dossier for the Energy / Fuel Distribution managed ingestion
+pilot.
 
 ## Source Family
 
@@ -11,9 +11,10 @@ ingestion pilot.
   `https://www.gov.br/anp/pt-br/centrais-de-conteudo/dados-abertos/vendas-de-derivados-de-petroleo-e-biocombustiveis`
 - Product alignment: GICS Energy coverage, especially Oil & Gas Refining &
   Marketing and fuel distribution market context.
-- Import status: not implemented. The repository currently keeps
-  `fuel_distribution_sector_intake` as a planned managed-ingestion
-  registration.
+- Import status: implemented as a managed storage/import pilot. The repository
+  registers `fuel_distribution_sector_intake` as an implemented managed
+  ingestion contract with raw snapshots, cold Parquet detail, and a compact
+  SQLite mart. UI reads are not implemented yet.
 
 ## Measured CSV Corpus
 
@@ -40,7 +41,13 @@ root.
 | Vendas anuais de querosene de aviacao por municipio | municipality-product-year | 1990-2024 | 9,515 | 731,064 | `VENDAS` in liters |
 | Vendas anuais de querosene iluminante por municipio | municipality-product-year | 1990-2024 | 15,133 | 1,148,376 | `VENDAS` in liters |
 
-Measured total: 961,753 rows and 62,920,814 bytes, about 60.0 MiB of CSV.
+Measured total: 961,753 source rows and 62,920,814 bytes, about 60.0 MiB of
+CSV.
+
+Live import on 2026-07-01 wrote 1,104,043 normalized facts because GLP
+municipality rows with `P13` and `OUTROS` are split into separate auditable
+facts. The managed store contained 15 raw snapshots, 409 Parquet partitions,
+and 754 rows in `fuel_distribution_product_year_mart`.
 
 ## Source URLs
 
@@ -86,16 +93,20 @@ Do not write the full detail corpus directly into `cvm_financials.db`,
 
 ## Initial Fact Families
 
-Recommended first implementation pass:
+Implemented first pass:
 
 - `fuel_sales_state_month_fact`: state/product/month observations from the
   monthly ANP sources.
 - `fuel_sales_municipality_year_fact`: municipality/product/year observations
   from annual ANP files.
-- `fuel_sales_product_year_mart`: national and regional yearly summary by
-  product and unit.
+- `fuel_distribution_product_year_mart`: national yearly summary by source
+  dataset, product, year, and official unit.
+
+Not yet implemented:
+
 - `fuel_sales_state_month_mart`: bounded state/product/month summary for trend
   charts.
+- UI reads for sector/company screens.
 
 The default UI should start from national, region, and state summaries. It
 should load municipality-level detail only after the user filters to a product,
@@ -117,7 +128,21 @@ Each parsed row must preserve:
 - product, segment, vessel, origin/destination region when present;
 - unit and scale.
 
-## Open Questions Before Importer Work
+## How To Refresh
+
+Run:
+
+```powershell
+python scripts/data/import_fuel_distribution_sources.py
+```
+
+The command prefers `%USERPROFILE%\Documents\CVMAnalytics` when the installed
+Energy KPI database exists. It downloads official ANP CSV files to a temporary
+folder, copies the immutable raw snapshots into the managed store, writes
+partitioned Parquet detail, updates `managed_dataset_catalog`, and rebuilds the
+compact product-year mart.
+
+## Open Questions Before UI Work
 
 - Whether to include all annual municipality files in v1 or start with gasoline
   C, diesel, ethanol, and GLP.

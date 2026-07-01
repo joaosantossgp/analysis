@@ -2,9 +2,9 @@
 
 ## Goal
 
-Prepare the Energy / Fuel Distribution sector intake without importing a new
-dataset yet. This pilot must prove the source size, grain, lineage, and bounded
-read plan before any parser writes high-cardinality facts into local storage.
+Prepare the Energy / Fuel Distribution sector intake without writing
+high-cardinality facts into the main app databases. This pilot proves the
+source size, grain, lineage, and bounded read plan before UI integration.
 
 ## Non-Negotiable Storage Rule
 
@@ -31,16 +31,18 @@ No new heavy importer may write high-cardinality detail rows into
    - Capture source URL/path, access method, cadence, file sizes, expected row
      counts, keys, entity identifiers, date coverage, units, and licensing or
      use constraints.
-2. Contract finalization.
-   - Replace the planned registration with an implemented registration only
-     after the source grain, lineage fields, partitions, and read bounds are
-     known.
-3. Parser and importer.
+2. Contract finalization. Done:
+   `fuel_distribution_sector_intake` is implemented in
+   `src/platform/managed_ingestion_registry.py`.
+   - The source grain, lineage fields, partitions, and read bounds are known.
+3. Parser and importer. Done:
+   `src/energy_kpi/fuel_distribution.py` and
+   `scripts/data/import_fuel_distribution_sources.py`.
    - Preserve raw snapshots, write managed detail storage, create a manifest,
      and avoid unbounded writes to the main SQLite databases.
-4. Marts and app reads.
-   - Build summary-first marts for default screens and bounded drill-down reads
-     for detail.
+4. Marts and app reads. Partially done.
+   - `fuel_distribution_product_year_mart` exists for summary-first reads.
+   - UI reads and richer state/month marts remain follow-up work.
 
 ## Acceptance Before Importer Work
 

@@ -110,11 +110,11 @@ The managed-ingestion contract guardrail verifies that large local-first
 analytical stores are registered, have valid contracts, have matching local
 manifests under `%USERPROFILE%\Documents\CVMAnalytics`, and do not leave
 unclassified large detail tables in the main SQLite databases. It currently
-covers the CCEE hourly hot/cold store and MMGD project detail store. New heavy
-sector ingestion must add a managed registration and bounded read plan before
-release validation can pass in strict mode. Planned registrations, such as the
-Fuel Distribution intake, validate their contracts but do not require manifests
-until a real importer exists.
+covers the CCEE hourly hot/cold store, MMGD project detail store, and ANP Fuel
+Distribution managed store. New heavy sector ingestion must add a managed
+registration and bounded read plan before release validation can pass in strict
+mode. Planned registrations validate their contracts but do not require
+manifests until a real importer exists.
 
 For releases that touch CCEE hourly ingestion or the managed hot/cold store,
 run a sandbox ingestion smoke test with a real CCEE hourly snapshot:

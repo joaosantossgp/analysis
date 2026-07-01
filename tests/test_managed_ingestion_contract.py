@@ -26,7 +26,7 @@ def test_registered_managed_dataset_contracts_are_unique_and_valid():
 
     assert "ccee_plant_generation_hourly" in dataset_ids
     assert "distribution_mmgd_projects" in dataset_ids
-    assert "fuel_distribution_sector_intake" not in dataset_ids
+    assert "fuel_distribution_sector_intake" in dataset_ids
     assert len(dataset_ids) == len(set(dataset_ids))
     for contract in contracts:
         validate_contract(contract)
@@ -39,11 +39,14 @@ def test_registered_managed_dataset_contracts_are_unique_and_valid():
         if registration.contract.dataset_id == "fuel_distribution_sector_intake"
     )
     assert "fuel_distribution_sector_intake" in registration_ids
-    assert fuel_registration.status == "planned"
-    assert fuel_registration.manifest_required is False
+    assert fuel_registration.status == "implemented"
+    assert fuel_registration.manifest_required is True
     assert fuel_registration.contract.domain == "energy"
     assert fuel_registration.contract.fact_grain == "fuel-sales source-geography-product-period detail"
     assert "cold_parquet" in fuel_registration.contract.storage_layers
+    assert {table.table_name for table in fuel_registration.sqlite_tables} == {
+        "fuel_distribution_product_year_mart"
+    }
 
 
 def test_managed_ingestion_contract_report_can_require_manifests(tmp_path: Path):
@@ -80,13 +83,23 @@ def test_managed_ingestion_contract_report_accepts_planned_without_manifest(tmp_
     from scripts.data.check_managed_ingestion_contracts import build_managed_ingestion_contract_report
     from src.platform.managed_ingestion_registry import (
         ManagedDatasetRegistration,
-        registered_managed_datasets,
     )
 
-    planned = next(
-        registration
-        for registration in registered_managed_datasets()
-        if registration.contract.dataset_id == "fuel_distribution_sector_intake"
+    contract = ManagedDatasetContract(
+        domain="energy",
+        dataset_id="future_heavy_sector_intake",
+        fact_grain="entity-period detail",
+        storage_layers=("metadata_sqlite", "cold_parquet", "mart_sqlite"),
+        lineage_fields=DEFAULT_LINEAGE_FIELDS,
+        detail_reads_require_bounds=True,
+        default_hot_partitions=1,
+    )
+    planned = ManagedDatasetRegistration(
+        status="planned",
+        contract=contract,
+        manifest_required=False,
+        sqlite_tables=(),
+        notes="Synthetic planned registration for validation coverage.",
     )
     report = build_managed_ingestion_contract_report(
         data_dir=tmp_path,
@@ -96,7 +109,7 @@ def test_managed_ingestion_contract_report_accepts_planned_without_manifest(tmp_
 
     assert report["ok"] is True
     assert report["implemented_contracts"] == []
-    assert report["planned_contracts"][0]["dataset_id"] == "fuel_distribution_sector_intake"
+    assert report["planned_contracts"][0]["dataset_id"] == "future_heavy_sector_intake"
 
     duplicate = ManagedDatasetRegistration(
         status=planned.status,

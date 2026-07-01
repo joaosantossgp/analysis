@@ -188,11 +188,18 @@ def registered_managed_datasets() -> tuple[ManagedDatasetRegistration, ...]:
             notes="ANEEL MMGD project detail uses managed Parquet with bounded distributor/month reads.",
         ),
         ManagedDatasetRegistration(
-            status="planned",
+            status="implemented",
             contract=FUEL_DISTRIBUTION_INTAKE_CONTRACT,
-            manifest_required=False,
-            sqlite_tables=(),
-            notes="Planned Energy/Fuel Distribution intake; source discovery and sizing must happen before importer work.",
+            manifest_required=True,
+            sqlite_tables=(
+                ManagedSqliteTable(
+                    database="energy_kpis.db",
+                    table_name="fuel_distribution_product_year_mart",
+                    classification="sqlite_mart",
+                    notes="Compact ANP Fuel Distribution yearly product mart; detail is externalized to managed Parquet.",
+                ),
+            ),
+            notes="ANP Fuel Distribution sales detail uses raw snapshots plus managed Parquet with compact SQLite marts.",
         ),
     )
 
