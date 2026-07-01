@@ -259,6 +259,7 @@ class StorageInventoryManager:
         database_payloads = [self._database_payload(spec) for spec in databases]
         volumes = self._volume_payloads([root.path for root in roots])
         backup_candidates = self._backup_candidates()
+        managed_snapshot_history = self._managed_snapshot_history()
         elapsed_ms = int((time.perf_counter() - start) * 1000)
         total = int(totals["logical_bytes"])
         category_rows = _aggregate_rows(categories, total)
@@ -290,6 +291,7 @@ class StorageInventoryManager:
             "segments": segment_rows,
             "databases": database_payloads,
             "backup_candidates": backup_candidates,
+            "managed_snapshot_history": managed_snapshot_history,
             "largest_items": largest_items,
             "growth": growth,
             "history": history,
@@ -577,6 +579,7 @@ class StorageInventoryManager:
             "databases": [],
             "largest_items": [],
             "backup_candidates": [],
+            "managed_snapshot_history": [],
             "growth": {"available": False, "reason": "No storage inventory has been created."},
             "history": [],
             "warnings": ["No storage inventory snapshot is available yet."],
@@ -634,6 +637,87 @@ class StorageInventoryManager:
         candidates.sort(key=lambda row: int(row.get("logical_bytes") or 0), reverse=True)
         return candidates
 
+    def _managed_snapshot_history(self) -> list[dict[str, Any]]:
+        analytics_root = Path(self.settings.paths.data_dir) / "analytics"
+        if not analytics_root.exists():
+            return []
+
+        rows: list[dict[str, Any]] = []
+        try:
+            domains = [path for path in analytics_root.iterdir() if path.is_dir() and not path.is_symlink()]
+        except OSError:
+            return []
+
+        for domain_dir in domains:
+            try:
+                dataset_dirs = [path for path in domain_dir.iterdir() if path.is_dir() and not path.is_symlink()]
+            except OSError:
+                continue
+            for dataset_dir in dataset_dirs:
+                raw_root = dataset_dir / "raw"
+                if not raw_root.exists() or raw_root.is_symlink() or not raw_root.is_dir():
+                    continue
+                active_batch = _managed_manifest_import_batch(dataset_dir / "manifest.json")
+                try:
+                    snapshot_dirs = [path for path in raw_root.iterdir() if path.exists() and not path.is_symlink()]
+                except OSError:
+                    continue
+                for snapshot in snapshot_dirs:
+                    total, files, modified_at = self._path_total(snapshot)
+                    active = snapshot.name == active_batch
+                    rows.append({
+                        "dataset_id": dataset_dir.name,
+                        "domain": domain_dir.name,
+                        "snapshot_id": snapshot.name,
+                        "path": str(snapshot),
+                        "logical_bytes": total,
+                        "file_count": files,
+                        "modified_at": modified_at,
+                        "active_in_manifest": active,
+                        "status": "current" if active else "retained_audit_snapshot",
+                        "reason": (
+                            "Current raw source snapshot referenced by the managed dataset manifest."
+                            if active
+                            else "Retained raw source snapshot for auditability; this is not a cleanup action."
+                        ),
+                    })
+
+        rows.sort(
+            key=lambda row: (
+                not bool(row.get("active_in_manifest")),
+                str(row.get("modified_at") or ""),
+                str(row.get("path") or ""),
+            ),
+            reverse=False,
+        )
+        current = [row for row in rows if row.get("active_in_manifest")]
+        retained = sorted(
+            [row for row in rows if not row.get("active_in_manifest")],
+            key=lambda row: str(row.get("modified_at") or ""),
+            reverse=True,
+        )
+        return current + retained
+
+    def _path_total(self, path: Path) -> tuple[int, int, str | None]:
+        if path.is_file():
+            return _file_size(path), 1, _mtime_iso(path)
+        total = 0
+        files = 0
+        modified_at = _mtime_iso(path)
+        if not path.is_dir():
+            return total, files, modified_at
+        for file_info in self._iter_files(path, []):
+            if file_info.get("type") != "file":
+                continue
+            file_path = Path(file_info["path"])
+            size = int(file_info.get("size") or 0)
+            total += size
+            files += 1
+            item_mtime = _mtime_iso(file_path)
+            if item_mtime and (modified_at is None or item_mtime > modified_at):
+                modified_at = item_mtime
+        return total, files, modified_at
+
     @staticmethod
     def _is_stale(scanned_at: Any) -> bool:
         age = StorageInventoryManager._scan_age_seconds(scanned_at)
@@ -660,6 +744,22 @@ def _is_relative_to(child: Path, parent: Path) -> bool:
         return child != parent
     except ValueError:
         return False
+
+
+def _managed_manifest_import_batch(manifest_path: Path) -> str | None:
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    selection = payload.get("selection")
+    if isinstance(selection, dict):
+        value = selection.get("import_batch_id")
+        if value:
+            return str(value)
+    value = payload.get("import_batch_id")
+    return str(value) if value else None
 
 
 def _file_size(path: Path) -> int:

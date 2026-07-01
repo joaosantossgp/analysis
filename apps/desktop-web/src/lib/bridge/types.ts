@@ -1201,6 +1201,19 @@ export type StorageBackupCandidate = {
   reason: string;
 };
 
+export type StorageManagedSnapshotHistory = {
+  dataset_id: string;
+  domain: string;
+  snapshot_id: string;
+  path: string;
+  logical_bytes: number;
+  file_count: number;
+  modified_at?: string | null;
+  active_in_manifest: boolean;
+  status: "current" | "retained_audit_snapshot" | string;
+  reason: string;
+};
+
 export type StorageGrowthInfo = {
   available: boolean;
   reason?: string;
@@ -1232,6 +1245,7 @@ export type StorageInventory = {
   segments: StorageAggregateRow[];
   databases: StorageDatabaseInfo[];
   backup_candidates?: StorageBackupCandidate[];
+  managed_snapshot_history?: StorageManagedSnapshotHistory[];
   largest_items: StorageLargestItem[];
   growth: StorageGrowthInfo;
   warnings: string[];

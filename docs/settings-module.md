@@ -149,6 +149,14 @@ panel so users can see reclaimable storage after migration validation. This is
 diagnostic only: Settings does not expose a delete or move action in the current
 contract.
 
+Managed analytical stores can also report
+`managed_snapshot_history?: StorageManagedSnapshotHistory[]`. Each row describes
+a raw source batch under a managed dataset, whether the current manifest points
+to it, its logical bytes, file count, modified time, and audit reason. The
+Settings UI shows these in the Managed Source Snapshots panel so operators can
+see retained source evidence before any future retention policy is designed.
+This is also diagnostic only: no delete or move action is exposed in this phase.
+
 ## Known Limits
 
 - Market data health is currently conservative and reports `unknown` in the

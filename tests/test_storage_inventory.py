@@ -127,6 +127,42 @@ def test_storage_inventory_classifies_analytical_stores_and_backups(tmp_path):
     ]
 
 
+def test_storage_inventory_reports_managed_raw_snapshot_history(tmp_path):
+    settings = _settings(tmp_path)
+    paths = settings.paths
+    base = paths.data_dir / "analytics" / "energy" / "fuel_distribution_sector_intake"
+    raw_root = base / "raw"
+    old_snapshot = raw_root / "fuel_distribution_20260630T120000Z"
+    current_snapshot = raw_root / "fuel_distribution_20260701T120000Z"
+    old_snapshot.mkdir(parents=True)
+    current_snapshot.mkdir(parents=True)
+    old_snapshot.joinpath("old.csv").write_bytes(b"a" * 10)
+    current_snapshot.joinpath("current.csv").write_bytes(b"b" * 20)
+    base.joinpath("manifest.json").write_text(
+        '{"selection": {"import_batch_id": "fuel_distribution_20260701T120000Z"}}',
+        encoding="utf-8",
+    )
+
+    manager = StorageInventoryManager(settings)
+    inventory = manager.scan()
+
+    history = inventory["managed_snapshot_history"]
+    assert [row["snapshot_id"] for row in history] == [
+        "fuel_distribution_20260701T120000Z",
+        "fuel_distribution_20260630T120000Z",
+    ]
+    assert history[0]["dataset_id"] == "fuel_distribution_sector_intake"
+    assert history[0]["domain"] == "energy"
+    assert history[0]["logical_bytes"] == 20
+    assert history[0]["file_count"] == 1
+    assert history[0]["active_in_manifest"] is True
+    assert history[0]["status"] == "current"
+    assert history[1]["logical_bytes"] == 10
+    assert history[1]["active_in_manifest"] is False
+    assert history[1]["status"] == "retained_audit_snapshot"
+    assert "not a cleanup action" in history[1]["reason"]
+
+
 def test_storage_inventory_persists_latest_snapshot_and_bounded_history(tmp_path):
     settings = _settings(tmp_path)
     settings.paths.data_dir.mkdir(parents=True)

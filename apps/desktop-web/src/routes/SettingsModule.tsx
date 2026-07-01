@@ -537,6 +537,7 @@ function StorageInventoryDetails({ inventory }: { inventory: StorageInventory })
         </Panel>
       ) : null}
       <RollbackBackupPlan inventory={inventory} />
+      <ManagedSourceSnapshotPlan inventory={inventory} />
       <div className="grid gap-5 xl:grid-cols-2">
         <StorageAggregatePanel title="Storage by Category" rows={inventory.categories} />
         <StorageAggregatePanel title="Storage by Data Segment" rows={inventory.segments} />
@@ -599,6 +600,50 @@ function StorageInventoryDetails({ inventory }: { inventory: StorageInventory })
         </ul>
       </Panel>
     </>
+  );
+}
+
+function ManagedSourceSnapshotPlan({ inventory }: { inventory: StorageInventory }) {
+  const snapshots = inventory.managed_snapshot_history ?? [];
+  if (snapshots.length === 0) {
+    return null;
+  }
+  const current = snapshots.filter((item) => item.active_in_manifest);
+  const retained = snapshots.filter((item) => !item.active_in_manifest);
+  const retainedBytes = retained.reduce((total, item) => total + (item.logical_bytes ?? 0), 0);
+  return (
+    <Panel
+      title="Managed Source Snapshots"
+      subtitle="Raw source batches retained for auditability before any future cleanup policy."
+    >
+      <div className="grid gap-3 md:grid-cols-3">
+        <Metric label="Current batches" value={formatNumber(current.length)} status="healthy" />
+        <Metric label="Retained audit batches" value={formatNumber(retained.length)} status={retained.length ? "degraded" : "healthy"} />
+        <Metric label="Retained bytes" value={formatBytes(retainedBytes)} />
+      </div>
+      <div className="mt-4 divide-y divide-zinc-800 rounded border border-zinc-800">
+        {snapshots.slice(0, 8).map((item) => (
+          <div key={item.path} className="grid gap-3 p-3 lg:grid-cols-[minmax(0,1fr)_9rem_8rem] lg:items-start">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-sm font-medium text-zinc-100">{item.dataset_id}</p>
+                <StatusBadge status={item.active_in_manifest ? "healthy" : "degraded"}>
+                  {item.active_in_manifest ? "Current" : "Retained"}
+                </StatusBadge>
+              </div>
+              <p className="mt-1 font-mono text-[11px] text-zinc-500">{item.domain} · {item.snapshot_id}</p>
+              <p className="break-all font-mono text-[11px] text-zinc-500">{item.path}</p>
+              <p className="mt-1 text-xs leading-5 text-zinc-500">{item.reason}</p>
+            </div>
+            <p className="font-mono text-sm text-zinc-200 lg:text-right">{formatBytes(item.logical_bytes)}</p>
+            <p className="text-xs text-zinc-500 lg:text-right">{formatDate(item.modified_at)}</p>
+          </div>
+        ))}
+      </div>
+      <p className="mt-3 text-xs leading-5 text-zinc-500">
+        This panel is diagnostic only. It does not delete or move source files; retention rules must be introduced as a separate audited maintenance step.
+      </p>
+    </Panel>
   );
 }
 
