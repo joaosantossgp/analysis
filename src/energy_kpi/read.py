@@ -19,6 +19,11 @@ from src.energy_kpi.hourly_read_adapter import (
     HourlyReadRequest,
     read_hourly_from_hot_cold,
 )
+from src.energy_kpi.fuel_distribution import (
+    get_fuel_distribution_product_year_summary,
+    get_fuel_distribution_state_month_series,
+    read_fuel_distribution_detail,
+)
 from src.platform.contracts import (
     CountryKPIValueDTO,
     EnergyKPIHealthDTO,
@@ -101,6 +106,73 @@ class EnergyKPIReadService:
 
     def _engine(self):
         return get_energy_kpi_engine(self._settings)
+
+    def get_fuel_distribution_product_year_summary(
+        self,
+        *,
+        source_dataset_id: str | None = None,
+        product: str | None = None,
+        unit: str | None = None,
+        start_year: int | None = None,
+        end_year: int | None = None,
+        limit: int | None = 500,
+    ) -> dict[str, Any]:
+        """Return compact ANP Fuel Distribution yearly summaries from SQLite marts."""
+        with self._engine().connect() as conn:
+            return get_fuel_distribution_product_year_summary(
+                conn,
+                source_dataset_id=source_dataset_id,
+                product=product,
+                unit=unit,
+                start_year=start_year,
+                end_year=end_year,
+                limit=limit,
+            )
+
+    def get_fuel_distribution_state_month_series(
+        self,
+        *,
+        source_dataset_id: str | None,
+        product: str | None,
+        state: str | None = None,
+        start_period: str | None = None,
+        end_period: str | None = None,
+        unit: str | None = None,
+        limit: int | None = 5_000,
+    ) -> dict[str, Any]:
+        """Return bounded state/month ANP Fuel Distribution series from SQLite marts."""
+        with self._engine().connect() as conn:
+            return get_fuel_distribution_state_month_series(
+                conn,
+                source_dataset_id=source_dataset_id,
+                product=product,
+                state=state,
+                start_period=start_period,
+                end_period=end_period,
+                unit=unit,
+                limit=limit,
+            )
+
+    def get_fuel_distribution_detail(
+        self,
+        *,
+        source_dataset_id: str | None,
+        product: str | None,
+        year: int | None,
+        region_or_state: str | None = None,
+        limit: int | None = 500,
+        offset: int | None = 0,
+    ) -> dict[str, Any]:
+        """Return bounded ANP Fuel Distribution detail from managed Parquet."""
+        return read_fuel_distribution_detail(
+            data_dir=Path(self._settings.paths.data_dir),
+            source_dataset_id=source_dataset_id,
+            product=product,
+            year=year,
+            region_or_state=region_or_state,
+            limit=limit,
+            offset=offset,
+        )
 
     def get_energy_mart_status(self) -> dict[str, Any]:
         """Return lightweight Energy mart maintenance status.

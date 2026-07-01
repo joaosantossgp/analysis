@@ -75,6 +75,22 @@ def ensure_fuel_distribution_managed_tables(conn) -> None:
             PRIMARY KEY (source_dataset_id, product, year, unit)
         )
     """))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS fuel_distribution_state_month_mart (
+            source_dataset_id  TEXT NOT NULL,
+            product            TEXT NOT NULL,
+            reference_period   TEXT NOT NULL,
+            year               INTEGER NOT NULL,
+            month              INTEGER NOT NULL,
+            region             TEXT,
+            state              TEXT NOT NULL,
+            unit               TEXT NOT NULL,
+            total_value        REAL NOT NULL,
+            source_row_count   INTEGER NOT NULL,
+            updated_at         TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (source_dataset_id, product, reference_period, state, unit)
+        )
+    """))
 
 
 def _utc_now() -> str:
@@ -307,6 +323,10 @@ def persist_fuel_distribution_sources_to_managed_store(
             text("DELETE FROM fuel_distribution_product_year_mart WHERE source_dataset_id = :source_dataset_id"),
             {"source_dataset_id": source_id},
         )
+        conn.execute(
+            text("DELETE FROM fuel_distribution_state_month_mart WHERE source_dataset_id = :source_dataset_id"),
+            {"source_dataset_id": source_id},
+        )
     mart_frame = (
         frame.group_by(["source_dataset_id", "product", "year", "unit"])
         .agg([
@@ -336,6 +356,45 @@ def persist_fuel_distribution_sources_to_managed_store(
             for row in mart_frame.to_dicts()
         ],
     )
+    state_month_frame = (
+        frame.filter(pl.col("frequency") == "monthly")
+        .filter(pl.col("state").is_not_null())
+        .filter(pl.col("month").is_not_null())
+        .group_by(["source_dataset_id", "product", "reference_period", "year", "month", "region", "state", "unit"])
+        .agg([
+            pl.col("value").sum().alias("total_value"),
+            pl.len().alias("source_row_count"),
+        ])
+        .sort(["product", "reference_period", "state", "source_dataset_id", "unit"])
+    )
+    if state_month_frame.height:
+        conn.execute(
+            text("""
+                INSERT INTO fuel_distribution_state_month_mart (
+                    source_dataset_id, product, reference_period, year, month, region, state,
+                    unit, total_value, source_row_count, updated_at
+                )
+                VALUES (
+                    :source_dataset_id, :product, :reference_period, :year, :month, :region, :state,
+                    :unit, :total_value, :source_row_count, datetime('now')
+                )
+            """),
+            [
+                {
+                    "source_dataset_id": str(row["source_dataset_id"]),
+                    "product": str(row["product"]),
+                    "reference_period": str(row["reference_period"]),
+                    "year": int(row["year"]),
+                    "month": int(row["month"]),
+                    "region": row["region"],
+                    "state": str(row["state"]),
+                    "unit": str(row["unit"]),
+                    "total_value": float(row["total_value"]),
+                    "source_row_count": int(row["source_row_count"]),
+                }
+                for row in state_month_frame.to_dicts()
+            ],
+        )
 
     manifest = _manifest_payload(
         base_dir=paths.base_dir,
@@ -384,6 +443,128 @@ def persist_fuel_distribution_sources_to_managed_store(
         "raw_snapshots": raw_snapshots,
         "partitions": partitions,
     }
+
+
+def _bounded_limit(limit: int | None, *, default: int = 500, maximum: int = 5_000) -> int:
+    return max(1, min(int(limit or default), maximum))
+
+
+def get_fuel_distribution_product_year_summary(
+    conn,
+    *,
+    source_dataset_id: str | None = None,
+    product: str | None = None,
+    unit: str | None = None,
+    start_year: int | None = None,
+    end_year: int | None = None,
+    limit: int | None = 500,
+) -> dict[str, Any]:
+    """Read compact Fuel Distribution yearly product summaries from SQLite."""
+    ensure_fuel_distribution_managed_tables(conn)
+    clauses: list[str] = []
+    params: dict[str, Any] = {"limit": _bounded_limit(limit)}
+    if source_dataset_id:
+        clauses.append("source_dataset_id = :source_dataset_id")
+        params["source_dataset_id"] = str(source_dataset_id)
+    if product:
+        clauses.append("product = :product")
+        params["product"] = str(product)
+    if unit:
+        clauses.append("unit = :unit")
+        params["unit"] = str(unit)
+    if start_year is not None:
+        clauses.append("year >= :start_year")
+        params["start_year"] = int(start_year)
+    if end_year is not None:
+        clauses.append("year <= :end_year")
+        params["end_year"] = int(end_year)
+    where = "WHERE " + " AND ".join(clauses) if clauses else ""
+    rows = conn.execute(
+        text(f"""
+            SELECT source_dataset_id, product, year, unit, total_value, source_row_count
+            FROM fuel_distribution_product_year_mart
+            {where}
+            ORDER BY product, year, source_dataset_id, unit
+            LIMIT :limit
+        """),
+        params,
+    ).mappings().all()
+    items = [
+        {
+            "source_dataset_id": str(row["source_dataset_id"]),
+            "product": str(row["product"]),
+            "year": int(row["year"]),
+            "unit": str(row["unit"]),
+            "total_value": float(row["total_value"]),
+            "source_row_count": int(row["source_row_count"]),
+        }
+        for row in rows
+    ]
+    return {"source": "sqlite_mart", "items": items, "count": len(items)}
+
+
+def get_fuel_distribution_state_month_series(
+    conn,
+    *,
+    source_dataset_id: str | None,
+    product: str | None,
+    state: str | None = None,
+    start_period: str | None = None,
+    end_period: str | None = None,
+    unit: str | None = None,
+    limit: int | None = 5_000,
+) -> dict[str, Any]:
+    """Read bounded monthly state/product Fuel Distribution series from SQLite."""
+    source_id = str(source_dataset_id or "").strip()
+    product_value = str(product or "").strip()
+    if not source_id or not product_value:
+        raise ValueError("Fuel Distribution state-month reads require source_dataset_id and product")
+    ensure_fuel_distribution_managed_tables(conn)
+    clauses = ["source_dataset_id = :source_dataset_id", "product = :product"]
+    params: dict[str, Any] = {
+        "source_dataset_id": source_id,
+        "product": product_value,
+        "limit": _bounded_limit(limit, default=5_000),
+    }
+    if state:
+        clauses.append("state = :state")
+        params["state"] = str(state)
+    if start_period:
+        clauses.append("reference_period >= :start_period")
+        params["start_period"] = str(start_period)
+    if end_period:
+        clauses.append("reference_period <= :end_period")
+        params["end_period"] = str(end_period)
+    if unit:
+        clauses.append("unit = :unit")
+        params["unit"] = str(unit)
+    rows = conn.execute(
+        text(f"""
+            SELECT source_dataset_id, product, reference_period, year, month, region, state,
+                   unit, total_value, source_row_count
+            FROM fuel_distribution_state_month_mart
+            WHERE {" AND ".join(clauses)}
+            ORDER BY reference_period, state, unit
+            LIMIT :limit
+        """),
+        params,
+    ).mappings().all()
+    items = [
+        {
+            "source_dataset_id": str(row["source_dataset_id"]),
+            "product": str(row["product"]),
+            "reference_period": str(row["reference_period"]),
+            "year": int(row["year"]),
+            "month": int(row["month"]),
+            "region": row["region"],
+            "state": str(row["state"]),
+            "unit": str(row["unit"]),
+            "total_value": float(row["total_value"]),
+            "source_row_count": int(row["source_row_count"]),
+        }
+        for row in rows
+    ]
+    return {"source": "sqlite_mart", "items": items, "count": len(items)}
 
 
 def _read_valid_manifest(data_dir: Path) -> dict[str, Any]:

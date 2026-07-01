@@ -40,9 +40,14 @@ No new heavy importer may write high-cardinality detail rows into
    `scripts/data/import_fuel_distribution_sources.py`.
    - Preserve raw snapshots, write managed detail storage, create a manifest,
      and avoid unbounded writes to the main SQLite databases.
-4. Marts and app reads. Partially done.
-   - `fuel_distribution_product_year_mart` exists for summary-first reads.
-   - UI reads and richer state/month marts remain follow-up work.
+4. Marts and read contracts. Done for the first UI slice.
+   - `fuel_distribution_product_year_mart` exists for summary-first national
+     yearly reads.
+   - `fuel_distribution_state_month_mart` exists for bounded state/month trend
+     reads.
+   - Desktop bridge/read service contracts expose both marts plus bounded
+     Parquet detail reads.
+   - Dedicated UI screens remain follow-up work.
 
 ## Acceptance Before Importer Work
 

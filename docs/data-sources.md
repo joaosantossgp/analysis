@@ -130,7 +130,10 @@ sales data. Its current source dossier is
 `python scripts/data/import_fuel_distribution_sources.py`. New fuel-sector
 ingestion must use raw snapshots, managed analytical detail storage, explicit
 lineage, and compact SQLite marts; it must not add high-cardinality detail rows
-directly to the main app databases.
+directly to the main app databases. Current app-facing reads use
+`fuel_distribution_product_year_mart` for overview summaries,
+`fuel_distribution_state_month_mart` for bounded trends, and cold Parquet detail
+only after the caller supplies source/product/year filters.
 
 The standalone `idx_cppe_ref(reference_datetime)` index is intentionally not
 created by the current schema. The raw table primary key already starts with

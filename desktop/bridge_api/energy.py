@@ -189,6 +189,67 @@ class EnergyBridgeMixin:
         except Exception as exc:
             return {"error": str(exc), "refresh_running": False, "refresh_error": None}
 
+    def get_fuel_distribution_product_year_summary(self, params=None) -> dict:
+        params = params or {}
+        try:
+            payload = self._retry_energy_read(
+                lambda: self._energy_svc().get_fuel_distribution_product_year_summary(
+                    source_dataset_id=params.get("source_dataset_id"),
+                    product=params.get("product"),
+                    unit=params.get("unit"),
+                    start_year=int(params["start_year"]) if params.get("start_year") is not None else None,
+                    end_year=int(params["end_year"]) if params.get("end_year") is not None else None,
+                    limit=int(params.get("limit", 500) or 500),
+                )
+            )
+            return self._sanitize_for_json(payload)
+        except Exception as exc:
+            return {"error": str(exc), "source": "sqlite_mart", "items": [], "count": 0}
+
+    def get_fuel_distribution_state_month_series(self, params=None) -> dict:
+        params = params or {}
+        try:
+            payload = self._retry_energy_read(
+                lambda: self._energy_svc().get_fuel_distribution_state_month_series(
+                    source_dataset_id=params.get("source_dataset_id"),
+                    product=params.get("product"),
+                    state=params.get("state"),
+                    start_period=params.get("start_period"),
+                    end_period=params.get("end_period"),
+                    unit=params.get("unit"),
+                    limit=int(params.get("limit", 5000) or 5000),
+                )
+            )
+            return self._sanitize_for_json(payload)
+        except Exception as exc:
+            return {"error": str(exc), "source": "sqlite_mart", "items": [], "count": 0}
+
+    def get_fuel_distribution_detail(self, params=None) -> dict:
+        params = params or {}
+        try:
+            payload = self._retry_energy_read(
+                lambda: self._energy_svc().get_fuel_distribution_detail(
+                    source_dataset_id=params.get("source_dataset_id"),
+                    product=params.get("product"),
+                    year=int(params["year"]) if params.get("year") is not None else None,
+                    region_or_state=params.get("region_or_state"),
+                    limit=int(params.get("limit", 500) or 500),
+                    offset=int(params.get("offset", 0) or 0),
+                )
+            )
+            return self._sanitize_for_json(payload)
+        except Exception as exc:
+            return {
+                "error": str(exc),
+                "source": "managed_parquet",
+                "rows": [],
+                "count": 0,
+                "total_matching_rows": 0,
+                "limit": int(params.get("limit", 500) or 500),
+                "offset": int(params.get("offset", 0) or 0),
+                "truncated": False,
+            }
+
     def refresh_energy_kpis(self, params=None) -> dict:
         params = params or {}
         state = self._energy_refresh_status()

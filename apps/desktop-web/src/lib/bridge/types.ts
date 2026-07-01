@@ -26,6 +26,12 @@ import type {
   PlantParcelManualImportResult,
   PlantParcelChartDataParams,
   PlantParcelChartDataResponse,
+  FuelDistributionProductYearSummaryParams,
+  FuelDistributionProductYearSummaryResponse,
+  FuelDistributionStateMonthSeriesParams,
+  FuelDistributionStateMonthSeriesResponse,
+  FuelDistributionDetailParams,
+  FuelDistributionDetailResponse,
   EnergyMartStatusResponse,
   EnergyMartRebuildState,
   StartEnergyMartRebuildParams
@@ -172,6 +178,14 @@ export type {
   PlantParcelChartDataParams,
   PlantParcelChartSeries,
   PlantParcelChartDataResponse,
+  FuelDistributionProductYearSummaryParams,
+  FuelDistributionProductYearSummaryItem,
+  FuelDistributionProductYearSummaryResponse,
+  FuelDistributionStateMonthSeriesParams,
+  FuelDistributionStateMonthSeriesItem,
+  FuelDistributionStateMonthSeriesResponse,
+  FuelDistributionDetailParams,
+  FuelDistributionDetailResponse,
   EnergyMartBuildStatus,
   EnergyMartRebuildState,
   EnergyMartStatusResponse,
@@ -1559,6 +1573,9 @@ export interface BridgeApi {
   refresh_plant_parcel_source(params: PlantParcelRefreshParams): Promise<PlantParcelRefreshResult>;
   select_plant_parcel_import_file(params: PlantParcelFilePickerParams): Promise<PlantParcelFilePickerResult>;
   import_plant_parcel_source_file(params: PlantParcelManualImportParams): Promise<PlantParcelManualImportResult>;
+  get_fuel_distribution_product_year_summary(params?: FuelDistributionProductYearSummaryParams): Promise<FuelDistributionProductYearSummaryResponse>;
+  get_fuel_distribution_state_month_series(params: FuelDistributionStateMonthSeriesParams): Promise<FuelDistributionStateMonthSeriesResponse>;
+  get_fuel_distribution_detail(params: FuelDistributionDetailParams): Promise<FuelDistributionDetailResponse>;
   // Distribution analytics domain
   get_distribution_distributors(params?: { search?: string; economic_group_id?: string; uf?: string }): Promise<{ items: DistributorEntry[]; count: number; error?: string }>;
   get_distribution_distributor_detail(params: { distributor_id: string }): Promise<DistributorDetail | { error: string }>;
@@ -1647,6 +1664,9 @@ export interface BridgeApi {
   refresh_plant_parcel_source(params: PlantParcelRefreshParams): Promise<PlantParcelRefreshResult>;
   select_plant_parcel_import_file(params: PlantParcelFilePickerParams): Promise<PlantParcelFilePickerResult>;
   import_plant_parcel_source_file(params: PlantParcelManualImportParams): Promise<PlantParcelManualImportResult>;
+  get_fuel_distribution_product_year_summary(params?: FuelDistributionProductYearSummaryParams): Promise<FuelDistributionProductYearSummaryResponse>;
+  get_fuel_distribution_state_month_series(params: FuelDistributionStateMonthSeriesParams): Promise<FuelDistributionStateMonthSeriesResponse>;
+  get_fuel_distribution_detail(params: FuelDistributionDetailParams): Promise<FuelDistributionDetailResponse>;
   // Distribution analytics domain
   get_distribution_distributors(params?: { search?: string; economic_group_id?: string; uf?: string }): Promise<{ items: DistributorEntry[]; count: number; error?: string }>;
   get_distribution_distributor_detail(params: { distributor_id: string }): Promise<DistributorDetail | { error: string }>;

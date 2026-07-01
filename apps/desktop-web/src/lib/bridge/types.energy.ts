@@ -449,6 +449,85 @@ export interface PlantParcelChartDataResponse {
   error?: string;
 }
 
+export interface FuelDistributionProductYearSummaryParams {
+  source_dataset_id?: string;
+  product?: string;
+  unit?: string;
+  start_year?: number;
+  end_year?: number;
+  limit?: number;
+}
+
+export interface FuelDistributionProductYearSummaryItem {
+  source_dataset_id: string;
+  product: string;
+  year: number;
+  unit: string;
+  total_value: number;
+  source_row_count: number;
+}
+
+export interface FuelDistributionProductYearSummaryResponse {
+  source: "sqlite_mart" | string;
+  items: FuelDistributionProductYearSummaryItem[];
+  count: number;
+  error?: string;
+}
+
+export interface FuelDistributionStateMonthSeriesParams {
+  source_dataset_id: string;
+  product: string;
+  state?: string;
+  start_period?: string;
+  end_period?: string;
+  unit?: string;
+  limit?: number;
+}
+
+export interface FuelDistributionStateMonthSeriesItem {
+  source_dataset_id: string;
+  product: string;
+  reference_period: string;
+  year: number;
+  month: number;
+  region: string | null;
+  state: string;
+  unit: string;
+  total_value: number;
+  source_row_count: number;
+}
+
+export interface FuelDistributionStateMonthSeriesResponse {
+  source: "sqlite_mart" | string;
+  items: FuelDistributionStateMonthSeriesItem[];
+  count: number;
+  error?: string;
+}
+
+export interface FuelDistributionDetailParams {
+  source_dataset_id: string;
+  product: string;
+  year: number;
+  region_or_state?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface FuelDistributionDetailResponse {
+  source: "managed_parquet" | string;
+  dataset_id?: string;
+  source_dataset_id?: string;
+  product?: string;
+  year?: number;
+  rows: Array<Record<string, unknown>>;
+  count: number;
+  total_matching_rows: number;
+  limit: number;
+  offset: number;
+  truncated: boolean;
+  error?: string;
+}
+
 export interface EnergyMartBuildStatus {
   mart_name?: string;
   build_version?: string | null;

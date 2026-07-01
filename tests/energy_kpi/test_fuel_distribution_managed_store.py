@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import polars as pl
 import pytest
@@ -87,6 +88,20 @@ def test_fuel_distribution_import_writes_raw_parquet_manifest_and_mart(tmp_path:
         ("GASOLINA C", 2026, "m3", 2734.5, 2),
         ("ÓLEO DIESEL", 2025, "m3", 700.25, 1),
     ]
+    state_month_rows = db_conn.execute(
+        text(
+            """
+            SELECT product, reference_period, state, unit, total_value, source_row_count
+            FROM fuel_distribution_state_month_mart
+            ORDER BY product, reference_period
+            """
+        )
+    ).fetchall()
+    assert state_month_rows == [
+        ("GASOLINA C", "2026-01", "SÃO PAULO", "m3", 1234.5, 1),
+        ("GASOLINA C", "2026-02", "SÃO PAULO", "m3", 1500.0, 1),
+        ("ÓLEO DIESEL", "2025-01", "PARANÁ", "m3", 700.25, 1),
+    ]
 
     catalog = db_conn.execute(
         text(
@@ -100,6 +115,205 @@ def test_fuel_distribution_import_writes_raw_parquet_manifest_and_mart(tmp_path:
     assert catalog is not None
     assert catalog.row_count == 3
     assert catalog.partition_count == 2
+
+
+def test_fuel_distribution_summary_reads_use_sqlite_marts(tmp_path: Path, db_conn):
+    from src.energy_kpi.fuel_distribution import (
+        FuelDistributionSourceFile,
+        get_fuel_distribution_product_year_summary,
+        get_fuel_distribution_state_month_series,
+        persist_fuel_distribution_sources_to_managed_store,
+    )
+
+    source_path = _write_csv(
+        tmp_path / "vendas-combustiveis.csv",
+        "\ufeffANO;MÊS;GRANDE REGIÃO;UNIDADE DA FEDERAÇÃO;PRODUTO;VENDAS\n"
+        "2026;JAN;REGIÃO SUDESTE;SÃO PAULO;GASOLINA C;100,0\n"
+        "2026;FEV;REGIÃO SUDESTE;SÃO PAULO;GASOLINA C;200,0\n"
+        "2026;JAN;REGIÃO SUL;PARANÁ;GASOLINA C;50,0\n"
+        "2025;JAN;REGIÃO SUL;PARANÁ;ÓLEO DIESEL;70,0\n",
+    )
+    persist_fuel_distribution_sources_to_managed_store(
+        data_dir=tmp_path,
+        conn=db_conn,
+        sources=(
+            FuelDistributionSourceFile(
+                source_dataset_id="anp_fuel_sales_state_month",
+                label="Vendas de derivados petroleo e etanol",
+                official_url="https://example.test/anp/vendas.csv",
+                path=source_path,
+                grain="state-product-month",
+                value_unit="m3",
+                frequency="monthly",
+            ),
+        ),
+        import_batch_id="fuel-batch-summary",
+        parser_version="test-parser",
+    )
+
+    summary = get_fuel_distribution_product_year_summary(
+        db_conn,
+        product="GASOLINA C",
+        start_year=2026,
+        end_year=2026,
+    )
+    assert summary["source"] == "sqlite_mart"
+    assert summary["count"] == 1
+    assert summary["items"] == [
+        {
+            "source_dataset_id": "anp_fuel_sales_state_month",
+            "product": "GASOLINA C",
+            "year": 2026,
+            "unit": "m3",
+            "total_value": 350.0,
+            "source_row_count": 3,
+        }
+    ]
+
+    series = get_fuel_distribution_state_month_series(
+        db_conn,
+        source_dataset_id="anp_fuel_sales_state_month",
+        product="GASOLINA C",
+        state="SÃO PAULO",
+        start_period="2026-01",
+        end_period="2026-12",
+    )
+    assert series["source"] == "sqlite_mart"
+    assert series["count"] == 2
+    assert series["items"] == [
+        {
+            "source_dataset_id": "anp_fuel_sales_state_month",
+            "product": "GASOLINA C",
+            "reference_period": "2026-01",
+            "year": 2026,
+            "month": 1,
+            "region": "REGIÃO SUDESTE",
+            "state": "SÃO PAULO",
+            "unit": "m3",
+            "total_value": 100.0,
+            "source_row_count": 1,
+        },
+        {
+            "source_dataset_id": "anp_fuel_sales_state_month",
+            "product": "GASOLINA C",
+            "reference_period": "2026-02",
+            "year": 2026,
+            "month": 2,
+            "region": "REGIÃO SUDESTE",
+            "state": "SÃO PAULO",
+            "unit": "m3",
+            "total_value": 200.0,
+            "source_row_count": 1,
+        },
+    ]
+
+
+def test_energy_read_service_exposes_fuel_distribution_marts(tmp_path: Path, db_conn):
+    from src.energy_kpi.fuel_distribution import (
+        FuelDistributionSourceFile,
+        persist_fuel_distribution_sources_to_managed_store,
+    )
+    from src.energy_kpi.read import EnergyKPIReadService
+
+    source_path = _write_csv(
+        tmp_path / "vendas-combustiveis.csv",
+        "\ufeffANO;MÊS;GRANDE REGIÃO;UNIDADE DA FEDERAÇÃO;PRODUTO;VENDAS\n"
+        "2026;JAN;REGIÃO SUDESTE;SÃO PAULO;GASOLINA C;100,0\n",
+    )
+    persist_fuel_distribution_sources_to_managed_store(
+        data_dir=tmp_path,
+        conn=db_conn,
+        sources=(
+            FuelDistributionSourceFile(
+                source_dataset_id="anp_fuel_sales_state_month",
+                label="Vendas de derivados petroleo e etanol",
+                official_url="https://example.test/anp/vendas.csv",
+                path=source_path,
+                grain="state-product-month",
+                value_unit="m3",
+                frequency="monthly",
+            ),
+        ),
+        import_batch_id="fuel-batch-service",
+        parser_version="test-parser",
+    )
+
+    class MockConnContext:
+        def __init__(self, conn):
+            self.conn = conn
+
+        def __enter__(self):
+            return self.conn
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            return None
+
+    mock_engine = MagicMock()
+    mock_engine.connect.side_effect = lambda: MockConnContext(db_conn)
+    settings = MagicMock()
+    settings.paths.data_dir = tmp_path
+    svc = EnergyKPIReadService(settings)
+    svc._engine = MagicMock(return_value=mock_engine)
+
+    summary = svc.get_fuel_distribution_product_year_summary(product="GASOLINA C")
+    assert summary["items"][0]["total_value"] == 100.0
+
+    series = svc.get_fuel_distribution_state_month_series(
+        source_dataset_id="anp_fuel_sales_state_month",
+        product="GASOLINA C",
+        state="SÃO PAULO",
+    )
+    assert series["items"][0]["reference_period"] == "2026-01"
+
+
+def test_energy_bridge_exposes_fuel_distribution_read_contracts():
+    from desktop.bridge import CVMBridge
+
+    class MockBridge(CVMBridge):
+        def __init__(self):
+            self._energy_read_service = MagicMock()
+            self._energy_read_service.get_fuel_distribution_product_year_summary.return_value = {
+                "source": "sqlite_mart",
+                "items": [{"product": "GASOLINA C"}],
+                "count": 1,
+            }
+            self._energy_read_service.get_fuel_distribution_state_month_series.return_value = {
+                "source": "sqlite_mart",
+                "items": [{"reference_period": "2026-01"}],
+                "count": 1,
+            }
+
+        def _energy_svc(self):
+            return self._energy_read_service
+
+        def _sanitize_for_json(self, value):
+            return value
+
+    bridge = MockBridge()
+    summary = bridge.get_fuel_distribution_product_year_summary({"product": "GASOLINA C"})
+    assert summary["count"] == 1
+    bridge._energy_read_service.get_fuel_distribution_product_year_summary.assert_called_once_with(
+        source_dataset_id=None,
+        product="GASOLINA C",
+        unit=None,
+        start_year=None,
+        end_year=None,
+        limit=500,
+    )
+
+    series = bridge.get_fuel_distribution_state_month_series(
+        {"source_dataset_id": "anp_fuel_sales_state_month", "product": "GASOLINA C", "state": "SP"}
+    )
+    assert series["items"][0]["reference_period"] == "2026-01"
+    bridge._energy_read_service.get_fuel_distribution_state_month_series.assert_called_once_with(
+        source_dataset_id="anp_fuel_sales_state_month",
+        product="GASOLINA C",
+        state="SP",
+        start_period=None,
+        end_period=None,
+        unit=None,
+        limit=5000,
+    )
 
 
 def test_fuel_distribution_detail_reads_require_bounds(tmp_path: Path, db_conn):

@@ -198,6 +198,12 @@ def registered_managed_datasets() -> tuple[ManagedDatasetRegistration, ...]:
                     classification="sqlite_mart",
                     notes="Compact ANP Fuel Distribution yearly product mart; detail is externalized to managed Parquet.",
                 ),
+                ManagedSqliteTable(
+                    database="energy_kpis.db",
+                    table_name="fuel_distribution_state_month_mart",
+                    classification="sqlite_mart",
+                    notes="Compact ANP Fuel Distribution state-month trend mart for bounded chart reads.",
+                ),
             ),
             notes="ANP Fuel Distribution sales detail uses raw snapshots plus managed Parquet with compact SQLite marts.",
         ),

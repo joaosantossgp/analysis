@@ -45,7 +45,8 @@ def test_registered_managed_dataset_contracts_are_unique_and_valid():
     assert fuel_registration.contract.fact_grain == "fuel-sales source-geography-product-period detail"
     assert "cold_parquet" in fuel_registration.contract.storage_layers
     assert {table.table_name for table in fuel_registration.sqlite_tables} == {
-        "fuel_distribution_product_year_mart"
+        "fuel_distribution_product_year_mart",
+        "fuel_distribution_state_month_mart",
     }
 
 
