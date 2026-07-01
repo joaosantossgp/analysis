@@ -9,16 +9,53 @@ updates, and diagnostics.
 | Route | Section |
 |-------|---------|
 | `/settings` | Overview |
-| `/settings/health` | Data Health |
-| `/settings/storage` | Storage and Local Data |
-| `/settings/sources` | Sources and Imports |
-| `/settings/imports` | Backward-compatible Sources and Imports entry |
-| `/settings/updates` | Updates |
-| `/settings/coverage` | Backward-compatible CVM Coverage detail entry |
-| `/settings/diagnostics` | Application / Advanced Diagnostics |
+| `/settings/health` | Data |
+| `/settings/coverage` | Data > Coverage deep link |
+| `/settings/updates` | Data > Updates deep link |
+| `/settings/sources` | Sources |
+| `/settings/imports` | Sources > Manual Imports deep link |
+| `/settings/storage` | Storage |
+| `/settings/app` | App |
+| `/settings/diagnostics` | Advanced |
 | `/status` | Redirects to `/settings/diagnostics` |
 | `/data-coverage` | Redirects to `/settings/coverage` |
 | `/atualizar-base` | Redirects to `/settings/updates` |
+
+The top-level Settings navigation is intentionally limited to six user-facing
+sections: Overview, Data, Sources, Storage, App, and Advanced. Legacy deep links
+remain routed to their original workflows, but they are grouped under the new
+section labels.
+
+## Information Architecture
+
+Overview is a calm, action-first summary. It shows overall status, issue counts,
+a capped Needs Attention list, and cards for Data, Sources, Storage, and App.
+Advanced appears from Overview only when the health summary reports critical
+diagnostic errors. Overview uses only the cached lightweight Settings health
+summary and cached storage summary; it does not trigger coverage loads, storage
+scans, imports, refreshes, repair actions, migrations, or network work.
+
+Data is the default data-state section. It focuses on required CVM registry and
+financial statement checks, coverage entry points, market/energy/source status
+when reported by the health summary, and the Data Updates workflow. Status
+definitions and provenance are no longer part of the default Data screen.
+
+Sources is a source hub. The default view shows source segment health. Manual
+Imports and News are opened through the local segmented control so the CCEE file
+import workflow and the full News settings panel are not rendered together by
+default. `/settings/imports` still opens Manual Imports directly.
+
+Storage shows local footprint, file count, free space, largest category, last
+measured time, an explicit Refresh inventory button, and managed paths first.
+Technical inventory tables remain available under Storage > Advanced details.
+
+App contains user-facing runtime state: version, runtime mode, bridge status,
+write mode, data root mode, desktop shell, lock state, and common local file
+paths. Software updater controls remain in Advanced diagnostics because the
+existing updater UI is owned by the diagnostics/status workflow.
+
+Advanced contains troubleshooting surfaces: runtime diagnostics, updater/log
+details from `StatusPage`, metric provenance, and status definitions.
 
 ## Health Status Semantics
 
@@ -79,7 +116,8 @@ The overview does not call:
 - integrity, migration, vacuum, or repair operations.
 
 Full CVM coverage and distribution source/count details are loaded only after the
-user opens the relevant Settings section or indicator workflow.
+user opens the relevant Settings section or indicator workflow. Metric
+provenance is shown in Advanced > Evidence, not on the default Data view.
 
 ## Storage Inventory
 
@@ -130,9 +168,11 @@ Storage health uses categorical thresholds:
 - skipped paths or scan errors: degraded or partial, depending on severity.
 
 The Settings Overview shows only compact cached storage fields: total logical
-footprint, main volume free space, largest category, growth when history exists,
-and last measured time. Opening `/settings/storage` displays detailed category,
-segment, database, largest-item, warning, and measurement-note tables.
+footprint, main volume free space, largest category, and last measured time.
+Opening `/settings/storage` displays the default storage summary and managed
+paths first. Detailed category, segment, database, largest-item, warning,
+rollback-backup, managed-snapshot, and measurement-note tables are kept behind
+Storage > Advanced details.
 
 `/settings/storage` also shows a tiered local storage summary:
 

@@ -27,6 +27,7 @@ import { UserImportsPage } from "./UserImportsPage";
 
 type SettingsSection =
   | "overview"
+  | "app"
   | "health"
   | "coverage"
   | "storage"
@@ -39,19 +40,27 @@ type SettingsModuleProps = {
   section: SettingsSection;
 };
 
-const NAV_ITEMS: Array<{
-  id: SettingsSection;
+type SettingsNavSection = "overview" | "data" | "sources" | "storage" | "app" | "advanced";
+
+export const SETTINGS_NAV_ITEMS: Array<{
+  id: SettingsNavSection;
   label: string;
   to: string;
-  description: string;
 }> = [
-  { id: "overview", label: "Overview", to: "/settings", description: "Status, warnings, and next actions" },
-  { id: "health", label: "Data Health", to: "/settings/health", description: "Segment-level data health" },
-  { id: "storage", label: "Storage", to: "/settings/storage", description: "Local paths and data files" },
-  { id: "sources", label: "Sources & Imports", to: "/settings/sources", description: "Managed and manual data sources" },
-  { id: "updates", label: "Updates", to: "/settings/updates", description: "Database update workflows" },
-  { id: "diagnostics", label: "Diagnostics", to: "/settings/diagnostics", description: "Runtime and advanced details" },
+  { id: "overview", label: "Overview", to: "/settings" },
+  { id: "data", label: "Data", to: "/settings/health" },
+  { id: "sources", label: "Sources", to: "/settings/sources" },
+  { id: "storage", label: "Storage", to: "/settings/storage" },
+  { id: "app", label: "App", to: "/settings/app" },
+  { id: "advanced", label: "Advanced", to: "/settings/diagnostics" },
 ];
+
+export function getSettingsNavSection(section: SettingsSection): SettingsNavSection {
+  if (section === "health" || section === "coverage" || section === "updates") return "data";
+  if (section === "imports") return "sources";
+  if (section === "diagnostics") return "advanced";
+  return section;
+}
 
 export function SettingsModule({ section }: SettingsModuleProps) {
   const [bridgeReady, setBridgeReady] = useState(false);
@@ -78,13 +87,13 @@ export function SettingsModule({ section }: SettingsModuleProps) {
   const summary = result?.summary ?? null;
   const browserReason = result?.mode === "browser" ? result.reason : null;
   const loading = !bridgeReady || summaryQuery.isLoading;
-  const navSection = section === "imports" ? "sources" : section === "coverage" ? "health" : section;
+  const navSection = getSettingsNavSection(section);
 
   return (
     <section className="space-y-5">
       <PageHeader
         title="Settings"
-        subtitle="Local application configuration, data health, storage, sources, updates, and diagnostics."
+        subtitle="Health, data sources, storage, app state, and diagnostics."
         actions={
           <StatusBadge status={summary?.overall_status ?? "unknown"}>
             {loading ? "Connecting" : statusLabel(summary?.overall_status ?? "unknown")}
@@ -113,30 +122,21 @@ export function SettingsModule({ section }: SettingsModuleProps) {
             <SettingsNestedPage intro={<CoverageIntro summary={summary} />}>
               <DataCoveragePage />
             </SettingsNestedPage>
-          ) : section === "storage" ? (
-            <SettingsStorage loading={loading} summary={summary} />
-          ) : section === "sources" || section === "imports" ? (
-            <SettingsNestedPage intro={<SourcesIntro summary={summary} />}>
-              <SettingsGroup
-                title="News Sources & Retention"
-                subtitle="Local news feeds, RSS/Atom additions, source health, collection runs, and News database retention."
-              >
-                <NewsSettingsPanel />
-              </SettingsGroup>
-              <SettingsGroup
-                title="Manual Imports"
-                subtitle="User-managed import workflows and file-based source tools."
-              >
-                <UserImportsPage />
-              </SettingsGroup>
-            </SettingsNestedPage>
           ) : section === "updates" ? (
             <SettingsNestedPage intro={<UpdatesIntro summary={summary} />}>
               <UpdateBasePage />
             </SettingsNestedPage>
+          ) : section === "storage" ? (
+            <SettingsStorage loading={loading} summary={summary} />
+          ) : section === "sources" || section === "imports" ? (
+            <SettingsSources loading={loading} summary={summary} initialView={section === "imports" ? "imports" : "sources"} />
+          ) : section === "app" ? (
+            <SettingsApp loading={loading} summary={summary} />
           ) : (
             <SettingsNestedPage intro={<DiagnosticsIntro summary={summary} />}>
+              <AdvancedEvidence summary={summary} />
               <StatusPage />
+              <AdvancedReference />
             </SettingsNestedPage>
           )}
         </main>
@@ -145,14 +145,14 @@ export function SettingsModule({ section }: SettingsModuleProps) {
   );
 }
 
-function SettingsNav({ current }: { current: SettingsSection }) {
+function SettingsNav({ current }: { current: SettingsNavSection }) {
   return (
     <aside className="min-w-0">
       <nav
         aria-label="Settings sections"
         className="grid gap-1 rounded-lg border border-zinc-800 bg-zinc-900/55 p-2 xl:sticky xl:top-4"
       >
-        {NAV_ITEMS.map((item) => {
+        {SETTINGS_NAV_ITEMS.map((item) => {
           const active = current === item.id;
           return (
             <NavLink
@@ -166,8 +166,10 @@ function SettingsNav({ current }: { current: SettingsSection }) {
                 color: active ? "var(--color-text-primary)" : "var(--color-text-secondary)",
               }}
             >
-              <span className="block text-sm font-medium">{item.label}</span>
-              <span className="mt-0.5 block text-[11px] leading-4 text-zinc-500">{item.description}</span>
+              <span className="flex items-center justify-between gap-2 text-sm font-medium">
+                {item.label}
+                {active ? <span className="h-1.5 w-1.5 rounded-full bg-cyan-300" aria-hidden="true" /> : null}
+              </span>
             </NavLink>
           );
         })}
@@ -195,41 +197,36 @@ function SettingsOverview({
   return (
     <>
       <Panel
-        title={summary.summary.title}
-        subtitle={summary.summary.message}
+        title="System status"
+        subtitle={summary.summary.title}
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <LinkButton to="/settings/health">Open Data Health</LinkButton>
+            <LinkButton to="/settings/health">Open Data</LinkButton>
             <LinkButton to="/settings/updates">Update Data</LinkButton>
+            <LinkButton to="/settings/sources">Open Sources</LinkButton>
+            <LinkButton to="/settings/storage">Open Storage</LinkButton>
           </div>
         }
       >
-        <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+        <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
           <Metric label="Overall" value={statusLabel(summary.overall_status)} status={summary.overall_status} />
           <Metric label="Critical" value={formatNumber(summary.summary.critical_segments)} status={summary.summary.critical_segments ? "critical" : "healthy"} />
           <Metric label="Degraded" value={formatNumber(summary.summary.degraded_segments)} status={summary.summary.degraded_segments ? "degraded" : "healthy"} />
           <Metric label="Empty" value={formatNumber(summary.summary.empty_segments)} status={summary.summary.empty_segments ? "empty" : "healthy"} />
           <Metric label="Updating" value={formatNumber(summary.summary.updating_segments)} status={summary.summary.updating_segments ? "updating" : "healthy"} />
-          <Metric label="Load" value={`${formatNumber(summary.summary.initial_load_duration_ms)} ms`} />
         </div>
-        <p className="mt-4 text-xs leading-5 text-zinc-500">
-          Initial Settings load uses {formatNumber(summary.summary.initial_bridge_calls)} bridge call. Full coverage and distribution diagnostics are deferred.
-        </p>
       </Panel>
-
-      <SettingsStorageOverview summary={summary} />
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
         <Panel
           title="Needs Attention"
-          subtitle="Most important data or runtime states first."
-          actions={<LinkButton to="/settings/health">View all segments</LinkButton>}
+          subtitle="Top issues from the lightweight local summary."
+          actions={<LinkButton to="/settings/health">Open Data</LinkButton>}
         >
           {attention.length === 0 ? (
             <StateBanner
               variant="success"
               title="No required issues detected"
-              message="Required CVM registry and financial statement checks are usable. Optional segment details may still be deferred."
               size="dense"
             />
           ) : (
@@ -237,19 +234,47 @@ function SettingsOverview({
           )}
         </Panel>
 
-        <Panel title="Runtime" subtitle="Effective desktop configuration">
-          <dl className="grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-1">
-            <Field label="Version" value={summary.runtime.version} mono />
-            <Field label="Mode" value={runtimeModeLabel(summary.runtime.runtime_mode)} />
-            <Field label="Write mode" value={summary.runtime.write_mode ?? "unknown"} tone={summary.runtime.write_mode === "read-only" ? "warn" : "neutral"} />
-            <Field label="Lock" value={summary.runtime.lock_status?.status ?? "unknown"} mono />
-          </dl>
-          {summary.runtime.write_mode === "read-only" ? (
-            <p className="mt-3 rounded border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-100">
-              Write actions are disabled. Diagnostics and local data reads remain available.
-            </p>
-          ) : null}
-        </Panel>
+        <OverviewStorageCard summary={summary} />
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <SettingsIntentCard
+          title="Data"
+          status={worstStatus(summary.segments.filter((segment) => isDataSegment(segment)))}
+          meta={`${formatNumber(summary.segments.filter((segment) => isDataSegment(segment)).length)} checks`}
+          to="/settings/health"
+          action="Review health"
+        />
+        <SettingsIntentCard
+          title="Sources"
+          status={worstStatus(summary.segments.filter((segment) => isSourceSegment(segment)))}
+          meta="Managed sources, imports, and News"
+          to="/settings/sources"
+          action="Open sources"
+        />
+        <SettingsIntentCard
+          title="Storage"
+          status={inventoryStatusForBadge(summary.storage_inventory?.status)}
+          meta={summary.storage_inventory ? formatBytes(summary.storage_inventory.logical_bytes_total) : "No inventory"}
+          to="/settings/storage"
+          action="Open storage"
+        />
+        <SettingsIntentCard
+          title="App"
+          status={summary.runtime.bridge_status === "ready" ? "healthy" : "unavailable"}
+          meta={`${runtimeModeLabel(summary.runtime.runtime_mode)} · ${summary.runtime.write_mode ?? "unknown"}`}
+          to="/settings/app"
+          action="View app state"
+        />
+        {summary.overall_status === "critical" || summary.errors.length > 0 ? (
+          <SettingsIntentCard
+            title="Advanced"
+            status="critical"
+            meta={`${formatNumber(summary.errors.length)} error(s)`}
+            to="/settings/diagnostics"
+            action="Open diagnostics"
+          />
+        ) : null}
       </div>
     </>
   );
@@ -268,45 +293,176 @@ function SettingsDataHealth({
   return (
     <>
       <Panel
-        title="Data Health"
-        subtitle="Segment-level status using the fastest available evidence. Expensive coverage details are opened explicitly."
-        actions={<LinkButton to="/settings/coverage">Open CVM Coverage</LinkButton>}
+        title="Data"
+        subtitle="Local data state and update entry points."
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <LinkButton to="/settings/updates">Data Updates</LinkButton>
+            <LinkButton to="/settings/coverage">Coverage</LinkButton>
+          </div>
+        }
       >
-        <SegmentList segments={summary.segments} />
-      </Panel>
-      <Panel title="Status Definitions" subtitle="Canonical vocabulary used in Settings." dense>
-        <div className="grid gap-2 md:grid-cols-2">
-          {(["healthy", "degraded", "critical", "updating", "empty", "unavailable", "unknown"] as SettingsHealthStatus[]).map((status) => (
-            <div key={status} className="rounded border border-zinc-800 bg-zinc-950/45 p-3">
-              <StatusBadge status={status}>{statusLabel(status)}</StatusBadge>
-              <p className="mt-2 text-xs leading-5 text-zinc-500">{definition(status)}</p>
-            </div>
-          ))}
+        <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
+          <Metric label="Required" value={formatNumber(summary.summary.required_segments)} />
+          <Metric label="Critical" value={formatNumber(summary.summary.critical_segments)} status={summary.summary.critical_segments ? "critical" : "healthy"} />
+          <Metric label="Degraded" value={formatNumber(summary.summary.degraded_segments)} status={summary.summary.degraded_segments ? "degraded" : "healthy"} />
+          <Metric label="Empty" value={formatNumber(summary.summary.empty_segments)} status={summary.summary.empty_segments ? "empty" : "healthy"} />
+          <Metric label="Updating" value={formatNumber(summary.summary.updating_segments)} status={summary.summary.updating_segments ? "updating" : "healthy"} />
         </div>
       </Panel>
-      <Panel title="Metric Provenance" subtitle="Where the summary values come from." dense>
-        <div className="overflow-auto">
-          <table className="w-full min-w-[780px] border-collapse text-sm">
-            <thead className="text-left text-xs uppercase tracking-wide text-zinc-500">
-              <tr>
-                <th className="border-b border-zinc-800 px-3 py-2">Metric</th>
-                <th className="border-b border-zinc-800 px-3 py-2">Source</th>
-                <th className="border-b border-zinc-800 px-3 py-2">Cost</th>
-                <th className="border-b border-zinc-800 px-3 py-2">Failure behavior</th>
-              </tr>
-            </thead>
-            <tbody>
-              {summary.provenance.map((item) => (
-                <tr key={`${item.metric}-${item.source}`} className="border-b border-zinc-900">
-                  <td className="px-3 py-2 font-mono text-xs text-zinc-200">{item.metric}</td>
-                  <td className="px-3 py-2 text-zinc-300">{item.source}</td>
-                  <td className="px-3 py-2 text-zinc-400">{item.cost}</td>
-                  <td className="px-3 py-2 text-zinc-500">{item.failure_behavior}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+
+      <Panel title="Health" subtitle="Fast local evidence. Coverage details and update jobs open explicitly.">
+        <SegmentList segments={summary.segments.filter((segment) => isDataSegment(segment) || isSourceSegment(segment))} />
+      </Panel>
+    </>
+  );
+}
+
+type SourcesView = "sources" | "imports" | "news";
+
+function SettingsSources({
+  loading,
+  summary,
+  initialView,
+}: {
+  loading: boolean;
+  summary: SettingsHealthSummary | null;
+  initialView: SourcesView;
+}) {
+  const [view, setView] = useState<SourcesView>(initialView);
+
+  useEffect(() => {
+    setView(initialView);
+  }, [initialView]);
+
+  if (loading || !summary) {
+    return <StateBanner variant="loading" title="Loading sources..." />;
+  }
+
+  const sourceSegments = summary.segments.filter((segment) => isSourceSegment(segment));
+
+  return (
+    <>
+      <Panel
+        title="Sources"
+        subtitle="Managed feeds, user files, and News configuration."
+        actions={<StatusBadge status={worstStatus(sourceSegments)}>{statusLabel(worstStatus(sourceSegments))}</StatusBadge>}
+      >
+        <div className="grid gap-3 md:grid-cols-3">
+          <Metric label="Source checks" value={formatNumber(sourceSegments.length)} status={worstStatus(sourceSegments)} />
+          <Metric label="Warnings" value={formatNumber(sourceSegments.reduce((total, segment) => total + segment.warnings.length, 0))} status={sourceSegments.some((segment) => segment.warnings.length > 0) ? "degraded" : "healthy"} />
+          <Metric label="Errors" value={formatNumber(sourceSegments.reduce((total, segment) => total + segment.errors.length, 0))} status={sourceSegments.some((segment) => segment.errors.length > 0) ? "critical" : "healthy"} />
         </div>
+      </Panel>
+
+      <div className="flex flex-wrap gap-2 rounded-lg border border-zinc-800 bg-zinc-900/55 p-2">
+        <TabButton active={view === "sources"} onClick={() => setView("sources")}>Data Sources</TabButton>
+        <TabButton active={view === "imports"} onClick={() => setView("imports")}>Manual Imports</TabButton>
+        <TabButton active={view === "news"} onClick={() => setView("news")}>News</TabButton>
+      </div>
+
+      {view === "sources" ? (
+        <Panel title="Data Sources" subtitle="Managed local sources and their current state.">
+          <SegmentList segments={sourceSegments} />
+        </Panel>
+      ) : view === "imports" ? (
+        <SettingsGroup
+          title="Manual Imports"
+          subtitle="CCEE source files, drag-and-drop import, status, and audit evidence."
+        >
+          <UserImportsPage />
+        </SettingsGroup>
+      ) : (
+        <SettingsGroup
+          title="News"
+          subtitle="News feeds, collection scope, retention, source health, and collection runs."
+        >
+          <NewsSettingsPanel />
+        </SettingsGroup>
+      )}
+    </>
+  );
+}
+
+function SettingsApp({
+  loading,
+  summary,
+}: {
+  loading: boolean;
+  summary: SettingsHealthSummary | null;
+}) {
+  const openMutation = useMutation({ mutationFn: openStatusPath });
+  const [copied, setCopied] = useState<string | null>(null);
+
+  if (loading || !summary) {
+    return <StateBanner variant="loading" title="Loading app state..." />;
+  }
+
+  const paths = Object.values(summary.storage).filter(Boolean) as LocalPathInfo[];
+  const desktopMode = summary.runtime.bridge_status === "ready";
+
+  async function copyPath(item: LocalPathInfo) {
+    try {
+      await navigator.clipboard.writeText(item.path);
+      setCopied(item.kind);
+    } catch {
+      setCopied(null);
+    }
+  }
+
+  return (
+    <>
+      <Panel title="App" subtitle="User-facing runtime state for the local desktop app.">
+        <dl className="grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-4">
+          <Field label="Version" value={summary.runtime.version} mono />
+          <Field label="Runtime" value={runtimeModeLabel(summary.runtime.runtime_mode)} />
+          <Field label="Bridge" value={summary.runtime.bridge_status || "unknown"} />
+          <Field label="Write mode" value={summary.runtime.write_mode ?? "unknown"} tone={summary.runtime.write_mode === "read-only" ? "warn" : "neutral"} />
+          <Field label="Data root mode" value={summary.runtime.using_release_data_dir ? "shared Documents data" : "app-managed data"} />
+          <Field label="Desktop shell" value={summary.runtime.desktop_shell ?? "unknown"} mono />
+          <Field label="Local-first" value={summary.runtime.local_first ? "yes" : "no"} />
+          <Field label="Lock" value={summary.runtime.lock_status?.status ?? "unknown"} mono />
+        </dl>
+      </Panel>
+
+      <Panel title="Local Files" subtitle="Common app locations. Diagnostics exposes the full technical view.">
+        {paths.length === 0 ? (
+          <StateBanner variant="empty" title="No local paths reported" message="Path diagnostics require the desktop bridge." />
+        ) : (
+          <div className="divide-y divide-zinc-800 rounded border border-zinc-800">
+            {paths.map((item) => (
+              <div key={item.kind} className="grid gap-3 p-3 lg:grid-cols-[10rem_minmax(0,1fr)_auto] lg:items-center">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-zinc-500">{pathLabel(item.kind)}</p>
+                  <StatusBadge status={item.exists ? "healthy" : "empty"}>{item.exists ? "Exists" : "Missing"}</StatusBadge>
+                </div>
+                <p className="break-all font-mono text-xs leading-5 text-zinc-200">{item.path}</p>
+                <div className="flex flex-wrap gap-2">
+                  <Button size="xs" variant="ghost" onClick={() => void copyPath(item)}>
+                    {copied === item.kind ? "Copied" : "Copy"}
+                  </Button>
+                  <Button
+                    size="xs"
+                    variant="secondary"
+                    disabled={!desktopMode || !canOpenPath(item.kind)}
+                    loading={openMutation.isPending && openMutation.variables === item.kind}
+                    onClick={() => openMutation.mutate(item.kind as StatusPathKind)}
+                  >
+                    Open
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {openMutation.error ? (
+          <StateBanner
+            variant="error"
+            title="Could not open path"
+            message={openMutation.error instanceof Error ? openMutation.error.message : String(openMutation.error)}
+            size="dense"
+          />
+        ) : null}
       </Panel>
     </>
   );
@@ -416,13 +572,6 @@ function SettingsStorage({
         ) : null}
       </Panel>
 
-      {inventory ? (
-        <>
-          <StorageArchitectureSnapshot inventory={inventory} />
-          <StorageInventoryDetails inventory={inventory} />
-        </>
-      ) : null}
-
       <Panel title="Managed Paths" subtitle="Resolved Settings paths and safe open-folder actions.">
         {paths.length === 0 ? (
           <StateBanner variant="empty" title="No local paths reported" message="Path diagnostics require the desktop bridge." />
@@ -462,6 +611,13 @@ function SettingsStorage({
           />
         ) : null}
       </Panel>
+
+      {inventory ? (
+        <AdvancedDisclosure title="Advanced details">
+          <StorageArchitectureSnapshot inventory={inventory} />
+          <StorageInventoryDetails inventory={inventory} />
+        </AdvancedDisclosure>
+      ) : null}
     </>
   );
 }
@@ -491,36 +647,34 @@ function StorageArchitectureSnapshot({ inventory }: { inventory: StorageInventor
   );
 }
 
-function SettingsStorageOverview({ summary }: { summary: SettingsHealthSummary }) {
+function OverviewStorageCard({ summary }: { summary: SettingsHealthSummary }) {
   const storage = summary.storage_inventory;
   if (!storage) {
     return (
-      <Panel title="Local Storage" subtitle="Cached inventory summary">
+      <Panel title="Storage" subtitle="Local data footprint">
         <StateBanner
           variant="empty"
           title="No storage inventory summary"
-          message="Open Storage and refresh inventory to measure local data footprint."
           size="dense"
         />
+        <div className="mt-3">
+          <LinkButton to="/settings/storage">Open Storage</LinkButton>
+        </div>
       </Panel>
     );
   }
   return (
     <Panel
-      title="Local Storage"
-      subtitle="Cached local data footprint and main data-volume free space."
-      actions={<LinkButton to="/settings/storage">View storage details</LinkButton>}
+      title="Storage"
+      subtitle="Cached local data footprint"
+      actions={<LinkButton to="/settings/storage">Open Storage</LinkButton>}
     >
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-3 md:grid-cols-2">
         <Metric label="Local data" value={formatBytes(storage.logical_bytes_total)} status={inventoryStatusForBadge(storage.status)} />
         <Metric label="Free on volume" value={formatBytes(storage.main_volume?.free_bytes)} status={storage.main_volume?.status ?? "unknown"} />
         <Metric label="Largest category" value={storage.largest_category?.label ?? "—"} />
-        <Metric label="Growth" value={formatGrowth(storage.growth.change_since_previous_bytes)} />
         <Metric label="Measured" value={formatRelativeAge(storage.scan_age_seconds)} status={storage.is_stale ? "degraded" : "healthy"} />
       </div>
-      <p className="mt-4 text-xs leading-5 text-zinc-500">
-        Overview reads the latest cached inventory only. It does not start a recursive filesystem scan.
-      </p>
     </Panel>
   );
 }
@@ -709,6 +863,123 @@ function StorageAggregatePanel({ title, rows }: { title: string; rows: StorageAg
   );
 }
 
+function SettingsIntentCard({
+  title,
+  status,
+  meta,
+  to,
+  action,
+}: {
+  title: string;
+  status: SettingsHealthStatus;
+  meta: string;
+  to: string;
+  action: string;
+}) {
+  return (
+    <article className="rounded-lg border border-zinc-800 bg-zinc-900/55 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold text-zinc-100">{title}</h2>
+          <p className="mt-1 text-xs text-zinc-500">{meta}</p>
+        </div>
+        <StatusBadge status={status}>{statusLabel(status)}</StatusBadge>
+      </div>
+      <div className="mt-4">
+        <LinkButton to={to}>{action}</LinkButton>
+      </div>
+    </article>
+  );
+}
+
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="rounded-md border px-3 py-1.5 text-xs font-medium transition-colors"
+      style={{
+        background: active ? "var(--color-surface-3)" : "transparent",
+        borderColor: active ? "var(--color-border-default)" : "transparent",
+        color: active ? "var(--color-text-primary)" : "var(--color-text-secondary)",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function AdvancedDisclosure({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <details className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
+      <summary className="cursor-pointer text-sm font-semibold text-zinc-100">{title}</summary>
+      <div className="mt-4 space-y-5">{children}</div>
+    </details>
+  );
+}
+
+function AdvancedEvidence({ summary }: { summary: SettingsHealthSummary | null }) {
+  if (!summary) {
+    return null;
+  }
+  return (
+    <Panel title="Evidence" subtitle="Metric provenance for the Settings health summary." dense>
+      <div className="overflow-auto">
+        <table className="w-full min-w-[780px] border-collapse text-sm">
+          <thead className="text-left text-xs uppercase tracking-wide text-zinc-500">
+            <tr>
+              <th className="border-b border-zinc-800 px-3 py-2">Metric</th>
+              <th className="border-b border-zinc-800 px-3 py-2">Source</th>
+              <th className="border-b border-zinc-800 px-3 py-2">Cost</th>
+              <th className="border-b border-zinc-800 px-3 py-2">Failure behavior</th>
+            </tr>
+          </thead>
+          <tbody>
+            {summary.provenance.map((item) => (
+              <tr key={`${item.metric}-${item.source}`} className="border-b border-zinc-900">
+                <td className="px-3 py-2 font-mono text-xs text-zinc-200">{item.metric}</td>
+                <td className="px-3 py-2 text-zinc-300">{item.source}</td>
+                <td className="px-3 py-2 text-zinc-400">{item.cost}</td>
+                <td className="px-3 py-2 text-zinc-500">{item.failure_behavior}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
+  );
+}
+
+function AdvancedReference() {
+  const statuses: SettingsHealthStatus[] = ["healthy", "degraded", "critical", "updating", "empty", "unavailable", "unknown"];
+  return (
+    <Panel title="Reference" subtitle="Status definitions used across Settings." dense>
+      <div className="grid gap-2 md:grid-cols-2">
+        {statuses.map((status) => (
+          <div key={status} className="rounded border border-zinc-800 bg-zinc-950/45 p-3">
+            <StatusBadge status={status}>{statusLabel(status)}</StatusBadge>
+            <p className="mt-2 text-xs leading-5 text-zinc-500">{definition(status)}</p>
+          </div>
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
 function SettingsNestedPage({
   intro,
   children,
@@ -748,20 +1019,9 @@ function CoverageIntro({ summary }: { summary: SettingsHealthSummary | null }) {
   const financial = summary?.segments.find((segment) => segment.id === "cvm_financials");
   return (
     <SectionIntro
-      title="Data Health"
+      title="Data Coverage"
       description="CVM coverage details are loaded here only after opening the coverage section."
       segment={financial}
-    />
-  );
-}
-
-function SourcesIntro({ summary }: { summary: SettingsHealthSummary | null }) {
-  const plant = summary?.segments.find((segment) => segment.id === "plant_parcels");
-  return (
-    <SectionIntro
-      title="Sources and Imports"
-      description="Manual imports and source refresh controls remain here, with bridge write policy enforced by the existing workflows."
-      segment={plant}
     />
   );
 }
@@ -770,7 +1030,7 @@ function UpdatesIntro({ summary }: { summary: SettingsHealthSummary | null }) {
   const financial = summary?.segments.find((segment) => segment.id === "cvm_financials");
   return (
     <SectionIntro
-      title="Updates"
+      title="Data Updates"
       description="Database updates are separate from software updates. Write actions are disabled in read-only mode by the bridge."
       segment={financial}
     />
@@ -819,6 +1079,9 @@ function SegmentList({
   segments: SettingsHealthSegment[];
   compact?: boolean;
 }) {
+  if (segments.length === 0) {
+    return <StateBanner variant="empty" title="No segment evidence reported" size="dense" />;
+  }
   return (
     <div className="divide-y divide-zinc-800 rounded border border-zinc-800">
       {segments.map((segment) => (
@@ -964,6 +1227,22 @@ function canOpenPath(kind: string): boolean {
   return ["data", "database", "output", "logs", "cache"].includes(kind);
 }
 
+function isDataSegment(segment: SettingsHealthSegment): boolean {
+  return ["cvm_registry", "cvm_financials", "market_data", "energy_macro", "plant_parcels", "distribution"].includes(segment.id);
+}
+
+function isSourceSegment(segment: SettingsHealthSegment): boolean {
+  return ["plant_parcels", "distribution", "energy_macro", "user_imports", "manual_imports", "news"].includes(segment.id);
+}
+
+function worstStatus(segments: SettingsHealthSegment[]): SettingsHealthStatus {
+  const order: SettingsHealthStatus[] = ["critical", "degraded", "empty", "updating", "unavailable", "unknown", "healthy"];
+  for (const status of order) {
+    if (segments.some((segment) => segment.status === status)) return status;
+  }
+  return "unknown";
+}
+
 function formatNumber(value: number | null | undefined): string {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return "—";
   return new Intl.NumberFormat("en-US").format(Number(value));
@@ -986,12 +1265,6 @@ function formatBytes(value: number | null | undefined): string {
 function formatPercent(value: number | null | undefined): string {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return "—";
   return `${Number(value).toFixed(1)}%`;
-}
-
-function formatGrowth(value: number | null | undefined): string {
-  if (value === null || value === undefined || Number.isNaN(Number(value))) return "No history";
-  if (value === 0) return "No change";
-  return `${value > 0 ? "+" : ""}${formatBytes(value)}`;
 }
 
 function formatRelativeAge(seconds: number | null | undefined): string {

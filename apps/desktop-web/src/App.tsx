@@ -154,6 +154,7 @@ function AppShellWithPalette() {
             <Route path="/settings/imports" element={<SettingsModule section="imports" />} />
             <Route path="/settings/updates" element={<SettingsModule section="updates" />} />
             <Route path="/settings/coverage" element={<SettingsModule section="coverage" />} />
+            <Route path="/settings/app" element={<SettingsModule section="app" />} />
             <Route path="/settings/diagnostics" element={<SettingsModule section="diagnostics" />} />
             {/* Backwards compatibility redirects */}
             <Route path="/atualizar-base" element={<Navigate to="/settings/updates" replace />} />

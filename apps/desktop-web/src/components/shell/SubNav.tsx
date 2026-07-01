@@ -46,11 +46,11 @@ function subNavFor(pathname: string, params: Record<string, string | undefined>,
   ) {
     return [
       { to: "/settings", label: "Overview", end: true },
-      { to: "/settings/health", label: "Data Health", activeOn: ["/settings/coverage"] },
+      { to: "/settings/health", label: "Data", activeOn: ["/settings/coverage", "/settings/updates"] },
+      { to: "/settings/sources", label: "Sources", activeOn: ["/settings/imports"] },
       { to: "/settings/storage", label: "Storage" },
-      { to: "/settings/sources", label: "Sources & Imports", activeOn: ["/settings/imports"] },
-      { to: "/settings/updates", label: "Updates" },
-      { to: "/settings/diagnostics", label: "Diagnostics" },
+      { to: "/settings/app", label: "App" },
+      { to: "/settings/diagnostics", label: "Advanced" },
     ];
   }
 
