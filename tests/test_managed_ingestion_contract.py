@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -15,16 +16,33 @@ from src.platform.managed_ingestion_contract import (
 
 
 def test_registered_managed_dataset_contracts_are_unique_and_valid():
-    from src.platform.managed_ingestion_registry import registered_managed_dataset_contracts
+    from src.platform.managed_ingestion_registry import (
+        registered_managed_dataset_contracts,
+        registered_managed_datasets,
+    )
 
     contracts = registered_managed_dataset_contracts()
     dataset_ids = [contract.dataset_id for contract in contracts]
 
     assert "ccee_plant_generation_hourly" in dataset_ids
     assert "distribution_mmgd_projects" in dataset_ids
+    assert "fuel_distribution_sector_intake" not in dataset_ids
     assert len(dataset_ids) == len(set(dataset_ids))
     for contract in contracts:
         validate_contract(contract)
+
+    registrations = registered_managed_datasets()
+    registration_ids = [registration.contract.dataset_id for registration in registrations]
+    fuel_registration = next(
+        registration
+        for registration in registrations
+        if registration.contract.dataset_id == "fuel_distribution_sector_intake"
+    )
+    assert "fuel_distribution_sector_intake" in registration_ids
+    assert fuel_registration.status == "planned"
+    assert fuel_registration.manifest_required is False
+    assert fuel_registration.contract.domain == "energy"
+    assert "cold_parquet" in fuel_registration.contract.storage_layers
 
 
 def test_managed_ingestion_contract_report_can_require_manifests(tmp_path: Path):
@@ -55,6 +73,95 @@ def test_managed_ingestion_contract_report_can_require_manifests(tmp_path: Path)
     )
     assert failure_report["ok"] is False
     assert failure_report["failures"][0]["check"] == "manifest_missing"
+
+
+def test_managed_ingestion_contract_report_accepts_planned_without_manifest(tmp_path: Path):
+    from scripts.data.check_managed_ingestion_contracts import build_managed_ingestion_contract_report
+    from src.platform.managed_ingestion_registry import (
+        ManagedDatasetRegistration,
+        registered_managed_datasets,
+    )
+
+    planned = next(
+        registration
+        for registration in registered_managed_datasets()
+        if registration.contract.dataset_id == "fuel_distribution_sector_intake"
+    )
+    report = build_managed_ingestion_contract_report(
+        data_dir=tmp_path,
+        registrations=(planned,),
+        require_manifests=True,
+    )
+
+    assert report["ok"] is True
+    assert report["implemented_contracts"] == []
+    assert report["planned_contracts"][0]["dataset_id"] == "fuel_distribution_sector_intake"
+
+    duplicate = ManagedDatasetRegistration(
+        status=planned.status,
+        contract=planned.contract,
+        manifest_required=planned.manifest_required,
+        sqlite_tables=planned.sqlite_tables,
+        notes=planned.notes,
+    )
+    duplicate_report = build_managed_ingestion_contract_report(
+        data_dir=tmp_path,
+        registrations=(planned, duplicate),
+        require_manifests=True,
+    )
+    assert duplicate_report["ok"] is False
+    assert duplicate_report["failures"][0]["check"] == "duplicate_dataset_id"
+
+
+def test_strict_sqlite_large_table_scan_fails_unclassified_table(tmp_path: Path):
+    from scripts.data.check_managed_ingestion_contracts import build_managed_ingestion_contract_report
+
+    db_path = tmp_path / "energy_kpis.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("CREATE TABLE future_heavy_fact (id INTEGER PRIMARY KEY, value TEXT)")
+        conn.executemany(
+            "INSERT INTO future_heavy_fact (value) VALUES (?)",
+            [("a",), ("b",), ("c",)],
+        )
+
+    report = build_managed_ingestion_contract_report(
+        data_dir=tmp_path,
+        registrations=(),
+        require_manifests=True,
+        scan_sqlite_large_tables=True,
+        sqlite_database_paths=(db_path,),
+        sqlite_row_threshold=2,
+    )
+
+    assert report["ok"] is False
+    assert report["sqlite_large_tables"][0]["table_name"] == "future_heavy_fact"
+    assert report["unclassified_large_tables"][0]["table_name"] == "future_heavy_fact"
+    assert report["failures"][0]["check"] == "sqlite_large_table_unclassified"
+
+
+def test_strict_sqlite_large_table_scan_accepts_registered_table(tmp_path: Path):
+    from scripts.data.check_managed_ingestion_contracts import build_managed_ingestion_contract_report
+
+    db_path = tmp_path / "cvm_financials.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("CREATE TABLE financial_reports (id INTEGER PRIMARY KEY, value TEXT)")
+        conn.executemany(
+            "INSERT INTO financial_reports (value) VALUES (?)",
+            [("a",), ("b",), ("c",)],
+        )
+
+    report = build_managed_ingestion_contract_report(
+        data_dir=tmp_path,
+        registrations=(),
+        require_manifests=True,
+        scan_sqlite_large_tables=True,
+        sqlite_database_paths=(db_path,),
+        sqlite_row_threshold=2,
+    )
+
+    assert report["ok"] is True
+    assert report["sqlite_large_tables"][0]["classification"] == "accepted_row_store"
+    assert report["unclassified_large_tables"] == []
 
 
 def test_managed_dataset_contract_requires_lineage_and_bounded_detail_reads():

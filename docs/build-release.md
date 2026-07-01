@@ -87,7 +87,7 @@ Before publishing:
 npm --prefix apps/desktop-web run typecheck
 npm --prefix apps/desktop-web run build
 python scripts/data/check_storage_budget.py
-python scripts/data/check_managed_ingestion_contracts.py --require-manifests
+python scripts/data/check_managed_ingestion_contracts.py --require-manifests --scan-sqlite-large-tables
 python -m py_compile desktop/app.py desktop/bridge.py
 pytest tests -q
 ```
@@ -107,11 +107,14 @@ Retained rollback backups are warnings by default, not failures. Use
 release policy explicitly requires no local rollback backups.
 
 The managed-ingestion contract guardrail verifies that large local-first
-analytical stores are registered, have valid contracts, and have matching local
-manifests under `%USERPROFILE%\Documents\CVMAnalytics`. It currently covers the
-CCEE hourly hot/cold store and MMGD project detail store. New heavy sector
-ingestion must add a managed contract before release validation can pass in
-strict mode.
+analytical stores are registered, have valid contracts, have matching local
+manifests under `%USERPROFILE%\Documents\CVMAnalytics`, and do not leave
+unclassified large detail tables in the main SQLite databases. It currently
+covers the CCEE hourly hot/cold store and MMGD project detail store. New heavy
+sector ingestion must add a managed registration and bounded read plan before
+release validation can pass in strict mode. Planned registrations, such as the
+Fuel Distribution intake, validate their contracts but do not require manifests
+until a real importer exists.
 
 For releases that touch CCEE hourly ingestion or the managed hot/cold store,
 run a sandbox ingestion smoke test with a real CCEE hourly snapshot:
