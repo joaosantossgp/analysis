@@ -14,6 +14,49 @@ from src.platform.managed_ingestion_contract import (
 )
 
 
+def test_registered_managed_dataset_contracts_are_unique_and_valid():
+    from src.platform.managed_ingestion_registry import registered_managed_dataset_contracts
+
+    contracts = registered_managed_dataset_contracts()
+    dataset_ids = [contract.dataset_id for contract in contracts]
+
+    assert "ccee_plant_generation_hourly" in dataset_ids
+    assert "distribution_mmgd_projects" in dataset_ids
+    assert len(dataset_ids) == len(set(dataset_ids))
+    for contract in contracts:
+        validate_contract(contract)
+
+
+def test_managed_ingestion_contract_report_can_require_manifests(tmp_path: Path):
+    from scripts.data.check_managed_ingestion_contracts import build_managed_ingestion_contract_report
+
+    contract = ManagedDatasetContract(
+        domain="energy",
+        dataset_id="future_heavy_sector_fact",
+        fact_grain="entity-period detail",
+        storage_layers=("metadata_sqlite", "cold_parquet", "mart_sqlite"),
+        lineage_fields=DEFAULT_LINEAGE_FIELDS,
+        detail_reads_require_bounds=True,
+        default_hot_partitions=1,
+    )
+
+    warning_report = build_managed_ingestion_contract_report(
+        data_dir=tmp_path,
+        contracts=(contract,),
+        require_manifests=False,
+    )
+    assert warning_report["ok"] is True
+    assert warning_report["warnings"][0]["check"] == "manifest_missing"
+
+    failure_report = build_managed_ingestion_contract_report(
+        data_dir=tmp_path,
+        contracts=(contract,),
+        require_manifests=True,
+    )
+    assert failure_report["ok"] is False
+    assert failure_report["failures"][0]["check"] == "manifest_missing"
+
+
 def test_managed_dataset_contract_requires_lineage_and_bounded_detail_reads():
     contract = ManagedDatasetContract(
         domain="energy",

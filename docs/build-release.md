@@ -87,6 +87,7 @@ Before publishing:
 npm --prefix apps/desktop-web run typecheck
 npm --prefix apps/desktop-web run build
 python scripts/data/check_storage_budget.py
+python scripts/data/check_managed_ingestion_contracts.py --require-manifests
 python -m py_compile desktop/app.py desktop/bridge.py
 pytest tests -q
 ```
@@ -104,6 +105,13 @@ main database layout. Default budgets are:
 Retained rollback backups are warnings by default, not failures. Use
 `python scripts/data/check_storage_budget.py --fail-on-backups` only when the
 release policy explicitly requires no local rollback backups.
+
+The managed-ingestion contract guardrail verifies that large local-first
+analytical stores are registered, have valid contracts, and have matching local
+manifests under `%USERPROFILE%\Documents\CVMAnalytics`. It currently covers the
+CCEE hourly hot/cold store and MMGD project detail store. New heavy sector
+ingestion must add a managed contract before release validation can pass in
+strict mode.
 
 For releases that touch CCEE hourly ingestion or the managed hot/cold store,
 run a sandbox ingestion smoke test with a real CCEE hourly snapshot:

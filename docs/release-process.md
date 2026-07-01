@@ -38,6 +38,7 @@ Before publishing:
 npm --prefix apps/desktop-web run typecheck
 npm --prefix apps/desktop-web run build
 python scripts/data/check_storage_budget.py
+python scripts/data/check_managed_ingestion_contracts.py --require-manifests
 python -m py_compile desktop/app.py desktop/bridge.py
 pytest tests -q
 ```
@@ -47,6 +48,11 @@ Run `pytest apps/api/tests -q` if `apps/api` or shared API contracts changed.
 `check_storage_budget.py` enforces the local storage guardrail documented in
 [`build-release.md`](build-release.md). Retained rollback backups are warnings
 unless the release explicitly opts into `--fail-on-backups`.
+
+`check_managed_ingestion_contracts.py --require-manifests` enforces that large
+managed analytical stores have registered contracts and valid local manifests,
+so future heavy sector ingestion cannot silently fall back to monolithic SQLite
+detail tables.
 
 Manual release validation must include packaged app launch, clean install,
 update over previous version, offline already-downloaded data read, updater

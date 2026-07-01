@@ -127,6 +127,61 @@ def _seed_external_hourly_catalog(conn, manifest_path: Path) -> None:
     )
 
 
+def test_hourly_manifest_contract_repair_updates_legacy_manifest_and_catalog(tmp_path: Path):
+    from src.energy_kpi.hourly_store_ingest import (
+        CCEE_HOURLY_CONTRACT,
+        repair_ccee_hourly_manifest_contract,
+    )
+
+    settings = build_settings(tmp_path)
+    manifest_path = (
+        settings.paths.data_dir
+        / "analytics"
+        / "energy"
+        / "ccee_plant_generation_hourly"
+        / "manifest.json"
+    )
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    legacy_manifest = {
+        "schema_version": 1,
+        "source_database": str(settings.paths.energy_kpi_db_path),
+        "selection": {
+            "available_months": [{"reference_month": "2026-01", "row_count": 2}],
+            "hot_months": ["2026-01"],
+            "cold_months": [],
+            "full_months": True,
+        },
+        "artifacts": {
+            "output_dir": str(manifest_path.parent),
+            "hot": {"path": str(manifest_path.parent / "hot" / "energy_hot.sqlite")},
+            "cold": {"path": str(manifest_path.parent / "cold"), "partitions": []},
+        },
+        "validation": {"ok": True},
+    }
+    manifest_path.write_text(json.dumps(legacy_manifest, indent=2) + "\n", encoding="utf-8")
+
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        _seed_external_hourly_catalog(conn, manifest_path)
+        before_catalog = conn.execute(
+            text("SELECT manifest_fingerprint FROM external_hourly_store_catalog WHERE dataset=:dataset"),
+            {"dataset": EXTERNAL_HOURLY_TABLE},
+        ).scalar_one()
+
+        result = repair_ccee_hourly_manifest_contract(settings, conn, manifest_path=manifest_path)
+
+        updated_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        after_catalog = conn.execute(
+            text("SELECT manifest_fingerprint FROM external_hourly_store_catalog WHERE dataset=:dataset"),
+            {"dataset": EXTERNAL_HOURLY_TABLE},
+        ).scalar_one()
+
+    assert result["repaired"] is True
+    assert updated_manifest["contract"] == CCEE_HOURLY_CONTRACT.to_manifest_contract()
+    assert before_catalog != after_catalog
+    assert after_catalog == _manifest_fingerprint(updated_manifest)
+
+
 def test_energy_metric_conversions_handle_units_and_leap_years():
     assert mwh_to_gwh(1_500) == pytest.approx(1.5)
     assert mwh_to_twh(1_500_000) == pytest.approx(1.5)

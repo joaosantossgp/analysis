@@ -165,6 +165,34 @@ def _load_manifest(manifest_path: Path) -> dict[str, Any]:
     return manifest
 
 
+def repair_ccee_hourly_manifest_contract(
+    settings: AppSettings,
+    conn,
+    *,
+    manifest_path: Path | None = None,
+) -> dict[str, Any]:
+    """Add the hourly managed-store contract to a valid legacy manifest."""
+    resolved_manifest_path = Path(manifest_path or (settings.paths.data_dir / MANIFEST_RELATIVE_PATH)).resolve()
+    manifest = _load_manifest(resolved_manifest_path)
+    if "contract" in manifest:
+        validate_manifest_contract(manifest, CCEE_HOURLY_CONTRACT)
+        return {
+            "dataset_id": CCEE_HOURLY_CONTRACT.dataset_id,
+            "manifest_path": str(resolved_manifest_path),
+            "repaired": False,
+        }
+
+    manifest["contract"] = CCEE_HOURLY_CONTRACT.to_manifest_contract()
+    validate_manifest_contract(manifest, CCEE_HOURLY_CONTRACT)
+    _write_manifest(resolved_manifest_path, manifest)
+    _write_catalog(conn, settings, resolved_manifest_path, manifest)
+    return {
+        "dataset_id": CCEE_HOURLY_CONTRACT.dataset_id,
+        "manifest_path": str(resolved_manifest_path),
+        "repaired": True,
+    }
+
+
 def _manifest_fingerprint(manifest: dict[str, Any]) -> str:
     payload = json.dumps(manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
