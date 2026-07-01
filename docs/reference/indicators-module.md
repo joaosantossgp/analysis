@@ -1,80 +1,160 @@
 # Indicators Module
 
-Active reference for the desktop `Indicators` module at `apps/desktop-web/src/routes/CountryKpisPage.tsx`.
+Active reference for the desktop `Indicators` workspace at
+`apps/desktop-web/src/routes/CountryKpisPage.tsx`.
 
 ## Product Shape
 
-- Route: `/indicators` (legacy `/country-kpis` redirects here for backward compatibility).
-- Top navigation label: `Indicators`.
-- The page is a thin host for the **Indicator Explorer** (default view) with one
-  secondary view toggle:
-  - `Explorer`: scalable, metadata-driven catalog of local-first macro/energy KPIs.
-  - `Sector & Company`: microeconomic CVM sector snapshots + company KPI coverage.
+- Route: `/indicators`.
+- Legacy route: `/country-kpis` redirects to `/indicators`.
+- Query shape: `?section=<section>&sub=<energy-subview>`.
+- The workspace is organized around the analyst path:
+  `sector -> company/portfolio -> asset -> indicator -> source/export`.
 
-The former nested `Macroeconomic → Country/SIN → Matrix/Trend` tab tree is
-retired. Those visualizations are now reached from an indicator's detail panel
-(see below), which scales to many more indicators than fixed tabs.
+Top-level sections:
 
-## Indicator Explorer
+| Section | Purpose |
+| --- | --- |
+| `Workspace` | Landing page for available workflows, Energy coverage, source status, and future work areas. |
+| `Sectors` | Sector workspaces. Energy is the first deep sector. |
+| `Companies & Assets` | CVM registry, economic groups, sectoral asset links, and mapping hub. |
+| `Indicator Library` | Catalog-driven KPI search and metadata surface. |
+| `Data Health & Sources` | Centralized source coverage and refresh audit where available. |
+| `Exports & Verification` | Inventory of real export paths, source evidence and pre-export checks. |
 
-`apps/desktop-web/src/components/indicators/explorer/`
+Compatibility:
 
-The Explorer is **catalog-driven**: it does not hardcode an indicator list. It
-reads the backend `kpi_catalog` (country `energy_utilities.country.*` + SIN
-`energy_utilities.sin.*`) via `get_kpi_catalog`, joins it with the cached series
-and health snapshots, and normalises everything into `IndicatorRecord[]` through
-the registry at `apps/desktop-web/src/lib/indicators/registry.ts`.
+- Missing `section` defaults to `Workspace`.
+- Legacy `section=discover` resolves to `Companies & Assets`.
+- Legacy `section=favorites` resolves to `Indicator Library`.
+- `section=exports` opens the export/verification inventory.
+- Existing Energy deep links with `section=energy&sub=...` remain valid.
+
+## Energy Workspace
+
+Energy is the first deep sector workspace. Current subviews:
+
+| Subview | Component | Current coverage |
+| --- | --- | --- |
+| `Overview` | inline overview in `CountryKpisPage.tsx` | Workflow map, Energy analysis spine, portfolio/asset coverage snapshot. |
+| `Distribution` | `components/indicators/distribution/DistributorExplorer.tsx` | ANEEL distributor operational KPIs, charts, detail tabs, refresh, Excel export. |
+| `Generation` | `components/indicators/PlantParcelExplorer.tsx` | CCEE plant-parcel catalog, generation series, source status, manual import support. |
+| `Fuel` | `components/indicators/FuelDistributionExplorer.tsx` | ANP fuel sales marts and bounded detail preview. |
+| `Power System` | `components/indicators/SINKpiPanel.tsx` | SIN operating indicators with source status and local cached reads. |
+| `Matrix & Trends` | `components/indicators/explorer/IndicatorExplorer.tsx` | Country energy and electricity matrix indicators from the KPI catalog. |
+
+Do not remove or hide these subviews when reorganizing the workspace.
+
+The Energy overview also exposes an analysis spine:
+
+- Sector context: distribution, generation, fuel, SIN and matrix panels.
+- Company portfolios: linked distributors and generation assets by CVM company
+  or custom owner.
+- Asset review: mapped plants, distributors and unresolved ownership links.
+- Source verification: snapshots, source status, refresh logs and partial source
+  warnings.
+- Indicator outputs: verified source data feeding the Indicator Library and
+  export-ready views.
+
+The portfolio/asset snapshot uses the same existing bridge data as
+`Companies & Assets`: `get_conglomerates`, `get_asset_mappings`, and
+`get_company_universe`. It does not add new Energy indicators, forecasts,
+ownership inference, or schema.
+
+## Indicator Library
+
+`components/indicators/explorer/`
+
+The Indicator Library is catalog-driven. It reads the backend `kpi_catalog`,
+joins cached series and health snapshots, and normalizes records through
+`apps/desktop-web/src/lib/indicators/registry.ts`.
 
 Layout:
+
 - `ExplorerStatusStrip` — total indicators, sources, cached locally, stale,
   failed/blocked, last refresh.
-- `ExplorerToolbar` — debounced search + faceted filters (Theme, Source,
-  Frequency, Geography, Status, Type) + sort + favorites toggle.
-- `IndicatorCatalogTable` — dense, sticky-header table. **Renders no charts.**
-- `IndicatorDetailPanel` — full reproducibility metadata for the selected
-  indicator plus **exactly one** lazy preview chart, source refresh / Excel
-  export, related-indicator links, and the composite-view launchers
-  (electricity matrix via `MatrixView`, SIN generation mix via `GenerationMix`).
+- `ExplorerToolbar` — debounced search, facets, sort, favorites toggle.
+- `IndicatorCatalogTable` — dense sticky-header table with no inline charts.
+- `IndicatorDetailPanel` — reproducibility metadata, preview chart, source
+  refresh, Excel export where supported, related indicators, composite view
+  launchers.
 
-Favorites (pinned indicators) persist to `localStorage`
-(`cvm:indicators:favorites:v1`) via `apps/desktop-web/src/lib/indicators/useFavorites.ts`.
+Favorites persist to `localStorage` under `cvm:indicators:favorites:v1`.
 
-### Reproducibility metadata
+Every metadata field shown by the Explorer must map to a real backend field or
+render as `—`. Do not invent source, coverage, quality, confidence, or freshness
+metadata in the frontend.
 
-Every field shown maps to a real backend field — nothing is invented; missing
-values render as `—`:
+## Companies & Assets
 
-| Explorer field | Backend source |
-| --- | --- |
-| Source / dataset | `KPICatalogEntry.primary_source`, kpi_id namespace, series `source_dataset` |
-| Raw field | series `source_field` |
-| Methodology / value type | `calculation_method` (`direct` = raw; `derived_*` = derived) |
-| Unit | `KPICatalogEntry.unit` |
-| Reference period / coverage | series `period` / `reference_datetime` (min–max) |
-| Last refresh | `get_energy_kpi_health` / SIN dashboard `last_successful_update` |
-| Cache status | derived: cached / stale / not cached / failed / blocked |
-| Caveats / audit / verification | `source_caveats`, `audit_notes`, `source_verification_status` |
-| Data quality | series `data_quality_status`, `source_conflict`, `fallback_used` |
+`components/indicators/SectorCompanyPanel.tsx`
 
-### Performance
+This view connects CVM company identity with sectoral assets where data is
+available. It currently exposes:
 
-Five cached bridge reads back the whole Explorer (catalog + country series —
-shared with the detail chart — + SIN dashboard + 2 health). No per-row queries,
-no charts in the table, exactly one chart for the selected indicator. The SIN
-preview series is fetched lazily only when a SIN indicator is selected. Search
-is debounced (300ms); filtering/sorting are memoised.
+- Portfolio Overview as the default company/asset workflow.
+- CVM company registry and listed/non-listed entities.
+- Economic groups.
+- Linked distributors and generation assets by owner.
+- Mapping Review for auto-linked, manual, custom-owner, and unresolved assets.
+- Automatic mapping, manual overrides, manual unlinks, custom-owner links, and
+  persisted review notes.
 
-## Sector & Company view
+Manual user mappings are expected product behavior. Do not treat them as a
+hidden workaround.
 
-`apps/desktop-web/src/components/indicators/SectorCompanyPanel.tsx`. Reuses
-existing CVM local data through the bridge:
+Current limitations:
 
-- Sector snapshots: `get_sectors` via `apps/desktop-web/src/lib/api/sectors.ts`.
-- Company coverage: `get_companies` via `apps/desktop-web/src/lib/api/companies.ts`.
+- Automatic mapping confidence is not recorded in the local data model.
+- Mapping Review edits are limited to the existing local bridge contract:
+  target CVM company, custom owner, unresolved/manual unlink, and review note.
+- Portfolio Overview uses existing bridge fields only; it does not add new
+  company-to-asset schema.
+- There is no separate audit history table yet. The current mapping row stores
+  the latest manual relationship, note, source flag, and backend timestamp.
 
-This view is intentionally not a new data layer. It is the UI organization point
-for company/sector indicators already owned by the CVM read-service/KPI engine,
-which is why it is not part of the energy `kpi_catalog`.
+## Data Health & Sources
+
+Centralized health currently covers ANEEL distribution through
+`get_distribution_health`.
+
+Other source health is still shown inside specialist views:
+
+- Generation source status lives in `PlantParcelExplorer`.
+- SIN source status lives in `SINKpiPanel`.
+- Fuel marts are readable, but centralized health is not yet available.
+
+The UI should label this as partial coverage. Do not imply that all source
+health is centralized until the bridge and data model support it.
+
+## Exports & Verification
+
+`CountryKpisPage.tsx` exposes an `Exports & Verification` section as a
+workspace inventory and checklist. It does not generate a new centralized
+export manifest in this phase.
+
+Direct export paths currently visible from Indicators:
+
+- Distribution Excel report: generated inside `Energy -> Distribution` after
+  selecting a distributor or economic group. Uses the existing
+  `export_distribution_excel` bridge method.
+- Country energy KPI Excel: generated from the Indicator Library / Matrix &
+  Trends detail panel for supported country-level KPIs. Uses the existing
+  `export_country_kpis_excel` bridge method.
+
+Source-review paths without a centralized export action:
+
+- Generation asset review: `Energy -> Generation`, with source status, manual
+  imports, plant detail and owner mapping.
+- SIN subsystem review: `Energy -> Power System`, with source status, local
+  record counts, snapshots and refresh errors where available.
+- Fuel mart review: `Energy -> Fuel`, with source dataset ids, product/state/year
+  filters and bounded detail previews.
+- Mapping Review notes: `Companies & Assets`, with the latest manual mapping
+  note stored on the local mapping row.
+
+The UI must keep these distinctions visible. Do not label a workflow as
+downloadable unless the active bridge/API exposes an export action for it.
 
 ## Runtime Contract
 
@@ -89,22 +169,21 @@ UI component
 -> Python services / SQLite
 ```
 
-Reads are offline-only. Manual refresh actions are explicit and source-specific:
-
-- Country energy refresh: `refresh_energy_kpis`.
-- SIN refresh: `refresh_sin_kpis`.
-
-Browser mode renders a non-blocking browser-only banner. Mock mode
-(`npm run dev:mock`) renders a dev-only catalog fixture (`MOCK_KPI_CATALOG` in
-`apps/desktop-web/src/lib/bridge/mock.ts`) so the Explorer is testable without
-the Python bridge. The fixture is excluded from production builds.
+Reads are local-first. Refresh actions are explicit and source-specific.
+Browser mode must render non-blocking browser-only states instead of crashing.
 
 ## Validation
 
-After changing this module, run:
+After changing this module, run the relevant subset first, then the broader
+frontend checks:
 
 ```powershell
+npm --prefix apps/desktop-web run test -- src/routes/__tests__/CountryKpisPage.test.ts
+npm --prefix apps/desktop-web run test
 npm --prefix apps/desktop-web run typecheck
 npm --prefix apps/desktop-web run build
-python -m pytest tests/energy_kpi -q
 ```
+
+For Energy data-path changes, also run the relevant Python tests. UI-only
+navigation/copy changes do not require Python data tests unless bridge behavior
+or data contracts changed.
