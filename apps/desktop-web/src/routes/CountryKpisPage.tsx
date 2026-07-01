@@ -40,10 +40,15 @@ const DistributorExplorer = lazy(() =>
     (m) => ({ default: m.DistributorExplorer }),
   ),
 );
+const FuelDistributionExplorer = lazy(() =>
+  import("@/components/indicators/FuelDistributionExplorer").then((m) => ({
+    default: m.FuelDistributionExplorer,
+  })),
+);
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type TopSection = "discover" | "energy" | "favorites" | "health";
-type EnergySub = "overview" | "distribution" | "generation" | "sin" | "matrix";
+type EnergySub = "overview" | "distribution" | "generation" | "fuel" | "sin" | "matrix";
 
 // ── Nav config ────────────────────────────────────────────────────────────────
 const TOP_NAV: Array<{ id: TopSection; label: string; icon: string }> = [
@@ -57,6 +62,7 @@ const ENERGY_SUB_NAV: Array<{ id: EnergySub; label: string }> = [
   { id: "overview", label: "Overview" },
   { id: "distribution", label: "Distribution" },
   { id: "generation", label: "Generation" },
+  { id: "fuel", label: "Fuel" },
   { id: "sin", label: "Power System" },
   { id: "matrix", label: "Matrix & Trends" },
 ];
@@ -192,6 +198,10 @@ export function CountryKpisPage() {
             <PlantParcelExplorer bridgeReady={bridgeReady} />
           )}
 
+          {section === "energy" && energySub === "fuel" && (
+            <FuelDistributionExplorer bridgeReady={bridgeReady} />
+          )}
+
           {section === "energy" && energySub === "sin" && (
             <SINPanelWrapper bridgeReady={bridgeReady} />
           )}
@@ -231,6 +241,7 @@ function EnergyOverviewPlaceholder() {
         {[
           { label: "Distribution", desc: "ANEEL distributor operational KPIs", sub: "distribution" },
           { label: "Generation", desc: "Plant-parcel CCEE generation data", sub: "generation" },
+          { label: "Fuel", desc: "ANP fuel sales marts and bounded detail", sub: "fuel" },
           { label: "Power System", desc: "ONS SIN balances, EAR, ENA, CMO", sub: "sin" },
           { label: "Matrix & Trends", desc: "Fossil, renewables, carbon and macro trends", sub: "matrix" },
         ].map((card) => (
@@ -541,6 +552,7 @@ function parseEnergySub(raw: string | null): EnergySub {
   if (
     raw === "distribution" ||
     raw === "generation" ||
+    raw === "fuel" ||
     raw === "sin" ||
     raw === "matrix"
   )

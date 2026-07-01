@@ -27,6 +27,12 @@ import type {
   EnergyMartStatusResponse,
   EnergyMartRebuildState,
   StartEnergyMartRebuildParams,
+  FuelDistributionDetailParams,
+  FuelDistributionDetailResponse,
+  FuelDistributionProductYearSummaryParams,
+  FuelDistributionProductYearSummaryResponse,
+  FuelDistributionStateMonthSeriesParams,
+  FuelDistributionStateMonthSeriesResponse,
   PlantParcelFilePickerResult,
   PlantParcelManualImportParams,
   PlantParcelManualImportResult,
@@ -95,6 +101,18 @@ export type PlantParcelDetailResult =
 export type PlantParcelChartDataResult =
   | { mode: "desktop"; data: PlantParcelChartDataResponse }
   | { mode: "browser"; data: null; reason: string };
+
+export type FuelDistributionProductYearSummaryResult =
+  | { mode: "desktop"; response: FuelDistributionProductYearSummaryResponse }
+  | { mode: "browser"; response: null; reason: string };
+
+export type FuelDistributionStateMonthSeriesResult =
+  | { mode: "desktop"; response: FuelDistributionStateMonthSeriesResponse }
+  | { mode: "browser"; response: null; reason: string };
+
+export type FuelDistributionDetailResult =
+  | { mode: "desktop"; response: FuelDistributionDetailResponse }
+  | { mode: "browser"; response: null; reason: string };
 
 export type EnergyMartStatusResult =
   | { mode: "desktop"; status: EnergyMartStatusResponse }
@@ -366,6 +384,51 @@ export async function fetchPlantParcelChartData(
   );
   if (payload.error) throw new Error(payload.error);
   return { mode: "desktop", data: payload };
+}
+
+export async function fetchFuelDistributionProductYearSummary(
+  params?: FuelDistributionProductYearSummaryParams,
+): Promise<FuelDistributionProductYearSummaryResult> {
+  const mode: BridgeMode = getBridgeMode();
+  if (mode === "browser") {
+    return { mode: "browser", response: null, reason: BROWSER_REASON };
+  }
+  const payload: FuelDistributionProductYearSummaryResponse = await callBridge(
+    "get_fuel_distribution_product_year_summary",
+    params ?? {},
+  );
+  if (payload.error) throw new Error(payload.error);
+  return { mode: "desktop", response: payload };
+}
+
+export async function fetchFuelDistributionStateMonthSeries(
+  params: FuelDistributionStateMonthSeriesParams,
+): Promise<FuelDistributionStateMonthSeriesResult> {
+  const mode: BridgeMode = getBridgeMode();
+  if (mode === "browser") {
+    return { mode: "browser", response: null, reason: BROWSER_REASON };
+  }
+  const payload: FuelDistributionStateMonthSeriesResponse = await callBridge(
+    "get_fuel_distribution_state_month_series",
+    params,
+  );
+  if (payload.error) throw new Error(payload.error);
+  return { mode: "desktop", response: payload };
+}
+
+export async function fetchFuelDistributionDetail(
+  params: FuelDistributionDetailParams,
+): Promise<FuelDistributionDetailResult> {
+  const mode: BridgeMode = getBridgeMode();
+  if (mode === "browser") {
+    return { mode: "browser", response: null, reason: BROWSER_REASON };
+  }
+  const payload: FuelDistributionDetailResponse = await callBridge(
+    "get_fuel_distribution_detail",
+    params,
+  );
+  if (payload.error) throw new Error(payload.error);
+  return { mode: "desktop", response: payload };
 }
 
 export async function fetchEnergyMartStatus(): Promise<EnergyMartStatusResult> {

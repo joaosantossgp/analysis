@@ -38,6 +38,9 @@ import type {
   EnergyKPIHealthResponse,
   EnergyMartRebuildState,
   EnergyMartStatusResponse,
+  FuelDistributionDetailResponse,
+  FuelDistributionProductYearSummaryResponse,
+  FuelDistributionStateMonthSeriesResponse,
   EnergyKPIRefreshResult,
   KPIBundle,
   OnboardingState,
@@ -1645,6 +1648,63 @@ export function createMockBridge(): Partial<BridgeApi> {
       ...MOCK_PLANT_DETAIL,
       entity_id: params?.entity_id ?? MOCK_PLANT_DETAIL.entity_id,
     }),
+
+    get_fuel_distribution_product_year_summary: async (params) => {
+      const product = String(params?.product ?? "").trim().toUpperCase();
+      const startYear = params?.start_year == null ? null : Number(params.start_year);
+      const endYear = params?.end_year == null ? null : Number(params.end_year);
+      const rows = [
+        { source_dataset_id: "anp_fuel_sales_state_month", product: "GASOLINA C", year: YEAR - 1, unit: "m3", total_value: 44_821_000, source_row_count: 324 },
+        { source_dataset_id: "anp_fuel_sales_state_month", product: "GASOLINA C", year: YEAR, unit: "m3", total_value: 21_654_000, source_row_count: 162 },
+        { source_dataset_id: "anp_diesel_type_state_month", product: "ÓLEO DIESEL", year: YEAR - 1, unit: "m3", total_value: 63_210_000, source_row_count: 324 },
+        { source_dataset_id: "anp_ethanol_municipality_year", product: "ETANOL HIDRATADO", year: YEAR - 1, unit: "liters", total_value: 18_940_000_000, source_row_count: 5_102 },
+      ].filter((row) => {
+        if (product && row.product !== product) return false;
+        if (startYear != null && row.year < startYear) return false;
+        if (endYear != null && row.year > endYear) return false;
+        return true;
+      });
+      return { source: "sqlite_mart", items: rows, count: rows.length } satisfies FuelDistributionProductYearSummaryResponse;
+    },
+
+    get_fuel_distribution_state_month_series: async (params) => {
+      const product = String(params?.product ?? "GASOLINA C").trim().toUpperCase() || "GASOLINA C";
+      const state = String(params?.state ?? "SÃO PAULO").trim().toUpperCase() || "SÃO PAULO";
+      const rows = ["01", "02", "03", "04", "05", "06"].map((month, index) => ({
+        source_dataset_id: String(params?.source_dataset_id ?? "anp_fuel_sales_state_month"),
+        product,
+        reference_period: `${YEAR}-${month}`,
+        year: YEAR,
+        month: index + 1,
+        region: "REGIÃO SUDESTE",
+        state,
+        unit: "m3",
+        total_value: 760_000 + index * 22_500,
+        source_row_count: 1,
+      }));
+      return { source: "sqlite_mart", items: rows, count: rows.length } satisfies FuelDistributionStateMonthSeriesResponse;
+    },
+
+    get_fuel_distribution_detail: async (params) => {
+      const rows = [
+        { reference_period: `${params?.year ?? YEAR}-01`, region: "REGIÃO SUDESTE", state: "SÃO PAULO", municipality: null, product: params?.product ?? "GASOLINA C", unit: "m3", value: 799_343.74, source_dataset_id: params?.source_dataset_id },
+        { reference_period: `${params?.year ?? YEAR}-02`, region: "REGIÃO SUDESTE", state: "SÃO PAULO", municipality: null, product: params?.product ?? "GASOLINA C", unit: "m3", value: 812_904.12, source_dataset_id: params?.source_dataset_id },
+        { reference_period: `${params?.year ?? YEAR}-03`, region: "REGIÃO SUDESTE", state: "SÃO PAULO", municipality: null, product: params?.product ?? "GASOLINA C", unit: "m3", value: 844_010.52, source_dataset_id: params?.source_dataset_id },
+      ];
+      return {
+        source: "managed_parquet",
+        dataset_id: "fuel_distribution_sector_intake",
+        source_dataset_id: params?.source_dataset_id,
+        product: params?.product,
+        year: params?.year,
+        rows,
+        count: rows.length,
+        total_matching_rows: rows.length,
+        limit: params?.limit ?? 500,
+        offset: params?.offset ?? 0,
+        truncated: false,
+      } satisfies FuelDistributionDetailResponse;
+    },
 
     get_plant_parcel_chart_data: async (params) => {
       const freq = params.frequency || "monthly";
