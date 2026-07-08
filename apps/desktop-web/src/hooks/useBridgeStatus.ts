@@ -55,9 +55,28 @@ async function check(): Promise<void> {
       lastCheckedAt: Date.now(),
     });
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (mode === "desktop" && message.includes("[bridge:ping]") && message.includes("method missing")) {
+      try {
+        await callBridge("get_app_status", {});
+        setProbe({
+          kind: "ready",
+          mode,
+          pingTs: null,
+          lastCheckedAt: Date.now(),
+        });
+        return;
+      } catch (fallbackErr) {
+        setProbe({
+          kind: "error",
+          message: fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr),
+        });
+        return;
+      }
+    }
     setProbe({
       kind: "error",
-      message: err instanceof Error ? err.message : String(err),
+      message,
     });
   }
 }
@@ -110,6 +129,10 @@ export function __resetBridgeStatusForTesting(): void {
   pollerStarted = false;
   currentProbe = { kind: "init" };
   subscribers.clear();
+}
+
+export function __getBridgeStatusSnapshotForTesting(): BridgeProbe {
+  return currentProbe;
 }
 
 // Re-export the effect hook below so callers that want a useEffect-style

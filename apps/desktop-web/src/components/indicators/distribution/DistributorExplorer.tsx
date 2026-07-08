@@ -1720,14 +1720,6 @@ function DistributionTrendPanel({
   const ordered = [...series].sort((a, b) => a.period.localeCompare(b.period));
   const hasValues = ordered.length > 0;
 
-  if (!hasValues) {
-    return (
-      <div className="rounded border border-zinc-800 bg-zinc-950/40 p-3 text-xs text-zinc-500">
-        No chart data available for this selection.
-      </div>
-    );
-  }
-
   // State
   const [selected, setSelected] = useState<IndicatorSelection[]>([]);
   const [chart, setChart] = useState<ChartAesthetics>({
@@ -1837,6 +1829,14 @@ function DistributionTrendPanel({
   const onChartChange = useCallback((patch: Partial<ChartAesthetics>) => {
     setChart((prev) => ({ ...prev, ...patch }));
   }, []);
+
+  if (!hasValues) {
+    return (
+      <div className="rounded border border-zinc-800 bg-zinc-950/40 p-3 text-xs text-zinc-500">
+        No chart data available for this selection.
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3 rounded border border-zinc-800 bg-zinc-950/40 p-4">
