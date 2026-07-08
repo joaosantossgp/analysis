@@ -125,14 +125,22 @@ def _configure_bundled_data_paths() -> None:
     if not _bundled():
         if not os.environ.get("CVM_DATA_DIR"):
             user_root = _user_data_root()
+            db_dir = user_root / "db"
+            output_dir = user_root / "output"
+            logs_dir = user_root / "logs"
+            cache_dir = user_root / "cache"
+
+            for path in (user_root, db_dir, output_dir, logs_dir, cache_dir):
+                path.mkdir(parents=True, exist_ok=True)
+
             os.environ.setdefault("CVMANALYTICS_USE_RELEASE_DATA", "1")
             os.environ["CVM_DATA_DIR"] = str(user_root)
-            os.environ.setdefault("CVM_DB_DIR", str(user_root / "db"))
-            os.environ.setdefault("SQLITE_PATH", str(user_root / "db" / "cvm_financials.db"))
-            os.environ.setdefault("CVM_NEWS_DB", str(user_root / "db" / "news.db"))
-            os.environ.setdefault("CVM_OUTPUT_DIR", str(user_root / "output"))
-            os.environ.setdefault("CVM_LOG_DIR", str(user_root / "logs"))
-            os.environ.setdefault("CVM_CACHE_DIR", str(user_root / "cache"))
+            os.environ.setdefault("CVM_DB_DIR", str(db_dir))
+            os.environ.setdefault("SQLITE_PATH", str(db_dir / "cvm_financials.db"))
+            os.environ.setdefault("CVM_NEWS_DB", str(db_dir / "news.db"))
+            os.environ.setdefault("CVM_OUTPUT_DIR", str(output_dir))
+            os.environ.setdefault("CVM_LOG_DIR", str(logs_dir))
+            os.environ.setdefault("CVM_CACHE_DIR", str(cache_dir))
         return
 
     user_root = _user_data_root()
