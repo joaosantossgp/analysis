@@ -42,6 +42,10 @@ Compatibility redirects:
 
 | Topic | Doc |
 |---|---|
+| Product direction | `docs/PRODUCT_DIRECTION.md` |
+| Product development checklist | `docs/PRODUCT_DEVELOPMENT_CHECKLIST.md` |
+| Product principles | `docs/PRODUCT.md` |
+| Design system and UI principles | `docs/DESIGN.md` |
 | Architecture | `docs/architecture.md` |
 | Data sources | `docs/data-sources.md` |
 | Excel exports | `docs/excel-exports.md` |

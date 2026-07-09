@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import zipfile
 import pytest
 import polars as pl
 from sqlalchemy import text
@@ -731,6 +732,28 @@ def test_continuity_actuals_exact_duplicate_collapses_without_conflict(tmp_path,
     upsert_continuity_actuals_facts(db_conn, parsed, "snap-cont-dupe")
     stored = db_conn.execute(text("SELECT count(*) FROM distribution_continuity_facts")).scalar()
     assert stored == 1
+
+
+def test_parse_continuity_actuals_from_zip_wrapped_csv(tmp_path):
+    from src.energy_kpi.distribution import parse_continuity_actuals
+
+    csv_bytes = (
+        '"DatGeracaoConjuntoDados";"IdeConjUndConsumidoras";"DscConjUndConsumidoras";'
+        '"SigAgente";"NumCNPJ";"SigIndicador";"AnoIndice";"NumPeriodoIndice";"VlrIndiceEnviado"\r\n'
+        '"2026-07-05";"12591";"Set A";"EAC";"04065033000170";"DEC";"2026";"4";"1,57"\r\n'
+    ).encode("utf-8")
+    path = tmp_path / "indicadores-continuidade-coletivos-2020-2029.csv"
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("indicadores-continuidade-coletivos-2020-2029.csv", csv_bytes)
+
+    parsed = parse_continuity_actuals(path, "csv")
+
+    assert parsed.height == 1
+    row = parsed.to_dicts()[0]
+    assert row["normalized_cnpj"] == "04065033000170"
+    assert row["indicator_code"] == "DEC"
+    assert row["reference_month"] == "2026-04"
+    assert row["actual_value"] == 1.57
 
 
 def test_parse_and_upsert_mmgd(tmp_path, db_conn):

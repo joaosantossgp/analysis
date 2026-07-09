@@ -120,6 +120,44 @@ This system explicitly rejects a dashboard SaaS generico look. It must not drift
 - Rounded, bordered surfaces with tonal layering instead of heavy shadows.
 - Visible evidence: periods, data states, filters, and empty/error states are part of the design.
 
+### Product Minimalism
+
+Minimalism is a core product principle for CVM Analytics. It does not mean
+fewer tools or less data. It means the screen shows the right information with
+strong hierarchy, consistent patterns, low friction, and no unnecessary visual
+or textual noise.
+
+Design decision: less is more useful when it means fewer visible decisions,
+fewer repeated labels, fewer decorative containers, and fewer generic words. It
+is not useful when it removes source, period, unit, method, caveat, state, or
+the next action needed for an analyst to trust the screen.
+
+For this product, a minimal screen should still be dense when density helps an
+analyst compare companies, periods, sources, or indicators. Remove clutter, not
+evidence. Source, period, unit, currency, consolidation type, calculation
+method, missing data, and data-quality issues must remain available when they
+affect interpretation.
+
+### Minimalism Review Rules
+
+- Start with the analyst task: selection, source data, indicator, historical
+  trend, interpretation, export, or next action.
+- Put summary first, then filters and primary data, then detail on demand.
+- Prefer compact tables, clear section titles, stable filters, and direct
+  actions over decorative cards or generic dashboard grids.
+- Remove repeated labels, vague helper copy, duplicate controls, ornamental
+  badges, and chart containers that do not improve interpretation.
+- Treat redundant summary panels as a product error. A summary should add a new
+  decision, action, source drill-down, or method explanation; otherwise it is
+  noise even when it looks organized.
+- Keep empty, loading, error, stale, and partial-data states explicit and close
+  to the affected data.
+- Do not hide audit fields to make the UI look cleaner.
+- Use visual hierarchy to separate essential information, secondary context,
+  and optional detail.
+- If a screen feels busy, first reduce duplication and unclear hierarchy before
+  removing analytical content.
+
 ## 2. Colors
 
 The palette is a restrained dark-neutral system with one operational teal accent and a small chart vocabulary.

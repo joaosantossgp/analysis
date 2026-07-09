@@ -1954,7 +1954,7 @@ export function createMockBridge(): Partial<BridgeApi> {
     get_company_statement: async (params) => {
       const p = params as Record<string, unknown>;
       const cdCvm = Number(p?.cd_cvm ?? 0);
-      const statementType = String(p?.statement_type ?? "DRE");
+      const statementType = String(p?.statement_type ?? p?.stmt ?? "DRE");
       const c = FIXTURE_COMPANIES.find((x) => x.cd_cvm === cdCvm);
       if (!c?.has_financial_data) {
         return { cd_cvm: cdCvm, statement_type: statementType, years: [], table: { columns: [], rows: [] }, exclude_conflicts: true, error: "No financial data" } satisfies StatementMatrix;

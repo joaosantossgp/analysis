@@ -48,6 +48,7 @@ _RECOVERY_LOG_NAME = "recovery.log"
 
 _VITE_DEV_PORT = 5173
 _VITE_DEV_URL = f"http://127.0.0.1:{_VITE_DEV_PORT}"
+_VITE_DEV_PORT_MAX = 5199
 _WIDTH, _HEIGHT = 1280, 820
 _BG = "#0a0a0a"
 _STARTUP_TIMEOUT = 15  # segundos — bundle pode demorar mais no primeiro boot
@@ -891,6 +892,16 @@ def _wait_for_port(port: int, timeout: float = _STARTUP_TIMEOUT) -> bool:
     return False
 
 
+def _first_free_vite_dev_port() -> int:
+    for port in range(_VITE_DEV_PORT, _VITE_DEV_PORT_MAX + 1):
+        if not _port_open(port):
+            return port
+    sys.exit(
+        f"[desktop] Nenhuma porta Vite livre encontrada entre "
+        f"{_VITE_DEV_PORT} e {_VITE_DEV_PORT_MAX}."
+    )
+
+
 def _vite_dist_path() -> Path:
     """Locate the Vite static build.
 
@@ -950,8 +961,17 @@ def _start_vite_dev_server() -> tuple[subprocess.Popen[bytes] | None, str]:
         sys.exit(f"[desktop] Vite app nao encontrado em {vite_dir}.")
 
     env = {**os.environ, "BROWSER": "none", "ANALISYS_DESKTOP_MODE": "1"}
-    if _port_open(_VITE_DEV_PORT):
-        return None, _VITE_DEV_URL
+    # Desktop dev must use the real pywebview bridge. If a parent shell was
+    # used for `npm run dev:mock`, this inherited variable would make the Vite
+    # bundle prefer fixture data over window.pywebview.api.
+    env.pop("VITE_MOCK_BRIDGE", None)
+
+    port = _first_free_vite_dev_port()
+    if port != _VITE_DEV_PORT:
+        print(
+            f"[desktop] porta {_VITE_DEV_PORT} ocupada; iniciando Vite dev "
+            f"sem mock em {port}."
+        )
 
     proc = subprocess.Popen(
         [
@@ -962,20 +982,21 @@ def _start_vite_dev_server() -> tuple[subprocess.Popen[bytes] | None, str]:
             "--host",
             "127.0.0.1",
             "--port",
-            str(_VITE_DEV_PORT),
+            str(port),
+            "--strictPort",
         ],
         cwd=str(vite_dir),
         env=env,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-    if not _wait_for_port(_VITE_DEV_PORT, timeout=30):
+    if not _wait_for_port(port, timeout=30):
         proc.terminate()
         sys.exit(
-            f"[desktop] Vite dev server nao respondeu na porta {_VITE_DEV_PORT} "
+            f"[desktop] Vite dev server nao respondeu na porta {port} "
             "apos 30s."
         )
-    return proc, _VITE_DEV_URL
+    return proc, f"http://127.0.0.1:{port}"
 
 
 _refresh_lock = threading.Lock()

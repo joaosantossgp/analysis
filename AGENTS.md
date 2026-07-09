@@ -6,6 +6,8 @@ Canonical operating rules for AI agents in this project. English-only. ~120 line
 
 - This is the **default** contract. Read once per session.
 - For runtime architecture, data sources, Excel exports, development, build/release, troubleshooting, and product workflows, start with the canonical docs linked from `README.md`.
+- For macro product direction and feature fit, read `docs/PRODUCT_DIRECTION.md`.
+- For product principles, minimalism, and UI hierarchy standards, read `docs/PRODUCT.md` and `docs/DESIGN.md`.
 - For a full map of every folder, workflow, and doc status, see `docs/reference/repository-map.md`.
 - For long-running autonomous PRs, also read `docs/governance/autonomous-mode.md`.
 - Before touching `src/` or `apps/api/`, also read `docs/CONTEXT.md`.
@@ -50,7 +52,7 @@ Canonical operating rules for AI agents in this project. English-only. ~120 line
 8. **Match the language of the surrounding code.** Some files are Portuguese, some English. Use whichever the file you're editing already uses.
 9. **Be honest about audit/finding quality.** If you delegate analysis to a subagent and the findings don't hold up on inspection, say so. Don't relay confidence you don't have.
 10. **Data/financial/modeling work:** prioritize auditability and correctness over speed. Preserve column conventions; honor `docs/CONTEXT.md`.
-11. **UI/design work:** keep output professional and consistent with the existing design system. Preserve creative latitude — propose visual options when not constrained.
+11. **UI/design work:** keep output professional, minimal, analyst-grade, and consistent with the existing design system. Preserve auditability and avoid decorative dashboard patterns.
 12. **Autonomous (long-running) work:** route through `docs/governance/autonomous-mode.md`. Interactive sessions use this file only.
 
 ## Token and Context Efficiency Protocol
@@ -162,6 +164,10 @@ Each task type has a minimal extra rule on top of the principles. Match the mode
 - `docs/build-release.md` — build, release, updater, and validation contract
 - `docs/troubleshooting.md` — runtime, data, updater, and export troubleshooting
 - `docs/product-workflows.md` — implemented vs planned analyst workflows
+- `docs/PRODUCT_DIRECTION.md` — macro product direction and feature-fit rules
+- `docs/PRODUCT_DEVELOPMENT_CHECKLIST.md` — next-step product development checklist
+- `docs/PRODUCT.md` — product principles, minimalism, target users
+- `docs/DESIGN.md` — design system, UI principles, minimalism review rules
 - `docs/COMO_RODAR.md` — how to run locally (Portuguese, operational)
 - `docs/CONTEXT.md` — domain rules for `src/` and `apps/api/`
 - `docs/decisions/` — ADRs (durable architectural decisions)

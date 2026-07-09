@@ -145,6 +145,10 @@ The Status strip shows **BRIDGE · MOCK** in violet and Settings -> Diagnostics 
 ## F5 / reload behavior in dev mode
 
 In `--dev` mode, the app loads the Vite dev server (`http://127.0.0.1:5173`).
+If port `5173` is already occupied, desktop dev starts its own non-mock Vite
+server on the next free port and opens that URL in pywebview. It also strips
+`VITE_MOCK_BRIDGE` from the spawned Vite environment so desktop dev cannot
+silently use fixture data.
 
 - **F5 / browser reload** reloads the Vite frontend inside the pywebview window.
 - The Python backend and bridge stay alive — they run in the same process and are
@@ -390,6 +394,9 @@ Press F5 inside the pywebview window while running `--dev`.
   All `window.pywebview.api` calls fail. Settings -> Diagnostics shows a browser fallback
   banner. Use `npm run dev:mock` for fixture-backed UI development, or
   `python -m desktop.app --dev` for realistic testing.
+- **Do not use `npm run dev:mock` for desktop dev.** It compiles the frontend
+  with `VITE_MOCK_BRIDGE=1`, which deliberately routes bridge calls to fixtures
+  instead of the packaged-app database.
 - `CVMANALYTICS_USE_RELEASE_DATA` does not copy or migrate data — it just points
   the dev app at the existing release directory. If the release app has never run,
   that directory may not exist yet.

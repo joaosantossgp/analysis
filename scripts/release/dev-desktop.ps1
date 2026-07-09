@@ -19,6 +19,7 @@ Set-Location $repoRoot
 
 $releaseDataDir = Join-Path $env:USERPROFILE "Documents\CVMAnalytics"
 $env:CVMANALYTICS_USE_RELEASE_DATA = "1"
+Remove-Item Env:VITE_MOCK_BRIDGE -ErrorAction SilentlyContinue
 
 $args = @("--dev")
 if ($Debug) { $args += "--debug" }

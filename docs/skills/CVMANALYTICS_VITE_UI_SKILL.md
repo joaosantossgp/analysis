@@ -63,6 +63,32 @@ The CVMAnalytics Vite UI must look and feel like a **professional financial work
 - **What it is NOT:** A generic SaaS dashboard, a consumer marketing page, a mobile-first responsive layout, or an over-animated crypto/fintech web app.
 - **Not a Bloomberg Clone:** This app is not a Bloomberg clone. Do not copy Bloomberg branding, trademarks, proprietary UI, layout, exact colors, icons, keyboard shortcuts, or visual identity. Instead, draw inspiration from general financial-terminal principles: information density, workflow speed, absolute clarity, screen continuity, and deep analytical usability.
 
+### Product Minimalism
+
+Minimalism is a formal product and UX principle for CVMAnalytics.
+
+In this app, minimalism means showing the right information with strong
+hierarchy, low friction, consistent patterns, and no unnecessary visual or
+textual noise. It does not mean fewer features, sparse layouts, or hiding
+important evidence.
+
+For UI work, apply these rules:
+
+- Be direct, but keep material financial context visible.
+- Prefer dense, readable, analyst-grade layouts over decorative dashboards.
+- Put summary first and reveal detail on demand.
+- Remove repeated labels, vague helper text, redundant cards, duplicate filters,
+  and ornamental visual treatments.
+- Standardize tables, indicators, filters, chart framing, and action placement
+  across pages.
+- Preserve auditability: source, period, unit, currency, consolidation type,
+  calculation method, freshness, and data-quality caveats must remain
+  accessible when the data supports them.
+- Do not hide missing data, stale data, partial coverage, bridge errors, or
+  source failures behind a cleaner-looking UI.
+- Empty, loading, error, stale, and partial states must be explicit and useful.
+- Optimize for fast professional judgment, not casual browsing.
+
 ---
 
 ## 5. Design & Visual Direction
@@ -222,10 +248,31 @@ A Vite UI screen is considered complete **only** if it passes all the following:
 - [ ] **Production Build:** Bundles successfully (`npm run build`).
 - [ ] **No Bundled Node Runtime:** Packaged executable starts the Vite UI without spawning a bundled Node runtime or packaged legacy web server.
 - [ ] **Data Safety:** Persistent user directories (`%USERPROFILE%\Documents\CVMAnalytics`) are preserved.
+- [ ] **Minimalism:** The screen has clear hierarchy, avoids redundant copy and decorative dashboard patterns, keeps essential audit metadata accessible, and helps the analyst reach the next action quickly.
+
+## 16. Page-By-Page Minimalism Review Workflow
+
+When the user reviews the app page by page and describes what they dislike,
+the agent must:
+
+1. Inspect the real route, active components, API facades, bridge calls, and
+   state handling for that page.
+2. Identify the implemented data flow and distinguish implemented behavior from
+   planned or aspirational docs.
+3. Compare the page against the minimalism principle and the screen acceptance
+   checklist.
+4. Propose targeted improvements before broad rewrites.
+5. Preserve existing working flows, exports, source evidence, and error states.
+6. Avoid changing data semantics, bridge contracts, schemas, or inactive apps
+   unless the user explicitly asks and the architecture supports it.
+7. Validate loading, empty, error, stale/partial data, responsive layout, and
+   performance-sensitive interactions.
+8. Report remaining risks, unverified states, and any uncertainty about source
+   quality or product scope.
 
 ---
 
-## 16. Output Expectations for AI Agents
+## 17. Output Expectations for AI Agents
 
 When wrapping up a task, your final report **must** follow this format:
 

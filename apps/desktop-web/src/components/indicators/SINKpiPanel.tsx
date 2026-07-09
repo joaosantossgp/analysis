@@ -594,6 +594,17 @@ export function SINKpiPanel({
             />
           ) : (
             <div className="rounded border border-zinc-800 bg-zinc-950/35 p-4">
+              <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-mono uppercase tracking-wide text-zinc-500">
+                <span>ONS/CCEE local cache</span>
+                <span className="text-zinc-700">·</span>
+                <span>Subsystem grain</span>
+                <span className="text-zinc-700">·</span>
+                <span>Frequency varies by source</span>
+                <span className="text-zinc-700">·</span>
+                <span>
+                  {periods[0] ?? ""} to {periods[periods.length - 1] ?? ""}
+                </span>
+              </div>
               <IndicatorChart
                 series={chartSeries}
                 periods={periods}
@@ -753,7 +764,7 @@ function SubsystemAuditTable({
     <section className="min-w-0 max-w-full rounded border border-zinc-800 bg-zinc-950/35">
       <div className="border-b border-zinc-800 px-4 py-3">
         <h4 className="text-sm font-medium text-zinc-100">Audit Table</h4>
-        <p className="text-[11px] text-zinc-500">Latest local value by subsystem, KPI, unit, and reference timestamp.</p>
+        <p className="text-[11px] text-zinc-500">Latest local SIN cache by subsystem, KPI, unit, and source reference timestamp.</p>
       </div>
       <div className="min-w-0 max-w-full overflow-x-auto">
         <table className="min-w-[720px] w-full border-collapse text-sm">
@@ -812,7 +823,7 @@ function SourcePanel({ dashboard }: { dashboard: SINKPIDashboardResponse }) {
         <div>
           <h4 className="text-sm font-medium text-zinc-100">Source Provenance</h4>
           <p className="text-[11px] text-zinc-500">
-            Local records are read from `energy_kpis.db`; no live network call is required to open this dashboard.
+            Local records are read from energy_kpis.db; no live network call is required to open this dashboard.
           </p>
         </div>
         <span className="font-mono text-[10px] text-zinc-500">
@@ -863,7 +874,7 @@ function NumHead({ label, unit }: { label: string; unit: string }) {
 
 function NumCell({ value, signed = false }: { value: number | null | undefined; signed?: boolean }) {
   if (value === null || value === undefined || !Number.isFinite(value)) {
-    return <td className="px-3 py-2 text-right font-mono text-[11px] text-zinc-600">-</td>;
+    return <td className="px-3 py-2 text-right font-mono text-[11px] text-zinc-600">—</td>;
   }
   const text = signed && value > 0 ? `+${formatNumber(value)}` : formatNumber(value);
   return (

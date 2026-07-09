@@ -77,6 +77,10 @@ Workflow files under `.github/workflows/` are active unless explicitly removed:
 | Project overview | `README.md` |
 | Agent rules | `AGENTS.md` |
 | Active project map | `docs/active-project-map.md` |
+| Product direction | `docs/PRODUCT_DIRECTION.md` |
+| Product development checklist | `docs/PRODUCT_DEVELOPMENT_CHECKLIST.md` |
+| Product principles | `docs/PRODUCT.md` |
+| Design system and UI principles | `docs/DESIGN.md` |
 | Runtime architecture | `docs/architecture.md` |
 | Data sources and auditability | `docs/data-sources.md` |
 | Excel export standards | `docs/excel-exports.md` |

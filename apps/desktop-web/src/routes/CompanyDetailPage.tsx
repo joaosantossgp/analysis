@@ -11,6 +11,7 @@ import { IndicatorChart } from "@/components/indicators/IndicatorChart";
 import { IndicatorControls } from "@/components/indicators/IndicatorControls";
 import { IndicatorLegend } from "@/components/indicators/IndicatorLegend";
 import { IndicatorTable } from "@/components/indicators/IndicatorTable";
+import { formatValue } from "@/lib/indicators/format";
 import {
   fetchCompanyInfo,
   fetchCompanyKpis,
@@ -20,14 +21,16 @@ import {
   type CompanyYearsResultUI,
 } from "@/lib/api/companyDetail";
 import { whenBridgeReady } from "@/lib/bridge/adapter";
-import type { KPIBundle } from "@/lib/bridge/types";
-import { buildIndicatorDefs, defaultSelectedIds } from "@/lib/indicators/catalog";
+import type { KPIBundle, TabularData, TabularRow } from "@/lib/bridge/types";
+import { formatUnit } from "@/lib/formatters";
+import { buildIndicatorDefs, categoryLabel, defaultSelectedIds } from "@/lib/indicators/catalog";
 import { resolveSeries, selectPeriods } from "@/lib/indicators/series";
 import type {
   AxisSide,
   ChartType,
   Frequency,
   IndicatorSelection,
+  ResolvedSeries,
 } from "@/lib/indicators/types";
 import { useIndicatorConfig } from "@/lib/indicators/useIndicatorConfig";
 
@@ -413,6 +416,10 @@ function IndicatorChartPanel({
     () => resolveSeries(activeTable, periods, plottable, chart.type, chart.indexMode),
     [activeTable, periods, plottable, chart.type, chart.indexMode],
   );
+  const latestMoves = useMemo(
+    () => buildLatestMoves(series, periods, chart.indexMode),
+    [series, periods, chart.indexMode],
+  );
 
   const showAxisControls = useMemo(
     () => new Set(series.map((s) => s.unit)).size > 1,
@@ -504,6 +511,8 @@ function IndicatorChartPanel({
             selectedCount={config.selected.length}
           />
 
+          <LatestMovesSummary moves={latestMoves} />
+
           {/* Chart area with state machine */}
           <ChartArea
             noIndicatorsAtAll={noIndicatorsAtAll}
@@ -575,12 +584,316 @@ function IndicatorChartPanel({
             </span>
           </summary>
           <div style={{ borderTop: "1px solid var(--color-border-subtle)" }}>
+            <IndicatorMethodAudit
+              table={activeTable}
+              selectedIds={plottableIds}
+              frequency={frequency}
+              indexMode={chart.indexMode}
+            />
             <IndicatorTable table={activeTable} periods={periods} selectedIds={plottableIds} />
           </div>
         </details>
       ) : null}
     </div>
   );
+}
+
+interface IndicatorAuditRow {
+  id: string;
+  label: string;
+  category: string;
+  unit: string;
+  method: string;
+  basis: string;
+  formula: string;
+}
+
+function IndicatorMethodAudit({
+  table,
+  selectedIds,
+  frequency,
+  indexMode,
+}: {
+  table: TabularData;
+  selectedIds: string[];
+  frequency: Frequency;
+  indexMode: boolean;
+}) {
+  const rows = useMemo(
+    () => buildIndicatorAuditRows(table, selectedIds, frequency, indexMode),
+    [table, selectedIds, frequency, indexMode],
+  );
+  if (rows.length === 0) return null;
+  return (
+    <section
+      aria-label="Indicator source and method"
+      style={{
+        borderBottom: "1px solid var(--color-border-subtle)",
+        padding: "10px 14px 12px",
+      }}
+    >
+      <div
+        className="mb-2 flex flex-wrap items-baseline justify-between gap-2"
+      >
+        <h3
+          style={{
+            color: "var(--color-text-primary)",
+            fontSize: "var(--text-sm)",
+            fontWeight: 650,
+            margin: 0,
+          }}
+        >
+          Source and method
+        </h3>
+        <p
+          style={{
+            color: "var(--color-text-tertiary)",
+            fontSize: "var(--text-2xs)",
+            margin: 0,
+          }}
+        >
+          Local CVM statements · KPI engine · selected indicators
+        </p>
+      </div>
+      <div className="grid gap-2">
+        {rows.map((row) => (
+          <div
+            key={row.id}
+            className="grid gap-2 lg:grid-cols-[minmax(10rem,1.1fr)_minmax(12rem,1.8fr)]"
+            style={{
+              borderTop: "1px solid var(--color-border-subtle)",
+              paddingTop: 8,
+            }}
+          >
+            <div className="min-w-0">
+              <p
+                className="truncate"
+                style={{
+                  color: "var(--color-text-primary)",
+                  fontSize: "var(--text-xs)",
+                  fontWeight: 650,
+                  margin: 0,
+                }}
+                title={row.label}
+              >
+                {row.label}
+              </p>
+              <p
+                className="truncate font-mono"
+                style={{
+                  color: "var(--color-text-tertiary)",
+                  fontSize: "var(--text-2xs)",
+                  margin: "2px 0 0",
+                }}
+                title={`${row.id} · ${row.category} · ${row.unit}`}
+              >
+                {row.id} · {row.category} · {row.unit}
+              </p>
+            </div>
+            <div className="grid min-w-0 gap-1 sm:grid-cols-[minmax(8rem,0.7fr)_minmax(10rem,1fr)_minmax(12rem,1.3fr)]">
+              <AuditMeta label="Method" value={row.method} />
+              <AuditMeta label="Basis" value={row.basis} />
+              <AuditMeta label="Formula" value={row.formula} mono />
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function AuditMeta({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
+  return (
+    <div className="min-w-0">
+      <p
+        style={{
+          color: "var(--color-text-tertiary)",
+          fontSize: "var(--text-2xs)",
+          letterSpacing: "0.04em",
+          margin: 0,
+          textTransform: "uppercase",
+        }}
+      >
+        {label}
+      </p>
+      <p
+        className={mono ? "truncate font-mono" : "truncate"}
+        style={{
+          color: "var(--color-text-secondary)",
+          fontSize: "var(--text-xs)",
+          margin: "1px 0 0",
+        }}
+        title={value}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function buildIndicatorAuditRows(
+  table: TabularData,
+  selectedIds: string[],
+  frequency: Frequency,
+  indexMode: boolean,
+): IndicatorAuditRow[] {
+  const order = new Map(selectedIds.map((id, index) => [id, index] as const));
+  return table.rows
+    .filter((row) => order.has(rowId(row)))
+    .sort((a, b) => (order.get(rowId(a)) ?? 0) - (order.get(rowId(b)) ?? 0))
+    .map((row) => {
+      const id = rowId(row);
+      const rawFormula = String(row.FORMULA ?? "").trim();
+      const unit = indexMode ? "Index (100)" : formatUnit(row.FORMAT_TYPE);
+      const basis =
+        frequency === "annual"
+          ? "Annual fiscal close"
+          : "Quarterly view; LTM for flow metrics";
+      return {
+        id,
+        label: String(row.KPI_NOME ?? id),
+        category: categoryLabel(String(row.CATEGORIA ?? "—")),
+        unit,
+        method: "Calculated KPI",
+        basis,
+        formula: rawFormula || "Formula metadata unavailable",
+      };
+    });
+}
+
+function rowId(row: TabularRow): string {
+  return String(row.KPI_ID ?? "").trim();
+}
+
+interface LatestMove {
+  id: string;
+  label: string;
+  color: string;
+  latestPeriod: string;
+  latestValue: string;
+  changeLabel: string;
+}
+
+function LatestMovesSummary({ moves }: { moves: LatestMove[] }) {
+  if (moves.length === 0) return null;
+  return (
+    <div
+      aria-label="Latest indicator moves"
+      className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4"
+      style={{
+        borderTop: "1px solid var(--color-border-subtle)",
+        paddingTop: 10,
+      }}
+    >
+      {moves.map((move) => (
+        <div
+          key={move.id}
+          className="min-w-0"
+          style={{
+            borderLeft: `2px solid ${move.color}`,
+            paddingLeft: 9,
+          }}
+        >
+          <p
+            className="truncate"
+            style={{
+              color: "var(--color-text-tertiary)",
+              fontSize: "var(--text-2xs)",
+              letterSpacing: "0.04em",
+              margin: 0,
+              textTransform: "uppercase",
+            }}
+            title={move.label}
+          >
+            {move.label}
+          </p>
+          <p
+            className="truncate font-mono"
+            style={{
+              color: "var(--color-text-primary)",
+              fontSize: "var(--text-sm)",
+              fontWeight: 650,
+              margin: "2px 0 0",
+            }}
+            title={`${move.latestValue} in ${move.latestPeriod}`}
+          >
+            {move.latestValue}
+            <span
+              style={{
+                color: "var(--color-text-tertiary)",
+                fontSize: "var(--text-2xs)",
+                marginLeft: 6,
+              }}
+            >
+              {move.latestPeriod}
+            </span>
+          </p>
+          <p
+            className="truncate font-mono"
+            style={{
+              color: "var(--color-text-secondary)",
+              fontSize: "var(--text-2xs)",
+              margin: "1px 0 0",
+            }}
+            title={move.changeLabel}
+          >
+            {move.changeLabel}
+          </p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function buildLatestMoves(
+  series: ResolvedSeries[],
+  periods: string[],
+  indexMode: boolean,
+): LatestMove[] {
+  return series.map((item) => {
+    const latestIndex = findPreviousFiniteIndex(item.points, item.points.length - 1);
+    if (latestIndex === -1) return null;
+    const previousIndex = findPreviousFiniteIndex(item.points, latestIndex - 1);
+    const latestValue = item.points[latestIndex];
+    if (latestValue === null) return null;
+    const changeLabel =
+      previousIndex === -1 || item.points[previousIndex] === null
+        ? "No prior period"
+        : `${formatSignedChange(latestValue - item.points[previousIndex], item.unit, indexMode)} vs ${periods[previousIndex]}`;
+    return {
+      id: item.id,
+      label: item.label,
+      color: item.color,
+      latestPeriod: periods[latestIndex] ?? "Latest",
+      latestValue: formatValue(latestValue, item.unit, indexMode),
+      changeLabel,
+    };
+  }).filter((move): move is LatestMove => move !== null);
+}
+
+function findPreviousFiniteIndex(points: Array<number | null>, startIndex: number): number {
+  for (let index = startIndex; index >= 0; index -= 1) {
+    const value = points[index];
+    if (typeof value === "number" && Number.isFinite(value)) return index;
+  }
+  return -1;
+}
+
+function formatSignedChange(value: number, unit: ResolvedSeries["unit"], indexMode: boolean): string {
+  if (Math.abs(value) < 0.000001) return unit === "pct" && !indexMode ? "0.0 pp" : "0";
+  const sign = value > 0 ? "+" : "";
+  if (indexMode) return `${sign}${value.toFixed(1)}`;
+  if (unit === "pct") return `${sign}${(value * 100).toFixed(1)} pp`;
+  if (unit === "ratio") return `${sign}${value.toFixed(1)}x`;
+  return `${sign}${formatValue(value, unit, false)}`;
 }
 
 function IndicatorMetadataRow({

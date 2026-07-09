@@ -1702,6 +1702,15 @@ const TREND_METRICS: Record<DistributionTab, TrendMetric[]> = {
   ],
 };
 
+const DISTRIBUTION_SOURCE_CONTEXT: Record<DistributionTab, string> = {
+  market: "ANEEL SAMP Mercado",
+  balance: "ANEEL SAMP Balanco",
+  quality: "ANEEL DEC/FEC",
+  tariffs: "ANEEL homologated tariffs",
+  delinquency: "ANEEL delinquency indicators",
+  mmgd: "ANEEL MMGD projects",
+};
+
 function mapMetricUnit(unit: string): IndicatorUnit {
   if (unit === "%") return "pct";
   if (unit === "BRL" || unit === "R$") return "brl";
@@ -1845,8 +1854,16 @@ function DistributionTrendPanel({
           <div className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
             Historical chart
           </div>
-          <div className="text-[10px] font-mono text-zinc-600">
-            {periods[0] ?? ""} to {periods[periods.length - 1] ?? ""}
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] font-mono uppercase tracking-wide text-zinc-600">
+            <span>{DISTRIBUTION_SOURCE_CONTEXT[activeTab]}</span>
+            <span className="text-zinc-700">·</span>
+            <span>Monthly series</span>
+            <span className="text-zinc-700">·</span>
+            <span>Selected distributor/group grain</span>
+            <span className="text-zinc-700">·</span>
+            <span>
+              {periods[0] ?? ""} to {periods[periods.length - 1] ?? ""}
+            </span>
           </div>
         </div>
       </div>

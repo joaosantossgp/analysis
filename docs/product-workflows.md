@@ -94,3 +94,26 @@ Good analyst workflows should expose:
 Avoid marketing language and avoid presenting dashboard visuals without source,
 period, and caveat context.
 
+## Minimalism Standard For Workflow Reviews
+
+Minimalism is now a core product principle for CVMAnalytics. In workflow
+reviews, minimalism means reducing friction and noise while preserving the
+information analysts need to trust the result.
+
+For each page or workflow, check:
+
+- whether the first screen makes the primary analyst task obvious;
+- whether essential information is visually prioritized over secondary context;
+- whether repeated copy, redundant cards, duplicate controls, or generic
+  dashboard framing can be removed;
+- whether tables, filters, indicators, and charts follow patterns already used
+  elsewhere in the app;
+- whether source, period, unit, currency, consolidation, calculation method,
+  freshness, and caveats remain accessible;
+- whether empty, loading, error, stale, and partial states tell the analyst what
+  happened and what action is available;
+- whether the workflow moves naturally from selection to evidence, indicator,
+  trend, interpretation, export, or next action.
+
+Do not make a page cleaner by hiding data-quality issues, missing values,
+unavailable source metadata, or local bridge failures.

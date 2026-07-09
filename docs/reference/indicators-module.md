@@ -1,6 +1,6 @@
 # Indicators Module
 
-Active reference for the desktop `Indicators` workspace at
+Active reference for the desktop `Indicators` module at
 `apps/desktop-web/src/routes/CountryKpisPage.tsx`.
 
 ## Product Shape
@@ -8,82 +8,157 @@ Active reference for the desktop `Indicators` workspace at
 - Route: `/indicators`.
 - Legacy route: `/country-kpis` redirects to `/indicators`.
 - Query shape: `?section=<section>&sub=<energy-subview>`.
-- The workspace is organized around the analyst path:
+- The module is organized around the analyst path:
   `sector -> company/portfolio -> asset -> indicator -> source/export`.
 
 Top-level sections:
 
 | Section | Purpose |
 | --- | --- |
-| `Workspace` | Landing page for available workflows, Energy coverage, source status, and future work areas. |
-| `Sectors` | Sector workspaces. Energy is the first deep sector. |
+| `Indicator Library` | Central list of indicators that can be opened directly without selecting a company, distributor, plant, asset, parcel, ticker or economic group. |
+| `Sectors` | Sector analysis. Energy is the first deep sector. |
 | `Companies & Assets` | CVM registry, economic groups, sectoral asset links, and mapping hub. |
-| `Indicator Library` | Catalog-driven KPI search and metadata surface. |
 | `Data Health & Sources` | Centralized source coverage and refresh audit where available. |
 | `Exports & Verification` | Inventory of real export paths, source evidence and pre-export checks. |
 
 Compatibility:
 
-- Missing `section` defaults to `Workspace`.
+- Missing `section` defaults to `Indicator Library`.
+- Legacy `section=overview` resolves to `Indicator Library`.
 - Legacy `section=discover` resolves to `Companies & Assets`.
 - Legacy `section=favorites` resolves to `Indicator Library`.
+- Missing `sub` inside `Sectors` defaults to `Distribution`.
+- Legacy `sub=overview` resolves to `Distribution`.
 - `section=exports` opens the export/verification inventory.
 - Existing Energy deep links with `section=energy&sub=...` remain valid.
 
-## Energy Workspace
+## Energy Sector
 
-Energy is the first deep sector workspace. Current subviews:
+Energy is the first deep sector. Current subviews:
 
 | Subview | Component | Current coverage |
 | --- | --- | --- |
-| `Overview` | inline overview in `CountryKpisPage.tsx` | Workflow map, Energy analysis spine, portfolio/asset coverage snapshot. |
 | `Distribution` | `components/indicators/distribution/DistributorExplorer.tsx` | ANEEL distributor operational KPIs, charts, detail tabs, refresh, Excel export. |
 | `Generation` | `components/indicators/PlantParcelExplorer.tsx` | CCEE plant-parcel catalog, generation series, source status, manual import support. |
 | `Fuel` | `components/indicators/FuelDistributionExplorer.tsx` | ANP fuel sales marts and bounded detail preview. |
 | `Power System` | `components/indicators/SINKpiPanel.tsx` | SIN operating indicators with source status and local cached reads. |
-| `Matrix & Trends` | `components/indicators/explorer/IndicatorExplorer.tsx` | Country energy and electricity matrix indicators from the KPI catalog. |
+| `Matrix & Trends` | `components/indicators/explorer/IndicatorExplorer.tsx` | Catalog-backed country energy/electricity and SIN records, with metadata, previews, source refresh and supported export. |
 
-Do not remove or hide these subviews when reorganizing the workspace.
-
-The Energy overview also exposes an analysis spine:
-
-- Sector context: distribution, generation, fuel, SIN and matrix panels.
-- Company portfolios: linked distributors and generation assets by CVM company
-  or custom owner.
-- Asset review: mapped plants, distributors and unresolved ownership links.
-- Source verification: snapshots, source status, refresh logs and partial source
-  warnings.
-- Indicator outputs: verified source data feeding the Indicator Library and
-  export-ready views.
-
-The portfolio/asset snapshot uses the same existing bridge data as
-`Companies & Assets`: `get_conglomerates`, `get_asset_mappings`, and
-`get_company_universe`. It does not add new Energy indicators, forecasts,
-ownership inference, or schema.
+Do not remove or hide these subviews when reorganizing the module.
 
 ## Indicator Library
 
 `components/indicators/explorer/`
 
-The Indicator Library is catalog-driven. It reads the backend `kpi_catalog`,
-joins cached series and health snapshots, and normalizes records through
-`apps/desktop-web/src/lib/indicators/registry.ts`.
+The default Indicator Library page is an indicator list, not the detailed catalog
+browser. It lists only indicators whose chart/table can be opened directly from
+the library without an entity selector. Company-, distributor-, asset-, plant-,
+parcel-, ticker-, fuel product-, state-, or economic-group-specific indicators
+belong in their specialist workflows, not in the default library.
 
-Layout:
+Current library rows include:
 
-- `ExplorerStatusStrip` — total indicators, sources, cached locally, stale,
+- Catalog-backed country energy/electricity records from the backend
+  `kpi_catalog`, opened through `Sectors -> Matrix & Trends`.
+- Catalog-backed SIN power-system records from the backend `kpi_catalog`,
+  opened through `Sectors -> Power System`.
+- Static fallback definitions for those same country and SIN namespaces when
+  the local catalog is unavailable, clearly marked as definition-only until
+  cached series are available.
+
+Do not list company KPI definitions, distributor metrics, Generation plant or
+portfolio metrics, Fuel product/state/region metrics, individual subsystem
+observations, or any other row that requires a selector before data can render.
+Those records belong in their dedicated detail pages. For example, Distribution
+metrics such as billed energy, DEC, FEC, losses, injected energy and
+delinquency remain inside `Sectors -> Distribution`.
+
+UI pattern:
+
+- One page title: `Indicator Library`.
+- No summary cards, dashboard counters, generic intro paragraph, or
+  implementation-detail warning panels.
+- Compact controls above the table: unlabeled search input plus domain, source,
+  unit, type, status and favorites filters.
+- Dense table with indicator name/id, definition or formula, domain, scope,
+  unit/period, source, method/type, definition or data status, favorite action,
+  and secondary open action.
+- Row selection opens a full-width detail panel in the library page. The panel shows
+  metadata, source fields, availability, preview chart/table rows when real
+  cached series exist, and honest empty states when only the definition is
+  available.
+- The table must be useful before navigation. Open actions are secondary links
+  to specialist pages, not a substitute for showing the indicator definition or
+  detail metadata in the library itself.
+- Indicator-level export is exposed only for catalog-backed country KPI rows
+  through `export_country_kpis_excel({ kpi_ids: [...] })` and only when cached
+  preview rows are available. SIN rows show export as unavailable until an
+  indicator-level export exists.
+
+The backend-driven catalog browser still exists, but it is scoped to
+`Energy -> Matrix & Trends`. In catalog mode, `IndicatorExplorer` reads the
+backend `kpi_catalog`, joins cached series and health snapshots, and normalizes
+records through `apps/desktop-web/src/lib/indicators/registry.ts`.
+
+Catalog mode layout:
+
+- `ExplorerStatusStrip` - total indicators, sources, cached locally, stale,
   failed/blocked, last refresh.
-- `ExplorerToolbar` — debounced search, facets, sort, favorites toggle.
-- `IndicatorCatalogTable` — dense sticky-header table with no inline charts.
-- `IndicatorDetailPanel` — reproducibility metadata, preview chart, source
+- `ExplorerToolbar` - debounced search, facets, sort, favorites toggle.
+- `IndicatorCatalogTable` - dense sticky-header table with no inline charts.
+- `IndicatorDetailPanel` - reproducibility metadata, preview chart, source
   refresh, Excel export where supported, related indicators, composite view
   launchers.
 
-Favorites persist to `localStorage` under `cvm:indicators:favorites:v1`.
+Favorites persist to `localStorage` under `cvm:indicators:favorites:v1` inside
+the catalog browser. There is no top-level Favorites page.
+
+Current backend catalog namespaces are `energy_utilities.country.*` and
+`energy_utilities.sin.*`. Distribution, fuel, generation and company financial
+indicators currently have specialist pages or contracts, but they are
+entity-dependent and must not be surfaced in the default Indicator Library. Do
+not invent units, periods, formulas, coverage or freshness values; if metadata
+is not available, label it as unavailable.
 
 Every metadata field shown by the Explorer must map to a real backend field or
 render as `—`. Do not invent source, coverage, quality, confidence, or freshness
 metadata in the frontend.
+
+## Indicator UX Minimalism Standards
+
+Indicators are a core product surface. They must be dense, comparable,
+traceable, and fast to interpret without becoming generic dashboard panels.
+
+For each indicator area, future reviews must check:
+
+- Metric name: clear, stable, and specific enough for financial analysis.
+- Unit: visible near the value, table header, axis, or detail metadata.
+- Period: clear for point-in-time, quarterly, annual, accumulated, and LTM
+  views.
+- Value type: reported, calculated, estimated, imported, external, unavailable,
+  or not supported by current data.
+- Source: traceable to the underlying source, local cache, import, bridge
+  method, or catalog metadata when available.
+- Formula: available for calculated indicators when the backend/catalog exposes
+  it.
+- Consolidation: consolidated and individual data must not be visually mixed
+  without clear labels.
+- Missing values: shown explicitly as missing or unavailable, never silently
+  converted to zero or hidden.
+- Historical comparison: easy to scan through trends, tables, or bounded chart
+  previews without overloading the page.
+- Filters: consistent with the rest of Indicators and aligned to real data
+  fields.
+- Visual hierarchy: summary first, detail on demand, source/audit metadata
+  accessible.
+- Noise level: no repeated labels, vague helper copy, redundant cards, or
+  decorative chart framing that slows interpretation.
+- Analyst value: the page should help an Equity, Credit, IB, or sector analyst
+  reach a decision or next action faster.
+
+Minimalism does not override auditability. If the app lacks source,
+calculation, confidence, coverage, or freshness metadata for an indicator, the
+UI should state that the metadata is unavailable instead of inventing it.
 
 ## Companies & Assets
 
@@ -130,7 +205,7 @@ health is centralized until the bridge and data model support it.
 ## Exports & Verification
 
 `CountryKpisPage.tsx` exposes an `Exports & Verification` section as a
-workspace inventory and checklist. It does not generate a new centralized
+module inventory and checklist. It does not generate a new centralized
 export manifest in this phase.
 
 Direct export paths currently visible from Indicators:
@@ -138,8 +213,8 @@ Direct export paths currently visible from Indicators:
 - Distribution Excel report: generated inside `Energy -> Distribution` after
   selecting a distributor or economic group. Uses the existing
   `export_distribution_excel` bridge method.
-- Country energy KPI Excel: generated from the Indicator Library / Matrix &
-  Trends detail panel for supported country-level KPIs. Uses the existing
+- Country energy KPI Excel: generated from the `Energy -> Matrix & Trends`
+  detail panel for supported country-level KPIs. Uses the existing
   `export_country_kpis_excel` bridge method.
 
 Source-review paths without a centralized export action:

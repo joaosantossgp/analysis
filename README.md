@@ -125,6 +125,10 @@ See [docs/data-sources.md](docs/data-sources.md).
 
 | Topic | Canonical doc |
 |---|---|
+| Product direction | [docs/PRODUCT_DIRECTION.md](docs/PRODUCT_DIRECTION.md) |
+| Product development checklist | [docs/PRODUCT_DEVELOPMENT_CHECKLIST.md](docs/PRODUCT_DEVELOPMENT_CHECKLIST.md) |
+| Product principles | [docs/PRODUCT.md](docs/PRODUCT.md) |
+| Design system and UI principles | [docs/DESIGN.md](docs/DESIGN.md) |
 | Runtime architecture | [docs/architecture.md](docs/architecture.md) |
 | Data sources and auditability | [docs/data-sources.md](docs/data-sources.md) |
 | Excel export standards | [docs/excel-exports.md](docs/excel-exports.md) |

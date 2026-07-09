@@ -6,6 +6,8 @@ import logging
 import time
 import uuid
 import re
+import shutil
+import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -82,12 +84,42 @@ def _ensure_optional_columns(df: pl.DataFrame, columns: list[str]) -> pl.DataFra
     return df.with_columns([pl.lit(None).cast(pl.String).alias(col) for col in missing])
 
 
+def _zip_csv_member(path: Path) -> str:
+    with zipfile.ZipFile(path) as zf:
+        for info in zf.infolist():
+            if not info.is_dir() and Path(info.filename).suffix.lower() == ".csv":
+                return info.filename
+        for info in zf.infolist():
+            if not info.is_dir():
+                return info.filename
+    raise DistributionSchemaError(f"ZIP resource {path.name} does not contain a CSV member")
+
+
+def _extract_zip_csv(path: Path, dest: Path) -> Path:
+    member = _zip_csv_member(path)
+    tmp_dest = dest.with_name(f".{dest.name}.{uuid.uuid4().hex}.tmp")
+    with zipfile.ZipFile(path) as zf, zf.open(member) as src, open(tmp_dest, "wb") as out:
+        shutil.copyfileobj(src, out)
+    tmp_dest.replace(dest)
+    return dest
+
+
+def _readable_distribution_csv_path(file_path: Path) -> Path:
+    if not zipfile.is_zipfile(file_path):
+        return file_path
+    extracted_path = file_path.with_name(f"{file_path.stem}.extracted.csv")
+    if not extracted_path.exists() or extracted_path.stat().st_mtime < file_path.stat().st_mtime:
+        _extract_zip_csv(file_path, extracted_path)
+    return extracted_path
+
+
 def _read_distribution_csv(file_path: Path, **kwargs) -> pl.DataFrame:
     """Read ANEEL CSVs with the encodings observed in official downloads."""
+    csv_path = _readable_distribution_csv_path(file_path)
     last_exc: Exception | None = None
     for encoding in ("utf-8", "windows-1252", "latin1-lossy"):
         try:
-            return pl.read_csv(file_path, separator=";", encoding=encoding, infer_schema_length=10000, **kwargs)
+            return pl.read_csv(csv_path, separator=";", encoding=encoding, infer_schema_length=10000, **kwargs)
         except Exception as exc:
             last_exc = exc
     assert last_exc is not None
@@ -391,6 +423,10 @@ def fetch_distribution_resource(
         for chunk in resp.iter_content(chunk_size=128 * 1024):
             if chunk:
                 f.write(chunk)
+
+    if fmt == "csv" and zipfile.is_zipfile(dest):
+        logger.info("Extracting ZIP-wrapped ANEEL CSV resource %s", dest.name)
+        _extract_zip_csv(dest, dest)
 
     # Compute stats
     sha = _sha256_file(dest)

@@ -377,13 +377,13 @@ export function CompanyModelMappingPage() {
     return <StateBanner variant="error" title="Invalid CVM code" />;
   }
   if (!bridgeReady || workspaceQuery.isLoading) {
-    return <StateBanner variant="loading" title="Loading model builder..." />;
+    return <StateBanner variant="loading" title="Loading Excel mapping..." />;
   }
   if (workspaceQuery.isError) {
     return (
       <StateBanner
         variant="error"
-        title="Could not load Model Export Builder"
+        title="Could not load Excel Mapping"
         message={workspaceQuery.error instanceof Error ? workspaceQuery.error.message : String(workspaceQuery.error)}
         onRetry={() => workspaceQuery.refetch()}
       />
@@ -401,8 +401,8 @@ export function CompanyModelMappingPage() {
       <EntityHeader cdCvm={cdCvm} activeTab="mapping" />
       <Panel
         dense
-        title="Model Export Builder"
-        subtitle="Preview the Excel Model sheet, audit source lines, then export a saved mapping."
+        title="Excel Mapping"
+        subtitle="Map local CVM statement lines to the Excel Model sheet, then export a saved preset."
       >
         <CompanyCommandBar
           cdCvm={cdCvm}
@@ -545,7 +545,7 @@ function StatementMappingSelector({
   onChange: (statementType: string) => void;
 }) {
   return (
-    <Panel dense title="Statement" subtitle="Model mapping family">
+    <Panel dense title="Statement" subtitle="Excel mapping family">
       <div className="grid gap-2 md:grid-cols-2 2xl:grid-cols-4">
         {groups.map((group) => {
           const selected = group.statementType === activeStatementType;
@@ -802,8 +802,8 @@ function ModelPreviewTable({
   return (
     <Panel
       dense
-      title={`Model Preview: ${statementLabel}`}
-      subtitle={`${statementType ? `${statementType} | ` : ""}${statementSummary}. R$ mm. Click a row to inspect source lines and export logic.`}
+      title={`Excel Model Preview: ${statementLabel}`}
+      subtitle={`${statementType ? `${statementType} | ` : ""}${statementSummary}. R$ mm. Click a row to inspect lineage and export logic.`}
       footer="Values are previewed from local CVM data and scaled like the exported Excel Model sheet."
     >
       <div className="overflow-x-auto" style={tableFrameStyle}>
@@ -963,6 +963,12 @@ function RowInspector({
             <MetricBox label="Sources" value={String(entry.sources.length)} tone={entry.sources.length ? "ok" : "warn"} />
             <MetricBox label="Latest preview" value={formatModelValue(latestPreviewValue(previewRow, periods))} tone="neutral" />
           </div>
+          <RowLineageAudit
+            entry={entry}
+            workspace={workspace}
+            isFormula={Boolean(isFormula)}
+            touched={touched}
+          />
           
           {isFormula ? (
             <div style={formulaBoxStyle}>
@@ -1394,6 +1400,57 @@ function SourceLineCard({
   );
 }
 
+function RowLineageAudit({
+  entry,
+  workspace,
+  isFormula,
+  touched,
+}: {
+  entry: ExcelMappingEntry;
+  workspace: ExcelMappingWorkspace | null;
+  isFormula: boolean;
+  touched: boolean;
+}) {
+  const formulaDef = workspace?.formula_definitions?.[entry.target_id];
+  const dependencyLabels = formulaDef?.dependencies
+    .map((depId) => workspace?.mapping.entries.find((item) => item.target_id === depId)?.target_label ?? depId)
+    .slice(0, 3) ?? [];
+  const sourceText = isFormula
+    ? dependencyLabels.length > 0
+      ? `${dependencyLabels.join(" + ")}${formulaDef && formulaDef.dependencies.length > dependencyLabels.length ? " +" : ""}`
+      : "Calculated model row"
+    : entry.sources.length > 0
+      ? `${entry.sources.length} local CVM line${entry.sources.length === 1 ? "" : "s"}`
+      : "No mapped CVM source";
+  const methodText = isFormula
+    ? "Formula from mapped model rows"
+    : `${operationLabel(entry.operation)}; scale R$ thousands to R$ millions`;
+  const exportText = touched
+    ? "Preview only until the preset is saved"
+    : "Saved preset feeds Excel export";
+
+  return (
+    <dl style={lineageAuditStyle}>
+      <LineageItem label="Source" value={sourceText} />
+      <LineageItem label="Transform" value={methodText} />
+      <LineageItem label="Export" value={exportText} />
+    </dl>
+  );
+}
+
+function LineageItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={lineageRowStyle}>
+      <dt style={{ color: "var(--color-text-tertiary)", fontSize: "var(--text-2xs)", textTransform: "uppercase" }}>
+        {label}
+      </dt>
+      <dd className="min-w-0 truncate" title={value} style={{ color: "var(--color-text-secondary)", fontSize: "var(--text-xs)", margin: 0 }}>
+        {value}
+      </dd>
+    </div>
+  );
+}
+
 function ValidationStrip({
   validation,
   entries,
@@ -1802,6 +1859,10 @@ function friendlyFormula(entry: ExcelMappingEntry, workspace: ExcelMappingWorksp
   return `${entry.target_label} sums ${entry.sources.length} CVM lines, then scales from R$ thousands to R$ millions.`;
 }
 
+function operationLabel(operation: string): string {
+  return OPERATIONS.find((item) => item.value === operation)?.label ?? operation;
+}
+
 function friendlyIssueMessage(issue: ExcelMappingValidationIssue, entries: ExcelMappingEntry[] = []): string {
   if (issue.target_id) {
     const label = entries.find((entry) => entry.target_id === issue.target_id)?.target_label;
@@ -1828,7 +1889,7 @@ function latestPreviewValue(row: PreviewRow | null, periods: string[]) {
 }
 
 function formatModelValue(value: unknown): string {
-  if (typeof value !== "number" || !Number.isFinite(value)) return "-";
+  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
   const absolute = Math.abs(value);
   const formatted = absolute.toLocaleString("en-US", {
     maximumFractionDigits: absolute >= 100 ? 0 : 1,
@@ -1949,6 +2010,23 @@ const sourceCardStyle: CSSProperties = {
   gap: 8,
   justifyContent: "space-between",
   padding: "8px 9px",
+};
+const lineageAuditStyle: CSSProperties = {
+  background: "var(--color-surface-1)",
+  border: "1px solid var(--color-border-subtle)",
+  borderRadius: "var(--radius-sm)",
+  display: "grid",
+  gap: 0,
+  margin: 0,
+  padding: "2px 9px",
+};
+const lineageRowStyle: CSSProperties = {
+  alignItems: "baseline",
+  borderBottom: "1px solid var(--color-border-subtle)",
+  display: "grid",
+  gap: 8,
+  gridTemplateColumns: "76px minmax(0, 1fr)",
+  padding: "6px 0",
 };
 const formulaBoxStyle: CSSProperties = {
   background: "var(--color-surface-1)",

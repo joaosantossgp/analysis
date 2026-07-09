@@ -21,7 +21,7 @@ function subNavFor(pathname: string, params: Record<string, string | undefined>,
     return [
       { to: `/empresas/${cdCvm}`, label: "Overview", end: true },
       { to: `/empresas/${cdCvm}/demonstrativos`, label: "Financial Statements" },
-      { to: `/empresas/${cdCvm}/model-mapping`, label: "Model Mapping" },
+      { to: `/empresas/${cdCvm}/model-mapping`, label: "Excel Mapping" },
       { to: `/empresas/${cdCvm}/coverage`, label: "Coverage Status" },
     ];
   }

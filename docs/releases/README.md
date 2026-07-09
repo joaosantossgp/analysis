@@ -2,7 +2,7 @@
 
 This directory holds per-version release notes for the CVMAnalytics desktop product.
 
-The latest local release note in this directory is `v0.28.0`. The packaged
+The latest local release note in this directory is `v0.29.2`. The packaged
 Windows desktop EXE distributed via [GitHub Releases](https://github.com/joaosantossgp/analisys/releases)
 is the authoritative distribution channel — this directory is a **partial**
 local copy of the per-version notes, not the source of truth.
@@ -11,7 +11,9 @@ local copy of the per-version notes, not the source of truth.
 
 | Version | Notes |
 |---|---|
-| `v0.28.0` | [v0.28.0.md](v0.28.0.md) — latest local release note |
+| `v0.29.2` | [v0.29.2.md](v0.29.2.md) — product direction, source readiness, desktop dev data-path safety |
+| `v0.29.1` | [v0.29.1.md](v0.29.1.md) — Coverage workspace polish and release-readiness fixes |
+| `v0.28.0` | [v0.28.0.md](v0.28.0.md) — Indicators workspace refinement |
 | `v0.27.3` | [v0.27.3.md](v0.27.3.md) — Model Mapping performance optimization (95%+ load time reduction) |
 | `v0.27.2` | [v0.27.2.md](v0.27.2.md) — Automatic Model Mapping engine with override capabilities |
 | `v0.27.1` | [v0.27.1.md](v0.27.1.md) — Company Overview chart refinement and shared period selector |

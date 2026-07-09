@@ -28,13 +28,20 @@ import { whenBridgeReady } from "@/lib/bridge/adapter";
 import type { StatementMatrix, TabularRow } from "@/lib/bridge/types";
 
 const MAX_STATEMENT_YEARS = 3;
-const META_COLUMNS = new Set(["CD_CONTA", "DS_CONTA", "STANDARD_NAME", "LINE_ID_BASE"]);
+const META_COLUMNS = new Set([
+  "CD_CONTA",
+  "DS_CONTA",
+  "STANDARD_NAME",
+  "LINE_ID_BASE",
+  "Conta",
+  "Descrição",
+]);
 
 const STATEMENT_COPY: Record<StatementType, string> = {
-  DRE: "Demonstração de resultado",
-  BPA: "Balanço patrimonial ativo",
-  BPP: "Balanço patrimonial passivo",
-  DFC: "Fluxo de caixa",
+  DRE: "Income statement",
+  BPA: "Balance sheet — assets",
+  BPP: "Balance sheet — liabilities and equity",
+  DFC: "Cash flow statement",
 };
 
 const STATEMENT_TOTAL_CODES: Partial<Record<StatementType, Set<string>>> = {
@@ -65,8 +72,8 @@ export function CompanyStatementsPage() {
     return (
       <StateBanner
         variant="error"
-        title="CVM inválido"
-        message={`"${params.cdCvm}" não é um código CVM válido.`}
+        title="Invalid CVM code"
+        message={`"${params.cdCvm}" is not a valid CVM code.`}
       />
     );
   }
@@ -101,7 +108,7 @@ function StatementSelector({
   onChange: (statementType: StatementType) => void;
 }) {
   return (
-    <Panel dense title="Statement" subtitle="Statement family">
+    <Panel dense title="Statement" subtitle="Official CVM statement family">
       <div className="grid gap-2 sm:grid-cols-4">
         {STATEMENT_OPTIONS.map((option) => {
           const selected = option.value === active;
@@ -176,7 +183,7 @@ function StatementPanel({
     return (
       <StateBanner
         variant="error"
-        title="Anos indisponíveis"
+        title="Periods unavailable"
         onRetry={() => yearsQuery.refetch()}
         message={yearsQuery.error instanceof Error ? yearsQuery.error.message : String(yearsQuery.error)}
       />
@@ -189,8 +196,8 @@ function StatementPanel({
     return (
       <StateBanner
         variant="empty"
-        title="Sem demonstrações anuais"
-        message="Esta empresa não tem demonstrações anuais no banco local."
+        title="No annual statements"
+        message="This company has no annual statements in the local database."
       />
     );
   }
@@ -201,7 +208,7 @@ function StatementPanel({
     return (
       <StateBanner
         variant="error"
-        title="Demonstração indisponível"
+        title="Statement unavailable"
         onRetry={() => statementQuery.refetch()}
         message={
           statementQuery.error instanceof Error
@@ -272,9 +279,7 @@ function StatementGrid({
   return (
     <Panel
       title={STATEMENT_COPY[statementType]}
-      subtitle={`${matrix.statement_type} · years ${selectedYears.join(", ")} · ${sourceRows.length} rows · conflicts excluded: ${
-        matrix.exclude_conflicts ? "yes" : "no"
-      }`}
+      subtitle={`${matrix.statement_type} · ${periodColumns.length} period${periodColumns.length !== 1 ? "s" : ""} · ${sourceRows.length} rows`}
       actions={
         refreshing ? (
           <span className="font-mono" style={{ color: "var(--color-state-warn)", fontSize: "var(--text-xs)" }}>
@@ -282,8 +287,13 @@ function StatementGrid({
           </span>
         ) : null
       }
-      footer="Source: local CVM filings. Values are stored as R$ thousands and rendered as compact reais."
+      footer="Rows are filtered locally. Missing values render as —; no client-side financial recalculation is applied."
     >
+      <StatementSourceAudit
+        matrix={matrix}
+        statementTitle={STATEMENT_COPY[statementType]}
+        periodColumns={periodColumns}
+      />
       <TableToolbar
         search={search}
         onSearchChange={setSearch}
@@ -298,6 +308,116 @@ function StatementGrid({
       />
     </Panel>
   );
+}
+
+function StatementSourceAudit({
+  matrix,
+  statementTitle,
+  periodColumns,
+}: {
+  matrix: StatementMatrix;
+  statementTitle: string;
+  periodColumns: string[];
+}) {
+  const periodScope = formatPeriodScope(periodColumns);
+  return (
+    <section
+      aria-label="Statement source and method"
+      className="mb-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4"
+      style={{
+        border: "1px solid var(--color-border-subtle)",
+        borderRadius: "var(--radius-sm)",
+        padding: "10px 12px",
+      }}
+    >
+      <SourceAuditItem
+        label="Source"
+        value="Official CVM filings"
+        detail="Local database copy"
+      />
+      <SourceAuditItem
+        label="Statement"
+        value={statementTitle}
+        detail={matrix.statement_type}
+      />
+      <SourceAuditItem
+        label="Periods"
+        value={periodScope}
+        detail={formatPeriodKind(periodColumns)}
+        mono
+      />
+      <SourceAuditItem
+        label="Scale / policy"
+        value="R$ thousands"
+        detail={`${matrix.exclude_conflicts ? "Conflicts excluded" : "Conflicts included"} · consolidation not exposed`}
+      />
+    </section>
+  );
+}
+
+function SourceAuditItem({
+  label,
+  value,
+  detail,
+  mono = false,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  mono?: boolean;
+}) {
+  return (
+    <div className="min-w-0">
+      <p
+        style={{
+          color: "var(--color-text-tertiary)",
+          fontSize: "var(--text-2xs)",
+          letterSpacing: "0.04em",
+          margin: 0,
+          textTransform: "uppercase",
+        }}
+      >
+        {label}
+      </p>
+      <p
+        className={mono ? "truncate font-mono" : "truncate"}
+        style={{
+          color: "var(--color-text-primary)",
+          fontSize: "var(--text-sm)",
+          fontWeight: 650,
+          margin: "2px 0 0",
+        }}
+        title={value}
+      >
+        {value}
+      </p>
+      <p
+        className="truncate"
+        style={{
+          color: "var(--color-text-tertiary)",
+          fontSize: "var(--text-2xs)",
+          margin: "1px 0 0",
+        }}
+        title={detail}
+      >
+        {detail}
+      </p>
+    </div>
+  );
+}
+
+function formatPeriodScope(periodColumns: string[]): string {
+  if (periodColumns.length === 0) return "No periods";
+  const first = periodColumns[0];
+  const last = periodColumns[periodColumns.length - 1];
+  return first === last ? first : `${first}-${last}`;
+}
+
+function formatPeriodKind(periodColumns: string[]): string {
+  if (periodColumns.length === 0) return "No periods";
+  if (periodColumns.every((period) => /^\d{4}$/.test(period))) return "Annual columns";
+  if (periodColumns.every((period) => /^[1-4]Q\d{2}$/.test(period))) return "Quarterly columns";
+  return "Mixed period columns";
 }
 
 function buildStatementGrid(

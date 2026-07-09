@@ -5,10 +5,10 @@ const BROWSER_REASON =
   "Running in browser mode — pywebview bridge is unavailable. Launch with python -m desktop.app --vite or the packaged exe.";
 
 export const STATEMENT_OPTIONS = [
-  { value: "DRE", label: "DRE", description: "Resultado" },
-  { value: "BPA", label: "BPA", description: "Ativo" },
-  { value: "BPP", label: "BPP", description: "Passivo" },
-  { value: "DFC", label: "DFC", description: "Fluxo de caixa" },
+  { value: "DRE", label: "DRE", description: "Income" },
+  { value: "BPA", label: "BPA", description: "Assets" },
+  { value: "BPP", label: "BPP", description: "Liabilities & equity" },
+  { value: "DFC", label: "DFC", description: "Cash flow" },
 ] as const;
 
 export type StatementType = (typeof STATEMENT_OPTIONS)[number]["value"];
