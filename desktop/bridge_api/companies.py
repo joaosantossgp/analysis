@@ -107,6 +107,21 @@ class CompanyBridgeMixin:
         except Exception as exc:
             return {"error": str(exc)}
 
+    def get_company_financial_readiness(self, params=None) -> dict:
+        p = params or {}
+        try:
+            cd_cvm = int(p.get("cd_cvm", 0))
+            if cd_cvm <= 0:
+                return {"error": "Invalid cd_cvm"}
+            result = self._svc().get_company_financial_readiness(cd_cvm)
+            result = dataclasses.replace(
+                result,
+                refresh_available=self._is_write_allowed(),
+            )
+            return self._sanitize_for_json(result.to_dict())
+        except Exception as exc:
+            return {"error": str(exc)}
+
     def _get_cached_company_info(self, cd_cvm: int) -> dict[str, Any] | None:
         with self._company_info_lock:
             cached = self._company_info_cache.get(int(cd_cvm))

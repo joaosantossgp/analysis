@@ -288,6 +288,45 @@ class CompanyInfoDTO:
 
 
 @dataclass(frozen=True)
+class CompanyFinancialPeriodDTO:
+    period_label: str
+    period_display: str
+    period_type: str
+    period_year: int
+    period_quarter: int | None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class CompanyFinancialReadinessDTO:
+    cd_cvm: int
+    source_class: str
+    source_label: str
+    availability_state: str
+    freshness_state: str
+    refresh_state: str
+    has_local_financial_reports: bool
+    available_periods: tuple[CompanyFinancialPeriodDTO, ...]
+    local_read_model_updated_at: str | None
+    last_successful_refresh_at: str | None
+    latest_local_evidence_at: str | None
+    last_refresh_error: str | None
+    financial_export_eligible: bool
+    exportable_years: tuple[int, ...]
+    refresh_available: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        payload = asdict(self)
+        payload["available_periods"] = [
+            period.to_dict() for period in self.available_periods
+        ]
+        payload["exportable_years"] = list(self.exportable_years)
+        return payload
+
+
+@dataclass(frozen=True)
 class CompanyDirectoryPagination:
     page: int
     page_size: int
