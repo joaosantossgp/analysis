@@ -57,11 +57,36 @@ directly. A wrapper folder breaks the updater contract.
   builds unless `-Version` is supplied.
 - The release workflow supplies the exact version and aborts if the bundled
   version differs.
-- `desktop/_build_info.py` is generated build provenance and may show a
-  post-tag describe string in local builds.
+- `desktop/_build_info.py` is generated build provenance written by the desktop
+  build. It is useful for packaged-app diagnostics, but it is not authoritative
+  checkout state and may be stale in a source tree until a package build runs.
 
-As of this audit, the repository contains tag `v0.28.0` and local
-`desktop/__version__.py` is post-`v0.28.0`.
+## Release Evidence Hierarchy
+
+When release evidence conflicts, use this hierarchy:
+
+1. **Release tag and commit** — verify the checkout with `git describe --tags
+   --exact-match HEAD`, `git tag --points-at HEAD`, and `git rev-parse HEAD`.
+   The tag and commit identify the source tree that should have produced the
+   release.
+2. **Bundled runtime version** — verify `desktop/__version__.py` in the source
+   tree or packaged bundle. The release workflow passes the exact version into
+   `desktop/build_desktop.ps1 -Version <version>` and fails if the bundled
+   runtime version does not match the release input.
+3. **Generated build provenance** — inspect `desktop/_build_info.py` or
+   Settings -> Diagnostics in the packaged app for generated build commit and
+   build timestamp. Treat this as artifact provenance, not as proof of the
+   current checkout.
+4. **Packaged validation evidence** — use the release workflow logs, release
+   notes, and manual packaged-app validation records to prove the built artifact
+   launched correctly, used the expected data root, handled offline/update
+   states, preserved user data, and exported Excel files that open without
+   repair.
+
+Each release record should identify tag, commit, bundled runtime version, build
+timestamp when available, validation environment, and the results of packaged
+launch, updater/offline, and Excel-open checks. User data remains excluded from
+release artifacts.
 
 ## Updater Contract
 
