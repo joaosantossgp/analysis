@@ -33,6 +33,7 @@ import { Button } from "@/components/ui/Button";
 import { UniverseSidebar } from "@/components/coverage/UniverseSidebar";
 import { BulkCompanyManagerModal } from "@/components/coverage/BulkCompanyManagerModal";
 import { CoverageMethodologyModal } from "@/components/coverage/CoverageMethodologyModal";
+import { resolveCoverageWorkQueueHandoff } from "@/components/coverage/workQueueHandoffs";
 
 const DEFAULT_TIER_HOURS: Record<string, number> = {
   must_cover: 120.0,
@@ -2821,6 +2822,9 @@ function WorkQueueSection({ universeId, onOpenMethodology }: { universeId: strin
 
   // News DB unavailable banner (single system task with type=news_db_unavailable)
   const newsBannerTask = allTasks.find((t: any) => t.task_type === "news_db_unavailable");
+  const newsBannerHandoff = newsBannerTask
+    ? resolveCoverageWorkQueueHandoff(newsBannerTask, { universeId })
+    : null;
   const visibleTasks = allTasks.filter((t: any) => t.task_type !== "news_db_unavailable");
 
   const filteredTasks = severityFilter === "all"
@@ -2834,13 +2838,26 @@ function WorkQueueSection({ universeId, onOpenMethodology }: { universeId: strin
       <CapacityWidget universeId={universeId} onOpenMethodology={onOpenMethodology} />
 
       {/* News unavailable banner */}
-      {newsBannerTask && (
-        <div className="flex items-start gap-2 p-3 border border-amber-800/40 bg-amber-950/10 rounded text-amber-400 text-xs">
-          <span className="font-bold shrink-0">⚠ News Workload:</span>
-          <span>{newsBannerTask.reason}</span>
-          <span className="text-amber-600 ml-auto shrink-0">{newsBannerTask.suggested_action}</span>
+      {newsBannerTask && newsBannerHandoff ? (
+        <div className="flex items-start gap-3 p-3 border border-amber-800/40 bg-amber-950/10 rounded text-amber-400 text-xs">
+          <span className="font-bold shrink-0">News Workload:</span>
+          <div className="min-w-0 flex-1 space-y-1">
+            <span className="block">{newsBannerTask.reason}</span>
+            <span className="block text-amber-600">{newsBannerTask.suggested_action}</span>
+            <span className="block text-amber-300/80">{newsBannerHandoff.completionSignal}</span>
+          </div>
+          {newsBannerHandoff.supported && newsBannerHandoff.destination ? (
+            <Link
+              to={newsBannerHandoff.destination}
+              className="shrink-0 px-2 py-0.5 bg-[var(--color-surface-3)] border border-amber-800/50 rounded text-2xs hover:border-amber-600 transition-colors text-amber-100 font-medium"
+            >
+              {newsBannerHandoff.actionLabel}
+            </Link>
+          ) : (
+            <span className="shrink-0 text-2xs text-amber-700">{newsBannerHandoff.unsupportedReason}</span>
+          )}
         </div>
-      )}
+      ) : null}
 
       <Panel title="Active Tasks" subtitle={`${visibleTasks.length} task(s) — data-quality, checklist, and news workload gaps`}>
         {/* Filter chips */}
@@ -2870,30 +2887,7 @@ function WorkQueueSection({ universeId, onOpenMethodology }: { universeId: strin
             />
           ) : (
             filteredTasks.map((t: any, i: number) => {
-              const getTaskAction = (taskType: string, cdCvm: any) => {
-                switch (taskType) {
-                  case "missing_market_cap":
-                    return { label: "Import Market Cap", to: cdCvm ? `/empresas/${cdCvm}/coverage` : "/settings/updates" };
-                  case "missing_liquidity":
-                    return { label: "Refresh Prices", to: cdCvm ? `/empresas/${cdCvm}/coverage` : "/settings/updates" };
-                  case "missing_gics":
-                    return { label: "Fix GICS", to: cdCvm ? `/empresas/${cdCvm}/coverage` : "/settings/diagnostics" };
-                  case "unassigned_owner":
-                    return { label: "Assign Owner", to: "/coverage/prioritization" };
-                  case "incomplete_checklist":
-                  case "checklist_gap":
-                    return { label: "Open Checklist", to: cdCvm ? `/empresas/${cdCvm}/coverage` : "/coverage" };
-                  case "news_gap":
-                    return { label: "Review News", to: "/news" };
-                  case "news_mapping_unavailable":
-                    return { label: "Configure News", to: "/settings/sources" };
-                  case "news_db_unavailable":
-                    return { label: "Open News", to: "/news" };
-                  default:
-                    return { label: "Open Details", to: cdCvm ? `/empresas/${cdCvm}` : "/coverage" };
-                }
-              };
-              const action = getTaskAction(t.task_type, t.cd_cvm);
+              const handoff = resolveCoverageWorkQueueHandoff(t, { universeId });
               return (
                 <div
                   key={i}
@@ -2923,16 +2917,36 @@ function WorkQueueSection({ universeId, onOpenMethodology }: { universeId: strin
                       </div>
                       <p className="text-[var(--color-text-secondary)] text-2xs font-medium">{t.reason}</p>
                       <p className="text-zinc-400 text-2xs font-normal">{t.suggested_action}</p>
+                      <div className="grid gap-1 pt-1 text-3xs text-zinc-500 sm:grid-cols-3">
+                        <span>
+                          <span className="uppercase text-zinc-600">Question:</span> {handoff.analystQuestion}
+                        </span>
+                        <span>
+                          <span className="uppercase text-zinc-600">Evidence:</span> {handoff.evidenceSurface}
+                        </span>
+                        <span>
+                          <span className="uppercase text-zinc-600">Done when:</span> {handoff.completionSignal}
+                        </span>
+                      </div>
+                      {!handoff.supported && handoff.unsupportedReason ? (
+                        <p className="text-3xs text-amber-500/90">{handoff.unsupportedReason}</p>
+                      ) : null}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <span className="text-3xs text-zinc-500 font-mono uppercase">{t.task_type?.replace(/_/g, " ")}</span>
-                    <Link
-                      to={action.to}
-                      className="px-2 py-0.5 bg-[var(--color-surface-3)] border border-[var(--color-border-default)] rounded text-2xs hover:border-[var(--color-action-primary)] transition-colors text-[var(--color-text-primary)] font-medium"
-                    >
-                      {action.label}
-                    </Link>
+                    {handoff.supported && handoff.destination ? (
+                      <Link
+                        to={handoff.destination}
+                        className="px-2 py-0.5 bg-[var(--color-surface-3)] border border-[var(--color-border-default)] rounded text-2xs hover:border-[var(--color-action-primary)] transition-colors text-[var(--color-text-primary)] font-medium"
+                      >
+                        {handoff.actionLabel}
+                      </Link>
+                    ) : (
+                      <span className="px-2 py-0.5 border border-zinc-800 rounded text-2xs text-zinc-600">
+                        No action
+                      </span>
+                    )}
                   </div>
                 </div>
               );
