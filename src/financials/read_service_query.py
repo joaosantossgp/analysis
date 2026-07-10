@@ -29,6 +29,8 @@ from src.platform.contracts import (
     CompanyDirectoryPage,
     CompanyDirectoryPagination,
     CompanyFiltersDTO,
+    CompanyFinancialPeriodDTO,
+    CompanyFinancialReadinessDTO,
     CompanyInfoDTO,
     CompanySectorFilterOption,
     CompanySearchResult,
@@ -252,6 +254,177 @@ class ReadServiceQueryMixin:
     def get_company_info_dict(self, cd_cvm: int) -> dict[str, Any]:
         info = self.get_company_info(cd_cvm)
         return info.to_dict() if info else {}
+
+    def get_company_financial_readiness(
+        self,
+        cd_cvm: int,
+    ) -> CompanyFinancialReadinessDTO:
+        code = int(cd_cvm)
+        state = self.query_layer.get_company_info_with_read_model_state(code)
+        refresh_record = self._get_company_financial_refresh_record(code)
+        has_local_reports = bool(state.get("has_local_financial_reports"))
+
+        complete_periods = (
+            self.query_layer.get_company_complete_periods(code)
+            if has_local_reports
+            else []
+        )
+        available_periods = tuple(
+            CompanyFinancialPeriodDTO(
+                period_label=str(period["period_label"]),
+                period_display=str(period["period_display"]),
+                period_type=str(period["period_type"]),
+                period_year=int(period["period_year"]),
+                period_quarter=(
+                    int(period["period_quarter"])
+                    if period.get("period_quarter") is not None
+                    else None
+                ),
+            )
+            for period in complete_periods
+        )
+
+        export_periods = (
+            self.query_layer.get_available_export_periods(code)
+            if has_local_reports
+            else {"all_export_years": []}
+        )
+        exportable_years = tuple(
+            int(year) for year in export_periods.get("all_export_years", [])
+        )
+        availability_state = self._financial_availability_state(
+            has_local_reports=has_local_reports,
+            complete_periods=available_periods,
+        )
+        refresh_state = self._financial_refresh_state(refresh_record)
+        freshness_state = self._financial_freshness_state(
+            availability_state=availability_state,
+            refresh_state=refresh_state,
+        )
+        local_read_model_updated_at = self._none_if_blank(
+            state.get("read_model_updated_at")
+        )
+        last_successful_refresh_at = self._none_if_blank(
+            refresh_record.get("last_success_at")
+        )
+
+        return CompanyFinancialReadinessDTO(
+            cd_cvm=code,
+            source_class="official_reported",
+            source_label="CVM DFP/ITR filings",
+            availability_state=availability_state,
+            freshness_state=freshness_state,
+            refresh_state=refresh_state,
+            has_local_financial_reports=has_local_reports,
+            available_periods=available_periods,
+            local_read_model_updated_at=local_read_model_updated_at,
+            last_successful_refresh_at=last_successful_refresh_at,
+            latest_local_evidence_at=self._latest_iso_timestamp(
+                local_read_model_updated_at,
+                last_successful_refresh_at,
+            ),
+            last_refresh_error=self._none_if_blank(refresh_record.get("last_error")),
+            financial_export_eligible=bool(exportable_years),
+            exportable_years=exportable_years,
+        )
+
+    def _get_company_financial_refresh_record(self, cd_cvm: int) -> dict[str, Any]:
+        inspector = inspect(self.engine)
+        if not inspector.has_table("company_refresh_status"):
+            return {}
+
+        columns = {
+            str(column.get("name") or "").lower()
+            for column in inspector.get_columns("company_refresh_status")
+        }
+        select_columns = [
+            "last_status" if "last_status" in columns else "NULL AS last_status",
+            "last_error" if "last_error" in columns else "NULL AS last_error",
+            (
+                "last_success_at"
+                if "last_success_at" in columns
+                else "NULL AS last_success_at"
+            ),
+        ]
+        sql = text(
+            f"""
+            SELECT {", ".join(select_columns)}
+            FROM company_refresh_status
+            WHERE cd_cvm = :cd_cvm
+            LIMIT 1
+            """
+        )
+        with self.engine.connect() as conn:
+            row = conn.execute(sql, {"cd_cvm": int(cd_cvm)}).mappings().first()
+        return dict(row) if row is not None else {}
+
+    @staticmethod
+    def _financial_availability_state(
+        *,
+        has_local_reports: bool,
+        complete_periods: tuple[CompanyFinancialPeriodDTO, ...],
+    ) -> str:
+        if complete_periods:
+            return "ready"
+        if has_local_reports:
+            return "partial"
+        return "missing"
+
+    @staticmethod
+    def _financial_refresh_state(refresh_record: dict[str, Any]) -> str:
+        raw_status = str(refresh_record.get("last_status") or "").strip().lower()
+        if not raw_status:
+            return "not_recorded"
+        if raw_status == "success":
+            return "successful"
+        if raw_status in BATCH_REFRESH_FAILED_STATES:
+            return "failed"
+        if raw_status in {"queued", "running", "in_progress"}:
+            return "in_progress"
+        if raw_status == "no_data":
+            return "no_data"
+        return raw_status
+
+    @staticmethod
+    def _financial_freshness_state(
+        *,
+        availability_state: str,
+        refresh_state: str,
+    ) -> str:
+        if availability_state != "ready":
+            return "unknown"
+        if refresh_state in {"failed", "no_data"}:
+            return "stale"
+        if refresh_state == "successful":
+            return "fresh"
+        return "unknown"
+
+    @staticmethod
+    def _none_if_blank(value: Any) -> str | None:
+        if value is None:
+            return None
+        text_value = str(value).strip()
+        return text_value or None
+
+    @classmethod
+    def _latest_iso_timestamp(cls, *values: str | None) -> str | None:
+        candidates = [value for value in values if value]
+        if not candidates:
+            return None
+
+        def parse(value: str) -> datetime | None:
+            try:
+                parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError:
+                return None
+            if parsed.tzinfo is None:
+                return parsed.replace(tzinfo=timezone.utc)
+            return parsed.astimezone(timezone.utc)
+
+        parsed = [(value, parse(value)) for value in candidates]
+        if all(dt is not None for _, dt in parsed):
+            return max(parsed, key=lambda item: item[1] or datetime.min)[0]
+        return candidates[0]
 
     @functools.lru_cache(maxsize=10)
     def get_available_years(self, cd_cvm: int) -> list[int]:
