@@ -1,6 +1,6 @@
 # Energy/Utilities Driver Pilot Contract
 
-Status: proposed for Joao review.
+Status: revised proposal awaiting Joao final approval.
 
 Issue: #352.
 Epic: #347.
@@ -36,6 +36,24 @@ Out of scope:
   bridge methods, database schema, importers, or ingestion changes.
 - Proven company financial causality. This contract can identify exposure
   hypotheses and future modeling links, but it cannot claim financial impact.
+
+## Analytical horizon
+
+This pilot supports historical diagnosis, current-condition diagnosis, and an
+assessment of whether observed SIN conditions have been becoming tighter or
+looser.
+
+This pilot does not support a complete forward-looking system-adequacy forecast
+or a definitive long-term structural conclusion. A future forward-looking
+extension requires a separately approved contract covering at least demand
+outlook, capacity expansion pipeline, expected commissioning dates, delays and
+cancellations, retirements, comparable firm-supply measures, scenario
+assumptions, and temporal alignment between demand, capacity, and firm-supply
+evidence.
+
+EPE demand and expansion outlooks remain deferred from this pilot because they
+do not yet have a verified local read model or user-facing workflow, but they
+are required inputs for that future forward-looking extension.
 
 ## Repository baseline
 
@@ -83,20 +101,23 @@ Known gaps:
   asset/distributor mappings are investigation aids, not proof of financial
   causality.
 
-## Selected drivers
+## Analytical families
 
-The pilot uses five drivers because these are the smallest material set needed
-to answer the approved question. The count is not a target.
+The pilot uses five analytical families because these are the smallest material
+set needed to answer the approved question. The count is not a target. The
+first three families are explanatory drivers, the fourth is a
+confirmatory/outcome signal, and the fifth is a required future capability that
+is not implementation-ready until an aggregate contract is approved.
 
-| Driver | Analyst question answered | Product workspace |
-| --- | --- | --- |
-| SIN load and demand pressure | Is system demand rising faster than the available operating base? | Indicator Library / Sector Workbench / Power System |
-| Generation supply and mix | Which generation sources are meeting demand, and is the mix shifting toward tighter or looser operation? | Indicator Library / Sector Workbench / Power System |
-| Hydro buffer and inflow | Is hydro flexibility improving or deteriorating? | Indicator Library / Sector Workbench / Power System |
-| System price stress | Do marginal cost and spot price signals confirm tightness or looseness? | Indicator Library / Sector Workbench / Power System |
-| Capacity and firm-supply headroom | Is structural supply capacity expanding enough, and where should company/asset exposure be investigated next? | Sector Workbench with Generation/Asset handoff |
+| Analytical family | Analytical role | Implementation readiness | Source/provider | Grain | Main caveat |
+| --- | --- | --- | --- | --- | --- |
+| SIN load and demand pressure | Explanatory driver | Eligible for implementation planning after final approval from existing SIN evidence | ONS | SIN subsystem by timestamp | Demand pressure needs supply and hydro context before interpretation. |
+| Generation supply and mix | Explanatory driver | Eligible for implementation planning after final approval from existing SIN evidence | ONS | SIN subsystem/source by timestamp | Mix shares are local calculations and do not prove company impact. |
+| Hydro buffer and inflow | Explanatory driver | Eligible for implementation planning after final approval from existing SIN evidence | ONS | SIN subsystem by timestamp | Hydrology explains system conditions, not company financial causality. |
+| System price confirmation | Confirmatory/outcome signal | Eligible for implementation planning after final approval for ONS CMO; CCEE PLD remains partial/source-risky | ONS and CCEE | SIN subsystem/submarket by timestamp | Price must not be used circularly as both cause and proof of tightness. |
+| Capacity and firm-supply headroom | Required future capability | Implementation blocked pending an approved aggregate contract | ANEEL and CCEE | Plant and parcel evidence only; no approved system aggregate | MW and MWmed cannot be added or directly compared; no headroom formula is approved. |
 
-## Driver contract
+## Analytical family contract
 
 ### 1. SIN load and demand pressure
 
@@ -135,9 +156,9 @@ expected recency; failed refresh remains visible through SIN source status and
 refresh error; partial refresh can still leave ONS data readable.
 
 Sector interpretation: rising load, especially if paired with weak hydro
-buffers, high thermal dispatch, or high price signals, points toward a tighter
-system. Flat or falling load with stable supply and lower price stress points
-toward a looser system.
+buffers, high thermal dispatch, or confirmatory high price signals, points
+toward a tighter system. Flat or falling load with stable supply and lower
+price confirmation points toward a looser system.
 
 Exposed business models or company types: distribution companies through demand
 and regulated market volume; generators and integrated utilities through system
@@ -263,13 +284,14 @@ thermal dispatch, and margin scenarios.
 Correct product workspace: Indicator Library and Energy Power System; company
 handoff to Company Workspace after approved exposure mapping.
 
-### 4. System price stress
+### 4. System price confirmation
 
 Analyst question answered: Do price and marginal-cost signals confirm system
 tightness or looseness?
 
-Materiality: price signals summarize scarcity when load, hydrology, and
-generation mix alone are ambiguous.
+Materiality: price signals summarize observed market and dispatch outcomes
+after load, hydrology, generation availability, and supply conditions have
+already been evaluated as explanatory drivers.
 
 Source class and provider: official external datasets, ONS for CMO and CCEE for
 PLD.
@@ -294,48 +316,61 @@ source-risk caveat.
 Offline availability: local reads only after successful refresh.
 
 Missing, partial, stale, and failure behavior: ONS CMO can be available while
-CCEE PLD is missing or failed. PLD access failure must be visible and must not
-silently substitute another value. Skipped or failed PLD does not invalidate
-ONS evidence.
+CCEE PLD is missing or failed. CCEE PLD remains explicitly
+partial/source-risky. PLD access failure must be visible and must not silently
+substitute another value. Skipped or failed PLD does not invalidate ONS CMO
+evidence.
 
-Sector interpretation: high or rising CMO/PLD supports a tighter-system
-interpretation when demand, hydrology, and thermal dispatch also point that
-way. Low or falling CMO/PLD supports a looser interpretation when supply
-conditions are adequate.
+Sector interpretation: high or rising CMO/PLD can support a tighter-system
+interpretation when load, weak hydrology, generation availability, and supply
+conditions independently point that way. Low or falling CMO/PLD can challenge a
+tightness interpretation or support a looser interpretation when supply
+conditions are adequate. Price must not be used circularly as both the cause
+and proof of system tightness.
 
 Exposed business models or company types: merchant/uncontracted generators,
 thermal generators, hydro generators exposed to spot/GSF effects, traders,
 retailers, and integrated utilities. Exposure depends on contracts and
 portfolio position.
 
-Evidence versus hypothesis versus modeled causality: CMO and PLD are evidence.
-Exposure by company type is a hypothesis. Company margin effect is modeled
-causality and is not authorized here.
+Evidence versus hypothesis versus modeled causality: CMO and PLD are evidence
+of observed price outcomes, not primary causal drivers. Exposure by company
+type is a hypothesis. Company margin effect is modeled causality and is not
+authorized here.
 
 Possible future Critical Factors / forecast connection: CMO/PLD can become a
-pricing Critical Factor and scenario driver after source reliability, exposure,
-and contract-position assumptions are approved.
+pricing confirmation signal, forecast output check, or scenario input after
+source reliability, exposure, and contract-position assumptions are approved.
 
 Correct product workspace: Indicator Library and Energy Power System. CCEE PLD
 must remain visibly partial/source-risky until reliability is improved.
 
 ### 5. Capacity and firm-supply headroom
 
-Analyst question answered: Is structural supply capacity expanding enough to
-explain a looser system, or is demand outpacing reliable supply?
+Analytical role: required driver capability -- implementation blocked pending
+an approved aggregate contract.
+
+Analyst question answered: In a future approved extension, is structural supply
+capacity expanding enough to explain a looser system, or is demand outpacing
+comparable firm supply?
 
 Materiality: structural tightness is not only current dispatch. The analyst
-needs a capacity and firm-supply lens to separate temporary hydrology/price
-stress from a persistent supply-demand imbalance.
+will need a capacity and firm-supply lens to separate temporary hydrology or
+price outcomes from a persistent supply-demand imbalance, but the current
+repository has plant- and parcel-grain evidence rather than an approved
+system-level headroom metric.
 
 Source class and provider: official external datasets, ANEEL and CCEE.
 
-Entity and grain: CEG plant and CCEE plant parcel. This is not a default
-system-grain Indicator Library row until an approved aggregate read model
-exists.
+Entity and grain: CEG plant and CCEE plant parcel. Plant and parcel records
+remain investigation handoffs only. They must not be aggregated into a system
+metric without approved entity deduplication and grain rules.
 
-Unit and scale: capacity in `MW`; physical guarantee in `MWmed`; generation in
-`MWmed`, `MWh`, or derived `GWh` depending on read path.
+Unit and scale: installed capacity in `MW`; physical guarantee in `MWmed`;
+generation in `MWmed`, `MWh`, or derived `GWh` depending on read path.
+Installed capacity in MW is not firm supply. Physical guarantee in MWmed is
+not operational availability. MW and MWmed must not be added or directly
+compared.
 
 Frequency and historical coverage: ANEEL SIGA plant registry is
 monthly/daily; CCEE plant parcel monthly data is annual/monthly by source
@@ -350,8 +385,9 @@ Local database/store/mart: `energy_kpis.db`; `aneel_siga_plants`,
 
 Transformation or formula: capacity normalized from ANEEL kW fields to MW
 where exposed by plant metrics; CCEE generation calculations use existing
-monthly/daily/hourly read paths and mart outputs. No new aggregate formula is
-approved by this decision.
+monthly/daily/hourly read paths and mart outputs. No system headroom formula is
+approved by this decision. Commissioning, retirement, delay, and cancellation
+treatment must be defined before any aggregate is calculated.
 
 Freshness: source status and mart status from existing plant parcel source
 status and Energy mart diagnostics.
@@ -361,14 +397,18 @@ build. Broad hourly reads must use existing bounded marts or explicit
 entity/month/date-window guardrails.
 
 Missing, partial, stale, and failure behavior: missing source rows or stale
-marts make capacity/flexibility evidence unavailable or partial; large raw
-hourly data must not be scanned for broad system views; CCEE access blocks and
-manual import fallbacks must remain visible.
+marts make plant/parcel evidence unavailable or partial; large raw hourly data
+must not be scanned for broad system views; CCEE access blocks and manual
+import fallbacks must remain visible. No system headroom status may be reported
+until temporal alignment between demand, capacity, and firm-supply evidence is
+approved.
 
-Sector interpretation: capacity additions and firm energy availability can
-explain structural loosening when they expand faster than load and reduce price
-stress. If capacity expansion is intermittent, concentrated, or not matched by
-firm energy, the system may remain tight despite nominal MW additions.
+Sector interpretation: capacity additions and comparable firm-supply measures
+may eventually help explain structural loosening when they expand faster than
+load under approved temporal and grain rules. The current evidence cannot prove
+system headroom. If capacity expansion is intermittent, concentrated, delayed,
+cancelled, retired elsewhere, or not matched by comparable firm supply, the
+system may remain tight despite nominal MW additions.
 
 Exposed business models or company types: generators by source type,
 integrated utilities with generation portfolios, and companies with mapped
@@ -376,15 +416,18 @@ plants. This is an investigation handoff, not a company KPI.
 
 Evidence versus hypothesis versus modeled causality: source capacity and
 generation records are evidence at plant/parcel grain. System headroom is a
-future calculated sector metric. Company exposure is a hypothesis until
-ownership mapping and forecast assumptions are approved.
+future calculated sector metric blocked pending an approved aggregate contract.
+Company exposure is a hypothesis until ownership mapping and forecast
+assumptions are approved.
 
 Possible future Critical Factors / forecast connection: capacity/flexibility
 can feed company Critical Factors for portfolio mix, availability, contracted
-energy, and future dispatch. Forecasts require an approved model contract.
+energy, and future dispatch only after the aggregate contract, exposure mapping,
+and model contract are approved.
 
 Correct product workspace: Sector Workbench with Generation/Asset handoff. Do
-not add plant/parcel rows to the default Indicator Library.
+not add plant/parcel rows to the default Indicator Library. No default
+Indicator Library metric may be created from this capability yet.
 
 ## Company exposure handoffs
 
@@ -393,7 +436,7 @@ These are not implementation requirements and do not prove financial impact.
 | Exposure type | Why it matters | Correct handoff | Required caution |
 | --- | --- | --- | --- |
 | Hydro-heavy generators | Sensitive to hydrology, storage, ENA, GSF, and spot prices. | Company Workspace / future Critical Factors after portfolio exposure mapping. | GSF is not verified as a current source contract in this pilot. |
-| Thermal generators | Benefit from dispatch and price stress, but depend on fuel, contracts, availability, and merit order. | Generation/Asset workflow, then Company Workspace. | Fuel cost and dispatch economics are not implemented here. |
+| Thermal generators | Benefit from dispatch and confirmed price outcomes, but depend on fuel, contracts, availability, and merit order. | Generation/Asset workflow, then Company Workspace. | Fuel cost and dispatch economics are not implemented here. |
 | Wind/solar generators | Exposed to capacity growth, generation mix, curtailment, and price profile. | Generation/Asset workflow. | Plant/parcel analysis is excluded from the pilot contract. |
 | Distribution utilities | Exposed to demand, losses, MMGD penetration, tariffs, service quality, and regulatory pass-throughs. | Distribution workspace and Company Workspace. | Distribution metrics are entity-dependent and do not enter the default Indicator Library. |
 | Integrated utilities | Exposed through both generation and distribution portfolios. | Company Workspace after asset/distributor mapping review. | Do not infer consolidated impact from system indicators alone. |
@@ -403,7 +446,8 @@ These are not implementation requirements and do not prove financial impact.
 
 | Driver or source | Decision | Reason |
 | --- | --- | --- |
-| EPE electricity consumption by class/region/subsystem | Deferred. | Prepared for later in SIN docs, but no verified local read model or user-facing workflow exists. ONS load is sufficient for the first demand-side pilot. |
+| EPE electricity consumption by class/region/subsystem | Deferred from this pilot; required for a future forward-looking extension. | Prepared for later in SIN docs, but no verified local read model or user-facing workflow exists. ONS load is sufficient for the first historical/current demand-side pilot. |
+| EPE demand and expansion outlook | Deferred from this pilot; required for a future forward-looking extension. | Forward-looking adequacy requires demand outlook, expansion pipeline, expected commissioning dates, delays/cancellations, retirements, comparable firm-supply measures, scenario assumptions, and temporal alignment. |
 | ANP fuel distribution | Excluded. | Explicitly outside the approved Brazilian electricity/SIN boundary. |
 | Company financial KPIs, leverage, margins, capex | Excluded from this decision. | These belong in Company Workspace and can inform future company Critical Factors, not the sector/system pilot. |
 | Plant, parcel, or asset-level drill-down | Excluded from pilot analysis; allowed only as a future investigation handoff. | Explicit exclusion and not openable as default Indicator Library evidence. |
@@ -419,7 +463,7 @@ These are not implementation requirements and do not prove financial impact.
   without selecting a company, plant, parcel, distributor, state, product,
   ticker, or economic group.
 - Sector Workbench / Energy Power System: interpretation of load, generation,
-  hydrology, price stress, and future approved sector aggregates.
+  hydrology, system price confirmation, and future approved sector aggregates.
 - Distribution workspace: distributor/economic-group metrics such as billed
   energy, tariffs, losses, DEC/FEC, delinquency, and MMGD.
 - Generation/Asset workflow: plant, parcel, CEG, capacity, and asset-level
@@ -434,8 +478,8 @@ These are not implementation requirements and do not prove financial impact.
 The pilot is ready for implementation planning only when Joao reviews and
 approves:
 
-- the five selected drivers;
-- the selected source/provider/grain matrix;
+- the five analytical families and their roles;
+- the selected source/provider/grain matrix and implementation-readiness limits;
 - the deferred driver list;
 - the rule that company handoffs are exposure hypotheses only;
 - the rule that this decision does not authorize implementation.
