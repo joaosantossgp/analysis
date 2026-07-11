@@ -79,19 +79,50 @@ While the child task is open or in review, the parent task is `status:blocked`. 
 
 - Commit at coherent, validated checkpoints.
 - Push when a checkpoint should be preserved remotely or reflected in the PR.
-- Open the PR (even as draft) as soon as the branch is reviewable.
-- When validations pass: update the issue, mark the PR ready if needed, and merge via `scripts/release/pr_complete.ps1` or equivalent.
+- Open a draft PR only while the work is incomplete, still under validation, or blocked by risk review.
+- When implementation and validation are complete: update the issue and PR report, then mark the PR ready for review.
+- Enable native GitHub auto-merge with the preferred merge method after the trust gate and branch requirements below are satisfied.
 - Preferred merge: **squash**.
+- Never merge, manually or automatically, while required checks are pending, failed, cancelled, skipped, or missing.
+- Never bypass unresolved conflicts, branch protection, or unresolved required review conversations.
 - After merge: confirm task closure, remove the local worktree, confirm the remote branch was removed.
+
+### Auto-merge trust gate
+
+Repository-level auto-merge only makes the GitHub feature available. It does not authorize auto-merge on every PR.
+
+Enable native auto-merge only when at least one of these is true:
+
+- the PR author login is exactly `joaosantossgp`;
+- the PR has the `automerge:approved-by-joao` label, applied by Joao or by a specifically documented maintainer acting on Joao's instruction.
+
+Do not infer approval from comments, mentions, reactions, assignments, review requests, linked issues, passing checks, author claims, or public-fork status. The approval label must not be applied automatically from untrusted PR text, comments, issue links, branch names, or workflow output.
+
+Never enable automatic merging solely from authorship for PRs involving architecture changes, database schemas or migrations, destructive operations, financial calculations, source classifications or contracts, updater or release infrastructure, user-data movement or deletion, product-direction decisions, security-sensitive permissions, or PRs explicitly marked as requiring Joao approval. These require explicit final approval through `automerge:approved-by-joao`.
+
+Decision tasks do not authorize implementation or auto-merge unless Joao explicitly approves that merge.
+
+Before enabling auto-merge, verify:
+
+- the PR is not a draft;
+- the linked task issue is approved by repository governance when required;
+- the head SHA matches the SHA that was validated;
+- all required checks for that head passed;
+- no required check is pending, failed, cancelled, skipped, or missing;
+- the PR is conflict-free;
+- required review conversations are resolved;
+- lane, risk, and write-set requirements are satisfied.
+
+After auto-merge completes, verify the PR merged, the linked issue closed, the remote task branch was deleted, and the local worktree was cleaned up.
 
 ## 7. CI enforcement
 
 In autonomous mode, the heavy guardrails are active:
 
-- `.github/workflows/pr-issue-guardrails.yml` enforces the issue/PR contract when the PR carries the `flow:autonomous` label.
+- `.github/workflows/pr-issue-guardrails.yml` reports a concrete required check for every PR and enforces the issue/PR contract when the PR carries the `flow:autonomous` label.
 - `.github/guardrails/path-policy.json` enforces lane/risk constraints on critical paths.
 
-For interactive PRs (no `flow:autonomous` label), these checks are skipped or relaxed.
+For interactive PRs (no `flow:autonomous` label), heavy autonomous rules are relaxed but the required check must still complete successfully.
 
 ## 8. Stop conditions
 

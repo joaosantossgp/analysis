@@ -18,10 +18,9 @@ permissions:
 
 jobs:
   validate-pr-issue-contract:
-    # Only enforce the heavy issue/lane/risk contract on autonomous-mode PRs.
-    # Interactive PRs (the default) skip these checks. To opt in, add the
-    # `flow:autonomous` label to the PR. See docs/governance/autonomous-mode.md.
-    if: contains(github.event.pull_request.labels.*.name, 'flow:autonomous')
+    # Always report a concrete pass/fail check so branch protection never relies on
+    # a skipped guardrail. Heavy issue/lane/risk rules are enforced only when the PR
+    # carries the `flow:autonomous` label. See docs/governance/autonomous-mode.md.
     runs-on: ubuntu-latest
     steps:
       - name: Validate branch, issue, lanes, and critical paths
@@ -250,6 +249,14 @@ jobs:
             const currentLabelNames = currentLabels.map((label) =>
               typeof label === "string" ? label : label.name,
             );
+
+            if (!currentLabelNames.includes("flow:autonomous")) {
+              core.info(
+                "Interactive PR without flow:autonomous label. Heavy autonomous guardrails are relaxed.",
+              );
+              return;
+            }
+
             const isJulesPr =
               currentLabelNames.includes(julesConfig.sourceLabel) ||
               hasJulesMarker(body, julesConfig.bodyMarkers);
