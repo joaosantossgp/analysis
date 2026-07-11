@@ -1,6 +1,6 @@
 # Energy/Utilities Driver Pilot Contract
 
-Status: revised proposal awaiting Joao final approval.
+Status: approved by João on 2026-07-11.
 
 Issue: #352.
 Epic: #347.
@@ -15,6 +15,19 @@ are most exposed?
 Approval source: Joao's 2026-07-11 Codex prompt for issue #352. The GitHub
 issue had no prior approval comment when work started, so this decision record
 and the issue execution note preserve the approval source.
+
+Final approval: João approved the final five-family matrix in PR #357 on
+2026-07-11. This approval authorizes merging this Decision record. It does not
+authorize implementation, UI changes, bridge methods, database changes,
+importers, aggregation formulas, alerts, scoring, forecasts, valuation, thesis,
+or implementation issues.
+
+Approval constraints that remain active:
+
+- Capacity and firm-supply headroom remains blocked pending a separate approved
+  aggregate contract.
+- Complete forward-looking system adequacy remains outside this pilot.
+- Company handoffs remain exposure hypotheses only.
 
 ## Boundaries
 
