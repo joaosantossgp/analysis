@@ -1934,6 +1934,41 @@ export function createMockBridge(): Partial<BridgeApi> {
       } satisfies CompanyInfo;
     },
 
+    get_company_financial_readiness: async (params) => {
+      const p = params as Record<string, unknown>;
+      const cdCvm = Number(p?.cd_cvm ?? 0);
+      const company = FIXTURE_COMPANIES.find((item) => item.cd_cvm === cdCvm);
+      const years = company?.anos_disponiveis ?? [];
+      const hasFinancialData = Boolean(company?.has_financial_data);
+      const timestamp = hasFinancialData
+        ? new Date(Date.now() - 86_400_000).toISOString()
+        : null;
+
+      return {
+        cd_cvm: cdCvm,
+        source_class: "official_reported",
+        source_label: "Mock fixture · CVM DFP/ITR filings",
+        availability_state: hasFinancialData ? "ready" : "missing",
+        freshness_state: hasFinancialData ? "fresh" : "unknown",
+        refresh_state: hasFinancialData ? "successful" : "not_recorded",
+        has_local_financial_reports: hasFinancialData,
+        available_periods: years.map((year) => ({
+          period_label: `FY${year}`,
+          period_display: `FY ${year}`,
+          period_type: "annual",
+          period_year: year,
+          period_quarter: null,
+        })),
+        local_read_model_updated_at: timestamp,
+        last_successful_refresh_at: timestamp,
+        latest_local_evidence_at: timestamp,
+        last_refresh_error: null,
+        financial_export_eligible: hasFinancialData && years.length > 0,
+        exportable_years: hasFinancialData ? years : [],
+        refresh_available: true,
+      };
+    },
+
     get_company_years: async (params) => {
       const p = params as Record<string, unknown>;
       const cdCvm = Number(p?.cd_cvm ?? 0);

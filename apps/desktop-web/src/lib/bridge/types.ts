@@ -323,6 +323,46 @@ export type CompanyYearsResult = {
   error?: string;
 };
 
+export type CompanyFinancialPeriod = {
+  period_label: string;
+  period_display: string;
+  period_type: string;
+  period_year: number;
+  period_quarter: number | null;
+};
+
+/**
+ * Additive local financial-evidence contract from
+ * CVMBridge.get_company_financial_readiness.
+ *
+ * The backend keeps unknown refresh values visible for auditability, so the
+ * frontend must handle state strings outside the known vocabulary explicitly.
+ */
+export type CompanyFinancialReadiness = {
+  cd_cvm: number;
+  source_class: string;
+  source_label: string;
+  availability_state: "ready" | "partial" | "missing" | (string & {});
+  freshness_state: "fresh" | "stale" | "unknown" | (string & {});
+  refresh_state:
+    | "not_recorded"
+    | "successful"
+    | "failed"
+    | "in_progress"
+    | "no_data"
+    | (string & {});
+  has_local_financial_reports: boolean;
+  available_periods: CompanyFinancialPeriod[];
+  local_read_model_updated_at: string | null;
+  last_successful_refresh_at: string | null;
+  latest_local_evidence_at: string | null;
+  last_refresh_error: string | null;
+  financial_export_eligible: boolean;
+  exportable_years: number[];
+  refresh_available: boolean;
+  error?: string;
+};
+
 export type TabularRow = Record<string, string | number | boolean | null>;
 export type TabularData = {
   columns: string[];
@@ -1511,6 +1551,9 @@ export interface BridgeApi {
   backfill_news_article_content(params?: BackfillNewsArticleContentParams): Promise<BackfillNewsArticleContentResult>;
   get_companies(params: Record<string, unknown>): Promise<CompanyDirectoryPage>;
   get_company_info(params: Record<string, unknown>): Promise<CompanyInfo>;
+  get_company_financial_readiness(
+    params: Record<string, unknown>,
+  ): Promise<CompanyFinancialReadiness>;
   get_company_years(params: Record<string, unknown>): Promise<CompanyYearsResult>;
   get_company_kpis(params: Record<string, unknown>): Promise<KPIBundle>;
   get_company_historical_indicators(
