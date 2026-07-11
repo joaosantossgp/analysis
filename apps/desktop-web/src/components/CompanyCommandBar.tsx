@@ -4,6 +4,7 @@ import {
   useQuery,
   useQueryClient,
   type QueryClient,
+  type QueryKey,
 } from "@tanstack/react-query";
 
 import { ExportStatusLine } from "@/components/export/ExportStatusLine";
@@ -415,17 +416,26 @@ export function CompanyCommandBar({
   );
 }
 
+export function companyDataInvalidationKeys(cdCvm: number): QueryKey[] {
+  return [
+    ["company-info", cdCvm],
+    ["company-years", cdCvm],
+    ["company-kpis"],
+    ["company-statement"],
+    ["companies"],
+    ["data-coverage"],
+    ["db-diagnostics"],
+    ["base-health"],
+    ["refresh-jobs"],
+    ["company-refresh-status"],
+    ["company-financial-readiness", cdCvm],
+  ];
+}
+
 function invalidateCompanyData(queryClient: QueryClient, cdCvm: number) {
-  void queryClient.invalidateQueries({ queryKey: ["company-info", cdCvm] });
-  void queryClient.invalidateQueries({ queryKey: ["company-years", cdCvm] });
-  void queryClient.invalidateQueries({ queryKey: ["company-kpis"] });
-  void queryClient.invalidateQueries({ queryKey: ["company-statement"] });
-  void queryClient.invalidateQueries({ queryKey: ["companies"] });
-  void queryClient.invalidateQueries({ queryKey: ["data-coverage"] });
-  void queryClient.invalidateQueries({ queryKey: ["db-diagnostics"] });
-  void queryClient.invalidateQueries({ queryKey: ["base-health"] });
-  void queryClient.invalidateQueries({ queryKey: ["refresh-jobs"] });
-  void queryClient.invalidateQueries({ queryKey: ["company-refresh-status"] });
+  for (const queryKey of companyDataInvalidationKeys(cdCvm)) {
+    void queryClient.invalidateQueries({ queryKey });
+  }
 }
 
 function buildStatusText({

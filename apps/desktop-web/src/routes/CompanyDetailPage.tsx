@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 
 import { CompanyCommandBar } from "@/components/CompanyCommandBar";
@@ -13,15 +13,22 @@ import { IndicatorLegend } from "@/components/indicators/IndicatorLegend";
 import { IndicatorTable } from "@/components/indicators/IndicatorTable";
 import { formatValue } from "@/lib/indicators/format";
 import {
+  fetchCompanyFinancialReadiness,
   fetchCompanyInfo,
   fetchCompanyKpis,
   fetchCompanyYears,
+  type CompanyFinancialReadinessResult,
   type CompanyInfoResult,
   type CompanyKpisResult,
   type CompanyYearsResultUI,
 } from "@/lib/api/companyDetail";
 import { whenBridgeReady } from "@/lib/bridge/adapter";
-import type { KPIBundle, TabularData, TabularRow } from "@/lib/bridge/types";
+import type {
+  CompanyFinancialReadiness,
+  KPIBundle,
+  TabularData,
+  TabularRow,
+} from "@/lib/bridge/types";
 import { formatUnit } from "@/lib/formatters";
 import { buildIndicatorDefs, categoryLabel, defaultSelectedIds } from "@/lib/indicators/catalog";
 import { resolveSeries, selectPeriods } from "@/lib/indicators/series";
@@ -122,6 +129,12 @@ function CompanyReferenceWorkspace({
     enabled: bridgeReady && selectedYears.length > 0,
   });
 
+  const readinessQuery = useQuery<CompanyFinancialReadinessResult>({
+    queryKey: ["company-financial-readiness", cdCvm],
+    queryFn: () => fetchCompanyFinancialReadiness(cdCvm),
+    enabled: bridgeReady,
+  });
+
   const info =
     companyQuery.data?.mode === "desktop" ? companyQuery.data.info : null;
   const bundle = kpiQuery.data?.mode === "desktop" ? kpiQuery.data.bundle : null;
@@ -136,6 +149,8 @@ function CompanyReferenceWorkspace({
         lastModelUpdatedAt={info?.read_model_updated_at ?? null}
       />
 
+      <FinancialReadinessPanel cdCvm={cdCvm} readinessQuery={readinessQuery} />
+
       {/* Two-column analytical workspace */}
       <AnalyticalWorkspace
         cdCvm={cdCvm}
@@ -149,6 +164,357 @@ function CompanyReferenceWorkspace({
       />
     </div>
   );
+}
+
+type FinancialReadinessDisplayState =
+  | "ready"
+  | "partial"
+  | "stale"
+  | "failed"
+  | "missing"
+  | "unknown";
+
+function FinancialReadinessPanel({
+  cdCvm,
+  readinessQuery,
+}: {
+  cdCvm: number;
+  readinessQuery: UseQueryResult<CompanyFinancialReadinessResult>;
+}) {
+  const statementsAction = (
+    <Link
+      to={`/empresas/${cdCvm}/demonstrativos`}
+      className="font-mono"
+      style={{
+        color: "var(--color-action-primary)",
+        fontSize: "var(--text-xs)",
+        textDecoration: "none",
+      }}
+    >
+      View statements
+    </Link>
+  );
+
+  if (
+    readinessQuery.isLoading ||
+    (!readinessQuery.data && !readinessQuery.isError)
+  ) {
+    return (
+      <Panel title="Financial readiness" subtitle="Local financial evidence" dense>
+        <StateBanner
+          variant="loading"
+          size="dense"
+          title="Loading financial readiness"
+        />
+      </Panel>
+    );
+  }
+
+  if (readinessQuery.isError) {
+    return (
+      <Panel
+        title="Financial readiness"
+        subtitle="Local financial evidence"
+        actions={statementsAction}
+        dense
+      >
+        <StateBanner
+          variant="error"
+          size="dense"
+          title="Financial readiness unavailable"
+          message={
+            readinessQuery.error instanceof Error
+              ? readinessQuery.error.message
+              : String(readinessQuery.error)
+          }
+          onRetry={() => {
+            void readinessQuery.refetch();
+          }}
+        />
+      </Panel>
+    );
+  }
+
+  if (readinessQuery.data.mode === "browser") {
+    return (
+      <Panel title="Financial readiness" subtitle="Local financial evidence" dense>
+        <StateBanner
+          variant="browser-only"
+          size="dense"
+          title="Desktop runtime required"
+          message={readinessQuery.data.reason}
+        />
+      </Panel>
+    );
+  }
+
+  const readiness = readinessQuery.data.readiness;
+  const state = getCompanyFinancialReadinessState(readiness);
+  const status = financialReadinessStatusCopy(state, readiness.last_refresh_error);
+
+  return (
+    <Panel
+      title="Financial readiness"
+      subtitle="Local financial evidence"
+      actions={statementsAction}
+      dense
+    >
+      <div className="space-y-3">
+        <div
+          className="flex flex-wrap items-baseline gap-x-2 gap-y-1"
+          role={state === "failed" ? "alert" : "status"}
+        >
+          <span
+            aria-hidden="true"
+            className="font-mono"
+            style={{ color: status.color, fontSize: "var(--text-sm)" }}
+          >
+            {status.glyph}
+          </span>
+          <span
+            style={{ color: status.color, fontSize: "var(--text-sm)", fontWeight: 650 }}
+          >
+            {status.title}
+          </span>
+          <span
+            style={{ color: "var(--color-text-secondary)", fontSize: "var(--text-xs)" }}
+          >
+            {status.message}
+          </span>
+        </div>
+
+        <dl className="grid gap-x-4 gap-y-3 sm:grid-cols-2 xl:grid-cols-3">
+          <ReadinessField
+            label="Source class"
+            value={formatSourceClass(readiness.source_class)}
+            detail={readiness.source_label || "—"}
+          />
+          <ReadinessField
+            label="Local evidence"
+            value={readiness.has_local_financial_reports ? "Available" : "Not available"}
+          />
+          <ReadinessField
+            label="Available periods"
+            value={formatFinancialPeriods(readiness.available_periods)}
+            mono
+          />
+          <ReadinessField
+            label="Latest local evidence"
+            value={formatFinancialTimestamp(readiness.latest_local_evidence_at)}
+            mono
+          />
+          <ReadinessField
+            label="Refresh state"
+            value={formatAuditLabel(readiness.refresh_state)}
+          />
+          <ReadinessField
+            label="Refresh action"
+            value={
+              readiness.refresh_available
+                ? "Available in command bar"
+                : "Unavailable in current runtime"
+            }
+          />
+          <ReadinessField
+            label="Financial export"
+            value={formatExportEligibility(readiness)}
+            mono
+          />
+        </dl>
+
+        {readiness.last_refresh_error ? (
+          <p
+            role="alert"
+            style={{
+              color: "var(--color-state-err)",
+              fontSize: "var(--text-xs)",
+              margin: 0,
+            }}
+          >
+            Last refresh error: {readiness.last_refresh_error}
+          </p>
+        ) : null}
+
+        <p
+          style={{
+            color: "var(--color-text-tertiary)",
+            fontSize: "var(--text-xs)",
+            margin: 0,
+          }}
+        >
+          Refresh and Excel export stay in the Company Command Bar above.
+        </p>
+      </div>
+    </Panel>
+  );
+}
+
+function ReadinessField({
+  label,
+  value,
+  detail,
+  mono = false,
+}: {
+  label: string;
+  value: string;
+  detail?: string;
+  mono?: boolean;
+}) {
+  return (
+    <div className="min-w-0">
+      <dt
+        style={{
+          color: "var(--color-text-tertiary)",
+          fontSize: "var(--text-2xs)",
+          letterSpacing: "0.04em",
+          textTransform: "uppercase",
+        }}
+      >
+        {label}
+      </dt>
+      <dd
+        className={mono ? "mt-0.5 break-words font-mono" : "mt-0.5 break-words"}
+        style={{
+          color: "var(--color-text-primary)",
+          fontSize: "var(--text-xs)",
+          margin: 0,
+        }}
+      >
+        {value}
+      </dd>
+      {detail ? (
+        <p
+          className="break-words"
+          style={{
+            color: "var(--color-text-tertiary)",
+            fontSize: "var(--text-2xs)",
+            margin: "2px 0 0",
+          }}
+        >
+          {detail}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Converts the additive bridge vocabulary into mutually exclusive UI states.
+ * Unknown raw refresh states remain visible as review-required rather than
+ * being inferred as successful.
+ */
+export function getCompanyFinancialReadinessState(
+  readiness: CompanyFinancialReadiness,
+): FinancialReadinessDisplayState {
+  const availability = normalizeFinancialReadinessValue(readiness.availability_state);
+  const freshness = normalizeFinancialReadinessValue(readiness.freshness_state);
+  const refresh = normalizeFinancialReadinessValue(readiness.refresh_state);
+
+  if (refresh === "failed" || readiness.last_refresh_error) return "failed";
+  if (availability === "missing") return "missing";
+  if (availability === "partial") return "partial";
+  if (freshness === "stale" || refresh === "no_data") return "stale";
+  if (availability === "ready" && freshness === "fresh" && refresh === "successful") {
+    return "ready";
+  }
+  return "unknown";
+}
+
+function financialReadinessStatusCopy(
+  state: FinancialReadinessDisplayState,
+  lastRefreshError: string | null,
+) {
+  switch (state) {
+    case "ready":
+      return {
+        color: "var(--color-state-ok)",
+        glyph: "●",
+        title: "Ready",
+        message: "Complete local periods are available for analysis and financial export.",
+      };
+    case "partial":
+      return {
+        color: "var(--color-state-warn)",
+        glyph: "▲",
+        title: "Partial evidence",
+        message: "Local financial reports exist, but at least one required statement element is incomplete.",
+      };
+    case "stale":
+      return {
+        color: "var(--color-state-warn)",
+        glyph: "▲",
+        title: "Evidence may be stale",
+        message: "Local periods remain available, but the recorded refresh outcome needs review.",
+      };
+    case "failed":
+      return {
+        color: "var(--color-state-err)",
+        glyph: "!",
+        title: "Refresh failed",
+        message: lastRefreshError || "Review the current local evidence and the last refresh error.",
+      };
+    case "missing":
+      return {
+        color: "var(--color-text-secondary)",
+        glyph: "—",
+        title: "No local financial evidence",
+        message: "No complete local financial period is available for this company.",
+      };
+    case "unknown":
+      return {
+        color: "var(--color-text-secondary)",
+        glyph: "?",
+        title: "Readiness needs review",
+        message: "The recorded local evidence state cannot be classified automatically.",
+      };
+  }
+}
+
+function formatSourceClass(value: string | null | undefined): string {
+  if (!value) return "—";
+  if (value === "official_reported") return "Official reported";
+  return formatAuditLabel(value);
+}
+
+function formatFinancialPeriods(
+  periods: CompanyFinancialReadiness["available_periods"],
+): string {
+  if (periods.length === 0) return "—";
+  return periods
+    .map((period) => period.period_display || period.period_label)
+    .filter(Boolean)
+    .join(" · ") || "—";
+}
+
+function formatFinancialTimestamp(value: string | null | undefined): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("en-US", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatExportEligibility(readiness: CompanyFinancialReadiness): string {
+  if (!readiness.financial_export_eligible) return "Not eligible";
+  if (readiness.exportable_years.length === 0) return "Eligible";
+  return `Eligible · ${readiness.exportable_years.map((year) => `FY${year}`).join(", ")}`;
+}
+
+function formatAuditLabel(value: string | null | undefined): string {
+  if (!value) return "—";
+  return value
+    .trim()
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function normalizeFinancialReadinessValue(value: string | null | undefined): string {
+  return String(value || "").trim().toLowerCase();
 }
 
 // ---------------------------------------------------------------------------

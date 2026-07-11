@@ -8,6 +8,7 @@
  */
 import { callBridge, getBridgeMode, type BridgeMode } from "../bridge/adapter";
 import type {
+  CompanyFinancialReadiness,
   CompanyInfo,
   CompanyYearsResult,
   KPIBundle,
@@ -37,6 +38,31 @@ export async function fetchCompanyInfo(
     };
   }
   return { mode: "desktop", info };
+}
+
+export type CompanyFinancialReadinessResult =
+  | { mode: "desktop"; readiness: CompanyFinancialReadiness }
+  | { mode: "browser"; readiness: null; reason: string };
+
+/**
+ * Reads the bounded local financial-evidence contract for a company.
+ *
+ * This facade performs no refresh, export, or network activity. Those actions
+ * remain owned by their existing Company Command Bar surfaces.
+ */
+export async function fetchCompanyFinancialReadiness(
+  cdCvm: number,
+): Promise<CompanyFinancialReadinessResult> {
+  if (getBridgeMode() === "browser") {
+    return { mode: "browser", readiness: null, reason: BROWSER_REASON };
+  }
+  const readiness = await callBridge("get_company_financial_readiness", {
+    cd_cvm: cdCvm,
+  });
+  if (readiness.error) {
+    throw new Error(readiness.error);
+  }
+  return { mode: "desktop", readiness };
 }
 
 export type CompanyYearsResultUI =
