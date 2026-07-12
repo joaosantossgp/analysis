@@ -44,6 +44,40 @@ def _write_csv(path: Path, columns: list[str], rows: list[list[object]], sep: st
     return path
 
 
+def _insert_sin_series_rows(db_engine, rows: list[tuple[str, str, str]]) -> None:
+    with db_engine.begin() as conn:
+        conn.execute(
+            text("""
+                INSERT INTO subsystem_kpi_values (
+                    kpi_id, subsystem_code, reference_datetime,
+                    source_value, normalized_value, unit, source,
+                    source_dataset, source_field, source_hash, snapshot_id
+                ) VALUES (
+                    :kpi_id, :subsystem_code, :reference_datetime,
+                    :value, :value, 'BRL/MWh', 'ONS',
+                    'cmo_semihorario', 'val_cmo', :source_hash, 'test-snapshot'
+                )
+            """),
+            [
+                {
+                    "kpi_id": kpi_id,
+                    "subsystem_code": subsystem_code,
+                    "reference_datetime": reference_datetime,
+                    "value": float(index),
+                    "source_hash": f"row-{index}",
+                }
+                for index, (kpi_id, subsystem_code, reference_datetime) in enumerate(rows, start=1)
+            ],
+        )
+
+
+def _sin_series_keys(values) -> list[tuple[str, str, str]]:
+    return [
+        (value.reference_datetime, value.subsystem_code, value.kpi_id)
+        for value in values
+    ]
+
+
 def test_normalize_subsystem_code_variants():
     assert normalize_subsystem_code("SUL") == "S"
     assert normalize_subsystem_code("SE") == "SE_CO"
@@ -172,6 +206,115 @@ def test_sin_read_path_is_offline(tmp_path: Path, db_engine, monkeypatch):
     dashboard = svc.get_sin_kpi_dashboard()
     assert dashboard.observations
     assert dashboard.source_statuses
+
+
+def test_sin_series_positive_limit_returns_newest_global_rows_in_ascending_order(
+    db_engine, monkeypatch
+):
+    cmo = f"{SIN_NS}.cmo_brl_mwh"
+    load = f"{SIN_NS}.load_mwmed"
+    rows = [
+        (cmo, "S", "2026-01-01T00:00:00"),
+        (load, "N", "2026-01-02T00:00:00"),
+        (cmo, "S", "2026-01-03T00:00:00"),
+        (cmo, "N", "2026-01-04T00:00:00"),
+        (load, "N", "2026-01-04T00:00:00"),
+        (cmo, "S", "2026-01-04T00:00:00"),
+        (load, "S", "2026-01-04T00:00:00"),
+    ]
+    _insert_sin_series_rows(db_engine, rows)
+    svc = EnergyKPIReadService(build_settings())
+    monkeypatch.setattr(svc, "_engine", lambda: db_engine)
+
+    values = svc.get_sin_kpi_series(limit=4)
+
+    assert _sin_series_keys(values) == [
+        ("2026-01-04T00:00:00", "N", cmo),
+        ("2026-01-04T00:00:00", "N", load),
+        ("2026-01-04T00:00:00", "S", cmo),
+        ("2026-01-04T00:00:00", "S", load),
+    ]
+    assert len(values) == 4
+    assert max(value.reference_datetime for value in values) == "2026-01-04T00:00:00"
+    assert "2026-01-01T00:00:00" not in {value.reference_datetime for value in values}
+
+
+def test_sin_series_applies_kpi_subsystem_and_date_filters_before_limit(db_engine, monkeypatch):
+    cmo = f"{SIN_NS}.cmo_brl_mwh"
+    load = f"{SIN_NS}.load_mwmed"
+    rows = [
+        (cmo, "S", "2026-01-01T00:00:00"),
+        (cmo, "S", "2026-01-02T00:00:00"),
+        (cmo, "S", "2026-01-03T00:00:00"),
+        (cmo, "S", "2026-01-04T00:00:00"),
+        (cmo, "S", "2026-01-05T00:00:00"),
+        (load, "S", "2026-01-06T00:00:00"),
+        (cmo, "N", "2026-01-07T00:00:00"),
+    ]
+    _insert_sin_series_rows(db_engine, rows)
+    svc = EnergyKPIReadService(build_settings())
+    monkeypatch.setattr(svc, "_engine", lambda: db_engine)
+
+    window_values = svc.get_sin_kpi_series(
+        kpi_ids=[cmo],
+        subsystem_codes=["S"],
+        start_datetime="2026-01-02T00:00:00",
+        end_datetime="2026-01-04T00:00:00",
+    )
+    values = svc.get_sin_kpi_series(
+        kpi_ids=[cmo],
+        subsystem_codes=["S"],
+        start_datetime="2026-01-02T00:00:00",
+        end_datetime="2026-01-04T00:00:00",
+        limit=2,
+    )
+
+    assert [value.reference_datetime for value in window_values] == [
+        "2026-01-02T00:00:00",
+        "2026-01-03T00:00:00",
+        "2026-01-04T00:00:00",
+    ]
+    assert _sin_series_keys(values) == [
+        ("2026-01-03T00:00:00", "S", cmo),
+        ("2026-01-04T00:00:00", "S", cmo),
+    ]
+
+
+@pytest.mark.parametrize("limit", [None, 0, -1])
+def test_sin_series_non_positive_or_missing_limit_remains_unbounded(limit, db_engine, monkeypatch):
+    cmo = f"{SIN_NS}.cmo_brl_mwh"
+    rows = [
+        (cmo, "S", "2026-01-03T00:00:00"),
+        (cmo, "S", "2026-01-01T00:00:00"),
+        (cmo, "S", "2026-01-02T00:00:00"),
+    ]
+    _insert_sin_series_rows(db_engine, rows)
+    svc = EnergyKPIReadService(build_settings())
+    monkeypatch.setattr(svc, "_engine", lambda: db_engine)
+
+    values = svc.get_sin_kpi_series(limit=limit)
+
+    assert [value.reference_datetime for value in values] == [
+        "2026-01-01T00:00:00",
+        "2026-01-02T00:00:00",
+        "2026-01-03T00:00:00",
+    ]
+
+
+def test_sin_series_below_limit_result_is_unchanged(db_engine, monkeypatch):
+    cmo = f"{SIN_NS}.cmo_brl_mwh"
+    rows = [
+        (cmo, "S", "2026-01-02T00:00:00"),
+        (cmo, "S", "2026-01-01T00:00:00"),
+    ]
+    _insert_sin_series_rows(db_engine, rows)
+    svc = EnergyKPIReadService(build_settings())
+    monkeypatch.setattr(svc, "_engine", lambda: db_engine)
+
+    unbounded = svc.get_sin_kpi_series()
+    bounded = svc.get_sin_kpi_series(limit=10)
+
+    assert bounded == unbounded
 
 
 def test_sin_refresh_partial_when_ccee_fails(tmp_path: Path, monkeypatch):
