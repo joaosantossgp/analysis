@@ -1,11 +1,35 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from sqlalchemy import create_engine, text
 
 from src.platform.settings import build_settings
 from src.companies.coverage import CoverageUniverseService, ensure_coverage_tables_for_connection
+
+
+def _recent_liquidity_dates() -> list[str]:
+    # SQLite date('now') is UTC-based; keep fixtures safely inside the rolling 30-day window.
+    today_utc = datetime.now(timezone.utc).date()
+    return [(today_utc - timedelta(days=offset)).isoformat() for offset in range(6, 1, -1)]
+
+
+def _market_history_rows(*entries: tuple[int, str, float, float]) -> list[dict[str, object]]:
+    dates = _recent_liquidity_dates()
+    return [
+        {
+            "cd_cvm": cd_cvm,
+            "ticker": ticker,
+            "date": date_value,
+            "volume": volume,
+            "close": close,
+            "source": "yahoo",
+        }
+        for cd_cvm, ticker, volume, close in entries
+        for date_value in dates
+    ]
 
 
 @pytest.fixture
@@ -116,19 +140,13 @@ def test_engine(tmp_path):
             text(
                 """
                 INSERT INTO market_history (cd_cvm, ticker, date, volume, close, adjusted_close, source)
-                VALUES 
-                (9512, 'PETR4', '2026-06-11', 50000000.0, 38.5, 38.5, 'yahoo'),
-                (9512, 'PETR4', '2026-06-12', 50000000.0, 38.5, 38.5, 'yahoo'),
-                (9512, 'PETR4', '2026-06-13', 50000000.0, 38.5, 38.5, 'yahoo'),
-                (9512, 'PETR4', '2026-06-14', 50000000.0, 38.5, 38.5, 'yahoo'),
-                (9512, 'PETR4', '2026-06-15', 50000000.0, 38.5, 38.5, 'yahoo'),
-                (4170, 'VALE3', '2026-06-11', 15000000.0, 62.1, 62.1, 'yahoo'),
-                (4170, 'VALE3', '2026-06-12', 15000000.0, 62.1, 62.1, 'yahoo'),
-                (4170, 'VALE3', '2026-06-13', 15000000.0, 62.1, 62.1, 'yahoo'),
-                (4170, 'VALE3', '2026-06-14', 15000000.0, 62.1, 62.1, 'yahoo'),
-                (4170, 'VALE3', '2026-06-15', 15000000.0, 62.1, 62.1, 'yahoo')
+                VALUES (:cd_cvm, :ticker, :date, :volume, :close, :close, :source)
                 """
-            )
+            ),
+            _market_history_rows(
+                (9512, "PETR4", 50000000.0, 38.5),
+                (4170, "VALE3", 15000000.0, 62.1),
+            ),
         )
 
 
@@ -194,6 +212,7 @@ def test_coverage_universe_service_lifecycle(test_engine):
     assert petr["owner_analyst"] == "Analyst A"
     # Verify calculated log scores
     assert petr["cap_score"] > 0
+    assert petr["liquidity_observations"] == 5
     assert petr["vol_score"] > 0
     assert petr["final_score"] > 0
 
@@ -354,14 +373,10 @@ def test_coverage_universe_edge_cases(test_engine):
             text(
                 """
                 INSERT OR REPLACE INTO market_history (cd_cvm, ticker, date, volume, close, adjusted_close, source)
-                VALUES 
-                (1234, 'PORT4', '2026-06-11', 100000.0, 10.0, 10.0, 'yahoo'),
-                (1234, 'PORT4', '2026-06-12', 100000.0, 10.0, 10.0, 'yahoo'),
-                (1234, 'PORT4', '2026-06-13', 100000.0, 10.0, 10.0, 'yahoo'),
-                (1234, 'PORT4', '2026-06-14', 100000.0, 10.0, 10.0, 'yahoo'),
-                (1234, 'PORT4', '2026-06-15', 100000.0, 10.0, 10.0, 'yahoo')
+                VALUES (:cd_cvm, :ticker, :date, :volume, :close, :close, :source)
                 """
-            )
+            ),
+            _market_history_rows((1234, "PORT4", 100000.0, 10.0)),
         )
 
     service.add_company_to_universe(u_id, 1234, "watchlist", "Portuguese GICS company")
@@ -398,14 +413,10 @@ def test_coverage_universe_edge_cases(test_engine):
             text(
                 """
                 INSERT OR REPLACE INTO market_history (cd_cvm, ticker, date, volume, close, adjusted_close, source)
-                VALUES 
-                (5678, 'CONF3', '2026-06-11', 100000.0, 10.0, 10.0, 'yahoo'),
-                (5678, 'CONF3', '2026-06-12', 100000.0, 10.0, 10.0, 'yahoo'),
-                (5678, 'CONF3', '2026-06-13', 100000.0, 10.0, 10.0, 'yahoo'),
-                (5678, 'CONF3', '2026-06-14', 100000.0, 10.0, 10.0, 'yahoo'),
-                (5678, 'CONF3', '2026-06-15', 100000.0, 10.0, 10.0, 'yahoo')
+                VALUES (:cd_cvm, :ticker, :date, :volume, :close, :close, :source)
                 """
-            )
+            ),
+            _market_history_rows((5678, "CONF3", 100000.0, 10.0)),
         )
 
     service.add_company_to_universe(u_id, 5678, "watchlist", "Market cap conflict company")
@@ -512,19 +523,13 @@ def test_coverage_universe_hotfixes(test_engine):
             text(
                 """
                 INSERT OR REPLACE INTO market_history (cd_cvm, ticker, date, volume, close, adjusted_close, source)
-                VALUES 
-                (7777, 'CONF7', '2026-06-11', 1000.0, 10.0, 10.0, 'yahoo'),
-                (7777, 'CONF7', '2026-06-12', 1000.0, 10.0, 10.0, 'yahoo'),
-                (7777, 'CONF7', '2026-06-13', 1000.0, 10.0, 10.0, 'yahoo'),
-                (7777, 'CONF7', '2026-06-14', 1000.0, 10.0, 10.0, 'yahoo'),
-                (7777, 'CONF7', '2026-06-15', 1000.0, 10.0, 10.0, 'yahoo'),
-                (8888, 'ZERO8', '2026-06-11', 1000.0, 10.0, 10.0, 'yahoo'),
-                (8888, 'ZERO8', '2026-06-12', 1000.0, 10.0, 10.0, 'yahoo'),
-                (8888, 'ZERO8', '2026-06-13', 1000.0, 10.0, 10.0, 'yahoo'),
-                (8888, 'ZERO8', '2026-06-14', 1000.0, 10.0, 10.0, 'yahoo'),
-                (8888, 'ZERO8', '2026-06-15', 1000.0, 10.0, 10.0, 'yahoo')
+                VALUES (:cd_cvm, :ticker, :date, :volume, :close, :close, :source)
                 """
-            )
+            ),
+            _market_history_rows(
+                (7777, "CONF7", 1000.0, 10.0),
+                (8888, "ZERO8", 1000.0, 10.0),
+            ),
         )
 
     service.add_company_to_universe(u_id, 7777, "core", "Conflict test")
@@ -539,7 +544,7 @@ def test_coverage_universe_hotfixes(test_engine):
 
     # Now let's test zero-weight factor logic by modifying the universe assumptions weights
     assumptions = service.get_universe(u_id)["assumptions"]
-    # Disable market cap, holding pct and sector complexity weights; keep only volume weight
+    # Disable market cap and holding pct weights; keep volume and sector weights active.
     assumptions["weights"] = {
         "market_cap_weight": 0.0,
         "volume_weight": 0.5,
@@ -558,7 +563,8 @@ def test_coverage_universe_hotfixes(test_engine):
     scores_zero = service.calculate_priority_scores(u_id)
     zero_comp = next(x for x in scores_zero if x["cd_cvm"] == 8888)
 
-    # With only volume weight active and volume available, it should NOT be blocked!
+    # With volume and sector available, zero-weight missing factors should NOT block scoring.
+    assert zero_comp["liquidity_observations"] == 5
     assert zero_comp["score_status"] == "complete"
     assert zero_comp["final_score"] is not None
     # Zero-weight factors should not be listed as missing
