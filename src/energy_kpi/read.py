@@ -613,12 +613,11 @@ class EnergyKPIReadService:
             params["end_datetime"] = end_datetime
 
         where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
-        limit_sql = ""
-        if limit is not None and int(limit) > 0:
-            limit_sql = "LIMIT :limit"
+        has_limit = limit is not None and int(limit) > 0
+        if has_limit:
             params["limit"] = int(limit)
 
-        sql = f"""
+        select_sql = f"""
             SELECT v.kpi_id, v.subsystem_code,
                    COALESCE(d.display_name, v.subsystem_code) AS subsystem_name,
                    v.reference_datetime, v.normalized_value, v.unit, v.source,
@@ -627,9 +626,23 @@ class EnergyKPIReadService:
             FROM subsystem_kpi_values v
             LEFT JOIN subsystem_dimension d ON d.subsystem_code = v.subsystem_code
             {where}
-            ORDER BY v.reference_datetime, v.subsystem_code, v.kpi_id
-            {limit_sql}
         """
+        if has_limit:
+            sql = f"""
+                WITH newest AS (
+                    {select_sql}
+                    ORDER BY v.reference_datetime DESC, v.subsystem_code DESC, v.kpi_id DESC
+                    LIMIT :limit
+                )
+                SELECT *
+                FROM newest
+                ORDER BY reference_datetime, subsystem_code, kpi_id
+            """
+        else:
+            sql = f"""
+                {select_sql}
+                ORDER BY v.reference_datetime, v.subsystem_code, v.kpi_id
+            """
         with self._engine().connect() as conn:
             rows = conn.execute(text(sql), params).fetchall()
         return [self._sin_row_to_dto(row) for row in rows]
