@@ -230,13 +230,16 @@ export const MOCK_SIN_DASHBOARD: SINKPIDashboardResponse = {
   latest_reference_datetime: MOCK_SIN_VALUES.at(-1)?.reference_datetime ?? null,
   is_empty: false,
   is_stale: false,
-  observations: MOCK_SIN_VALUES.filter((row) => row.reference_datetime === MOCK_SIN_VALUES.at(-1)?.reference_datetime),
+  observations: MOCK_SIN_VALUES.filter((row) =>
+    row.reference_datetime === MOCK_SIN_VALUES.at(-1)?.reference_datetime &&
+    row.kpi_id !== "energy_utilities.sin.pld_brl_mwh",
+  ),
   source_statuses: [
-    { source: "ONS", dataset: "balanco_energia_subsistema", frequency: "hourly", last_snapshot_at: NOW, local_records_count: 6160, last_status: "partial", last_error: null },
-    { source: "ONS", dataset: "ear_diario_subsistema", frequency: "daily", last_snapshot_at: NOW, local_records_count: 112, last_status: "partial", last_error: null },
-    { source: "ONS", dataset: "ena_diario_subsistema", frequency: "daily", last_snapshot_at: NOW, local_records_count: 224, last_status: "partial", last_error: null },
-    { source: "ONS", dataset: "cmo_semihorario", frequency: "semi-hourly", last_snapshot_at: NOW, local_records_count: 1344, last_status: "partial", last_error: null },
-    { source: "CCEE", dataset: "pld_horario", frequency: "hourly", last_snapshot_at: NOW, local_records_count: 1344, last_status: "partial", last_error: "Mock partial source note: CCEE can return 403 in some environments." },
+    { source: "ONS", dataset: "balanco_energia_subsistema", frequency: "hourly", last_snapshot_at: NOW, local_records_count: 6160, last_status: "success", last_error: null, latest_reference_datetime: NOW, latest_successful_snapshot_at: NOW, latest_attempt_at: NOW, latest_attempt_status: "success", latest_failure_at: null, health_state: "success", is_missing: false, is_stale: false },
+    { source: "ONS", dataset: "ear_diario_subsistema", frequency: "daily", last_snapshot_at: NOW, local_records_count: 112, last_status: "success", last_error: null, latest_reference_datetime: NOW, latest_successful_snapshot_at: NOW, latest_attempt_at: NOW, latest_attempt_status: "success", latest_failure_at: null, health_state: "success", is_missing: false, is_stale: false },
+    { source: "ONS", dataset: "ena_diario_subsistema", frequency: "daily", last_snapshot_at: NOW, local_records_count: 224, last_status: "success", last_error: null, latest_reference_datetime: NOW, latest_successful_snapshot_at: NOW, latest_attempt_at: NOW, latest_attempt_status: "success", latest_failure_at: null, health_state: "success", is_missing: false, is_stale: false },
+    { source: "ONS", dataset: "cmo_semihorario", frequency: "semi-hourly", last_snapshot_at: NOW, local_records_count: 1344, last_status: "success", last_error: null, latest_reference_datetime: NOW, latest_successful_snapshot_at: NOW, latest_attempt_at: NOW, latest_attempt_status: "success", latest_failure_at: null, health_state: "success", is_missing: false, is_stale: false },
+    { source: "CCEE", dataset: "pld_horario", frequency: "hourly", last_snapshot_at: null, local_records_count: 0, last_status: "failed", last_error: "Mock source-risk note: CCEE returned HTTP 403.", latest_reference_datetime: null, latest_successful_snapshot_at: null, latest_attempt_at: NOW, latest_attempt_status: "failed", latest_failure_at: NOW, health_state: "failed", is_missing: true, is_stale: false },
   ],
   refresh_running: false,
   refresh_error: null,

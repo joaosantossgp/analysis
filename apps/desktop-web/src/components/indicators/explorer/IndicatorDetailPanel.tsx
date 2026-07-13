@@ -26,6 +26,8 @@ const PREVIEW_CHART: ChartAesthetics = {
   indexMode: false,
 };
 
+export const CHANGE_COMPARISON_LABEL = "vs prior observation";
+
 const SIN_SUBSYSTEMS = [
   { code: "S", label: "South / Sul", color: "#60A5FA" },
   { code: "SE_CO", label: "Southeast-Center West", color: "#22D3EE" },
@@ -188,7 +190,7 @@ function DetailBody({
               fontSize: "var(--text-xs)",
             }}
           >
-            {change.dir > 0 ? "▲" : change.dir < 0 ? "▼" : "■"} {change.label} YoY
+            {change.dir > 0 ? "▲" : change.dir < 0 ? "▼" : "■"} {change.label} {CHANGE_COMPARISON_LABEL}
           </span>
         ) : null}
         <span style={{ color: "var(--color-text-tertiary)", fontSize: "var(--text-2xs)" }}>

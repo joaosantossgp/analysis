@@ -427,9 +427,10 @@ const SINKpiPanel = lazy(() =>
 );
 
 function SINPanelWrapper({ bridgeReady }: { bridgeReady: boolean }) {
+  const [viewMode, setViewMode] = useState<"matrix" | "trend">("matrix");
   return (
     <Suspense fallback={<StateBanner variant="loading" title="Loading power system data…" />}>
-      <SINKpiPanel bridgeReady={bridgeReady} viewMode="matrix" />
+      <SINKpiPanel bridgeReady={bridgeReady} viewMode={viewMode} onViewModeChange={setViewMode} />
     </Suspense>
   );
 }
