@@ -402,7 +402,7 @@ def test_sin_source_statuses_are_dataset_specific_when_pld_fails(
     assert pld.latest_successful_snapshot_at is None
     assert pld.latest_reference_datetime is None
     assert pld.local_records_count == 0
-    assert pld.is_missing is False
+    assert pld.is_missing is True
     assert pld.is_stale is False
     assert pld.last_error == "HTTP 403 Forbidden"
 
@@ -416,7 +416,7 @@ def test_sin_source_status_cached_rows_plus_newer_failure_is_partial(
             conn,
             dataset="pld_horario",
             source="CCEE",
-            fetched_at="2026-07-01T00:00:00+00:00",
+            fetched_at="2999-01-01T00:00:00+00:00",
             row_count=1,
         )
         _insert_sin_observation(
@@ -425,14 +425,14 @@ def test_sin_source_status_cached_rows_plus_newer_failure_is_partial(
             source="CCEE",
             kpi_id=pld,
             subsystem_code="SE_CO",
-            reference_datetime="2026-07-01T00:00:00",
+            reference_datetime="2999-01-01T00:00:00",
             snapshot_id=snapshot_id,
             value=150.0,
         )
         _insert_sin_failure(
             conn,
             dataset="pld_horario",
-            created_at="2026-07-02T00:00:00+00:00",
+            created_at="2999-01-02T00:00:00+00:00",
             error="HTTP 403 Forbidden",
         )
 
@@ -444,10 +444,79 @@ def test_sin_source_status_cached_rows_plus_newer_failure_is_partial(
     assert pld_status.health_state == "partial"
     assert pld_status.last_status == "partial"
     assert pld_status.local_records_count == 1
-    assert pld_status.latest_reference_datetime == "2026-07-01T00:00:00"
-    assert pld_status.latest_successful_snapshot_at == "2026-07-01T00:00:00+00:00"
-    assert pld_status.latest_attempt_at == "2026-07-02T00:00:00+00:00"
+    assert pld_status.latest_reference_datetime == "2999-01-01T00:00:00"
+    assert pld_status.latest_successful_snapshot_at == "2999-01-01T00:00:00+00:00"
+    assert pld_status.latest_attempt_at == "2999-01-02T00:00:00+00:00"
     assert pld_status.latest_attempt_status == "failed"
+    assert pld_status.is_missing is False
+    assert pld_status.is_stale is False
+    assert pld_status.last_error == "HTTP 403 Forbidden"
+
+
+def test_sin_source_status_successful_snapshot_without_rows_is_partial_missing(
+    db_engine, monkeypatch
+):
+    with db_engine.begin() as conn:
+        _insert_sin_snapshot(
+            conn,
+            dataset="pld_horario",
+            source="CCEE",
+            fetched_at="2999-01-01T00:00:00+00:00",
+            row_count=0,
+        )
+
+    svc = EnergyKPIReadService(build_settings())
+    monkeypatch.setattr(svc, "_engine", lambda: db_engine)
+
+    pld_status = _source_status_by_dataset(svc.get_sin_kpi_dashboard())["pld_horario"]
+
+    assert pld_status.health_state == "partial"
+    assert pld_status.last_status == "partial"
+    assert pld_status.local_records_count == 0
+    assert pld_status.latest_successful_snapshot_at == "2999-01-01T00:00:00+00:00"
+    assert pld_status.is_missing is True
+    assert pld_status.is_stale is False
+
+
+def test_sin_source_status_stale_cached_rows_plus_newer_failure_is_partial_and_stale(
+    db_engine, monkeypatch
+):
+    pld = f"{SIN_NS}.pld_brl_mwh"
+    with db_engine.begin() as conn:
+        snapshot_id = _insert_sin_snapshot(
+            conn,
+            dataset="pld_horario",
+            source="CCEE",
+            fetched_at="2000-01-01T00:00:00+00:00",
+            row_count=1,
+        )
+        _insert_sin_observation(
+            conn,
+            dataset="pld_horario",
+            source="CCEE",
+            kpi_id=pld,
+            subsystem_code="SE_CO",
+            reference_datetime="2000-01-01T00:00:00",
+            snapshot_id=snapshot_id,
+            value=150.0,
+        )
+        _insert_sin_failure(
+            conn,
+            dataset="pld_horario",
+            created_at="2000-01-02T00:00:00+00:00",
+            error="HTTP 403 Forbidden",
+        )
+
+    svc = EnergyKPIReadService(build_settings())
+    monkeypatch.setattr(svc, "_engine", lambda: db_engine)
+
+    pld_status = _source_status_by_dataset(svc.get_sin_kpi_dashboard())["pld_horario"]
+
+    assert pld_status.health_state == "partial"
+    assert pld_status.last_status == "partial"
+    assert pld_status.local_records_count == 1
+    assert pld_status.is_missing is False
+    assert pld_status.is_stale is True
     assert pld_status.last_error == "HTTP 403 Forbidden"
 
 
@@ -490,6 +559,8 @@ def test_sin_source_status_newer_success_clears_older_failure(db_engine, monkeyp
     assert pld_status.latest_attempt_at == "2999-01-01T00:00:00+00:00"
     assert pld_status.last_error is None
     assert pld_status.latest_failure_at == "2026-07-01T00:00:00+00:00"
+    assert pld_status.is_missing is False
+    assert pld_status.is_stale is False
 
 
 def test_sin_source_status_missing_dataset_has_no_false_success(db_engine, monkeypatch):
@@ -549,8 +620,10 @@ def test_sin_source_status_stale_state_is_per_dataset(db_engine, monkeypatch):
     by_dataset = _source_status_by_dataset(svc.get_sin_kpi_dashboard())
 
     assert by_dataset["balanco_energia_subsistema"].health_state == "stale"
+    assert by_dataset["balanco_energia_subsistema"].is_missing is False
     assert by_dataset["balanco_energia_subsistema"].is_stale is True
     assert by_dataset["pld_horario"].health_state == "success"
+    assert by_dataset["pld_horario"].is_missing is False
     assert by_dataset["pld_horario"].is_stale is False
     assert by_dataset["balanco_energia_subsistema"].latest_reference_datetime == "2000-01-01T00:00:00"
     assert by_dataset["pld_horario"].latest_reference_datetime == "2999-01-01T00:00:00"

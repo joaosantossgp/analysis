@@ -1206,10 +1206,8 @@ class EnergyKPIReadService:
             )
             is_stale = local_count > 0 and self._is_sin_stale(latest_reference)
 
-            # State precedence is dataset-local: current failure with cached rows
-            # is partial; current failure without rows is failed; stale rows are
-            # stale only when no newer failure exists; success requires rows plus
-            # a proven successful snapshot; no evidence remains missing/unknown.
+            # health_state is a prioritized dataset classification. The boolean
+            # flags below remain orthogonal data conditions for consumers.
             if current_failure:
                 health_state = "partial" if local_count > 0 else "failed"
                 last_error = latest_failure.get("error")
@@ -1260,8 +1258,8 @@ class EnergyKPIReadService:
                 latest_attempt_status=latest_attempt_status,
                 latest_failure_at=latest_failure_at,
                 health_state=health_state,
-                is_missing=health_state == "missing",
-                is_stale=is_stale and health_state == "stale",
+                is_missing=local_count == 0,
+                is_stale=is_stale,
             )
         return list(by_dataset.values())
 

@@ -90,7 +90,7 @@ def test_sin_dashboard_cache_schema_rebuilds_old_payload_shape(tmp_path, monkeyp
                 "latest_attempt_status": "failed",
                 "latest_failure_at": "2026-07-10T01:05:00+00:00",
                 "health_state": "failed",
-                "is_missing": False,
+                "is_missing": True,
                 "is_stale": False,
             }
         ],
@@ -103,6 +103,7 @@ def test_sin_dashboard_cache_schema_rebuilds_old_payload_shape(tmp_path, monkeyp
 
     assert service.calls == 1
     assert result["source_statuses"][0]["health_state"] == "failed"
+    assert result["source_statuses"][0]["is_missing"] is True
     assert result["source_statuses"][0]["latest_attempt_status"] == "failed"
     assert result["source_statuses"][0]["last_error"] == "HTTP 403 Forbidden"
     assert (tmp_path / "sin_kpi_dashboard_v2.json").exists()
