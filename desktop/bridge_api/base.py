@@ -36,7 +36,7 @@ class BaseBridgeMixin:
     CVM_MIN_YEAR = 2010
     KPI_CATALOG_CACHE_SCHEMA_VERSION = 1
     COUNTRY_KPI_SERIES_CACHE_SCHEMA_VERSION = 1
-    SIN_DASHBOARD_CACHE_SCHEMA_VERSION = 1
+    SIN_DASHBOARD_CACHE_SCHEMA_VERSION = 2
 
     def __init__(self) -> None:
         self._service = None

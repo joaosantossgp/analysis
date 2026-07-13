@@ -1,6 +1,8 @@
 """Tests for SIN subsystem KPI ingestion/read paths."""
 from __future__ import annotations
 
+import json
+import uuid
 from pathlib import Path
 
 import pandas as pd
@@ -71,11 +73,128 @@ def _insert_sin_series_rows(db_engine, rows: list[tuple[str, str, str]]) -> None
         )
 
 
+def _insert_sin_observation(
+    conn,
+    *,
+    dataset: str,
+    source: str,
+    kpi_id: str,
+    subsystem_code: str,
+    reference_datetime: str,
+    snapshot_id: str,
+    value: float = 100.0,
+) -> None:
+    conn.execute(
+        text("""
+            INSERT INTO subsystem_kpi_values (
+                kpi_id, subsystem_code, reference_datetime,
+                source_value, normalized_value, unit, source,
+                source_dataset, source_field, source_hash, snapshot_id
+            ) VALUES (
+                :kpi_id, :subsystem_code, :reference_datetime,
+                :value, :value, 'MWmed', :source,
+                :dataset, 'fixture', :source_hash, :snapshot_id
+            )
+        """),
+        {
+            "kpi_id": kpi_id,
+            "subsystem_code": subsystem_code,
+            "reference_datetime": reference_datetime,
+            "value": value,
+            "source": source,
+            "dataset": dataset,
+            "source_hash": f"{dataset}:{kpi_id}:{subsystem_code}:{reference_datetime}",
+            "snapshot_id": snapshot_id,
+        },
+    )
+
+
+def _insert_sin_snapshot(
+    conn,
+    *,
+    dataset: str,
+    source: str,
+    fetched_at: str,
+    snapshot_id: str | None = None,
+    row_count: int = 1,
+) -> str:
+    snapshot_id = snapshot_id or f"snapshot-{dataset}-{uuid.uuid4()}"
+    conn.execute(
+        text("""
+            INSERT INTO source_snapshots (
+                snapshot_id, source, fetched_at, file_path, sha256,
+                row_count, source_version_label, status
+            ) VALUES (
+                :snapshot_id, :source, :fetched_at, :file_path, 'deadbeef',
+                :row_count, :source_version_label, 'ok'
+            )
+        """),
+        {
+            "snapshot_id": snapshot_id,
+            "source": source,
+            "fetched_at": fetched_at,
+            "file_path": f"/tmp/{dataset}.csv",
+            "row_count": row_count,
+            "source_version_label": f"{dataset}:2026",
+        },
+    )
+    return snapshot_id
+
+
+def _insert_sin_failure(
+    conn,
+    *,
+    dataset: str,
+    created_at: str,
+    error: str,
+    status: str = "partial",
+) -> None:
+    run_id = f"run-{dataset}-{uuid.uuid4()}"
+    conn.execute(
+        text("""
+            INSERT INTO kpi_refresh_log (
+                run_id, started_at, finished_at, source, status,
+                rows_ingested, rows_conflict, error, triggered_by
+            ) VALUES (
+                :run_id, :started_at, :finished_at, 'SIN', :status,
+                0, 0, :error_text, 'test'
+            )
+        """),
+        {
+            "run_id": run_id,
+            "started_at": created_at,
+            "finished_at": created_at,
+            "status": status,
+            "error_text": json.dumps([{"dataset": dataset, "year": "2026", "error": error}]),
+        },
+    )
+    conn.execute(
+        text("""
+            INSERT INTO data_quality_checks (
+                check_id, run_id, check_name, severity, passed, details_json, created_at
+            ) VALUES (
+                :check_id, :run_id, :check_name, 'warn', 0, :details_json, :created_at
+            )
+        """),
+        {
+            "check_id": f"dq-{dataset}-{uuid.uuid4()}",
+            "run_id": run_id,
+            "check_name": f"sin_source_failure:{dataset}:2026",
+            "details_json": json.dumps({"dataset": dataset, "year": "2026", "error": error}),
+            "created_at": created_at,
+        },
+    )
+
+
 def _sin_series_keys(values) -> list[tuple[str, str, str]]:
     return [
         (value.reference_datetime, value.subsystem_code, value.kpi_id)
         for value in values
     ]
+
+
+def _source_status_by_dataset(dashboard):
+    return {status.dataset: status for status in dashboard.source_statuses}
 
 
 def test_normalize_subsystem_code_variants():
@@ -206,6 +325,329 @@ def test_sin_read_path_is_offline(tmp_path: Path, db_engine, monkeypatch):
     dashboard = svc.get_sin_kpi_dashboard()
     assert dashboard.observations
     assert dashboard.source_statuses
+
+
+def test_sin_source_statuses_are_dataset_specific_when_pld_fails(
+    db_engine, monkeypatch
+):
+    load = f"{SIN_NS}.load_mwmed"
+    ear = f"{SIN_NS}.ear_stored_pct"
+    ena = f"{SIN_NS}.ena_gross_mwmed"
+    cmo = f"{SIN_NS}.cmo_brl_mwh"
+    with db_engine.begin() as conn:
+        seed_subsystem_dimension(conn)
+        for dataset, source, kpi_id, reference_datetime in [
+            ("balanco_energia_subsistema", "ONS", load, "2026-07-10T00:00:00"),
+            ("ear_diario_subsistema", "ONS", ear, "2026-07-09T00:00:00"),
+            ("ena_diario_subsistema", "ONS", ena, "2026-07-09T00:00:00"),
+            ("cmo_semihorario", "ONS", cmo, "2026-07-10T00:30:00"),
+        ]:
+            snapshot_id = _insert_sin_snapshot(
+                conn,
+                dataset=dataset,
+                source=source,
+                fetched_at="2026-07-10T01:00:00+00:00",
+                row_count=4,
+            )
+            _insert_sin_observation(
+                conn,
+                dataset=dataset,
+                source=source,
+                kpi_id=kpi_id,
+                subsystem_code="S",
+                reference_datetime=reference_datetime,
+                snapshot_id=snapshot_id,
+            )
+        _insert_sin_failure(
+            conn,
+            dataset="pld_horario",
+            created_at="2026-07-10T01:05:00+00:00",
+            error="HTTP 403 Forbidden",
+        )
+
+    svc = EnergyKPIReadService(build_settings())
+    monkeypatch.setattr(svc, "_engine", lambda: db_engine)
+    monkeypatch.setattr("requests.get", lambda *args, **kwargs: pytest.fail("network call on read"))
+
+    dashboard = svc.get_sin_kpi_dashboard()
+    by_dataset = _source_status_by_dataset(dashboard)
+
+    assert dashboard.to_dict().keys() >= {
+        "last_successful_update",
+        "latest_reference_datetime",
+        "is_empty",
+        "is_stale",
+        "observations",
+        "source_statuses",
+    }
+    for dataset in [
+        "balanco_energia_subsistema",
+        "ear_diario_subsistema",
+        "ena_diario_subsistema",
+        "cmo_semihorario",
+    ]:
+        status = by_dataset[dataset]
+        assert status.last_status == "success"
+        assert status.health_state == "success"
+        assert status.last_error is None
+        assert status.local_records_count == 1
+        assert status.latest_reference_datetime is not None
+        assert status.is_missing is False
+
+    pld = by_dataset["pld_horario"]
+    assert pld.last_status == "failed"
+    assert pld.health_state == "failed"
+    assert pld.latest_attempt_status == "failed"
+    assert pld.latest_attempt_at == "2026-07-10T01:05:00+00:00"
+    assert pld.latest_successful_snapshot_at is None
+    assert pld.latest_reference_datetime is None
+    assert pld.local_records_count == 0
+    assert pld.is_missing is True
+    assert pld.is_stale is False
+    assert pld.last_error == "HTTP 403 Forbidden"
+
+
+def test_sin_source_status_cached_rows_plus_newer_failure_is_partial(
+    db_engine, monkeypatch
+):
+    pld = f"{SIN_NS}.pld_brl_mwh"
+    with db_engine.begin() as conn:
+        snapshot_id = _insert_sin_snapshot(
+            conn,
+            dataset="pld_horario",
+            source="CCEE",
+            fetched_at="2999-01-01T00:00:00+00:00",
+            row_count=1,
+        )
+        _insert_sin_observation(
+            conn,
+            dataset="pld_horario",
+            source="CCEE",
+            kpi_id=pld,
+            subsystem_code="SE_CO",
+            reference_datetime="2999-01-01T00:00:00",
+            snapshot_id=snapshot_id,
+            value=150.0,
+        )
+        _insert_sin_failure(
+            conn,
+            dataset="pld_horario",
+            created_at="2999-01-02T00:00:00+00:00",
+            error="HTTP 403 Forbidden",
+        )
+
+    svc = EnergyKPIReadService(build_settings())
+    monkeypatch.setattr(svc, "_engine", lambda: db_engine)
+
+    pld_status = _source_status_by_dataset(svc.get_sin_kpi_dashboard())["pld_horario"]
+
+    assert pld_status.health_state == "partial"
+    assert pld_status.last_status == "partial"
+    assert pld_status.local_records_count == 1
+    assert pld_status.latest_reference_datetime == "2999-01-01T00:00:00"
+    assert pld_status.latest_successful_snapshot_at == "2999-01-01T00:00:00+00:00"
+    assert pld_status.latest_attempt_at == "2999-01-02T00:00:00+00:00"
+    assert pld_status.latest_attempt_status == "failed"
+    assert pld_status.is_missing is False
+    assert pld_status.is_stale is False
+    assert pld_status.last_error == "HTTP 403 Forbidden"
+
+
+def test_sin_source_status_successful_snapshot_without_rows_is_partial_missing(
+    db_engine, monkeypatch
+):
+    with db_engine.begin() as conn:
+        _insert_sin_snapshot(
+            conn,
+            dataset="pld_horario",
+            source="CCEE",
+            fetched_at="2999-01-01T00:00:00+00:00",
+            row_count=0,
+        )
+
+    svc = EnergyKPIReadService(build_settings())
+    monkeypatch.setattr(svc, "_engine", lambda: db_engine)
+
+    pld_status = _source_status_by_dataset(svc.get_sin_kpi_dashboard())["pld_horario"]
+
+    assert pld_status.health_state == "partial"
+    assert pld_status.last_status == "partial"
+    assert pld_status.local_records_count == 0
+    assert pld_status.latest_successful_snapshot_at == "2999-01-01T00:00:00+00:00"
+    assert pld_status.is_missing is True
+    assert pld_status.is_stale is False
+
+
+def test_sin_source_status_stale_cached_rows_plus_newer_failure_is_partial_and_stale(
+    db_engine, monkeypatch
+):
+    pld = f"{SIN_NS}.pld_brl_mwh"
+    with db_engine.begin() as conn:
+        snapshot_id = _insert_sin_snapshot(
+            conn,
+            dataset="pld_horario",
+            source="CCEE",
+            fetched_at="2000-01-01T00:00:00+00:00",
+            row_count=1,
+        )
+        _insert_sin_observation(
+            conn,
+            dataset="pld_horario",
+            source="CCEE",
+            kpi_id=pld,
+            subsystem_code="SE_CO",
+            reference_datetime="2000-01-01T00:00:00",
+            snapshot_id=snapshot_id,
+            value=150.0,
+        )
+        _insert_sin_failure(
+            conn,
+            dataset="pld_horario",
+            created_at="2000-01-02T00:00:00+00:00",
+            error="HTTP 403 Forbidden",
+        )
+
+    svc = EnergyKPIReadService(build_settings())
+    monkeypatch.setattr(svc, "_engine", lambda: db_engine)
+
+    pld_status = _source_status_by_dataset(svc.get_sin_kpi_dashboard())["pld_horario"]
+
+    assert pld_status.health_state == "partial"
+    assert pld_status.last_status == "partial"
+    assert pld_status.local_records_count == 1
+    assert pld_status.is_missing is False
+    assert pld_status.is_stale is True
+    assert pld_status.last_error == "HTTP 403 Forbidden"
+
+
+def test_sin_source_status_newer_success_clears_older_failure(db_engine, monkeypatch):
+    pld = f"{SIN_NS}.pld_brl_mwh"
+    with db_engine.begin() as conn:
+        _insert_sin_failure(
+            conn,
+            dataset="pld_horario",
+            created_at="2026-07-01T00:00:00+00:00",
+            error="HTTP 403 Forbidden",
+            status="error",
+        )
+        snapshot_id = _insert_sin_snapshot(
+            conn,
+            dataset="pld_horario",
+            source="CCEE",
+            fetched_at="2999-01-01T00:00:00+00:00",
+            row_count=1,
+        )
+        _insert_sin_observation(
+            conn,
+            dataset="pld_horario",
+            source="CCEE",
+            kpi_id=pld,
+            subsystem_code="SE_CO",
+            reference_datetime="2999-01-01T00:00:00",
+            snapshot_id=snapshot_id,
+            value=151.0,
+        )
+
+    svc = EnergyKPIReadService(build_settings())
+    monkeypatch.setattr(svc, "_engine", lambda: db_engine)
+
+    pld_status = _source_status_by_dataset(svc.get_sin_kpi_dashboard())["pld_horario"]
+
+    assert pld_status.health_state == "success"
+    assert pld_status.last_status == "success"
+    assert pld_status.latest_attempt_status == "success"
+    assert pld_status.latest_attempt_at == "2999-01-01T00:00:00+00:00"
+    assert pld_status.last_error is None
+    assert pld_status.latest_failure_at == "2026-07-01T00:00:00+00:00"
+    assert pld_status.is_missing is False
+    assert pld_status.is_stale is False
+
+
+def test_sin_source_status_missing_dataset_has_no_false_success(db_engine, monkeypatch):
+    svc = EnergyKPIReadService(build_settings())
+    monkeypatch.setattr(svc, "_engine", lambda: db_engine)
+
+    status = _source_status_by_dataset(svc.get_sin_kpi_dashboard())["pld_horario"]
+
+    assert status.health_state == "missing"
+    assert status.last_status == "missing"
+    assert status.latest_attempt_status is None
+    assert status.latest_reference_datetime is None
+    assert status.latest_successful_snapshot_at is None
+    assert status.latest_failure_at is None
+    assert status.is_missing is True
+    assert status.is_stale is False
+    assert status.last_error is None
+
+
+def test_sin_source_status_stale_state_is_per_dataset(db_engine, monkeypatch):
+    load = f"{SIN_NS}.load_mwmed"
+    pld = f"{SIN_NS}.pld_brl_mwh"
+    with db_engine.begin() as conn:
+        stale_snapshot = _insert_sin_snapshot(
+            conn,
+            dataset="balanco_energia_subsistema",
+            source="ONS",
+            fetched_at="2000-01-01T00:00:00+00:00",
+        )
+        _insert_sin_observation(
+            conn,
+            dataset="balanco_energia_subsistema",
+            source="ONS",
+            kpi_id=load,
+            subsystem_code="S",
+            reference_datetime="2000-01-01T00:00:00",
+            snapshot_id=stale_snapshot,
+        )
+        current_snapshot = _insert_sin_snapshot(
+            conn,
+            dataset="pld_horario",
+            source="CCEE",
+            fetched_at="2999-01-01T00:00:00+00:00",
+        )
+        _insert_sin_observation(
+            conn,
+            dataset="pld_horario",
+            source="CCEE",
+            kpi_id=pld,
+            subsystem_code="SE_CO",
+            reference_datetime="2999-01-01T00:00:00",
+            snapshot_id=current_snapshot,
+        )
+
+    svc = EnergyKPIReadService(build_settings())
+    monkeypatch.setattr(svc, "_engine", lambda: db_engine)
+    by_dataset = _source_status_by_dataset(svc.get_sin_kpi_dashboard())
+
+    assert by_dataset["balanco_energia_subsistema"].health_state == "stale"
+    assert by_dataset["balanco_energia_subsistema"].is_missing is False
+    assert by_dataset["balanco_energia_subsistema"].is_stale is True
+    assert by_dataset["pld_horario"].health_state == "success"
+    assert by_dataset["pld_horario"].is_missing is False
+    assert by_dataset["pld_horario"].is_stale is False
+    assert by_dataset["balanco_energia_subsistema"].latest_reference_datetime == "2000-01-01T00:00:00"
+    assert by_dataset["pld_horario"].latest_reference_datetime == "2999-01-01T00:00:00"
+
+
+def test_sin_source_status_failure_survives_service_recreation(db_engine, monkeypatch):
+    with db_engine.begin() as conn:
+        _insert_sin_failure(
+            conn,
+            dataset="pld_horario",
+            created_at="2026-07-10T01:05:00+00:00",
+            error="HTTP 403 Forbidden",
+            status="error",
+        )
+
+    first = EnergyKPIReadService(build_settings())
+    second = EnergyKPIReadService(build_settings())
+    monkeypatch.setattr(first, "_engine", lambda: db_engine)
+    monkeypatch.setattr(second, "_engine", lambda: db_engine)
+
+    assert _source_status_by_dataset(first.get_sin_kpi_dashboard())["pld_horario"].last_error == "HTTP 403 Forbidden"
+    recreated = _source_status_by_dataset(second.get_sin_kpi_dashboard())["pld_horario"]
+    assert recreated.health_state == "failed"
+    assert recreated.last_error == "HTTP 403 Forbidden"
 
 
 def test_sin_series_positive_limit_returns_newest_global_rows_in_ascending_order(

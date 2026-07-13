@@ -962,6 +962,14 @@ class SINKPISourceStatusDTO:
     local_records_count: int
     last_status: str | None
     last_error: str | None
+    latest_reference_datetime: str | None = None
+    latest_successful_snapshot_at: str | None = None
+    latest_attempt_at: str | None = None
+    latest_attempt_status: str | None = None
+    latest_failure_at: str | None = None
+    health_state: str = "unknown"
+    is_missing: bool = False
+    is_stale: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
