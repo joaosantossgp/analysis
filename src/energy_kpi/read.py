@@ -1169,47 +1169,162 @@ class EnergyKPIReadService:
         )
 
     def _get_sin_source_statuses(self, conn) -> list[SINKPISourceStatusDTO]:
-        latest_log = conn.execute(text("""
-            SELECT status, error
-            FROM kpi_refresh_log
-            WHERE source = 'SIN'
-            ORDER BY started_at DESC
-            LIMIT 1
-        """)).fetchone()
-        latest_status = latest_log[0] if latest_log else None
-        error_by_dataset = self._parse_sin_error_by_dataset(latest_log[1] if latest_log else None)
         records = conn.execute(text("""
             SELECT source_dataset, COUNT(*) AS row_count, MAX(reference_datetime) AS latest_reference
             FROM subsystem_kpi_values
             GROUP BY source_dataset
         """)).fetchall()
         count_by_dataset = {row[0]: int(row[1] or 0) for row in records}
+        latest_reference_by_dataset = {row[0]: row[2] for row in records}
         snapshots = conn.execute(text("""
-            SELECT source_version_label, MAX(fetched_at) AS fetched_at
+            SELECT source_version_label, fetched_at
             FROM source_snapshots
-            WHERE source IN ('ONS', 'CCEE')
-            GROUP BY source_version_label
+            WHERE source IN ('ONS', 'CCEE') AND status = 'ok'
         """)).fetchall()
         snapshot_by_dataset: dict[str, str] = {}
         for row in snapshots:
-            label = str(row[0] or "")
-            dataset = label.split(":", 1)[0]
-            if dataset:
+            dataset = self._sin_dataset_from_snapshot_label(row[0])
+            if dataset and self._is_newer(row[1], snapshot_by_dataset.get(dataset)):
                 snapshot_by_dataset[dataset] = row[1]
+
+        failure_by_dataset = self._get_sin_dataset_failures(conn)
         by_dataset: dict[str, SINKPISourceStatusDTO] = {}
         for entry in SIN_KPI_CATALOG:
             if entry.source_dataset in by_dataset:
                 continue
+            local_count = count_by_dataset.get(entry.source_dataset, 0)
+            latest_reference = latest_reference_by_dataset.get(entry.source_dataset)
+            latest_success_at = snapshot_by_dataset.get(entry.source_dataset)
+            latest_failure = failure_by_dataset.get(entry.source_dataset, {})
+            latest_failure_at = latest_failure.get("created_at")
+            current_failure = bool(
+                latest_failure_at
+                and (
+                    latest_success_at is None
+                    or self._is_newer_or_equal(latest_failure_at, latest_success_at)
+                )
+            )
+            is_stale = local_count > 0 and self._is_sin_stale(latest_reference)
+
+            # State precedence is dataset-local: current failure with cached rows
+            # is partial; current failure without rows is failed; stale rows are
+            # stale only when no newer failure exists; success requires rows plus
+            # a proven successful snapshot; no evidence remains missing/unknown.
+            if current_failure:
+                health_state = "partial" if local_count > 0 else "failed"
+                last_error = latest_failure.get("error")
+                latest_attempt_at = latest_failure_at
+                latest_attempt_status = "failed"
+            elif local_count > 0 and is_stale:
+                health_state = "stale"
+                last_error = None
+                latest_attempt_at = latest_success_at
+                latest_attempt_status = "success" if latest_success_at else None
+            elif local_count > 0 and latest_success_at:
+                health_state = "success"
+                last_error = None
+                latest_attempt_at = latest_success_at
+                latest_attempt_status = "success"
+            elif latest_success_at:
+                health_state = "partial"
+                last_error = None
+                latest_attempt_at = latest_success_at
+                latest_attempt_status = "success"
+            elif latest_failure_at:
+                health_state = "failed"
+                last_error = latest_failure.get("error")
+                latest_attempt_at = latest_failure_at
+                latest_attempt_status = "failed"
+            elif local_count > 0:
+                health_state = "unknown"
+                last_error = None
+                latest_attempt_at = None
+                latest_attempt_status = None
+            else:
+                health_state = "missing"
+                last_error = None
+                latest_attempt_at = None
+                latest_attempt_status = None
+
             by_dataset[entry.source_dataset] = SINKPISourceStatusDTO(
                 source=entry.source,
                 dataset=entry.source_dataset,
                 frequency=entry.frequency,
-                last_snapshot_at=snapshot_by_dataset.get(entry.source_dataset),
-                local_records_count=count_by_dataset.get(entry.source_dataset, 0),
-                last_status=latest_status,
-                last_error=error_by_dataset.get(entry.source_dataset),
+                last_snapshot_at=latest_success_at,
+                local_records_count=local_count,
+                last_status=health_state,
+                last_error=last_error,
+                latest_reference_datetime=latest_reference,
+                latest_successful_snapshot_at=latest_success_at,
+                latest_attempt_at=latest_attempt_at,
+                latest_attempt_status=latest_attempt_status,
+                latest_failure_at=latest_failure_at,
+                health_state=health_state,
+                is_missing=health_state == "missing",
+                is_stale=is_stale and health_state == "stale",
             )
         return list(by_dataset.values())
+
+    def _get_sin_dataset_failures(self, conn) -> dict[str, dict[str, str]]:
+        rows = conn.execute(text("""
+            SELECT check_name, details_json, created_at
+            FROM data_quality_checks
+            WHERE passed = 0
+              AND check_name LIKE 'sin_source_failure:%'
+            ORDER BY created_at
+        """)).fetchall()
+        failures: dict[str, dict[str, str]] = {}
+        for row in rows:
+            parts = str(row[0] or "").split(":")
+            dataset = parts[1] if len(parts) >= 2 else ""
+            if not dataset:
+                continue
+            error = ""
+            try:
+                details = json.loads(row[1] or "{}")
+                if isinstance(details, dict):
+                    error = str(details.get("error") or "")
+            except Exception:
+                error = str(row[1] or "")
+            if self._is_newer_or_equal(row[2], failures.get(dataset, {}).get("created_at")):
+                failures[dataset] = {
+                    "created_at": row[2],
+                    "error": error,
+                }
+        return failures
+
+    @staticmethod
+    def _sin_dataset_from_snapshot_label(label: str | None) -> str:
+        raw = str(label or "")
+        return raw.split(":", 1)[0] if raw else ""
+
+    @classmethod
+    def _is_newer(cls, candidate: str | None, current: str | None) -> bool:
+        if candidate is None:
+            return False
+        if current is None:
+            return True
+        return cls._timestamp_sort_key(candidate) > cls._timestamp_sort_key(current)
+
+    @classmethod
+    def _is_newer_or_equal(cls, candidate: str | None, current: str | None) -> bool:
+        if candidate is None:
+            return False
+        if current is None:
+            return True
+        return cls._timestamp_sort_key(candidate) >= cls._timestamp_sort_key(current)
+
+    @staticmethod
+    def _timestamp_sort_key(value: str | None) -> datetime:
+        if not value:
+            return datetime.min.replace(tzinfo=timezone.utc)
+        try:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed.astimezone(timezone.utc)
+        except Exception:
+            return datetime.min.replace(tzinfo=timezone.utc)
 
     @staticmethod
     def _parse_sin_error_by_dataset(error_text: str | None) -> dict[str, str]:
