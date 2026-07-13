@@ -3,6 +3,8 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import type { SINKPIObservation, SINKPISourceStatus } from "@/lib/bridge/types";
+import { createMockBridge } from "@/lib/bridge/mock";
+import { MOCK_KPI_CATALOG, MOCK_SIN_DASHBOARD, MOCK_SIN_VALUES } from "@/lib/bridge/mockEnergyFixtures";
 
 import {
   buildGenerationMixRow,
@@ -176,5 +178,30 @@ describe("SIN Power System presentation", () => {
 
   it("uses a frequency-neutral adjacent-point change label", () => {
     expect(CHANGE_COMPARISON_LABEL).toBe("vs prior observation");
+  });
+
+  it("keeps failed and missing mock PLD out of both local dashboard and trend reads", async () => {
+    const pldId = "energy_utilities.sin.pld_brl_mwh";
+    const cmoId = "energy_utilities.sin.cmo_brl_mwh";
+    const mockBridge = createMockBridge();
+    const pldStatus = MOCK_SIN_DASHBOARD.source_statuses.find((status) => status.dataset === "pld_horario");
+
+    expect(pldStatus).toMatchObject({ health_state: "failed", is_missing: true, local_records_count: 0 });
+    expect(MOCK_KPI_CATALOG.some((entry) => entry.kpi_id === pldId)).toBe(true);
+    expect(MOCK_SIN_DASHBOARD.observations.some((row) => row.kpi_id === pldId)).toBe(false);
+    expect(MOCK_SIN_VALUES.some((row) => row.kpi_id === pldId)).toBe(false);
+
+    const pldSeries = await mockBridge.get_sin_kpi_series?.({ kpi_ids: [pldId] });
+    const cmoSeries = await mockBridge.get_sin_kpi_series?.({ kpi_ids: [cmoId] });
+
+    expect(pldSeries).toMatchObject({ count: 0, values: [] });
+    expect(cmoSeries?.count).toBeGreaterThan(0);
+    expect(cmoSeries?.values.every((row) => row.kpi_id === cmoId)).toBe(true);
+    expect(trendPresentationState({
+      isLoading: false,
+      isError: false,
+      hasSeries: pldSeries?.count ? pldSeries.count > 0 : false,
+      hasSelection: true,
+    })).toBe("empty");
   });
 });

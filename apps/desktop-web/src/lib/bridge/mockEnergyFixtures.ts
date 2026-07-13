@@ -181,6 +181,7 @@ function buildMockSINValues(): SINKPIObservation[] {
       const wind = load * ([0.10, 0.03, 0.63, 0.04][idx] ?? 0.1);
       const solar = load * ([0.04, 0.05, 0.08, 0.03][idx] ?? 0.04);
       const total = hydro + thermal + wind + solar;
+      // PLD stays in the catalog, but has no mock local rows after its CCEE HTTP 403.
       const valueMap: Record<string, number> = {
         [`${SIN_NS}.load_mwmed`]: load,
         [`${SIN_NS}.generation_hydro_mwmed`]: hydro,
@@ -199,7 +200,6 @@ function buildMockSINValues(): SINKPIObservation[] {
         [`${SIN_NS}.ena_storable_mwmed`]: [6100, 30200, 4700, 6600][idx] + wave * 400,
         [`${SIN_NS}.ena_storable_pct_mlt`]: [72, 65, 44, 87][idx] + wave * 4,
         [`${SIN_NS}.cmo_brl_mwh`]: [148, 152, 144, 155][idx] + wave * 9,
-        [`${SIN_NS}.pld_brl_mwh`]: [142, 151, 139, 152][idx] + wave * 7,
         [`${SIN_NS}.net_interchange_mwmed`]: [-850, -4200, 780, 5400][idx] + wave * 350,
       };
       for (const [kpiId, value] of Object.entries(valueMap)) {
@@ -225,20 +225,21 @@ function buildMockSINValues(): SINKPIObservation[] {
 
 export const MOCK_SIN_VALUES = buildMockSINValues();
 
+function mockLocalRecordCount(dataset: string): number {
+  return MOCK_SIN_VALUES.filter((row) => row.source_dataset === dataset).length;
+}
+
 export const MOCK_SIN_DASHBOARD: SINKPIDashboardResponse = {
   last_successful_update: new Date(Date.now() - 3_600_000).toISOString(),
   latest_reference_datetime: MOCK_SIN_VALUES.at(-1)?.reference_datetime ?? null,
   is_empty: false,
   is_stale: false,
-  observations: MOCK_SIN_VALUES.filter((row) =>
-    row.reference_datetime === MOCK_SIN_VALUES.at(-1)?.reference_datetime &&
-    row.kpi_id !== "energy_utilities.sin.pld_brl_mwh",
-  ),
+  observations: MOCK_SIN_VALUES.filter((row) => row.reference_datetime === MOCK_SIN_VALUES.at(-1)?.reference_datetime),
   source_statuses: [
-    { source: "ONS", dataset: "balanco_energia_subsistema", frequency: "hourly", last_snapshot_at: NOW, local_records_count: 6160, last_status: "success", last_error: null, latest_reference_datetime: NOW, latest_successful_snapshot_at: NOW, latest_attempt_at: NOW, latest_attempt_status: "success", latest_failure_at: null, health_state: "success", is_missing: false, is_stale: false },
-    { source: "ONS", dataset: "ear_diario_subsistema", frequency: "daily", last_snapshot_at: NOW, local_records_count: 112, last_status: "success", last_error: null, latest_reference_datetime: NOW, latest_successful_snapshot_at: NOW, latest_attempt_at: NOW, latest_attempt_status: "success", latest_failure_at: null, health_state: "success", is_missing: false, is_stale: false },
-    { source: "ONS", dataset: "ena_diario_subsistema", frequency: "daily", last_snapshot_at: NOW, local_records_count: 224, last_status: "success", last_error: null, latest_reference_datetime: NOW, latest_successful_snapshot_at: NOW, latest_attempt_at: NOW, latest_attempt_status: "success", latest_failure_at: null, health_state: "success", is_missing: false, is_stale: false },
-    { source: "ONS", dataset: "cmo_semihorario", frequency: "semi-hourly", last_snapshot_at: NOW, local_records_count: 1344, last_status: "success", last_error: null, latest_reference_datetime: NOW, latest_successful_snapshot_at: NOW, latest_attempt_at: NOW, latest_attempt_status: "success", latest_failure_at: null, health_state: "success", is_missing: false, is_stale: false },
+    { source: "ONS", dataset: "balanco_energia_subsistema", frequency: "hourly", last_snapshot_at: NOW, local_records_count: mockLocalRecordCount("balanco_energia_subsistema"), last_status: "success", last_error: null, latest_reference_datetime: NOW, latest_successful_snapshot_at: NOW, latest_attempt_at: NOW, latest_attempt_status: "success", latest_failure_at: null, health_state: "success", is_missing: false, is_stale: false },
+    { source: "ONS", dataset: "ear_diario_subsistema", frequency: "daily", last_snapshot_at: NOW, local_records_count: mockLocalRecordCount("ear_diario_subsistema"), last_status: "success", last_error: null, latest_reference_datetime: NOW, latest_successful_snapshot_at: NOW, latest_attempt_at: NOW, latest_attempt_status: "success", latest_failure_at: null, health_state: "success", is_missing: false, is_stale: false },
+    { source: "ONS", dataset: "ena_diario_subsistema", frequency: "daily", last_snapshot_at: NOW, local_records_count: mockLocalRecordCount("ena_diario_subsistema"), last_status: "success", last_error: null, latest_reference_datetime: NOW, latest_successful_snapshot_at: NOW, latest_attempt_at: NOW, latest_attempt_status: "success", latest_failure_at: null, health_state: "success", is_missing: false, is_stale: false },
+    { source: "ONS", dataset: "cmo_semihorario", frequency: "semi-hourly", last_snapshot_at: NOW, local_records_count: mockLocalRecordCount("cmo_semihorario"), last_status: "success", last_error: null, latest_reference_datetime: NOW, latest_successful_snapshot_at: NOW, latest_attempt_at: NOW, latest_attempt_status: "success", latest_failure_at: null, health_state: "success", is_missing: false, is_stale: false },
     { source: "CCEE", dataset: "pld_horario", frequency: "hourly", last_snapshot_at: null, local_records_count: 0, last_status: "failed", last_error: "Mock source-risk note: CCEE returned HTTP 403.", latest_reference_datetime: null, latest_successful_snapshot_at: null, latest_attempt_at: NOW, latest_attempt_status: "failed", latest_failure_at: NOW, health_state: "failed", is_missing: true, is_stale: false },
   ],
   refresh_running: false,
