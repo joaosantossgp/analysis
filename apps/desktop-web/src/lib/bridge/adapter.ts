@@ -33,6 +33,7 @@ export class BridgeError extends Error {
 // ---------------------------------------------------------------------------
 
 let _mockBridgeCache: Partial<BridgeApi> | null | undefined = undefined;
+let pendingBridgeReadiness: Promise<BridgeMode> | null = null;
 
 /** True only when running in a Vite dev build with VITE_MOCK_BRIDGE=1. */
 export function isMockBridgeEnabled(): boolean {
@@ -57,6 +58,12 @@ export function isBridgeAvailable(): boolean {
   );
 }
 
+/** A desktop bridge is callable only after a stable status sentinel is installed. */
+export function hasCallableBridgeSentinel(): boolean {
+  const api = typeof window === "undefined" ? undefined : window.pywebview?.api;
+  return typeof api?.ping === "function" || typeof api?.get_app_status === "function";
+}
+
 export function getBridgeMode(): BridgeMode {
   if (isMockBridgeEnabled()) return "mock";
   return isBridgeAvailable() ? "desktop" : "browser";
@@ -78,24 +85,43 @@ export function whenBridgeReady(timeoutMs = 5000): Promise<BridgeMode> {
   if (isMockBridgeEnabled()) {
     return Promise.resolve("mock");
   }
-  if (isBridgeAvailable()) {
+  if (hasCallableBridgeSentinel()) {
     return Promise.resolve("desktop");
   }
-  return new Promise<BridgeMode>((resolve) => {
+  if (pendingBridgeReadiness) {
+    return pendingBridgeReadiness;
+  }
+
+  const readiness = new Promise<BridgeMode>((resolve) => {
     let settled = false;
+    let pollIntervalId: number | null = null;
+    let timeoutId: number | null = null;
     const finish = (mode: BridgeMode) => {
       if (settled) return;
       settled = true;
       window.removeEventListener("pywebviewready", onReady);
-      clearTimeout(timer);
+      if (pollIntervalId !== null) window.clearInterval(pollIntervalId);
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
       resolve(mode);
     };
-    const onReady = () => finish("desktop");
+
+    const finishWhenCallable = () => {
+      if (hasCallableBridgeSentinel()) finish("desktop");
+    };
+    const onReady = () => finishWhenCallable();
+
     window.addEventListener("pywebviewready", onReady, { once: true });
-    const timer = setTimeout(() => {
+    pollIntervalId = window.setInterval(finishWhenCallable, 25);
+    timeoutId = window.setTimeout(() => {
       finish(isBridgeAvailable() ? "desktop" : "browser");
     }, timeoutMs);
+    finishWhenCallable();
   });
+  pendingBridgeReadiness = readiness;
+  void readiness.finally(() => {
+    if (pendingBridgeReadiness === readiness) pendingBridgeReadiness = null;
+  });
+  return readiness;
 }
 
 /**
