@@ -12,8 +12,10 @@
 import { useEffect, useSyncExternalStore } from "react";
 
 import {
+  BridgeError,
   callBridge,
   getBridgeMode,
+  hasCallableBridgeSentinel,
   whenBridgeReady,
   type BridgeMode,
 } from "@/lib/bridge/adapter";
@@ -29,6 +31,7 @@ let currentProbe: BridgeProbe = { kind: "init" };
 const subscribers = new Set<() => void>();
 let pollIntervalId: number | null = null;
 let pollerStarted = false;
+let inFlightCheck: Promise<void> | null = null;
 
 function notify(): void {
   subscribers.forEach((listener) => listener());
@@ -39,12 +42,25 @@ function setProbe(probe: BridgeProbe): void {
   notify();
 }
 
-async function check(): Promise<void> {
+async function runCheck(): Promise<void> {
   const mode = await whenBridgeReady();
   if (mode === "browser") {
     setProbe({ kind: "browser", lastCheckedAt: Date.now() });
     return;
   }
+
+  if (mode === "desktop" && !hasCallableBridgeSentinel()) {
+    setProbe({
+      kind: "error",
+      message: new BridgeError(
+        "readiness",
+        "pywebview.api detected but no callable ping or get_app_status after readiness timeout",
+        "desktop",
+      ).message,
+    });
+    return;
+  }
+
   setProbe({ kind: "checking", mode });
   try {
     const { ts } = await callBridge("ping", {});
@@ -69,7 +85,9 @@ async function check(): Promise<void> {
       } catch (fallbackErr) {
         setProbe({
           kind: "error",
-          message: fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr),
+          message: `${message}; fallback get_app_status also failed: ${
+            fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)
+          }`,
         });
         return;
       }
@@ -79,6 +97,16 @@ async function check(): Promise<void> {
       message,
     });
   }
+}
+
+function check(): Promise<void> {
+  if (inFlightCheck) return inFlightCheck;
+  const pending = runCheck();
+  inFlightCheck = pending;
+  void pending.finally(() => {
+    if (inFlightCheck === pending) inFlightCheck = null;
+  });
+  return pending;
 }
 
 function ensurePollerStarted(): void {
@@ -127,6 +155,7 @@ export function __resetBridgeStatusForTesting(): void {
     pollIntervalId = null;
   }
   pollerStarted = false;
+  inFlightCheck = null;
   currentProbe = { kind: "init" };
   subscribers.clear();
 }
