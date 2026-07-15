@@ -10,7 +10,7 @@ import {
   triggerSINKPIRefresh,
   fetchKPICatalog,
 } from "@/lib/api/energyKpis";
-import type { SINKPIDashboardResponse, SINKPIObservation } from "@/lib/bridge/types";
+import type { SINKPIDashboardResponse, SINKPIObservation, SINKPISourceStatus } from "@/lib/bridge/types";
 import { useSubsystemKpiConfig } from "@/lib/indicators/useSubsystemKpiConfig";
 import { IndicatorControls } from "./IndicatorControls";
 import { IndicatorLegend } from "./IndicatorLegend";
@@ -70,9 +70,44 @@ const AUDIT_KPI_IDS = [
   KPI.load,
   KPI.generationTotal,
   KPI.ear,
+  KPI.ena,
   KPI.cmo,
   KPI.pld,
 ];
+
+export const SIN_ANALYTICAL_FAMILIES = [
+  {
+    title: "Load and demand pressure",
+    role: "Explanatory driver",
+    evidence: "Load by SIN subsystem (MWmed)",
+    boundary: "Load is context for system conditions; it does not prove tightness by itself.",
+  },
+  {
+    title: "Generation supply and mix",
+    role: "Explanatory driver",
+    evidence: "Generation and measured technology mix by subsystem (MWmed, %)",
+    boundary: "Missing mix components remain unavailable rather than being treated as zero.",
+  },
+  {
+    title: "Hydro buffer and inflow",
+    role: "Explanatory driver",
+    evidence: "EAR and ENA by subsystem (%, MWmed)",
+    boundary: "This is system evidence, not company-level causality.",
+  },
+  {
+    title: "System price confirmation",
+    role: "Confirmatory / outcome signal",
+    evidence: "CMO and PLD remain separate price series (BRL/MWh)",
+    boundary: "Price confirms outcomes; it is not causal proof. PLD source risk remains explicit.",
+  },
+] as const;
+
+const GENERATION_MIX = [
+  { kpi: KPI.mixHydro, label: "Hydro", color: "#60A5FA" },
+  { kpi: KPI.mixThermal, label: "Thermal", color: "#FB923C" },
+  { kpi: KPI.mixWind, label: "Wind", color: "#4ADE80" },
+  { kpi: KPI.mixSolar, label: "Solar", color: "#FBBF24" },
+] as const;
 
 type LatestIndex = Map<string, SINKPIObservation>;
 
@@ -88,12 +123,38 @@ const RANGE_OPTIONS = [
   { label: "All History", days: 9999 },
 ];
 
+export function PowerSystemViewToggle({
+  viewMode,
+  onViewModeChange,
+}: {
+  viewMode: "matrix" | "trend";
+  onViewModeChange: (mode: "matrix" | "trend") => void;
+}) {
+  return (
+    <div aria-label="Power System view" className="flex rounded border border-zinc-700 bg-zinc-900/60 p-0.5">
+      {(["matrix", "trend"] as const).map((mode) => (
+        <button
+          key={mode}
+          type="button"
+          aria-pressed={viewMode === mode}
+          onClick={() => onViewModeChange(mode)}
+          className={`rounded px-2.5 py-1 text-xs font-medium focus-visible:outline focus-visible:outline-1 focus-visible:outline-cyan-500 ${viewMode === mode ? "bg-zinc-700 text-zinc-100" : "text-zinc-400 hover:text-zinc-200"}`}
+        >
+          {mode === "matrix" ? "Overview" : "Trends"}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function SINKpiPanel({
   bridgeReady,
   viewMode,
+  onViewModeChange,
 }: {
   bridgeReady: boolean;
   viewMode: "matrix" | "trend";
+  onViewModeChange?: (mode: "matrix" | "trend") => void;
 }) {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshStartedAt, setRefreshStartedAt] = useState<number | null>(null);
@@ -170,7 +231,7 @@ export function SINKpiPanel({
       start_datetime: startDatetime,
       limit: 50_000,
     }),
-    enabled: bridgeReady && !!trendKpiId,
+    enabled: bridgeReady && viewMode === "trend" && !!trendKpiId,
     staleTime: 60_000,
   });
 
@@ -448,6 +509,12 @@ export function SINKpiPanel({
   const latestIndex = buildLatestIndex(dashboard.observations);
   const hasData = !dashboard.is_empty && dashboard.observations.length > 0;
   const refreshBusy = isRefreshing || backendRefreshRunning;
+  const trendState = trendPresentationState({
+    isLoading: seriesQuery.isLoading,
+    isError: seriesQuery.isError,
+    hasSeries: chartSeries.some((chartSeries) => chartSeries.points.some((point) => point !== null)) && periods.length > 0,
+    hasSelection: plottable.length > 0,
+  });
 
   const xTickFormatter = (value: string) => {
     if (rangeDays <= 30) return value;
@@ -472,7 +539,8 @@ export function SINKpiPanel({
             Local cache first. Manual refresh downloads ONS operating datasets and attempts CCEE PLD.
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          <PowerSystemViewToggle viewMode={viewMode} onViewModeChange={onViewModeChange ?? (() => undefined)} />
           <button
             type="button"
             onClick={handleRefresh}
@@ -518,14 +586,18 @@ export function SINKpiPanel({
       )}
 
       {!hasData ? (
-        <EmptySINState
-          onRefresh={handleRefresh}
-          isStarting={isRefreshing}
-          refreshRunning={backendRefreshRunning}
-        />
+        <div className="space-y-4">
+          <EmptySINState
+            onRefresh={handleRefresh}
+            isStarting={isRefreshing}
+            refreshRunning={backendRefreshRunning}
+          />
+          {dashboard.source_statuses.length > 0 && <SourcePanel dashboard={dashboard} />}
+        </div>
       ) : viewMode === "matrix" ? (
         /* Matrix View: Generation Mix */
         <div className="space-y-4">
+          <AnalyticalFamilies />
           <VisualPanel title="Generation Mix" subtitle="Latest measured generation shares by subsystem">
             <GenerationMix latestIndex={latestIndex} />
           </VisualPanel>
@@ -586,11 +658,26 @@ export function SINKpiPanel({
             />
           </div>
 
-          {chartSeries.length === 0 || periods.length === 0 ? (
+          {trendState === "loading" ? (
+            <StateBanner variant="loading" title="Loading cached SIN series…" size="dense" />
+          ) : trendState === "error" ? (
+            <StateBanner
+              variant="error"
+              title="Could not load SIN series"
+              message={seriesQuery.error instanceof Error ? seriesQuery.error.message : String(seriesQuery.error)}
+              onRetry={() => { void seriesQuery.refetch(); }}
+            />
+          ) : trendState === "selection-required" ? (
             <StateBanner
               variant="empty"
-              title="Nothing to plot"
-              message="Select at least one subsystem using the Subsystems picker above."
+              title="Select a subsystem to plot"
+              message="Choose one or more subsystems using the Subsystems picker above."
+            />
+          ) : trendState === "empty" ? (
+            <StateBanner
+              variant="empty"
+              title="No cached observations"
+              message="No local SIN observations match this indicator, subsystem selection, and range."
             />
           ) : (
             <div className="rounded border border-zinc-800 bg-zinc-950/35 p-4">
@@ -694,47 +781,85 @@ function VisualPanel({
   );
 }
 
+function AnalyticalFamilies() {
+  return (
+    <section className="min-w-0 rounded border border-zinc-800 bg-zinc-950/35">
+      <div className="border-b border-zinc-800 px-4 py-3">
+        <h4 className="text-sm font-medium text-zinc-100">Power System evidence</h4>
+        <p className="text-[11px] text-zinc-500">Current local subsystem evidence, grouped by the approved analytical role.</p>
+      </div>
+      <div className="grid divide-y divide-zinc-800 md:grid-cols-2 md:divide-x md:divide-y-0">
+        {SIN_ANALYTICAL_FAMILIES.map((family) => (
+          <div key={family.title} className="p-3">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+              <h5 className="text-xs font-medium text-zinc-200">{family.title}</h5>
+              <span className="font-mono text-[10px] uppercase tracking-wide text-cyan-300">{family.role}</span>
+            </div>
+            <p className="mt-1 text-[11px] text-zinc-400">{family.evidence}</p>
+            <p className="mt-1 text-[10px] leading-snug text-zinc-600">{family.boundary}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+export function buildGenerationMixRow(latestIndex: LatestIndex, subsystemCode: string) {
+  const parts = GENERATION_MIX.map((item) => ({
+    ...item,
+    value: latestIndex.get(key(item.kpi, subsystemCode))?.value ?? null,
+  }));
+  return {
+    parts,
+    available: parts.some((part) => part.value !== null),
+    complete: parts.every((part) => part.value !== null),
+  };
+}
+
 export function GenerationMix({ latestIndex }: { latestIndex: LatestIndex }) {
-  const mix = [
-    { kpi: KPI.mixHydro, label: "Hydro", color: "#60A5FA" },
-    { kpi: KPI.mixThermal, label: "Thermal", color: "#FB923C" },
-    { kpi: KPI.mixWind, label: "Wind", color: "#4ADE80" },
-    { kpi: KPI.mixSolar, label: "Solar", color: "#FBBF24" },
-  ];
   return (
     <div className="space-y-4">
       {SUBSYSTEMS.map((sub) => {
-        const parts = mix.map((item) => ({
-          ...item,
-          value: latestIndex.get(key(item.kpi, sub.code))?.value ?? 0,
-        }));
+        const row = buildGenerationMixRow(latestIndex, sub.code);
         return (
           <div key={sub.code}>
             <div className="mb-1 flex items-center justify-between">
               <span className="text-xs text-zinc-300">{sub.label}</span>
               <span className="font-mono text-[10px] text-zinc-500">{sub.short}</span>
             </div>
-            <div className="flex h-7 overflow-hidden rounded border border-zinc-800 bg-zinc-900">
-              {parts.map((part) => (
-                <div
-                  key={part.kpi}
-                  title={`${part.label}: ${formatNumber(part.value)}%`}
-                  className="relative flex items-center justify-center"
-                  style={{ width: `${Math.max(0, part.value)}%`, background: part.color }}
-                >
-                  {part.value > 8 && (
-                    <span className="text-[10px] font-medium text-zinc-900/80">
-                      {Math.round(part.value)}%
-                    </span>
-                  )}
+            {!row.available ? (
+              <div className="flex h-7 items-center rounded border border-dashed border-zinc-700 bg-zinc-900/50 px-2 text-[10px] text-zinc-500">Mix unavailable in the local cache</div>
+            ) : (
+              <>
+                <div className="flex h-7 overflow-hidden rounded border border-zinc-800 bg-zinc-900">
+                  {row.parts.map((part) => part.value === null ? null : (
+                    <div
+                      key={part.kpi}
+                      title={`${part.label}: ${formatNumber(part.value)}%`}
+                      className="relative flex items-center justify-center"
+                      style={{ width: `${Math.max(0, part.value)}%`, background: part.color }}
+                    >
+                      {part.value > 8 && (
+                        <span className="text-[10px] font-medium text-zinc-900/80">
+                          {Math.round(part.value)}%
+                        </span>
+                      )}
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+                {row.parts.some((part) => part.value === 0) && (
+                  <p className="mt-1 text-[10px] text-zinc-400">
+                    Measured zero: {row.parts.filter((part) => part.value === 0).map((part) => `${part.label} 0%`).join(", ")}
+                  </p>
+                )}
+                {!row.complete && <p className="mt-1 text-[10px] text-amber-300">Partial measurement — unavailable technologies are not shown as zero or normalized.</p>}
+              </>
+            )}
           </div>
         );
       })}
       <div className="flex flex-wrap gap-3 text-[10px] text-zinc-500">
-        {mix.map((part) => (
+        {GENERATION_MIX.map((part) => (
           <span key={part.kpi} className="flex items-center gap-1.5">
             <span className="h-2.5 w-2.5 rounded-sm" style={{ background: part.color }} />
             {part.label}
@@ -816,7 +941,7 @@ function SubsystemAuditTable({
   );
 }
 
-function SourcePanel({ dashboard }: { dashboard: SINKPIDashboardResponse }) {
+export function SourcePanel({ dashboard }: { dashboard: SINKPIDashboardResponse }) {
   return (
     <section className="rounded border border-zinc-800 bg-zinc-950/35 p-4">
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
@@ -830,29 +955,75 @@ function SourcePanel({ dashboard }: { dashboard: SINKPIDashboardResponse }) {
           Last successful update: {formatDateTime(dashboard.last_successful_update)}
         </span>
       </div>
-      <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
-        {dashboard.source_statuses.map((source) => (
+      <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+        {dashboard.source_statuses.map((source) => {
+          const health = describeSINSourceHealth(source);
+          return (
           <div key={`${source.source}:${source.dataset}`} className="rounded border border-zinc-800 bg-zinc-900/35 p-3">
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-medium text-zinc-200">{source.source}</span>
-              <span className={source.last_error ? "text-[10px] text-amber-300" : "text-[10px] text-green-300"}>
-                {source.last_error ? "partial" : source.last_status ?? "idle"}
+              <span className={`text-[10px] ${health.tone}`}>
+                {health.label}
               </span>
             </div>
             <p className="mt-1 truncate font-mono text-[10px] text-zinc-500" title={source.dataset}>{source.dataset}</p>
             <dl className="mt-3 space-y-1 text-[11px]">
               <SourceStat label="Frequency" value={source.frequency} />
               <SourceStat label="Records" value={source.local_records_count.toLocaleString("en-US")} />
-              <SourceStat label="Snapshot" value={formatDateTime(source.last_snapshot_at)} />
+              <SourceStat label="Latest local" value={formatDateTime(source.latest_reference_datetime)} />
+              <SourceStat label="Successful snapshot" value={formatDateTime(source.latest_successful_snapshot_at)} />
+              {source.latest_attempt_at && <SourceStat label={`Latest attempt (${source.latest_attempt_status ?? "unknown"})`} value={formatDateTime(source.latest_attempt_at)} />}
             </dl>
-            {source.last_error && (
-              <p className="mt-2 line-clamp-2 text-[10px] text-amber-300" title={source.last_error}>{source.last_error}</p>
+            {(health.missing || health.stale) && (
+              <p className="mt-2 text-[10px] text-zinc-400">
+                {[health.missing ? "No usable local rows" : null, health.stale ? "Local rows are stale" : null].filter(Boolean).join(" · ")}
+              </p>
+            )}
+            {health.currentError && (
+              <p className="mt-2 line-clamp-2 text-[10px] text-amber-300" title={health.currentError}>{health.currentError}</p>
             )}
           </div>
-        ))}
+          );
+        })}
       </div>
     </section>
   );
+}
+
+export function describeSINSourceHealth(source: SINKPISourceStatus) {
+  const label = source.health_state || source.last_status || "unknown";
+  const tone = label === "success"
+    ? "text-green-300"
+    : label === "failed" || label === "missing"
+      ? "text-red-300"
+      : label === "partial" || label === "stale"
+        ? "text-amber-300"
+        : "text-zinc-400";
+  return {
+    label,
+    tone,
+    missing: source.is_missing,
+    stale: source.is_stale,
+    currentError: source.last_error,
+  };
+}
+
+export function trendPresentationState({
+  isLoading,
+  isError,
+  hasSeries,
+  hasSelection,
+}: {
+  isLoading: boolean;
+  isError: boolean;
+  hasSeries: boolean;
+  hasSelection: boolean;
+}): "loading" | "error" | "selection-required" | "empty" | "ready" {
+  if (!hasSelection) return "selection-required";
+  if (isLoading) return "loading";
+  if (isError) return "error";
+  if (!hasSeries) return "empty";
+  return "ready";
 }
 
 function SourceStat({ label, value }: { label: string; value: string }) {

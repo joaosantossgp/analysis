@@ -120,6 +120,14 @@ export interface SINKPISourceStatus {
   local_records_count: number;
   last_status: string | null;
   last_error: string | null;
+  latest_reference_datetime: string | null;
+  latest_successful_snapshot_at: string | null;
+  latest_attempt_at: string | null;
+  latest_attempt_status: string | null;
+  latest_failure_at: string | null;
+  health_state: "success" | "partial" | "failed" | "missing" | "stale" | "unknown" | string;
+  is_missing: boolean;
+  is_stale: boolean;
 }
 
 export interface SINKPIDashboardResponse {
