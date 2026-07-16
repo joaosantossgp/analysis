@@ -37,6 +37,9 @@ import type {
   PlantParcelManualImportParams,
   PlantParcelManualImportResult,
   SINKPIDashboardResponse,
+  SINKPIDailyChartObservation,
+  SINKPIDailyChartSeriesParams,
+  SINKPIDailyChartSeriesResponse,
   SINKPIHealthResponse,
   SINKPIObservation,
   SINKPIRefreshParams,
@@ -77,6 +80,10 @@ export type SINKPIDashboardResult =
 export type SINKPISeriesResult =
   | { mode: "desktop"; values: SINKPIObservation[] }
   | { mode: "browser"; values: []; reason: string };
+
+export type SINKPIDailyChartSeriesResult =
+  | { mode: "desktop"; series: SINKPIDailyChartSeriesResponse }
+  | { mode: "browser"; series: null; reason: string };
 
 export type SINKPIHealthResult =
   | { mode: "desktop"; health: SINKPIHealthResponse }
@@ -254,6 +261,39 @@ export async function fetchSINKPISeries(
   );
   if (payload.error) throw new Error(payload.error);
   return { mode: "desktop", values: payload.values ?? [] };
+}
+
+export function assertUnambiguousDailyChartSlots(
+  values: SINKPIDailyChartObservation[],
+): void {
+  const validSlots = new Set<string>();
+  for (const value of values) {
+    if (value.value === null) continue;
+    const slot = `${value.kpi_id}|${value.subsystem_code}|${value.reference_date}`;
+    if (validSlots.has(slot)) {
+      throw new Error(
+        `Daily SIN chart response contains multiple provenance records for ${slot}. ` +
+        "The UI will not choose or re-aggregate a representative value.",
+      );
+    }
+    validSlots.add(slot);
+  }
+}
+
+export async function fetchSINKPIDailyChartSeries(
+  params?: SINKPIDailyChartSeriesParams,
+): Promise<SINKPIDailyChartSeriesResult> {
+  const mode: BridgeMode = getBridgeMode();
+  if (mode === "browser") {
+    return { mode: "browser", series: null, reason: BROWSER_REASON };
+  }
+  const payload: SINKPIDailyChartSeriesResponse = await callBridge(
+    "get_sin_kpi_daily_chart_series",
+    params ?? {},
+  );
+  if (payload.error) throw new Error(payload.error);
+  assertUnambiguousDailyChartSlots(payload.values ?? []);
+  return { mode: "desktop", series: payload };
 }
 
 export async function fetchSINKPIHealth(): Promise<SINKPIHealthResult> {

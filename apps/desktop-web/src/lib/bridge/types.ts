@@ -10,6 +10,8 @@ import type {
   SINKPIDashboardResponse,
   SINKPISeriesParams,
   SINKPISeriesResponse,
+  SINKPIDailyChartSeriesParams,
+  SINKPIDailyChartSeriesResponse,
   SINKPIHealthResponse,
   SINKPIRefreshParams,
   SINKPIRefreshResult,
@@ -157,6 +159,10 @@ export type {
   SINKPIDashboardResponse,
   SINKPISeriesParams,
   SINKPISeriesResponse,
+  SINKPIDailyChartRawDrilldown,
+  SINKPIDailyChartObservation,
+  SINKPIDailyChartSeriesParams,
+  SINKPIDailyChartSeriesResponse,
   SINKPIHealthResponse,
   SINKPIRefreshParams,
   SINKPIRefreshResult,
@@ -1619,6 +1625,7 @@ export interface BridgeApi {
   export_country_kpis_excel(params?: { iso_codes?: string[]; kpi_ids?: string[] }): Promise<{ path: string | null; error?: string }>;
   get_sin_kpi_dashboard(params?: Record<string, unknown>): Promise<SINKPIDashboardResponse>;
   get_sin_kpi_series(params?: SINKPISeriesParams): Promise<SINKPISeriesResponse>;
+  get_sin_kpi_daily_chart_series(params?: SINKPIDailyChartSeriesParams): Promise<SINKPIDailyChartSeriesResponse>;
   get_sin_kpi_health(params?: Record<string, unknown>): Promise<SINKPIHealthResponse>;
   refresh_sin_kpis(params?: SINKPIRefreshParams): Promise<SINKPIRefreshResult>;
   get_energy_mart_status(params?: Record<string, unknown>): Promise<EnergyMartStatusResponse>;
@@ -1710,6 +1717,7 @@ export interface BridgeApi {
   export_country_kpis_excel(params?: { iso_codes?: string[]; kpi_ids?: string[] }): Promise<{ path: string | null; error?: string }>;
   get_sin_kpi_dashboard(params?: Record<string, unknown>): Promise<SINKPIDashboardResponse>;
   get_sin_kpi_series(params?: SINKPISeriesParams): Promise<SINKPISeriesResponse>;
+  get_sin_kpi_daily_chart_series(params?: SINKPIDailyChartSeriesParams): Promise<SINKPIDailyChartSeriesResponse>;
   get_sin_kpi_health(params?: Record<string, unknown>): Promise<SINKPIHealthResponse>;
   refresh_sin_kpis(params?: SINKPIRefreshParams): Promise<SINKPIRefreshResult>;
   get_energy_mart_status(params?: Record<string, unknown>): Promise<EnergyMartStatusResponse>;

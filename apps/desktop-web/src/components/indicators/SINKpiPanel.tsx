@@ -5,12 +5,12 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { StateBanner } from "@/components/feedback/StateBanner";
 import {
   fetchSINKPIDashboard,
+  fetchSINKPIDailyChartSeries,
   fetchSINKPIHealth,
-  fetchSINKPISeries,
   triggerSINKPIRefresh,
   fetchKPICatalog,
 } from "@/lib/api/energyKpis";
-import type { SINKPIDashboardResponse, SINKPIObservation, SINKPISourceStatus } from "@/lib/bridge/types";
+import type { SINKPIDailyChartObservation, SINKPIDailyChartSeriesResponse, SINKPIDashboardResponse, SINKPIObservation, SINKPISourceStatus } from "@/lib/bridge/types";
 import { useSubsystemKpiConfig } from "@/lib/indicators/useSubsystemKpiConfig";
 import { IndicatorControls } from "./IndicatorControls";
 import { IndicatorLegend } from "./IndicatorLegend";
@@ -119,6 +119,37 @@ type LatestIndex = Map<string, SINKPIObservation>;
 
 function isPctKpi(kpiId: string): boolean {
   return kpiId.endsWith("pct") || kpiId.includes("share");
+}
+
+export function summariseDailyChartAudit(
+  series: Pick<SINKPIDailyChartSeriesResponse, "values" | "count" | "raw_row_count" | "coverage">,
+) {
+  const unique = (items: string[]) => [...new Set(items)].sort();
+  const snapshots = unique(series.values.flatMap((value) => value.snapshot_ids));
+  const startDate = series.coverage.start_date;
+  const endDate = series.coverage.end_date;
+  return {
+    coverage: startDate && endDate ? `${startDate} to ${endDate}` : "No returned coverage",
+    dailyPointCount: series.count,
+    rawRowCount: series.raw_row_count,
+    sources: unique(series.values.flatMap((value) => value.sources)),
+    datasets: unique(series.values.flatMap((value) => value.source_datasets)),
+    fields: unique(series.values.flatMap((value) => value.source_fields)),
+    snapshotCount: snapshots.length,
+    formulas: unique(series.values.map((value) => value.formula)),
+    qualityStatuses: unique(series.values.flatMap((value) => value.data_quality_statuses)),
+  };
+}
+
+export function dailyChartDates(
+  values: SINKPIDailyChartObservation[],
+  kpiId: string,
+): string[] {
+  const dates = new Set<string>();
+  for (const value of values) {
+    if (value.kpi_id === kpiId) dates.add(value.reference_date);
+  }
+  return [...dates].sort();
 }
 
 const RANGE_OPTIONS = [
@@ -230,12 +261,11 @@ export function SINKpiPanel({
   });
 
   const seriesQuery = useQuery({
-    queryKey: ["sin-kpi-series", startDatetime, trendKpiId],
-    queryFn: () => fetchSINKPISeries({
+    queryKey: ["sin-kpi-daily-chart-series", startDatetime, trendKpiId],
+    queryFn: () => fetchSINKPIDailyChartSeries({
       kpi_ids: [trendKpiId],
       subsystem_codes: SUBSYSTEMS.map((s) => s.code),
       start_datetime: startDatetime,
-      limit: 50_000,
     }),
     enabled: bridgeReady && viewMode === "trend" && !!trendKpiId,
     staleTime: 60_000,
@@ -244,90 +274,23 @@ export function SINKpiPanel({
   const dashboard =
     dashboardQuery.data?.mode === "desktop" ? dashboardQuery.data.dashboard : null;
   const health = healthQuery.data?.mode === "desktop" ? healthQuery.data.health : null;
-  const series = seriesQuery.data?.mode === "desktop" ? seriesQuery.data.values : [];
-
-  const aggregatedSeries = useMemo(() => {
-    if (!series || series.length === 0) return [];
-
-    const hasTime = series.some((row) => {
-      const parts = row.reference_datetime.split(/[ T]/);
-      if (parts.length > 1) {
-        const timePart = parts[1];
-        return timePart !== "00:00:00" && timePart !== "00:00:00.000Z" && timePart !== "00:00";
-      }
-      return false;
-    });
-
-    if (rangeDays <= 30 || !hasTime) {
-      return series;
-    }
-
-    const groups = new Map<string, { sum: number; count: number; row: (typeof series)[0] }>();
-    for (const row of series) {
-      if (row.value === null) continue;
-      const datePart = row.reference_datetime.slice(0, 10);
-      const key = `${row.subsystem_code}|${row.kpi_id}|${datePart}`;
-
-      const existing = groups.get(key);
-      if (existing) {
-        existing.sum += row.value;
-        existing.count += 1;
-      } else {
-        groups.set(key, {
-          sum: row.value,
-          count: 1,
-          row: {
-            ...row,
-            reference_datetime: `${datePart}T00:00:00`,
-          },
-        });
-      }
-    }
-
-    const result: typeof series = [];
-    for (const group of groups.values()) {
-      result.push({
-        ...group.row,
-        value: group.sum / group.count,
-      });
-    }
-    return result;
-  }, [series, rangeDays]);
+  const dailyChart = seriesQuery.data?.mode === "desktop" ? seriesQuery.data.series : null;
+  const series: SINKPIDailyChartObservation[] = dailyChart?.values ?? [];
+  const dailyChartAudit = useMemo(
+    () => (dailyChart ? summariseDailyChartAudit(dailyChart) : null),
+    [dailyChart],
+  );
 
   const sortedDatetimes = useMemo(() => {
-    const dates = new Set<string>();
-    for (const row of aggregatedSeries) {
-      if (row.kpi_id === trendKpiId && row.value !== null) {
-        dates.add(row.reference_datetime);
-      }
-    }
-    return [...dates].sort();
-  }, [aggregatedSeries, trendKpiId]);
+    return dailyChartDates(series, trendKpiId);
+  }, [series, trendKpiId]);
 
   const periods = useMemo(() => {
-    const hasTime = sortedDatetimes.some((dt) => {
-      const parts = dt.split(/[ T]/);
-      if (parts.length > 1) {
-        const timePart = parts[1];
-        return timePart !== "00:00:00" && timePart !== "00:00:00.000Z" && timePart !== "00:00";
-      }
-      return false;
-    });
-
-    const spansMultipleYears = sortedDatetimes.length > 0 &&
-      sortedDatetimes[0].slice(0, 4) !== sortedDatetimes[sortedDatetimes.length - 1].slice(0, 4);
-
     return sortedDatetimes.map((dt) => {
       const match = dt.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/);
       if (!match) return dt;
-      const [, year, month, day, hour, minute] = match;
+      const [, year, month, day] = match;
       const yy = year.slice(2);
-      if (hasTime && hour !== undefined && minute !== undefined) {
-        if (spansMultipleYears) {
-          return `${month}/${day}/${yy} ${hour}:${minute}`;
-        }
-        return `${month}/${day} ${hour}:${minute}`;
-      }
       return `${month}/${day}/${yy}`;
     });
   }, [sortedDatetimes]);
@@ -344,9 +307,9 @@ export function SINKpiPanel({
     return plottable.map((sel) => {
       const sub = SUBSYSTEMS.find((s) => s.code === sel.id)!;
       const valueByDt = new Map<string, number>();
-      for (const row of aggregatedSeries) {
+      for (const row of series) {
         if (row.kpi_id === trendKpiId && row.subsystem_code === sub.code && row.value !== null) {
-          valueByDt.set(row.reference_datetime, row.value);
+          valueByDt.set(row.reference_date, row.value);
         }
       }
 
@@ -454,7 +417,7 @@ export function SINKpiPanel({
     }
     void qc.invalidateQueries({ queryKey: ["sin-kpi-dashboard"] });
     void qc.invalidateQueries({ queryKey: ["sin-kpi-health"] });
-    void qc.invalidateQueries({ queryKey: ["sin-kpi-series"] });
+    void qc.invalidateQueries({ queryKey: ["sin-kpi-daily-chart-series"] });
   }, [backendRefreshRunning, dashboard, health, isRefreshing, qc, refreshStartedAt]);
 
   const handleRefresh = async () => {
@@ -482,7 +445,7 @@ export function SINKpiPanel({
         });
         void qc.invalidateQueries({ queryKey: ["sin-kpi-dashboard"] });
         void qc.invalidateQueries({ queryKey: ["sin-kpi-health"] });
-        void qc.invalidateQueries({ queryKey: ["sin-kpi-series"] });
+        void qc.invalidateQueries({ queryKey: ["sin-kpi-daily-chart-series"] });
       }
       await Promise.all([dashboardQuery.refetch(), healthQuery.refetch()]);
     } catch (error) {
@@ -669,7 +632,7 @@ export function SINKpiPanel({
           ) : trendState === "error" ? (
             <StateBanner
               variant="error"
-              title="Could not load SIN series"
+              title="Could not load daily SIN chart"
               message={seriesQuery.error instanceof Error ? seriesQuery.error.message : String(seriesQuery.error)}
               onRetry={() => { void seriesQuery.refetch(); }}
             />
@@ -690,12 +653,12 @@ export function SINKpiPanel({
               <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-mono uppercase tracking-wide text-zinc-500">
                 <span>ONS/CCEE local cache</span>
                 <span className="text-zinc-700">·</span>
-                <span>Subsystem grain</span>
+                <span>Daily local calculation</span>
                 <span className="text-zinc-700">·</span>
-                <span>Frequency varies by source</span>
+                <span>Source lineage retained</span>
                 <span className="text-zinc-700">·</span>
                 <span>
-                  {periods[0] ?? ""} to {periods[periods.length - 1] ?? ""}
+                  {dailyChartAudit?.coverage ?? "No returned coverage"}
                 </span>
               </div>
               <IndicatorChart
@@ -705,6 +668,21 @@ export function SINKpiPanel({
                 height={320}
                 xTickFormatter={xTickFormatter}
               />
+              {dailyChartAudit && (
+                <details className="mt-3 border-t border-zinc-800 pt-3 text-xs text-zinc-400">
+                  <summary className="cursor-pointer font-mono uppercase tracking-wide text-zinc-300">
+                    Daily chart audit · {dailyChartAudit.dailyPointCount} daily points · {dailyChartAudit.rawRowCount} raw observations
+                  </summary>
+                  <dl className="mt-2 grid gap-x-5 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
+                    <div><dt className="text-zinc-600">Sources</dt><dd>{dailyChartAudit.sources.join(", ") || "—"}</dd></div>
+                    <div><dt className="text-zinc-600">Datasets</dt><dd>{dailyChartAudit.datasets.join(", ") || "—"}</dd></div>
+                    <div><dt className="text-zinc-600">Fields</dt><dd>{dailyChartAudit.fields.join(", ") || "—"}</dd></div>
+                    <div><dt className="text-zinc-600">Snapshots</dt><dd>{dailyChartAudit.snapshotCount}</dd></div>
+                    <div><dt className="text-zinc-600">Formula</dt><dd>{dailyChartAudit.formulas.join("; ") || "—"}</dd></div>
+                    <div><dt className="text-zinc-600">Data quality</dt><dd>{dailyChartAudit.qualityStatuses.join(", ") || "—"}</dd></div>
+                  </dl>
+                </details>
+              )}
             </div>
           )}
 

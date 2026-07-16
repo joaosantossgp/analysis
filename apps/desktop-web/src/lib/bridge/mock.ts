@@ -52,6 +52,7 @@ import type {
   SectorDetailResponse,
   SettingsHealthSummary,
   SINKPIHealthResponse,
+  SINKPIDailyChartSeriesResponse,
   SINKPISeriesResponse,
   StatementMatrix,
   StorageInventory,
@@ -68,6 +69,14 @@ import {
   MOCK_SIN_DASHBOARD,
   MOCK_SIN_VALUES,
 } from "./mockEnergyFixtures";
+
+const MOCK_SIN_FREQUENCY_BY_DATASET: Record<string, string> = {
+  balanco_energia_subsistema: "hourly",
+  ear_diario_subsistema: "daily",
+  ena_diario_subsistema: "daily",
+  cmo_semihorario: "semi-hourly",
+  pld_horario: "hourly",
+};
 
 
 // ---------------------------------------------------------------------------
@@ -1531,6 +1540,107 @@ export function createMockBridge(): Partial<BridgeApi> {
         return true;
       });
       return { values, count: values.length } satisfies SINKPISeriesResponse;
+    },
+
+    get_sin_kpi_daily_chart_series: async (params) => {
+      const p = params as Record<string, unknown> | undefined;
+      const kpiIds = Array.isArray(p?.kpi_ids) ? new Set(p?.kpi_ids as string[]) : null;
+      const subsystemCodes = Array.isArray(p?.subsystem_codes) ? new Set(p?.subsystem_codes as string[]) : null;
+      const startDatetime = typeof p?.start_datetime === "string" ? p.start_datetime : null;
+      const endDatetime = typeof p?.end_datetime === "string" ? p.end_datetime : null;
+      const request = {
+        kpi_ids: kpiIds ? [...kpiIds] : [],
+        subsystem_codes: subsystemCodes ? [...subsystemCodes] : [],
+        start_datetime: startDatetime,
+        end_datetime: endDatetime,
+      };
+      if (p && Object.prototype.hasOwnProperty.call(p, "limit")) {
+        return {
+          values: [],
+          count: 0,
+          raw_row_count: 0,
+          request,
+          coverage: { start_date: null, end_date: null },
+          generated_at: NOW,
+          error: "get_sin_kpi_daily_chart_series does not accept limit",
+        } satisfies SINKPIDailyChartSeriesResponse;
+      }
+      const rawValues = MOCK_SIN_VALUES.filter((row) => {
+        if (kpiIds && !kpiIds.has(row.kpi_id)) return false;
+        if (subsystemCodes && !subsystemCodes.has(row.subsystem_code)) return false;
+        if (startDatetime && row.reference_datetime < startDatetime) return false;
+        if (endDatetime && row.reference_datetime > endDatetime) return false;
+        return true;
+      });
+      const groups = new Map<string, typeof rawValues>();
+      const rawReaderRowCounts = new Map<string, number>();
+      for (const row of rawValues) {
+        const referenceDate = row.reference_datetime.slice(0, 10);
+        const frequency = MOCK_SIN_FREQUENCY_BY_DATASET[row.source_dataset] ?? "unknown";
+        const key = [
+          row.kpi_id,
+          row.subsystem_code,
+          referenceDate,
+          row.unit,
+          frequency,
+          row.source,
+          row.source_dataset,
+          row.source_field,
+          row.snapshot_id,
+        ].join("|");
+        const rawReaderKey = [row.kpi_id, row.subsystem_code, referenceDate].join("|");
+        rawReaderRowCounts.set(rawReaderKey, (rawReaderRowCounts.get(rawReaderKey) ?? 0) + 1);
+        groups.set(key, [...(groups.get(key) ?? []), row]);
+      }
+      const values = [...groups.values()].map((rows) => {
+        const first = rows[0];
+        const usable = rows.filter((row) => row.value !== null);
+        const referenceDate = first.reference_datetime.slice(0, 10);
+        const dayStart = `${referenceDate}T00:00:00`;
+        const dayEnd = `${referenceDate}T23:59:59.999999`;
+        const rawReaderKey = [first.kpi_id, first.subsystem_code, referenceDate].join("|");
+        return {
+          kpi_id: first.kpi_id,
+          subsystem_code: first.subsystem_code,
+          subsystem_name: first.subsystem_name,
+          reference_date: referenceDate,
+          value: usable.length > 0
+            ? usable.reduce((sum, row) => sum + (row.value ?? 0), 0) / usable.length
+            : null,
+          unit: first.unit,
+          frequency: MOCK_SIN_FREQUENCY_BY_DATASET[first.source_dataset] ?? "unknown",
+          raw_row_count: rows.length,
+          contributing_observation_count: usable.length,
+          sources: [...new Set(rows.map((row) => row.source))],
+          source_datasets: [...new Set(rows.map((row) => row.source_dataset))],
+          source_fields: [...new Set(rows.map((row) => row.source_field))],
+          data_quality_statuses: [...new Set(rows.map((row) => row.data_quality_status))],
+          snapshot_ids: [...new Set(rows.map((row) => row.snapshot_id))],
+          aggregation: "daily_mean_non_null",
+          formula: "mean(normalized_value where normalized_value is not null)",
+          calculated_at: NOW,
+          raw_drilldown: {
+            method: "get_sin_kpi_series",
+            kpi_ids: [first.kpi_id],
+            subsystem_codes: [first.subsystem_code],
+            start_datetime: startDatetime && startDatetime > dayStart ? startDatetime : dayStart,
+            end_datetime: endDatetime && endDatetime < dayEnd ? endDatetime : dayEnd,
+            unit_context: first.unit,
+            raw_reader_row_count: rawReaderRowCounts.get(rawReaderKey) ?? 0,
+          },
+        };
+      });
+      return {
+        values,
+        count: values.length,
+        raw_row_count: rawValues.length,
+        request,
+        coverage: {
+          start_date: values.at(0)?.reference_date ?? null,
+          end_date: values.at(-1)?.reference_date ?? null,
+        },
+        generated_at: NOW,
+      } satisfies SINKPIDailyChartSeriesResponse;
     },
 
     get_sin_kpi_health: async () => ({
