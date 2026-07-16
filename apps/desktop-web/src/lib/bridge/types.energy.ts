@@ -156,6 +156,62 @@ export interface SINKPISeriesResponse {
   error?: string;
 }
 
+export interface SINKPIDailyChartRawDrilldown {
+  method: "get_sin_kpi_series" | string;
+  kpi_ids: string[];
+  subsystem_codes: string[];
+  start_datetime: string;
+  end_datetime: string;
+  unit_context: string;
+  raw_reader_row_count: number;
+}
+
+export interface SINKPIDailyChartObservation {
+  kpi_id: string;
+  subsystem_code: "S" | "SE_CO" | "NE" | "N" | string;
+  subsystem_name: string;
+  reference_date: string;
+  value: number | null;
+  unit: string;
+  frequency: string;
+  raw_row_count: number;
+  contributing_observation_count: number;
+  sources: string[];
+  source_datasets: string[];
+  source_fields: string[];
+  data_quality_statuses: string[];
+  snapshot_ids: string[];
+  aggregation: string;
+  formula: string;
+  calculated_at: string;
+  raw_drilldown: SINKPIDailyChartRawDrilldown;
+}
+
+export interface SINKPIDailyChartSeriesParams {
+  kpi_ids?: string[];
+  subsystem_codes?: string[];
+  start_datetime?: string;
+  end_datetime?: string;
+}
+
+export interface SINKPIDailyChartSeriesResponse {
+  values: SINKPIDailyChartObservation[];
+  count: number;
+  raw_row_count: number;
+  request: {
+    kpi_ids: string[];
+    subsystem_codes: string[];
+    start_datetime: string | null;
+    end_datetime: string | null;
+  };
+  coverage: {
+    start_date: string | null;
+    end_date: string | null;
+  };
+  generated_at: string;
+  error?: string;
+}
+
 export interface SINKPIHealthResponse {
   last_refresh_at: string | null;
   last_refresh_status: string | null;

@@ -93,7 +93,14 @@ observation drilldown contract and its limit/order behavior is unchanged.
 
 The backend contract does not itself change the Vite chart. A frontend task
 must consume it explicitly and preserve the same unit, provenance, empty, and
-error-state boundaries.
+error-state boundaries. The chart consumer must request this daily method
+without a client-side row limit and must not fetch the raw series to repeat its
+aggregation. It must display the response's actual coverage and retain the
+returned source, dataset, field, snapshot, formula, and data-quality evidence.
+Before treating a KPI/subsystem/date as one chart slot, the consumer must
+reject multiple non-null daily points with distinct provenance; it must not
+silently choose a last value or calculate another representative value. Raw
+inspection remains an explicit `get_sin_kpi_series` drilldown action.
 
 ## Known Limitations
 

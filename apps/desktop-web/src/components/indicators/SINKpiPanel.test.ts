@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import type { SINKPIObservation, SINKPISourceStatus } from "@/lib/bridge/types";
+import type { SINKPIDailyChartObservation, SINKPIObservation, SINKPISourceStatus } from "@/lib/bridge/types";
 import { createMockBridge } from "@/lib/bridge/mock";
 import { MOCK_KPI_CATALOG, MOCK_SIN_DASHBOARD, MOCK_SIN_VALUES } from "@/lib/bridge/mockEnergyFixtures";
+import * as energyKpis from "@/lib/api/energyKpis";
 
 import {
   buildGenerationMixRow,
@@ -17,6 +18,7 @@ import {
   SourcePanel,
   trendPresentationState,
 } from "./SINKpiPanel";
+import * as sinPanel from "./SINKpiPanel";
 import { CHANGE_COMPARISON_LABEL } from "./explorer/IndicatorDetailPanel";
 
 const latestIndex = new Map<string, SINKPIObservation>();
@@ -38,6 +40,38 @@ function sourceStatus(overrides: Partial<SINKPISourceStatus>): SINKPISourceStatu
     health_state: "success",
     is_missing: false,
     is_stale: false,
+    ...overrides,
+  };
+}
+
+function dailyChartValue(overrides: Partial<SINKPIDailyChartObservation>): SINKPIDailyChartObservation {
+  return {
+    kpi_id: "energy_utilities.sin.load_mwmed",
+    subsystem_code: "S",
+    subsystem_name: "South / Sul",
+    reference_date: "2026-07-09",
+    value: 10,
+    unit: "MWmed",
+    frequency: "half-hourly",
+    raw_row_count: 48,
+    contributing_observation_count: 48,
+    sources: ["ONS"],
+    source_datasets: ["load_half_hourly"],
+    source_fields: ["value"],
+    data_quality_statuses: ["ok"],
+    snapshot_ids: ["snapshot-1"],
+    aggregation: "daily_mean_non_null",
+    formula: "mean(normalized_value where normalized_value is not null)",
+    calculated_at: "2026-07-10T00:00:00+00:00",
+    raw_drilldown: {
+      method: "get_sin_kpi_series",
+      kpi_ids: ["energy_utilities.sin.load_mwmed"],
+      subsystem_codes: ["S"],
+      start_datetime: "2026-07-09T00:00:00",
+      end_datetime: "2026-07-09T23:59:59.999999",
+      unit_context: "MWmed",
+      raw_reader_row_count: 48,
+    },
     ...overrides,
   };
 }
@@ -185,6 +219,128 @@ describe("SIN Power System presentation", () => {
     expect(trendPresentationState({ isLoading: true, isError: false, hasSeries: false, hasSelection: false })).toBe("selection-required");
     expect(trendPresentationState({ isLoading: false, isError: false, hasSeries: false, hasSelection: true })).toBe("empty");
     expect(trendPresentationState({ isLoading: true, isError: false, hasSeries: false, hasSelection: true })).toBe("loading");
+  });
+
+  it("rejects ambiguous daily chart slots instead of choosing or re-aggregating a value", () => {
+    expect(() => energyKpis.assertUnambiguousDailyChartSlots([
+      dailyChartValue({ value: 10 }),
+      dailyChartValue({ value: 20, snapshot_ids: ["snapshot-2"] }),
+    ])).toThrow(/multiple provenance records/i);
+  });
+
+  it("keeps all-missing daily dates in the chart domain as gaps", () => {
+    const dailyChartDates = (sinPanel as {
+      dailyChartDates?: (values: SINKPIDailyChartObservation[], kpiId: string) => string[];
+    }).dailyChartDates;
+
+    expect(dailyChartDates?.([
+      dailyChartValue({ reference_date: "2026-07-01", value: 10 }),
+      dailyChartValue({ reference_date: "2026-07-02", value: null }),
+      dailyChartValue({ reference_date: "2026-07-03", value: 12 }),
+    ], "energy_utilities.sin.load_mwmed")).toEqual([
+      "2026-07-01",
+      "2026-07-02",
+      "2026-07-03",
+    ]);
+  });
+
+  it("keeps returned daily coverage and lineage accessible for the trend audit", () => {
+    const summariseDailyChartAudit = (sinPanel as {
+      summariseDailyChartAudit?: (series: {
+        values: SINKPIDailyChartObservation[];
+        count: number;
+        raw_row_count: number;
+        coverage: { start_date: string | null; end_date: string | null };
+      }) => unknown;
+    }).summariseDailyChartAudit;
+
+    expect(summariseDailyChartAudit?.({
+      values: [dailyChartValue({
+        sources: ["ONS", "CCEE"],
+        source_datasets: ["ons_daily", "ccee_daily"],
+        source_fields: ["value_a", "value_b"],
+        snapshot_ids: ["snapshot-1", "snapshot-2"],
+      })],
+      count: 1,
+      raw_row_count: 48,
+      coverage: { start_date: "2026-07-01", end_date: "2026-07-09" },
+    })).toEqual({
+      coverage: "2026-07-01 to 2026-07-09",
+      dailyPointCount: 1,
+      rawRowCount: 48,
+      sources: ["CCEE", "ONS"],
+      datasets: ["ccee_daily", "ons_daily"],
+      fields: ["value_a", "value_b"],
+      snapshotCount: 2,
+      formulas: ["mean(normalized_value where normalized_value is not null)"],
+      qualityStatuses: ["ok"],
+    });
+  });
+
+  it("exposes the daily SIN chart contract in browser-preview mock mode without a raw limit", async () => {
+    const cmoRow = MOCK_SIN_VALUES.find((row) =>
+      row.kpi_id === "energy_utilities.sin.cmo_brl_mwh" && row.subsystem_code === "S",
+    );
+    if (!cmoRow) throw new Error("Expected a mock CMO South observation");
+    const mockBridge = createMockBridge() as unknown as {
+      get_sin_kpi_daily_chart_series?: (params?: {
+        kpi_ids?: string[];
+        subsystem_codes?: string[];
+        start_datetime?: string;
+        end_datetime?: string;
+      }) => Promise<{
+        count: number;
+        raw_row_count: number;
+        values: Array<{
+          kpi_id: string;
+          reference_date: string;
+          value: number | null;
+          frequency: string;
+          aggregation: string;
+          formula: string;
+          raw_drilldown: {
+            method: string;
+            start_datetime: string;
+            end_datetime: string;
+            raw_reader_row_count: number;
+          };
+        }>;
+      }>;
+    };
+
+    const response = await mockBridge.get_sin_kpi_daily_chart_series?.({
+      kpi_ids: ["energy_utilities.sin.cmo_brl_mwh"],
+      subsystem_codes: ["S"],
+      start_datetime: cmoRow.reference_datetime,
+      end_datetime: cmoRow.reference_datetime,
+    });
+
+    expect(response).toMatchObject({ count: expect.any(Number), raw_row_count: expect.any(Number) });
+    expect(response?.count).toBeGreaterThan(0);
+    expect(response?.values).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kpi_id: "energy_utilities.sin.cmo_brl_mwh",
+        reference_date: cmoRow.reference_datetime.slice(0, 10),
+        frequency: "semi-hourly",
+        aggregation: "daily_mean_non_null",
+        formula: "mean(normalized_value where normalized_value is not null)",
+        raw_drilldown: expect.objectContaining({
+          method: "get_sin_kpi_series",
+          start_datetime: cmoRow.reference_datetime,
+          end_datetime: cmoRow.reference_datetime,
+          raw_reader_row_count: 1,
+        }),
+      }),
+    ]));
+
+    const rejected = await mockBridge.get_sin_kpi_daily_chart_series?.({
+      kpi_ids: ["energy_utilities.sin.cmo_brl_mwh"],
+      limit: 50_000,
+    } as {
+      kpi_ids: string[];
+      limit: number;
+    });
+    expect((rejected as { error?: string } | undefined)?.error).toContain("does not accept limit");
   });
 
   it("uses a frequency-neutral adjacent-point change label", () => {
