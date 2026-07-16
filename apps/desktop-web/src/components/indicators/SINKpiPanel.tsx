@@ -19,6 +19,8 @@ import type { IndicatorDef, ResolvedSeries, ChartType, AxisSide } from "@/lib/in
 
 const SIN_NS = "energy_utilities.sin";
 
+type SINKpiDef = Omit<IndicatorDef, "unit"> & { unit: string };
+
 const SUBSYSTEMS = [
   { code: "S", short: "S", label: "South / Sul", color: "#60A5FA" },
   { code: "SE_CO", short: "SE/CO", label: "Southeast-Center West", color: "#22D3EE" },
@@ -44,7 +46,7 @@ const KPI = {
   interchange: `${SIN_NS}.net_interchange_mwmed`,
 } as const;
 
-const SIN_KPI_META_FALLBACK: Record<string, { label: string; unit: string; category: string }> = {
+export const SIN_KPI_META_FALLBACK: Record<string, { label: string; unit: string; category: string }> = {
   "energy_utilities.sin.load_mwmed": { label: "Load", unit: "MWmed", category: "Load" },
   "energy_utilities.sin.generation_hydro_mwmed": { label: "Hydro Generation", unit: "MWmed", category: "Generation" },
   "energy_utilities.sin.generation_thermal_mwmed": { label: "Thermal Generation", unit: "MWmed", category: "Generation" },
@@ -61,10 +63,14 @@ const SIN_KPI_META_FALLBACK: Record<string, { label: string; unit: string; categ
   "energy_utilities.sin.ena_gross_pct_mlt": { label: "Gross ENA % MLT", unit: "pct", category: "Hydrology" },
   "energy_utilities.sin.ena_storable_mwmed": { label: "Storable ENA (MWmed)", unit: "number", category: "Hydrology" },
   "energy_utilities.sin.ena_storable_pct_mlt": { label: "Storable ENA % MLT", unit: "pct", category: "Hydrology" },
-  "energy_utilities.sin.cmo_brl_mwh": { label: "CMO", unit: "number", category: "Prices" },
-  "energy_utilities.sin.pld_brl_mwh": { label: "PLD", unit: "number", category: "Prices" },
+  "energy_utilities.sin.cmo_brl_mwh": { label: "CMO", unit: "R$/MWh", category: "Prices" },
+  "energy_utilities.sin.pld_brl_mwh": { label: "PLD", unit: "R$/MWh", category: "Prices" },
   "energy_utilities.sin.net_interchange_mwmed": { label: "Net Interchange", unit: "number", category: "Trade" },
 };
+
+export function normalizeSINCatalogUnit(unit: string): string {
+  return unit === "%" ? "pct" : unit === "ratio" ? "ratio" : unit;
+}
 
 const AUDIT_KPI_IDS = [
   KPI.load,
@@ -186,13 +192,13 @@ export function SINKpiPanel({
     return entries.filter((e) => e.kpi_id.startsWith("energy_utilities.sin"));
   }, [catalogQuery.data]);
 
-  const defs: IndicatorDef[] = useMemo(() => {
+  const defs: SINKpiDef[] = useMemo(() => {
     if (sinCatalog.length > 0) {
       return sinCatalog.map((e) => ({
         id: e.kpi_id,
         label: e.display_name,
         category: e.macro_category || "General",
-        unit: e.unit === "%" ? ("pct" as const) : e.unit === "ratio" ? ("ratio" as const) : ("number" as const),
+        unit: normalizeSINCatalogUnit(e.unit),
         isPlaceholder: false,
         available: true,
       }));
@@ -201,7 +207,7 @@ export function SINKpiPanel({
       id,
       label: meta.label,
       category: meta.category,
-      unit: meta.unit as "pct" | "ratio" | "number",
+      unit: meta.unit,
       isPlaceholder: false,
       available: true,
     }));
@@ -879,7 +885,7 @@ function SubsystemAuditTable({
   latestIndex: LatestIndex;
   dashboard: SINKPIDashboardResponse;
   selectedKpiIds: string[];
-  defs: IndicatorDef[];
+  defs: SINKpiDef[];
 }) {
   const rows = SUBSYSTEMS.map((sub) => ({
     sub,

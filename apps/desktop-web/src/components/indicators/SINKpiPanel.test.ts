@@ -12,6 +12,8 @@ import {
   GenerationMix,
   PowerSystemViewToggle,
   SIN_ANALYTICAL_FAMILIES,
+  SIN_KPI_META_FALLBACK,
+  normalizeSINCatalogUnit,
   SourcePanel,
   trendPresentationState,
 } from "./SINKpiPanel";
@@ -41,6 +43,15 @@ function sourceStatus(overrides: Partial<SINKPISourceStatus>): SINKPISourceStatu
 }
 
 describe("SIN Power System presentation", () => {
+  it("keeps price audit-table fallback units explicit", () => {
+    expect(SIN_KPI_META_FALLBACK["energy_utilities.sin.cmo_brl_mwh"]?.unit).toBe("R$/MWh");
+    expect(SIN_KPI_META_FALLBACK["energy_utilities.sin.pld_brl_mwh"]?.unit).toBe("R$/MWh");
+  });
+
+  it("preserves the catalog PLD unit for the audit table", () => {
+    expect(normalizeSINCatalogUnit("R$/MWh")).toBe("R$/MWh");
+  });
+
   it("defines only the four approved analytical families and keeps price confirmatory", () => {
     expect(SIN_ANALYTICAL_FAMILIES).toEqual(expect.arrayContaining([
       expect.objectContaining({ title: "Load and demand pressure", role: "Explanatory driver" }),
