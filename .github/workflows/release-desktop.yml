@@ -45,8 +45,16 @@ jobs:
           if (-not $raw) {
             $raw = "${{ github.ref_name }}" -replace '^v', ''
           }
+          if ($raw -match '^[0-9]+\.[0-9]+\.[0-9]+$') {
+            $prerelease = "false"
+          } elseif ($raw -match '^[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$') {
+            $prerelease = "true"
+          } else {
+            throw "Unsupported release version '$raw'. Expected X.Y.Z or X.Y.Z-rc.N."
+          }
           echo "VERSION=$raw" >> $env:GITHUB_OUTPUT
           echo "TAG=v$raw" >> $env:GITHUB_OUTPUT
+          echo "PRERELEASE=$prerelease" >> $env:GITHUB_OUTPUT
 
       - name: Build desktop bundle
         shell: pwsh
@@ -108,6 +116,7 @@ jobs:
         with:
           tag_name: ${{ steps.ver.outputs.TAG }}
           name: "CVM Analytics ${{ steps.ver.outputs.TAG }}"
+          prerelease: ${{ steps.ver.outputs.PRERELEASE }}
           generate_release_notes: true
           files: |
             ${{ steps.pkg.outputs.ZIP }}
