@@ -30,6 +30,13 @@ _APPDATA_DIR = Path(os.environ.get("LOCALAPPDATA", tempfile.gettempdir())) / "CV
 _SNOOZE_FILE = _APPDATA_DIR / "snooze.json"
 _VERSIONS_DIR = _APPDATA_DIR / "versions"
 _SNOOZE_DAYS = 7
+_VERSION_NUMBER = r"(?:0|[1-9][0-9]*)"
+# `git describe` appends this suffix only for commits after a tag, so zero is invalid.
+_GIT_DESCRIBE_DISTANCE = r"(?:[1-9][0-9]*)"
+_VERSION_RE = re.compile(
+    rf"v?({_VERSION_NUMBER})\.({_VERSION_NUMBER})\.({_VERSION_NUMBER})"
+    rf"(?:-rc\.({_VERSION_NUMBER}))?(?:-{_GIT_DESCRIBE_DISTANCE}-g[0-9a-f]+)?$"
+)
 # Shared with update_helper.ps1 ($LogPath) and tailed by the Status page
 # (bridge._collect_recent_diagnostics). The whole install flow logs here so a
 # failure remains inspectable after the app process exits.
@@ -48,15 +55,18 @@ def _log(message: str) -> None:
 
 
 def _parse_version(tag: str) -> tuple[int, ...]:
-    """Compare semver core X.Y.Z; ignore git-describe suffix (e.g. 1.2.3-4-gabc)."""
-    cleaned = tag.lstrip("v").strip()
-    m = re.match(r"^(\d+)\.(\d+)\.(\d+)", cleaned)
+    """Parse only project stable/rc.N versions and git-describe suffixes."""
+    m = _VERSION_RE.fullmatch(tag.strip())
     if m:
-        return tuple(int(x) for x in m.groups())
-    try:
-        return tuple(int(x) for x in cleaned.split("."))
-    except ValueError:
-        return (0,)
+        major, minor, patch, rc = m.groups()
+        return (
+            int(major),
+            int(minor),
+            int(patch),
+            1 if rc is None else 0,
+            int(rc or 0),
+        )
+    return (0,)
 
 
 class UpdateChecker:

@@ -101,6 +101,17 @@ Verified implementation:
   `%LOCALAPPDATA%\CVMAnalytics\update_rollback\<utc-ts>\`.
 - User data directories are denied by name and are not part of the bundle swap.
 
+### Accepted updater version tags
+
+The updater accepts only a stable `v?MAJOR.MINOR.PATCH` tag or the matching
+`-rc.N` prerelease form, with no leading zeros in numeric components. It also
+accepts the `git describe` form emitted after a tag:
+`<tag>-DISTANCE-g<lowercase-hex>`. `DISTANCE` must be positive
+(`[1-9][0-9]*`); an exact tag has no suffix, so `-0-g...` is invalid. Invalid
+or malformed tags are ignored and must never be offered as updates even when a
+matching release asset exists. Keep parser and both updater-path regressions in
+sync when extending this contract.
+
 User data under `%USERPROFILE%\Documents\CVMAnalytics` must not be overwritten
 by update/install flows.
 
