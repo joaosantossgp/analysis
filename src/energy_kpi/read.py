@@ -28,9 +28,12 @@ from src.platform.contracts import (
     CountryKPIValueDTO,
     EnergyKPIHealthDTO,
     KPICatalogEntryDTO,
+    SINKPIDailyChartObservationDTO,
+    SINKPIDailyChartSeriesDTO,
     SINKPIDashboardDTO,
     SINKPIHealthDTO,
     SINKPIObservationDTO,
+    SINKPIRawDrilldownDTO,
     SINKPISourceStatusDTO,
 )
 from src.energy_kpi.metrics import (
@@ -646,6 +649,174 @@ class EnergyKPIReadService:
         with self._engine().connect() as conn:
             rows = conn.execute(text(sql), params).fetchall()
         return [self._sin_row_to_dto(row) for row in rows]
+
+    def get_sin_kpi_daily_chart_series(
+        self,
+        *,
+        kpi_ids: list[str] | None = None,
+        subsystem_codes: list[str] | None = None,
+        start_datetime: str | None = None,
+        end_datetime: str | None = None,
+    ) -> SINKPIDailyChartSeriesDTO:
+        """Return locally calculated daily chart points with raw SIN lineage.
+
+        The aggregation preserves the legacy client formula: mean of non-null
+        normalized observations sharing a source calendar date. Unit is part of
+        the grouping key so incompatible scales can never be averaged together.
+        """
+        conditions = []
+        params: dict[str, Any] = {}
+        if kpi_ids:
+            placeholders = ",".join(f":kpi_{i}" for i in range(len(kpi_ids)))
+            conditions.append(f"v.kpi_id IN ({placeholders})")
+            for i, value in enumerate(kpi_ids):
+                params[f"kpi_{i}"] = value
+        if subsystem_codes:
+            placeholders = ",".join(f":sub_{i}" for i in range(len(subsystem_codes)))
+            conditions.append(f"v.subsystem_code IN ({placeholders})")
+            for i, value in enumerate(subsystem_codes):
+                params[f"sub_{i}"] = value
+        if start_datetime:
+            conditions.append("v.reference_datetime >= :start_datetime")
+            params["start_datetime"] = start_datetime
+        if end_datetime:
+            conditions.append("v.reference_datetime <= :end_datetime")
+            params["end_datetime"] = end_datetime
+
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+        sql = f"""
+            SELECT v.kpi_id, v.subsystem_code,
+                   COALESCE(d.display_name, v.subsystem_code) AS subsystem_name,
+                   v.reference_datetime, v.normalized_value, v.unit,
+                   COALESCE(c.frequency, 'unknown') AS frequency, v.source,
+                   v.source_dataset, v.source_field, v.data_quality_status,
+                   v.snapshot_id
+            FROM subsystem_kpi_values v
+            LEFT JOIN subsystem_dimension d ON d.subsystem_code = v.subsystem_code
+            LEFT JOIN kpi_catalog c ON c.kpi_id = v.kpi_id
+            {where}
+            ORDER BY v.reference_datetime, v.subsystem_code, v.kpi_id,
+                     v.unit, c.frequency, v.source, v.source_dataset, v.source_field, v.snapshot_id
+        """
+        with self._engine().connect() as conn:
+            rows = conn.execute(text(sql), params).fetchall()
+
+        generated_at = datetime.now(timezone.utc).isoformat()
+        groups: dict[tuple[str, str, str, str, str, str, str, str, str, str], dict[str, Any]] = {}
+        raw_reader_row_counts: dict[tuple[str, str, str], int] = {}
+        for row in rows:
+            kpi_id = str(row[0])
+            subsystem_code = str(row[1])
+            subsystem_name = str(row[2] or subsystem_code)
+            reference_date = str(row[3])[:10]
+            unit = str(row[5] or "")
+            frequency = str(row[6] or "unknown")
+            source = str(row[7] or "")
+            source_dataset = str(row[8] or "")
+            source_field = str(row[9] or "")
+            snapshot_id = str(row[11] or "")
+            key = (
+                kpi_id,
+                subsystem_code,
+                subsystem_name,
+                reference_date,
+                unit,
+                frequency,
+                source,
+                source_dataset,
+                source_field,
+                snapshot_id,
+            )
+            raw_reader_key = (kpi_id, subsystem_code, reference_date)
+            raw_reader_row_counts[raw_reader_key] = raw_reader_row_counts.get(raw_reader_key, 0) + 1
+            group = groups.setdefault(
+                key,
+                {
+                    "sum": 0.0,
+                    "raw_row_count": 0,
+                    "contributing_observation_count": 0,
+                    "sources": set(),
+                    "source_datasets": set(),
+                    "source_fields": set(),
+                    "data_quality_statuses": set(),
+                    "snapshot_ids": set(),
+                },
+            )
+            group["raw_row_count"] += 1
+            if row[4] is not None:
+                group["sum"] += float(row[4])
+                group["contributing_observation_count"] += 1
+            group["sources"].add(source)
+            group["source_datasets"].add(source_dataset)
+            group["source_fields"].add(source_field)
+            group["data_quality_statuses"].add(str(row[10] or "ok"))
+            group["snapshot_ids"].add(snapshot_id)
+
+        values: list[SINKPIDailyChartObservationDTO] = []
+        for key in sorted(groups, key=lambda item: (item[3], item[1], item[0], item[4], item[5], item[6], item[7], item[8], item[9])):
+            (
+                kpi_id,
+                subsystem_code,
+                subsystem_name,
+                reference_date,
+                unit,
+                frequency,
+                _source,
+                _source_dataset,
+                _source_field,
+                _snapshot_id,
+            ) = key
+            group = groups[key]
+            contributors = int(group["contributing_observation_count"])
+            raw_row_count = int(group["raw_row_count"])
+            day_start_datetime = f"{reference_date}T00:00:00"
+            day_end_datetime = f"{reference_date}T23:59:59.999999"
+            drilldown_start_datetime = max(day_start_datetime, start_datetime) if start_datetime else day_start_datetime
+            drilldown_end_datetime = min(day_end_datetime, end_datetime) if end_datetime else day_end_datetime
+            values.append(
+                SINKPIDailyChartObservationDTO(
+                    kpi_id=kpi_id,
+                    subsystem_code=subsystem_code,
+                    subsystem_name=subsystem_name,
+                    reference_date=reference_date,
+                    value=(float(group["sum"]) / contributors) if contributors else None,
+                    unit=unit,
+                    frequency=frequency,
+                    raw_row_count=raw_row_count,
+                    contributing_observation_count=contributors,
+                    sources=tuple(sorted(group["sources"])),
+                    source_datasets=tuple(sorted(group["source_datasets"])),
+                    source_fields=tuple(sorted(group["source_fields"])),
+                    data_quality_statuses=tuple(sorted(group["data_quality_statuses"])),
+                    snapshot_ids=tuple(sorted(group["snapshot_ids"])),
+                    aggregation="daily_mean_non_null",
+                    formula="mean(normalized_value where normalized_value is not null)",
+                    calculated_at=generated_at,
+                    raw_drilldown=SINKPIRawDrilldownDTO(
+                        method="get_sin_kpi_series",
+                        kpi_ids=(kpi_id,),
+                        subsystem_codes=(subsystem_code,),
+                        start_datetime=drilldown_start_datetime,
+                        end_datetime=drilldown_end_datetime,
+                        unit_context=unit,
+                        raw_reader_row_count=raw_reader_row_counts[
+                            (kpi_id, subsystem_code, reference_date)
+                        ],
+                    ),
+                )
+            )
+
+        return SINKPIDailyChartSeriesDTO(
+            values=tuple(values),
+            raw_row_count=len(rows),
+            requested_kpi_ids=tuple(kpi_ids or ()),
+            requested_subsystem_codes=tuple(subsystem_codes or ()),
+            requested_start_datetime=start_datetime,
+            requested_end_datetime=end_datetime,
+            coverage_start_date=values[0].reference_date if values else None,
+            coverage_end_date=values[-1].reference_date if values else None,
+            generated_at=generated_at,
+        )
 
     def get_sin_kpi_dashboard(self) -> SINKPIDashboardDTO:
         """Return latest SIN KPI snapshot plus provenance source panel."""

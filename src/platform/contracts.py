@@ -954,6 +954,113 @@ class SINKPIObservationDTO:
 
 
 @dataclass(frozen=True)
+class SINKPIRawDrilldownDTO:
+    """Exact raw-read scope corresponding to one calculated daily observation."""
+
+    method: str
+    kpi_ids: tuple[str, ...]
+    subsystem_codes: tuple[str, ...]
+    start_datetime: str
+    end_datetime: str
+    unit_context: str
+    raw_reader_row_count: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "method": self.method,
+            "kpi_ids": list(self.kpi_ids),
+            "subsystem_codes": list(self.subsystem_codes),
+            "start_datetime": self.start_datetime,
+            "end_datetime": self.end_datetime,
+            "unit_context": self.unit_context,
+            "raw_reader_row_count": self.raw_reader_row_count,
+        }
+
+
+@dataclass(frozen=True)
+class SINKPIDailyChartObservationDTO:
+    """A locally calculated daily SIN chart point with complete raw lineage."""
+
+    kpi_id: str
+    subsystem_code: str
+    subsystem_name: str
+    reference_date: str
+    value: float | None
+    unit: str
+    frequency: str
+    raw_row_count: int
+    contributing_observation_count: int
+    sources: tuple[str, ...]
+    source_datasets: tuple[str, ...]
+    source_fields: tuple[str, ...]
+    data_quality_statuses: tuple[str, ...]
+    snapshot_ids: tuple[str, ...]
+    aggregation: str
+    formula: str
+    calculated_at: str
+    raw_drilldown: SINKPIRawDrilldownDTO
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "kpi_id": self.kpi_id,
+            "subsystem_code": self.subsystem_code,
+            "subsystem_name": self.subsystem_name,
+            "reference_date": self.reference_date,
+            "value": self.value,
+            "unit": self.unit,
+            "frequency": self.frequency,
+            "raw_row_count": self.raw_row_count,
+            "contributing_observation_count": self.contributing_observation_count,
+            "sources": list(self.sources),
+            "source_datasets": list(self.source_datasets),
+            "source_fields": list(self.source_fields),
+            "data_quality_statuses": list(self.data_quality_statuses),
+            "snapshot_ids": list(self.snapshot_ids),
+            "aggregation": self.aggregation,
+            "formula": self.formula,
+            "calculated_at": self.calculated_at,
+            "raw_drilldown": self.raw_drilldown.to_dict(),
+        }
+
+
+@dataclass(frozen=True)
+class SINKPIDailyChartSeriesDTO:
+    """Offline daily chart read response, including request and coverage evidence."""
+
+    values: tuple[SINKPIDailyChartObservationDTO, ...]
+    raw_row_count: int
+    requested_kpi_ids: tuple[str, ...]
+    requested_subsystem_codes: tuple[str, ...]
+    requested_start_datetime: str | None
+    requested_end_datetime: str | None
+    coverage_start_date: str | None
+    coverage_end_date: str | None
+    generated_at: str
+
+    @property
+    def count(self) -> int:
+        return len(self.values)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "values": [value.to_dict() for value in self.values],
+            "count": self.count,
+            "raw_row_count": self.raw_row_count,
+            "request": {
+                "kpi_ids": list(self.requested_kpi_ids),
+                "subsystem_codes": list(self.requested_subsystem_codes),
+                "start_datetime": self.requested_start_datetime,
+                "end_datetime": self.requested_end_datetime,
+            },
+            "coverage": {
+                "start_date": self.coverage_start_date,
+                "end_date": self.coverage_end_date,
+            },
+            "generated_at": self.generated_at,
+        }
+
+
+@dataclass(frozen=True)
 class SINKPISourceStatusDTO:
     source: str
     dataset: str
