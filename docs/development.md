@@ -11,11 +11,29 @@ Install dependencies:
 
 ```powershell
 pip install -r requirements.txt
-npm --prefix apps/desktop-web install
+npm ci --prefix apps/desktop-web
 ```
 
 CI installs `requirements.txt`, `apps/api/requirements-dev.txt`, and runs
 frontend checks with Node 22.
+
+## Isolated Worktree Bootstrap
+
+For autonomous task worktrees, create the task workspace from `main`, then run
+the bootstrap from that worktree:
+
+```powershell
+.\scripts\governance\worktree_create.ps1 -Issue <issue-number> -Slug <task-slug> -Lane ops-quality
+Set-Location .\.claude\worktrees\ops-quality\<issue-number>-<task-slug>
+.\scripts\setup\bootstrap_worktree.ps1
+```
+
+The bootstrap prints the worktree it is preparing, requires Node.js 22+ and
+Python 3.11+, and verifies the local Vite executable. If
+`apps/desktop-web/node_modules/.bin/vite.cmd` is missing, it runs `npm ci` in
+that worktree's `apps/desktop-web` directory. It does not copy or version
+`node_modules`, change lockfiles, create a virtual environment, or install
+Python packages. Run the normal Python setup separately when the task needs it.
 
 ## Active Development Modes
 
