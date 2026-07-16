@@ -9,6 +9,7 @@ import pandas as pd
 import pytest
 from sqlalchemy import text
 
+from desktop.bridge_api.energy import EnergyBridgeMixin
 from src.energy_kpi.read import EnergyKPIReadService
 from src.energy_kpi.sin_catalog import SIN_NS
 from src.energy_kpi.sin_ingest import (
@@ -82,18 +83,23 @@ def _insert_sin_observation(
     subsystem_code: str,
     reference_datetime: str,
     snapshot_id: str,
-    value: float = 100.0,
+    value: float | None = 100.0,
+    unit: str = "MWmed",
+    source_field: str = "fixture",
+    data_quality_status: str = "ok",
 ) -> None:
     conn.execute(
         text("""
             INSERT INTO subsystem_kpi_values (
                 kpi_id, subsystem_code, reference_datetime,
                 source_value, normalized_value, unit, source,
-                source_dataset, source_field, source_hash, snapshot_id
+                source_dataset, source_field, source_hash, snapshot_id,
+                data_quality_status
             ) VALUES (
                 :kpi_id, :subsystem_code, :reference_datetime,
-                :value, :value, 'MWmed', :source,
-                :dataset, 'fixture', :source_hash, :snapshot_id
+                :value, :value, :unit, :source,
+                :dataset, :source_field, :source_hash, :snapshot_id,
+                :data_quality_status
             )
         """),
         {
@@ -103,8 +109,11 @@ def _insert_sin_observation(
             "value": value,
             "source": source,
             "dataset": dataset,
-            "source_hash": f"{dataset}:{kpi_id}:{subsystem_code}:{reference_datetime}",
+            "unit": unit,
+            "source_field": source_field,
+            "source_hash": f"{dataset}:{kpi_id}:{subsystem_code}:{reference_datetime}:{unit}:{source_field}:{snapshot_id}",
             "snapshot_id": snapshot_id,
+            "data_quality_status": data_quality_status,
         },
     )
 
@@ -757,6 +766,269 @@ def test_sin_series_below_limit_result_is_unchanged(db_engine, monkeypatch):
     bounded = svc.get_sin_kpi_series(limit=10)
 
     assert bounded == unbounded
+
+
+def test_sin_daily_chart_series_preserves_daily_mean_missingness_and_lineage(db_engine, monkeypatch):
+    cmo = f"{SIN_NS}.cmo_brl_mwh"
+    with db_engine.begin() as conn:
+        seed_sin_kpi_catalog(conn)
+        _insert_sin_observation(
+            conn,
+            dataset="cmo_semihorario",
+            source="ONS",
+            kpi_id=cmo,
+            subsystem_code="S",
+            reference_datetime="2026-01-01T00:00:00",
+            snapshot_id="snapshot-a",
+            value=10.0,
+            unit="R$/MWh",
+            source_field="price_a",
+        )
+        _insert_sin_observation(
+            conn,
+            dataset="cmo_semihorario",
+            source="ONS",
+            kpi_id=cmo,
+            subsystem_code="S",
+            reference_datetime="2026-01-01T12:00:00",
+            snapshot_id="snapshot-a",
+            value=30.0,
+            unit="R$/MWh",
+            source_field="price_a",
+            data_quality_status="warning",
+        )
+        _insert_sin_observation(
+            conn,
+            dataset="cmo_semihorario",
+            source="ONS",
+            kpi_id=cmo,
+            subsystem_code="S",
+            reference_datetime="2026-01-02T00:00:00",
+            snapshot_id="snapshot-c",
+            value=None,
+            unit="R$/MWh",
+            source_field="price_a",
+        )
+
+    svc = EnergyKPIReadService(build_settings())
+    monkeypatch.setattr(svc, "_engine", lambda: db_engine)
+
+    result = svc.get_sin_kpi_daily_chart_series(
+        kpi_ids=[cmo],
+        subsystem_codes=["S"],
+        start_datetime="2026-01-01T00:00:00",
+        end_datetime="2026-01-02T23:59:59",
+    )
+
+    assert result.count == 2
+    assert result.raw_row_count == 3
+    assert result.requested_kpi_ids == (cmo,)
+    assert result.requested_subsystem_codes == ("S",)
+    assert result.coverage_start_date == "2026-01-01"
+    assert result.coverage_end_date == "2026-01-02"
+
+    first, missing = result.values
+    assert first.reference_date == "2026-01-01"
+    assert first.value == pytest.approx(20.0)
+    assert first.frequency == "semi-hourly"
+    assert first.raw_row_count == 2
+    assert first.contributing_observation_count == 2
+    assert first.sources == ("ONS",)
+    assert first.source_datasets == ("cmo_semihorario",)
+    assert first.source_fields == ("price_a",)
+    assert first.data_quality_statuses == ("ok", "warning")
+    assert first.snapshot_ids == ("snapshot-a",)
+    assert first.aggregation == "daily_mean_non_null"
+    assert first.raw_drilldown.method == "get_sin_kpi_series"
+    assert first.raw_drilldown.kpi_ids == (cmo,)
+    assert first.raw_drilldown.subsystem_codes == ("S",)
+    assert first.raw_drilldown.start_datetime == "2026-01-01T00:00:00"
+    assert first.raw_drilldown.end_datetime == "2026-01-01T23:59:59.999999"
+    assert first.raw_drilldown.raw_reader_row_count == 2
+
+    assert missing.reference_date == "2026-01-02"
+    assert missing.value is None
+    assert missing.raw_row_count == 1
+    assert missing.contributing_observation_count == 0
+
+
+def test_sin_daily_chart_series_keeps_different_units_as_distinct_daily_values(db_engine, monkeypatch):
+    cmo = f"{SIN_NS}.cmo_brl_mwh"
+    with db_engine.begin() as conn:
+        _insert_sin_observation(
+            conn,
+            dataset="cmo_semihorario",
+            source="ONS",
+            kpi_id=cmo,
+            subsystem_code="S",
+            reference_datetime="2026-02-01T00:00:00",
+            snapshot_id="snapshot-brl",
+            value=100.0,
+            unit="R$/MWh",
+        )
+        _insert_sin_observation(
+            conn,
+            dataset="cmo_semihorario",
+            source="ONS",
+            kpi_id=cmo,
+            subsystem_code="S",
+            reference_datetime="2026-02-01T12:00:00",
+            snapshot_id="snapshot-usd",
+            value=20.0,
+            unit="USD/MWh",
+        )
+
+    svc = EnergyKPIReadService(build_settings())
+    monkeypatch.setattr(svc, "_engine", lambda: db_engine)
+
+    result = svc.get_sin_kpi_daily_chart_series(
+        kpi_ids=[cmo],
+        subsystem_codes=["S"],
+        start_datetime="2026-02-01T00:00:00",
+        end_datetime="2026-02-01T23:59:59",
+    )
+
+    assert [(row.reference_date, row.unit, row.value) for row in result.values] == [
+        ("2026-02-01", "R$/MWh", 100.0),
+        ("2026-02-01", "USD/MWh", 20.0),
+    ]
+    assert [row.raw_row_count for row in result.values] == [1, 1]
+    assert [row.raw_drilldown.raw_reader_row_count for row in result.values] == [2, 2]
+
+
+def test_sin_daily_chart_series_never_averages_different_sources(db_engine, monkeypatch):
+    cmo = f"{SIN_NS}.cmo_brl_mwh"
+    with db_engine.begin() as conn:
+        _insert_sin_observation(
+            conn,
+            dataset="cmo_semihorario",
+            source="ONS",
+            kpi_id=cmo,
+            subsystem_code="S",
+            reference_datetime="2026-02-02T00:00:00",
+            snapshot_id="snapshot-ons",
+            value=10.0,
+            unit="R$/MWh",
+            source_field="val_cmo",
+        )
+        _insert_sin_observation(
+            conn,
+            dataset="pld_horario",
+            source="CCEE",
+            kpi_id=cmo,
+            subsystem_code="S",
+            reference_datetime="2026-02-02T12:00:00",
+            snapshot_id="snapshot-ccee",
+            value=30.0,
+            unit="R$/MWh",
+            source_field="PLD_HORA",
+        )
+
+    svc = EnergyKPIReadService(build_settings())
+    monkeypatch.setattr(svc, "_engine", lambda: db_engine)
+
+    result = svc.get_sin_kpi_daily_chart_series(
+        kpi_ids=[cmo],
+        subsystem_codes=["S"],
+        start_datetime="2026-02-02T00:00:00",
+        end_datetime="2026-02-02T23:59:59",
+    )
+
+    assert result.count == 2
+    assert {(row.sources, row.source_datasets, row.value) for row in result.values} == {
+        (("ONS",), ("cmo_semihorario",), 10.0),
+        (("CCEE",), ("pld_horario",), 30.0),
+    }
+
+
+def test_sin_daily_chart_raw_drilldown_intersects_partial_day_request(db_engine, monkeypatch):
+    cmo = f"{SIN_NS}.cmo_brl_mwh"
+    with db_engine.begin() as conn:
+        _insert_sin_observation(
+            conn,
+            dataset="cmo_semihorario",
+            source="ONS",
+            kpi_id=cmo,
+            subsystem_code="S",
+            reference_datetime="2026-02-03T00:00:00",
+            snapshot_id="snapshot-ons",
+            value=10.0,
+            unit="R$/MWh",
+            source_field="val_cmo",
+        )
+        _insert_sin_observation(
+            conn,
+            dataset="cmo_semihorario",
+            source="ONS",
+            kpi_id=cmo,
+            subsystem_code="S",
+            reference_datetime="2026-02-03T12:00:00",
+            snapshot_id="snapshot-ons",
+            value=30.0,
+            unit="R$/MWh",
+            source_field="val_cmo",
+        )
+
+    svc = EnergyKPIReadService(build_settings())
+    monkeypatch.setattr(svc, "_engine", lambda: db_engine)
+
+    result = svc.get_sin_kpi_daily_chart_series(
+        kpi_ids=[cmo],
+        subsystem_codes=["S"],
+        start_datetime="2026-02-03T12:00:00",
+        end_datetime="2026-02-03T12:30:00",
+    )
+
+    assert result.count == 1
+    point = result.values[0]
+    assert point.value == 30.0
+    assert point.raw_drilldown.start_datetime == "2026-02-03T12:00:00"
+    assert point.raw_drilldown.end_datetime == "2026-02-03T12:30:00"
+    assert point.raw_drilldown.raw_reader_row_count == 1
+
+
+def test_sin_daily_chart_bridge_exposes_json_payload_and_rejects_limit(db_engine, monkeypatch):
+    cmo = f"{SIN_NS}.cmo_brl_mwh"
+    with db_engine.begin() as conn:
+        _insert_sin_observation(
+            conn,
+            dataset="cmo_semihorario",
+            source="ONS",
+            kpi_id=cmo,
+            subsystem_code="S",
+            reference_datetime="2026-03-01T00:00:00",
+            snapshot_id="snapshot-bridge",
+            value=42.0,
+            unit="R$/MWh",
+        )
+
+    svc = EnergyKPIReadService(build_settings())
+    monkeypatch.setattr(svc, "_engine", lambda: db_engine)
+
+    class TestEnergyBridge(EnergyBridgeMixin):
+        def _energy_svc(self):
+            return svc
+
+        def _retry_energy_read(self, fn, *, attempts: int = 4):
+            return fn()
+
+        def _sanitize_for_json(self, value):
+            return value
+
+    bridge = TestEnergyBridge()
+    payload = bridge.get_sin_kpi_daily_chart_series({
+        "kpi_ids": [cmo],
+        "subsystem_codes": ["S"],
+        "start_datetime": "2026-03-01T00:00:00",
+        "end_datetime": "2026-03-01T23:59:59",
+    })
+
+    assert payload["count"] == 1
+    assert payload["raw_row_count"] == 1
+    assert payload["values"][0]["value"] == 42.0
+    assert payload["values"][0]["raw_drilldown"]["method"] == "get_sin_kpi_series"
+    rejected = bridge.get_sin_kpi_daily_chart_series({"limit": 50_000})
+    assert "does not accept limit" in rejected["error"]
 
 
 def test_sin_refresh_partial_when_ccee_fails(tmp_path: Path, monkeypatch):

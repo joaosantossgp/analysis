@@ -368,6 +368,24 @@ class EnergyBridgeMixin:
         except Exception as exc:
             return {"error": str(exc), "values": [], "count": 0}
 
+    def get_sin_kpi_daily_chart_series(self, params=None) -> dict:
+        """Return auditable local daily chart observations without raw-row truncation."""
+        params = params or {}
+        try:
+            if "limit" in params:
+                raise ValueError("get_sin_kpi_daily_chart_series does not accept limit")
+            payload = self._retry_energy_read(
+                lambda: self._energy_svc().get_sin_kpi_daily_chart_series(
+                    kpi_ids=params.get("kpi_ids"),
+                    subsystem_codes=params.get("subsystem_codes"),
+                    start_datetime=params.get("start_datetime"),
+                    end_datetime=params.get("end_datetime"),
+                )
+            )
+            return self._sanitize_for_json(payload.to_dict())
+        except Exception as exc:
+            return {"error": str(exc), "values": [], "count": 0, "raw_row_count": 0}
+
     def get_sin_kpi_health(self, params=None) -> dict:
         try:
             health = self._retry_energy_read(lambda: self._energy_svc().get_sin_kpi_health())
