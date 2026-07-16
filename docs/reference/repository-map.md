@@ -45,7 +45,7 @@ Node package is `apps/desktop-web/package.json`.
 | Area | Active files |
 |---|---|
 | `scripts/data/` | `atualizar_todos.py`, `batch_completo.py`, `restaurar_historico.py`, `seed_catalog.py`, `sync_identity.py`, `expand_tickers.py`, `import_company_gics.py`, `backfill_company_gics.py`, `build_canonical_dict.py`, `canonicalize_data_layout.py`, `atualizar_dados.ps1`, `test_seed_catalog.py` |
-| `scripts/setup/` | `setup_db.py`, `setup_companies_table.py`, `bootstrap_windows.ps1` |
+| `scripts/setup/` | `setup_db.py`, `setup_companies_table.py`, `bootstrap_windows.ps1`, `bootstrap_worktree.ps1` |
 | `scripts/diagnostics/` | `runtime_doctor.py`, `smoke_validate.py`, `db_portability_smoke.py`, `update_base_smoke.py`, `test_update_base_smoke.py`, `phase1_pywebview_smoke.py`, `benchmark_read_paths.py`, `benchmark_real_read_paths.py`, `calibrate_mappings.py` |
 | `scripts/qa/` | `quick_verify.py`, `verify_consolidation.py`, `verify_line_id_base.py`, `final_verification.py`, `workbook_paths.py` |
 | `scripts/release/` | `dev-desktop.ps1`, `dev-desktop-release-data.ps1`, `test_motw_explorer.ps1`, `test_motw_launch.ps1`, `test_motw_strip.py`, `pr_complete.ps1` |

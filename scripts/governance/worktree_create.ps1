@@ -9,7 +9,7 @@ param(
   [ValidateSet("frontend", "backend", "ops-quality")]
   [string]$Lane,
 
-  [string]$Base = "master"
+  [string]$Base = "main"
 )
 
 $ErrorActionPreference = "Stop"
