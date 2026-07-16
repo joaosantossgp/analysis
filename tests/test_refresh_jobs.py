@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import text
@@ -136,8 +137,100 @@ def _insert_financial_report_row(
 def test_build_postgres_claim_next_job_sql_uses_skip_locked():
     sql = build_postgres_claim_next_job_sql()
 
+    assert "ORDER BY requested_at ASC, enqueue_sequence ASC, id ASC" in sql
     assert "FOR UPDATE SKIP LOCKED" in sql
     assert "UPDATE refresh_jobs" in sql
+
+
+def test_refresh_job_repository_preserves_fifo_for_tied_requested_at(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(
+        "src.refresh.jobs.utc_now_iso",
+        lambda: "2026-07-16T00:00:00+00:00",
+    )
+    job_ids = iter(("z" * 32, "a" * 32))
+    monkeypatch.setattr(
+        "src.refresh.jobs.uuid4",
+        lambda: SimpleNamespace(hex=next(job_ids)),
+    )
+    _, repository = _make_repository(tmp_path)
+
+    first = repository.enqueue_job(
+        cd_cvm=4170,
+        company_name="VALE",
+        source_scope="on_demand",
+        start_year=2010,
+        end_year=2025,
+    )
+    second = repository.enqueue_job(
+        cd_cvm=9512,
+        company_name="PETROBRAS",
+        source_scope="on_demand",
+        start_year=2010,
+        end_year=2025,
+    )
+
+    assert first is not None
+    assert second is not None
+    assert _read_projection(repository, 4170)["queue_position"] == 0
+    assert _read_projection(repository, 9512)["queue_position"] == 1
+
+    first_claimed = repository.claim_next_job(worker_id="worker-a")
+    second_claimed = repository.claim_next_job(worker_id="worker-b")
+
+    assert first_claimed is not None
+    assert second_claimed is not None
+    assert first_claimed.id == first.id
+    assert second_claimed.id == second.id
+
+
+def test_refresh_job_repository_migrates_legacy_jobs_with_sequence_default(tmp_path):
+    settings = build_settings(project_root=tmp_path)
+    settings.paths.db_path.parent.mkdir(parents=True, exist_ok=True)
+    engine = build_engine(settings)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE refresh_jobs (
+                    id TEXT PRIMARY KEY,
+                    cd_cvm INTEGER NOT NULL,
+                    company_name TEXT,
+                    source_scope TEXT NOT NULL DEFAULT 'on_demand',
+                    start_year INTEGER NOT NULL,
+                    end_year INTEGER NOT NULL,
+                    state TEXT NOT NULL,
+                    requested_at TEXT NOT NULL
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                INSERT INTO refresh_jobs (
+                    id, cd_cvm, company_name, source_scope, start_year, end_year,
+                    state, requested_at
+                ) VALUES (
+                    'legacy-job', 4170, 'VALE', 'on_demand', 2010, 2025,
+                    'queued', '2026-07-16T00:00:00+00:00'
+                )
+                """
+            )
+        )
+
+    repository = RefreshJobRepository(engine)
+    repository.ensure_schema()
+
+    with engine.connect() as conn:
+        migrated = conn.execute(
+            text(
+                "SELECT enqueue_sequence FROM refresh_jobs WHERE id = 'legacy-job'"
+            )
+        ).mappings().one()
+
+    assert migrated["enqueue_sequence"] == 0
 
 
 def test_refresh_job_repository_projects_zero_based_queue_positions(tmp_path):

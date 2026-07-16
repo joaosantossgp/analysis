@@ -155,7 +155,7 @@ def build_postgres_claim_next_job_sql() -> str:
             SELECT id
             FROM refresh_jobs
             WHERE state = 'queued'
-            ORDER BY requested_at ASC, id ASC
+            ORDER BY requested_at ASC, enqueue_sequence ASC, id ASC
             FOR UPDATE SKIP LOCKED
             LIMIT 1
         )
@@ -283,6 +283,7 @@ def _ensure_refresh_jobs_schema(conn) -> None:
                 state TEXT NOT NULL,
                 stage TEXT,
                 requested_at TEXT NOT NULL,
+                enqueue_sequence BIGINT NOT NULL DEFAULT 0,
                 started_at TEXT,
                 heartbeat_at TEXT,
                 finished_at TEXT,
@@ -305,6 +306,7 @@ def _ensure_refresh_jobs_schema(conn) -> None:
         "company_name": "TEXT",
         "source_scope": "TEXT NOT NULL DEFAULT 'on_demand'",
         "stage": "TEXT",
+        "enqueue_sequence": "BIGINT NOT NULL DEFAULT 0",
         "started_at": "TEXT",
         "heartbeat_at": "TEXT",
         "finished_at": "TEXT",
@@ -325,8 +327,26 @@ def _ensure_refresh_jobs_schema(conn) -> None:
     conn.execute(
         text(
             """
+            CREATE TABLE IF NOT EXISTS refresh_job_enqueue_counter (
+                counter_key TEXT PRIMARY KEY,
+                last_value BIGINT NOT NULL
+            )
+            """
+        )
+    )
+    conn.execute(
+        text(
+            """
             CREATE INDEX IF NOT EXISTS idx_refresh_jobs_state_requested_at
             ON refresh_jobs(state, requested_at)
+            """
+        )
+    )
+    conn.execute(
+        text(
+            """
+            CREATE INDEX IF NOT EXISTS idx_refresh_jobs_state_requested_at_sequence
+            ON refresh_jobs(state, requested_at, enqueue_sequence, id)
             """
         )
     )
@@ -339,6 +359,21 @@ def _ensure_refresh_jobs_schema(conn) -> None:
             """
         )
     )
+
+
+def _next_enqueue_sequence(conn) -> int:
+    sequence = conn.execute(
+        text(
+            """
+            INSERT INTO refresh_job_enqueue_counter (counter_key, last_value)
+            VALUES ('refresh_jobs', 1)
+            ON CONFLICT (counter_key) DO UPDATE
+            SET last_value = last_value + 1
+            RETURNING last_value
+            """
+        )
+    ).scalar_one()
+    return int(sequence)
 
 
 class RefreshJobRepository:
@@ -361,6 +396,7 @@ class RefreshJobRepository:
                     ORDER BY
                         CASE WHEN state = 'running' THEN 0 ELSE 1 END,
                         requested_at ASC,
+                        enqueue_sequence ASC,
                         id ASC
                     LIMIT 1
                     """
@@ -391,6 +427,7 @@ class RefreshJobRepository:
             if active_row is not None:
                 return None
             baseline_snapshot = self._load_read_model_snapshot(conn, cd_cvm=cd_cvm)
+            enqueue_sequence = _next_enqueue_sequence(conn)
 
             try:
                 conn.execute(
@@ -406,6 +443,7 @@ class RefreshJobRepository:
                             state,
                             stage,
                             requested_at,
+                            enqueue_sequence,
                             progress_current,
                             progress_total,
                             progress_message,
@@ -422,6 +460,7 @@ class RefreshJobRepository:
                             :state,
                             :stage,
                             :requested_at,
+                            :enqueue_sequence,
                             :progress_current,
                             :progress_total,
                             :progress_message,
@@ -441,6 +480,7 @@ class RefreshJobRepository:
                         "state": JOB_STATE_QUEUED,
                         "stage": JOB_STAGE_QUEUED,
                         "requested_at": now_iso,
+                        "enqueue_sequence": enqueue_sequence,
                         "progress_current": 0,
                         "progress_total": 1,
                         "progress_message": "Solicitacao enfileirada para processamento interno.",
@@ -554,7 +594,7 @@ class RefreshJobRepository:
                         SELECT *
                         FROM refresh_jobs
                         WHERE state = 'queued'
-                        ORDER BY requested_at ASC, id ASC
+                        ORDER BY requested_at ASC, enqueue_sequence ASC, id ASC
                         LIMIT 1
                         """
                     )
@@ -790,7 +830,7 @@ class RefreshJobRepository:
                     FROM refresh_jobs
                     WHERE state = 'running'
                       AND COALESCE(heartbeat_at, started_at, requested_at) < :cutoff
-                    ORDER BY requested_at ASC, id ASC
+                    ORDER BY requested_at ASC, enqueue_sequence ASC, id ASC
                     """
                 ),
                 {"cutoff": cutoff_iso},
@@ -1235,7 +1275,7 @@ class RefreshJobRepository:
                 SELECT id, cd_cvm
                 FROM refresh_jobs
                 WHERE state = 'queued'
-                ORDER BY requested_at ASC, id ASC
+                ORDER BY requested_at ASC, enqueue_sequence ASC, id ASC
                 """
             )
         ).mappings().all()
