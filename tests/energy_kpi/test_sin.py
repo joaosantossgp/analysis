@@ -346,16 +346,16 @@ def test_sin_source_statuses_are_dataset_specific_when_pld_fails(
     with db_engine.begin() as conn:
         seed_subsystem_dimension(conn)
         for dataset, source, kpi_id, reference_datetime in [
-            ("balanco_energia_subsistema", "ONS", load, "2026-07-10T00:00:00"),
-            ("ear_diario_subsistema", "ONS", ear, "2026-07-09T00:00:00"),
-            ("ena_diario_subsistema", "ONS", ena, "2026-07-09T00:00:00"),
-            ("cmo_semihorario", "ONS", cmo, "2026-07-10T00:30:00"),
+            ("balanco_energia_subsistema", "ONS", load, "2999-01-01T00:00:00"),
+            ("ear_diario_subsistema", "ONS", ear, "2999-01-01T00:00:00"),
+            ("ena_diario_subsistema", "ONS", ena, "2999-01-01T00:00:00"),
+            ("cmo_semihorario", "ONS", cmo, "2999-01-01T00:30:00"),
         ]:
             snapshot_id = _insert_sin_snapshot(
                 conn,
                 dataset=dataset,
                 source=source,
-                fetched_at="2026-07-10T01:00:00+00:00",
+                fetched_at="2999-01-01T01:00:00+00:00",
                 row_count=4,
             )
             _insert_sin_observation(
@@ -370,7 +370,7 @@ def test_sin_source_statuses_are_dataset_specific_when_pld_fails(
         _insert_sin_failure(
             conn,
             dataset="pld_horario",
-            created_at="2026-07-10T01:05:00+00:00",
+            created_at="2999-01-02T01:05:00+00:00",
             error="HTTP 403 Forbidden",
         )
 
@@ -407,7 +407,7 @@ def test_sin_source_statuses_are_dataset_specific_when_pld_fails(
     assert pld.last_status == "failed"
     assert pld.health_state == "failed"
     assert pld.latest_attempt_status == "failed"
-    assert pld.latest_attempt_at == "2026-07-10T01:05:00+00:00"
+    assert pld.latest_attempt_at == "2999-01-02T01:05:00+00:00"
     assert pld.latest_successful_snapshot_at is None
     assert pld.latest_reference_datetime is None
     assert pld.local_records_count == 0
