@@ -398,8 +398,6 @@ export function CountryKpisPage() {
             <IndicatorExplorer
               bridgeReady={bridgeReady}
               mode="library"
-              onOpenSection={setSection}
-              onOpenEnergySub={setEnergySub}
             />
           )}
 

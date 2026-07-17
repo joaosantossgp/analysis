@@ -17,6 +17,14 @@ import {
   parseEnergySub,
   parseSection,
 } from "../CountryKpisPage";
+import {
+  DEFAULT_LIBRARY_PANEL_WIDTH,
+  MAX_LIBRARY_PANEL_WIDTH,
+  MIN_LIBRARY_PANEL_WIDTH,
+  calculateLibraryPanelDragWidth,
+  calculateLibraryPanelViewportBounds,
+  clampLibraryPanelWidth,
+} from "@/lib/indicators/libraryPanelLayout";
 
 describe("CountryKpisPage indicators navigation", () => {
   it("exposes analyst-oriented top-level sections without a generic Workspace tab", () => {
@@ -154,6 +162,36 @@ describe("CountryKpisPage indicators navigation", () => {
         (workflow) => workflow.id,
       ),
     ).toEqual(["generation-source-review", "sin-source-review", "fuel-detail-review"]);
+  });
+
+  it("keeps the library detail panel resizable within usable bounds", () => {
+    expect(DEFAULT_LIBRARY_PANEL_WIDTH).toBe(420);
+    expect(clampLibraryPanelWidth(100)).toBe(MIN_LIBRARY_PANEL_WIDTH);
+    expect(clampLibraryPanelWidth(9999)).toBe(MAX_LIBRARY_PANEL_WIDTH);
+    expect(calculateLibraryPanelDragWidth({ startWidth: 420, startX: 900, currentX: 820 })).toBe(500);
+    expect(calculateLibraryPanelDragWidth({ startWidth: 420, startX: 900, currentX: 960 })).toBe(360);
+  });
+
+  it("bounds the library detail panel to the indicator table and content margin", () => {
+    expect(
+      calculateLibraryPanelViewportBounds({
+        viewportWidth: 2048,
+        viewportHeight: 900,
+        contentRect: { right: 2032 },
+        mainRect: { top: 68, bottom: 876 },
+        tableRect: { top: 121, bottom: 862 },
+      }),
+    ).toEqual({ top: 121, right: 16, bottom: 40 });
+
+    expect(
+      calculateLibraryPanelViewportBounds({
+        viewportWidth: 2048,
+        viewportHeight: 900,
+        contentRect: { right: 2032 },
+        mainRect: { top: 68, bottom: 876 },
+        tableRect: { top: -515, bottom: 862 },
+      }),
+    ).toEqual({ top: 84, right: 16, bottom: 40 });
   });
 });
 

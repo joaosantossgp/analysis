@@ -257,6 +257,51 @@ body {
   flex-shrink: 0;
 }
 
+.indicator-library-chart-tools .chart-toolbar {
+  align-items: center;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  gap: 8px;
+}
+
+.indicator-library-chart-tools .chart-toolbar__field:nth-child(1) {
+  grid-column: 1 / 3;
+  grid-row: 1;
+}
+
+.indicator-library-chart-tools .chart-toolbar__field:nth-child(2) {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.indicator-library-chart-tools .chart-toolbar__actions {
+  grid-column: 2;
+  grid-row: 2;
+  justify-self: end;
+}
+
+.indicator-library-chart-tools .chart-toolbar__field {
+  min-width: 0;
+}
+
+.indicator-library-chart-tools .chart-toolbar__field > :last-child {
+  min-width: 0;
+}
+
+.indicator-library-detail-shell {
+  position: relative;
+}
+
+@media (min-width: 1280px) {
+  .indicator-library-detail-shell {
+    bottom: var(--indicator-library-panel-bottom, calc(24px + var(--spacing-4)));
+    position: fixed;
+    right: var(--indicator-library-panel-right, var(--spacing-4));
+    top: var(--indicator-library-panel-top, calc(36px + 32px + var(--spacing-4)));
+    width: var(--indicator-library-panel-width);
+    z-index: 30;
+  }
+}
+
 .market-summary-row {
   padding-inline: 1px;
 }
@@ -352,4 +397,3 @@ body {
   scrollbar-width: thin;
   scrollbar-color: var(--color-border-strong, #3a3a3a) transparent;
 }
-
