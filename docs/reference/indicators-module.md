@@ -75,25 +75,36 @@ delinquency remain inside `Sectors -> Distribution`.
 
 UI pattern:
 
-- One page title: `Indicator Library`.
+- One page title: `Indicator Library`, with inline definition help explaining
+  that the page is the central library for indicators that open without an
+  entity selector.
 - No summary cards, dashboard counters, generic intro paragraph, or
   implementation-detail warning panels.
 - Compact controls above the table: unlabeled search input plus domain, source,
   unit, type, status and favorites filters.
-- Dense table with indicator name/id, definition or formula, domain, scope,
-  unit/period, source, method/type, definition or data status, favorite action,
-  and secondary open action.
-- Row selection opens a full-width detail panel in the library page. The panel shows
-  metadata, source fields, availability, preview chart/table rows when real
-  cached series exist, and honest empty states when only the definition is
-  available.
-- The table must be useful before navigation. Open actions are secondary links
-  to specialist pages, not a substitute for showing the indicator definition or
-  detail metadata in the library itself.
-- Indicator-level export is exposed only for catalog-backed country KPI rows
-  through `export_country_kpis_excel({ kpi_ids: [...] })` and only when cached
-  preview rows are available. SIN rows show export as unavailable until an
-  indicator-level export exists.
+- Dense table with indicator name, inline definition help, unit, period, scope,
+  domain, source, and favorite action inside the indicator cell. Selecting the
+  row opens the indicator detail panel; there is no separate open column or
+  specialist navigation action in the Library.
+- Row selection opens a right-side detail panel on wide screens, compressing the
+  table while preserving scroll position. On narrow screens, the panel stacks
+  below the table. On wide screens, the panel is docked to the indicator table
+  bounds and the visible app viewport while the table scrolls, so selecting a
+  lower row keeps the detail panel in view without crossing the page's right
+  content margin. The user can resize the panel horizontally from its left edge
+  or switch it to a fullscreen overlay for larger chart inspection. The panel is
+  intentionally minimal: indicator name with favorite action, definition, unit
+  above the chart, the same configurable
+  `IndicatorControls` / `IndicatorChart` / `IndicatorLegend` pattern used by
+  Financial indicators, then source and domain. It does not show a broad
+  metadata grid, latest-observation table, specialist navigation, or
+  per-indicator export actions.
+- The table and side panel must be useful without requiring navigation to a
+  specialist page. Specialist workflows remain available from their own
+  sections rather than as secondary actions in the Library detail panel.
+- Indicator-level export remains outside the default Library detail panel.
+  Country KPI export is still available in catalog mode through
+  `export_country_kpis_excel`.
 
 The backend-driven catalog browser still exists, but it is scoped to
 `Energy -> Matrix & Trends`. In catalog mode, `IndicatorExplorer` reads the

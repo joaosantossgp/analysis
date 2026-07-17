@@ -5,11 +5,28 @@
  * level. Catalog mode preserves the backend-driven
  * `kpi_catalog` workflow used by Energy > Matrix & Trends.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { keepPreviousData, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 
 import { StateBanner } from "@/components/feedback/StateBanner";
-import { COUNTRY_ISO_CODES } from "@/components/indicators/CountryKpiCharts";
+import { IndicatorChart } from "@/components/indicators/IndicatorChart";
+import {
+  COUNTRY_COLORS,
+  COUNTRY_ISO_CODES,
+  COUNTRY_LABELS,
+  isPctKpi,
+} from "@/components/indicators/CountryKpiCharts";
+import { IndicatorControls } from "@/components/indicators/IndicatorControls";
+import { IndicatorLegend } from "@/components/indicators/IndicatorLegend";
 import {
   exportCountryKPIsExcel,
   fetchCountryKPISeries,
@@ -26,7 +43,6 @@ import {
   buildIndicatorRecords,
   collectFacets,
   filterRecords,
-  formatLatestValue,
   hasActiveFilters,
   sortRecords,
   type ExplorerFilters,
@@ -41,24 +57,35 @@ import {
   filterIndicatorLibraryRows,
   hasActiveIndicatorLibraryFilters,
   indicatorLibraryFavoriteKey,
-  isCountryKpiLibraryRow,
   resolveIndicatorLibrarySelection,
-  type IndicatorLibraryAction,
-  type IndicatorLibraryEnergySub,
   type IndicatorLibraryFacetOption,
   type IndicatorLibraryFilterKey,
   type IndicatorLibraryFilters,
   type IndicatorLibraryRow,
-  type IndicatorLibrarySection,
 } from "@/lib/indicators/indicatorLibrary";
+import {
+  DEFAULT_LIBRARY_PANEL_WIDTH,
+  MAX_LIBRARY_PANEL_WIDTH,
+  MIN_LIBRARY_PANEL_WIDTH,
+  calculateLibraryPanelDragWidth,
+  calculateLibraryPanelViewportBounds,
+  clampLibraryPanelWidth,
+} from "@/lib/indicators/libraryPanelLayout";
 import type { CountryKPIValue, SINKPIObservation } from "@/lib/bridge/types";
+import type {
+  AxisSide,
+  ChartAesthetics,
+  ChartType,
+  IndicatorDef,
+  IndicatorSelection,
+  ResolvedSeries,
+} from "@/lib/indicators/types";
 import { useFavorites } from "@/lib/indicators/useFavorites";
 
 import { ExplorerStatusStrip } from "./ExplorerStatusStrip";
 import { ExplorerToolbar, type FilterDimension } from "./ExplorerToolbar";
 import { IndicatorCatalogTable } from "./IndicatorCatalogTable";
 import { IndicatorDetailPanel } from "./IndicatorDetailPanel";
-import { Tag } from "./StatusBadge";
 
 type Msg = { text: string; ok: boolean } | null;
 
@@ -71,6 +98,27 @@ type LibraryCatalogIssue = {
 type CountrySeriesQueryResult = Awaited<ReturnType<typeof fetchCountryKPISeries>>;
 type SinSeriesQueryResult = Awaited<ReturnType<typeof fetchSINKPISeries>>;
 
+const LIBRARY_PREVIEW_CHART: ChartAesthetics = {
+  type: "line",
+  smooth: false,
+  markers: true,
+  legend: true,
+  grid: true,
+  dataLabels: false,
+  indexMode: false,
+};
+
+const LIBRARY_SIN_SUBSYSTEMS = [
+  { code: "S", label: "South / Sul", color: "#60A5FA" },
+  { code: "SE_CO", label: "Southeast-Center West", color: "#22D3EE" },
+  { code: "NE", label: "Northeast / Nordeste", color: "#FBBF24" },
+  { code: "N", label: "North / Norte", color: "#4ADE80" },
+] as const;
+
+const LIBRARY_MAX_SELECTED = 6;
+const INDICATOR_LIBRARY_HELP =
+  "Central library of macro, sector, system, market, and benchmark indicators that can be opened directly without first selecting a company, asset, plant, parcel, ticker, or economic group.";
+
 function prettyCount(value: number): string {
   return value.toLocaleString("en-US");
 }
@@ -79,14 +127,10 @@ export function IndicatorExplorer({
   bridgeReady,
   defaultFavoritesOnly = false,
   mode = "catalog",
-  onOpenSection,
-  onOpenEnergySub,
 }: {
   bridgeReady: boolean;
   defaultFavoritesOnly?: boolean;
   mode?: IndicatorExplorerMode;
-  onOpenSection?: (section: IndicatorLibrarySection) => void;
-  onOpenEnergySub?: (sub: IndicatorLibraryEnergySub) => void;
 }) {
   const qc = useQueryClient();
 
@@ -103,7 +147,7 @@ export function IndicatorExplorer({
   const [refreshingGroup, setRefreshingGroup] = useState<IndicatorSourceGroup | null>(null);
   const [msg, setMsg] = useState<Msg>(null);
   const seenRunning = useRef(false);
-  const shouldLoadValues = mode === "catalog";
+  const shouldLoadValues = mode === "catalog" || mode === "library";
 
   // ── Queries (all cached local reads) ──────────────────────────────────────
   const catalogQuery = useQuery({
@@ -282,8 +326,6 @@ export function IndicatorExplorer({
       <IndicatorLibraryLanding
         records={records}
         catalogIssue={catalogIssue}
-        onOpenSection={onOpenSection}
-        onOpenEnergySub={onOpenEnergySub}
       />
     );
   }
@@ -402,18 +444,24 @@ export function IndicatorExplorer({
 function IndicatorLibraryLanding({
   records,
   catalogIssue,
-  onOpenSection,
-  onOpenEnergySub,
 }: {
   records: IndicatorRecord[];
   catalogIssue?: LibraryCatalogIssue | null;
-  onOpenSection?: (section: IndicatorLibrarySection) => void;
-  onOpenEnergySub?: (sub: IndicatorLibraryEnergySub) => void;
 }) {
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState<IndicatorLibraryFilters>(EMPTY_INDICATOR_LIBRARY_FILTERS);
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [panelWidth, setPanelWidth] = useState(DEFAULT_LIBRARY_PANEL_WIDTH);
+  const [panelFullscreen, setPanelFullscreen] = useState(false);
+  const [resizeDrag, setResizeDrag] = useState<{ startX: number; startWidth: number } | null>(null);
+  const [panelViewportBounds, setPanelViewportBounds] = useState<{
+    top: number;
+    right: number;
+    bottom: number;
+  } | null>(null);
+  const contentBoundsRef = useRef<HTMLDivElement | null>(null);
+  const tableFrameRef = useRef<HTMLDivElement | null>(null);
   const favorites = useFavorites();
   const rows = useMemo(() => buildIndicatorLibraryRows(records), [records]);
   const facets = useMemo(() => collectIndicatorLibraryFacets(rows), [rows]);
@@ -438,16 +486,112 @@ function IndicatorLibraryLanding({
   useEffect(() => {
     if (!selectedId) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setSelectedId(null);
+      if (event.key === "Escape") {
+        if (panelFullscreen) setPanelFullscreen(false);
+        else setSelectedId(null);
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selectedId]);
+  }, [panelFullscreen, selectedId]);
 
   const selected = useMemo(
     () => (selectedId ? rows.find((row) => row.id === selectedId) ?? null : null),
     [rows, selectedId],
   );
+  const panelLayoutStyle = useMemo(
+    () => {
+      if (!selected || panelFullscreen) return undefined;
+      return {
+        "--indicator-library-panel-width": `${panelWidth}px`,
+        ...(panelViewportBounds
+          ? {
+              "--indicator-library-panel-top": `${panelViewportBounds.top}px`,
+              "--indicator-library-panel-right": `${panelViewportBounds.right}px`,
+              "--indicator-library-panel-bottom": `${panelViewportBounds.bottom}px`,
+            }
+          : null),
+      } as CSSProperties;
+    },
+    [panelFullscreen, panelViewportBounds, panelWidth, selected],
+  );
+
+  const updatePanelViewportBounds = useCallback(() => {
+    if (!selected || panelFullscreen) return;
+    const contentRect = contentBoundsRef.current?.getBoundingClientRect();
+    const tableRect = tableFrameRef.current?.getBoundingClientRect();
+    const mainRect = tableFrameRef.current?.closest("main")?.getBoundingClientRect();
+    if (!contentRect || !tableRect || !mainRect) return;
+
+    const next = calculateLibraryPanelViewportBounds({
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      contentRect,
+      mainRect,
+      tableRect,
+    });
+    setPanelViewportBounds((current) =>
+      current?.top === next.top && current.right === next.right && current.bottom === next.bottom
+        ? current
+        : next,
+    );
+  }, [panelFullscreen, selected]);
+
+  useEffect(() => {
+    if (!selected) {
+      setPanelFullscreen(false);
+      setPanelViewportBounds(null);
+    }
+  }, [selected]);
+
+  useEffect(() => {
+    if (!selected || panelFullscreen) {
+      setPanelViewportBounds(null);
+      return;
+    }
+
+    let frame = 0;
+    const scheduleUpdate = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(updatePanelViewportBounds);
+    };
+    const main = tableFrameRef.current?.closest("main");
+
+    scheduleUpdate();
+    window.addEventListener("resize", scheduleUpdate);
+    window.addEventListener("scroll", scheduleUpdate, true);
+    main?.addEventListener("scroll", scheduleUpdate, { passive: true });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", scheduleUpdate);
+      window.removeEventListener("scroll", scheduleUpdate, true);
+      main?.removeEventListener("scroll", scheduleUpdate);
+    };
+  }, [filtered.length, panelFullscreen, panelWidth, selected, updatePanelViewportBounds]);
+
+  useEffect(() => {
+    if (!resizeDrag) return;
+
+    const handlePointerMove = (event: PointerEvent) => {
+      setPanelWidth(
+        calculateLibraryPanelDragWidth({
+          startWidth: resizeDrag.startWidth,
+          startX: resizeDrag.startX,
+          currentX: event.clientX,
+        }),
+      );
+    };
+    const handlePointerEnd = () => setResizeDrag(null);
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerEnd);
+    window.addEventListener("pointercancel", handlePointerEnd);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerEnd);
+      window.removeEventListener("pointercancel", handlePointerEnd);
+    };
+  }, [resizeDrag]);
 
   const toggleFilter = useCallback((key: IndicatorLibraryFilterKey, value: string) => {
     setFilters((current) => {
@@ -468,10 +612,13 @@ function IndicatorLibraryLanding({
   const hasFilters = hasActiveIndicatorLibraryFilters(filters) || favoritesOnly || search.trim().length > 0;
 
   return (
-    <div className="space-y-3">
+    <div ref={contentBoundsRef} className="indicator-library-root space-y-3">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold text-zinc-100">Indicator Library</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-lg font-semibold text-zinc-100">Indicator Library</h1>
+            <IndicatorDefinitionHelp definition={INDICATOR_LIBRARY_HELP} name="Indicator Library" />
+          </div>
         </div>
         <div className="font-mono text-[11px] text-zinc-500">
           {prettyCount(filtered.length)} / {prettyCount(rows.length)}
@@ -520,60 +667,131 @@ function IndicatorLibraryLanding({
         />
       ) : null}
 
-      {selected ? (
-        <IndicatorLibraryDetailPanel
-          row={selected}
-          isFavorite={favorites.isFavorite(indicatorLibraryFavoriteKey(selected))}
-          onToggleFavorite={() => favorites.toggle(indicatorLibraryFavoriteKey(selected))}
-          onClose={() => setSelectedId(null)}
-          onOpenSection={onOpenSection}
-          onOpenEnergySub={onOpenEnergySub}
-        />
-      ) : null}
+      <div
+        className={
+          selected && !panelFullscreen
+            ? "grid items-start gap-3 xl:grid-cols-[minmax(0,1fr)_var(--indicator-library-panel-width)]"
+            : "grid items-start gap-3"
+        }
+        style={panelLayoutStyle}
+      >
+        <section className="min-w-0">
+          {filtered.length === 0 ? (
+            <StateBanner
+              variant="empty"
+              title="No indicators match"
+              message="Clear search and filters to return to the full library."
+            />
+          ) : (
+            <div
+              ref={tableFrameRef}
+              className="indicator-library-table-frame overflow-auto rounded-md border border-zinc-800"
+            >
+              <table className="min-w-[760px] w-full text-left text-xs">
+                <thead className="sticky top-0 bg-zinc-950 text-[10px] uppercase tracking-[0.08em] text-zinc-500">
+                  <tr>
+                    <th className="px-3 py-2 font-medium">Indicator</th>
+                    <th className="px-3 py-2 font-medium">Unit</th>
+                    <th className="px-3 py-2 font-medium">Period</th>
+                    <th className="px-3 py-2 font-medium">Scope</th>
+                    <th className="px-3 py-2 font-medium">Domain</th>
+                    <th className="px-3 py-2 font-medium">Source</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((row) => (
+                    <IndicatorLibraryTableRow
+                      key={row.id}
+                      row={row}
+                      selected={row.id === selectedId}
+                      isFavorite={favorites.isFavorite(indicatorLibraryFavoriteKey(row))}
+                      onSelect={() =>
+                        setSelectedId((current) => resolveIndicatorLibrarySelection(current, row.id))
+                      }
+                      onToggleFavorite={() => favorites.toggle(indicatorLibraryFavoriteKey(row))}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
 
-      <section className="min-w-0">
-        {filtered.length === 0 ? (
-          <StateBanner
-            variant="empty"
-            title="No indicators match"
-            message="Clear search and filters to return to the full library."
+        {selected && panelFullscreen ? (
+          <button
+            type="button"
+            aria-label="Exit fullscreen indicator detail backdrop"
+            onClick={() => setPanelFullscreen(false)}
+            className="fixed inset-0 z-40 cursor-default border-0 bg-black/70"
           />
-        ) : (
-          <div className="overflow-auto rounded-md border border-zinc-800">
-            <table className="min-w-[980px] w-full text-left text-xs">
-              <thead className="sticky top-0 bg-zinc-950 text-[10px] uppercase tracking-[0.08em] text-zinc-500">
-                <tr>
-                  <th className="w-8 px-3 py-2 font-medium" aria-label="Favorite" />
-                  <th className="px-3 py-2 font-medium">Indicator</th>
-                  <th className="px-3 py-2 font-medium">Definition</th>
-                  <th className="px-3 py-2 font-medium">Domain</th>
-                  <th className="px-3 py-2 font-medium">Scope</th>
-                  <th className="px-3 py-2 font-medium">Unit / period</th>
-                  <th className="px-3 py-2 font-medium">Source</th>
-                  <th className="px-3 py-2 font-medium">Type</th>
-                  <th className="px-3 py-2 text-right font-medium">Open</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((row) => (
-                  <IndicatorLibraryTableRow
-                    key={row.id}
-                    row={row}
-                    selected={row.id === selectedId}
-                    isFavorite={favorites.isFavorite(indicatorLibraryFavoriteKey(row))}
-                    onSelect={() =>
-                      setSelectedId((current) => resolveIndicatorLibrarySelection(current, row.id))
+        ) : null}
+
+        {selected ? (
+          <aside
+            className={
+              panelFullscreen
+                ? "fixed inset-3 z-50 min-w-0"
+                : "relative min-w-0"
+            }
+          >
+            <div className={panelFullscreen ? "h-full" : "indicator-library-detail-shell"}>
+              {!panelFullscreen ? (
+                <div
+                  role="separator"
+                  aria-label="Resize indicator detail panel"
+                  aria-orientation="vertical"
+                  aria-valuemin={MIN_LIBRARY_PANEL_WIDTH}
+                  aria-valuemax={MAX_LIBRARY_PANEL_WIDTH}
+                  aria-valuenow={panelWidth}
+                  tabIndex={0}
+                  title="Drag to resize"
+                  onDoubleClick={() => setPanelWidth(DEFAULT_LIBRARY_PANEL_WIDTH)}
+                  onKeyDown={(event: ReactKeyboardEvent<HTMLDivElement>) => {
+                    const step = event.shiftKey ? 80 : 40;
+                    if (event.key === "ArrowLeft") {
+                      event.preventDefault();
+                      setPanelWidth((current) => clampLibraryPanelWidth(current + step));
+                    } else if (event.key === "ArrowRight") {
+                      event.preventDefault();
+                      setPanelWidth((current) => clampLibraryPanelWidth(current - step));
+                    } else if (event.key === "Home") {
+                      event.preventDefault();
+                      setPanelWidth(MIN_LIBRARY_PANEL_WIDTH);
+                    } else if (event.key === "End") {
+                      event.preventDefault();
+                      setPanelWidth(MAX_LIBRARY_PANEL_WIDTH);
                     }
-                    onToggleFavorite={() => favorites.toggle(indicatorLibraryFavoriteKey(row))}
-                    onOpenSection={onOpenSection}
-                    onOpenEnergySub={onOpenEnergySub}
+                  }}
+                  onPointerDown={(event: ReactPointerEvent<HTMLDivElement>) => {
+                    event.preventDefault();
+                    setResizeDrag({ startX: event.clientX, startWidth: panelWidth });
+                  }}
+                  className="absolute -left-1.5 top-0 hidden h-full w-3 cursor-col-resize items-stretch justify-center rounded-sm outline-none xl:flex"
+                >
+                  <span
+                    aria-hidden="true"
+                    className={`my-2 w-px rounded-full ${
+                      resizeDrag ? "bg-amber-400" : "bg-zinc-700"
+                    }`}
                   />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+                </div>
+              ) : null}
+              <IndicatorLibraryDetailPanel
+                row={selected}
+                isFavorite={favorites.isFavorite(indicatorLibraryFavoriteKey(selected))}
+                onToggleFavorite={() => favorites.toggle(indicatorLibraryFavoriteKey(selected))}
+                isFullscreen={panelFullscreen}
+                isViewportDocked={!panelFullscreen}
+                onToggleFullscreen={() => setPanelFullscreen((value) => !value)}
+                onClose={() => {
+                  setPanelFullscreen(false);
+                  setSelectedId(null);
+                }}
+              />
+            </div>
+          </aside>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -686,16 +904,12 @@ function IndicatorLibraryTableRow({
   isFavorite,
   onSelect,
   onToggleFavorite,
-  onOpenSection,
-  onOpenEnergySub,
 }: {
   row: IndicatorLibraryRow;
   selected: boolean;
   isFavorite: boolean;
   onSelect: () => void;
   onToggleFavorite: () => void;
-  onOpenSection?: (section: IndicatorLibrarySection) => void;
-  onOpenEnergySub?: (sub: IndicatorLibraryEnergySub) => void;
 }) {
   return (
     <tr
@@ -714,114 +928,51 @@ function IndicatorLibraryTableRow({
       }`}
     >
       <td className="px-3 py-2">
-        <button
-          type="button"
-          aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
-          aria-pressed={isFavorite}
-          onClick={(event) => {
-            event.stopPropagation();
-            onToggleFavorite();
-          }}
-          className="text-base leading-none"
-          style={{
-            background: "transparent",
-            border: "none",
-            color: isFavorite ? "var(--color-action-primary)" : "var(--color-text-disabled)",
-            cursor: "pointer",
-            padding: 0,
-          }}
-        >
-          {isFavorite ? "★" : "☆"}
-        </button>
-      </td>
-      <td className="px-3 py-2">
-        <div className="font-medium text-zinc-100">{row.name}</div>
-        <div className="mt-1 font-mono text-[10px] text-zinc-600">{row.id}</div>
-      </td>
-      <td className="max-w-[360px] px-3 py-2 text-zinc-400">
-        <div
-          title={row.description}
-          style={{
-            display: "-webkit-box",
-            overflow: "hidden",
-            WebkitBoxOrient: "vertical",
-            WebkitLineClamp: 2,
-          }}
-        >
-          {row.description}
+        <div className="flex min-w-[180px] items-center gap-2">
+          <div className="min-w-0 font-medium text-zinc-100">{row.name}</div>
+          <IndicatorDefinitionHelp definition={row.description} name={row.name} />
+          <button
+            type="button"
+            aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
+            aria-pressed={isFavorite}
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggleFavorite();
+            }}
+            onKeyDown={(event) => event.stopPropagation()}
+            className="text-base leading-none"
+            style={{
+              background: "transparent",
+              border: "none",
+              color: isFavorite ? "var(--color-action-primary)" : "var(--color-text-disabled)",
+              cursor: "pointer",
+              padding: 0,
+            }}
+          >
+            {isFavorite ? "★" : "☆"}
+          </button>
         </div>
       </td>
-      <td className="px-3 py-2 text-zinc-300">{row.domain}</td>
+      <td className="px-3 py-2 font-mono text-zinc-300">{row.unit}</td>
+      <td className="px-3 py-2 text-zinc-500">{row.period}</td>
       <td className="px-3 py-2 text-zinc-500">{row.scope}</td>
-      <td className="px-3 py-2">
-        <div className="font-mono text-zinc-300">{row.unit}</div>
-        <div className="mt-1 text-[11px] text-zinc-600">{row.period}</div>
-      </td>
+      <td className="px-3 py-2 text-zinc-300">{row.domain}</td>
       <td className="px-3 py-2 text-zinc-500">{row.source}</td>
-      <td className="px-3 py-2">
-        <div className="text-zinc-300">{row.valueType}</div>
-        <div className="mt-1 text-[11px] text-zinc-600">{row.status}</div>
-      </td>
-      <td className="px-3 py-2 text-right">
-        <LibraryActionButton
-          action={row.action}
-          onClickCapture={(event) => event.stopPropagation()}
-          onOpenSection={onOpenSection}
-          onOpenEnergySub={onOpenEnergySub}
-        />
-      </td>
     </tr>
   );
 }
 
-function LibraryActionButton({
-  action,
-  onClickCapture,
-  onOpenSection,
-  onOpenEnergySub,
-}: {
-  action: IndicatorLibraryAction;
-  onClickCapture?: (event: React.MouseEvent<HTMLElement>) => void;
-  onOpenSection?: (section: IndicatorLibrarySection) => void;
-  onOpenEnergySub?: (sub: IndicatorLibraryEnergySub) => void;
-}) {
-  const className =
-    "inline-flex items-center justify-center rounded border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs font-medium text-zinc-200 transition-colors hover:border-zinc-500 hover:bg-zinc-800 focus-visible:outline focus-visible:outline-1 focus-visible:outline-amber-400";
-
-  if (action.type === "hash") {
-    return (
-      <a
-        href={action.href}
-        className={className}
-        aria-label={action.label}
-        title={action.label}
-        onClick={onClickCapture}
-      >
-        Open
-      </a>
-    );
-  }
-
-  const disabled = action.type === "energy" ? !onOpenEnergySub : !onOpenSection;
-  const handleClick = () => {
-    if (action.type === "energy") onOpenEnergySub?.(action.sub);
-    else onOpenSection?.(action.section);
-  };
-
+function IndicatorDefinitionHelp({ definition, name }: { definition: string; name: string }) {
   return (
     <button
       type="button"
-      className={className}
-      disabled={disabled}
-      onClick={(event) => {
-        onClickCapture?.(event);
-        handleClick();
-      }}
-      aria-label={action.label}
-      title={action.label}
-      style={{ cursor: disabled ? "not-allowed" : undefined, opacity: disabled ? 0.55 : undefined }}
+      aria-label={`${name} definition: ${definition}`}
+      title={definition}
+      onClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => event.stopPropagation()}
+      className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-zinc-700 bg-zinc-950 font-mono text-[10px] leading-none text-zinc-500 hover:border-zinc-500 hover:text-zinc-200 focus-visible:outline focus-visible:outline-1 focus-visible:outline-amber-400"
     >
-      Open
+      ?
     </button>
   );
 }
@@ -830,18 +981,19 @@ function IndicatorLibraryDetailPanel({
   row,
   isFavorite,
   onToggleFavorite,
+  isFullscreen,
+  isViewportDocked,
+  onToggleFullscreen,
   onClose,
-  onOpenSection,
-  onOpenEnergySub,
 }: {
   row: IndicatorLibraryRow | null;
   isFavorite: boolean;
   onToggleFavorite: () => void;
+  isFullscreen: boolean;
+  isViewportDocked: boolean;
+  onToggleFullscreen: () => void;
   onClose: () => void;
-  onOpenSection?: (section: IndicatorLibrarySection) => void;
-  onOpenEnergySub?: (sub: IndicatorLibraryEnergySub) => void;
 }) {
-  const [exportMsg, setExportMsg] = useState<Msg>(null);
   const sourceId = row?.sourceRecordId ?? "";
   const isCountry = row?.previewKind === "country-kpi" && Boolean(sourceId);
   const isSin = row?.previewKind === "sin-kpi" && Boolean(sourceId);
@@ -865,57 +1017,27 @@ function IndicatorLibraryDetailPanel({
     staleTime: 60_000,
   });
 
-  const countryRows = useMemo(() => {
-    const values = countryQuery.data?.mode === "desktop" ? countryQuery.data.values : [];
-    return latestCountryRows(values, sourceId);
-  }, [countryQuery.data, sourceId]);
-
-  const sinRows = useMemo(() => {
-    const values = sinQuery.data?.mode === "desktop" ? sinQuery.data.values : [];
-    return latestSinRows(values, sourceId);
-  }, [sinQuery.data, sourceId]);
-
   if (!row) {
     return (
       <div className="flex min-h-60 items-center justify-center rounded-md border border-dashed border-zinc-800 p-6 text-center text-sm text-zinc-600">
-        Select an indicator to inspect metadata, availability, preview data, and export options.
+        Select an indicator to inspect its definition and chart.
       </div>
     );
   }
 
-  const exportDisabledReason = exportReason(row, {
-    countryLoading: countryQuery.isLoading,
-    countryError: countryQuery.isError,
-    countryRows: countryRows.length,
-  });
-
-  const handleExport = async () => {
-    if (exportDisabledReason) return;
-    setExportMsg({ text: "Exporting indicator to Excel…", ok: true });
-    try {
-      const result =
-        isCountryKpiLibraryRow(row) && row.sourceRecordId
-          ? await exportCountryKPIsExcel({ kpi_ids: [row.sourceRecordId] })
-          : { path: null, error: row.exportUnavailableReason ?? "Export is unavailable." };
-      setExportMsg(
-        result.path
-          ? { text: `Exported to ${result.path}`, ok: true }
-          : { text: result.error ?? "Export failed.", ok: false },
-      );
-    } catch (error) {
-      setExportMsg({ text: `Export failed: ${String(error)}`, ok: false });
-    }
-  };
-
   return (
-    <div className="space-y-3 rounded-md border border-zinc-800 bg-zinc-950/40 p-4">
-      {exportMsg ? <RefreshMsg msg={exportMsg} onDismiss={() => setExportMsg(null)} /> : null}
+    <div
+      className={`space-y-3 rounded-md border border-zinc-800 p-4 ${
+        isFullscreen
+          ? "h-full overflow-auto bg-zinc-950/95"
+          : isViewportDocked
+            ? "bg-zinc-950/40 xl:h-full xl:overflow-auto"
+            : "bg-zinc-950/40 xl:max-h-[calc(100vh-180px)] xl:overflow-auto"
+      }`}
+    >
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
+        <div className="flex min-w-0 items-center gap-2">
           <h2 className="text-base font-semibold text-zinc-100">{row.name}</h2>
-          <div className="mt-1 font-mono text-[10px] text-zinc-600">{row.id}</div>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
           <button
             type="button"
             aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
@@ -932,6 +1054,17 @@ function IndicatorLibraryDetailPanel({
           >
             {isFavorite ? "★" : "☆"}
           </button>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <button
+            type="button"
+            aria-label={isFullscreen ? "Restore indicator detail panel" : "Fullscreen indicator detail panel"}
+            aria-pressed={isFullscreen}
+            onClick={onToggleFullscreen}
+            className="inline-flex h-7 items-center justify-center rounded border border-zinc-800 bg-zinc-950 px-2 font-mono text-[10px] text-zinc-500 hover:border-zinc-600 hover:text-zinc-200"
+          >
+            {isFullscreen ? "Dock" : "Full"}
+          </button>
           <button
             type="button"
             aria-label="Close indicator detail"
@@ -945,61 +1078,19 @@ function IndicatorLibraryDetailPanel({
 
       <p className="text-sm leading-relaxed text-zinc-300">{row.description}</p>
 
-      <div className="flex flex-wrap gap-1.5">
-        <Tag>{row.domain}</Tag>
-        <Tag>{row.source}</Tag>
-        <Tag>{row.unit}</Tag>
-        <Tag tone="info">{row.valueType}</Tag>
-      </div>
-
-      <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
-        <LibraryMeta label="Scope" value={row.scope} />
-        <LibraryMeta label="Period" value={row.period} />
-        <LibraryMeta label="Status" value={row.status} />
-        <LibraryMeta label="Data quality" value={row.dataQuality ?? "Unavailable"} />
-        <LibraryMeta label="Coverage" value={coverageLabel(row.coverageStart, row.coverageEnd)} />
-        <LibraryMeta label="Last update" value={shortDateTime(row.lastRefreshAt)} />
-        <LibraryMeta label="Latest" value={formatLatestValue(row.latestValue ?? null, row.unit)} />
-        <LibraryMeta label="Reference" value={row.latestReferenceDate ?? "Unavailable"} />
-      </dl>
-
       <div className="space-y-2">
-        <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-zinc-500">
-          Data preview
-        </div>
+        <LibraryDetailField label="Unit" value={row.unit} />
         <IndicatorLibraryPreview
           row={row}
           countryQuery={countryQuery}
           sinQuery={sinQuery}
-          countryRows={countryRows}
-          sinRows={sinRows}
+          chartHeight={isFullscreen ? 460 : 300}
         />
+        <div className="grid grid-cols-2 gap-x-4 gap-y-2 border-t border-zinc-800 pt-2">
+          <LibraryDetailField label="Source" value={row.source} />
+          <LibraryDetailField label="Domain" value={row.domain} />
+        </div>
       </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <LibraryActionButton
-          action={row.action}
-          onOpenSection={onOpenSection}
-          onOpenEnergySub={onOpenEnergySub}
-        />
-        <button
-          type="button"
-          disabled={Boolean(exportDisabledReason)}
-          onClick={handleExport}
-          title={exportDisabledReason ?? "Export this indicator from the local country KPI cache."}
-          className="inline-flex h-7 items-center justify-center rounded border px-3 font-mono text-xs"
-          style={{
-            background: "var(--color-surface-1)",
-            borderColor: "var(--color-border-default)",
-            color: exportDisabledReason ? "var(--color-text-disabled)" : "var(--color-text-secondary)",
-            cursor: exportDisabledReason ? "not-allowed" : "pointer",
-            opacity: exportDisabledReason ? 0.65 : 1,
-          }}
-        >
-          Export
-        </button>
-      </div>
-      {exportDisabledReason ? <p className="m-0 text-xs text-zinc-600">{exportDisabledReason}</p> : null}
     </div>
   );
 }
@@ -1008,15 +1099,116 @@ function IndicatorLibraryPreview({
   row,
   countryQuery,
   sinQuery,
-  countryRows,
-  sinRows,
+  chartHeight,
 }: {
   row: IndicatorLibraryRow;
   countryQuery: UseQueryResult<CountrySeriesQueryResult, Error>;
   sinQuery: UseQueryResult<SinSeriesQueryResult, Error>;
-  countryRows: CountryKPIValue[];
-  sinRows: SINKPIObservation[];
+  chartHeight: number;
 }) {
+  const sourceId = row.sourceRecordId ?? "";
+  const countryValues = countryQuery.data?.mode === "desktop" ? countryQuery.data.values : [];
+  const sinValues = sinQuery.data?.mode === "desktop" ? sinQuery.data.values : [];
+  const isCountryPreview = row.sourceGroup === "energy_country";
+  const isSinPreview = row.sourceGroup === "sin";
+  const [chart, setChart] = useState<ChartAesthetics>(() => ({ ...LIBRARY_PREVIEW_CHART }));
+  const [selected, setSelected] = useState<IndicatorSelection[]>([]);
+  const seededRowRef = useRef<string | null>(null);
+
+  const defs: IndicatorDef[] = useMemo(() => {
+    if (isCountryPreview) {
+      return COUNTRY_ISO_CODES.map((iso) => ({
+        id: iso,
+        label: COUNTRY_LABELS[iso] ?? iso,
+        category: "Countries",
+        unit: isPctKpi(sourceId) ? ("pct" as const) : ("number" as const),
+        isPlaceholder: false,
+        available: countryValues.some(
+          (value) => value.kpi_id === sourceId && value.iso_code === iso && value.value !== null,
+        ),
+      }));
+    }
+    if (isSinPreview) {
+      return LIBRARY_SIN_SUBSYSTEMS.map((subsystem) => ({
+        id: subsystem.code,
+        label: subsystem.label,
+        category: "Subsystems",
+        unit: isSinPctKpi(sourceId) ? ("pct" as const) : ("number" as const),
+        isPlaceholder: false,
+        available: sinValues.some(
+          (value) =>
+            value.kpi_id === sourceId &&
+            value.subsystem_code === subsystem.code &&
+            value.value !== null,
+        ),
+      }));
+    }
+    return [];
+  }, [countryValues, isCountryPreview, isSinPreview, sinValues, sourceId]);
+
+  const maxSelected = Math.min(LIBRARY_MAX_SELECTED, Math.max(defs.length, 1));
+  const availableDefs = useMemo(() => defs.filter((def) => def.available), [defs]);
+  const defsById = useMemo(() => new Map(defs.map((def) => [def.id, def])), [defs]);
+  const selectionById = useMemo(() => new Map(selected.map((item) => [item.id, item] as const)), [selected]);
+  const plottable = useMemo(
+    () => selected.filter((item) => defsById.get(item.id)?.available),
+    [defsById, selected],
+  );
+  const droppedCount = selected.filter((item) => defsById.has(item.id) && !defsById.get(item.id)?.available).length;
+  const countryChart = useMemo(
+    () => buildCountryPreviewChart(countryValues, sourceId, plottable, chart),
+    [chart, countryValues, plottable, sourceId],
+  );
+  const sinChart = useMemo(
+    () => buildSinPreviewChart(sinValues, sourceId, plottable, chart),
+    [chart, plottable, sinValues, sourceId],
+  );
+  const activeChart = isCountryPreview ? countryChart : sinChart;
+  const itemNoun = isCountryPreview ? "Countries" : "Subsystems";
+  const showAxisControls = useMemo(
+    () => new Set(activeChart.series.map((series) => series.unit)).size > 1,
+    [activeChart.series],
+  );
+
+  useEffect(() => {
+    seededRowRef.current = null;
+    setSelected([]);
+    setChart({ ...LIBRARY_PREVIEW_CHART });
+  }, [row.id]);
+
+  useEffect(() => {
+    if (seededRowRef.current === row.id || availableDefs.length === 0) return;
+    seededRowRef.current = row.id;
+    setSelected(
+      availableDefs.slice(0, maxSelected).map((def) => ({
+        id: def.id,
+        axis: "auto",
+        type: "auto",
+      })),
+    );
+  }, [availableDefs, maxSelected, row.id]);
+
+  const handleChartChange = useCallback((patch: Partial<ChartAesthetics>) => {
+    setChart((current) => ({ ...current, ...patch }));
+  }, []);
+
+  function toggleSelection(id: string) {
+    const exists = selected.some((item) => item.id === id);
+    if (exists) {
+      setSelected(selected.filter((item) => item.id !== id));
+    } else if (selected.length < maxSelected) {
+      setSelected([...selected, { id, axis: "auto", type: "auto" }]);
+    }
+  }
+
+  function setAxis(id: string, axis: "auto" | AxisSide) {
+    setSelected(selected.map((item) => (item.id === id ? { ...item, axis } : item)));
+  }
+
+  function setType(id: string, type: "auto" | ChartType) {
+    setSelected(selected.map((item) => (item.id === id ? { ...item, type } : item)));
+  }
+
   if (row.previewKind === "none" || !row.sourceRecordId || !row.sourceGroup) {
     return (
       <StateBanner
@@ -1035,7 +1227,7 @@ function IndicatorLibraryPreview({
     if (countryQuery.data?.mode === "browser") {
       return <StateBanner variant="browser-only" size="dense" message={countryQuery.data.reason} />;
     }
-    if (countryRows.length === 0) {
+    if (countryValues.length === 0) {
       return (
         <StateBanner
           variant="empty"
@@ -1045,7 +1237,25 @@ function IndicatorLibraryPreview({
         />
       );
     }
-    return <CountryPreviewTable rows={countryRows} />;
+    return (
+      <IndicatorLibraryPreviewChart
+        chart={chart}
+        defs={defs}
+        droppedCount={droppedCount}
+        itemNoun={itemNoun}
+        maxSelected={maxSelected}
+        onChartChange={handleChartChange}
+        onSetAxis={setAxis}
+        onSetType={setType}
+        onToggleSelection={toggleSelection}
+        chartHeight={chartHeight}
+        periods={activeChart.periods}
+        selected={selected}
+        selectionById={selectionById}
+        series={activeChart.series}
+        showAxisControls={showAxisControls}
+      />
+    );
   }
 
   if (sinQuery.isLoading) return <StateBanner variant="loading" size="dense" title="Loading cached values…" />;
@@ -1053,7 +1263,7 @@ function IndicatorLibraryPreview({
   if (sinQuery.data?.mode === "browser") {
     return <StateBanner variant="browser-only" size="dense" message={sinQuery.data.reason} />;
   }
-  if (sinRows.length === 0) {
+  if (sinValues.length === 0) {
     return (
       <StateBanner
         variant="empty"
@@ -1063,137 +1273,244 @@ function IndicatorLibraryPreview({
       />
     );
   }
-  return <SinPreviewTable rows={sinRows} />;
+  return (
+    <IndicatorLibraryPreviewChart
+      chart={chart}
+      defs={defs}
+      droppedCount={droppedCount}
+      itemNoun={itemNoun}
+      maxSelected={maxSelected}
+      onChartChange={handleChartChange}
+      onSetAxis={setAxis}
+      onSetType={setType}
+      onToggleSelection={toggleSelection}
+      chartHeight={chartHeight}
+      periods={activeChart.periods}
+      selected={selected}
+      selectionById={selectionById}
+      series={activeChart.series}
+      showAxisControls={showAxisControls}
+      xTickFormatter={formatShortDateTick}
+    />
+  );
 }
 
-function CountryPreviewTable({ rows }: { rows: CountryKPIValue[] }) {
+function IndicatorLibraryPreviewChart({
+  chart,
+  chartHeight,
+  defs,
+  droppedCount,
+  itemNoun,
+  maxSelected,
+  onChartChange,
+  onSetAxis,
+  onSetType,
+  onToggleSelection,
+  series,
+  periods,
+  selected,
+  selectionById,
+  showAxisControls,
+  xTickFormatter,
+}: {
+  chart: ChartAesthetics;
+  chartHeight: number;
+  defs: IndicatorDef[];
+  droppedCount: number;
+  itemNoun: string;
+  maxSelected: number;
+  onChartChange: (patch: Partial<ChartAesthetics>) => void;
+  onSetAxis: (id: string, axis: "auto" | AxisSide) => void;
+  onSetType: (id: string, type: "auto" | ChartType) => void;
+  onToggleSelection: (id: string) => void;
+  series: ResolvedSeries[];
+  periods: string[];
+  selected: IndicatorSelection[];
+  selectionById: Map<string, IndicatorSelection>;
+  showAxisControls: boolean;
+  xTickFormatter?: (value: string) => string;
+}) {
   return (
-    <div className="overflow-auto rounded border border-zinc-800">
-      <table className="w-full text-left text-xs">
-        <thead className="bg-zinc-950 text-[10px] uppercase tracking-[0.08em] text-zinc-500">
-          <tr>
-            <th className="px-2 py-1.5 font-medium">Country</th>
-            <th className="px-2 py-1.5 text-right font-medium">Period</th>
-            <th className="px-2 py-1.5 text-right font-medium">Value</th>
-            <th className="px-2 py-1.5 font-medium">Quality</th>
-            <th className="px-2 py-1.5 font-medium">Source</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((item) => (
-            <tr key={`${item.iso_code}-${item.period}`} className="border-t border-zinc-800">
-              <td className="px-2 py-1.5 text-zinc-300">{item.country_name || item.iso_code}</td>
-              <td className="px-2 py-1.5 text-right font-mono text-zinc-400">{item.period}</td>
-              <td className="px-2 py-1.5 text-right font-mono text-zinc-100">
-                {formatLatestValue(item.value, item.unit)}
-              </td>
-              <td className="px-2 py-1.5 text-zinc-500">{item.data_quality_status}</td>
-              <td className="px-2 py-1.5 text-zinc-500">{item.source}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="space-y-2">
+      <div className="indicator-library-chart-tools">
+        <IndicatorControls
+          frequency="annual"
+          quarterlyAvailable={false}
+          onFrequencyChange={() => undefined}
+          showFrequency={false}
+          itemNoun={itemNoun}
+          defs={defs}
+          selectedIds={selected.map((item) => item.id)}
+          onToggleIndicator={onToggleSelection}
+          maxSelected={maxSelected}
+          chart={chart}
+          onChartChange={onChartChange}
+        />
+      </div>
+
+      {droppedCount > 0 ? (
+        <p className="m-0 text-xs text-amber-400">
+          {droppedCount} selected {droppedCount === 1 ? "series is" : "series are"} unavailable and hidden.
+        </p>
+      ) : null}
+
+      {series.length === 0 || periods.length === 0 ? (
+        <StateBanner
+          variant="empty"
+          size="dense"
+          title="No chartable series"
+          message={`Select at least one available ${itemNoun.toLowerCase().replace(/s$/, "")} above.`}
+        />
+      ) : (
+        <IndicatorChart
+          series={series}
+          periods={periods}
+          config={chart}
+          height={chartHeight}
+          xTickFormatter={xTickFormatter}
+        />
+      )}
+
+      {chart.legend && series.length > 0 ? (
+        <IndicatorLegend
+          series={series}
+          selectionById={selectionById}
+          indexMode={chart.indexMode}
+          showAxisControls={showAxisControls}
+          onSetAxis={onSetAxis}
+          onSetType={onSetType}
+          onRemove={onToggleSelection}
+        />
+      ) : null}
     </div>
   );
 }
 
-function SinPreviewTable({ rows }: { rows: SINKPIObservation[] }) {
-  return (
-    <div className="overflow-auto rounded border border-zinc-800">
-      <table className="w-full text-left text-xs">
-        <thead className="bg-zinc-950 text-[10px] uppercase tracking-[0.08em] text-zinc-500">
-          <tr>
-            <th className="px-2 py-1.5 font-medium">Subsystem</th>
-            <th className="px-2 py-1.5 font-medium">Reference</th>
-            <th className="px-2 py-1.5 text-right font-medium">Value</th>
-            <th className="px-2 py-1.5 font-medium">Quality</th>
-            <th className="px-2 py-1.5 font-medium">Source</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((item) => (
-            <tr key={`${item.subsystem_code}-${item.reference_datetime}`} className="border-t border-zinc-800">
-              <td className="px-2 py-1.5 text-zinc-300">{item.subsystem_name || item.subsystem_code}</td>
-              <td className="px-2 py-1.5 font-mono text-zinc-400">{shortDateTime(item.reference_datetime)}</td>
-              <td className="px-2 py-1.5 text-right font-mono text-zinc-100">
-                {formatLatestValue(item.value, item.unit)}
-              </td>
-              <td className="px-2 py-1.5 text-zinc-500">{item.data_quality_status}</td>
-              <td className="px-2 py-1.5 text-zinc-500">{item.source}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function LibraryMeta({ label, value }: { label: string; value: string }) {
+function LibraryDetailField({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[10px] uppercase tracking-[0.08em] text-zinc-600">{label}</dt>
-      <dd className="m-0 break-words font-mono text-xs text-zinc-400">{value || "Unavailable"}</dd>
+      <div className="text-[10px] uppercase tracking-[0.08em] text-zinc-600">{label}</div>
+      <div className="mt-1 break-words font-mono text-xs text-zinc-300">{value || "Unavailable"}</div>
     </div>
   );
 }
 
-function exportReason(
-  row: IndicatorLibraryRow,
-  state: {
-    countryLoading: boolean;
-    countryError: boolean;
-    countryRows: number;
-  },
-): string | null {
-  if (!isCountryKpiLibraryRow(row)) return row.exportUnavailableReason ?? "No export is available for this indicator.";
-  if (state.countryLoading) return "Load cached preview rows before exporting.";
-  if (state.countryError) return "Cached country series could not be loaded.";
-  if (state.countryRows === 0) return "No cached country rows are available for this indicator.";
-  return null;
-}
-
-function latestCountryRows(rows: CountryKPIValue[], kpiId: string): CountryKPIValue[] {
-  const latestByCountry = new Map<string, CountryKPIValue>();
+function buildCountryPreviewChart(
+  rows: CountryKPIValue[],
+  kpiId: string,
+  plottable: IndicatorSelection[],
+  chart: ChartAesthetics,
+): { series: ResolvedSeries[]; periods: string[] } {
+  if (!kpiId) return { series: [], periods: [] };
+  const asPct = isPctKpi(kpiId);
+  const years = new Set<number>();
   for (const row of rows) {
-    if (row.kpi_id !== kpiId || row.value === null) continue;
-    const current = latestByCountry.get(row.iso_code);
-    if (!current || row.period > current.period) latestByCountry.set(row.iso_code, row);
+    if (row.kpi_id === kpiId && row.value !== null) years.add(row.period);
   }
-  return [...latestByCountry.values()]
-    .sort((a, b) => (a.country_name || a.iso_code).localeCompare(b.country_name || b.iso_code))
-    .slice(0, 8);
+  const sortedYears = [...years].sort((a, b) => a - b);
+  if (sortedYears.length === 0 || plottable.length === 0) return { series: [], periods: [] };
+
+  const series: ResolvedSeries[] = plottable.map((selection) => {
+    const yearValues = new Map(
+      rows
+        .filter((row) => row.iso_code === selection.id && row.kpi_id === kpiId)
+        .map((row) => [row.period, row.value] as const),
+    );
+    let points = sortedYears.map((year) => yearValues.get(year) ?? null);
+    if (asPct) points = points.map((value) => (value !== null ? value / 100 : null));
+    if (chart.indexMode) points = rebaseToBase100(points);
+    const finite = points.filter((value): value is number => value !== null);
+    return {
+      id: selection.id,
+      label: COUNTRY_LABELS[selection.id] ?? selection.id,
+      unit: chart.indexMode ? "number" : asPct ? "pct" : "number",
+      color: COUNTRY_COLORS[selection.id] ?? "#94A3B8",
+      type: selection.type === "auto" ? chart.type : selection.type,
+      axis: chart.indexMode ? "left" : selection.axis === "auto" ? "left" : selection.axis,
+      points,
+      latest: finite.length > 0 ? finite[finite.length - 1] : null,
+    };
+  });
+
+  return { series, periods: sortedYears.map(String) };
 }
 
-function latestSinRows(rows: SINKPIObservation[], kpiId: string): SINKPIObservation[] {
-  const order = new Map([
-    ["S", 0],
-    ["SE_CO", 1],
-    ["NE", 2],
-    ["N", 3],
-  ]);
-  const latestBySubsystem = new Map<string, SINKPIObservation>();
+function buildSinPreviewChart(
+  rows: SINKPIObservation[],
+  kpiId: string,
+  plottable: IndicatorSelection[],
+  chart: ChartAesthetics,
+): { series: ResolvedSeries[]; periods: string[] } {
+  if (!kpiId) return { series: [], periods: [] };
+  const isPct = isSinPctKpi(kpiId);
+  const valuesBySubsystem = new Map<string, Map<string, { sum: number; count: number }>>();
+  const dateSet = new Set<string>();
+
   for (const row of rows) {
     if (row.kpi_id !== kpiId || row.value === null) continue;
-    const current = latestBySubsystem.get(row.subsystem_code);
-    if (!current || row.reference_datetime > current.reference_datetime) {
-      latestBySubsystem.set(row.subsystem_code, row);
+    const date = row.reference_datetime.slice(0, 10);
+    dateSet.add(date);
+    let subsystemValues = valuesBySubsystem.get(row.subsystem_code);
+    if (!subsystemValues) {
+      subsystemValues = new Map();
+      valuesBySubsystem.set(row.subsystem_code, subsystemValues);
+    }
+    const current = subsystemValues.get(date);
+    if (current) {
+      current.sum += row.value;
+      current.count += 1;
+    } else {
+      subsystemValues.set(date, { sum: row.value, count: 1 });
     }
   }
-  return [...latestBySubsystem.values()].sort(
-    (a, b) => (order.get(a.subsystem_code) ?? 99) - (order.get(b.subsystem_code) ?? 99),
+
+  const dates = [...dateSet].sort().slice(-366);
+  if (dates.length === 0 || plottable.length === 0) return { series: [], periods: [] };
+  const subsystemsByCode: Map<string, (typeof LIBRARY_SIN_SUBSYSTEMS)[number]> = new Map(
+    LIBRARY_SIN_SUBSYSTEMS.map((subsystem) => [subsystem.code, subsystem]),
   );
+
+  const series: ResolvedSeries[] = plottable.flatMap((selection) => {
+    const subsystem = subsystemsByCode.get(selection.id);
+    if (!subsystem || !valuesBySubsystem.has(subsystem.code)) return [];
+    const subsystemValues = valuesBySubsystem.get(subsystem.code)!;
+    let points = dates.map((date) => {
+      const value = subsystemValues.get(date);
+      if (!value) return null;
+      const mean = value.sum / value.count;
+      return isPct ? mean / 100 : mean;
+    });
+    if (chart.indexMode) points = rebaseToBase100(points);
+    const finite = points.filter((value): value is number => value !== null);
+    return [{
+      id: subsystem.code,
+      label: subsystem.label,
+      unit: chart.indexMode ? "number" : isPct ? "pct" : "number",
+      color: subsystem.color,
+      type: selection.type === "auto" ? chart.type : selection.type,
+      axis: chart.indexMode ? "left" : selection.axis === "auto" ? "left" : selection.axis,
+      points,
+      latest: finite.length > 0 ? finite[finite.length - 1] : null,
+    }];
+  });
+
+  return { series, periods: dates };
 }
 
-function coverageLabel(start?: string | null, end?: string | null): string {
-  if (!start && !end) return "Unavailable";
-  return `${start ?? "—"} - ${end ?? "—"}`;
+function isSinPctKpi(kpiId: string): boolean {
+  return kpiId.endsWith("pct") || kpiId.includes("share");
 }
 
-function shortDateTime(value?: string | null): string {
-  if (!value) return "Unavailable";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value.slice(0, 10);
-  return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "2-digit" });
+function rebaseToBase100(points: Array<number | null>): Array<number | null> {
+  const base = points.find((value): value is number => value !== null);
+  if (base === undefined || base === 0) return points;
+  return points.map((value) => (value === null ? null : (value / base) * 100));
+}
+
+function formatShortDateTick(value: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  if (!match) return value;
+  return `${match[3]}/${match[2]}/${match[1].slice(2)}`;
 }
 
 function RefreshMsg({ msg, onDismiss }: { msg: NonNullable<Msg>; onDismiss: () => void }) {
