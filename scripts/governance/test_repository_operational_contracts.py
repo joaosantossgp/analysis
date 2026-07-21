@@ -1,40 +1,103 @@
 from __future__ import annotations
 
+import ast
 import importlib
 import json
 import re
+import subprocess
+import textwrap
+from fnmatch import fnmatchcase
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def _tracked_files() -> set[str]:
+    result = subprocess.run(
+        ["git", "-C", str(ROOT), "ls-files"],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    return set(result.stdout.splitlines())
+
+
+def _tracked_matches(pattern: str, tracked_files: set[str]) -> set[str]:
+    return {path for path in tracked_files if fnmatchcase(path, pattern)}
+
+
+def _extract_python_heredoc(workflow: str) -> str:
+    pattern = re.compile(
+        r"(?ms)^[ \t]*python - <<'PY'[ \t]*\n(?P<body>.*?)^[ \t]*PY[ \t]*$"
+    )
+    matches = list(pattern.finditer(workflow))
+    assert len(matches) == 1, "expected exactly one embedded Python heredoc"
+    return textwrap.dedent(matches[0].group("body"))
+
+
+def _import_from_symbols(source: str) -> set[tuple[str, str]]:
+    tree = ast.parse(source)
+    return {
+        (node.module, alias.name)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module is not None
+        for alias in node.names
+    }
+
+
+def test_seed_import_inventory_ignores_textual_decoys() -> None:
+    source = """
+message = "from src.platform.db import build_engine"
+# from src.platform.settings import build_settings
+from src.platform.settings import build_settings
+"""
+
+    assert _import_from_symbols(source) == {
+        ("src.platform.settings", "build_settings")
+    }
+
+
 def test_seed_catalog_smoke_uses_resolvable_platform_modules() -> None:
     workflow = (ROOT / ".github/workflows/seed_catalog.yml").read_text(
         encoding="utf-8"
     )
+    imports = _import_from_symbols(_extract_python_heredoc(workflow))
     expected_imports = {
-        "from src.platform.db import build_engine": ("src.platform.db", "build_engine"),
-        "from src.platform.settings import build_settings": (
-            "src.platform.settings",
-            "build_settings",
-        ),
+        ("src.platform.db", "build_engine"),
+        ("src.platform.settings", "build_settings"),
+    }
+    stale_imports = {
+        ("src.db", "build_engine"),
+        ("src.settings", "build_settings"),
     }
 
-    violations = []
-    for stale in (
-        "from src.db import build_engine",
-        "from src.settings import build_settings",
-    ):
-        if stale in workflow:
-            violations.append(f"stale seed import: {stale}")
-    for statement, (module_name, symbol_name) in expected_imports.items():
-        if statement not in workflow:
-            violations.append(f"missing active seed import: {statement}")
+    violations = [
+        f"stale seed import: from {module_name} import {symbol_name}"
+        for module_name, symbol_name in sorted(imports & stale_imports)
+    ]
+    violations.extend(
+        f"missing active seed import: from {module_name} import {symbol_name}"
+        for module_name, symbol_name in sorted(expected_imports - imports)
+    )
     assert not violations, "\n".join(violations)
-    for statement, (module_name, symbol_name) in expected_imports.items():
+    for module_name, symbol_name in expected_imports:
         symbol = getattr(importlib.import_module(module_name), symbol_name)
         assert callable(symbol)
+
+
+def test_policy_wildcards_resolve_to_tracked_runtime_files() -> None:
+    tracked_files = _tracked_files()
+
+    read_service_matches = _tracked_matches(
+        "src/financials/read_service_*.py", tracked_files
+    )
+    bridge_api_matches = _tracked_matches("desktop/bridge_api/**", tracked_files)
+
+    assert "src/financials/read_service_query.py" in read_service_matches
+    assert "desktop/bridge_api/base.py" in bridge_api_matches
+    assert not _tracked_matches("desktop/missing_bridge_api/**", tracked_files)
 
 
 def test_critical_runtime_policy_tracks_active_module_paths() -> None:
@@ -67,6 +130,7 @@ def test_critical_runtime_policy_tracks_active_module_paths() -> None:
         "apps/api/app/dependencies.py",
         "desktop/app.py",
         "desktop/bridge.py",
+        "desktop/services.py",
         "desktop/bridge_api/**",
     }
 
@@ -74,10 +138,13 @@ def test_critical_runtime_policy_tracks_active_module_paths() -> None:
     violations.extend(
         f"missing active path-policy entry: {path}" for path in sorted(required - patterns)
     )
+    tracked_files = _tracked_files()
+    violations.extend(
+        f"path-policy entry matches no tracked file: {path}"
+        for path in sorted(patterns)
+        if not _tracked_matches(path, tracked_files)
+    )
     assert not violations, "\n".join(violations)
-    for relative_path in required:
-        if "*" not in relative_path:
-            assert (ROOT / relative_path).is_file()
 
 
 def test_worktree_lifecycle_scripts_default_to_main() -> None:

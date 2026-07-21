@@ -107,6 +107,7 @@
         "apps/api/app/dependencies.py",
         "desktop/app.py",
         "desktop/bridge.py",
+        "desktop/services.py",
         "desktop/bridge_api/**"
       ],
       "ownerLane": "backend",
