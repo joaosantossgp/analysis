@@ -436,6 +436,8 @@ split because the active autonomous lane allowlists do not permit one PR to span
 - Hash canonical inputs before and after, mutate only disposable fixtures, stop
   the exact child process in `finally`, and retain logs/checksums/screenshots as
   audit evidence.
+- Implement the controller and CDP runner as committed, test-first diagnostic
+  scripts; independently review/hash the harness before running it.
 
 ## 10. Overlap decisions
 

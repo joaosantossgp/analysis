@@ -1006,6 +1006,11 @@ their gated behavior remains unchanged.
 
 **Files:**
 - Create: `docs/architecture-hardening-wave-audit.md`
+- Create: `scripts/diagnostics/validate_packaged_candidate.ps1`
+- Create: `scripts/diagnostics/validate_packaged_ui.cjs`
+- Create: `scripts/governance/test_packaged_candidate_harness.py`
+- Modify: `scripts/governance/test_frontend_ci_contract.py`
+- Modify: `.github/workflows/ci.yml`
 - Generated/ignored: `dist/CVMAnalytics/**`
 - Generated/ignored: `scratch/architecture-hardening-wave/task-7/**`
 - Do not modify: runtime source, database schemas/data, updater/release workflows, or version/channel contracts
@@ -1015,7 +1020,7 @@ their gated behavior remains unchanged.
   explicit child-process `CVMANALYTICS_DATA_DIR` and `LOCALAPPDATA`, SQLite
   backup copies, package diagnostic mode, WebView2 CDP, Excel export, and the
   updater helper contract.
-- Produces: a current-head candidate checksum/provenance package and durable final audit report. It publishes no release.
+- Produces: a committed/reviewed reusable package-validation harness plus a current-head candidate checksum/provenance package and durable final audit report. It publishes no release.
 
 - [ ] **Step 1: Create and bootstrap the validation worktree**
 
@@ -1047,7 +1052,101 @@ Expected: all pass. A failure is investigated and reported; it is never hidden
 or converted to a pass. Do not use `--fail-on-backups` and do not run a managed
 ingestion smoke with `--apply`.
 
-- [ ] **Step 3: Build the local candidate without publishing**
+- [ ] **Step 3: Write the failing committed-harness contract test**
+
+Create `scripts/governance/test_packaged_candidate_harness.py`. Before either
+harness file exists, assert both tracked paths exist, then statically require:
+
+- PowerShell parameters `Mode`, `CandidateDir`, `EvidenceDir`, `SourceDataRoot`,
+  `CdCvm`, and `CdpPort`;
+- `ValidateInputs` and `Run` modes;
+- fail-closed descendant checks for evidence, candidate, fixture, updater, and
+  workbook paths;
+- no controller-shell `$env:CVM*`, `$env:LOCALAPPDATA`, or `$env:DATABASE_URL`
+  assignment;
+- child-only runtime path/proxy maps, `try/finally` exact-process cleanup,
+  SQLite `backup()`, before/after manifests, actual updater `-New`/`-Current`,
+  and all eight protected install directories;
+- Node `connectOverCDP`, the six representative bridge methods, four routes,
+  both viewports, payload byte sizes, console/network logs, and nonzero failure
+  exits.
+
+Run:
+
+```powershell
+python -m pytest scripts/governance/test_packaged_candidate_harness.py -q
+```
+
+Expected: failure only because the two tracked harness files are absent. A
+collection/import error is not acceptable.
+
+- [ ] **Step 4: Implement the committed controller and CDP harness**
+
+Create `scripts/diagnostics/validate_packaged_candidate.ps1` with this public
+interface:
+
+```powershell
+param(
+  [ValidateSet('ValidateInputs','Run')][string]$Mode = 'Run',
+  [Parameter(Mandatory)][string]$CandidateDir,
+  [Parameter(Mandatory)][string]$EvidenceDir,
+  [Parameter(Mandatory)][string]$SourceDataRoot,
+  [int]$CdCvm = 9512,
+  [int]$CdpPort = 9223
+)
+```
+
+Resolve these variables once at the top; every later step consumes them:
+
+```powershell
+$repoRoot = (git rev-parse --show-toplevel).Trim()
+$taskRoot = [IO.Path]::GetFullPath($EvidenceDir)
+$candidateDir = [IO.Path]::GetFullPath($CandidateDir)
+$sourceRoot = [IO.Path]::GetFullPath($SourceDataRoot)
+$candidateExe = Join-Path $candidateDir 'CVMAnalytics.exe'
+$zipPath = Join-Path $taskRoot 'CVMAnalytics-current-head.zip'
+$fixtureRoot = Join-Path $taskRoot 'fixture'
+$refreshFailureRoot = Join-Path $taskRoot 'fixture-refresh-failure'
+$staged = Join-Path $taskRoot 'updater\staged'
+$current = Join-Path $taskRoot 'updater\current'
+$updaterLocalAppData = Join-Path $taskRoot 'updater\localappdata'
+$uiResultsPath = Join-Path $taskRoot 'ui\ui-results.json'
+```
+
+`ValidateInputs` resolves/asserts that evidence is under repository `scratch`,
+candidate is under repository `dist`, the source root is the explicitly supplied
+read-only root, the executable and bundled canonical mapping exist, and every
+mutation target is a descendant of `$taskRoot`; it prints JSON and exits before
+copying, launching, or writing outside its evidence directory. `Run` calls
+reviewable functions named `Write-FileManifest`, `Backup-SqliteDatabase`,
+`Invoke-IsolatedDiagnostic`, `Invoke-PackagedUi`, `Test-WorkbookOpen`,
+`Invoke-ScratchUpdaterTest`, and `Compare-PreservationManifest`, implementing
+Steps 6-12 below. A failure throws and exits nonzero.
+
+Create tracked `scripts/diagnostics/validate_packaged_ui.cjs`. It loads the
+existing Playwright dependency by repository-relative path and accepts exact CLI
+arguments `--cdp-url`, `--output-dir`, `--cd-cvm`, and `--process-start-ms`.
+It implements the bridge calls/routes/viewports/artifacts/failure rules below;
+no generated JavaScript is accepted as evidence.
+
+Re-run the new contract test. Then extend Task 4's explicit CI repository-test
+command and its static assertion to append
+`scripts/governance/test_packaged_candidate_harness.py` before `-q`; observe the
+CI contract assertion red before editing the workflow, then green afterward.
+
+Commit the harness before it is allowed to launch anything:
+
+```powershell
+git add -- scripts/diagnostics/validate_packaged_candidate.ps1 scripts/diagnostics/validate_packaged_ui.cjs scripts/governance/test_packaged_candidate_harness.py scripts/governance/test_frontend_ci_contract.py .github/workflows/ci.yml
+git diff --cached --check
+git commit -m "test(package): add isolated validation harness"
+```
+
+Obtain independent specification and code-quality review of this commit,
+including every path assertion and process invocation. Do not run `Mode Run`
+until that review is clean.
+
+- [ ] **Step 5: Build the local candidate without publishing**
 
 ```powershell
 $validationVersion = python -c "from desktop.__version__ import __version__; print(__version__)"
@@ -1060,15 +1159,20 @@ count/size, and `git status --short`. Do not create or push a tag. Generated
 provenance/version changes must match the build script contract; no unrelated
 tracked change is allowed.
 
-- [ ] **Step 4: Create and verify a local ZIP artifact**
+- [ ] **Step 6: Create and verify a local ZIP artifact**
+
+Steps 6-12 are implementation and acceptance requirements inside the two
+tracked harness files. Do not create or paste an ignored controller/CDP script.
+The harness is executed only through the exact Step 12 invocation after its diff
+and contract tests are reviewed.
 
 Create the ZIP under ignored task scratch, not the repository root:
 
 ```powershell
-Compress-Archive -Path dist\CVMAnalytics\* `
-  -DestinationPath scratch\architecture-hardening-wave\task-7\CVMAnalytics-current-head.zip `
+Compress-Archive -Path (Join-Path $candidateDir '*') `
+  -DestinationPath $zipPath `
   -CompressionLevel Optimal
-Get-FileHash scratch\architecture-hardening-wave\task-7\CVMAnalytics-current-head.zip -Algorithm SHA256
+Get-FileHash $zipPath -Algorithm SHA256
 ```
 
 Open the ZIP and assert its flat top-level roots are exactly
@@ -1093,11 +1197,10 @@ try {
 
 Record entry count, byte size, and SHA-256.
 
-- [ ] **Step 5: Create a WAL-safe disposable data fixture and preservation manifests**
+- [ ] **Step 7: Create a WAL-safe disposable data fixture and preservation manifests**
 
-Use source root `C:\Users\jadaojoao\Documents\CVMAnalytics`, representative
-company `cd_cvm=9512`, and fixture root
-`scratch\architecture-hardening-wave\task-7\fixture`. Before reading, create a
+Use `$sourceRoot` from the supplied `SourceDataRoot`, representative company
+`$CdCvm` (invoked as `9512`), and `$fixtureRoot` under task scratch. Before reading, create a
 sorted SHA-256 manifest of all source-root `input/**`, `raw/**`, and
 `source_snapshots/**` files plus `db\cvm_financials.db` and
 `db\energy_kpis.db`. Record missing paths explicitly. Copy each required SQLite
@@ -1116,8 +1219,6 @@ contention; never terminate the user's process or hash a concurrently changing
 baseline.
 
 ```powershell
-$sourceRoot = 'C:\Users\jadaojoao\Documents\CVMAnalytics'
-$fixtureRoot = Join-Path (Resolve-Path scratch\architecture-hardening-wave\task-7).Path 'fixture'
 python -c "import sqlite3,sys,pathlib; s,d=map(pathlib.Path,sys.argv[1:]); d.parent.mkdir(parents=True,exist_ok=True); a=sqlite3.connect(f'file:{s.as_posix()}?mode=ro',uri=True); b=sqlite3.connect(d); a.backup(b); b.close(); a.close()" "$sourceRoot\db\cvm_financials.db" "$fixtureRoot\db\cvm_financials.db"
 python -c "import sqlite3,sys,pathlib; s,d=map(pathlib.Path,sys.argv[1:]); d.parent.mkdir(parents=True,exist_ok=True); a=sqlite3.connect(f'file:{s.as_posix()}?mode=ro',uri=True); b=sqlite3.connect(d); a.backup(b); b.close(); a.close()" "$sourceRoot\db\energy_kpis.db" "$fixtureRoot\db\energy_kpis.db"
 ```
@@ -1134,7 +1235,7 @@ failure semantics can be observed without touching source data. Record each SQL
 statement. Any source-tree write, missing representative row, or failed backup
 is a hard failure.
 
-- [ ] **Step 6: Run a clean isolated frozen diagnostic with child-only environment**
+- [ ] **Step 8: Run a clean isolated frozen diagnostic with child-only environment**
 
 Never assign `$env:CVMANALYTICS_DATA_DIR` or `$env:LOCALAPPDATA` in the controller
 shell. Start the exact child with an environment map and capture its PID/exit:
@@ -1183,7 +1284,7 @@ mode, the candidate version/build SHA, and
 paths under the fixture/local-appdata roots. Fail if any reported path is under
 the canonical Documents root.
 
-- [ ] **Step 7: Exercise the real packaged UI and bridge offline through CDP**
+- [ ] **Step 9: Exercise the real packaged UI and bridge offline through CDP**
 
 Launch the package against the unmodified fixture with the Step 6 HTTP(S)/SOCKS
 proxy-denial values and explicit catalog refusal URL, plus:
@@ -1198,8 +1299,8 @@ PID, and put cleanup in `finally { Stop-Process -Id $p.Id -Force -ErrorAction
 SilentlyContinue }`. Wait no longer than 60 seconds for
 `http://127.0.0.1:9223/json/version`.
 
-Create ignored `task-7/validate-package-ui.cjs` and run it with the repository's
-installed Playwright module. It must `chromium.connectOverCDP`, select the
+Run the tracked `scripts/diagnostics/validate_packaged_ui.cjs` with the existing
+Playwright module. It must `chromium.connectOverCDP`, select the
 pywebview page, wait until `window.pywebview?.api?.get_app_status` is callable,
 record console errors and every request whose URL is not `file:`, `data:`,
 `blob:`, `http://127.0.0.1`, or `http://localhost`, then call and JSON-record:
@@ -1216,6 +1317,36 @@ await api.export_company_excel({cd_cvm: 9512, reveal: false, period_scope: "last
 Measure process-start to bridge-ready elapsed milliseconds. For every recorded
 bridge result, also record `Buffer.byteLength(JSON.stringify(result), "utf8")`
 so the audit has representative real IPC payload sizes without changing the API.
+The JSON schema includes
+`bridge_results.<method>.{result,utf8_json_bytes,duration_ms}`, including
+`bridge_results.export_company_excel.result.file_path`.
+
+`Invoke-PackagedUi` uses this exact launch/control pattern with `$childEnv` from
+Step 8 copied into `$uiEnv`:
+
+```powershell
+$uiEnv = $childEnv.Clone()
+$uiEnv.LOCALAPPDATA = Join-Path $taskRoot 'localappdata-ui'
+$uiEnv.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=$CdpPort --remote-allow-origins=* --proxy-server=http://127.0.0.1:9 --proxy-bypass-list=127.0.0.1;localhost"
+$processStartMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+$p = Start-Process $candidateExe -Environment $uiEnv -PassThru -WindowStyle Hidden
+try {
+  $deadline = (Get-Date).AddSeconds(60)
+  do {
+    try { $cdp = Invoke-RestMethod "http://127.0.0.1:$CdpPort/json/version"; break }
+    catch { Start-Sleep -Milliseconds 250 }
+  } while ((Get-Date) -lt $deadline -and -not $p.HasExited)
+  if (-not $cdp) { throw 'CDP readiness timeout' }
+  & node (Join-Path $repoRoot 'scripts/diagnostics/validate_packaged_ui.cjs') `
+    --cdp-url "http://127.0.0.1:$CdpPort" `
+    --output-dir (Join-Path $taskRoot 'ui') `
+    --cd-cvm $CdCvm `
+    --process-start-ms $processStartMs
+  if ($LASTEXITCODE -ne 0) { throw "CDP harness failed: $LASTEXITCODE" }
+} finally {
+  Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+}
+```
 
 For each of `#/empresas`, `#/empresas/9512`,
 `#/indicators?section=energy&sub=sin`, and `#/settings/diagnostics`, navigate in
@@ -1233,12 +1364,15 @@ then stop the child. Assert the candidate stays alive and the fixture-only CNPJ
 and refresh timestamp remain absent. This is a direct current-head packaged
 observation of offline startup failure; do not generalize beyond it.
 
-- [ ] **Step 8: Validate the generated workbook**
+- [ ] **Step 10: Validate the generated workbook**
 
-Read `file_path` from `ui-results.json`. Fail unless it resolves under
+Read `file_path` from `ui-results.json` exactly as follows. Fail unless it resolves under
 `fixture\output`, has a stable SHA-256, and opens read-only with both validators:
 
 ```powershell
+$uiResults = Get-Content $uiResultsPath -Raw | ConvertFrom-Json
+$excelPath = [IO.Path]::GetFullPath($uiResults.bridge_results.export_company_excel.result.file_path)
+Assert-Descendant -Parent (Join-Path $fixtureRoot 'output') -Child $excelPath
 python -c "import openpyxl,sys,json; p=sys.argv[1]; w=openpyxl.load_workbook(p,data_only=False,read_only=True); print(json.dumps({'sheets':w.sheetnames,'formulas':sum(1 for s in w for row in s.iter_rows() for c in row if isinstance(c.value,str) and c.value.startswith('='))})); w.close()" $excelPath
 $excel = $null
 $book = $null
@@ -1267,7 +1401,7 @@ Because alerts are suppressed and no stable repair-event API is used, state only
 that the workbook opened successfully read-only and no repair prompt was
 observable under automation; do not claim stronger repair detection.
 
-- [ ] **Step 9: Exercise updater swapping only in a scratch install**
+- [ ] **Step 11: Exercise updater swapping only in a scratch install**
 
 Create `task-7/updater/current`, `staged`, and a separate
 `localappdata-updater`. Populate `current` and `staged` with distinct
@@ -1317,7 +1451,7 @@ sentinel hash is unchanged. Resolve and assert all updater paths begin with the
 task root before invoking the helper. The harness must never pass the repository,
 Documents root, real install, `%LOCALAPPDATA%`, `$HOME`, or `~` as a swap target.
 
-- [ ] **Step 10: Prove preservation and classify evidence**
+- [ ] **Step 12: Prove preservation and classify evidence**
 
 Regenerate the canonical source manifest from Step 5 and byte-compare it with
 the before manifest. Regenerate fixture manifests and explain only the expected
@@ -1327,7 +1461,29 @@ Fail the task on any canonical source/input/raw/source-snapshot hash change,
 unexpected database write, successful outbound request, leaked app process, or
 path outside scratch.
 
-- [ ] **Step 11: Write the durable final audit report**
+After the reviewed harness commit is clean, execute it only with:
+
+```powershell
+$repoRoot = (git rev-parse --show-toplevel).Trim()
+$taskRoot = Join-Path $repoRoot 'scratch\architecture-hardening-wave\task-7'
+$candidateDir = Join-Path $repoRoot 'dist\CVMAnalytics'
+$sourceRoot = 'C:\Users\jadaojoao\Documents\CVMAnalytics'
+$harness = Join-Path $repoRoot 'scripts\diagnostics\validate_packaged_candidate.ps1'
+New-Item -ItemType Directory -Force $taskRoot | Out-Null
+& pwsh -NoProfile -File $harness -Mode ValidateInputs -CandidateDir $candidateDir -EvidenceDir $taskRoot -SourceDataRoot $sourceRoot -CdCvm 9512 -CdpPort 9223 |
+  Tee-Object (Join-Path $taskRoot 'validate-inputs.log')
+if ($LASTEXITCODE -ne 0) { throw 'Harness input validation failed' }
+& pwsh -NoProfile -File $harness -Mode Run -CandidateDir $candidateDir -EvidenceDir $taskRoot -SourceDataRoot $sourceRoot -CdCvm 9512 -CdpPort 9223 |
+  Tee-Object (Join-Path $taskRoot 'validation-run.log')
+if ($LASTEXITCODE -ne 0) { throw 'Packaged validation failed' }
+python -m pytest scripts/governance/test_repository_operational_contracts.py scripts/governance/test_frontend_ci_contract.py scripts/diagnostics/test_bridge_method_inventory.py scripts/governance/test_packaged_candidate_harness.py -q
+```
+
+The controller writes `evidence-summary.json` containing the harness commit SHA,
+its own SHA-256 hashes, arguments, environment allowlist, timestamps, durations,
+exit statuses, child PIDs, and every artifact path/hash.
+
+- [ ] **Step 13: Write the durable final audit report**
 
 Create `docs/architecture-hardening-wave-audit.md`. For every objective
 requirement and child, record:
@@ -1346,7 +1502,7 @@ requirement and child, record:
 Distinguish pass, contradiction, incomplete, weak/indirect, and missing evidence.
 Do not claim a packaged behavior from source-only or dev-only checks.
 
-- [ ] **Step 12: Review, commit, and publish only the audit report**
+- [ ] **Step 14: Review, commit, and publish the harness plus audit report**
 
 ```powershell
 git add -- docs/architecture-hardening-wave-audit.md
@@ -1355,7 +1511,7 @@ git commit -m "docs: record architecture hardening wave audit"
 ```
 
 Generate the task review package, obtain specification and quality approval,
-push/open a `flow:autonomous`, `lane:ops-quality`, `risk:shared` draft docs-only
+push/open a `flow:autonomous`, `lane:ops-quality`, `risk:shared` draft
 PR closing the validation child, mark it ready after review, and merge after checks.
 Generated package/scratch files remain untracked and no release is published.
 
@@ -1369,7 +1525,7 @@ After all authorized PRs merge and the audit PR is current:
 - [ ] Confirm Tasks 1-4 and 7 have focused reviewed PR evidence.
 - [ ] Confirm Tasks 5-6 remain open/blocked unless João separately approved implementation.
 - [ ] Confirm no open PR, branch diff, or commit changed startup refresh behavior, publication behavior, database/public/financial/updater contracts, user-visible behavior, or `desktop/services.py` structure.
-- [ ] Re-run final tests/checks at the final merged SHA, including `python -m pytest scripts/governance/test_repository_operational_contracts.py scripts/governance/test_frontend_ci_contract.py scripts/diagnostics/test_bridge_method_inventory.py -q`, and record provenance.
+- [ ] Re-run final tests/checks at the final merged SHA, including `python -m pytest scripts/governance/test_repository_operational_contracts.py scripts/governance/test_frontend_ci_contract.py scripts/diagnostics/test_bridge_method_inventory.py scripts/governance/test_packaged_candidate_harness.py -q`, and record provenance.
 - [ ] Inspect the primary dirty checkout and prove its original user changes remain untouched.
 - [ ] Search issues/PRs once more for duplicates and cross-link any newly overlapping work.
 - [ ] Perform a requirement-by-requirement completion audit against the original goal and this design before marking the goal complete.
