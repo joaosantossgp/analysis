@@ -1011,7 +1011,11 @@ sorted SHA-256 manifest of all source-root `input/**`, `raw/**`, and
 `db\energy_kpis.db`. Record missing paths explicitly. Copy each required SQLite
 database with Python's `sqlite3.Connection.backup()` into `fixture\db`; never
 copy a live `.db`, `-wal`, or `-shm` file directly. Copy required non-database
-fixtures with `Copy-Item`, then hash the fixture.
+fixtures with `Copy-Item`: specifically the market-cap universe snapshot into
+`fixture\metadata` when present. The canonical-account mapping remains the
+read-only file bundled into the candidate. Do not copy the multi-gigabyte input
+or raw trees; their canonical hashes are preservation evidence, not package
+fixtures. Hash the completed fixture.
 
 ```powershell
 $sourceRoot = 'C:\Users\jadaojoao\Documents\CVMAnalytics'
@@ -1041,12 +1045,21 @@ shell. Start the exact child with an environment map and capture its PID/exit:
 $childEnv = @{
   CVMANALYTICS_DATA_DIR = $fixtureRoot
   CVM_DATA_DIR = $fixtureRoot
+  CVM_INPUT_DIR = (Join-Path $fixtureRoot 'input')
+  CVM_REPORTS_DIR = (Join-Path $fixtureRoot 'output\reports')
+  CVM_METADATA_DIR = (Join-Path $fixtureRoot 'metadata')
   CVM_DB_DIR = (Join-Path $fixtureRoot 'db')
   SQLITE_PATH = (Join-Path $fixtureRoot 'db\cvm_financials.db')
+  CVM_CANONICAL_ACCOUNTS_PATH = (Join-Path $candidateDir '_internal\data\import\canonical_accounts.csv')
+  CVM_ACCOUNT_DICTIONARY_PATH = (Join-Path $fixtureRoot 'cvm_account_dictionary.csv')
+  CVM_COMPANY_UNIVERSE_SNAPSHOT_PATH = (Join-Path $fixtureRoot 'metadata\b3_market_cap_universe_snapshot.csv')
+  CVM_ENERGY_KPI_DB = (Join-Path $fixtureRoot 'db\energy_kpis.db')
+  CVM_ENERGY_KPI_RAW_DIR = (Join-Path $fixtureRoot 'raw\energy')
   CVM_NEWS_DB = (Join-Path $fixtureRoot 'db\news.db')
   CVM_OUTPUT_DIR = (Join-Path $fixtureRoot 'output')
   CVM_LOG_DIR = (Join-Path $fixtureRoot 'logs')
   CVM_CACHE_DIR = (Join-Path $fixtureRoot 'cache')
+  CVM_ONBOARDING_STATE_PATH = (Join-Path $fixtureRoot 'onboarding_state.json')
   LOCALAPPDATA = (Join-Path $taskRoot 'localappdata-diagnostic')
   CVM_CATALOG_URL = 'http://127.0.0.1:9/cad.csv'
   HTTP_PROXY = 'http://127.0.0.1:9'
@@ -1061,8 +1074,12 @@ $p = Start-Process $candidateExe -ArgumentList '--diagnose-runtime','--non-inter
 if ($p.ExitCode -ne 0) { throw "Diagnostic failed: $($p.ExitCode)" }
 ```
 
-Explicitly setting every runtime path variable prevents controller-shell values
-from winning the packaged `setdefault` calls. Fail unless the log reports frozen
+Explicitly setting all settings-backed mutable/read-model paths prevents
+controller-shell values from winning packaged defaults; the one bundled mapping
+path is asserted under `$candidateDir`. Before launch, enumerate inherited
+`CVM*`, `SQLITE_PATH`, and `DATABASE_URL` variables and fail if any path-bearing
+name is neither overwritten above nor explicitly documented as non-path
+configuration. Fail unless the log reports frozen
 mode, the candidate version/build SHA, and
 paths under the fixture/local-appdata roots. Fail if any reported path is under
 the canonical Documents root.
