@@ -102,6 +102,12 @@ tests came from the primary dirty checkout, which contains uncommitted user UI
 tests. It is retained only as a session observation. The clean authoritative
 commit baseline is 75 Vite tests.
 
+Application startup/bridge-ready elapsed time and representative bridge payload
+byte sizes were not measured in this initial clean-source baseline; they remain
+**Needs validation**, rather than being inferred from the runtime doctor or
+read-path benchmark. The current-head packaged child records both at the real
+WebView2/pywebview boundary.
+
 `npm ci` reported two dependency-audit findings (one low, one high). This wave
 does not change dependencies, and the audit output alone does not justify an
 unscoped upgrade.
@@ -348,7 +354,9 @@ evidence and decision tasks in this wave.
 
 ## 9. Bounded Epic and child design
 
-Create one Epic with six non-duplicative children:
+Create one Epic with seven non-duplicative children. The Bridge guardrail is
+split because the active autonomous lane allowlists do not permit one PR to span
+`apps/desktop-web/**`, `scripts/**`, `tests/**`, and `docs/**`:
 
 ### Child 1 — Repair repository operational-contract drift
 
@@ -373,16 +381,25 @@ Create one Epic with six non-duplicative children:
 
 ### Child 3 — Guard BridgeApi integrity
 
-**Risk:** low/medium, frontend contract guardrail
+**Risk:** shared, frontend contract guardrail
 **Authorized:** yes, within the smallest guardrail scope
 
 - Add and observe a failing duplicate-name static test.
 - Remove duplicate declarations only.
+- Preserve the exact unique method/type surface.
+- Open a frontend-lane draft PR; no Python/docs files are included.
+
+### Child 4 — Inventory Python and TypeScript bridge methods
+
+**Risk:** shared, ops-quality contract evidence
+**Authorized:** yes, within the smallest guardrail scope
+
 - Produce a verified Python-versus-TypeScript method inventory and document
   every mismatch.
+- Add the pure-stdlib inventory unit test to explicit CI collection.
 - Preserve the runtime surface and avoid generation/framework/dependency work.
 
-### Child 4 — Characterize automatic startup metadata refresh
+### Child 5 — Characterize automatic startup metadata refresh
 
 **Risk:** contract-sensitive investigation
 **Authorized:** characterization only
@@ -394,7 +411,7 @@ Create one Epic with six non-duplicative children:
 - Present options and a recommendation.
 - Do not change, disable, or remove the refresh without explicit approval.
 
-### Child 5 — Define release-publication evidence gate
+### Child 6 — Define release-publication evidence gate
 
 **Risk:** release-sensitive investigation
 **Authorized:** characterization/proposal only
@@ -403,7 +420,7 @@ Create one Epic with six non-duplicative children:
 - Define a minimal proposal and rollback/failure behavior.
 - Do not modify publication behavior without explicit approval.
 
-### Child 6 — Validate a current-head packaged candidate
+### Child 7 — Validate a current-head packaged candidate
 
 **Risk:** medium, isolated verification
 **Authorized:** yes
@@ -413,7 +430,8 @@ Create one Epic with six non-duplicative children:
 - Build without a stable tag or release.
 - Verify provenance and ZIP roots exactly. Use SQLite backup copies, a
   child-process-only data root and `LOCALAPPDATA`, denied outbound networking,
-  CDP-driven real WebView2 routes at 1366x768 and 1920x1080, Excel open checks,
+  CDP-driven real WebView2 routes at 1366x768 and 1920x1080, with Chromium's
+  proxy also forced to the refusal endpoint, plus Excel open checks,
   and a scratch-only updater install/rollback harness.
 - Hash canonical inputs before and after, mutate only disposable fixtures, stop
   the exact child process in `finally`, and retain logs/checksums/screenshots as
@@ -451,7 +469,7 @@ Create one Epic with six non-duplicative children:
 The wave is complete only when:
 
 1. this design and the detailed plan are committed;
-2. the Epic and six children contain source evidence, acceptance criteria,
+2. the Epic and seven children contain source evidence, acceptance criteria,
    dependencies, risks, write sets, and approval boundaries;
 3. every authorized low/medium implementation issue has a reviewed, verified,
    focused PR outcome;

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Deliver six bounded architecture/product hardening children that repair proven guardrail drift, expose existing tests in CI, protect BridgeApi declarations, characterize gated startup/release risks, and validate a disposable current-head package without changing product behavior.
+**Goal:** Deliver seven bounded architecture/product hardening children that repair proven guardrail drift, expose existing tests in CI, protect and inventory BridgeApi declarations, characterize gated startup/release risks, and validate a disposable current-head package without changing product behavior.
 
 **Architecture:** Preserve the active Vite -> pywebview -> Python -> local-store architecture. Add test-first static guardrails at the repository and TypeScript boundaries, keep the two behavior-sensitive findings as investigation-only issues, and finish with isolated package evidence. Each implementation child owns a separate worktree, branch, review, and PR.
 
@@ -31,7 +31,7 @@
 ## Tracking setup
 
 After this plan passes self-review, the controller creates exactly one Epic and
-six child issues. The created issue URL is the source of the numeric issue id;
+seven child issues. The created issue URL is the source of the numeric issue id;
 the controller records each child in the Epic checklist and each child records
 the Epic as its parent in the body.
 
@@ -42,9 +42,10 @@ the Epic as its parent in the body.
 1. `[Ops] Repair stale repository operational contracts`
 2. `[CI] Run Vite tests in the desktop frontend job`
 3. `[Bridge] Guard BridgeApi declaration integrity`
-4. `[Investigation] Characterize automatic startup metadata refresh`
-5. `[Investigation] Define release-publication evidence gate`
-6. `[Validation] Verify a current-head packaged desktop candidate`
+4. `[Bridge] Inventory Python and TypeScript bridge methods`
+5. `[Investigation] Characterize automatic startup metadata refresh`
+6. `[Investigation] Define release-publication evidence gate`
+7. `[Validation] Verify a current-head packaged desktop candidate`
 
 Every issue body includes objective, evidence with source commit
 `9ecd2db246668452262624ea7ad4f370eb7a67d9`, scope, non-goals, risk, lane,
@@ -73,8 +74,9 @@ briefs can link the canonical design and plan on `main`.
 
 **Issue title:** `[Ops] Repair stale repository operational contracts`
 
-**Risk/publication:** shared workflow change; open the PR as draft and mark it
-ready only after independent specification and quality review.
+**Risk/publication:** shared workflow change; label the PR `flow:autonomous`,
+`lane:ops-quality`, and `risk:shared`, open it as draft, and mark it ready only
+after independent specification and quality review.
 
 **Files:**
 - Create: `scripts/governance/test_repository_operational_contracts.py`
@@ -287,8 +289,9 @@ main CI when dependent Task 2 merges.
 **Dependency:** Task 1 must merge first so this task can place both governance
 tests under explicit CI collection.
 
-**Risk/publication:** shared workflow change; open the PR as draft and mark it
-ready only after independent specification and quality review.
+**Risk/publication:** shared workflow change; label the PR `flow:autonomous`,
+`lane:ops-quality`, and `risk:shared`, open it as draft, and mark it ready only
+after independent specification and quality review.
 
 **Files:**
 - Create: `scripts/governance/test_frontend_ci_contract.py`
@@ -408,28 +411,24 @@ GitHub checks prove both the Vite and governance-test steps ran.
 **Files:**
 - Create: `apps/desktop-web/src/lib/bridge/types.contract.test.ts`
 - Modify: `apps/desktop-web/src/lib/bridge/types.ts:1654-end-of-interface`
-- Create: `scripts/diagnostics/bridge_method_inventory.py`
-- Create: `tests/test_bridge_method_inventory.py`
-- Create: `docs/reference/bridge-method-inventory.md`
 
 **Interfaces:**
-- Consumes: `BridgeApi` in `apps/desktop-web/src/lib/bridge/types.ts`; `CVMBridge` mixin imports/bases in `desktop/bridge.py`; public methods declared on the referenced mixin classes.
-- Produces: unique TypeScript declaration names, pure-stdlib inventory function `build_inventory(root: Path) -> dict[str, object]`, JSON CLI output, and a committed mismatch report. It does not change a runtime method.
+- Consumes: `BridgeApi` in `apps/desktop-web/src/lib/bridge/types.ts`.
+- Produces: a non-vacuous duplicate-name Vitest and unique TypeScript declaration names. It does not change a runtime method or unique type surface.
 
-- [ ] **Step 1: Create and bootstrap the shared issue worktree**
+- [ ] **Step 1: Create and bootstrap the frontend issue worktree**
 
-This child spans the frontend declaration, Python inventory, tests, and docs,
-so classify it `lane:master`. The governance helper does not accept that lane;
-create the isolated worktree explicitly after validating the ignored target:
+Classify the issue `lane:frontend`, `risk:shared`, and use an autonomous draft
+PR. After Task 2 merges:
 
 ```powershell
 git fetch origin main
 $expectedBase = git rev-parse origin/main
-$branch = "task/$issueNumber-bridge-api-integrity"
-$path = Join-Path (git rev-parse --show-toplevel) ".claude/worktrees/master/$issueNumber-bridge-api-integrity"
-git check-ignore .claude/worktrees
-git worktree add $path -b $branch origin/main
-Set-Location $path
+.\scripts\governance\worktree_create.ps1 `
+  -Issue $issueNumber `
+  -Slug bridge-api-declaration-integrity `
+  -Lane frontend `
+  -Base origin/main
 .\scripts\setup\bootstrap_worktree.ps1
 git rev-parse HEAD
 git status --short
@@ -509,9 +508,68 @@ npm --prefix apps/desktop-web run typecheck
 
 Expected: targeted test and typecheck pass.
 
-- [ ] **Step 6: Write the failing inventory-tool unit test**
+- [ ] **Step 6: Run complete frontend validation**
 
-Create `tests/test_bridge_method_inventory.py`:
+```powershell
+npm --prefix apps/desktop-web run test
+npm --prefix apps/desktop-web run typecheck
+npm --prefix apps/desktop-web run build
+git diff --check
+```
+
+Expected: all pass with current counts/durations recorded from the exact task
+SHA; explain the added contract test instead of copying an earlier baseline.
+
+- [ ] **Step 7: Commit and complete the frontend review/PR cycle**
+
+```powershell
+git add -- apps/desktop-web/src/lib/bridge/types.contract.test.ts apps/desktop-web/src/lib/bridge/types.ts
+git diff --cached --check
+git commit -m "test(bridge): guard BridgeApi declaration integrity"
+```
+
+Review must prove the pre/post unique method set and retained declaration text
+are identical, only redundant later declarations were deleted, and the parser
+cannot pass vacuously. Push and open a `flow:autonomous`, `risk:shared`,
+`lane:frontend` draft PR closing the child. Mark ready only after specification
+and quality review; merge only after required checks pass.
+
+---
+
+### Task 4: Inventory Python and TypeScript bridge methods
+
+**Issue title:** `[Bridge] Inventory Python and TypeScript bridge methods`
+
+**Dependency:** Tasks 2 and 3 must merge first.
+
+**Files:**
+- Create: `scripts/diagnostics/bridge_method_inventory.py`
+- Create: `scripts/diagnostics/test_bridge_method_inventory.py`
+- Create: `docs/reference/bridge-method-inventory.md`
+- Modify: `scripts/governance/test_frontend_ci_contract.py`
+- Modify: `.github/workflows/ci.yml`
+
+**Execution contract:** `lane:ops-quality`, `risk:shared`, autonomous draft PR.
+This write set is fully allowed by the active ops-quality lane.
+
+**Interfaces:**
+- Consumes: `CVMBridge` mixin imports/bases, public Python methods, the unique
+  `BridgeApi` declarations produced by Task 3, and Task 2's explicit repository
+  contract-test CI step.
+- Produces: pure-stdlib `build_inventory(root: Path) -> dict[str, object]`, JSON
+  CLI output, a committed mismatch report, and explicit CI collection of its
+  unit test. It generates or changes no contract code.
+
+- [ ] **Step 1: Create and bootstrap the ops-quality worktree**
+
+Fetch `origin/main`, assert the Task 2/3 merge SHAs are ancestors, then run the
+worktree helper with this issue number, slug `bridge-method-inventory`, lane
+`ops-quality`, and `-Base origin/main`. Bootstrap, prove `HEAD == origin/main`,
+and record a clean status plus full provenance.
+
+- [ ] **Step 2: Write the failing inventory-tool unit test**
+
+Create `scripts/diagnostics/test_bridge_method_inventory.py`:
 
 ```python
 from __future__ import annotations
@@ -520,7 +578,7 @@ import importlib.util
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def _load_build_inventory():
@@ -568,17 +626,17 @@ def test_build_inventory_compares_cvmbridge_mixins_with_typescript(tmp_path: Pat
     assert inventory["typescript_only"] == ["typescript_only"]
 ```
 
-- [ ] **Step 7: Verify the inventory test fails because the tool is absent**
+- [ ] **Step 3: Verify the inventory test fails because the tool is absent**
 
 ```powershell
-python -m pytest tests/test_bridge_method_inventory.py -q
+python -m pytest scripts/diagnostics/test_bridge_method_inventory.py -q
 ```
 
 Expected: the test fails at `assert module_path.is_file()` because the inventory
 tool does not yet exist. A collection/import error is not an acceptable red
 state.
 
-- [ ] **Step 8: Implement the pure-stdlib inventory tool**
+- [ ] **Step 4: Implement the pure-stdlib inventory tool**
 
 Create `scripts/diagnostics/bridge_method_inventory.py` with these exact public
 interfaces:
@@ -688,20 +746,20 @@ if __name__ == "__main__":
 The implementation is a diagnostic inventory, not code generation. Do not add
 dependencies or use the output to mutate source files.
 
-- [ ] **Step 9: Verify the inventory unit test is green**
+- [ ] **Step 5: Verify the inventory unit test is green**
 
 ```powershell
-python -m pytest tests/test_bridge_method_inventory.py -q
+python -m pytest scripts/diagnostics/test_bridge_method_inventory.py -q
 ```
 
 Expected: 1 passed.
 
-- [ ] **Step 10: Generate and inspect the real inventory**
+- [ ] **Step 6: Generate and inspect the real inventory**
 
 ```powershell
-New-Item -ItemType Directory -Force scratch\architecture-hardening-wave\task-3 | Out-Null
+New-Item -ItemType Directory -Force scratch\architecture-hardening-wave\task-4 | Out-Null
 python scripts/diagnostics/bridge_method_inventory.py --root . |
-  Tee-Object scratch\architecture-hardening-wave\task-3\bridge-method-inventory.json
+  Tee-Object scratch\architecture-hardening-wave\task-4\bridge-method-inventory.json
 ```
 
 Expected: `typescript_duplicates` is empty after Step 4. Record the full sorted
@@ -712,7 +770,7 @@ to active TypeScript call sites (`callBridge`) and Python tests before assigning
 one of: intentionally Python-only legacy method, active Python-only method,
 TypeScript-only declaration, or needs separately approved follow-up.
 
-- [ ] **Step 11: Document the verified inventory and mismatches**
+- [ ] **Step 7: Document the verified inventory and mismatches**
 
 Create `docs/reference/bridge-method-inventory.md` with the exact title
 `Desktop Bridge Method Inventory`. Populate its provenance block from the
@@ -731,13 +789,30 @@ or changed and that any contract follow-up requires a separately scoped issue
 and applicable approval. Empty fields, guessed values, and template markers
 make this step fail.
 
-- [ ] **Step 12: Run the complete relevant validation**
+- [ ] **Step 8: Add inventory-test collection to CI with a red/green contract**
+
+First extend `test_ci_collects_repository_governance_contracts` in
+`scripts/governance/test_frontend_ci_contract.py` so its normalized expected
+command ends with:
+
+```text
+scripts/governance/test_frontend_ci_contract.py scripts/diagnostics/test_bridge_method_inventory.py -q
+```
+
+Run that static test and observe the expected assertion failure. Then append
+`scripts/diagnostics/test_bridge_method_inventory.py` before `-q` in the existing
+`Run repository governance contract tests` CI command. Re-run the static test
+and the exact three-test command; both must pass. Do not change triggers, jobs,
+dependencies, or existing test commands.
+
+- [ ] **Step 9: Run the complete relevant validation**
 
 ```powershell
 npm --prefix apps/desktop-web run test
 npm --prefix apps/desktop-web run typecheck
 npm --prefix apps/desktop-web run build
-python -m pytest tests/test_bridge_method_inventory.py -q
+python -m pytest scripts/diagnostics/test_bridge_method_inventory.py -q
+python -m pytest scripts/governance/test_repository_operational_contracts.py scripts/governance/test_frontend_ci_contract.py scripts/diagnostics/test_bridge_method_inventory.py -q
 python -m pytest tests -q
 git diff --check
 ```
@@ -745,22 +820,22 @@ git diff --check
 Expected: all pass. Compare test counts to the recorded source SHA and explain
 the new tests; do not copy earlier counts as current evidence.
 
-- [ ] **Step 13: Commit and complete the review/PR cycle**
+- [ ] **Step 10: Commit and complete the review/PR cycle**
 
 ```powershell
-git add -- apps/desktop-web/src/lib/bridge/types.contract.test.ts apps/desktop-web/src/lib/bridge/types.ts scripts/diagnostics/bridge_method_inventory.py tests/test_bridge_method_inventory.py docs/reference/bridge-method-inventory.md
+git add -- scripts/diagnostics/bridge_method_inventory.py scripts/diagnostics/test_bridge_method_inventory.py docs/reference/bridge-method-inventory.md scripts/governance/test_frontend_ci_contract.py .github/workflows/ci.yml
 git diff --cached --check
-git commit -m "test(bridge): guard BridgeApi method integrity"
+git commit -m "test(bridge): inventory desktop bridge methods"
 ```
 
-Task review must explicitly verify that the unique TypeScript method set is
-unchanged, mismatch documentation matches the generated artifact, and no
-runtime/public contract changed. Push/open/merge the focused PR only after
-review and required checks are clean.
+Task review must explicitly verify that mismatch documentation matches the
+generated artifact, CI collects the unit test, and no runtime/public contract
+changed. Push and open a `flow:autonomous`, `risk:shared`, `lane:ops-quality`
+draft PR; mark ready only after review and merge only after checks are clean.
 
 ---
 
-### Task 4: Characterize the automatic startup metadata refresh
+### Task 5: Characterize the automatic startup metadata refresh
 
 **Issue title:** `[Investigation] Characterize automatic startup metadata refresh`
 
@@ -776,7 +851,16 @@ review and required checks are clean.
 - Consumes: the current startup thread, data-root resolution, lock status, direct SQLite writes, catalog network client, stdout behavior, and active CNPJ consumers.
 - Produces: an independently reviewed evidence record and decision options. It produces no code or behavior change.
 
-- [ ] **Step 1: Reproduce path selection without network or user-data writes**
+- [ ] **Step 1: Create a read-only investigation worktree**
+
+Fetch `origin/main`, assert Tasks 1-4 merge SHAs are ancestors, then use the
+worktree helper with this issue number, slug `startup-metadata-refresh-evidence`,
+lane `backend`, and `-Base origin/main`. Bootstrap, record the exact SHA and
+clean status, and make no tracked changes. Keep the branch/worktree only until
+the reviewed issue evidence reaches its blocked decision state; then remove it
+with the canonical helper without deleting any unmerged work.
+
+- [ ] **Step 2: Reproduce path selection without network or user-data writes**
 
 Use pytest monkeypatch/temporary directories or direct calls to path resolver
 functions only. Run the existing focused tests:
@@ -788,7 +872,7 @@ python -m pytest tests/test_desktop_runtime_paths.py tests/test_metadata_fixes.p
 Do not invoke `_background_remote_metadata_refresh` against the canonical data
 root and do not permit a real catalog request.
 
-- [ ] **Step 2: Record the development behavior**
+- [ ] **Step 3: Record the development behavior**
 
 Prove from source and temporary-path tests:
 
@@ -799,7 +883,7 @@ Prove from source and temporary-path tests:
 - all filesystem/database writes; and
 - user-visible/log observability and opt-out availability.
 
-- [ ] **Step 3: Record the packaged behavior**
+- [ ] **Step 4: Record the packaged behavior**
 
 Use source and `tests/test_desktop_runtime_paths.py` to characterize the expected
 frozen root, operator override, console behavior, timeout/failure behavior, and
@@ -809,14 +893,14 @@ evidence that the frozen refresh ran. Do not launch a real online refresh. Mark
 normal frozen refresh behavior **Needs validation** unless a later current-head
 package observation safely and directly exercises it.
 
-- [ ] **Step 4: Record consumers and failure semantics**
+- [ ] **Step 5: Record consumers and failure semantics**
 
 Use exact `rg`/source references for company identity, company UI, sector
 search, market-cap matching, distribution linking, and Excel export consumers.
 Distinguish catalog-load failure, per-company failure, partial success, zero
 valid updates, DB lock/write failure, TTL suppression, and next-start behavior.
 
-- [ ] **Step 5: Post the evidence and options to the issue**
+- [ ] **Step 6: Post the evidence and options to the issue**
 
 The issue comment includes source SHA, commands, environment, UTC timestamps,
 durations, results, log locations, a dev/packaged comparison table, and options:
@@ -836,7 +920,7 @@ is ready for João's explicit decision.
 
 ---
 
-### Task 5: Define the release-publication evidence gate
+### Task 6: Define the release-publication evidence gate
 
 **Issue title:** `[Investigation] Define release-publication evidence gate`
 
@@ -852,7 +936,15 @@ is ready for João's explicit decision.
 - Consumes: documented release preflight, current CI triggers/jobs, release tag workflow, package shape/checksum checks, and prior #372/#380/#382/#383 evidence.
 - Produces: a verified coverage matrix and minimal proposal. It does not change publication behavior.
 
-- [ ] **Step 1: Map documented checks to enforcement**
+- [ ] **Step 1: Create a read-only investigation worktree**
+
+Fetch `origin/main`, assert Tasks 1-4 merge SHAs are ancestors, then use the
+worktree helper with this issue number, slug `release-publication-evidence`, lane
+`ops-quality`, and `-Base origin/main`. Bootstrap, record exact SHA/clean status,
+and make no tracked changes. Remove the worktree with the canonical helper only
+after reviewed issue evidence reaches its blocked decision state.
+
+- [ ] **Step 2: Map documented checks to enforcement**
 
 Build an issue table with separate categories. Do not promote a useful check to
 the canonical release contract without documentation evidence:
@@ -869,10 +961,10 @@ pytest tests -q
 Documented conditional preflight (API/shared-contract changes):
 pytest apps/api/tests -q
 
-Enforced on main CI after authorized Tasks 1-2, but not currently documented as
+Enforced on main CI after authorized Tasks 1-4, but not currently documented as
 a canonical release preflight:
 npm --prefix apps/desktop-web run test
-python -m pytest scripts/governance/test_repository_operational_contracts.py scripts/governance/test_frontend_ci_contract.py -q
+python -m pytest scripts/governance/test_repository_operational_contracts.py scripts/governance/test_frontend_ci_contract.py scripts/diagnostics/test_bridge_method_inventory.py -q
 
 Documented/manual package evidence:
 package provenance/version
@@ -883,20 +975,20 @@ clean/offline/copied-data/Excel/updater-boundary smoke
 For each row record: current CI job, release job, manual-only status, evidence
 artifact, failure behavior, and whether a release asset can publish without it.
 
-- [ ] **Step 2: Verify trigger behavior from source and GitHub runs**
+- [ ] **Step 3: Verify trigger behavior from source and GitHub runs**
 
 Record exact workflow trigger source and recent run URLs/SHAs. Confirm whether a
 release tag receives a CI run and whether the release job depends on a successful
 CI workflow or independently repeats checks.
 
-- [ ] **Step 3: Produce the minimal proposal**
+- [ ] **Step 4: Produce the minimal proposal**
 
 Propose the smallest enforceable relationship, such as a reusable verification
 job/workflow or an explicit successful-SHA precondition. Include runtime,
 failure/cancel behavior, permissions, artifact retention, rollback, and stable
 versus prerelease preservation. Do not write YAML.
 
-- [ ] **Step 4: Post and independently review the issue evidence**
+- [ ] **Step 5: Post and independently review the issue evidence**
 
 Post source SHA, exact commands/API queries, environment, timestamps, durations,
 results, and URLs/log locations. Mark `status:blocked` and state plainly:
@@ -905,17 +997,17 @@ checks the matrix and proposal against `docs/build-release.md`; no PR is opened.
 
 ---
 
-### Task 6: Validate a current-head packaged desktop candidate
+### Task 7: Validate a current-head packaged desktop candidate
 
 **Issue title:** `[Validation] Verify a current-head packaged desktop candidate`
 
-**Dependency:** Tasks 1-3 must be merged. Tasks 4-5 must have reviewed evidence;
+**Dependency:** Tasks 1-4 must be merged. Tasks 5-6 must have reviewed evidence;
 their gated behavior remains unchanged.
 
 **Files:**
 - Create: `docs/architecture-hardening-wave-audit.md`
 - Generated/ignored: `dist/CVMAnalytics/**`
-- Generated/ignored: `scratch/architecture-hardening-wave/task-6/**`
+- Generated/ignored: `scratch/architecture-hardening-wave/task-7/**`
 - Do not modify: runtime source, database schemas/data, updater/release workflows, or version/channel contracts
 
 **Interfaces:**
@@ -927,7 +1019,7 @@ their gated behavior remains unchanged.
 
 - [ ] **Step 1: Create and bootstrap the validation worktree**
 
-Run `git fetch origin main`; assert the merge SHAs of Tasks 1-3 are ancestors of
+Run `git fetch origin main`; assert the merge SHAs of Tasks 1-4 are ancestors of
 `origin/main`. Create from that exact ref with the validation issue number, slug
 `current-head-package-validation`, lane `ops-quality`, and `-Base origin/main`.
 Record `git rev-parse HEAD`, require it equals `git rev-parse origin/main`, and
@@ -941,7 +1033,7 @@ Run each separately with UTC timing and its own log/meta file:
 npm --prefix apps/desktop-web run test
 npm --prefix apps/desktop-web run typecheck
 npm --prefix apps/desktop-web run build
-python -m pytest scripts/governance/test_repository_operational_contracts.py scripts/governance/test_frontend_ci_contract.py -q
+python -m pytest scripts/governance/test_repository_operational_contracts.py scripts/governance/test_frontend_ci_contract.py scripts/diagnostics/test_bridge_method_inventory.py -q
 python scripts/data/check_storage_budget.py
 python scripts/data/check_managed_ingestion_contracts.py --require-manifests --scan-sqlite-large-tables
 python -m py_compile desktop/app.py desktop/bridge.py
@@ -974,9 +1066,9 @@ Create the ZIP under ignored task scratch, not the repository root:
 
 ```powershell
 Compress-Archive -Path dist\CVMAnalytics\* `
-  -DestinationPath scratch\architecture-hardening-wave\task-6\CVMAnalytics-current-head.zip `
+  -DestinationPath scratch\architecture-hardening-wave\task-7\CVMAnalytics-current-head.zip `
   -CompressionLevel Optimal
-Get-FileHash scratch\architecture-hardening-wave\task-6\CVMAnalytics-current-head.zip -Algorithm SHA256
+Get-FileHash scratch\architecture-hardening-wave\task-7\CVMAnalytics-current-head.zip -Algorithm SHA256
 ```
 
 Open the ZIP and assert its flat top-level roots are exactly
@@ -1005,7 +1097,7 @@ Record entry count, byte size, and SHA-256.
 
 Use source root `C:\Users\jadaojoao\Documents\CVMAnalytics`, representative
 company `cd_cvm=9512`, and fixture root
-`scratch\architecture-hardening-wave\task-6\fixture`. Before reading, create a
+`scratch\architecture-hardening-wave\task-7\fixture`. Before reading, create a
 sorted SHA-256 manifest of all source-root `input/**`, `raw/**`, and
 `source_snapshots/**` files plus `db\cvm_financials.db` and
 `db\energy_kpis.db`. Record missing paths explicitly. Copy each required SQLite
@@ -1017,9 +1109,15 @@ read-only file bundled into the candidate. Do not copy the multi-gigabyte input
 or raw trees; their canonical hashes are preservation evidence, not package
 fixtures. Hash the completed fixture.
 
+First run `Get-Process -Name CVMAnalytics -ErrorAction SilentlyContinue` and
+inspect the canonical runtime lock without acquiring or removing it. If a real
+installed/dev app owns the canonical root, stop validation and report the
+contention; never terminate the user's process or hash a concurrently changing
+baseline.
+
 ```powershell
 $sourceRoot = 'C:\Users\jadaojoao\Documents\CVMAnalytics'
-$fixtureRoot = Join-Path (Resolve-Path scratch\architecture-hardening-wave\task-6).Path 'fixture'
+$fixtureRoot = Join-Path (Resolve-Path scratch\architecture-hardening-wave\task-7).Path 'fixture'
 python -c "import sqlite3,sys,pathlib; s,d=map(pathlib.Path,sys.argv[1:]); d.parent.mkdir(parents=True,exist_ok=True); a=sqlite3.connect(f'file:{s.as_posix()}?mode=ro',uri=True); b=sqlite3.connect(d); a.backup(b); b.close(); a.close()" "$sourceRoot\db\cvm_financials.db" "$fixtureRoot\db\cvm_financials.db"
 python -c "import sqlite3,sys,pathlib; s,d=map(pathlib.Path,sys.argv[1:]); d.parent.mkdir(parents=True,exist_ok=True); a=sqlite3.connect(f'file:{s.as_posix()}?mode=ro',uri=True); b=sqlite3.connect(d); a.backup(b); b.close(); a.close()" "$sourceRoot\db\energy_kpis.db" "$fixtureRoot\db\energy_kpis.db"
 ```
@@ -1060,6 +1158,7 @@ $childEnv = @{
   CVM_LOG_DIR = (Join-Path $fixtureRoot 'logs')
   CVM_CACHE_DIR = (Join-Path $fixtureRoot 'cache')
   CVM_ONBOARDING_STATE_PATH = (Join-Path $fixtureRoot 'onboarding_state.json')
+  DATABASE_URL = ''
   LOCALAPPDATA = (Join-Path $taskRoot 'localappdata-diagnostic')
   CVM_CATALOG_URL = 'http://127.0.0.1:9/cad.csv'
   HTTP_PROXY = 'http://127.0.0.1:9'
@@ -1086,14 +1185,20 @@ the canonical Documents root.
 
 - [ ] **Step 7: Exercise the real packaged UI and bridge offline through CDP**
 
-Launch the package against the unmodified fixture with the Step 6 proxy values,
-plus `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9223
---remote-allow-origins=*`. Use `Start-Process -Environment`, keep the returned
+Launch the package against the unmodified fixture with the Step 6 HTTP(S)/SOCKS
+proxy-denial values and explicit catalog refusal URL, plus:
+
+```text
+WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9223 --remote-allow-origins=* --proxy-server=http://127.0.0.1:9 --proxy-bypass-list=127.0.0.1;localhost
+```
+
+The Chromium proxy applies before CDP attaches, while its bypass keeps local
+control endpoints reachable. Use `Start-Process -Environment`, keep the returned
 PID, and put cleanup in `finally { Stop-Process -Id $p.Id -Force -ErrorAction
 SilentlyContinue }`. Wait no longer than 60 seconds for
 `http://127.0.0.1:9223/json/version`.
 
-Create ignored `task-6/validate-package-ui.cjs` and run it with the repository's
+Create ignored `task-7/validate-package-ui.cjs` and run it with the repository's
 installed Playwright module. It must `chromium.connectOverCDP`, select the
 pywebview page, wait until `window.pywebview?.api?.get_app_status` is callable,
 record console errors and every request whose URL is not `file:`, `data:`,
@@ -1107,6 +1212,10 @@ await api.get_company_financial_readiness({cd_cvm: 9512});
 await api.get_sin_kpi_dashboard({});
 await api.export_company_excel({cd_cvm: 9512, reveal: false, period_scope: "last_5_years"});
 ```
+
+Measure process-start to bridge-ready elapsed milliseconds. For every recorded
+bridge result, also record `Buffer.byteLength(JSON.stringify(result), "utf8")`
+so the audit has representative real IPC payload sizes without changing the API.
 
 For each of `#/empresas`, `#/empresas/9512`,
 `#/indicators?section=energy&sub=sin`, and `#/settings/diagnostics`, navigate in
@@ -1131,23 +1240,36 @@ Read `file_path` from `ui-results.json`. Fail unless it resolves under
 
 ```powershell
 python -c "import openpyxl,sys,json; p=sys.argv[1]; w=openpyxl.load_workbook(p,data_only=False,read_only=True); print(json.dumps({'sheets':w.sheetnames,'formulas':sum(1 for s in w for row in s.iter_rows() for c in row if isinstance(c.value,str) and c.value.startswith('='))})); w.close()" $excelPath
-$excel = New-Object -ComObject Excel.Application
+$excel = $null
+$book = $null
 try {
-  $excel.DisplayAlerts = $false
-  $book = $excel.Workbooks.Open($excelPath, 0, $true)
-  $book.Close($false)
-} finally {
-  if ($excel) { $excel.Quit(); [Runtime.InteropServices.Marshal]::FinalReleaseComObject($excel) | Out-Null }
+  $excel = New-Object -ComObject Excel.Application
+} catch [Runtime.InteropServices.COMException] {
+  $comNeedsValidation = $_.Exception.Message
+}
+if ($excel) {
+  try {
+    $excel.DisplayAlerts = $false
+    $book = $excel.Workbooks.Open($excelPath, 0, $true)
+    $book.Close($false)
+  } finally {
+    if ($book) { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($book) | Out-Null }
+    $excel.Quit()
+    [Runtime.InteropServices.Marshal]::FinalReleaseComObject($excel) | Out-Null
+  }
 }
 ```
 
-Record sheet names, formula count, file size/hash, COM availability, and whether
-Excel reported repair. If Excel is not installed, record COM as **Needs
-validation** rather than silently substituting openpyxl.
+Record sheet names, formula count, file size/hash, COM activation, and successful
+read-only open. Only COM activation/class-not-registered may be **Needs
+validation**. Once Excel activates, any `Workbooks.Open` failure is a hard fail.
+Because alerts are suppressed and no stable repair-event API is used, state only
+that the workbook opened successfully read-only and no repair prompt was
+observable under automation; do not claim stronger repair detection.
 
 - [ ] **Step 9: Exercise updater swapping only in a scratch install**
 
-Create `task-6/updater/current`, `staged`, and a separate
+Create `task-7/updater/current`, `staged`, and a separate
 `localappdata-updater`. Populate `current` and `staged` with distinct
 `CVMAnalytics.exe` test stubs plus `_internal/version.txt`; the staged stub is a
 tiny C# executable compiled with `Add-Type -OutputAssembly` that writes
@@ -1233,7 +1355,8 @@ git commit -m "docs: record architecture hardening wave audit"
 ```
 
 Generate the task review package, obtain specification and quality approval,
-push/open a docs-only PR closing the validation child, and merge after checks.
+push/open a `flow:autonomous`, `lane:ops-quality`, `risk:shared` draft docs-only
+PR closing the validation child, mark it ready after review, and merge after checks.
 Generated package/scratch files remain untracked and no release is published.
 
 ---
@@ -1242,11 +1365,11 @@ Generated package/scratch files remain untracked and no release is published.
 
 After all authorized PRs merge and the audit PR is current:
 
-- [ ] Confirm the Epic checklist links all six children and reflects their true states.
-- [ ] Confirm Tasks 1-3 and 6 have focused reviewed PR evidence.
-- [ ] Confirm Tasks 4-5 remain open/blocked unless João separately approved implementation.
+- [ ] Confirm the Epic checklist links all seven children and reflects their true states.
+- [ ] Confirm Tasks 1-4 and 7 have focused reviewed PR evidence.
+- [ ] Confirm Tasks 5-6 remain open/blocked unless João separately approved implementation.
 - [ ] Confirm no open PR, branch diff, or commit changed startup refresh behavior, publication behavior, database/public/financial/updater contracts, user-visible behavior, or `desktop/services.py` structure.
-- [ ] Re-run final tests/checks at the final merged SHA and record provenance.
+- [ ] Re-run final tests/checks at the final merged SHA, including `python -m pytest scripts/governance/test_repository_operational_contracts.py scripts/governance/test_frontend_ci_contract.py scripts/diagnostics/test_bridge_method_inventory.py -q`, and record provenance.
 - [ ] Inspect the primary dirty checkout and prove its original user changes remain untouched.
 - [ ] Search issues/PRs once more for duplicates and cross-link any newly overlapping work.
 - [ ] Perform a requirement-by-requirement completion audit against the original goal and this design before marking the goal complete.
