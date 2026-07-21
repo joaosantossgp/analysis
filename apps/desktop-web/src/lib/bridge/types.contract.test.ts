@@ -1,22 +1,65 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import {
+  createSourceFile,
+  isIdentifier,
+  isInterfaceDeclaration,
+  isMethodSignature,
+  isStringLiteral,
+  ScriptKind,
+  ScriptTarget,
+} from "typescript";
 import { describe, expect, it } from "vitest";
 
 function bridgeApiMethodNames(source: string): string[] {
-  const marker = "export interface BridgeApi {";
-  const start = source.indexOf(marker);
-  if (start < 0) throw new Error("BridgeApi interface marker not found");
-
-  const names: string[] = [];
-  for (const line of source.slice(start + marker.length).split(/\r?\n/)) {
-    if (line.trim() === "}" && !/^\s/.test(line)) break;
-    const match = /^\s+([A-Za-z_$][\w$]*)\s*\(/.exec(line);
-    if (match) names.push(match[1]);
+  const sourceFile = createSourceFile(
+    "types.ts",
+    source,
+    ScriptTarget.Latest,
+    true,
+    ScriptKind.TS,
+  );
+  const bridgeApiDeclarations = sourceFile.statements.filter(
+    (statement) =>
+      isInterfaceDeclaration(statement) && statement.name.text === "BridgeApi",
+  );
+  if (bridgeApiDeclarations.length !== 1) {
+    throw new Error(
+      `Expected exactly one BridgeApi interface, found ${bridgeApiDeclarations.length}`,
+    );
   }
-  return names;
+
+  return bridgeApiDeclarations[0].members.flatMap((member) => {
+    if (!isMethodSignature(member)) return [];
+    if (isIdentifier(member.name) || isStringLiteral(member.name)) {
+      return [member.name.text];
+    }
+    return [];
+  });
 }
 
 describe("BridgeApi declaration contract", () => {
+  it("normalizes valid method signature name forms", () => {
+    const names = bridgeApiMethodNames(`
+      export interface BridgeApi {
+        ping(params?: Record<string, unknown>): Promise<unknown>;
+        ping<T>(params: T): Promise<T>;
+        "ping"(params?: Record<string, unknown>): Promise<unknown>;
+        ping
+          (params?: Record<string, unknown>): Promise<unknown>;
+      }
+    `);
+    const counts = new Map<string, number>();
+    for (const name of names) counts.set(name, (counts.get(name) ?? 0) + 1);
+    const duplicates = [...counts]
+      .filter(([, count]) => count > 1)
+      .map(([name]) => name)
+      .sort();
+
+    expect(duplicates).toEqual(["ping"]);
+    expect(names).toHaveLength(4);
+  });
+
   it("declares every method name exactly once", () => {
     const path = fileURLToPath(new URL("./types.ts", import.meta.url));
     const names = bridgeApiMethodNames(readFileSync(path, "utf8"));
