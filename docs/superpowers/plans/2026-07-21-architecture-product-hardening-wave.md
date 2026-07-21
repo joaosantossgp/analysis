@@ -1126,8 +1126,10 @@ Create `task-6/updater/current`, `staged`, and a separate
 `CVMAnalytics.exe` test stubs plus `_internal/version.txt`; the staged stub is a
 tiny C# executable compiled with `Add-Type -OutputAssembly` that writes
 `relaunch.marker` beside itself and exits. Create sentinel files under all eight
-protected names from `desktop/update_helper.ps1` (`db`, `input`, `raw`,
-`source_snapshots`, `cache`, `logs`, `output`, `backups`) and hash them.
+protected install-directory names from `desktop/update_helper.ps1` (`data`,
+`output`, `logs`, `cache`, `tmp`, `backup`, `versions`, `update_rollback`) and
+hash them. These test the helper's install allowlist; the separate Step 5/10
+manifests protect canonical `input`, `raw`, `source_snapshots`, and database data.
 
 Compile distinct old/new stubs with this source template, substituting `old` and
 `staged` and using distinct class names/output paths so their hashes differ:
