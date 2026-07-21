@@ -6,6 +6,7 @@ import {
   isInterfaceDeclaration,
   isMethodSignature,
   isStringLiteral,
+  type InterfaceDeclaration,
   ScriptKind,
   ScriptTarget,
 } from "typescript";
@@ -20,7 +21,7 @@ function bridgeApiMethodNames(source: string): string[] {
     ScriptKind.TS,
   );
   const bridgeApiDeclarations = sourceFile.statements.filter(
-    (statement) =>
+    (statement): statement is InterfaceDeclaration =>
       isInterfaceDeclaration(statement) && statement.name.text === "BridgeApi",
   );
   if (bridgeApiDeclarations.length !== 1) {
