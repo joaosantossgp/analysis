@@ -1040,6 +1040,13 @@ shell. Start the exact child with an environment map and capture its PID/exit:
 ```powershell
 $childEnv = @{
   CVMANALYTICS_DATA_DIR = $fixtureRoot
+  CVM_DATA_DIR = $fixtureRoot
+  CVM_DB_DIR = (Join-Path $fixtureRoot 'db')
+  SQLITE_PATH = (Join-Path $fixtureRoot 'db\cvm_financials.db')
+  CVM_NEWS_DB = (Join-Path $fixtureRoot 'db\news.db')
+  CVM_OUTPUT_DIR = (Join-Path $fixtureRoot 'output')
+  CVM_LOG_DIR = (Join-Path $fixtureRoot 'logs')
+  CVM_CACHE_DIR = (Join-Path $fixtureRoot 'cache')
   LOCALAPPDATA = (Join-Path $taskRoot 'localappdata-diagnostic')
   CVM_CATALOG_URL = 'http://127.0.0.1:9/cad.csv'
   HTTP_PROXY = 'http://127.0.0.1:9'
@@ -1054,7 +1061,9 @@ $p = Start-Process $candidateExe -ArgumentList '--diagnose-runtime','--non-inter
 if ($p.ExitCode -ne 0) { throw "Diagnostic failed: $($p.ExitCode)" }
 ```
 
-Fail unless the log reports frozen mode, the candidate version/build SHA, and
+Explicitly setting every runtime path variable prevents controller-shell values
+from winning the packaged `setdefault` calls. Fail unless the log reports frozen
+mode, the candidate version/build SHA, and
 paths under the fixture/local-appdata roots. Fail if any reported path is under
 the canonical Documents root.
 
@@ -1157,7 +1166,7 @@ $helper = (Resolve-Path desktop\update_helper.ps1).Path
 $helperEnv = @{ LOCALAPPDATA = $updaterLocalAppData }
 $p = Start-Process powershell.exe -ArgumentList @(
   '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$helper,
-  '-NewVersionPath',$staged,'-CurrentInstallPath',$current
+  '-New',$staged,'-Current',$current
 ) -Environment $helperEnv -PassThru -Wait -WindowStyle Hidden
 if ($p.ExitCode -ne 0) { throw "Updater helper failed: $($p.ExitCode)" }
 ```
