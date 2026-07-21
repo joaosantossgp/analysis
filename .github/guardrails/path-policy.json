@@ -95,17 +95,20 @@
     {
       "name": "critical-runtime",
       "patterns": [
-        "src/settings.py",
-        "src/db.py",
-        "src/database.py",
-        "src/query_layer.py",
-        "src/read_service.py",
-        "src/refresh_service.py",
-        "src/scraper.py",
+        "src/platform/settings.py",
+        "src/platform/db.py",
+        "src/financials/database.py",
+        "src/financials/query_layer.py",
+        "src/financials/read_service.py",
+        "src/financials/read_service_*.py",
+        "src/refresh/service.py",
+        "src/financials/scraper.py",
         "apps/api/app/main.py",
         "apps/api/app/dependencies.py",
         "desktop/app.py",
-        "desktop/bridge.py"
+        "desktop/bridge.py",
+        "desktop/services.py",
+        "desktop/bridge_api/**"
       ],
       "ownerLane": "backend",
       "allowedLanes": [
