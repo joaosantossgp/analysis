@@ -18,6 +18,10 @@
 - BridgeApi work starts and ends with duplicate removal, a static duplicate-name test, a verified Python-versus-TypeScript inventory, and mismatch documentation unless evidence triggers a separately approved scope.
 - Every claimed baseline records source commit SHA, exact command, environment, UTC timestamp, duration, pass/fail result, and log/artifact location when available.
 - Work from clean `origin/main` in a child-specific isolated worktree; never write through the dirty primary checkout.
+- Before every child, run `git fetch origin main`, record `git rev-parse origin/main`,
+  and use `-Base origin/main` (or `git worktree add ... origin/main`). After each
+  dependency merges, fetch again and assert its merge SHA is an ancestor of the
+  selected base with `git merge-base --is-ancestor <merge-sha> origin/main`.
 - Use test-first red/green cycles for every implementation change and independent specification-plus-quality review before merge.
 - Never run the seed workflow against a remote database during this wave.
 - Never publish a tag, GitHub release, stable build, or updater channel change.
@@ -69,6 +73,9 @@ briefs can link the canonical design and plan on `main`.
 
 **Issue title:** `[Ops] Repair stale repository operational contracts`
 
+**Risk/publication:** shared workflow change; open the PR as draft and mark it
+ready only after independent specification and quality review.
+
 **Files:**
 - Create: `scripts/governance/test_repository_operational_contracts.py`
 - Modify: `.github/workflows/seed_catalog.yml:49-50`
@@ -84,11 +91,13 @@ briefs can link the canonical design and plan on `main`.
 Run from the primary repository after the issue number is recorded:
 
 ```powershell
+git fetch origin main
+$expectedBase = git rev-parse origin/main
 .\scripts\governance\worktree_create.ps1 `
   -Issue $issueNumber `
   -Slug repository-operational-contracts `
   -Lane ops-quality `
-  -Base main
+  -Base origin/main
 ```
 
 Then bootstrap in the created worktree:
@@ -99,7 +108,7 @@ git rev-parse HEAD
 git status --short
 ```
 
-Expected: the source SHA equals current clean `main`, bootstrap passes, and
+Expected: the source SHA equals `$expectedBase`, bootstrap passes, and
 status is empty. Record command provenance in ignored
 `scratch/architecture-hardening-wave/task-1/`.
 
@@ -131,10 +140,18 @@ def test_seed_catalog_smoke_uses_resolvable_platform_modules() -> None:
         ),
     }
 
-    assert "from src.db import build_engine" not in workflow
-    assert "from src.settings import build_settings" not in workflow
+    violations = []
+    for stale in (
+        "from src.db import build_engine",
+        "from src.settings import build_settings",
+    ):
+        if stale in workflow:
+            violations.append(f"stale seed import: {stale}")
     for statement, (module_name, symbol_name) in expected_imports.items():
-        assert statement in workflow
+        if statement not in workflow:
+            violations.append(f"missing active seed import: {statement}")
+    assert not violations, "\n".join(violations)
+    for statement, (module_name, symbol_name) in expected_imports.items():
         symbol = getattr(importlib.import_module(module_name), symbol_name)
         assert callable(symbol)
 
@@ -172,8 +189,11 @@ def test_critical_runtime_policy_tracks_active_module_paths() -> None:
         "desktop/bridge_api/**",
     }
 
-    assert patterns.isdisjoint(stale)
-    assert required <= patterns
+    violations = [f"stale path-policy entry: {path}" for path in sorted(patterns & stale)]
+    violations.extend(
+        f"missing active path-policy entry: {path}" for path in sorted(required - patterns)
+    )
+    assert not violations, "\n".join(violations)
     for relative_path in required:
         if "*" not in relative_path:
             assert (ROOT / relative_path).is_file()
@@ -198,9 +218,9 @@ Run:
 python -m pytest scripts/governance/test_repository_operational_contracts.py -q
 ```
 
-Expected: failures identify the two stale seed imports, the removed path-policy
-entries, and `worktree_remove.ps1` defaulting to `master`. A collection/import
-error is not an acceptable red state.
+Expected: aggregate assertion output identifies both stale seed imports, every
+stale/missing path-policy entry, and `worktree_remove.ps1` defaulting to
+`master`. A collection/import error is not an acceptable red state.
 
 - [ ] **Step 4: Apply the minimal operational repairs**
 
@@ -253,9 +273,10 @@ git commit -m "fix(ops): align repository operational contracts"
 ```
 
 Generate the task review package from the recorded task base, obtain both
-specification-compliance and code-quality approval, push the task branch, open a
-PR that closes the child issue, and wait for required checks. Merge only after
-review is clean and checks pass.
+specification-compliance and code-quality approval, push the task branch, and
+open a draft PR that closes the child issue. Mark it ready only after review is
+clean; merge only after required checks pass. This guardrail becomes enforced in
+main CI when dependent Task 2 merges.
 
 ---
 
@@ -263,20 +284,30 @@ review is clean and checks pass.
 
 **Issue title:** `[CI] Run Vite tests in the desktop frontend job`
 
+**Dependency:** Task 1 must merge first so this task can place both governance
+tests under explicit CI collection.
+
+**Risk/publication:** shared workflow change; open the PR as draft and mark it
+ready only after independent specification and quality review.
+
 **Files:**
 - Create: `scripts/governance/test_frontend_ci_contract.py`
 - Modify: `.github/workflows/ci.yml:98-105`
 
 **Interfaces:**
-- Consumes: existing `apps/desktop-web/package.json` script `test = vitest run` and the existing Node 22/npm-ci frontend job.
-- Produces: CI ordering `npm ci -> npm run test -> npm run typecheck -> npm run build` plus a static pytest regression check.
+- Consumes: existing `apps/desktop-web/package.json` script `test = vitest run`,
+  the existing Node 22/npm-ci frontend job, and Task 1's repository contract test.
+- Produces: CI ordering `npm ci -> npm run test -> npm run typecheck -> npm run build`,
+  explicit collection of both `scripts/governance/test_*.py` contract tests in
+  the Python job, and a static pytest regression check.
 
 - [ ] **Step 1: Create and bootstrap the issue worktree**
 
-Use `scripts/governance/worktree_create.ps1` with the recorded issue number,
-slug `frontend-ci-vitest`, lane `ops-quality`, and base `main`. Run
-`scripts/setup/bootstrap_worktree.ps1`, record the source SHA, and require a
-clean status.
+Run `git fetch origin main`, assert Task 1's merge SHA is an ancestor of
+`origin/main`, then use `scripts/governance/worktree_create.ps1` with the
+recorded issue number, slug `frontend-ci-vitest`, lane `ops-quality`, and base
+`origin/main`. Run `scripts/setup/bootstrap_worktree.ps1`, record the source SHA,
+and require a clean status.
 
 - [ ] **Step 2: Write the failing CI contract test**
 
@@ -302,6 +333,14 @@ def test_desktop_frontend_ci_runs_tests_before_typecheck_and_build() -> None:
     assert install < test < typecheck < build
     test_block = workflow[test:typecheck]
     assert "run: npm run test" in test_block
+
+
+def test_ci_collects_repository_governance_contracts() -> None:
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    assert (
+        "python -m pytest scripts/governance/test_repository_operational_contracts.py "
+        "scripts/governance/test_frontend_ci_contract.py -q"
+    ) in " ".join(workflow.split())
 ```
 
 - [ ] **Step 3: Verify the test fails for the missing CI step**
@@ -310,7 +349,8 @@ def test_desktop_frontend_ci_runs_tests_before_typecheck_and_build() -> None:
 python -m pytest scripts/governance/test_frontend_ci_contract.py -q
 ```
 
-Expected: one failure because `Test Vite desktop UI` is absent.
+Expected: two assertion failures: the Vite test step and explicit governance
+test collection are both absent. Collection/import errors are not acceptable.
 
 - [ ] **Step 4: Add the existing test command to CI**
 
@@ -321,20 +361,29 @@ Insert after `npm ci` and before typecheck:
         run: npm run test
 ```
 
-Do not change Node version, caching, lockfiles, dependencies, triggers, Python
-jobs, or build steps.
+In the existing Python test job, after dependency installation and before the
+core suite, add:
+
+```yaml
+      - name: Run repository governance contract tests
+        run: python -m pytest scripts/governance/test_repository_operational_contracts.py scripts/governance/test_frontend_ci_contract.py -q
+```
+
+Do not change Node version, caching, lockfiles, dependencies, triggers, existing
+Python commands, or build steps.
 
 - [ ] **Step 5: Verify targeted and frontend green states**
 
 ```powershell
 python -m pytest scripts/governance/test_frontend_ci_contract.py -q
+python -m pytest scripts/governance/test_repository_operational_contracts.py scripts/governance/test_frontend_ci_contract.py -q
 npm --prefix apps/desktop-web run test
 npm --prefix apps/desktop-web run typecheck
 npm --prefix apps/desktop-web run build
 git diff --check
 ```
 
-Expected: static test passes; clean-main frontend baseline is at least 14 files
+Expected: both static tests pass; clean-main frontend baseline is at least 14 files
 and 75 tests; typecheck/build pass. Record actual counts and durations rather
 than copying these expected lower bounds into evidence.
 
@@ -346,8 +395,9 @@ git diff --cached --check
 git commit -m "ci: run desktop Vite tests"
 ```
 
-Obtain task specification and quality review, push, open a PR closing the child,
-and merge only after required GitHub checks prove the new Vite test step ran.
+Obtain task specification and quality review, push, open a draft PR closing the
+child, and mark it ready only after review is clean. Merge only after required
+GitHub checks prove both the Vite and governance-test steps ran.
 
 ---
 
@@ -373,6 +423,8 @@ so classify it `lane:master`. The governance helper does not accept that lane;
 create the isolated worktree explicitly after validating the ignored target:
 
 ```powershell
+git fetch origin main
+$expectedBase = git rev-parse origin/main
 $branch = "task/$issueNumber-bridge-api-integrity"
 $path = Join-Path (git rev-parse --show-toplevel) ".claude/worktrees/master/$issueNumber-bridge-api-integrity"
 git check-ignore .claude/worktrees
@@ -383,8 +435,8 @@ git rev-parse HEAD
 git status --short
 ```
 
-Expected: ignore verification and bootstrap pass, the source is current clean
-`origin/main`, status is empty, and the canonical planning docs are present.
+Expected: ignore verification and bootstrap pass, `HEAD` equals `$expectedBase`,
+status is empty, and the canonical planning docs are present.
 
 - [ ] **Step 2: Write the failing TypeScript duplicate-name test**
 
@@ -402,8 +454,8 @@ function bridgeApiMethodNames(source: string): string[] {
 
   const names: string[] = [];
   for (const line of source.slice(start + marker.length).split(/\r?\n/)) {
-    if (line === "}") break;
-    const match = /^  ([A-Za-z_$][\w$]*)\s*\(/.exec(line);
+    if (line.trim() === "}" && !/^\s/.test(line)) break;
+    const match = /^\s+([A-Za-z_$][\w$]*)\s*\(/.exec(line);
     if (match) names.push(match[1]);
   }
   return names;
@@ -413,6 +465,12 @@ describe("BridgeApi declaration contract", () => {
   it("declares every method name exactly once", () => {
     const path = fileURLToPath(new URL("./types.ts", import.meta.url));
     const names = bridgeApiMethodNames(readFileSync(path, "utf8"));
+    expect(names.length).toBeGreaterThanOrEqual(100);
+    expect(names).toEqual(expect.arrayContaining([
+      "ping",
+      "get_companies",
+      "export_company_excel",
+    ]));
     const counts = new Map<string, number>();
     for (const name of names) counts.set(name, (counts.get(name) ?? 0) + 1);
 
@@ -548,7 +606,7 @@ def _typescript_method_names(path: Path) -> tuple[list[str], list[str]]:
         if line == "}":
             break
         stripped = line.lstrip()
-        if len(line) - len(stripped) != 2 or "(" not in stripped:
+        if not line[:1].isspace() or "(" not in stripped:
             continue
         candidate = stripped.split("(", 1)[0].strip()
         if candidate.isidentifier():
@@ -647,7 +705,9 @@ python scripts/diagnostics/bridge_method_inventory.py --root . |
 ```
 
 Expected: `typescript_duplicates` is empty after Step 4. Record the full sorted
-Python/TypeScript method lists and both mismatch lists. Compare every mismatch
+Python/TypeScript method lists and both mismatch lists. Fail the step if either
+list has fewer than 100 methods or omits `ping`, `get_companies`, or
+`export_company_excel`; this prevents a vacuous parser pass. Compare every mismatch
 to active TypeScript call sites (`callBridge`) and Python tests before assigning
 one of: intentionally Python-only legacy method, active Python-only method,
 TypeScript-only declaration, or needs separately approved follow-up.
@@ -741,10 +801,13 @@ Prove from source and temporary-path tests:
 
 - [ ] **Step 3: Record the packaged behavior**
 
-Use source, `tests/test_desktop_runtime_paths.py`, and the stale isolated package
-diagnostic from the design. Prove the normal frozen root, operator override,
-console behavior, timeout/failure behavior, and write targets. Do not launch a
-real online refresh.
+Use source and `tests/test_desktop_runtime_paths.py` to characterize the expected
+frozen root, operator override, console behavior, timeout/failure behavior, and
+write targets. The stale isolated package diagnostic exits before the startup
+thread and proves only its diagnostic path/root on commit `ad7e9af`; it is not
+evidence that the frozen refresh ran. Do not launch a real online refresh. Mark
+normal frozen refresh behavior **Needs validation** unless a later current-head
+package observation safely and directly exercises it.
 
 - [ ] **Step 4: Record consumers and failure semantics**
 
@@ -763,7 +826,11 @@ durations, results, log locations, a dev/packaged comparison table, and options:
 3. remove the startup action and rely on explicit/local ingestion paths.
 
 Recommend one option based on the local-first contract. Mark the issue
-`status:needs-input`. Do not edit code, tests, docs, or workflows to change the
+`status:blocked`. Classify every conclusion as `source-derived`,
+`in-process-test-observed`, `stale-package diagnostic`, or
+`current-head-packaged-observation`; label unobserved frozen conclusions
+**Needs validation**. Do not
+edit code, tests, docs, or workflows to change the
 behavior. A reviewer independently checks the evidence and confirms the issue
 is ready for João's explicit decision.
 
@@ -787,17 +854,27 @@ is ready for João's explicit decision.
 
 - [ ] **Step 1: Map documented checks to enforcement**
 
-Build an issue table with one row per canonical preflight:
+Build an issue table with separate categories. Do not promote a useful check to
+the canonical release contract without documentation evidence:
 
 ```text
+Documented mandatory release preflight:
 npm --prefix apps/desktop-web run typecheck
-npm --prefix apps/desktop-web run test
 npm --prefix apps/desktop-web run build
 python scripts/data/check_storage_budget.py
 python scripts/data/check_managed_ingestion_contracts.py --require-manifests --scan-sqlite-large-tables
 python -m py_compile desktop/app.py desktop/bridge.py
-python -m pytest tests -q
-python -m pytest apps/api/tests -q
+pytest tests -q
+
+Documented conditional preflight (API/shared-contract changes):
+pytest apps/api/tests -q
+
+Enforced on main CI after authorized Tasks 1-2, but not currently documented as
+a canonical release preflight:
+npm --prefix apps/desktop-web run test
+python -m pytest scripts/governance/test_repository_operational_contracts.py scripts/governance/test_frontend_ci_contract.py -q
+
+Documented/manual package evidence:
 package provenance/version
 ZIP root/checksum
 clean/offline/copied-data/Excel/updater-boundary smoke
@@ -822,7 +899,7 @@ versus prerelease preservation. Do not write YAML.
 - [ ] **Step 4: Post and independently review the issue evidence**
 
 Post source SHA, exact commands/API queries, environment, timestamps, durations,
-results, and URLs/log locations. Mark `status:needs-input` and state plainly:
+results, and URLs/log locations. Mark `status:blocked` and state plainly:
 publication workflow changes require João's explicit approval. A reviewer
 checks the matrix and proposal against `docs/build-release.md`; no PR is opened.
 
@@ -842,14 +919,19 @@ their gated behavior remains unchanged.
 - Do not modify: runtime source, database schemas/data, updater/release workflows, or version/channel contracts
 
 **Interfaces:**
-- Consumes: merged `main`, canonical build script and preflight commands, explicit `CVMANALYTICS_DATA_DIR`, disposable/copy-safe data fixtures, package diagnostic mode, Excel export, updater helper contract.
+- Consumes: merged `main`, canonical build script and preflight commands,
+  explicit child-process `CVMANALYTICS_DATA_DIR` and `LOCALAPPDATA`, SQLite
+  backup copies, package diagnostic mode, WebView2 CDP, Excel export, and the
+  updater helper contract.
 - Produces: a current-head candidate checksum/provenance package and durable final audit report. It publishes no release.
 
 - [ ] **Step 1: Create and bootstrap the validation worktree**
 
-Create from updated clean `origin/main` with the validation issue number, slug
-`current-head-package-validation`, lane `ops-quality`, and base `main`. Record
-the exact source SHA and require a clean worktree.
+Run `git fetch origin main`; assert the merge SHAs of Tasks 1-3 are ancestors of
+`origin/main`. Create from that exact ref with the validation issue number, slug
+`current-head-package-validation`, lane `ops-quality`, and `-Base origin/main`.
+Record `git rev-parse HEAD`, require it equals `git rev-parse origin/main`, and
+require a clean worktree.
 
 - [ ] **Step 2: Run and capture the full source preflight**
 
@@ -859,6 +941,7 @@ Run each separately with UTC timing and its own log/meta file:
 npm --prefix apps/desktop-web run test
 npm --prefix apps/desktop-web run typecheck
 npm --prefix apps/desktop-web run build
+python -m pytest scripts/governance/test_repository_operational_contracts.py scripts/governance/test_frontend_ci_contract.py -q
 python scripts/data/check_storage_budget.py
 python scripts/data/check_managed_ingestion_contracts.py --require-manifests --scan-sqlite-large-tables
 python -m py_compile desktop/app.py desktop/bridge.py
@@ -897,62 +980,204 @@ Get-FileHash scratch\architecture-hardening-wave\task-6\CVMAnalytics-current-hea
 ```
 
 Open the ZIP and assert its flat top-level roots are exactly
-`CVMAnalytics.exe` and `_internal`. Record entry count, size, and checksum.
-
-- [ ] **Step 5: Run a clean isolated frozen diagnostic**
-
-Set only the documented operator root for the child process:
+`CVMAnalytics.exe` and `_internal` with this fail-closed assertion:
 
 ```powershell
-New-Item -ItemType Directory -Force scratch\architecture-hardening-wave\task-6\clean-data | Out-Null
-$env:CVMANALYTICS_DATA_DIR = (Resolve-Path scratch\architecture-hardening-wave\task-6\clean-data).Path
-& .\dist\CVMAnalytics\CVMAnalytics.exe --diagnose-runtime --non-interactive
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$zipPath = (Resolve-Path $zipPath).Path
+$archive = [IO.Compression.ZipFile]::OpenRead($zipPath)
+try {
+  $roots = @($archive.Entries | ForEach-Object {
+    ($_.FullName -replace '\\','/').Split('/')[0]
+  } | Where-Object { $_ } | Sort-Object -Unique)
+  if (Compare-Object @('CVMAnalytics.exe','_internal') $roots) {
+    throw "Unexpected ZIP roots: $($roots -join ', ')"
+  }
+  if (-not ($archive.Entries.FullName -contains 'CVMAnalytics.exe')) {
+    throw 'CVMAnalytics.exe is not at the ZIP root'
+  }
+} finally { $archive.Dispose() }
 ```
 
-Expected: frozen runtime, version/build, WebView2/pythonnet, SQLite, and isolated
-paths are explicit; no Documents production database is opened. Preserve the
-diagnostic log.
+Record entry count, byte size, and SHA-256.
 
-- [ ] **Step 6: Validate copied-data and offline reads**
+- [ ] **Step 5: Create a WAL-safe disposable data fixture and preservation manifests**
 
-Create a disposable fixture under task scratch using SQLite backup/WAL-safe copy
-procedures. Copy only the files required for representative company, status,
-Energy, and Excel paths. Disconnect/deny network for the candidate process or
-use a controlled no-network environment. Verify already-downloaded data remains
-readable and missing/stale/source/error states remain visible.
+Use source root `C:\Users\jadaojoao\Documents\CVMAnalytics`, representative
+company `cd_cvm=9512`, and fixture root
+`scratch\architecture-hardening-wave\task-6\fixture`. Before reading, create a
+sorted SHA-256 manifest of all source-root `input/**`, `raw/**`, and
+`source_snapshots/**` files plus `db\cvm_financials.db` and
+`db\energy_kpis.db`. Record missing paths explicitly. Copy each required SQLite
+database with Python's `sqlite3.Connection.backup()` into `fixture\db`; never
+copy a live `.db`, `-wal`, or `-shm` file directly. Copy required non-database
+fixtures with `Copy-Item`, then hash the fixture.
 
-Capture at least:
+```powershell
+$sourceRoot = 'C:\Users\jadaojoao\Documents\CVMAnalytics'
+$fixtureRoot = Join-Path (Resolve-Path scratch\architecture-hardening-wave\task-6).Path 'fixture'
+python -c "import sqlite3,sys,pathlib; s,d=map(pathlib.Path,sys.argv[1:]); d.parent.mkdir(parents=True,exist_ok=True); a=sqlite3.connect(f'file:{s.as_posix()}?mode=ro',uri=True); b=sqlite3.connect(d); a.backup(b); b.close(); a.close()" "$sourceRoot\db\cvm_financials.db" "$fixtureRoot\db\cvm_financials.db"
+python -c "import sqlite3,sys,pathlib; s,d=map(pathlib.Path,sys.argv[1:]); d.parent.mkdir(parents=True,exist_ok=True); a=sqlite3.connect(f'file:{s.as_posix()}?mode=ro',uri=True); b=sqlite3.connect(d); a.backup(b); b.close(); a.close()" "$sourceRoot\db\energy_kpis.db" "$fixtureRoot\db\energy_kpis.db"
+```
 
-- company directory and company detail;
-- financial readiness/statement path;
-- Indicator Library/SIN cached path;
-- Settings/Diagnostics paths and build provenance;
-- no startup crash when offline; and
-- unchanged copied-file hashes for input/raw/source-snapshot fixtures.
+The manifest helper enumerates each listed file/path with `Get-ChildItem
+-File -Recurse`, emits relative path, length, and SHA-256 sorted by path, and
+writes JSON under task scratch. Run the same helper with the same path list after
+validation and require `Compare-Object` to return no rows.
 
-Do not use the canonical Documents databases directly.
+The fixture script must query `companies` for `9512` and abort if absent. A
+second disposable copy, `fixture-refresh-failure`, intentionally sets that row's
+`cnpj` to NULL and deletes only the metadata-refresh success key so offline
+failure semantics can be observed without touching source data. Record each SQL
+statement. Any source-tree write, missing representative row, or failed backup
+is a hard failure.
 
-- [ ] **Step 7: Validate package UI and normal laptop width**
+- [ ] **Step 6: Run a clean isolated frozen diagnostic with child-only environment**
 
-Launch the packaged candidate against the disposable root. Use the real
-pywebview/WebView2 runtime and capture screenshots/logs at 1366x768 and a wider
-desktop viewport. Verify loading, empty, partial/error, offline, bridge-ready,
-and normal navigation states without changing application state beyond the
-disposable fixture.
+Never assign `$env:CVMANALYTICS_DATA_DIR` or `$env:LOCALAPPDATA` in the controller
+shell. Start the exact child with an environment map and capture its PID/exit:
 
-- [ ] **Step 8: Validate Excel and updater boundaries**
+```powershell
+$childEnv = @{
+  CVMANALYTICS_DATA_DIR = $fixtureRoot
+  LOCALAPPDATA = (Join-Path $taskRoot 'localappdata-diagnostic')
+  CVM_CATALOG_URL = 'http://127.0.0.1:9/cad.csv'
+  HTTP_PROXY = 'http://127.0.0.1:9'
+  HTTPS_PROXY = 'http://127.0.0.1:9'
+  ALL_PROXY = 'http://127.0.0.1:9'
+  NO_PROXY = '127.0.0.1,localhost'
+}
+$p = Start-Process $candidateExe -ArgumentList '--diagnose-runtime','--non-interactive' `
+  -Environment $childEnv -PassThru -Wait -WindowStyle Hidden `
+  -RedirectStandardOutput (Join-Path $taskRoot 'diagnostic.stdout.log') `
+  -RedirectStandardError (Join-Path $taskRoot 'diagnostic.stderr.log')
+if ($p.ExitCode -ne 0) { throw "Diagnostic failed: $($p.ExitCode)" }
+```
 
-Generate one representative company workbook into the disposable output root,
-open it with the available spreadsheet validation runtime, and prove it opens
-without repair. Record sheets, formulas/source sections, and file hash.
+Fail unless the log reports frozen mode, the candidate version/build SHA, and
+paths under the fixture/local-appdata roots. Fail if any reported path is under
+the canonical Documents root.
 
-Exercise updater helper tests and package-contract checks only in disposable
-install/data roots. Prove the allowlisted swap remains `CVMAnalytics.exe` plus
-`_internal`, rollback is created, relaunch is issued, and user-data sentinels
-are unchanged. Do not change the update channel or query/publish a prerelease as
-stable.
+- [ ] **Step 7: Exercise the real packaged UI and bridge offline through CDP**
 
-- [ ] **Step 9: Write the durable final audit report**
+Launch the package against the unmodified fixture with the Step 6 proxy values,
+plus `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9223
+--remote-allow-origins=*`. Use `Start-Process -Environment`, keep the returned
+PID, and put cleanup in `finally { Stop-Process -Id $p.Id -Force -ErrorAction
+SilentlyContinue }`. Wait no longer than 60 seconds for
+`http://127.0.0.1:9223/json/version`.
+
+Create ignored `task-6/validate-package-ui.cjs` and run it with the repository's
+installed Playwright module. It must `chromium.connectOverCDP`, select the
+pywebview page, wait until `window.pywebview?.api?.get_app_status` is callable,
+record console errors and every request whose URL is not `file:`, `data:`,
+`blob:`, `http://127.0.0.1`, or `http://localhost`, then call and JSON-record:
+
+```javascript
+await api.get_app_status({});
+await api.get_companies({page: 1, page_size: 20});
+await api.get_company_info({cd_cvm: 9512});
+await api.get_company_financial_readiness({cd_cvm: 9512});
+await api.get_sin_kpi_dashboard({});
+await api.export_company_excel({cd_cvm: 9512, reveal: false, period_scope: "last_5_years"});
+```
+
+For each of `#/empresas`, `#/empresas/9512`,
+`#/indicators?section=energy&sub=sin`, and `#/settings/diagnostics`, navigate in
+the same real page, wait for two animation frames plus network idle/bounded UI
+settling, and capture screenshots after applying CDP
+`Emulation.setDeviceMetricsOverride` at both 1366x768 and 1920x1080. The script
+exits nonzero if bridge readiness times out, a result contains top-level `error`,
+the export lacks `ok: true`/`file_path`, a route renders an uncaught error, or an
+unexpected external request succeeds. Persist `ui-results.json`, console/network
+logs, and eight screenshots.
+
+Repeat only the launch/readiness portion against `fixture-refresh-failure`, wait
+at least 13 seconds (2-second delay plus 10-second catalog timeout plus margin),
+then stop the child. Assert the candidate stays alive and the fixture-only CNPJ
+and refresh timestamp remain absent. This is a direct current-head packaged
+observation of offline startup failure; do not generalize beyond it.
+
+- [ ] **Step 8: Validate the generated workbook**
+
+Read `file_path` from `ui-results.json`. Fail unless it resolves under
+`fixture\output`, has a stable SHA-256, and opens read-only with both validators:
+
+```powershell
+python -c "import openpyxl,sys,json; p=sys.argv[1]; w=openpyxl.load_workbook(p,data_only=False,read_only=True); print(json.dumps({'sheets':w.sheetnames,'formulas':sum(1 for s in w for row in s.iter_rows() for c in row if isinstance(c.value,str) and c.value.startswith('='))})); w.close()" $excelPath
+$excel = New-Object -ComObject Excel.Application
+try {
+  $excel.DisplayAlerts = $false
+  $book = $excel.Workbooks.Open($excelPath, 0, $true)
+  $book.Close($false)
+} finally {
+  if ($excel) { $excel.Quit(); [Runtime.InteropServices.Marshal]::FinalReleaseComObject($excel) | Out-Null }
+}
+```
+
+Record sheet names, formula count, file size/hash, COM availability, and whether
+Excel reported repair. If Excel is not installed, record COM as **Needs
+validation** rather than silently substituting openpyxl.
+
+- [ ] **Step 9: Exercise updater swapping only in a scratch install**
+
+Create `task-6/updater/current`, `staged`, and a separate
+`localappdata-updater`. Populate `current` and `staged` with distinct
+`CVMAnalytics.exe` test stubs plus `_internal/version.txt`; the staged stub is a
+tiny C# executable compiled with `Add-Type -OutputAssembly` that writes
+`relaunch.marker` beside itself and exits. Create sentinel files under all eight
+protected names from `desktop/update_helper.ps1` (`db`, `input`, `raw`,
+`source_snapshots`, `cache`, `logs`, `output`, `backups`) and hash them.
+
+Compile distinct old/new stubs with this source template, substituting `old` and
+`staged` and using distinct class names/output paths so their hashes differ:
+
+```csharp
+using System;
+using System.IO;
+public static class StagedProgram {
+    [STAThread]
+    public static void Main() {
+        File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "relaunch.marker"), "staged");
+    }
+}
+```
+
+Use `Add-Type -TypeDefinition $source -OutputAssembly $absoluteExe
+-OutputType ConsoleApplication`. Assert both stub paths, staged/current roots,
+and updater-localappdata resolve under the task root before invocation.
+
+Run the real helper in a separate PowerShell child whose `LOCALAPPDATA` points to
+`localappdata-updater`; pass only the absolute staged/current scratch paths:
+
+```powershell
+$helper = (Resolve-Path desktop\update_helper.ps1).Path
+$helperEnv = @{ LOCALAPPDATA = $updaterLocalAppData }
+$p = Start-Process powershell.exe -ArgumentList @(
+  '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$helper,
+  '-NewVersionPath',$staged,'-CurrentInstallPath',$current
+) -Environment $helperEnv -PassThru -Wait -WindowStyle Hidden
+if ($p.ExitCode -ne 0) { throw "Updater helper failed: $($p.ExitCode)" }
+```
+
+Fail unless current contains the staged allowlisted files, rollback under the
+scratch `LOCALAPPDATA` contains the old allowlisted files, `relaunch.marker`
+exists, the helper log records a successful relaunch, and every protected
+sentinel hash is unchanged. Resolve and assert all updater paths begin with the
+task root before invoking the helper. The harness must never pass the repository,
+Documents root, real install, `%LOCALAPPDATA%`, `$HOME`, or `~` as a swap target.
+
+- [ ] **Step 10: Prove preservation and classify evidence**
+
+Regenerate the canonical source manifest from Step 5 and byte-compare it with
+the before manifest. Regenerate fixture manifests and explain only the expected
+fixture DB/output changes. Classify every claim as source-derived,
+in-process-test-observed, current-head packaged observation, or Needs validation.
+Fail the task on any canonical source/input/raw/source-snapshot hash change,
+unexpected database write, successful outbound request, leaked app process, or
+path outside scratch.
+
+- [ ] **Step 11: Write the durable final audit report**
 
 Create `docs/architecture-hardening-wave-audit.md`. For every objective
 requirement and child, record:
@@ -971,7 +1196,7 @@ requirement and child, record:
 Distinguish pass, contradiction, incomplete, weak/indirect, and missing evidence.
 Do not claim a packaged behavior from source-only or dev-only checks.
 
-- [ ] **Step 10: Review, commit, and publish only the audit report**
+- [ ] **Step 12: Review, commit, and publish only the audit report**
 
 ```powershell
 git add -- docs/architecture-hardening-wave-audit.md
@@ -991,7 +1216,7 @@ After all authorized PRs merge and the audit PR is current:
 
 - [ ] Confirm the Epic checklist links all six children and reflects their true states.
 - [ ] Confirm Tasks 1-3 and 6 have focused reviewed PR evidence.
-- [ ] Confirm Tasks 4-5 remain open/needs-input unless João separately approved implementation.
+- [ ] Confirm Tasks 4-5 remain open/blocked unless João separately approved implementation.
 - [ ] Confirm no open PR, branch diff, or commit changed startup refresh behavior, publication behavior, database/public/financial/updater contracts, user-visible behavior, or `desktop/services.py` structure.
 - [ ] Re-run final tests/checks at the final merged SHA and record provenance.
 - [ ] Inspect the primary dirty checkout and prove its original user changes remain untouched.

@@ -149,7 +149,9 @@ regression checks before changing the files.
 `.github/workflows/ci.yml` installs the Vite dependencies, runs typecheck, and
 builds, but does not run Vitest. The clean suite is fast (75 tests in 6.556 s
 including command startup) and already exists. Adding the existing test command
-to CI changes no product behavior.
+to CI changes no product behavior. The new repository-governance tests from
+Child 1 also live outside `tests/`; Child 2 must explicitly collect them so the
+guardrail is enforced rather than merely runnable by an operator.
 
 ### 5.4 BridgeApi duplication and inventory gap
 
@@ -230,12 +232,17 @@ removing the behavior remains behind explicit approval.
 ### 5.6 Release evidence enforcement gap
 
 `.github/workflows/release-desktop.yml` builds the package, validates version
-metadata and ZIP layout, and publishes release assets. The broader documented
-preflight in `docs/build-release.md` includes core/API/UI tests, managed
-ingestion and storage checks, and packaged smoke/offline/update evidence. Those
-checks are not all enforced in the publication workflow. The main CI workflow
-does not run on release tags, so a tag can enter the release job without a tag
-specific CI run.
+metadata and ZIP layout, and publishes release assets. `docs/build-release.md`
+documents Vite typecheck/build, the core suite, managed-ingestion/storage checks,
+and packaged smoke/offline/update evidence as mandatory release preflight. It
+documents the API suite conditionally when API or shared contracts changed; it
+does not currently make Vitest a canonical release requirement. Child 2 will
+make Vitest and the two repository-governance tests part of main CI, but that is
+distinct from the documented release contract. The release investigation must
+preserve these categories instead of treating every desirable check as already
+mandatory. The documented checks are not all enforced in the publication
+workflow, and main CI does not run on release tags, so a tag can enter the
+release job without a tag-specific CI run.
 
 Prior work already validated prerelease classification and updater SemVer
 handling. This finding is narrower: define the evidence/preflight relationship
@@ -260,6 +267,13 @@ at `2026-07-21T19:51:28.5242250Z`, took 3.474 s, and used the explicit
 `CVMANALYTICS_DATA_DIR` operator override. Its logs are
 `stale-package-isolated.log` and
 `scratch/architecture-hardening-wave/package-diagnostic-isolated/diagnostics-20260721T195129Z.log`.
+
+That diagnostic exits before the normal startup thread is exercised. It proves
+only the frozen diagnostic path and isolated root for the older `ad7e9af`
+package; it does not prove packaged startup-refresh behavior. Refresh conclusions
+must be labelled as source-derived, in-process-test-observed, stale-package
+diagnostic, or current-head packaged observation. Any frozen behavior not
+directly observed remains **Needs validation**.
 
 An earlier probe used `CVM_DATA_DIR` alone and showed why that variable is not
 enough for `_user_data_root()` diagnostics: one diagnostic log was created in
@@ -349,10 +363,11 @@ Create one Epic with six non-duplicative children:
 
 ### Child 2 — Run Vite tests in CI
 
-**Risk:** low, ops-quality
+**Risk:** shared, ops-quality workflow
 **Authorized:** yes
 
 - Add `npm run test` to the existing Vite CI job before typecheck/build.
+- Explicitly collect both repository-governance tests created by Children 1-2.
 - Reuse the lockfile and current Node setup; add no dependency.
 - Validate workflow syntax and the local 75-test clean baseline.
 
@@ -373,7 +388,8 @@ Create one Epic with six non-duplicative children:
 **Authorized:** characterization only
 
 - Record dev and frozen target-path behavior, observability, failure semantics,
-  writes, opt-out status, and active consumers.
+  writes, opt-out status, and active consumers, with every conclusion classified
+  by its evidence level.
 - Add characterization tests only if they preserve current behavior.
 - Present options and a recommendation.
 - Do not change, disable, or remove the refresh without explicit approval.
@@ -395,11 +411,13 @@ Create one Epic with six non-duplicative children:
 - Run only after authorized code/CI guardrails are integrated into the
   candidate commit.
 - Build without a stable tag or release.
-- Verify provenance, ZIP roots, clean launch, copied-data preservation,
-  offline cached reads, source/missing/error visibility, Excel-open behavior,
-  updater helper allowlist/rollback boundary, and normal laptop width where
-  observable.
-- Use disposable roots and retain logs/checksums/screenshots as audit evidence.
+- Verify provenance and ZIP roots exactly. Use SQLite backup copies, a
+  child-process-only data root and `LOCALAPPDATA`, denied outbound networking,
+  CDP-driven real WebView2 routes at 1366x768 and 1920x1080, Excel open checks,
+  and a scratch-only updater install/rollback harness.
+- Hash canonical inputs before and after, mutate only disposable fixtures, stop
+  the exact child process in `finally`, and retain logs/checksums/screenshots as
+  audit evidence.
 
 ## 10. Overlap decisions
 
