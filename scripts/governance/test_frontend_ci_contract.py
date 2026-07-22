@@ -122,5 +122,6 @@ def test_ci_collects_repository_governance_contracts() -> None:
     assert (
         "Run repository governance contract tests",
         "python -m pytest scripts/governance/test_repository_operational_contracts.py "
-        "scripts/governance/test_frontend_ci_contract.py -q",
+        "scripts/governance/test_frontend_ci_contract.py "
+        "scripts/diagnostics/test_bridge_method_inventory.py -q",
     ) in steps
