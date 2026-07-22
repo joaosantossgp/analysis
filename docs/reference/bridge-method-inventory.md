@@ -2,17 +2,17 @@
 
 Provenance:
 
-- Inventory execution commit SHA: `a7b12c2bf5197f40b4d9ff27750765532a0227ca`
+- Inventory execution and reviewed tool/report commit SHA: `019bc4560563df868656adfa831fc7b5cb60ceb7`
 - Runtime bridge and TypeScript declaration base SHA: `e8e70615d1ede3dd724b2a63da75e7ff2ae1fbfb`
 - Command: `python scripts/diagnostics/bridge_method_inventory.py --root .`
 - Environment: Microsoft Windows NT 10.0.26200.0; PowerShell 7.6.3; Python 3.11.9; Node v24.14.1; npm 11.11.0
 - Working directory: `C:\Users\jadaojoao\Documents\Projects\analisys\.claude\worktrees\ops-quality\405-bridge-method-inventory`
-- Timestamp (UTC): `2026-07-21T23:56:25.3730577Z`
-- Duration: 0.315 seconds
+- Timestamp (UTC): `2026-07-22T00:17:12.9148482Z`
+- Duration: 0.154 seconds
 - Result: PASS (exit code 0)
-- Ignored inventory artifact: `scratch/architecture-hardening-wave/task-4/committed-bridge-method-inventory.json`
-- Ignored classification evidence: `scratch/architecture-hardening-wave/task-4/active-vite-mismatch-search-provenance.json`, `python-mismatch-source-search.log`, and `legacy-nextjs-shim-evidence.log`
-- Source state: committed and clean. The inventory tool and initial report were committed at the inventory execution SHA; the Python runtime bridge and TypeScript declarations were unchanged from the stated base SHA.
+- Ignored inventory artifact: `scratch/architecture-hardening-wave/task-4/review-committed-bridge-method-inventory.json`
+- Ignored classification evidence: `scratch/architecture-hardening-wave/task-4/review-active-vite-mismatch-search.log` and its provenance JSON, `review-python-mismatch-source-search.log`, and `review-legacy-nextjs-shim-evidence.log`
+- Source state: committed and clean. The reviewed inventory tool and mismatch classifications were committed at the inventory execution SHA; the Python runtime bridge and TypeScript declarations were unchanged from the stated base SHA.
 
 ## Inventory summary
 
