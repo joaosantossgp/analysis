@@ -39,8 +39,14 @@ def test_build_inventory_compares_cvmbridge_mixins_with_typescript(
     (tmp_path / "apps/desktop-web/src/lib/bridge/types.ts").write_text(
         "export interface BridgeApi {\n"
         "  ping(params?: Record<string, unknown>): Promise<unknown>;\n"
-        "  typescript_only(params?: Record<string, unknown>): Promise<unknown>;\n"
+        "  generic<T>(params: T): Promise<T>;\n"
+        '  "quoted-method"(params?: Record<string, unknown>): Promise<unknown>;\n'
+        "  multiline\n"
+        "    (params?: Record<string, unknown>): Promise<unknown>;\n"
         "  ping(params?: Record<string, unknown>): Promise<unknown>;\n"
+        "  status: string;\n"
+        "  handler: (params: string) => Promise<void>;\n"
+        "  (params: string): Promise<void>;\n"
         "}\n",
         encoding="utf-8",
     )
@@ -48,7 +54,12 @@ def test_build_inventory_compares_cvmbridge_mixins_with_typescript(
     inventory = _load_build_inventory()(tmp_path)
 
     assert inventory["python_methods"] == ["ping"]
-    assert inventory["typescript_methods"] == ["ping", "typescript_only"]
+    assert inventory["typescript_methods"] == [
+        "generic",
+        "multiline",
+        "ping",
+        "quoted-method",
+    ]
     assert inventory["typescript_duplicates"] == ["ping"]
     assert inventory["python_only"] == []
-    assert inventory["typescript_only"] == ["typescript_only"]
+    assert inventory["typescript_only"] == ["generic", "multiline", "quoted-method"]

@@ -11,7 +11,7 @@ Provenance:
 - Duration: 0.315 seconds
 - Result: PASS (exit code 0)
 - Ignored inventory artifact: `scratch/architecture-hardening-wave/task-4/committed-bridge-method-inventory.json`
-- Ignored classification evidence: `scratch/architecture-hardening-wave/task-4/active-vite-mismatch-search.log`, `python-mismatch-source-search.log`, and `legacy-nextjs-shim-evidence.log`
+- Ignored classification evidence: `scratch/architecture-hardening-wave/task-4/active-vite-mismatch-search-provenance.json`, `python-mismatch-source-search.log`, and `legacy-nextjs-shim-evidence.log`
 - Source state: committed and clean. The inventory tool and initial report were committed at the inventory execution SHA; the Python runtime bridge and TypeScript declarations were unchanged from the stated base SHA.
 
 ## Inventory summary
@@ -38,9 +38,9 @@ call site.
 | --- | --- | --- |
 | `download_company_excel` | Needs separately approved follow-up | Defined in `desktop/bridge_api/companies.py`; no active Vite or Python-test reference. It returns a base64 browser-download payload while the active Vite export path calls the typed `export_company_excel` method, but the retained bridge method's intended status is not documented. |
 | `get_company_suggestions` | Active Python-only method | Defined in `desktop/bridge_api/companies.py` and directly exercised by `tests/test_backend_perf_optimizations.py`; no active Vite reference. |
-| `get_em_destaque` | Intentionally Python-only legacy method | Defined in `desktop/bridge_api/companies.py`; no active Vite or Python-test reference. It was introduced by the historical Next.js bridge shim; the same service operation remains separately exposed by `apps/api/app/routes/companies.py`. |
+| `get_em_destaque` | Needs separately approved follow-up | Defined in `desktop/bridge_api/companies.py`; no active Vite or Python-test reference. History shows that it entered through the former Next.js bridge shim and the same service operation remains exposed by `apps/api/app/routes/companies.py`, but there is no current evidence of intentional bridge retention. |
 | `get_plant_parcel_source_submarket_summary` | Needs separately approved follow-up | Defined in `desktop/bridge_api/energy.py`, and its underlying service operation is exercised by `tests/energy_kpi/test_plant_parcels.py`. There is no direct bridge test, TypeScript declaration, or active Vite call site, so the intended bridge exposure cannot be inferred. |
-| `get_populares` | Intentionally Python-only legacy method | Defined in `desktop/bridge_api/companies.py`; no active Vite or Python-test reference. It was introduced by the historical Next.js bridge shim; the same service operation remains separately exposed by `apps/api/app/routes/companies.py`. |
+| `get_populares` | Needs separately approved follow-up | Defined in `desktop/bridge_api/companies.py`; no active Vite or Python-test reference. History shows that it entered through the former Next.js bridge shim and the same service operation remains exposed by `apps/api/app/routes/companies.py`, but there is no current evidence of intentional bridge retention. |
 | `save_company_excel` | Intentionally Python-only legacy method | Defined in `desktop/bridge_api/companies.py`; no active Vite or Python-test reference. The active `export_company_excel` implementation explicitly describes `save_company_excel` as the old browser download flow. |
 | `track_company_view` | Active Python-only method | Defined in `desktop/bridge_api/companies.py` and directly covered by the read/write-policy cases in `tests/test_bridge_write_policy.py`; no active Vite reference. |
 
