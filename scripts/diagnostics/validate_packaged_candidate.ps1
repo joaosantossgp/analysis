@@ -145,20 +145,79 @@ function Invoke-RecordedStep {
 }
 
 function Write-EvidenceSummary {
-  param([Parameter(Mandatory)][hashtable]$Evidence)
+  param([Parameter(Mandatory)][hashtable]$Evidence, [Parameter(Mandatory)][string]$SummaryPath)
   $artifactInventory = @()
+  $excludedSummaryPaths = @(
+    [IO.Path]::GetFullPath((Join-Path $taskRoot 'evidence-summary.json')).ToLowerInvariant(),
+    [IO.Path]::GetFullPath((Join-Path $taskRoot 'evidence-summary-fallback.json')).ToLowerInvariant()
+  )
   if (Test-Path -LiteralPath $taskRoot) {
     foreach ($artifact in Get-ChildItem -LiteralPath $taskRoot -File -Recurse -ErrorAction SilentlyContinue | Sort-Object FullName) {
       Assert-Descendant -Parent $taskRoot -Child $artifact.FullName
+      if ($excludedSummaryPaths -contains [IO.Path]::GetFullPath($artifact.FullName).ToLowerInvariant()) { continue }
       $artifactInventory += [ordered]@{ path = $artifact.FullName; bytes = $artifact.Length; sha256 = (Get-FileHash -LiteralPath $artifact.FullName -Algorithm SHA256).Hash }
     }
   }
   $Evidence.artifact_inventory = $artifactInventory
+  $resolvedSummaryPath = [IO.Path]::GetFullPath($SummaryPath)
+  $Evidence.summary_metadata = [ordered]@{
+    path = $resolvedSummaryPath
+    self_reference = 'This summary is excluded from artifact_inventory because hashing a document inside itself is self-referential; this path and final byte length are authoritative.'
+    bytes = 0
+  }
+  Assert-MutationTargets -Paths @($resolvedSummaryPath)
+  $utf8 = [Text.UTF8Encoding]::new($false)
+  $serialized = $null
+  for ($attempt = 0; $attempt -lt 10; $attempt++) {
+    $serialized = ($Evidence | ConvertTo-Json -Depth 12) + [Environment]::NewLine
+    $finalBytes = $utf8.GetByteCount($serialized)
+    if ([int64]$Evidence.summary_metadata.bytes -eq $finalBytes) { break }
+    $Evidence.summary_metadata.bytes = $finalBytes
+  }
+  $serialized = ($Evidence | ConvertTo-Json -Depth 12) + [Environment]::NewLine
+  $finalBytes = $utf8.GetByteCount($serialized)
+  if ([int64]$Evidence.summary_metadata.bytes -ne $finalBytes) { throw 'Could not stabilize evidence summary final byte metadata' }
+  [IO.File]::WriteAllText($resolvedSummaryPath, $serialized, $utf8)
+  if ((Get-Item -LiteralPath $resolvedSummaryPath).Length -ne $finalBytes) { throw 'Persisted evidence summary byte length does not match its final metadata' }
+}
+
+function Finalize-EvidenceSummary {
+  param(
+    [Parameter(Mandatory)][hashtable]$Evidence,
+    [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.ArrayList]$StepResults
+  )
+  $started = [DateTime]::UtcNow
+  $summaryStep = [ordered]@{ name = 'summary'; status = 'running'; started_utc = $started.ToString('o'); duration_ms = 0; pid = $null; exit_code = $null }
+  [void]$StepResults.Add($summaryStep)
+  $Evidence.summary_step = $summaryStep
   $summaryPath = Join-Path $taskRoot 'evidence-summary.json'
-  $Evidence.summary_metadata = @{ path = $summaryPath; self_hash_unavailable = 'self-referential summary is not hashed inside its own inventory'; bytes = $null }
-  Assert-MutationTargets -Paths @($summaryPath)
-  $Evidence | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $summaryPath -Encoding UTF8
-  $Evidence.summary_metadata.bytes = (Get-Item -LiteralPath $summaryPath).Length
+  $fallbackPath = Join-Path $taskRoot 'evidence-summary-fallback.json'
+  try {
+    $summaryStep.status = 'pass'
+    $summaryStep.exit_code = 0
+    $summaryStep.duration_ms = [int]([DateTime]::UtcNow - $started).TotalMilliseconds
+    Write-EvidenceSummary -Evidence $Evidence -SummaryPath $summaryPath
+  } catch {
+    $summaryFailure = $_
+    $summaryStep.status = 'failed'
+    $summaryStep.exit_code = 1
+    $summaryStep.error = $summaryFailure.Exception.Message
+    $summaryStep.duration_ms = [int]([DateTime]::UtcNow - $started).TotalMilliseconds
+    $Evidence.status = 'failed'
+    $Evidence.summary_failure = $summaryFailure.Exception.Message
+    if ($Evidence.primary_failure) {
+      if (-not $Evidence.secondary_failures) { $Evidence.secondary_failures = @() }
+      $Evidence.secondary_failures += [ordered]@{ name = 'summary_failure'; message = $summaryFailure.Exception.Message }
+    } else {
+      $Evidence.primary_failure = [ordered]@{ message = $summaryFailure.Exception.Message; type = $summaryFailure.Exception.GetType().FullName }
+    }
+    try {
+      Write-EvidenceSummary -Evidence $Evidence -SummaryPath $fallbackPath
+    } catch {
+      $summaryFailure.Exception.Data['summary_fallback_error'] = $_.Exception.Message
+    }
+    throw $summaryFailure
+  }
 }
 
 function Assert-ExistingDescendant {
@@ -521,8 +580,11 @@ try {
   }
   if (Test-Path -LiteralPath $fixtureBefore) {
     try {
-      Write-FileManifest -Root $fixtureRoot -RelativePaths @('db','metadata','output','logs','cache') -OutputPath $fixtureAfter | Out-Null
-      $evidence.fixture_changes = Invoke-RecordedStep -Name 'fixture_classification' -Results $stepResults -Action { @{ exit_code = 0; changes = (Test-FixturePolicy -BeforePath $fixtureBefore -AfterPath $fixtureAfter -Policy 'main') } }
+      $fixtureClassification = Invoke-RecordedStep -Name 'fixture_classification' -Results $stepResults -Action {
+        Write-FileManifest -Root $fixtureRoot -RelativePaths @('db','metadata','output','logs','cache') -OutputPath $fixtureAfter | Out-Null
+        @{ exit_code = 0; changes = @(Test-FixturePolicy -BeforePath $fixtureBefore -AfterPath $fixtureAfter -Policy 'main') }
+      }
+      $evidence.fixture_changes = $fixtureClassification.changes
     } catch {
       if (-not $primaryFailure) { $primaryFailure = $_; $evidence.status = 'failed'; $evidence.primary_failure = @{ message = $_.Exception.Message } }
       else { Register-SecondaryFailure -Evidence $evidence -Name 'fixture_classification' -ErrorRecord $_ }
@@ -530,8 +592,11 @@ try {
   }
   if (Test-Path -LiteralPath $refreshBefore) {
     try {
-      Write-FileManifest -Root $refreshFailureRoot -RelativePaths @('db','metadata','output','logs','cache') -OutputPath $refreshAfter | Out-Null
-      $evidence.refresh_failure_fixture_changes = Invoke-RecordedStep -Name 'refresh_failure_classification' -Results $stepResults -Action { @{ exit_code = 0; changes = (Test-FixturePolicy -BeforePath $refreshBefore -AfterPath $refreshAfter -Policy 'refresh-failure') } }
+      $refreshClassification = Invoke-RecordedStep -Name 'refresh_failure_classification' -Results $stepResults -Action {
+        Write-FileManifest -Root $refreshFailureRoot -RelativePaths @('db','metadata','output','logs','cache') -OutputPath $refreshAfter | Out-Null
+        @{ exit_code = 0; changes = @(Test-FixturePolicy -BeforePath $refreshBefore -AfterPath $refreshAfter -Policy 'refresh-failure') }
+      }
+      $evidence.refresh_failure_fixture_changes = $refreshClassification.changes
     } catch {
       if (-not $primaryFailure) { $primaryFailure = $_; $evidence.status = 'failed'; $evidence.primary_failure = @{ message = $_.Exception.Message } }
       else { Register-SecondaryFailure -Evidence $evidence -Name 'refresh_failure_classification' -ErrorRecord $_ }
@@ -540,9 +605,10 @@ try {
   $evidence.completed_utc = [DateTime]::UtcNow.ToString('o'); $evidence.duration_ms = [int]([DateTime]::UtcNow - $runStarted).TotalMilliseconds
   foreach ($cleanupFailure in $script:CleanupFailures) { if (-not $evidence.secondary_failures) { $evidence.secondary_failures = @() }; $evidence.secondary_failures += $cleanupFailure }
   $evidence.expected_identity = $expectedIdentity; $evidence.canonical_runtime_lock = $runtimeLock; $evidence.zip = $zip; $evidence.diagnostic = $diagnostic; $evidence.ui = $ui; $evidence.refresh_failure = $refreshFailure; $evidence.workbook = $workbook; $evidence.updater = $updater
-  $summaryStep = [ordered]@{ name = 'summary'; status = 'running'; started_utc = [DateTime]::UtcNow.ToString('o'); duration_ms = 0; pid = $null; exit_code = $null }
-  [void]$stepResults.Add($summaryStep)
-  $evidence.summary_step = $summaryStep
-  try { Write-EvidenceSummary -Evidence $evidence; $summaryStep.status = 'pass'; $summaryStep.exit_code = 0; Write-EvidenceSummary -Evidence $evidence } catch { $summaryStep.status = 'failed'; $summaryStep.error = $_.Exception.Message; if (-not $primaryFailure) { $primaryFailure = $_; $evidence.status = 'failed'; $evidence.summary_failure = $_.Exception.Message } else { Register-SecondaryFailure -Evidence $evidence -Name 'summary_failure' -ErrorRecord $_ }; try { $evidence | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $taskRoot 'evidence-summary-fallback.json') -Encoding UTF8 } catch { Register-SecondaryFailure -Evidence $evidence -Name 'summary_fallback' -ErrorRecord $_ } }
+  try {
+    Finalize-EvidenceSummary -Evidence $evidence -StepResults $stepResults
+  } catch {
+    if (-not $primaryFailure) { $primaryFailure = $_ }
+  }
 }
 if ($primaryFailure) { throw $primaryFailure }

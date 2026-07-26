@@ -72,16 +72,12 @@ async function waitForUiSettling(page) {
   await page.waitForTimeout(250);
 }
 
-async function main() {
-  const args = parseArgs(process.argv.slice(2));
+async function runValidation(args, { chromium }) {
   if (!Number.isInteger(args.cdCvm) || !Number.isFinite(args.processStartMs)) {
     throw new Error("--cd-cvm and --process-start-ms must be numeric");
   }
   fs.mkdirSync(args.outputDir, { recursive: true });
 
-  const repoRoot = path.resolve(__dirname, "..", "..");
-  const repositoryRequire = createRequire(path.join(repoRoot, "apps", "desktop-web", "package.json"));
-  const { chromium } = repositoryRequire("playwright");
   const consoleLogs = [];
   const networkLogs = [];
   const externalSuccesses = [];
@@ -217,7 +213,19 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(error.stack || error.message);
-  process.exitCode = 1;
-});
+async function main(argv = process.argv.slice(2)) {
+  const args = parseArgs(argv);
+  const repoRoot = path.resolve(__dirname, "..", "..");
+  const repositoryRequire = createRequire(path.join(repoRoot, "apps", "desktop-web", "package.json"));
+  const { chromium } = repositoryRequire("playwright");
+  return runValidation(args, { chromium });
+}
+
+module.exports = { main, parseArgs, runValidation };
+
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error.stack || error.message);
+    process.exitCode = 1;
+  });
+}

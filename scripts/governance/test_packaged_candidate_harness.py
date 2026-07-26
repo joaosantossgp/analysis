@@ -1,13 +1,53 @@
 from __future__ import annotations
 
+import json
 import re
 import subprocess
+import textwrap
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
 CONTROLLER = ROOT / "scripts/diagnostics/validate_packaged_candidate.ps1"
 UI_HARNESS = ROOT / "scripts/diagnostics/validate_packaged_ui.cjs"
+
+
+def _run_powershell_probe(tmp_path: Path, functions: tuple[str, ...], body: str) -> subprocess.CompletedProcess[str]:
+    function_names = ", ".join(f"'{name}'" for name in functions)
+    controller_path = CONTROLLER.as_posix().replace("'", "''")
+    probe = tmp_path / "harness-behavior-probe.ps1"
+    probe.write_text(
+        textwrap.dedent(
+            f"""
+            $ErrorActionPreference = 'Stop'
+            $tokens = $null
+            $parseErrors = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+              '{controller_path}',
+              [ref]$tokens,
+              [ref]$parseErrors
+            )
+            if ($parseErrors.Count -ne 0) {{ throw ($parseErrors | Out-String) }}
+            foreach ($functionName in @({function_names})) {{
+              $definition = $ast.FindAll({{
+                param($node)
+                $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                  $node.Name -eq $functionName
+              }}, $true) | Select-Object -First 1
+              if (-not $definition) {{ throw "Missing committed function: $functionName" }}
+              . ([scriptblock]::Create($definition.Extent.Text))
+            }}
+            {body}
+            """
+        ),
+        encoding="utf-8",
+    )
+    return subprocess.run(
+        ["pwsh", "-NoProfile", "-File", str(probe)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
 
 
 def test_packaged_candidate_harness_is_committed_and_fail_closed() -> None:
@@ -180,7 +220,7 @@ def test_finalization_binds_classifier_failures_and_exact_targets() -> None:
     assert "0x80040154" in controller
     finalization = controller.split("} finally {", 1)[-1]
     assert "primary_failure" in finalization
-    assert "Write-EvidenceSummary" in finalization
+    assert "Finalize-EvidenceSummary -Evidence $evidence -StepResults $stepResults" in finalization
 
 
 def test_extracted_reparse_guard_accepts_task_root_equality(tmp_path: Path) -> None:
@@ -205,33 +245,238 @@ def test_extracted_reparse_guard_accepts_task_root_equality(tmp_path: Path) -> N
     assert result.returncode == 0, result.stderr
 
 
-def test_execution_block_prepares_fresh_attempt_before_fixture_creation() -> None:
+def test_recorded_step_accepts_an_empty_array_list(tmp_path: Path) -> None:
+    result = _run_powershell_probe(
+        tmp_path,
+        ("Invoke-RecordedStep",),
+        """
+        $results = [System.Collections.ArrayList]@()
+        $value = Invoke-RecordedStep -Name 'first' -Results $results -Action {
+          [ordered]@{ exit_code = 0; marker = 'executed' }
+        }
+        if ($value.marker -ne 'executed') { throw 'The recorded action did not execute' }
+        if ($results.Count -ne 1 -or $results[0].name -ne 'first' -or $results[0].status -ne 'pass') {
+          throw 'The first recorded step was not appended to the empty ArrayList'
+        }
+        """,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_prepare_run_attempt_archives_known_outputs_and_starts_with_fresh_fixtures(tmp_path: Path) -> None:
+    task_root = (tmp_path / "evidence").as_posix().replace("'", "''")
+    result = _run_powershell_probe(
+        tmp_path,
+        (
+            "Resolve-ApprovedPath",
+            "Assert-Descendant",
+            "Assert-MutationTargets",
+            "Assert-NoReparseTree",
+            "Prepare-RunAttempt",
+        ),
+        f"""
+        $taskRoot = '{task_root}'
+        $fixtureRoot = Join-Path $taskRoot 'fixture'
+        $refreshFailureRoot = Join-Path $taskRoot 'fixture-refresh-failure'
+        New-Item -ItemType Directory -Force -Path $fixtureRoot,$refreshFailureRoot | Out-Null
+        Set-Content -LiteralPath (Join-Path $fixtureRoot 'stale.txt') -Value 'main'
+        Set-Content -LiteralPath (Join-Path $refreshFailureRoot 'stale.txt') -Value 'refresh'
+        Set-Content -LiteralPath (Join-Path $taskRoot 'canonical-runtime-lock.json') -Value '{{}}'
+        Set-Content -LiteralPath (Join-Path $taskRoot 'preflight.keep') -Value 'keep'
+
+        Prepare-RunAttempt
+
+        if (Test-Path -LiteralPath $fixtureRoot) {{ throw 'Main fixture was not removed from the active attempt' }}
+        if (Test-Path -LiteralPath $refreshFailureRoot) {{ throw 'Refresh fixture was not removed from the active attempt' }}
+        if (-not (Test-Path -LiteralPath (Join-Path $taskRoot 'preflight.keep'))) {{ throw 'Unrelated preflight evidence was moved' }}
+        $attempt = @(Get-ChildItem -LiteralPath (Join-Path $taskRoot 'attempts') -Directory)
+        if ($attempt.Count -ne 1) {{ throw "Expected exactly one attempt archive, found $($attempt.Count)" }}
+        foreach ($relative in @('fixture/stale.txt','fixture-refresh-failure/stale.txt','canonical-runtime-lock.json')) {{
+          if (-not (Test-Path -LiteralPath (Join-Path $attempt[0].FullName $relative))) {{
+            throw "Known stale output was not archived: $relative"
+          }}
+        }}
+        """,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_fixture_classifier_enforces_optional_root_and_policy_boundaries(tmp_path: Path) -> None:
+    fixture_dir = (tmp_path / "classifier").as_posix().replace("'", "''")
+    result = _run_powershell_probe(
+        tmp_path,
+        ("Classify-FixtureManifestChanges",),
+        f"""
+        $root = '{fixture_dir}'
+        New-Item -ItemType Directory -Force -Path $root | Out-Null
+        function Write-ProbeManifest([string]$Name, [object[]]$Rows) {{
+          $path = Join-Path $root "$Name.json"
+          @($Rows) | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $path -Encoding UTF8
+          return $path
+        }}
+        function Assert-Rejected([string]$Label, [object[]]$Before, [object[]]$After, [string]$Policy) {{
+          $beforePath = Write-ProbeManifest "$Label-before" $Before
+          $afterPath = Write-ProbeManifest "$Label-after" $After
+          $threw = $false
+          try {{ Classify-FixtureManifestChanges -BeforePath $beforePath -AfterPath $afterPath -Policy $Policy | Out-Null }}
+          catch {{ $threw = $true }}
+          if (-not $threw) {{ throw "Classifier accepted forbidden change: $Label" }}
+        }}
+
+        foreach ($status in @('missing','empty')) {{
+          $beforePath = Write-ProbeManifest "allowed-$status-before" @(@{{ path = 'output'; status = $status }})
+          $afterPath = Write-ProbeManifest "allowed-$status-after" @(@{{ path = 'output/report.xlsx'; status = 'present'; length = 1; sha256 = 'a' }})
+          $changes = @(Classify-FixtureManifestChanges -BeforePath $beforePath -AfterPath $afterPath -Policy 'main')
+          if ($changes.Count -ne 1 -or $changes[0].classification -ne 'expected_fixture_runtime_change') {{
+            throw "Main policy rejected optional $status output materialization"
+          }}
+        }}
+        $beforePath = Write-ProbeManifest 'refresh-log-before' @(@{{ path = 'logs'; status = 'missing' }})
+        $afterPath = Write-ProbeManifest 'refresh-log-after' @(@{{ path = 'logs/runtime.log'; status = 'present'; length = 1; sha256 = 'b' }})
+        Classify-FixtureManifestChanges -BeforePath $beforePath -AfterPath $afterPath -Policy 'refresh-failure' | Out-Null
+
+        Assert-Rejected 'status-transition' @(@{{ path = 'metadata'; status = 'empty' }}) @(@{{ path = 'metadata'; status = 'missing' }}) 'main'
+        Assert-Rejected 'deletion' @(@{{ path = 'output/report.xlsx'; status = 'present'; length = 1; sha256 = 'a' }}) @() 'main'
+        Assert-Rejected 'database-write' @(@{{ path = 'db/app.db'; status = 'present'; length = 1; sha256 = 'a' }}) @(@{{ path = 'db/app.db'; status = 'present'; length = 2; sha256 = 'b' }}) 'main'
+        Assert-Rejected 'metadata-write' @(@{{ path = 'metadata/source.csv'; status = 'present'; length = 1; sha256 = 'a' }}) @(@{{ path = 'metadata/source.csv'; status = 'present'; length = 2; sha256 = 'b' }}) 'main'
+        Assert-Rejected 'refresh-output' @(@{{ path = 'output'; status = 'missing' }}) @(@{{ path = 'output/report.xlsx'; status = 'present'; length = 1; sha256 = 'a' }}) 'refresh-failure'
+        """,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_summary_finalization_persists_final_row_and_accurate_self_metadata(tmp_path: Path) -> None:
+    success_root = (tmp_path / "summary-success").as_posix().replace("'", "''")
+    failure_root = (tmp_path / "summary-failure").as_posix().replace("'", "''")
+    result = _run_powershell_probe(
+        tmp_path,
+        (
+            "Resolve-ApprovedPath",
+            "Assert-Descendant",
+            "Assert-MutationTargets",
+            "Write-EvidenceSummary",
+            "Finalize-EvidenceSummary",
+        ),
+        f"""
+        $taskRoot = '{success_root}'
+        New-Item -ItemType Directory -Force -Path $taskRoot | Out-Null
+        Set-Content -LiteralPath (Join-Path $taskRoot 'artifact.txt') -Value 'artifact'
+        Set-Content -LiteralPath (Join-Path $taskRoot 'evidence-summary.json') -Value 'stale-summary'
+        $steps = [System.Collections.ArrayList]@()
+        $evidence = @{{ status = 'pass'; step_results = $steps }}
+        Finalize-EvidenceSummary -Evidence $evidence -StepResults $steps
+        $summaryPath = Join-Path $taskRoot 'evidence-summary.json'
+        $summary = Get-Content -LiteralPath $summaryPath -Raw | ConvertFrom-Json
+        $summaryRow = @($summary.step_results | Where-Object name -eq 'summary')
+        if ($summaryRow.Count -ne 1 -or $summaryRow[0].status -ne 'pass' -or $null -eq $summaryRow[0].duration_ms) {{
+          throw 'Persisted primary summary does not contain the final passing summary row and duration'
+        }}
+        if (@($summary.artifact_inventory | Where-Object path -eq $summaryPath).Count -ne 0) {{
+          throw 'The evidence summary included a stale self-hash in the normal artifact inventory'
+        }}
+        if ($summary.summary_metadata.path -ne $summaryPath -or -not $summary.summary_metadata.self_reference) {{
+          throw 'Summary self-reference metadata is incomplete'
+        }}
+        if ([int64]$summary.summary_metadata.bytes -ne (Get-Item -LiteralPath $summaryPath).Length) {{
+          throw 'Persisted summary byte metadata is not final and accurate'
+        }}
+
+        $taskRoot = '{failure_root}'
+        New-Item -ItemType Directory -Force -Path (Join-Path $taskRoot 'evidence-summary.json') | Out-Null
+        $failedSteps = [System.Collections.ArrayList]@()
+        $failedEvidence = @{{ status = 'failed'; primary_failure = @{{ message = 'original run failure' }}; step_results = $failedSteps }}
+        try {{ Finalize-EvidenceSummary -Evidence $failedEvidence -StepResults $failedSteps }} catch {{}}
+        $fallbackPath = Join-Path $taskRoot 'evidence-summary-fallback.json'
+        if (-not (Test-Path -LiteralPath $fallbackPath)) {{ throw 'Summary write failure did not persist fallback evidence' }}
+        $fallback = Get-Content -LiteralPath $fallbackPath -Raw | ConvertFrom-Json
+        $failedRow = @($fallback.step_results | Where-Object name -eq 'summary')
+        if ($failedRow.Count -ne 1 -or $failedRow[0].status -ne 'failed' -or $null -eq $failedRow[0].duration_ms -or -not $failedRow[0].error) {{
+          throw 'Persisted fallback does not contain the final failed summary row, duration, and error'
+        }}
+        if ([int64]$fallback.summary_metadata.bytes -ne (Get-Item -LiteralPath $fallbackPath).Length) {{
+          throw 'Persisted fallback byte metadata is not final and accurate'
+        }}
+        if ($fallback.primary_failure.message -ne 'original run failure') {{
+          throw 'Summary failure replaced the existing primary failure in fallback evidence'
+        }}
+        $secondary = @($fallback.secondary_failures | Where-Object name -eq 'summary_failure')
+        if ($secondary.Count -ne 1 -or -not $secondary[0].message) {{
+          throw 'Summary failure was not retained as a durable secondary failure'
+        }}
+        """,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_fixture_after_manifests_are_recorded_with_their_actual_changes() -> None:
     controller = CONTROLLER.read_text(encoding="utf-8")
-    execution = controller.split("Test-InputContract\n", 1)[1]
-    assert execution.index("Assert-NoReparseTree -Root $taskRoot") < execution.index("Prepare-RunAttempt") < execution.index("New-Fixture")
-    assert "-Policy 'refresh-failure'" in execution
-    assert "Representative company row disappeared" in controller
-    assert "0x80040154" in controller
+    main_finalizer = controller.split("if (Test-Path -LiteralPath $fixtureBefore)", 1)[1].split(
+        "if (Test-Path -LiteralPath $refreshBefore)", 1
+    )[0]
+    refresh_finalizer = controller.split("if (Test-Path -LiteralPath $refreshBefore)", 1)[1].split(
+        "$evidence.completed_utc", 1
+    )[0]
+
+    assert main_finalizer.index("Invoke-RecordedStep -Name 'fixture_classification'") < main_finalizer.index(
+        "Write-FileManifest -Root $fixtureRoot"
+    ) < main_finalizer.index("Test-FixturePolicy")
+    assert "$evidence.fixture_changes = $fixtureClassification.changes" in main_finalizer
+
+    assert refresh_finalizer.index(
+        "Invoke-RecordedStep -Name 'refresh_failure_classification'"
+    ) < refresh_finalizer.index("Write-FileManifest -Root $refreshFailureRoot") < refresh_finalizer.index(
+        "Test-FixturePolicy"
+    )
+    assert "$evidence.refresh_failure_fixture_changes = $refreshClassification.changes" in refresh_finalizer
 
 
-def test_failed_run_provenance_is_recorded_inside_finalization() -> None:
-    controller = CONTROLLER.read_text(encoding="utf-8")
-    ui_harness = UI_HARNESS.read_text(encoding="utf-8")
-    execution = controller.split("Test-InputContract\n", 1)[1]
-    assert execution.index("$evidence =") < execution.index("Prepare-RunAttempt") < execution.index("Get-Process -Name CVMAnalytics")
-    for step in ("attempt_preparation", "fixture_before_manifest", "refresh_before_manifest", "environment_audit", "source_after_preservation", "fixture_classification", "refresh_failure_classification"):
-        assert f"-Name '{step}'" in execution
-    assert "Exception.Data['node_pid']" in controller
-    assert "Exception.Data['node_exit_code']" in controller
-    assert "evidence-summary-fallback.json" in execution
-    assert "node_finalizer_errors" in ui_harness
-
-
-def test_mode_run_acceptance_paths_are_recorded_and_durable() -> None:
-    controller = CONTROLLER.read_text(encoding="utf-8")
-    execution = controller.split("Test-InputContract\n", 1)[1]
-    assert "-Name 'process_contention'" in execution
-    assert "$summaryStep" in execution
-    assert "summary_metadata" in controller
-    assert "summary_step" in controller
-    assert "fixture_after_manifest" not in execution or "-Name 'fixture_classification'" in execution
+def test_node_finalizer_close_failure_is_persisted_and_exits_nonzero(tmp_path: Path) -> None:
+    output_dir = tmp_path / "node-close-failure"
+    script = tmp_path / "node-close-failure-probe.cjs"
+    script.write_text(
+        textwrap.dedent(
+            f"""
+            const {{ runValidation }} = require({json.dumps(str(UI_HARNESS))});
+            const outputDir = {json.dumps(str(output_dir))};
+            const page = {{
+              url: () => "file:///candidate/index.html",
+              on: () => undefined,
+              waitForFunction: async () => undefined,
+              evaluate: async (_fn, payload) => {{
+                if (payload?.methodName === "get_app_status") {{
+                  return {{ runtime: {{ version: "1.2.3", build_commit: "abcdef123456" }} }};
+                }}
+                throw new Error("unexpected page.evaluate call");
+              }},
+            }};
+            const browser = {{
+              contexts: () => [{{ pages: () => [page] }}],
+              close: async () => {{ throw new Error("mock browser.close failure"); }},
+            }};
+            const chromium = {{ connectOverCDP: async () => browser }};
+            runValidation({{
+              cdpUrl: "http://127.0.0.1:9223",
+              outputDir,
+              cdCvm: 9512,
+              processStartMs: Date.now(),
+              expectedVersion: "1.2.3",
+              expectedBuildSha: "abcdef123456",
+              readinessOnly: true,
+            }}, {{ chromium }}).catch((error) => {{
+              console.error(error.stack || error.message);
+              process.exitCode = 1;
+            }});
+            """
+        ),
+        encoding="utf-8",
+    )
+    result = subprocess.run(["node", str(script)], capture_output=True, text=True, check=False)
+    assert result.returncode == 1
+    assert "mock browser.close failure" in result.stderr
+    persisted = json.loads((output_dir / "ui-results.json").read_text(encoding="utf-8"))
+    assert persisted["status"] == "failed"
+    assert "mock browser.close failure" in persisted["error"]
+    assert any(
+        item["stage"] == "browser.close" and "mock browser.close failure" in item["error"]
+        for item in persisted["node_finalizer_errors"]
+    )
