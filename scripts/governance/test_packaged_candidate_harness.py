@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 from pathlib import Path
 
 
@@ -180,3 +181,34 @@ def test_finalization_binds_classifier_failures_and_exact_targets() -> None:
     finalization = controller.split("} finally {", 1)[-1]
     assert "primary_failure" in finalization
     assert "Write-EvidenceSummary" in finalization
+
+
+def test_extracted_reparse_guard_accepts_task_root_equality(tmp_path: Path) -> None:
+    controller = CONTROLLER.read_text(encoding="utf-8")
+
+    def function_source(name: str, next_name: str) -> str:
+        return controller.split(f"function {name}", 1)[1].split(f"function {next_name}", 1)[0]
+
+    script = "\n".join(
+        [
+            "function Resolve-ApprovedPath" + function_source("Resolve-ApprovedPath", "Assert-Descendant"),
+            "function Assert-Descendant" + function_source("Assert-Descendant", "Stop-TrackedProcess"),
+            "function Assert-NoReparseTree" + function_source("Assert-NoReparseTree", "Prepare-RunAttempt"),
+            f"$taskRoot = '{tmp_path.as_posix()}'",
+            "New-Item -ItemType Directory -Force -Path $taskRoot | Out-Null",
+            "Assert-NoReparseTree -Root $taskRoot",
+        ]
+    )
+    probe = tmp_path / "root-equality-probe.ps1"
+    probe.write_text(script, encoding="utf-8")
+    result = subprocess.run(["pwsh", "-NoProfile", "-File", str(probe)], capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stderr
+
+
+def test_execution_block_prepares_fresh_attempt_before_fixture_creation() -> None:
+    controller = CONTROLLER.read_text(encoding="utf-8")
+    execution = controller.split("Test-InputContract\n", 1)[1]
+    assert execution.index("Assert-NoReparseTree -Root $taskRoot") < execution.index("Prepare-RunAttempt") < execution.index("New-Fixture")
+    assert "-Policy 'refresh-failure'" in execution
+    assert "Representative company row disappeared" in controller
+    assert "0x80040154" in controller

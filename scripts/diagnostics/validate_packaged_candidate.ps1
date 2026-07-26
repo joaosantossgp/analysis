@@ -97,12 +97,31 @@ function Assert-MutationTargets {
 
 function Assert-NoReparseTree {
   param([Parameter(Mandatory)][string]$Root)
-  Assert-Descendant -Parent $taskRoot -Child $Root
+  $rootPath = Resolve-ApprovedPath -Path $Root
+  $taskPath = Resolve-ApprovedPath -Path $taskRoot
+  if (-not $rootPath.Equals($taskPath, [StringComparison]::OrdinalIgnoreCase)) { Assert-Descendant -Parent $taskRoot -Child $rootPath }
   if (Test-Path -LiteralPath $Root) {
     foreach ($item in Get-ChildItem -LiteralPath $Root -Force -Recurse -ErrorAction Stop) {
       if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw "ReparsePoint exists below evidence root: $($item.FullName)" }
     }
   }
+}
+
+function Prepare-RunAttempt {
+  Assert-NoReparseTree -Root $taskRoot
+  $attemptRoot = Join-Path $taskRoot ('attempts\' + [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssZ'))
+  $knownOutputs = @('CVMAnalytics-current-head.zip','fixture','fixture-refresh-failure','updater','ui','refresh-failure-ui','localappdata-diagnostic','localappdata-ui','localappdata-refresh-failure','source-before-manifest.json','source-after-manifest.json','fixture-before-manifest.json','fixture-after-manifest.json','refresh-failure-before-manifest.json','refresh-failure-after-manifest.json','refresh_failure_sql.json','evidence-summary.json','evidence-summary-fallback.json','diagnostic.stdout.log','diagnostic.stderr.log')
+  foreach ($name in $knownOutputs) {
+    $source = Join-Path $taskRoot $name
+    if (Test-Path -LiteralPath $source) {
+      $destination = Join-Path $attemptRoot $name
+      Assert-MutationTargets -Paths @($source,$destination)
+      New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination) | Out-Null
+      Move-Item -LiteralPath $source -Destination $destination -Force
+    }
+  }
+  Assert-MutationTargets -Paths @($fixtureRoot,$refreshFailureRoot)
+  if (Test-Path -LiteralPath $fixtureRoot -or Test-Path -LiteralPath $refreshFailureRoot) { throw 'Fresh fixture roots could not be established for this attempt' }
 }
 
 function Register-SecondaryFailure {
@@ -157,7 +176,9 @@ function Write-FileManifest {
       [ordered]@{ path = $relativePath.Replace('\', '/'); status = 'missing' }
       continue
     }
-    foreach ($file in Get-ChildItem -LiteralPath $fullPath -File -Recurse | Sort-Object FullName) {
+    $files = @(Get-ChildItem -LiteralPath $fullPath -File -Recurse | Sort-Object FullName)
+    if ($files.Count -eq 0) { [ordered]@{ path = $relativePath.Replace('\','/'); status = 'empty' }; continue }
+    foreach ($file in $files) {
       $relative = [IO.Path]::GetRelativePath($Root, $file.FullName).Replace('\', '/')
       [ordered]@{
         path = $relative
@@ -458,6 +479,7 @@ if ($Mode -eq 'ValidateInputs') { exit 0 }
 
 New-Item -ItemType Directory -Force -Path $taskRoot | Out-Null
 Assert-NoReparseTree -Root $taskRoot
+Prepare-RunAttempt
 $runStarted = [DateTime]::UtcNow
 $stepResults = [System.Collections.ArrayList]@()
 $evidence = @{ harness_commit_sha = (git rev-parse HEAD).Trim(); started_utc = $runStarted.ToString('o'); status = 'running'; primary_failure = $null; step_results = $stepResults }
