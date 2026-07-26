@@ -216,7 +216,6 @@ def test_finalization_binds_classifier_failures_and_exact_targets() -> None:
     assert "evidence-summary.json" in controller
     assert "Assert-NoReparseTree" in controller
     assert "refresh_failure_sql.json" in controller
-    assert "refresh-failure only permits logs/cache" in controller
     assert "0x80040154" in controller
     finalization = controller.split("} finally {", 1)[-1]
     assert "primary_failure" in finalization
@@ -257,6 +256,24 @@ def test_recorded_step_accepts_an_empty_array_list(tmp_path: Path) -> None:
         if ($value.marker -ne 'executed') { throw 'The recorded action did not execute' }
         if ($results.Count -ne 1 -or $results[0].name -ne 'first' -or $results[0].status -ne 'pass') {
           throw 'The first recorded step was not appended to the empty ArrayList'
+        }
+        try {
+          Invoke-RecordedStep -Name 'generic-failure' -Results $results -Action {
+            $failure = [System.Exception]::new('generic child failure')
+            $failure.Data['pid'] = 4321
+            $failure.Data['exit_code'] = 17
+            $failure.Data['stdout'] = 'child.stdout.log'
+            $failure.Data['stderr'] = 'child.stderr.log'
+            $failure.Data['details'] = @{ stage = 'post-probe' }
+            throw $failure
+          } | Out-Null
+        } catch {}
+        $failed = $results[1]
+        if ($failed.status -ne 'failed' -or $failed.pid -ne 4321 -or $failed.exit_code -ne 17) {
+          throw 'Invoke-RecordedStep did not consume generic exception process data'
+        }
+        if ($failed.stdout -ne 'child.stdout.log' -or $failed.stderr -ne 'child.stderr.log' -or $failed.details.stage -ne 'post-probe') {
+          throw 'Invoke-RecordedStep lost generic exception artifacts or details'
         }
         """,
     )
@@ -335,11 +352,79 @@ def test_fixture_classifier_enforces_optional_root_and_policy_boundaries(tmp_pat
         $afterPath = Write-ProbeManifest 'refresh-log-after' @(@{{ path = 'logs/runtime.log'; status = 'present'; length = 1; sha256 = 'b' }})
         Classify-FixtureManifestChanges -BeforePath $beforePath -AfterPath $afterPath -Policy 'refresh-failure' | Out-Null
 
+        foreach ($policy in @('main','refresh-failure')) {{
+          foreach ($rootName in @('output','logs','cache')) {{
+            $beforePath = Write-ProbeManifest "$policy-$rootName-empty-before" @(@{{ path = $rootName; status = 'missing' }})
+            $afterPath = Write-ProbeManifest "$policy-$rootName-empty-after" @(@{{ path = $rootName; status = 'empty' }})
+            $changes = @(Classify-FixtureManifestChanges -BeforePath $beforePath -AfterPath $afterPath -Policy $policy)
+            if ($changes.Count -ne 1 -or $changes[0].classification -ne 'expected_fixture_runtime_change') {{
+              throw "$policy policy rejected exact optional-root missing-to-empty materialization: $rootName"
+            }}
+          }}
+        }}
         Assert-Rejected 'status-transition' @(@{{ path = 'metadata'; status = 'empty' }}) @(@{{ path = 'metadata'; status = 'missing' }}) 'main'
+        Assert-Rejected 'metadata-materialization' @(@{{ path = 'metadata'; status = 'missing' }}) @(@{{ path = 'metadata'; status = 'empty' }}) 'main'
         Assert-Rejected 'deletion' @(@{{ path = 'output/report.xlsx'; status = 'present'; length = 1; sha256 = 'a' }}) @() 'main'
         Assert-Rejected 'database-write' @(@{{ path = 'db/app.db'; status = 'present'; length = 1; sha256 = 'a' }}) @(@{{ path = 'db/app.db'; status = 'present'; length = 2; sha256 = 'b' }}) 'main'
         Assert-Rejected 'metadata-write' @(@{{ path = 'metadata/source.csv'; status = 'present'; length = 1; sha256 = 'a' }}) @(@{{ path = 'metadata/source.csv'; status = 'present'; length = 2; sha256 = 'b' }}) 'main'
         Assert-Rejected 'refresh-output' @(@{{ path = 'output'; status = 'missing' }}) @(@{{ path = 'output/report.xlsx'; status = 'present'; length = 1; sha256 = 'a' }}) 'refresh-failure'
+        """,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_harness_provenance_contains_invocation_environment_and_source_hashes(tmp_path: Path) -> None:
+    result = _run_powershell_probe(
+        tmp_path,
+        ("Get-HarnessProvenance",),
+        f"""
+        $childEnvironment = @{{
+          CVMANALYTICS_DATA_DIR = 'C:/scratch/fixture'
+          SQLITE_PATH = 'C:/scratch/fixture/db/app.db'
+          LOCALAPPDATA = 'C:/scratch/localappdata'
+          HTTP_PROXY = 'http://127.0.0.1:9'
+        }}
+        $provenance = Get-HarnessProvenance `
+          -Mode 'Run' `
+          -CandidateDir 'C:/repo/dist/CVMAnalytics' `
+          -EvidenceDir 'C:/repo/scratch/task-7' `
+          -SourceDataRoot 'C:/Users/operator/Documents/CVMAnalytics' `
+          -CdCvm 9512 `
+          -CdpPort 9223 `
+          -ChildEnvironment $childEnvironment `
+          -ControllerPath '{CONTROLLER.as_posix()}' `
+          -UiHarnessPath '{UI_HARNESS.as_posix()}'
+        foreach ($name in @('Mode','CandidateDir','EvidenceDir','SourceDataRoot','CdCvm','CdpPort')) {{
+          if ($null -eq $provenance.invocation_arguments[$name]) {{ throw "Missing invocation argument: $name" }}
+        }}
+        if (@($provenance.environment_allowlist).Count -ne 4) {{ throw 'Environment allowlist is incomplete' }}
+        if ($provenance.child_path_map.HTTP_PROXY) {{ throw 'Proxy URL leaked into the child path map' }}
+        foreach ($name in @('CVMANALYTICS_DATA_DIR','SQLITE_PATH','LOCALAPPDATA')) {{
+          if (-not $provenance.child_path_map[$name]) {{ throw "Safe child path map is missing: $name" }}
+        }}
+        if ($provenance.harness_files.controller.sha256 -ne (Get-FileHash -LiteralPath '{CONTROLLER.as_posix()}' -Algorithm SHA256).Hash.ToLowerInvariant()) {{
+          throw 'Controller source hash is absent or inaccurate'
+        }}
+        if ($provenance.harness_files.ui_harness.sha256 -ne (Get-FileHash -LiteralPath '{UI_HARNESS.as_posix()}' -Algorithm SHA256).Hash.ToLowerInvariant()) {{
+          throw 'UI harness source hash is absent or inaccurate'
+        }}
+        """,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_frozen_diagnostic_requires_the_exact_true_boolean_line(tmp_path: Path) -> None:
+    result = _run_powershell_probe(
+        tmp_path,
+        ("Test-FrozenDiagnosticEvidence",),
+        """
+        Test-FrozenDiagnosticEvidence -DiagnosticText "header`nfrozen: True`nfooter"
+        Test-FrozenDiagnosticEvidence -DiagnosticText "FROZEN: true"
+        foreach ($invalid in @('frozen: False','not frozen','frozen: truthy')) {
+          $threw = $false
+          try { Test-FrozenDiagnosticEvidence -DiagnosticText $invalid } catch { $threw = $true }
+          if (-not $threw) { throw "Accepted invalid frozen evidence: $invalid" }
+        }
         """,
     )
     assert result.returncode == 0, result.stderr
@@ -428,6 +513,35 @@ def test_fixture_after_manifests_are_recorded_with_their_actual_changes() -> Non
         "Test-FixturePolicy"
     )
     assert "$evidence.refresh_failure_fixture_changes = $refreshClassification.changes" in refresh_finalizer
+
+
+def test_failure_producers_and_summary_timing_are_structurally_bound() -> None:
+    controller = CONTROLLER.read_text(encoding="utf-8")
+
+    def function_body(name: str, next_name: str) -> str:
+        return controller.split(f"function {name}", 1)[1].split(f"function {next_name}", 1)[0]
+
+    recorded = function_body("Invoke-RecordedStep", "Write-EvidenceSummary")
+    assert "Exception.Data['pid']" in recorded
+    assert "Exception.Data['exit_code']" in recorded
+    assert "Exception.Data['stdout']" in recorded
+    assert "Exception.Data['stderr']" in recorded
+    assert "Exception.Data['details']" in recorded
+
+    for function_name, next_name in (
+        ("Invoke-IsolatedDiagnostic", "Wait-ForCdpBridge"),
+        ("Invoke-PackagedUi", "Test-RefreshFailureStartup"),
+        ("Test-RefreshFailureStartup", "Test-WorkbookOpen"),
+        ("Invoke-ScratchUpdaterTest", "Compare-PreservationManifest"),
+    ):
+        assert "Set-ExceptionProcessData" in function_body(function_name, next_name)
+
+    summary = function_body("Finalize-EvidenceSummary", "Assert-ExistingDescendant")
+    provisional_write = summary.index("Write-EvidenceSummary -Evidence $Evidence -SummaryPath $summaryPath")
+    pass_status = summary.index("$summaryStep.status = 'pass'")
+    duration = summary.index("$summaryStep.duration_ms", pass_status)
+    final_write = summary.index("Write-EvidenceSummary -Evidence $Evidence -SummaryPath $summaryPath", provisional_write + 1)
+    assert provisional_write < pass_status < duration < final_write
 
 
 def test_node_finalizer_close_failure_is_persisted_and_exits_nonzero(tmp_path: Path) -> None:

@@ -130,6 +130,38 @@ function Register-SecondaryFailure {
   $Evidence.secondary_failures += [ordered]@{ name = $Name; message = $ErrorRecord.Exception.Message }
 }
 
+function Set-ExceptionProcessData {
+  param(
+    [Parameter(Mandatory)]$ErrorRecord,
+    [object]$Process,
+    [object]$ChildResult,
+    [string]$Stdout,
+    [string]$Stderr,
+    [hashtable]$Details
+  )
+  $data = $ErrorRecord.Exception.Data
+  foreach ($key in @('pid','exit_code','stdout','stderr')) {
+    $value = if ($ChildResult) { $ChildResult.$key } else { $null }
+    if ($null -ne $value -and $null -eq $data[$key]) { $data[$key] = $value }
+  }
+  if ($Process) {
+    if ($null -eq $data['pid']) { $data['pid'] = $Process.Id }
+    if ($null -eq $data['exit_code'] -and $Process.HasExited) { $data['exit_code'] = $Process.ExitCode }
+  }
+  if ($Stdout -and $null -eq $data['stdout']) { $data['stdout'] = $Stdout }
+  if ($Stderr -and $null -eq $data['stderr']) { $data['stderr'] = $Stderr }
+  if ($Details) {
+    $mergedDetails = [ordered]@{}
+    if ($data['details'] -is [Collections.IDictionary]) {
+      foreach ($key in $data['details'].Keys) { $mergedDetails[$key] = $data['details'][$key] }
+    }
+    foreach ($key in $Details.Keys) {
+      if (-not $mergedDetails.Contains($key)) { $mergedDetails[$key] = $Details[$key] }
+    }
+    $data['details'] = $mergedDetails
+  }
+}
+
 function Invoke-RecordedStep {
   param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][scriptblock]$Action, [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.ArrayList]$Results)
   $started = [DateTime]::UtcNow
@@ -139,7 +171,7 @@ function Invoke-RecordedStep {
     [void]$Results.Add([ordered]@{ name = $Name; status = 'pass'; started_utc = $started.ToString('o'); duration_ms = [int]([DateTime]::UtcNow - $started).TotalMilliseconds; pid = $value.pid; exit_code = $value.exit_code })
     return $value
   } catch {
-    [void]$Results.Add([ordered]@{ name = $Name; status = 'failed'; started_utc = $started.ToString('o'); duration_ms = [int]([DateTime]::UtcNow - $started).TotalMilliseconds; pid = $_.Exception.Data['node_pid']; exit_code = $_.Exception.Data['node_exit_code']; stdout = $_.Exception.Data['node_stdout']; stderr = $_.Exception.Data['node_stderr']; error = $_.Exception.Message })
+    [void]$Results.Add([ordered]@{ name = $Name; status = 'failed'; started_utc = $started.ToString('o'); duration_ms = [int]([DateTime]::UtcNow - $started).TotalMilliseconds; pid = $_.Exception.Data['pid']; exit_code = $_.Exception.Data['exit_code']; stdout = $_.Exception.Data['stdout']; stderr = $_.Exception.Data['stderr']; details = $_.Exception.Data['details']; error = $_.Exception.Message })
     throw
   }
 }
@@ -193,6 +225,7 @@ function Finalize-EvidenceSummary {
   $summaryPath = Join-Path $taskRoot 'evidence-summary.json'
   $fallbackPath = Join-Path $taskRoot 'evidence-summary-fallback.json'
   try {
+    Write-EvidenceSummary -Evidence $Evidence -SummaryPath $summaryPath
     $summaryStep.status = 'pass'
     $summaryStep.exit_code = 0
     $summaryStep.duration_ms = [int]([DateTime]::UtcNow - $started).TotalMilliseconds
@@ -296,6 +329,49 @@ function New-ChildEnvironment {
   }
 }
 
+function Get-HarnessProvenance {
+  param(
+    [Parameter(Mandatory)][string]$Mode,
+    [Parameter(Mandatory)][string]$CandidateDir,
+    [Parameter(Mandatory)][string]$EvidenceDir,
+    [Parameter(Mandatory)][string]$SourceDataRoot,
+    [Parameter(Mandatory)][int]$CdCvm,
+    [Parameter(Mandatory)][int]$CdpPort,
+    [Parameter(Mandatory)][hashtable]$ChildEnvironment,
+    [Parameter(Mandatory)][string]$ControllerPath,
+    [Parameter(Mandatory)][string]$UiHarnessPath
+  )
+  $childPathMap = [ordered]@{}
+  foreach ($name in @($ChildEnvironment.Keys | Sort-Object)) {
+    if ($name -match '(?:_DIR|_PATH|_DB|LOCALAPPDATA|SQLITE_PATH)$') { $childPathMap[$name] = $ChildEnvironment[$name] }
+  }
+  $resolvedController = [IO.Path]::GetFullPath($ControllerPath)
+  $resolvedUiHarness = [IO.Path]::GetFullPath($UiHarnessPath)
+  return [ordered]@{
+    invocation_arguments = [ordered]@{
+      Mode = $Mode
+      CandidateDir = $CandidateDir
+      EvidenceDir = $EvidenceDir
+      SourceDataRoot = $SourceDataRoot
+      CdCvm = $CdCvm
+      CdpPort = $CdpPort
+    }
+    environment_allowlist = @($ChildEnvironment.Keys | Sort-Object)
+    child_path_map = $childPathMap
+    harness_files = [ordered]@{
+      controller = [ordered]@{ path = $resolvedController; sha256 = (Get-FileHash -LiteralPath $resolvedController -Algorithm SHA256).Hash.ToLowerInvariant() }
+      ui_harness = [ordered]@{ path = $resolvedUiHarness; sha256 = (Get-FileHash -LiteralPath $resolvedUiHarness -Algorithm SHA256).Hash.ToLowerInvariant() }
+    }
+  }
+}
+
+function Test-FrozenDiagnosticEvidence {
+  param([Parameter(Mandatory)][string]$DiagnosticText)
+  if ($DiagnosticText -notmatch '(?im)^[^\S\r\n]*frozen:[^\S\r\n]*True[^\S\r\n]*$') {
+    throw 'Diagnostic evidence does not report frozen: True'
+  }
+}
+
 function New-CandidateZip {
   Assert-Descendant -Parent $taskRoot -Child $zipPath
   Compress-Archive -Path (Join-Path $candidateDir '*') -DestinationPath $zipPath -CompressionLevel Optimal -Force
@@ -317,16 +393,22 @@ function Invoke-IsolatedDiagnostic {
   $stderr = Join-Path $taskRoot 'diagnostic.stderr.log'
   Assert-MutationTargets -Paths @($stdout, $stderr, $ChildEnvironment.LOCALAPPDATA, $ChildEnvironment.CVM_OUTPUT_DIR, $ChildEnvironment.CVM_LOG_DIR, $ChildEnvironment.CVM_CACHE_DIR, $ChildEnvironment.CVM_DB_DIR, $ChildEnvironment.CVM_METADATA_DIR)
   $p = Start-Process $candidateExe -ArgumentList '--diagnose-runtime','--non-interactive' -Environment $ChildEnvironment -PassThru -Wait -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr
-  if ($p.ExitCode -ne 0) { throw "Diagnostic failed: $($p.ExitCode)" }
-  $diagnosticText = (Get-Content -LiteralPath $stdout -Raw) + (Get-Content -LiteralPath $stderr -Raw)
-  $diagnosticLogs = Get-ChildItem -LiteralPath (Join-Path $fixtureRoot 'logs') -File -Recurse -ErrorAction SilentlyContinue | Get-Content -Raw -ErrorAction SilentlyContinue
-  $diagnosticText += ($diagnosticLogs -join [Environment]::NewLine)
-  foreach ($required in @('frozen', "version: $($ExpectedIdentity.version)", $fixtureRoot, $ChildEnvironment.LOCALAPPDATA)) {
-    if ($diagnosticText -notmatch [regex]::Escape($required)) { throw "Diagnostic evidence is missing: $required" }
+  try {
+    if ($p.ExitCode -ne 0) { throw "Diagnostic failed: $($p.ExitCode)" }
+    $diagnosticText = (Get-Content -LiteralPath $stdout -Raw) + (Get-Content -LiteralPath $stderr -Raw)
+    $diagnosticLogs = Get-ChildItem -LiteralPath (Join-Path $fixtureRoot 'logs') -File -Recurse -ErrorAction SilentlyContinue | Get-Content -Raw -ErrorAction SilentlyContinue
+    $diagnosticText += ($diagnosticLogs -join [Environment]::NewLine)
+    Test-FrozenDiagnosticEvidence -DiagnosticText $diagnosticText
+    foreach ($required in @("version: $($ExpectedIdentity.version)", $fixtureRoot, $ChildEnvironment.LOCALAPPDATA)) {
+      if ($diagnosticText -notmatch [regex]::Escape($required)) { throw "Diagnostic evidence is missing: $required" }
+    }
+    $canonicalDocuments = Join-Path $env:USERPROFILE 'Documents\CVMAnalytics'
+    if ($diagnosticText -match [regex]::Escape($canonicalDocuments)) { throw 'Diagnostic leaked the canonical Documents root' }
+    return [ordered]@{ status = 'pass'; started_utc = $started.ToString('o'); duration_ms = [int]([DateTime]::UtcNow - $started).TotalMilliseconds; pid = $p.Id; exit_code = $p.ExitCode; stdout = $stdout; stderr = $stderr; version = $ExpectedIdentity.version; build_sha_validation = 'deferred to get_app_status because --diagnose-runtime does not emit build_commit' }
+  } catch {
+    Set-ExceptionProcessData -ErrorRecord $_ -Process $p -Stdout $stdout -Stderr $stderr -Details @{ stage = 'diagnostic' }
+    throw
   }
-  $canonicalDocuments = Join-Path $env:USERPROFILE 'Documents\CVMAnalytics'
-  if ($diagnosticText -match [regex]::Escape($canonicalDocuments)) { throw 'Diagnostic leaked the canonical Documents root' }
-  return [ordered]@{ status = 'pass'; started_utc = $started.ToString('o'); duration_ms = [int]([DateTime]::UtcNow - $started).TotalMilliseconds; pid = $p.Id; exit_code = $p.ExitCode; stdout = $stdout; stderr = $stderr; version = $ExpectedIdentity.version; build_sha_validation = 'deferred to get_app_status because --diagnose-runtime does not emit build_commit' }
 }
 
 function Wait-ForCdpBridge {
@@ -343,7 +425,7 @@ function Wait-ForCdpBridge {
   $nodeStdout = Join-Path $OutputDir 'node.stdout.log'; $nodeStderr = Join-Path $OutputDir 'node.stderr.log'
   Assert-MutationTargets -Paths @($nodeStdout,$nodeStderr)
   $node = Start-Process (Get-Command node).Source -ArgumentList (@((Join-Path $repoRoot 'scripts\diagnostics\validate_packaged_ui.cjs')) + $arguments) -PassThru -Wait -WindowStyle Hidden -RedirectStandardOutput $nodeStdout -RedirectStandardError $nodeStderr
-  if ($node.ExitCode -ne 0) { $failure = [System.Exception]::new("CDP harness failed: $($node.ExitCode) (PID $($node.Id))"); $failure.Data['node_pid'] = $node.Id; $failure.Data['node_exit_code'] = $node.ExitCode; $failure.Data['node_stdout'] = $nodeStdout; $failure.Data['node_stderr'] = $nodeStderr; throw $failure }
+  if ($node.ExitCode -ne 0) { $failure = [System.Exception]::new("CDP harness failed: $($node.ExitCode) (PID $($node.Id))"); $failure.Data['pid'] = $node.Id; $failure.Data['exit_code'] = $node.ExitCode; $failure.Data['stdout'] = $nodeStdout; $failure.Data['stderr'] = $nodeStderr; $failure.Data['details'] = @{ stage = 'node_cdp'; candidate_pid = $Process.Id }; throw $failure }
   return [ordered]@{ pid = $node.Id; exit_code = $node.ExitCode; stdout = $nodeStdout; stderr = $nodeStderr }
 }
 
@@ -357,14 +439,33 @@ function Invoke-PackagedUi {
   Assert-MutationTargets -Paths @($uiEnv.LOCALAPPDATA, $uiEnv.CVM_OUTPUT_DIR, $uiEnv.CVM_LOG_DIR, $uiEnv.CVM_CACHE_DIR, $uiEnv.CVM_DB_DIR, $uiEnv.CVM_METADATA_DIR, (Join-Path $taskRoot 'ui'))
   $processStartMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
   $p = Start-Process $candidateExe -Environment $uiEnv -PassThru -WindowStyle Hidden
+  $bodyFailure = $null
+  $nodeChild = $null
+  $cleanup = $null
+  $result = $null
   try {
     $outputDir = Join-Path $taskRoot 'ui'
     $nodeChild = Wait-ForCdpBridge -Process $p -OutputDir $outputDir -ProcessStartMs $processStartMs -ExpectedIdentity $ExpectedIdentity
     if (-not (Test-Path -LiteralPath $uiResultsPath)) { throw "Missing UI results: $uiResultsPath" }
     $result = [ordered]@{ status = 'pass'; pid = $p.Id; node_child = $nodeChild; results = $uiResultsPath; started_utc = $started.ToString('o'); duration_ms = 0 }
-  } catch { $bodyFailure = $_; throw } finally {
-    try { $cleanup = Stop-TrackedProcess -Process $p -Label 'Packaged UI' } catch { if ($bodyFailure) { $script:CleanupFailures += @{ name = 'packaged_ui_cleanup'; message = $_.Exception.Message } } else { throw } }
+  } catch {
+    $bodyFailure = $_
+    Set-ExceptionProcessData -ErrorRecord $bodyFailure -Process $p -ChildResult $nodeChild -Details @{ stage = 'packaged_ui'; candidate_pid = $p.Id }
+  } finally {
+    try {
+      $cleanup = Stop-TrackedProcess -Process $p -Label 'Packaged UI'
+    } catch {
+      $cleanupFailure = $_
+      Set-ExceptionProcessData -ErrorRecord $cleanupFailure -Process $p -ChildResult $nodeChild -Details @{ stage = 'packaged_ui_cleanup'; candidate_pid = $p.Id }
+      if ($bodyFailure) {
+        $script:CleanupFailures += @{ name = 'packaged_ui_cleanup'; message = $cleanupFailure.Exception.Message }
+        Set-ExceptionProcessData -ErrorRecord $bodyFailure -Details @{ cleanup_error = $cleanupFailure.Exception.Message }
+      } else {
+        $bodyFailure = $cleanupFailure
+      }
+    }
   }
+  if ($bodyFailure) { throw $bodyFailure }
   $result.duration_ms = [int]([DateTime]::UtcNow - $started).TotalMilliseconds
   $result.cleanup = $cleanup
   return $result
@@ -380,19 +481,39 @@ function Test-RefreshFailureStartup {
   $processStartMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
   $p = Start-Process $candidateExe -Environment $failureEnv -PassThru -WindowStyle Hidden
   $bodyFailure = $null
+  $nodeChild = $null
+  $cleanup = $null
+  $postProbeExitCode = $null
+  $result = $null
   try {
     $nodeChild = Wait-ForCdpBridge -Process $p -OutputDir (Join-Path $taskRoot 'refresh-failure-ui') -ProcessStartMs $processStartMs -ExpectedIdentity $ExpectedIdentity -ReadinessOnly
     Start-Sleep -Seconds 13
     if ($p.HasExited) { throw "Refresh-failure candidate exited early: $($p.ExitCode)" }
     $state = & python -c "import sqlite3,sys,json; c=sqlite3.connect(sys.argv[1]); row=c.execute('select cnpj from companies where cd_cvm=?',(int(sys.argv[2]),)).fetchone(); refresh=c.execute(\"select value from app_settings where key='metadata_last_successful_refresh'\").fetchone(); print(json.dumps({'exists':row is not None,'cnpj':None if row is None else row[0],'metadata_last_successful_refresh':None if refresh is None else refresh[0]})); c.close()" (Join-Path $refreshFailureRoot 'db\cvm_financials.db') $CdCvm
-    if ($LASTEXITCODE -ne 0) { throw 'Could not inspect refresh-failure fixture' }
+    $postProbeExitCode = $LASTEXITCODE
+    if ($postProbeExitCode -ne 0) { throw 'Could not inspect refresh-failure fixture' }
     if (-not (($state | ConvertFrom-Json).exists)) { throw 'Representative company row disappeared during refresh-failure observation' }
     if ((($state | ConvertFrom-Json).cnpj) -ne $null) { throw 'Offline refresh failure unexpectedly restored the fixture CNPJ' }
     if ((($state | ConvertFrom-Json).metadata_last_successful_refresh) -ne $null) { throw 'Offline refresh failure unexpectedly persisted metadata_last_successful_refresh' }
     $result = [ordered]@{ status = 'pass'; pid = $p.Id; node_child = $nodeChild; stayed_alive_after_seconds = 13; state = ($state | ConvertFrom-Json); started_utc = $started.ToString('o'); duration_ms = 0 }
-  } catch { $bodyFailure = $_; throw } finally {
-    try { $cleanup = Stop-TrackedProcess -Process $p -Label 'Refresh-failure packaged UI' } catch { if ($bodyFailure) { $script:CleanupFailures += @{ name = 'refresh_failure_cleanup'; message = $_.Exception.Message } } else { throw } }
+  } catch {
+    $bodyFailure = $_
+    Set-ExceptionProcessData -ErrorRecord $bodyFailure -Process $p -ChildResult $nodeChild -Details @{ stage = 'refresh_failure_post_probe'; candidate_pid = $p.Id; post_probe_exit_code = $postProbeExitCode }
+  } finally {
+    try {
+      $cleanup = Stop-TrackedProcess -Process $p -Label 'Refresh-failure packaged UI'
+    } catch {
+      $cleanupFailure = $_
+      Set-ExceptionProcessData -ErrorRecord $cleanupFailure -Process $p -ChildResult $nodeChild -Details @{ stage = 'refresh_failure_cleanup'; candidate_pid = $p.Id; post_probe_exit_code = $postProbeExitCode }
+      if ($bodyFailure) {
+        $script:CleanupFailures += @{ name = 'refresh_failure_cleanup'; message = $cleanupFailure.Exception.Message }
+        Set-ExceptionProcessData -ErrorRecord $bodyFailure -Details @{ cleanup_error = $cleanupFailure.Exception.Message }
+      } else {
+        $bodyFailure = $cleanupFailure
+      }
+    }
   }
+  if ($bodyFailure) { throw $bodyFailure }
   $result.duration_ms = [int]([DateTime]::UtcNow - $started).TotalMilliseconds
   $result.cleanup = $cleanup
   return $result
@@ -454,22 +575,30 @@ public static class {0} {{ [STAThread] public static void Main() {{ File.WriteAl
   $before = @{}; foreach ($name in $protected) { $before[$name] = (Get-FileHash (Join-Path $current "$name\sentinel.txt") -Algorithm SHA256).Hash }
   $helper = (Resolve-Path (Join-Path $repoRoot 'desktop\update_helper.ps1')).Path
   $helperEnv = @{ LOCALAPPDATA = $updaterLocalAppData }
-  $p = Start-Process powershell.exe -ArgumentList @('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$helper,'-New',$staged,'-Current',$current) -Environment $helperEnv -PassThru -Wait -WindowStyle Hidden
-  if ($p.ExitCode -ne 0) { throw "Updater helper failed: $($p.ExitCode)" }
-  if (-not (Test-Path -LiteralPath (Join-Path $current 'relaunch.marker'))) { throw 'Updater did not relaunch the staged executable' }
-  if ((Get-Content -LiteralPath (Join-Path $current '_internal\version.txt') -Raw).Trim() -ne 'staged') { throw 'Updater did not copy staged _internal files' }
-  Assert-Descendant -Parent $taskRoot -Child $rollbackRoot
-  $rollback = Get-ChildItem -LiteralPath $rollbackRoot -Directory -ErrorAction SilentlyContinue | Where-Object { (Test-Path -LiteralPath (Join-Path $_.FullName 'CVMAnalytics.exe')) -and (Test-Path -LiteralPath (Join-Path $_.FullName '_internal\version.txt')) } | Select-Object -First 1
-  if (-not $rollback) { throw 'Updater rollback is missing the old executable or rollback _internal tree' }
-  $rollbackExecutableSha256 = (Get-FileHash (Join-Path $rollback.FullName 'CVMAnalytics.exe') -Algorithm SHA256).Hash
-  $rollbackInternalSha256 = (Get-FileHash (Join-Path $rollback.FullName '_internal\version.txt') -Algorithm SHA256).Hash
-  if ($oldExecutableSha256 -ne $rollbackExecutableSha256) { throw 'Updater rollback executable does not match the old executable' }
-  if ($oldInternalSha256 -ne $rollbackInternalSha256) { throw 'Updater rollback _internal does not match the old _internal tree' }
-  if ((Get-Content -LiteralPath (Join-Path $rollback.FullName '_internal\version.txt') -Raw).Trim() -ne 'old') { throw 'Updater rollback _internal did not preserve the old version' }
-  $helperLog = Join-Path $updaterLocalAppData 'CVMAnalytics\update_error.log'
-  if (-not (Test-Path -LiteralPath $helperLog) -or (Get-Content -LiteralPath $helperLog -Raw) -notmatch 'relaunch issued OK') { throw 'Updater helper did not record a successful relaunch' }
-  foreach ($name in $protected) { if ($before[$name] -ne (Get-FileHash (Join-Path $current "$name\sentinel.txt") -Algorithm SHA256).Hash) { throw "Updater changed protected directory: $name" } }
-  return [ordered]@{ status = 'pass'; started_utc = $started.ToString('o'); duration_ms = [int]([DateTime]::UtcNow - $started).TotalMilliseconds; pid = $p.Id; exit_code = $p.ExitCode; protected_directories = $protected; rollback_path = $rollback.FullName; old_executable_sha256 = $oldExecutableSha256; rollback_executable_sha256 = $rollbackExecutableSha256; old_internal_sha256 = $oldInternalSha256; rollback_internal_sha256 = $rollbackInternalSha256 }
+  $stdout = Join-Path $taskRoot 'updater\controller.stdout.log'
+  $stderr = Join-Path $taskRoot 'updater\controller.stderr.log'
+  Assert-MutationTargets -Paths @($stdout,$stderr)
+  $p = Start-Process powershell.exe -ArgumentList @('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$helper,'-New',$staged,'-Current',$current) -Environment $helperEnv -PassThru -Wait -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+  try {
+    if ($p.ExitCode -ne 0) { throw "Updater helper failed: $($p.ExitCode)" }
+    if (-not (Test-Path -LiteralPath (Join-Path $current 'relaunch.marker'))) { throw 'Updater did not relaunch the staged executable' }
+    if ((Get-Content -LiteralPath (Join-Path $current '_internal\version.txt') -Raw).Trim() -ne 'staged') { throw 'Updater did not copy staged _internal files' }
+    Assert-Descendant -Parent $taskRoot -Child $rollbackRoot
+    $rollback = Get-ChildItem -LiteralPath $rollbackRoot -Directory -ErrorAction SilentlyContinue | Where-Object { (Test-Path -LiteralPath (Join-Path $_.FullName 'CVMAnalytics.exe')) -and (Test-Path -LiteralPath (Join-Path $_.FullName '_internal\version.txt')) } | Select-Object -First 1
+    if (-not $rollback) { throw 'Updater rollback is missing the old executable or rollback _internal tree' }
+    $rollbackExecutableSha256 = (Get-FileHash (Join-Path $rollback.FullName 'CVMAnalytics.exe') -Algorithm SHA256).Hash
+    $rollbackInternalSha256 = (Get-FileHash (Join-Path $rollback.FullName '_internal\version.txt') -Algorithm SHA256).Hash
+    if ($oldExecutableSha256 -ne $rollbackExecutableSha256) { throw 'Updater rollback executable does not match the old executable' }
+    if ($oldInternalSha256 -ne $rollbackInternalSha256) { throw 'Updater rollback _internal does not match the old _internal tree' }
+    if ((Get-Content -LiteralPath (Join-Path $rollback.FullName '_internal\version.txt') -Raw).Trim() -ne 'old') { throw 'Updater rollback _internal did not preserve the old version' }
+    $helperLog = Join-Path $updaterLocalAppData 'CVMAnalytics\update_error.log'
+    if (-not (Test-Path -LiteralPath $helperLog) -or (Get-Content -LiteralPath $helperLog -Raw) -notmatch 'relaunch issued OK') { throw 'Updater helper did not record a successful relaunch' }
+    foreach ($name in $protected) { if ($before[$name] -ne (Get-FileHash (Join-Path $current "$name\sentinel.txt") -Algorithm SHA256).Hash) { throw "Updater changed protected directory: $name" } }
+    return [ordered]@{ status = 'pass'; started_utc = $started.ToString('o'); duration_ms = [int]([DateTime]::UtcNow - $started).TotalMilliseconds; pid = $p.Id; exit_code = $p.ExitCode; stdout = $stdout; stderr = $stderr; protected_directories = $protected; rollback_path = $rollback.FullName; old_executable_sha256 = $oldExecutableSha256; rollback_executable_sha256 = $rollbackExecutableSha256; old_internal_sha256 = $oldInternalSha256; rollback_internal_sha256 = $rollbackInternalSha256 }
+  } catch {
+    Set-ExceptionProcessData -ErrorRecord $_ -Process $p -Stdout $stdout -Stderr $stderr -Details @{ stage = 'updater' }
+    throw
+  }
 }
 
 function Compare-PreservationManifest {
@@ -489,7 +618,9 @@ function Classify-FixtureManifestChanges {
   foreach ($row in @($after)) {
     $prior = $beforeByPath[$row.path]
     if (-not $prior -or $prior.status -ne $row.status -or $prior.sha256 -ne $row.sha256 -or $prior.length -ne $row.length) {
-      $allowed = if ($Policy -eq 'main') { $row.path -like 'output/*' -or $row.path -like 'logs/*' -or $row.path -like 'cache/*' } else { $row.path -like 'logs/*' -or $row.path -like 'cache/*' } # refresh-failure only permits logs/cache
+      $emptyOptionalRootMaterialized = $prior -and $prior.status -eq 'missing' -and $row.status -eq 'empty' -and $row.path -in @('output','logs','cache')
+      $allowedDescendant = if ($Policy -eq 'main') { $row.path -like 'output/*' -or $row.path -like 'logs/*' -or $row.path -like 'cache/*' } else { $row.path -like 'logs/*' -or $row.path -like 'cache/*' } # refresh-failure only permits log/cache descendants
+      $allowed = $emptyOptionalRootMaterialized -or $allowedDescendant
       $classification = if ($allowed) { 'expected_fixture_runtime_change' } elseif ($row.path -like 'db/*' -or $row.path -like 'metadata/*') { 'unexpected_fixture_database_change' } else { 'unexpected_fixture_change' }
       $changes += [ordered]@{ path = $row.path; classification = $classification; before = $prior; after = $row }
     }
@@ -542,7 +673,19 @@ New-Item -ItemType Directory -Force -Path $taskRoot | Out-Null
 Assert-NoReparseTree -Root $taskRoot
 $runStarted = [DateTime]::UtcNow
 $stepResults = [System.Collections.ArrayList]@()
-$evidence = @{ harness_commit_sha = (git rev-parse HEAD).Trim(); started_utc = $runStarted.ToString('o'); status = 'running'; primary_failure = $null; step_results = $stepResults }
+$plannedChildEnvironment = New-ChildEnvironment -DataRoot $fixtureRoot -LocalAppData (Join-Path $taskRoot 'localappdata-diagnostic')
+$harnessProvenance = Get-HarnessProvenance -Mode $Mode -CandidateDir $CandidateDir -EvidenceDir $EvidenceDir -SourceDataRoot $SourceDataRoot -CdCvm $CdCvm -CdpPort $CdpPort -ChildEnvironment $plannedChildEnvironment -ControllerPath $PSCommandPath -UiHarnessPath (Join-Path $repoRoot 'scripts\diagnostics\validate_packaged_ui.cjs')
+$evidence = @{
+  harness_commit_sha = (git rev-parse HEAD).Trim()
+  harness_files = $harnessProvenance.harness_files
+  invocation_arguments = $harnessProvenance.invocation_arguments
+  environment_allowlist = $harnessProvenance.environment_allowlist
+  child_path_map = $harnessProvenance.child_path_map
+  started_utc = $runStarted.ToString('o')
+  status = 'running'
+  primary_failure = $null
+  step_results = $stepResults
+}
 $sourcePaths = @('input','raw','source_snapshots','db\cvm_financials.db','db\energy_kpis.db')
 $sourceBefore = Join-Path $taskRoot 'source-before-manifest.json'
 $sourceAfter = Join-Path $taskRoot 'source-after-manifest.json'
@@ -562,7 +705,7 @@ try {
   Invoke-RecordedStep -Name 'fixture' -Results $stepResults -Action { New-Fixture; @{ exit_code = 0 } } | Out-Null
   Invoke-RecordedStep -Name 'fixture_before_manifest' -Results $stepResults -Action { Write-FileManifest -Root $fixtureRoot -RelativePaths @('db','metadata','output','logs','cache') -OutputPath $fixtureBefore | Out-Null; @{ exit_code = 0 } } | Out-Null
   Invoke-RecordedStep -Name 'refresh_before_manifest' -Results $stepResults -Action { Write-FileManifest -Root $refreshFailureRoot -RelativePaths @('db','metadata','output','logs','cache') -OutputPath $refreshBefore | Out-Null; @{ exit_code = 0 } } | Out-Null
-  $childEnv = New-ChildEnvironment -DataRoot $fixtureRoot -LocalAppData (Join-Path $taskRoot 'localappdata-diagnostic')
+  $childEnv = $plannedChildEnvironment
   Invoke-RecordedStep -Name 'environment_audit' -Results $stepResults -Action { foreach ($name in (Get-ChildItem Env: | Where-Object { $_.Name -match '^(CVM|SQLITE_PATH|DATABASE_URL)' })) { if (-not $childEnv.ContainsKey($name.Name)) { throw "Inherited CVM/path environment variable is not overwritten or documented: $($name.Name)" } }; @{ exit_code = 0 } } | Out-Null
   $diagnostic = Invoke-RecordedStep -Name 'diagnostic' -Results $stepResults -Action { Invoke-IsolatedDiagnostic -ChildEnvironment $childEnv -ExpectedIdentity $expectedIdentity }
   $ui = Invoke-RecordedStep -Name 'packaged_ui' -Results $stepResults -Action { Invoke-PackagedUi -ChildEnvironment $childEnv -ExpectedIdentity $expectedIdentity }
