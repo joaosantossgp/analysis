@@ -462,9 +462,26 @@ function Invoke-IsolatedDiagnostic {
   }
 }
 
+function Start-CdpHarnessProcess {
+  param(
+    [Parameter(Mandatory)][string]$OutputDir,
+    [Parameter(Mandatory)][string]$HarnessPath,
+    [Parameter(Mandatory)][AllowEmptyCollection()][string[]]$Arguments
+  )
+  $OutputDir = [IO.Path]::GetFullPath($OutputDir)
+  $resolvedHarness = Resolve-ApprovedPath -Path $HarnessPath
+  if (-not (Test-Path -LiteralPath $resolvedHarness -PathType Leaf)) { throw "CDP harness does not exist: $resolvedHarness" }
+  $nodeStdout = Join-Path $OutputDir 'node.stdout.log'
+  $nodeStderr = Join-Path $OutputDir 'node.stderr.log'
+  Assert-MutationTargets -Paths @($OutputDir,$nodeStdout,$nodeStderr)
+  New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
+  Assert-NoReparseTree -Root $OutputDir
+  $node = Start-Process (Get-Command node).Source -ArgumentList (@($resolvedHarness) + @($Arguments)) -PassThru -Wait -WindowStyle Hidden -RedirectStandardOutput $nodeStdout -RedirectStandardError $nodeStderr
+  return [ordered]@{ pid = $node.Id; exit_code = $node.ExitCode; stdout = $nodeStdout; stderr = $nodeStderr }
+}
+
 function Wait-ForCdpBridge {
   param([Parameter(Mandatory)][System.Diagnostics.Process]$Process, [Parameter(Mandatory)][string]$OutputDir, [Parameter(Mandatory)][long]$ProcessStartMs, [Parameter(Mandatory)][hashtable]$ExpectedIdentity, [switch]$ReadinessOnly)
-  Assert-Descendant -Parent $taskRoot -Child $OutputDir
   $deadline = (Get-Date).AddSeconds(60)
   do {
     try { $cdp = Invoke-RestMethod "http://127.0.0.1:$CdpPort/json/version"; break }
@@ -473,11 +490,9 @@ function Wait-ForCdpBridge {
   if (-not $cdp) { throw 'CDP readiness timeout' }
   $arguments = @('--cdp-url', "http://127.0.0.1:$CdpPort", '--output-dir', $OutputDir, '--cd-cvm', $CdCvm, '--process-start-ms', $ProcessStartMs, '--expected-version', $ExpectedIdentity.version, '--expected-build-sha', $ExpectedIdentity.build_commit)
   if ($ReadinessOnly) { $arguments += '--readiness-only' }
-  $nodeStdout = Join-Path $OutputDir 'node.stdout.log'; $nodeStderr = Join-Path $OutputDir 'node.stderr.log'
-  Assert-MutationTargets -Paths @($nodeStdout,$nodeStderr)
-  $node = Start-Process (Get-Command node).Source -ArgumentList (@((Join-Path $repoRoot 'scripts\diagnostics\validate_packaged_ui.cjs')) + $arguments) -PassThru -Wait -WindowStyle Hidden -RedirectStandardOutput $nodeStdout -RedirectStandardError $nodeStderr
-  if ($node.ExitCode -ne 0) { $failure = [System.Exception]::new("CDP harness failed: $($node.ExitCode) (PID $($node.Id))"); $failure.Data['pid'] = $node.Id; $failure.Data['exit_code'] = $node.ExitCode; $failure.Data['stdout'] = $nodeStdout; $failure.Data['stderr'] = $nodeStderr; $failure.Data['details'] = @{ stage = 'node_cdp'; candidate_pid = $Process.Id }; throw $failure }
-  return [ordered]@{ pid = $node.Id; exit_code = $node.ExitCode; stdout = $nodeStdout; stderr = $nodeStderr }
+  $node = Start-CdpHarnessProcess -OutputDir $OutputDir -HarnessPath (Join-Path $repoRoot 'scripts\diagnostics\validate_packaged_ui.cjs') -Arguments $arguments
+  if ($node.exit_code -ne 0) { $failure = [System.Exception]::new("CDP harness failed: $($node.exit_code) (PID $($node.pid))"); $failure.Data['pid'] = $node.pid; $failure.Data['exit_code'] = $node.exit_code; $failure.Data['stdout'] = $node.stdout; $failure.Data['stderr'] = $node.stderr; $failure.Data['details'] = @{ stage = 'node_cdp'; candidate_pid = $Process.Id }; throw $failure }
+  return $node
 }
 
 function Invoke-PackagedUi {
@@ -743,15 +758,40 @@ function Classify-FixtureManifestChanges {
   $after = Get-Content -LiteralPath $AfterPath -Raw | ConvertFrom-Json
   $beforeByPath = @{}; foreach ($row in @($before)) { $beforeByPath[$row.path] = $row }
   $afterByPath = @{}; foreach ($row in @($after)) { $afterByPath[$row.path] = $row }
+  $sidecarPattern = '^(?<primary>db/.+\.db)-(?<kind>wal|shm)$'
+  if (@($before | Where-Object { $_.path -match $sidecarPattern }).Count -gt 0) {
+    throw 'Fixture manifest already contains a SQLite runtime sidecar'
+  }
   $changes = @()
   foreach ($row in @($after)) {
     $prior = $beforeByPath[$row.path]
     if (-not $prior -or $prior.status -ne $row.status -or $prior.sha256 -ne $row.sha256 -or $prior.length -ne $row.length) {
       $emptyOptionalRootMaterialized = $prior -and $prior.status -eq 'missing' -and $row.status -eq 'empty' -and $row.path -in @('output','logs','cache')
       $allowedDescendant = if ($Policy -eq 'main') { $row.path -like 'output/*' -or $row.path -like 'logs/*' -or $row.path -like 'cache/*' } else { $row.path -like 'logs/*' -or $row.path -like 'cache/*' } # refresh-failure only permits log/cache descendants
-      $allowed = $emptyOptionalRootMaterialized -or $allowedDescendant
-      $classification = if ($allowed) { 'expected_fixture_runtime_change' } elseif ($row.path -like 'db/*' -or $row.path -like 'metadata/*') { 'unexpected_fixture_database_change' } else { 'unexpected_fixture_change' }
-      $changes += [ordered]@{ path = $row.path; classification = $classification; before = $prior; after = $row }
+      $sidecarEvidence = $null
+      if (-not $prior -and $row.status -eq 'present' -and $row.sha256 -and $null -ne $row.length -and $row.path -match $sidecarPattern) {
+        $primaryPath = $matches.primary
+        $sidecarKind = $matches.kind.ToLowerInvariant()
+        $primaryBefore = $beforeByPath[$primaryPath]
+        $primaryAfter = $afterByPath[$primaryPath]
+        if ($primaryBefore -and $primaryAfter -and
+            $primaryBefore.status -eq 'present' -and $primaryAfter.status -eq 'present' -and
+            $primaryBefore.sha256 -and $null -ne $primaryBefore.length -and
+            $primaryBefore.sha256 -eq $primaryAfter.sha256 -and
+            $primaryBefore.length -eq $primaryAfter.length) {
+          $sidecarEvidence = [ordered]@{
+            kind = $sidecarKind
+            primary_path = $primaryPath
+            primary_sha256 = $primaryBefore.sha256
+            primary_length = $primaryBefore.length
+          }
+        }
+      }
+      $allowed = $emptyOptionalRootMaterialized -or $allowedDescendant -or [bool]$sidecarEvidence
+      $classification = if ($sidecarEvidence) { 'expected_fixture_runtime_sidecar' } elseif ($allowed) { 'expected_fixture_runtime_change' } elseif ($row.path -like 'db/*' -or $row.path -like 'metadata/*') { 'unexpected_fixture_database_change' } else { 'unexpected_fixture_change' }
+      $change = [ordered]@{ path = $row.path; classification = $classification; before = $prior; after = $row }
+      if ($sidecarEvidence) { $change.sidecar = $sidecarEvidence }
+      $changes += $change
     }
   }
   foreach ($prior in @($before)) {

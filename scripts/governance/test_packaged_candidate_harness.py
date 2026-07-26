@@ -374,6 +374,65 @@ def test_fixture_classifier_enforces_optional_root_and_policy_boundaries(tmp_pat
     assert result.returncode == 0, result.stderr
 
 
+def test_fixture_classifier_allows_only_new_sidecars_for_unchanged_tracked_database(
+    tmp_path: Path,
+) -> None:
+    fixture_dir = (tmp_path / "sidecar-classifier").as_posix().replace("'", "''")
+    result = _run_powershell_probe(
+        tmp_path,
+        ("Classify-FixtureManifestChanges",),
+        f"""
+        $root = '{fixture_dir}'
+        New-Item -ItemType Directory -Force -Path $root | Out-Null
+        function Write-ProbeManifest([string]$Name, [object[]]$Rows) {{
+          $path = Join-Path $root "$Name.json"
+          @($Rows) | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $path -Encoding UTF8
+          return $path
+        }}
+        function Assert-Rejected([string]$Label, [object[]]$Before, [object[]]$After) {{
+          $beforePath = Write-ProbeManifest "$Label-before" $Before
+          $afterPath = Write-ProbeManifest "$Label-after" $After
+          $threw = $false
+          try {{ Classify-FixtureManifestChanges -BeforePath $beforePath -AfterPath $afterPath -Policy 'main' | Out-Null }}
+          catch {{ $threw = $true }}
+          if (-not $threw) {{ throw "Classifier accepted forbidden SQLite sidecar state: $Label" }}
+        }}
+
+        $primary = @{{ path = 'db/cvm_financials.db'; status = 'present'; length = 100; sha256 = 'primary-hash' }}
+        $wal = @{{ path = 'db/cvm_financials.db-wal'; status = 'present'; length = 20; sha256 = 'wal-hash' }}
+        $shm = @{{ path = 'db/cvm_financials.db-shm'; status = 'present'; length = 10; sha256 = 'shm-hash' }}
+        $beforePath = Write-ProbeManifest 'allowed-before' @($primary)
+        $afterPath = Write-ProbeManifest 'allowed-after' @($primary,$wal,$shm)
+        $changes = @(Classify-FixtureManifestChanges -BeforePath $beforePath -AfterPath $afterPath -Policy 'main')
+        if ($changes.Count -ne 2) {{ throw "Expected two explicit sidecar changes, found $($changes.Count)" }}
+        foreach ($change in $changes) {{
+          if ($change.classification -ne 'expected_fixture_runtime_sidecar') {{
+            throw "Sidecar lacks explicit runtime classification: $($change.path)"
+          }}
+          if ($change.sidecar.primary_path -ne 'db/cvm_financials.db' -or
+              $change.sidecar.primary_sha256 -ne 'primary-hash' -or
+              [int64]$change.sidecar.primary_length -ne 100 -or
+              $change.sidecar.kind -notin @('wal','shm')) {{
+            throw "Sidecar evidence is incomplete: $($change.path)"
+          }}
+        }}
+
+        $changedPrimary = @{{ path = 'db/cvm_financials.db'; status = 'present'; length = 101; sha256 = 'changed-primary' }}
+        Assert-Rejected 'modified-primary' @($primary) @($changedPrimary,$wal)
+        Assert-Rejected 'deleted-primary' @($primary) @($wal)
+        Assert-Rejected 'pre-existing-sidecar' @($primary,$wal) @($primary,$wal)
+        $changedWal = @{{ path = 'db/cvm_financials.db-wal'; status = 'present'; length = 21; sha256 = 'changed-wal' }}
+        Assert-Rejected 'modified-sidecar' @($primary,$wal) @($primary,$changedWal)
+        Assert-Rejected 'deleted-sidecar' @($primary,$wal) @($primary)
+        $unhashedPrimary = @{{ path = 'db/cvm_financials.db'; status = 'present' }}
+        Assert-Rejected 'unhashed-primary' @($unhashedPrimary) @($unhashedPrimary,$wal)
+        $arbitrary = @{{ path = 'db/arbitrary.db'; status = 'present'; length = 1; sha256 = 'arbitrary' }}
+        Assert-Rejected 'arbitrary-db-addition' @($primary) @($primary,$arbitrary)
+        """,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_harness_provenance_contains_invocation_environment_and_source_hashes(tmp_path: Path) -> None:
     result = _run_powershell_probe(
         tmp_path,
@@ -429,6 +488,50 @@ def test_frozen_diagnostic_requires_the_exact_true_boolean_line(tmp_path: Path) 
         """,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_cdp_child_launch_creates_validated_redirect_directory_for_real_process(
+    tmp_path: Path,
+) -> None:
+    task_root = (tmp_path / "cdp-output").as_posix().replace("'", "''")
+    result = _run_powershell_probe(
+        tmp_path,
+        (
+            "Resolve-ApprovedPath",
+            "Assert-Descendant",
+            "Assert-MutationTargets",
+            "Assert-NoReparseTree",
+            "Start-CdpHarnessProcess",
+        ),
+        f"""
+        $taskRoot = '{task_root}'
+        New-Item -ItemType Directory -Force -Path $taskRoot | Out-Null
+        $outputDir = Join-Path $taskRoot 'ui'
+        $harnessPath = Join-Path $taskRoot 'redirect-probe.cjs'
+        [IO.File]::WriteAllText($harnessPath, "process.stdout.write('redirect-out'); process.stderr.write('redirect-err');")
+        if (Test-Path -LiteralPath $outputDir) {{ throw 'Probe output directory unexpectedly pre-exists' }}
+        $result = Start-CdpHarnessProcess -OutputDir $outputDir -HarnessPath $harnessPath -Arguments @()
+        if ($result.exit_code -ne 0 -or -not $result.pid) {{
+          throw 'Real Node child evidence is incomplete'
+        }}
+        if (-not (Test-Path -LiteralPath $outputDir -PathType Container)) {{ throw 'Redirect parent was not created' }}
+        if ([IO.File]::ReadAllText($result.stdout) -cne 'redirect-out') {{ throw 'Real stdout redirect was not captured' }}
+        if ([IO.File]::ReadAllText($result.stderr) -cne 'redirect-err') {{ throw 'Real stderr redirect was not captured' }}
+        """,
+    )
+    assert result.returncode == 0, result.stderr
+    controller = CONTROLLER.read_text(encoding="utf-8")
+    launch_body = controller.split("function Start-CdpHarnessProcess", 1)[1].split(
+        "function Wait-ForCdpBridge", 1
+    )[0]
+    launch = launch_body.index("$node = Start-Process")
+    assert launch_body.index("Assert-MutationTargets", 0, launch) < launch
+    assert launch_body.index("Assert-NoReparseTree", 0, launch) < launch
+    assert launch_body.index("New-Item", 0, launch) < launch
+    wait_body = controller.split("function Wait-ForCdpBridge", 1)[1].split(
+        "function Invoke-PackagedUi", 1
+    )[0]
+    assert "Start-CdpHarnessProcess" in wait_body
 
 
 def test_packaged_diagnostic_evidence_uses_only_bounded_fixture_artifacts(
