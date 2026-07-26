@@ -110,7 +110,7 @@ function Assert-NoReparseTree {
 function Prepare-RunAttempt {
   Assert-NoReparseTree -Root $taskRoot
   $attemptRoot = Join-Path $taskRoot ('attempts\' + [DateTime]::UtcNow.Ticks + '-' + [guid]::NewGuid().ToString('N'))
-  $knownOutputs = @('CVMAnalytics-current-head.zip','fixture','fixture-refresh-failure','updater','ui','refresh-failure-ui','localappdata-diagnostic','localappdata-ui','localappdata-refresh-failure','source-before-manifest.json','source-after-manifest.json','fixture-before-manifest.json','fixture-after-manifest.json','refresh-failure-before-manifest.json','refresh-failure-after-manifest.json','refresh_failure_sql.json','evidence-summary.json','evidence-summary-fallback.json','canonical-runtime-lock.json','diagnostic.stdout.log','diagnostic.stderr.log')
+  $knownOutputs = @('CVMAnalytics-current-head.zip','fixture','fixture-refresh-failure','updater','ui','refresh-failure-ui','localappdata-diagnostic','localappdata-ui','localappdata-refresh-failure','source-before-manifest.json','source-after-manifest.json','fixture-before-manifest.json','fixture-after-manifest.json','refresh-failure-before-manifest.json','refresh-failure-after-manifest.json','refresh_failure_sql.json','refresh-failure-mutation.py','refresh-failure-mutation.stdout.log','refresh-failure-mutation.stderr.log','evidence-summary.json','evidence-summary-fallback.json','canonical-runtime-lock.json','diagnostic.stdout.log','diagnostic.stderr.log')
   foreach ($name in $knownOutputs) {
     $source = Join-Path $taskRoot $name
     if (Test-Path -LiteralPath $source) {
@@ -187,7 +187,15 @@ function Write-EvidenceSummary {
     foreach ($artifact in Get-ChildItem -LiteralPath $taskRoot -File -Recurse -ErrorAction SilentlyContinue | Sort-Object FullName) {
       Assert-Descendant -Parent $taskRoot -Child $artifact.FullName
       if ($excludedSummaryPaths -contains [IO.Path]::GetFullPath($artifact.FullName).ToLowerInvariant()) { continue }
-      $artifactInventory += [ordered]@{ path = $artifact.FullName; bytes = $artifact.Length; sha256 = (Get-FileHash -LiteralPath $artifact.FullName -Algorithm SHA256).Hash }
+      $artifactEvidence = [ordered]@{ path = $artifact.FullName; bytes = $artifact.Length }
+      try {
+        $artifactEvidence.status = 'hashed'
+        $artifactEvidence.sha256 = (Get-FileHash -LiteralPath $artifact.FullName -Algorithm SHA256).Hash
+      } catch {
+        $artifactEvidence.status = 'hash_unavailable'
+        $artifactEvidence.error = $_.Exception.Message
+      }
+      $artifactInventory += $artifactEvidence
     }
   }
   $Evidence.artifact_inventory = $artifactInventory
@@ -716,6 +724,72 @@ function Test-FixturePolicy {
   return Classify-FixtureManifestChanges -BeforePath $BeforePath -AfterPath $AfterPath -Policy $Policy
 }
 
+function Invoke-RefreshFailureFixtureMutation {
+  param(
+    [Parameter(Mandatory)][string]$DatabasePath,
+    [Parameter(Mandatory)][int]$CdCvm
+  )
+  $resolvedDatabase = [IO.Path]::GetFullPath($DatabasePath)
+  $programPath = Join-Path $taskRoot 'refresh-failure-mutation.py'
+  $stdout = Join-Path $taskRoot 'refresh-failure-mutation.stdout.log'
+  $stderr = Join-Path $taskRoot 'refresh-failure-mutation.stderr.log'
+  Assert-ExistingDescendant -Parent $refreshFailureRoot -Child $resolvedDatabase -Label 'Refresh-failure fixture database'
+  Assert-MutationTargets -Paths @($resolvedDatabase,$programPath,$stdout,$stderr)
+  $pythonProgram = @'
+import sqlite3
+import sys
+
+connection = sqlite3.connect(sys.argv[1])
+try:
+    connection.execute(
+        "UPDATE companies SET cnpj = NULL WHERE cd_cvm = ?",
+        (int(sys.argv[2]),),
+    )
+    connection.execute(
+        "DELETE FROM app_settings WHERE key = ?",
+        ("metadata_last_successful_refresh",),
+    )
+    connection.commit()
+finally:
+    connection.close()
+'@
+  [IO.File]::WriteAllText($programPath, $pythonProgram, [Text.UTF8Encoding]::new($false))
+  $python = (Get-Command python -ErrorAction Stop).Source
+  $startInfo = [Diagnostics.ProcessStartInfo]::new()
+  $startInfo.FileName = $python
+  $startInfo.UseShellExecute = $false
+  $startInfo.CreateNoWindow = $true
+  $startInfo.RedirectStandardOutput = $true
+  $startInfo.RedirectStandardError = $true
+  [void]$startInfo.ArgumentList.Add($programPath)
+  [void]$startInfo.ArgumentList.Add($resolvedDatabase)
+  [void]$startInfo.ArgumentList.Add([string]$CdCvm)
+  $p = [Diagnostics.Process]::Start($startInfo)
+  $stdoutText = $p.StandardOutput.ReadToEnd()
+  $stderrText = $p.StandardError.ReadToEnd()
+  $p.WaitForExit()
+  [IO.File]::WriteAllText($stdout, $stdoutText, [Text.UTF8Encoding]::new($false))
+  [IO.File]::WriteAllText($stderr, $stderrText, [Text.UTF8Encoding]::new($false))
+  if ($p.ExitCode -ne 0) {
+    $failure = [System.Exception]::new("Could not prepare refresh-failure fixture (exit $($p.ExitCode))")
+    $failure.Data['pid'] = $p.Id
+    $failure.Data['exit_code'] = $p.ExitCode
+    $failure.Data['stdout'] = $stdout
+    $failure.Data['stderr'] = $stderr
+    $failure.Data['details'] = @{ stage = 'refresh_failure_fixture_mutation'; program = $programPath; database = $resolvedDatabase }
+    throw $failure
+  }
+  return [ordered]@{
+    status = 'pass'
+    pid = $p.Id
+    exit_code = $p.ExitCode
+    program = $programPath
+    database = $resolvedDatabase
+    stdout = $stdout
+    stderr = $stderr
+  }
+}
+
 function New-Fixture {
   Assert-MutationTargets -Paths @($fixtureRoot, (Join-Path $fixtureRoot 'db'), (Join-Path $fixtureRoot 'metadata'), (Join-Path $fixtureRoot 'output'), (Join-Path $fixtureRoot 'logs'), (Join-Path $fixtureRoot 'cache'), $refreshFailureRoot, (Join-Path $refreshFailureRoot 'db'), (Join-Path $refreshFailureRoot 'output'), (Join-Path $refreshFailureRoot 'logs'), (Join-Path $refreshFailureRoot 'cache'))
   New-Item -ItemType Directory -Force -Path $fixtureRoot | Out-Null
@@ -728,8 +802,8 @@ function New-Fixture {
   Copy-Item -LiteralPath $fixtureRoot -Destination $refreshFailureRoot -Recurse -Force
   $fixtureSql = @("UPDATE companies SET cnpj = NULL WHERE cd_cvm = ?", "DELETE FROM app_settings WHERE key = 'metadata_last_successful_refresh'")
   $fixtureSql | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $taskRoot 'refresh_failure_sql.json') -Encoding UTF8
-  & python -c "import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); c.execute('update companies set cnpj=NULL where cd_cvm=?',(int(sys.argv[2]),)); c.execute(\"delete from app_settings where key='metadata_last_successful_refresh'\"); c.commit(); c.close()" (Join-Path $refreshFailureRoot 'db\cvm_financials.db') $CdCvm
-  if ($LASTEXITCODE -ne 0) { throw 'Could not prepare refresh-failure fixture' }
+  $mutation = Invoke-RefreshFailureFixtureMutation -DatabasePath (Join-Path $refreshFailureRoot 'db\cvm_financials.db') -CdCvm $CdCvm
+  return [ordered]@{ status = 'pass'; pid = $mutation.pid; exit_code = $mutation.exit_code; refresh_failure_mutation = $mutation }
 }
 
 function Test-InputContract {
@@ -780,7 +854,7 @@ try {
   $runtimeLock = Invoke-RecordedStep -Name 'runtime_lock' -Results $stepResults -Action { Inspect-CanonicalRuntimeLock }
   Invoke-RecordedStep -Name 'source_before_manifest' -Results $stepResults -Action { Write-FileManifest -Root $sourceRoot -RelativePaths $sourcePaths -OutputPath $sourceBefore | Out-Null; @{ exit_code = 0 } } | Out-Null
   $zip = Invoke-RecordedStep -Name 'zip' -Results $stepResults -Action { New-CandidateZip }
-  Invoke-RecordedStep -Name 'fixture' -Results $stepResults -Action { New-Fixture; @{ exit_code = 0 } } | Out-Null
+  $fixture = Invoke-RecordedStep -Name 'fixture' -Results $stepResults -Action { New-Fixture }
   Invoke-RecordedStep -Name 'fixture_before_manifest' -Results $stepResults -Action { Write-FileManifest -Root $fixtureRoot -RelativePaths @('db','metadata','output','logs','cache') -OutputPath $fixtureBefore | Out-Null; @{ exit_code = 0 } } | Out-Null
   Invoke-RecordedStep -Name 'refresh_before_manifest' -Results $stepResults -Action { Write-FileManifest -Root $refreshFailureRoot -RelativePaths @('db','metadata','output','logs','cache') -OutputPath $refreshBefore | Out-Null; @{ exit_code = 0 } } | Out-Null
   $childEnv = $plannedChildEnvironment
@@ -825,7 +899,7 @@ try {
   }
   $evidence.completed_utc = [DateTime]::UtcNow.ToString('o'); $evidence.duration_ms = [int]([DateTime]::UtcNow - $runStarted).TotalMilliseconds
   foreach ($cleanupFailure in $script:CleanupFailures) { if (-not $evidence.secondary_failures) { $evidence.secondary_failures = @() }; $evidence.secondary_failures += $cleanupFailure }
-  $evidence.expected_identity = $expectedIdentity; $evidence.canonical_runtime_lock = $runtimeLock; $evidence.zip = $zip; $evidence.diagnostic = $diagnostic; $evidence.ui = $ui; $evidence.refresh_failure = $refreshFailure; $evidence.workbook = $workbook; $evidence.updater = $updater
+  $evidence.expected_identity = $expectedIdentity; $evidence.canonical_runtime_lock = $runtimeLock; $evidence.zip = $zip; $evidence.fixture = $fixture; $evidence.diagnostic = $diagnostic; $evidence.ui = $ui; $evidence.refresh_failure = $refreshFailure; $evidence.workbook = $workbook; $evidence.updater = $updater
   try {
     Finalize-EvidenceSummary -Evidence $evidence -StepResults $stepResults
   } catch {

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
 import subprocess
 import textwrap
 from pathlib import Path
@@ -513,6 +514,115 @@ def test_fixture_after_manifests_are_recorded_with_their_actual_changes() -> Non
         "Test-FixturePolicy"
     )
     assert "$evidence.refresh_failure_fixture_changes = $refreshClassification.changes" in refresh_finalizer
+
+
+def test_refresh_failure_fixture_mutation_uses_exact_python_program_and_records_child(
+    tmp_path: Path,
+) -> None:
+    task_root = tmp_path / "refresh-mutation"
+    refresh_root = task_root / "fixture-refresh-failure"
+    database = refresh_root / "db" / "cvm_financials.db"
+    database.parent.mkdir(parents=True)
+    with sqlite3.connect(database) as connection:
+        connection.execute("create table companies (cd_cvm integer primary key, cnpj text)")
+        connection.execute("create table app_settings (key text primary key, value text)")
+        connection.execute("insert into companies values (?, ?)", (9512, "33000167000101"))
+        connection.executemany(
+            "insert into app_settings values (?, ?)",
+            (
+                ("metadata_last_successful_refresh", "1783525990"),
+                ("unrelated_setting", "keep-me"),
+            ),
+        )
+
+    result = _run_powershell_probe(
+        tmp_path,
+        (
+            "Resolve-ApprovedPath",
+            "Assert-Descendant",
+            "Assert-MutationTargets",
+            "Assert-ExistingDescendant",
+            "Invoke-RefreshFailureFixtureMutation",
+        ),
+        f"""
+        $taskRoot = '{task_root.as_posix()}'
+        $refreshFailureRoot = '{refresh_root.as_posix()}'
+        $evidence = Invoke-RefreshFailureFixtureMutation -DatabasePath '{database.as_posix()}' -CdCvm 9512
+        if ($evidence.exit_code -ne 0 -or -not $evidence.pid) {{
+          throw 'Refresh mutation child PID/exit evidence is incomplete'
+        }}
+        foreach ($artifact in @($evidence.program,$evidence.stdout,$evidence.stderr)) {{
+          if (-not (Test-Path -LiteralPath $artifact)) {{ throw "Missing refresh mutation artifact: $artifact" }}
+        }}
+        """,
+    )
+    assert result.returncode == 0, result.stderr
+    with sqlite3.connect(database) as connection:
+        assert connection.execute(
+            "select cnpj from companies where cd_cvm = ?", (9512,)
+        ).fetchone() == (None,)
+        assert connection.execute(
+            "select value from app_settings where key = ?",
+            ("metadata_last_successful_refresh",),
+        ).fetchone() is None
+        assert connection.execute(
+            "select value from app_settings where key = ?", ("unrelated_setting",)
+        ).fetchone() == ("keep-me",)
+    controller = CONTROLLER.read_text(encoding="utf-8")
+    new_fixture = controller.split("function New-Fixture", 1)[1].split(
+        "function Test-InputContract", 1
+    )[0]
+    assert "Invoke-RefreshFailureFixtureMutation" in new_fixture
+    assert new_fixture.count("& python -c") == 1
+    assert "select cnpj from companies" in new_fixture
+
+
+def test_summary_inventory_classifies_locked_artifact_without_losing_primary_failure(
+    tmp_path: Path,
+) -> None:
+    task_root = (tmp_path / "locked-summary").as_posix().replace("'", "''")
+    result = _run_powershell_probe(
+        tmp_path,
+        (
+            "Resolve-ApprovedPath",
+            "Assert-Descendant",
+            "Assert-MutationTargets",
+            "Write-EvidenceSummary",
+            "Finalize-EvidenceSummary",
+        ),
+        f"""
+        $taskRoot = '{task_root}'
+        New-Item -ItemType Directory -Force -Path $taskRoot | Out-Null
+        $lockedPath = Join-Path $taskRoot 'validation-run.log'
+        [IO.File]::WriteAllText($lockedPath, 'live tee output')
+        $stream = [IO.File]::Open($lockedPath, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+        try {{
+          $steps = [System.Collections.ArrayList]@()
+          $evidence = @{{
+            status = 'failed'
+            primary_failure = @{{ message = 'fixture mutation failed' }}
+            step_results = $steps
+          }}
+          Finalize-EvidenceSummary -Evidence $evidence -StepResults $steps
+        }} finally {{
+          $stream.Dispose()
+        }}
+        $summaryPath = Join-Path $taskRoot 'evidence-summary.json'
+        if (-not (Test-Path -LiteralPath $summaryPath)) {{ throw 'Locked artifact prevented durable failure summary' }}
+        $summary = Get-Content -LiteralPath $summaryPath -Raw | ConvertFrom-Json
+        if ($summary.status -ne 'failed' -or $summary.primary_failure.message -ne 'fixture mutation failed') {{
+          throw 'Durable summary lost or converted the primary Mode Run failure'
+        }}
+        $locked = @($summary.artifact_inventory | Where-Object path -eq $lockedPath)
+        if ($locked.Count -ne 1 -or $locked[0].status -ne 'hash_unavailable' -or $locked[0].sha256 -or -not $locked[0].error) {{
+          throw 'Locked artifact did not receive explicit hash_unavailable evidence'
+        }}
+        if ([int64]$locked[0].bytes -ne (Get-Item -LiteralPath $lockedPath).Length) {{
+          throw 'Locked artifact byte evidence is inaccurate'
+        }}
+        """,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_failure_producers_and_summary_timing_are_structurally_bound() -> None:
