@@ -163,3 +163,20 @@ def test_failure_finalization_and_mutation_targets_are_fail_closed() -> None:
         assert token in controller
     assert "results.status = \"failed\"" in ui_harness
     assert "results.error" in ui_harness
+
+
+def test_finalization_binds_classifier_failures_and_exact_targets() -> None:
+    controller = CONTROLLER.read_text(encoding="utf-8")
+    assert "function Register-SecondaryFailure" in controller
+    assert "function Test-FixturePolicy" in controller
+    assert "exists':r is not None" in controller
+    assert "Representative company row disappeared" in controller
+    assert "summary_failure" in controller
+    assert "evidence-summary.json" in controller
+    assert "Assert-NoReparseTree" in controller
+    assert "refresh_failure_sql.json" in controller
+    assert "refresh-failure only permits logs/cache" in controller
+    assert "0x80040154" in controller
+    finalization = controller.split("} finally {", 1)[-1]
+    assert "primary_failure" in finalization
+    assert "Write-EvidenceSummary" in finalization

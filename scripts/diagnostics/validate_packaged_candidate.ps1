@@ -22,6 +22,7 @@ $staged = Join-Path $taskRoot 'updater\staged'
 $current = Join-Path $taskRoot 'updater\current'
 $updaterLocalAppData = Join-Path $taskRoot 'updater\localappdata'
 $uiResultsPath = Join-Path $taskRoot 'ui\ui-results.json'
+$script:CleanupFailures = @()
 
 function Resolve-ApprovedPath {
   param([Parameter(Mandatory)][string]$Path)
@@ -94,9 +95,26 @@ function Assert-MutationTargets {
   foreach ($path in $Paths) { Assert-Descendant -Parent $taskRoot -Child $path }
 }
 
+function Assert-NoReparseTree {
+  param([Parameter(Mandatory)][string]$Root)
+  Assert-Descendant -Parent $taskRoot -Child $Root
+  if (Test-Path -LiteralPath $Root) {
+    foreach ($item in Get-ChildItem -LiteralPath $Root -Force -Recurse -ErrorAction Stop) {
+      if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw "ReparsePoint exists below evidence root: $($item.FullName)" }
+    }
+  }
+}
+
+function Register-SecondaryFailure {
+  param([Parameter(Mandatory)][hashtable]$Evidence, [Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)]$ErrorRecord)
+  if (-not $Evidence.secondary_failures) { $Evidence.secondary_failures = @() }
+  $Evidence.secondary_failures += [ordered]@{ name = $Name; message = $ErrorRecord.Exception.Message }
+}
+
 function Invoke-RecordedStep {
   param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][scriptblock]$Action, [Parameter(Mandatory)][System.Collections.ArrayList]$Results)
   $started = [DateTime]::UtcNow
+  $bodyFailure = $null
   try {
     $value = & $Action
     [void]$Results.Add([ordered]@{ name = $Name; status = 'pass'; started_utc = $started.ToString('o'); duration_ms = [int]([DateTime]::UtcNow - $started).TotalMilliseconds; pid = $value.pid; exit_code = $value.exit_code })
@@ -117,7 +135,9 @@ function Write-EvidenceSummary {
     }
   }
   $Evidence.artifact_inventory = $artifactInventory
-  $Evidence | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $taskRoot 'evidence-summary.json') -Encoding UTF8
+  $summaryPath = Join-Path $taskRoot 'evidence-summary.json'
+  Assert-MutationTargets -Paths @($summaryPath)
+  $Evidence | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $summaryPath -Encoding UTF8
 }
 
 function Assert-ExistingDescendant {
@@ -238,8 +258,11 @@ function Wait-ForCdpBridge {
   if (-not $cdp) { throw 'CDP readiness timeout' }
   $arguments = @('--cdp-url', "http://127.0.0.1:$CdpPort", '--output-dir', $OutputDir, '--cd-cvm', $CdCvm, '--process-start-ms', $ProcessStartMs, '--expected-version', $ExpectedIdentity.version, '--expected-build-sha', $ExpectedIdentity.build_commit)
   if ($ReadinessOnly) { $arguments += '--readiness-only' }
-  & node (Join-Path $repoRoot 'scripts\diagnostics\validate_packaged_ui.cjs') @arguments
-  if ($LASTEXITCODE -ne 0) { throw "CDP harness failed: $LASTEXITCODE" }
+  $nodeStdout = Join-Path $OutputDir 'node.stdout.log'; $nodeStderr = Join-Path $OutputDir 'node.stderr.log'
+  Assert-MutationTargets -Paths @($nodeStdout,$nodeStderr)
+  $node = Start-Process (Get-Command node).Source -ArgumentList (@((Join-Path $repoRoot 'scripts\diagnostics\validate_packaged_ui.cjs')) + $arguments) -PassThru -Wait -WindowStyle Hidden -RedirectStandardOutput $nodeStdout -RedirectStandardError $nodeStderr
+  if ($node.ExitCode -ne 0) { throw "CDP harness failed: $($node.ExitCode) (PID $($node.Id))" }
+  return [ordered]@{ pid = $node.Id; exit_code = $node.ExitCode; stdout = $nodeStdout; stderr = $nodeStderr }
 }
 
 function Invoke-PackagedUi {
@@ -254,11 +277,11 @@ function Invoke-PackagedUi {
   $p = Start-Process $candidateExe -Environment $uiEnv -PassThru -WindowStyle Hidden
   try {
     $outputDir = Join-Path $taskRoot 'ui'
-    Wait-ForCdpBridge -Process $p -OutputDir $outputDir -ProcessStartMs $processStartMs -ExpectedIdentity $ExpectedIdentity
+    $nodeChild = Wait-ForCdpBridge -Process $p -OutputDir $outputDir -ProcessStartMs $processStartMs -ExpectedIdentity $ExpectedIdentity
     if (-not (Test-Path -LiteralPath $uiResultsPath)) { throw "Missing UI results: $uiResultsPath" }
-    $result = [ordered]@{ status = 'pass'; pid = $p.Id; results = $uiResultsPath; started_utc = $started.ToString('o'); duration_ms = 0 }
-  } finally {
-    $cleanup = Stop-TrackedProcess -Process $p -Label 'Packaged UI'
+    $result = [ordered]@{ status = 'pass'; pid = $p.Id; node_child = $nodeChild; results = $uiResultsPath; started_utc = $started.ToString('o'); duration_ms = 0 }
+  } catch { $bodyFailure = $_; throw } finally {
+    try { $cleanup = Stop-TrackedProcess -Process $p -Label 'Packaged UI' } catch { if ($bodyFailure) { $script:CleanupFailures += @{ name = 'packaged_ui_cleanup'; message = $_.Exception.Message } } else { throw } }
   }
   $result.duration_ms = [int]([DateTime]::UtcNow - $started).TotalMilliseconds
   $result.cleanup = $cleanup
@@ -274,17 +297,19 @@ function Test-RefreshFailureStartup {
   Assert-MutationTargets -Paths @($failureEnv.LOCALAPPDATA, $failureEnv.CVM_OUTPUT_DIR, $failureEnv.CVM_LOG_DIR, $failureEnv.CVM_CACHE_DIR, $failureEnv.CVM_DB_DIR, $failureEnv.CVM_METADATA_DIR, (Join-Path $taskRoot 'refresh-failure-ui'))
   $processStartMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
   $p = Start-Process $candidateExe -Environment $failureEnv -PassThru -WindowStyle Hidden
+  $bodyFailure = $null
   try {
-    Wait-ForCdpBridge -Process $p -OutputDir (Join-Path $taskRoot 'refresh-failure-ui') -ProcessStartMs $processStartMs -ExpectedIdentity $ExpectedIdentity -ReadinessOnly
+    $nodeChild = Wait-ForCdpBridge -Process $p -OutputDir (Join-Path $taskRoot 'refresh-failure-ui') -ProcessStartMs $processStartMs -ExpectedIdentity $ExpectedIdentity -ReadinessOnly
     Start-Sleep -Seconds 13
     if ($p.HasExited) { throw "Refresh-failure candidate exited early: $($p.ExitCode)" }
-    $state = & python -c "import sqlite3,sys,json; c=sqlite3.connect(sys.argv[1]); row=c.execute('select cnpj from companies where cd_cvm=?',(int(sys.argv[2]),)).fetchone(); refresh=c.execute(\"select value from app_settings where key='metadata_last_successful_refresh'\").fetchone(); print(json.dumps({'cnpj':None if row is None else row[0],'metadata_last_successful_refresh':None if refresh is None else refresh[0]})); c.close()" (Join-Path $refreshFailureRoot 'db\cvm_financials.db') $CdCvm
+    $state = & python -c "import sqlite3,sys,json; c=sqlite3.connect(sys.argv[1]); row=c.execute('select cnpj from companies where cd_cvm=?',(int(sys.argv[2]),)).fetchone(); refresh=c.execute(\"select value from app_settings where key='metadata_last_successful_refresh'\").fetchone(); print(json.dumps({'exists':row is not None,'cnpj':None if row is None else row[0],'metadata_last_successful_refresh':None if refresh is None else refresh[0]})); c.close()" (Join-Path $refreshFailureRoot 'db\cvm_financials.db') $CdCvm
     if ($LASTEXITCODE -ne 0) { throw 'Could not inspect refresh-failure fixture' }
+    if (-not (($state | ConvertFrom-Json).exists)) { throw 'Representative company row disappeared during refresh-failure observation' }
     if ((($state | ConvertFrom-Json).cnpj) -ne $null) { throw 'Offline refresh failure unexpectedly restored the fixture CNPJ' }
     if ((($state | ConvertFrom-Json).metadata_last_successful_refresh) -ne $null) { throw 'Offline refresh failure unexpectedly persisted metadata_last_successful_refresh' }
-    $result = [ordered]@{ status = 'pass'; pid = $p.Id; stayed_alive_after_seconds = 13; state = ($state | ConvertFrom-Json); started_utc = $started.ToString('o'); duration_ms = 0 }
-  } finally {
-    $cleanup = Stop-TrackedProcess -Process $p -Label 'Refresh-failure packaged UI'
+    $result = [ordered]@{ status = 'pass'; pid = $p.Id; node_child = $nodeChild; stayed_alive_after_seconds = 13; state = ($state | ConvertFrom-Json); started_utc = $started.ToString('o'); duration_ms = 0 }
+  } catch { $bodyFailure = $_; throw } finally {
+    try { $cleanup = Stop-TrackedProcess -Process $p -Label 'Refresh-failure packaged UI' } catch { if ($bodyFailure) { $script:CleanupFailures += @{ name = 'refresh_failure_cleanup'; message = $_.Exception.Message } } else { throw } }
   }
   $result.duration_ms = [int]([DateTime]::UtcNow - $started).TotalMilliseconds
   $result.cleanup = $cleanup
@@ -302,7 +327,7 @@ function Test-WorkbookOpen {
   $book = $null
   $comNeedsValidation = $null
   $readOnlyOpenSucceeded = $false
-  try { $excel = New-Object -ComObject Excel.Application } catch [Runtime.InteropServices.COMException] { $comNeedsValidation = $_.Exception.Message }
+  try { $excel = New-Object -ComObject Excel.Application } catch [Runtime.InteropServices.COMException] { if ($_.Exception.HResult -eq 0x80040154) { $comNeedsValidation = $_.Exception.Message } else { throw } }
   if ($excel) {
     try { $excel.DisplayAlerts = $false; $book = $excel.Workbooks.Open($excelPath, 0, $true); $readOnlyOpenSucceeded = $true; $book.Close($false) }
     finally {
@@ -373,7 +398,7 @@ function Compare-PreservationManifest {
 }
 
 function Classify-FixtureManifestChanges {
-  param([Parameter(Mandatory)][string]$BeforePath, [Parameter(Mandatory)][string]$AfterPath)
+  param([Parameter(Mandatory)][string]$BeforePath, [Parameter(Mandatory)][string]$AfterPath, [ValidateSet('main','refresh-failure')][string]$Policy = 'main')
   $before = Get-Content -LiteralPath $BeforePath -Raw | ConvertFrom-Json
   $after = Get-Content -LiteralPath $AfterPath -Raw | ConvertFrom-Json
   $beforeByPath = @{}; foreach ($row in @($before)) { $beforeByPath[$row.path] = $row }
@@ -382,15 +407,22 @@ function Classify-FixtureManifestChanges {
   foreach ($row in @($after)) {
     $prior = $beforeByPath[$row.path]
     if (-not $prior -or $prior.sha256 -ne $row.sha256 -or $prior.length -ne $row.length) {
-      $classification = if ($row.path -like 'output/*' -or $row.path -like 'logs/*' -or $row.path -like 'cache/*') { 'expected_fixture_runtime_change' } elseif ($row.path -like 'db/*' -or $row.path -like 'metadata/*') { 'unexpected_fixture_database_change' } else { 'unexpected_fixture_change' }
+      $allowed = if ($Policy -eq 'main') { $row.path -like 'output/*' -or $row.path -like 'logs/*' -or $row.path -like 'cache/*' } else { $row.path -like 'logs/*' -or $row.path -like 'cache/*' } # refresh-failure only permits logs/cache
+      $classification = if ($allowed) { 'expected_fixture_runtime_change' } elseif ($row.path -like 'db/*' -or $row.path -like 'metadata/*') { 'unexpected_fixture_database_change' } else { 'unexpected_fixture_change' }
       $changes += [ordered]@{ path = $row.path; classification = $classification; before = $prior; after = $row }
     }
   }
   foreach ($prior in @($before)) {
-    if (-not $afterByPath.ContainsKey($prior.path)) { $changes += [ordered]@{ path = $prior.path; classification = 'before-only'; before = $prior; after = $null } }
+    $materializedOptionalRoot = $prior.status -eq 'missing' -and ($prior.path -in @('output','logs','cache')) -and @($afterByPath.Keys | Where-Object { $_ -like "$($prior.path)/*" }).Count -gt 0
+    if (-not $afterByPath.ContainsKey($prior.path) -and -not $materializedOptionalRoot) { $changes += [ordered]@{ path = $prior.path; classification = 'before-only'; before = $prior; after = $null } }
   }
   if ($changes | Where-Object { $_.classification -notlike 'expected_*' }) { throw 'Fixture changed outside the narrow output/log/cache allowance' }
   return $changes
+}
+
+function Test-FixturePolicy {
+  param([Parameter(Mandatory)][string]$BeforePath, [Parameter(Mandatory)][string]$AfterPath, [Parameter(Mandatory)][string]$Policy)
+  return Classify-FixtureManifestChanges -BeforePath $BeforePath -AfterPath $AfterPath -Policy $Policy
 }
 
 function New-Fixture {
@@ -425,6 +457,7 @@ Test-InputContract
 if ($Mode -eq 'ValidateInputs') { exit 0 }
 
 New-Item -ItemType Directory -Force -Path $taskRoot | Out-Null
+Assert-NoReparseTree -Root $taskRoot
 $runStarted = [DateTime]::UtcNow
 $stepResults = [System.Collections.ArrayList]@()
 $evidence = @{ harness_commit_sha = (git rev-parse HEAD).Trim(); started_utc = $runStarted.ToString('o'); status = 'running'; primary_failure = $null; step_results = $stepResults }
@@ -435,6 +468,7 @@ $fixtureBefore = Join-Path $taskRoot 'fixture-before-manifest.json'
 $fixtureAfter = Join-Path $taskRoot 'fixture-after-manifest.json'
 $refreshBefore = Join-Path $taskRoot 'refresh-failure-before-manifest.json'
 $refreshAfter = Join-Path $taskRoot 'refresh-failure-after-manifest.json'
+Assert-MutationTargets -Paths @($sourceBefore,$sourceAfter,$fixtureBefore,$fixtureAfter,$refreshBefore,$refreshAfter,(Join-Path $taskRoot 'refresh_failure_sql.json'),(Join-Path $taskRoot 'evidence-summary.json'),(Join-Path $taskRoot 'ui\ui-results.json'),(Join-Path $taskRoot 'ui\console-errors.json'),(Join-Path $taskRoot 'ui\network-log.json'),(Join-Path $taskRoot 'refresh-failure-ui\ui-results.json'),(Join-Path $taskRoot 'refresh-failure-ui\console-errors.json'),(Join-Path $taskRoot 'refresh-failure-ui\network-log.json'))
 $primaryFailure = $null
 try {
   if (Get-Process -Name CVMAnalytics -ErrorAction SilentlyContinue) { throw 'A CVMAnalytics process is active; validation will not hash or contend with canonical data.' }
@@ -461,10 +495,27 @@ try {
   if (Test-Path -LiteralPath $sourceBefore) {
     try { Write-FileManifest -Root $sourceRoot -RelativePaths $sourcePaths -OutputPath $sourceAfter | Out-Null; Compare-PreservationManifest -BeforePath $sourceBefore -AfterPath $sourceAfter } catch { if (-not $primaryFailure) { $primaryFailure = $_; $evidence.status = 'failed'; $evidence.primary_failure = @{ message = $_.Exception.Message } } else { $evidence.preservation_failure = $_.Exception.Message } }
   }
-  if (Test-Path -LiteralPath $fixtureBefore) { try { Write-FileManifest -Root $fixtureRoot -RelativePaths @('db','metadata','output','logs','cache') -OutputPath $fixtureAfter | Out-Null; $evidence.fixture_changes = Classify-FixtureManifestChanges -BeforePath $fixtureBefore -AfterPath $fixtureAfter } catch { $evidence.fixture_classification_failure = $_.Exception.Message } }
-  if (Test-Path -LiteralPath $refreshBefore) { try { Write-FileManifest -Root $refreshFailureRoot -RelativePaths @('db','metadata','output','logs','cache') -OutputPath $refreshAfter | Out-Null; $evidence.refresh_failure_fixture_changes = Classify-FixtureManifestChanges -BeforePath $refreshBefore -AfterPath $refreshAfter } catch { $evidence.refresh_failure_classification_failure = $_.Exception.Message } }
+  if (Test-Path -LiteralPath $fixtureBefore) {
+    try {
+      Write-FileManifest -Root $fixtureRoot -RelativePaths @('db','metadata','output','logs','cache') -OutputPath $fixtureAfter | Out-Null
+      $evidence.fixture_changes = Test-FixturePolicy -BeforePath $fixtureBefore -AfterPath $fixtureAfter -Policy 'main'
+    } catch {
+      if (-not $primaryFailure) { $primaryFailure = $_; $evidence.status = 'failed'; $evidence.primary_failure = @{ message = $_.Exception.Message } }
+      else { Register-SecondaryFailure -Evidence $evidence -Name 'fixture_classification' -ErrorRecord $_ }
+    }
+  }
+  if (Test-Path -LiteralPath $refreshBefore) {
+    try {
+      Write-FileManifest -Root $refreshFailureRoot -RelativePaths @('db','metadata','output','logs','cache') -OutputPath $refreshAfter | Out-Null
+      $evidence.refresh_failure_fixture_changes = Test-FixturePolicy -BeforePath $refreshBefore -AfterPath $refreshAfter -Policy 'refresh-failure'
+    } catch {
+      if (-not $primaryFailure) { $primaryFailure = $_; $evidence.status = 'failed'; $evidence.primary_failure = @{ message = $_.Exception.Message } }
+      else { Register-SecondaryFailure -Evidence $evidence -Name 'refresh_failure_classification' -ErrorRecord $_ }
+    }
+  }
   $evidence.completed_utc = [DateTime]::UtcNow.ToString('o'); $evidence.duration_ms = [int]([DateTime]::UtcNow - $runStarted).TotalMilliseconds
+  foreach ($cleanupFailure in $script:CleanupFailures) { if (-not $evidence.secondary_failures) { $evidence.secondary_failures = @() }; $evidence.secondary_failures += $cleanupFailure }
   $evidence.expected_identity = $expectedIdentity; $evidence.canonical_runtime_lock = $runtimeLock; $evidence.zip = $zip; $evidence.diagnostic = $diagnostic; $evidence.ui = $ui; $evidence.refresh_failure = $refreshFailure; $evidence.workbook = $workbook; $evidence.updater = $updater
-  Write-EvidenceSummary -Evidence $evidence
+  try { Write-EvidenceSummary -Evidence $evidence } catch { if (-not $primaryFailure) { $primaryFailure = $_; $evidence.status = 'failed'; $evidence.summary_failure = $_.Exception.Message; try { $evidence | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $taskRoot 'evidence-summary-fallback.json') -Encoding UTF8 } catch { Register-SecondaryFailure -Evidence $evidence -Name 'summary_fallback' -ErrorRecord $_ } } else { Register-SecondaryFailure -Evidence $evidence -Name 'summary_failure' -ErrorRecord $_ } }
 }
 if ($primaryFailure) { throw $primaryFailure }

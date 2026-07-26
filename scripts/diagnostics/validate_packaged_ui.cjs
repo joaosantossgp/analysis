@@ -38,7 +38,19 @@ function writeFailureArtifacts(outputDir, payload) {
 }
 
 function writeJson(filePath, value) {
+  assertOutputTarget(filePath);
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+}
+
+function assertOutputTarget(filePath) {
+  const root = path.resolve(path.dirname(filePath));
+  let cursor = path.resolve(filePath);
+  while (cursor.startsWith(root)) {
+    if (fs.existsSync(cursor) && fs.lstatSync(cursor).isSymbolicLink()) throw new Error(`Reparse/symlink output target is not allowed: ${cursor}`);
+    const parent = path.dirname(cursor);
+    if (parent === cursor) break;
+    cursor = parent;
+  }
 }
 
 function isAllowedRequest(url) {
@@ -173,6 +185,7 @@ async function main() {
           mobile: false,
         });
         const filePath = path.join(args.outputDir, `${route.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "")}-${viewport.label}.png`);
+        assertOutputTarget(filePath);
         await page.screenshot({ path: filePath, fullPage: true });
         screenshots.push(filePath);
       }
