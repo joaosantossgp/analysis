@@ -219,9 +219,19 @@ def test_failed_run_provenance_is_recorded_inside_finalization() -> None:
     ui_harness = UI_HARNESS.read_text(encoding="utf-8")
     execution = controller.split("Test-InputContract\n", 1)[1]
     assert execution.index("$evidence =") < execution.index("Prepare-RunAttempt") < execution.index("Get-Process -Name CVMAnalytics")
-    for step in ("attempt_preparation", "fixture_before_manifest", "refresh_before_manifest", "environment_audit", "source_after_preservation", "fixture_classification", "refresh_failure_classification", "summary"):
+    for step in ("attempt_preparation", "fixture_before_manifest", "refresh_before_manifest", "environment_audit", "source_after_preservation", "fixture_classification", "refresh_failure_classification"):
         assert f"-Name '{step}'" in execution
     assert "Exception.Data['node_pid']" in controller
     assert "Exception.Data['node_exit_code']" in controller
     assert "evidence-summary-fallback.json" in execution
     assert "node_finalizer_errors" in ui_harness
+
+
+def test_mode_run_acceptance_paths_are_recorded_and_durable() -> None:
+    controller = CONTROLLER.read_text(encoding="utf-8")
+    execution = controller.split("Test-InputContract\n", 1)[1]
+    assert "-Name 'process_contention'" in execution
+    assert "$summaryStep" in execution
+    assert "summary_metadata" in controller
+    assert "summary_step" in controller
+    assert "fixture_after_manifest" not in execution or "-Name 'fixture_classification'" in execution

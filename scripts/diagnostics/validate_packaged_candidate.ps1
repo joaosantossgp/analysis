@@ -155,8 +155,10 @@ function Write-EvidenceSummary {
   }
   $Evidence.artifact_inventory = $artifactInventory
   $summaryPath = Join-Path $taskRoot 'evidence-summary.json'
+  $Evidence.summary_metadata = @{ path = $summaryPath; self_hash_unavailable = 'self-referential summary is not hashed inside its own inventory'; bytes = $null }
   Assert-MutationTargets -Paths @($summaryPath)
   $Evidence | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $summaryPath -Encoding UTF8
+  $Evidence.summary_metadata.bytes = (Get-Item -LiteralPath $summaryPath).Length
 }
 
 function Assert-ExistingDescendant {
@@ -493,7 +495,7 @@ Assert-MutationTargets -Paths @($sourceBefore,$sourceAfter,$fixtureBefore,$fixtu
 $primaryFailure = $null
 try {
   Invoke-RecordedStep -Name 'attempt_preparation' -Results $stepResults -Action { Prepare-RunAttempt; @{ exit_code = 0 } } | Out-Null
-  if (Get-Process -Name CVMAnalytics -ErrorAction SilentlyContinue) { throw 'A CVMAnalytics process is active; validation will not hash or contend with canonical data.' }
+  Invoke-RecordedStep -Name 'process_contention' -Results $stepResults -Action { if (Get-Process -Name CVMAnalytics -ErrorAction SilentlyContinue) { throw 'A CVMAnalytics process is active; validation will not hash or contend with canonical data.' }; @{ exit_code = 0 } } | Out-Null
   $expectedIdentity = Invoke-RecordedStep -Name 'candidate_identity' -Results $stepResults -Action { Get-ExpectedCandidateIdentity }
   $runtimeLock = Invoke-RecordedStep -Name 'runtime_lock' -Results $stepResults -Action { Inspect-CanonicalRuntimeLock }
   Invoke-RecordedStep -Name 'source_before_manifest' -Results $stepResults -Action { Write-FileManifest -Root $sourceRoot -RelativePaths $sourcePaths -OutputPath $sourceBefore | Out-Null; @{ exit_code = 0 } } | Out-Null
@@ -538,6 +540,9 @@ try {
   $evidence.completed_utc = [DateTime]::UtcNow.ToString('o'); $evidence.duration_ms = [int]([DateTime]::UtcNow - $runStarted).TotalMilliseconds
   foreach ($cleanupFailure in $script:CleanupFailures) { if (-not $evidence.secondary_failures) { $evidence.secondary_failures = @() }; $evidence.secondary_failures += $cleanupFailure }
   $evidence.expected_identity = $expectedIdentity; $evidence.canonical_runtime_lock = $runtimeLock; $evidence.zip = $zip; $evidence.diagnostic = $diagnostic; $evidence.ui = $ui; $evidence.refresh_failure = $refreshFailure; $evidence.workbook = $workbook; $evidence.updater = $updater
-  try { Invoke-RecordedStep -Name 'summary' -Results $stepResults -Action { Write-EvidenceSummary -Evidence $evidence; @{ exit_code = 0 } } | Out-Null } catch { if (-not $primaryFailure) { $primaryFailure = $_; $evidence.status = 'failed'; $evidence.summary_failure = $_.Exception.Message } else { Register-SecondaryFailure -Evidence $evidence -Name 'summary_failure' -ErrorRecord $_ }; try { $evidence | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $taskRoot 'evidence-summary-fallback.json') -Encoding UTF8 } catch { Register-SecondaryFailure -Evidence $evidence -Name 'summary_fallback' -ErrorRecord $_ } }
+  $summaryStep = [ordered]@{ name = 'summary'; status = 'running'; started_utc = [DateTime]::UtcNow.ToString('o'); duration_ms = 0; pid = $null; exit_code = $null }
+  [void]$stepResults.Add($summaryStep)
+  $evidence.summary_step = $summaryStep
+  try { Write-EvidenceSummary -Evidence $evidence; $summaryStep.status = 'pass'; $summaryStep.exit_code = 0; Write-EvidenceSummary -Evidence $evidence } catch { $summaryStep.status = 'failed'; $summaryStep.error = $_.Exception.Message; if (-not $primaryFailure) { $primaryFailure = $_; $evidence.status = 'failed'; $evidence.summary_failure = $_.Exception.Message } else { Register-SecondaryFailure -Evidence $evidence -Name 'summary_failure' -ErrorRecord $_ }; try { $evidence | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $taskRoot 'evidence-summary-fallback.json') -Encoding UTF8 } catch { Register-SecondaryFailure -Evidence $evidence -Name 'summary_fallback' -ErrorRecord $_ } }
 }
 if ($primaryFailure) { throw $primaryFailure }
