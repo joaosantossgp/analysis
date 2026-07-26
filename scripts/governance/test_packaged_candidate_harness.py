@@ -431,6 +431,89 @@ def test_frozen_diagnostic_requires_the_exact_true_boolean_line(tmp_path: Path) 
     assert result.returncode == 0, result.stderr
 
 
+def test_packaged_diagnostic_evidence_uses_only_bounded_fixture_artifacts(
+    tmp_path: Path,
+) -> None:
+    task_root = (tmp_path / "diagnostic-evidence").as_posix().replace("'", "''")
+    result = _run_powershell_probe(
+        tmp_path,
+        (
+            "Resolve-ApprovedPath",
+            "Assert-Descendant",
+            "Assert-ExistingDescendant",
+            "Test-FrozenDiagnosticEvidence",
+            "Read-PackagedDiagnosticEvidence",
+        ),
+        f"""
+        $taskRoot = '{task_root}'
+        $fixtureRoot = Join-Path $taskRoot 'fixture'
+        $logsRoot = Join-Path $fixtureRoot 'logs/nested'
+        $localAppData = Join-Path $taskRoot 'localappdata-diagnostic'
+        $stdout = Join-Path $taskRoot 'diagnostic.stdout.log'
+        $stderr = Join-Path $taskRoot 'diagnostic.stderr.log'
+        $directLog = Join-Path $fixtureRoot 'diagnostics-current.log'
+        $nestedLog = Join-Path $logsRoot 'runtime.log'
+        $outsideLog = Join-Path $taskRoot 'diagnostics-stale.log'
+        New-Item -ItemType Directory -Force -Path $logsRoot,$localAppData | Out-Null
+        [IO.File]::WriteAllText($stdout, '')
+        [IO.File]::WriteAllText($stderr, '')
+        [IO.File]::WriteAllText($nestedLog, 'producer: fixture-log')
+        $validText = @"
+version: 0.30.0-rc.1
+frozen: True
+_user_data_root: $fixtureRoot
+LOCALAPPDATA: $localAppData
+status: OK
+"@
+        [IO.File]::WriteAllText($directLog, $validText)
+        [IO.File]::WriteAllText($outsideLog, $validText)
+
+        $evidence = Read-PackagedDiagnosticEvidence `
+          -StdoutPath $stdout `
+          -StderrPath $stderr `
+          -FixtureRoot $fixtureRoot `
+          -ExpectedVersion '0.30.0-rc.1' `
+          -LocalAppData $localAppData
+        if ($evidence.status -ne 'pass') {{ throw 'Valid direct packaged diagnostic did not pass' }}
+        $expectedPaths = @($stdout,$stderr,$directLog,$nestedLog) | ForEach-Object {{ [IO.Path]::GetFullPath($_) }} | Sort-Object
+        $actualPaths = @($evidence.evidence_files.path) | Sort-Object
+        if (Compare-Object $expectedPaths $actualPaths) {{
+          throw "Diagnostic evidence paths escaped or omitted the bounded sources: $($actualPaths -join ', ')"
+        }}
+        if ($actualPaths -contains [IO.Path]::GetFullPath($outsideLog)) {{
+          throw 'An unrelated task-root diagnostic log was consumed'
+        }}
+        foreach ($file in @($evidence.evidence_files)) {{
+          if ($file.sha256 -ne (Get-FileHash -LiteralPath $file.path -Algorithm SHA256).Hash) {{
+            throw "Diagnostic evidence hash is inaccurate: $($file.path)"
+          }}
+        }}
+
+        [IO.File]::WriteAllText($directLog, $validText.Replace('frozen: True','frozen: False'))
+        $falseThrew = $false
+        try {{
+          Read-PackagedDiagnosticEvidence -StdoutPath $stdout -StderrPath $stderr -FixtureRoot $fixtureRoot -ExpectedVersion '0.30.0-rc.1' -LocalAppData $localAppData
+        }} catch {{
+          $falseThrew = $_.Exception.Message -match 'frozen: True'
+        }}
+        if (-not $falseThrew) {{
+          throw 'Frozen False direct evidence was accepted or an outside stale log satisfied the gate'
+        }}
+
+        $canonicalDocuments = Join-Path $env:USERPROFILE 'Documents/CVMAnalytics'
+        [IO.File]::WriteAllText($directLog, $validText + "`ncanonical leak: $canonicalDocuments")
+        $leakThrew = $false
+        try {{
+          Read-PackagedDiagnosticEvidence -StdoutPath $stdout -StderrPath $stderr -FixtureRoot $fixtureRoot -ExpectedVersion '0.30.0-rc.1' -LocalAppData $localAppData
+        }} catch {{
+          $leakThrew = $_.Exception.Message -match 'canonical Documents root'
+        }}
+        if (-not $leakThrew) {{ throw 'Canonical Documents path leak was accepted' }}
+        """,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_summary_finalization_persists_final_row_and_accurate_self_metadata(tmp_path: Path) -> None:
     success_root = (tmp_path / "summary-success").as_posix().replace("'", "''")
     failure_root = (tmp_path / "summary-failure").as_posix().replace("'", "''")

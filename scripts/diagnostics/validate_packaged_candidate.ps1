@@ -375,9 +375,60 @@ function Get-HarnessProvenance {
 
 function Test-FrozenDiagnosticEvidence {
   param([Parameter(Mandatory)][string]$DiagnosticText)
-  if ($DiagnosticText -notmatch '(?im)^[^\S\r\n]*frozen:[^\S\r\n]*True[^\S\r\n]*$') {
+  if ($DiagnosticText -notmatch '(?im)^[^\S\r\n]*frozen:[^\S\r\n]*True[^\S\r\n]*\r?$') {
     throw 'Diagnostic evidence does not report frozen: True'
   }
+}
+
+function Read-PackagedDiagnosticEvidence {
+  param(
+    [Parameter(Mandatory)][string]$StdoutPath,
+    [Parameter(Mandatory)][string]$StderrPath,
+    [Parameter(Mandatory)][string]$FixtureRoot,
+    [Parameter(Mandatory)][string]$ExpectedVersion,
+    [Parameter(Mandatory)][string]$LocalAppData
+  )
+  $resolvedFixture = [IO.Path]::GetFullPath($FixtureRoot)
+  $resolvedStdout = [IO.Path]::GetFullPath($StdoutPath)
+  $resolvedStderr = [IO.Path]::GetFullPath($StderrPath)
+  Assert-ExistingDescendant -Parent $taskRoot -Child $resolvedFixture -Label 'Diagnostic fixture root'
+  Assert-ExistingDescendant -Parent $taskRoot -Child $resolvedStdout -Label 'Diagnostic stdout'
+  Assert-ExistingDescendant -Parent $taskRoot -Child $resolvedStderr -Label 'Diagnostic stderr'
+
+  $evidencePaths = @($resolvedStdout, $resolvedStderr)
+  $evidencePaths += @(
+    Get-ChildItem -LiteralPath $resolvedFixture -File -ErrorAction SilentlyContinue |
+      Where-Object { $_.Name -like 'diagnostics-*.log' } |
+      ForEach-Object { $_.FullName }
+  )
+  $logsRoot = Join-Path $resolvedFixture 'logs'
+  if (Test-Path -LiteralPath $logsRoot) {
+    Assert-ExistingDescendant -Parent $resolvedFixture -Child $logsRoot -Label 'Diagnostic fixture logs root'
+    $evidencePaths += @(
+      Get-ChildItem -LiteralPath $logsRoot -File -Recurse -ErrorAction SilentlyContinue |
+        ForEach-Object { $_.FullName }
+    )
+  }
+
+  $evidenceFiles = @()
+  $diagnosticParts = foreach ($path in @($evidencePaths | Sort-Object -Unique)) {
+    Assert-ExistingDescendant -Parent $taskRoot -Child $path -Label 'Diagnostic evidence file'
+    $file = Get-Item -LiteralPath $path
+    $evidenceFiles += [ordered]@{
+      path = $file.FullName
+      bytes = $file.Length
+      sha256 = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash
+    }
+    [string](Get-Content -LiteralPath $file.FullName -Raw)
+  }
+  $diagnosticText = $diagnosticParts -join [Environment]::NewLine
+  Test-FrozenDiagnosticEvidence -DiagnosticText $diagnosticText
+  foreach ($required in @("version: $ExpectedVersion", $resolvedFixture, [IO.Path]::GetFullPath($LocalAppData))) {
+    if ($diagnosticText -notmatch [regex]::Escape($required)) { throw "Diagnostic evidence is missing: $required" }
+  }
+  $canonicalDocuments = Join-Path $env:USERPROFILE 'Documents\CVMAnalytics'
+  if ($diagnosticText -match [regex]::Escape($canonicalDocuments)) { throw 'Diagnostic leaked the canonical Documents root' }
+  return [ordered]@{ status = 'pass'; evidence_files = $evidenceFiles }
 }
 
 function New-CandidateZip {
@@ -403,16 +454,8 @@ function Invoke-IsolatedDiagnostic {
   $p = Start-Process $candidateExe -ArgumentList '--diagnose-runtime','--non-interactive' -Environment $ChildEnvironment -PassThru -Wait -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr
   try {
     if ($p.ExitCode -ne 0) { throw "Diagnostic failed: $($p.ExitCode)" }
-    $diagnosticText = (Get-Content -LiteralPath $stdout -Raw) + (Get-Content -LiteralPath $stderr -Raw)
-    $diagnosticLogs = Get-ChildItem -LiteralPath (Join-Path $fixtureRoot 'logs') -File -Recurse -ErrorAction SilentlyContinue | Get-Content -Raw -ErrorAction SilentlyContinue
-    $diagnosticText += ($diagnosticLogs -join [Environment]::NewLine)
-    Test-FrozenDiagnosticEvidence -DiagnosticText $diagnosticText
-    foreach ($required in @("version: $($ExpectedIdentity.version)", $fixtureRoot, $ChildEnvironment.LOCALAPPDATA)) {
-      if ($diagnosticText -notmatch [regex]::Escape($required)) { throw "Diagnostic evidence is missing: $required" }
-    }
-    $canonicalDocuments = Join-Path $env:USERPROFILE 'Documents\CVMAnalytics'
-    if ($diagnosticText -match [regex]::Escape($canonicalDocuments)) { throw 'Diagnostic leaked the canonical Documents root' }
-    return [ordered]@{ status = 'pass'; started_utc = $started.ToString('o'); duration_ms = [int]([DateTime]::UtcNow - $started).TotalMilliseconds; pid = $p.Id; exit_code = $p.ExitCode; stdout = $stdout; stderr = $stderr; version = $ExpectedIdentity.version; build_sha_validation = 'deferred to get_app_status because --diagnose-runtime does not emit build_commit' }
+    $diagnosticEvidence = Read-PackagedDiagnosticEvidence -StdoutPath $stdout -StderrPath $stderr -FixtureRoot $fixtureRoot -ExpectedVersion $ExpectedIdentity.version -LocalAppData $ChildEnvironment.LOCALAPPDATA
+    return [ordered]@{ status = 'pass'; started_utc = $started.ToString('o'); duration_ms = [int]([DateTime]::UtcNow - $started).TotalMilliseconds; pid = $p.Id; exit_code = $p.ExitCode; stdout = $stdout; stderr = $stderr; evidence_files = $diagnosticEvidence.evidence_files; version = $ExpectedIdentity.version; build_sha_validation = 'deferred to get_app_status because --diagnose-runtime does not emit build_commit' }
   } catch {
     Set-ExceptionProcessData -ErrorRecord $_ -Process $p -Stdout $stdout -Stderr $stderr -Details @{ stage = 'diagnostic' }
     throw
