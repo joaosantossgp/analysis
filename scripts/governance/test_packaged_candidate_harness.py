@@ -56,7 +56,7 @@ def test_packaged_candidate_harness_is_committed_and_fail_closed() -> None:
         "ALL_PROXY",
         "try",
         "finally",
-        "Stop-Process -Id $p.Id -Force",
+        "Stop-TrackedProcess -Process $p",
     ):
         assert token in controller, f"controller contract missing: {token}"
 
@@ -81,6 +81,60 @@ def test_packaged_candidate_harness_is_committed_and_fail_closed() -> None:
         "Buffer.byteLength",
         "console",
         "network",
-        "process.exit(1)",
+            "process.exitCode = 1",
     ):
         assert token in ui_harness, f"UI harness contract missing: {token}"
+
+
+def test_refresh_failure_uses_the_real_setting_and_repeats_bridge_readiness() -> None:
+    controller = CONTROLLER.read_text(encoding="utf-8")
+    assert "metadata_refresh_state" not in controller
+    assert "app_settings" in controller
+    assert "metadata_last_successful_refresh" in controller
+    assert "function Wait-ForCdpBridge" in controller
+    assert "-ReadinessOnly" in controller
+    assert "refresh_failure_sql.json" in controller
+
+
+def test_controller_inspects_the_runtime_lock_before_source_hashing_and_checks_identity() -> None:
+    controller = CONTROLLER.read_text(encoding="utf-8")
+    assert "function Inspect-CanonicalRuntimeLock" in controller
+    assert controller.index("Inspect-CanonicalRuntimeLock") < controller.index("Write-FileManifest -Root $sourceRoot")
+    assert "function Get-ExpectedCandidateIdentity" in controller
+    assert "build_commit" in controller
+    ui_harness = UI_HARNESS.read_text(encoding="utf-8")
+    assert "candidate version mismatch" in ui_harness
+    assert "candidate build SHA mismatch" in ui_harness
+
+
+def test_controller_rejects_reparse_escapes_and_compares_preservation_bytes() -> None:
+    controller = CONTROLLER.read_text(encoding="utf-8")
+    assert "function Resolve-ApprovedPath" in controller
+    assert "ReparsePoint" in controller
+    assert "[IO.File]::ReadAllBytes" in controller
+    compare_body = controller.split("function Compare-PreservationManifest", 1)[1].split("function ", 1)[0]
+    assert "Compare-Object" not in compare_body
+    assert "function Classify-FixtureManifestChanges" in controller
+
+
+def test_evidence_and_cleanup_contract_is_structured_and_fail_closed() -> None:
+    controller = CONTROLLER.read_text(encoding="utf-8")
+    ui_harness = UI_HARNESS.read_text(encoding="utf-8")
+    for token in (
+        "function Stop-TrackedProcess",
+        "Wait-Process -Id $Process.Id",
+        "artifact_inventory",
+        "step_results",
+        "started_utc",
+        "duration_ms",
+        "read_only_open_succeeded",
+        "no_repair_prompt_observable",
+        "com_activation",
+        "formula_count",
+        "file_size_bytes",
+        "rollback _internal",
+    ):
+        assert token in controller
+    assert "writeFailureArtifacts" in ui_harness
+    assert "finally" in ui_harness
+    assert "process.exitCode = 1" in ui_harness

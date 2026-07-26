@@ -3,25 +3,38 @@ const path = require("node:path");
 const { createRequire } = require("node:module");
 
 function parseArgs(argv) {
-  const expected = new Set(["--cdp-url", "--output-dir", "--cd-cvm", "--process-start-ms"]);
+  const expected = new Set(["--cdp-url", "--output-dir", "--cd-cvm", "--process-start-ms", "--expected-version", "--expected-build-sha", "--readiness-only"]);
   const values = {};
-  for (let index = 0; index < argv.length; index += 2) {
+  for (let index = 0; index < argv.length;) {
     const key = argv[index];
-    const value = argv[index + 1];
-    if (!expected.has(key) || value === undefined || values[key] !== undefined) {
-      throw new Error("Expected exactly --cdp-url, --output-dir, --cd-cvm, and --process-start-ms");
+    if (!expected.has(key) || values[key] !== undefined) {
+      throw new Error("Expected --cdp-url, --output-dir, --cd-cvm, --process-start-ms, --expected-version, and --expected-build-sha");
     }
+    if (key === "--readiness-only") { values[key] = true; index += 1; continue; }
+    const value = argv[index + 1];
+    if (value === undefined) throw new Error(`Missing value for ${key}`);
     values[key] = value;
+    index += 2;
   }
-  if (Object.keys(values).length !== expected.size) {
-    throw new Error("Missing required CDP harness arguments");
+  for (const key of ["--cdp-url", "--output-dir", "--cd-cvm", "--process-start-ms", "--expected-version", "--expected-build-sha"]) {
+    if (values[key] === undefined) throw new Error(`Missing required argument ${key}`);
   }
   return {
     cdpUrl: values["--cdp-url"],
     outputDir: path.resolve(values["--output-dir"]),
     cdCvm: Number(values["--cd-cvm"]),
     processStartMs: Number(values["--process-start-ms"]),
+    expectedVersion: values["--expected-version"],
+    expectedBuildSha: values["--expected-build-sha"].toLowerCase(),
+    readinessOnly: Boolean(values["--readiness-only"]),
   };
+}
+
+function writeFailureArtifacts(outputDir, payload) {
+  fs.mkdirSync(outputDir, { recursive: true });
+  writeJson(path.join(outputDir, "console-errors.json"), payload.consoleLogs);
+  writeJson(path.join(outputDir, "network-log.json"), payload.networkLogs);
+  writeJson(path.join(outputDir, "ui-results.json"), payload.results);
 }
 
 function writeJson(filePath, value) {
@@ -61,6 +74,7 @@ async function main() {
   const networkLogs = [];
   const externalSuccesses = [];
   const pageErrors = [];
+  const results = { bridge_results: {}, screenshots: [], status: "running" };
   let browser;
 
   try {
@@ -97,8 +111,10 @@ async function main() {
       { timeout: 60_000 },
     );
     const bridgeReadyMs = Date.now() - args.processStartMs;
-    const bridgeResults = {};
-    const calls = {
+    const bridgeResults = results.bridge_results;
+    const calls = args.readinessOnly ? {
+      get_app_status: {},
+    } : {
       get_app_status: {},
       get_companies: { page: 1, page_size: 20 },
       get_company_info: { cd_cvm: args.cdCvm },
@@ -119,6 +135,20 @@ async function main() {
       };
       if (topLevelError(result)) throw new Error(`Bridge result contains top-level error: ${method}`);
     }
+    const runtime = bridgeResults.get_app_status.result?.runtime;
+    if (runtime?.version !== args.expectedVersion) throw new Error(`candidate version mismatch: expected ${args.expectedVersion}, got ${runtime?.version}`);
+    const actualBuildSha = String(runtime?.build_commit || "").toLowerCase();
+    if (!actualBuildSha || !(actualBuildSha.startsWith(args.expectedBuildSha) || args.expectedBuildSha.startsWith(actualBuildSha))) {
+      throw new Error(`candidate build SHA mismatch: expected ${args.expectedBuildSha}, got ${actualBuildSha || "missing"}`);
+    }
+    results.bridge_ready_elapsed_ms = bridgeReadyMs;
+    results.expected_identity = { version: args.expectedVersion, build_commit: args.expectedBuildSha };
+    results.actual_identity = { version: runtime.version, build_commit: actualBuildSha };
+    if (args.readinessOnly) {
+      if (externalSuccesses.length) throw new Error(`Unexpected external request succeeded: ${externalSuccesses[0].url}`);
+      results.status = "bridge_ready";
+      return;
+    }
     const exported = bridgeResults.export_company_excel.result;
     if (!exported?.ok || !exported.file_path) throw new Error("Excel export did not return ok: true and file_path");
 
@@ -128,7 +158,7 @@ async function main() {
       { width: 1366, height: 768, label: "1366x768" },
       { width: 1920, height: 1080, label: "1920x1080" },
     ];
-    const screenshots = [];
+    const screenshots = results.screenshots;
     for (const route of routes) {
       await page.evaluate((hash) => {
         window.location.hash = hash;
@@ -150,23 +180,18 @@ async function main() {
     await client.send("Emulation.clearDeviceMetricsOverride");
     if (externalSuccesses.length) throw new Error(`Unexpected external request succeeded: ${externalSuccesses[0].url}`);
 
-    writeJson(path.join(args.outputDir, "console-errors.json"), consoleLogs);
-    writeJson(path.join(args.outputDir, "network-log.json"), networkLogs);
-    writeJson(path.join(args.outputDir, "ui-results.json"), {
-      cdp_url: args.cdpUrl,
-      bridge_ready_elapsed_ms: bridgeReadyMs,
-      bridge_results: bridgeResults,
-      routes,
-      screenshots,
-      console_errors: consoleLogs.length,
-      external_network_events: networkLogs.length,
-    });
+    results.status = "pass";
+    results.cdp_url = args.cdpUrl;
+    results.routes = routes;
+    results.console_errors = consoleLogs.length;
+    results.external_network_events = networkLogs.length;
   } finally {
+    writeFailureArtifacts(args.outputDir, { consoleLogs, networkLogs, results });
     if (browser) await browser.close();
   }
 }
 
 main().catch((error) => {
   console.error(error.stack || error.message);
-  process.exit(1);
+  process.exitCode = 1;
 });
