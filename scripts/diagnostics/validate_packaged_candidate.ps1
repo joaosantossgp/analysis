@@ -18,6 +18,7 @@ $candidateExe = Join-Path $candidateDir 'CVMAnalytics.exe'
 $zipPath = Join-Path $taskRoot 'CVMAnalytics-current-head.zip'
 $fixtureRoot = Join-Path $taskRoot 'fixture'
 $refreshFailureRoot = Join-Path $taskRoot 'fixture-refresh-failure'
+$refreshFailureSentinelCdCvm = 999999
 $staged = Join-Path $taskRoot 'updater\staged'
 $current = Join-Path $taskRoot 'updater\current'
 $updaterLocalAppData = Join-Path $taskRoot 'updater\localappdata'
@@ -543,6 +544,7 @@ function Read-RefreshFailureStateProbeResult {
     [Parameter(Mandatory)][int]$ExitCode,
     [Parameter(Mandatory)][string]$ProgramPath,
     [Parameter(Mandatory)][string]$DatabasePath,
+    [Parameter(Mandatory)][int]$SentinelCdCvm,
     [Parameter(Mandatory)][string]$StdoutPath,
     [Parameter(Mandatory)][string]$StderrPath
   )
@@ -559,6 +561,7 @@ function Read-RefreshFailureStateProbeResult {
     exit_code = $ExitCode
     program = $resolvedProgram
     database = $resolvedDatabase
+    sentinel_cd_cvm = $SentinelCdCvm
     stdout = $resolvedStdout
     stderr = $resolvedStderr
   }
@@ -571,9 +574,10 @@ function Read-RefreshFailureStateProbeResult {
   try {
     $state = Get-Content -LiteralPath $resolvedStdout -Raw | ConvertFrom-Json -ErrorAction Stop
     $stateProperties = @($state.PSObject.Properties.Name)
-    foreach ($required in @('exists','cnpj','metadata_last_successful_refresh')) {
+    foreach ($required in @('sentinel_cd_cvm','exists','cnpj','metadata_last_successful_refresh')) {
       if ($required -notin $stateProperties) { throw "JSON state is missing property: $required" }
     }
+    if ([int]$state.sentinel_cd_cvm -ne $SentinelCdCvm) { throw 'JSON state reports the wrong synthetic sentinel ID' }
   } catch {
     $failure = [System.Exception]::new("Refresh-failure state probe returned invalid JSON: $($_.Exception.Message)")
     foreach ($key in $evidence.Keys) { $failure.Data[$key] = $evidence[$key] }
@@ -588,7 +592,7 @@ function Read-RefreshFailureStateProbeResult {
 function Invoke-RefreshFailureStateProbe {
   param(
     [Parameter(Mandatory)][string]$DatabasePath,
-    [Parameter(Mandatory)][int]$CdCvm
+    [Parameter(Mandatory)][int]$SentinelCdCvm
   )
   $resolvedDatabase = [IO.Path]::GetFullPath($DatabasePath)
   $programPath = Join-Path $taskRoot 'refresh-failure-state-probe.py'
@@ -617,6 +621,7 @@ finally:
     connection.close()
 
 print(json.dumps({
+    "sentinel_cd_cvm": int(sys.argv[2]),
     "exists": company is not None,
     "cnpj": None if company is None else company[0],
     "metadata_last_successful_refresh": None if refresh is None else refresh[0],
@@ -632,14 +637,14 @@ print(json.dumps({
   $startInfo.RedirectStandardError = $true
   [void]$startInfo.ArgumentList.Add($programPath)
   [void]$startInfo.ArgumentList.Add($resolvedDatabase)
-  [void]$startInfo.ArgumentList.Add([string]$CdCvm)
+  [void]$startInfo.ArgumentList.Add([string]$SentinelCdCvm)
   $probeProcess = [Diagnostics.Process]::Start($startInfo)
   $stdoutText = $probeProcess.StandardOutput.ReadToEnd()
   $stderrText = $probeProcess.StandardError.ReadToEnd()
   $probeProcess.WaitForExit()
   [IO.File]::WriteAllText($stdout, $stdoutText, [Text.UTF8Encoding]::new($false))
   [IO.File]::WriteAllText($stderr, $stderrText, [Text.UTF8Encoding]::new($false))
-  return Read-RefreshFailureStateProbeResult -ChildPid $probeProcess.Id -ExitCode $probeProcess.ExitCode -ProgramPath $programPath -DatabasePath $resolvedDatabase -StdoutPath $stdout -StderrPath $stderr
+  return Read-RefreshFailureStateProbeResult -ChildPid $probeProcess.Id -ExitCode $probeProcess.ExitCode -ProgramPath $programPath -DatabasePath $resolvedDatabase -SentinelCdCvm $SentinelCdCvm -StdoutPath $stdout -StderrPath $stderr
 }
 
 function Test-RefreshFailureStartup {
@@ -662,7 +667,7 @@ function Test-RefreshFailureStartup {
     Start-Sleep -Seconds 13
     if ($p.HasExited) { throw "Refresh-failure candidate exited early: $($p.ExitCode)" }
     try {
-      $postProbe = Invoke-RefreshFailureStateProbe -DatabasePath (Join-Path $refreshFailureRoot 'db\cvm_financials.db') -CdCvm $CdCvm
+      $postProbe = Invoke-RefreshFailureStateProbe -DatabasePath (Join-Path $refreshFailureRoot 'db\cvm_financials.db') -SentinelCdCvm $refreshFailureSentinelCdCvm
       $postProbeExitCode = $postProbe.exit_code
     } catch {
       $postProbeExitCode = $_.Exception.Data['exit_code']
@@ -920,31 +925,83 @@ function Test-FixturePolicy {
 function Invoke-RefreshFailureFixtureMutation {
   param(
     [Parameter(Mandatory)][string]$DatabasePath,
-    [Parameter(Mandatory)][int]$CdCvm
+    [Parameter(Mandatory)][int]$SentinelCdCvm,
+    [Parameter(Mandatory)][string]$RepoRoot
   )
   $resolvedDatabase = [IO.Path]::GetFullPath($DatabasePath)
+  $resolvedRepoRoot = Resolve-ApprovedPath -Path $RepoRoot
   $programPath = Join-Path $taskRoot 'refresh-failure-mutation.py'
   $stdout = Join-Path $taskRoot 'refresh-failure-mutation.stdout.log'
   $stderr = Join-Path $taskRoot 'refresh-failure-mutation.stderr.log'
   Assert-ExistingDescendant -Parent $refreshFailureRoot -Child $resolvedDatabase -Label 'Refresh-failure fixture database'
+  if (-not (Test-Path -LiteralPath $resolvedRepoRoot -PathType Container)) { throw "Repository root does not exist: $resolvedRepoRoot" }
   Assert-MutationTargets -Paths @($resolvedDatabase,$programPath,$stdout,$stderr)
   $pythonProgram = @'
+import json
+import pathlib
 import sqlite3
 import sys
 
-connection = sqlite3.connect(sys.argv[1])
+database_path = pathlib.Path(sys.argv[1]).resolve()
+sentinel_cd_cvm = int(sys.argv[2])
+repo_root = pathlib.Path(sys.argv[3]).resolve()
+sys.path.insert(0, str(repo_root))
+
+from src.companies.identity import CompanyIdentityResolver
+
+resolver_mapping = CompanyIdentityResolver(skip_db=True)._get_ticker_map().get(sentinel_cd_cvm)
+if resolver_mapping:
+    raise RuntimeError(
+        f"synthetic sentinel unexpectedly has resolver mapping: {sentinel_cd_cvm}"
+    )
+
+connection = sqlite3.connect(database_path)
 try:
+    existing = connection.execute(
+        "SELECT 1 FROM companies WHERE cd_cvm = ?",
+        (sentinel_cd_cvm,),
+    ).fetchone()
+    if existing is not None:
+        raise RuntimeError(
+            f"synthetic sentinel already exists in refresh fixture: {sentinel_cd_cvm}"
+        )
     connection.execute(
-        "UPDATE companies SET cnpj = NULL WHERE cd_cvm = ?",
-        (int(sys.argv[2]),),
+        """
+        INSERT INTO companies (
+            cd_cvm,
+            company_name,
+            cnpj,
+            ticker_b3,
+            updated_at
+        ) VALUES (?, ?, NULL, NULL, ?)
+        """,
+        (
+            sentinel_cd_cvm,
+            "CVMANALYTICS REFRESH FAILURE SENTINEL",
+            "1970-01-01T00:00:00Z",
+        ),
     )
     connection.execute(
         "DELETE FROM app_settings WHERE key = ?",
         ("metadata_last_successful_refresh",),
     )
     connection.commit()
+    inserted = connection.execute(
+        "SELECT cnpj, ticker_b3 FROM companies WHERE cd_cvm = ?",
+        (sentinel_cd_cvm,),
+    ).fetchone()
 finally:
     connection.close()
+
+print(json.dumps({
+    "sentinel_cd_cvm": sentinel_cd_cvm,
+    "precondition_sentinel_absent": True,
+    "resolver_mapping_present": False,
+    "resolver_cnpj": None,
+    "resolver_ticker": None,
+    "sentinel_inserted": inserted == (None, None),
+    "metadata_last_successful_refresh_cleared": True,
+}))
 '@
   [IO.File]::WriteAllText($programPath, $pythonProgram, [Text.UTF8Encoding]::new($false))
   $python = (Get-Command python -ErrorAction Stop).Source
@@ -956,7 +1013,8 @@ finally:
   $startInfo.RedirectStandardError = $true
   [void]$startInfo.ArgumentList.Add($programPath)
   [void]$startInfo.ArgumentList.Add($resolvedDatabase)
-  [void]$startInfo.ArgumentList.Add([string]$CdCvm)
+  [void]$startInfo.ArgumentList.Add([string]$SentinelCdCvm)
+  [void]$startInfo.ArgumentList.Add($resolvedRepoRoot)
   $p = [Diagnostics.Process]::Start($startInfo)
   $stdoutText = $p.StandardOutput.ReadToEnd()
   $stderrText = $p.StandardError.ReadToEnd()
@@ -969,17 +1027,41 @@ finally:
     $failure.Data['exit_code'] = $p.ExitCode
     $failure.Data['stdout'] = $stdout
     $failure.Data['stderr'] = $stderr
-    $failure.Data['details'] = @{ stage = 'refresh_failure_fixture_mutation'; program = $programPath; database = $resolvedDatabase }
+    $failure.Data['program'] = $programPath
+    $failure.Data['database'] = $resolvedDatabase
+    $failure.Data['details'] = @{ stage = 'refresh_failure_fixture_mutation'; program = $programPath; database = $resolvedDatabase; sentinel_cd_cvm = $SentinelCdCvm }
+    throw $failure
+  }
+  try {
+    $mutationState = $stdoutText | ConvertFrom-Json -ErrorAction Stop
+    if ([int]$mutationState.sentinel_cd_cvm -ne $SentinelCdCvm -or
+        -not $mutationState.precondition_sentinel_absent -or
+        $mutationState.resolver_mapping_present -or
+        -not $mutationState.sentinel_inserted -or
+        -not $mutationState.metadata_last_successful_refresh_cleared) {
+      throw 'Synthetic sentinel mutation evidence is incomplete'
+    }
+  } catch {
+    $failure = [System.Exception]::new("Could not parse refresh-failure sentinel mutation evidence: $($_.Exception.Message)")
+    $failure.Data['pid'] = $p.Id
+    $failure.Data['exit_code'] = $p.ExitCode
+    $failure.Data['stdout'] = $stdout
+    $failure.Data['stderr'] = $stderr
+    $failure.Data['program'] = $programPath
+    $failure.Data['database'] = $resolvedDatabase
+    $failure.Data['details'] = @{ stage = 'refresh_failure_fixture_mutation_parse'; program = $programPath; database = $resolvedDatabase; sentinel_cd_cvm = $SentinelCdCvm }
     throw $failure
   }
   return [ordered]@{
     status = 'pass'
     pid = $p.Id
     exit_code = $p.ExitCode
+    sentinel_cd_cvm = $SentinelCdCvm
     program = $programPath
     database = $resolvedDatabase
     stdout = $stdout
     stderr = $stderr
+    mutation_state = $mutationState
   }
 }
 
@@ -993,10 +1075,16 @@ function New-Fixture {
   $company = & python -c "import sqlite3,sys,json; c=sqlite3.connect(sys.argv[1]); r=c.execute('select cnpj from companies where cd_cvm=?',(int(sys.argv[2]),)).fetchone(); print(json.dumps({'exists':r is not None,'cnpj':None if r is None else r[0]})); c.close()" (Join-Path $fixtureRoot 'db\cvm_financials.db') $CdCvm | ConvertFrom-Json
   if (-not $company.exists) { throw "Representative company row is missing from fixture: $CdCvm" }
   Copy-Item -LiteralPath $fixtureRoot -Destination $refreshFailureRoot -Recurse -Force
-  $fixtureSql = @("UPDATE companies SET cnpj = NULL WHERE cd_cvm = ?", "DELETE FROM app_settings WHERE key = 'metadata_last_successful_refresh'")
+  $fixtureSql = [ordered]@{
+    sentinel_cd_cvm = $refreshFailureSentinelCdCvm
+    statements = @(
+      "INSERT INTO companies (cd_cvm, company_name, cnpj, ticker_b3, updated_at) VALUES (?, ?, NULL, NULL, ?)",
+      "DELETE FROM app_settings WHERE key = 'metadata_last_successful_refresh'"
+    )
+  }
   $fixtureSql | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $taskRoot 'refresh_failure_sql.json') -Encoding UTF8
-  $mutation = Invoke-RefreshFailureFixtureMutation -DatabasePath (Join-Path $refreshFailureRoot 'db\cvm_financials.db') -CdCvm $CdCvm
-  return [ordered]@{ status = 'pass'; pid = $mutation.pid; exit_code = $mutation.exit_code; refresh_failure_mutation = $mutation }
+  $mutation = Invoke-RefreshFailureFixtureMutation -DatabasePath (Join-Path $refreshFailureRoot 'db\cvm_financials.db') -SentinelCdCvm $refreshFailureSentinelCdCvm -RepoRoot $repoRoot
+  return [ordered]@{ status = 'pass'; pid = $mutation.pid; exit_code = $mutation.exit_code; sentinel_cd_cvm = $refreshFailureSentinelCdCvm; refresh_failure_mutation = $mutation }
 }
 
 function Test-InputContract {
@@ -1026,6 +1114,7 @@ $evidence = @{
   invocation_arguments = $harnessProvenance.invocation_arguments
   environment_allowlist = $harnessProvenance.environment_allowlist
   child_path_map = $harnessProvenance.child_path_map
+  refresh_failure_sentinel_cd_cvm = $refreshFailureSentinelCdCvm
   started_utc = $runStarted.ToString('o')
   status = 'running'
   primary_failure = $null

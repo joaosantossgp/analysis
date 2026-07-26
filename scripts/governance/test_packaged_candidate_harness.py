@@ -710,14 +710,31 @@ def test_refresh_failure_fixture_mutation_uses_exact_python_program_and_records_
     database = refresh_root / "db" / "cvm_financials.db"
     database.parent.mkdir(parents=True)
     with sqlite3.connect(database) as connection:
-        connection.execute("create table companies (cd_cvm integer primary key, cnpj text)")
-        connection.execute("create table app_settings (key text primary key, value text)")
-        connection.execute("insert into companies values (?, ?)", (9512, "33000167000101"))
+        connection.execute(
+            """
+            create table companies (
+                cd_cvm integer primary key,
+                company_name text not null,
+                cnpj text,
+                ticker_b3 text,
+                company_type text not null default 'comercial',
+                is_active integer not null default 1,
+                updated_at text not null
+            )
+            """
+        )
+        connection.execute(
+            "create table app_settings (key text primary key, value text not null, updated_at text not null)"
+        )
+        connection.execute(
+            "insert into companies (cd_cvm, company_name, cnpj, ticker_b3, updated_at) values (?, ?, ?, ?, ?)",
+            (9512, "PETROBRAS", "33000167000101", "PETR4", "2026-07-26T00:00:00Z"),
+        )
         connection.executemany(
-            "insert into app_settings values (?, ?)",
+            "insert into app_settings values (?, ?, ?)",
             (
-                ("metadata_last_successful_refresh", "1783525990"),
-                ("unrelated_setting", "keep-me"),
+                ("metadata_last_successful_refresh", "1783525990", "2026-07-26T00:00:00Z"),
+                ("unrelated_setting", "keep-me", "2026-07-26T00:00:00Z"),
             ),
         )
 
@@ -733,20 +750,45 @@ def test_refresh_failure_fixture_mutation_uses_exact_python_program_and_records_
         f"""
         $taskRoot = '{task_root.as_posix()}'
         $refreshFailureRoot = '{refresh_root.as_posix()}'
-        $evidence = Invoke-RefreshFailureFixtureMutation -DatabasePath '{database.as_posix()}' -CdCvm 9512
+        $repoRoot = '{ROOT.as_posix()}'
+        $evidence = Invoke-RefreshFailureFixtureMutation -DatabasePath '{database.as_posix()}' -SentinelCdCvm 999999 -RepoRoot $repoRoot
         if ($evidence.exit_code -ne 0 -or -not $evidence.pid) {{
           throw 'Refresh mutation child PID/exit evidence is incomplete'
+        }}
+        if ($evidence.sentinel_cd_cvm -ne 999999 -or
+            -not $evidence.mutation_state.precondition_sentinel_absent -or
+            $evidence.mutation_state.resolver_mapping_present -or
+            -not $evidence.mutation_state.sentinel_inserted) {{
+          throw 'Synthetic sentinel mutation provenance is incomplete'
         }}
         foreach ($artifact in @($evidence.program,$evidence.stdout,$evidence.stderr)) {{
           if (-not (Test-Path -LiteralPath $artifact)) {{ throw "Missing refresh mutation artifact: $artifact" }}
         }}
+        $preconditionThrew = $false
+        try {{
+          Invoke-RefreshFailureFixtureMutation -DatabasePath '{database.as_posix()}' -SentinelCdCvm 999999 -RepoRoot $repoRoot | Out-Null
+        }} catch {{
+          $preconditionThrew = $_.Exception.Data['exit_code'] -ne 0 -and $_.Exception.Data['details'].sentinel_cd_cvm -eq 999999
+        }}
+        if (-not $preconditionThrew) {{ throw 'Pre-existing synthetic sentinel was accepted' }}
         """,
     )
     assert result.returncode == 0, result.stderr
     with sqlite3.connect(database) as connection:
         assert connection.execute(
-            "select cnpj from companies where cd_cvm = ?", (9512,)
-        ).fetchone() == (None,)
+            "select company_name, cnpj, ticker_b3, company_type, is_active, updated_at from companies where cd_cvm = ?",
+            (999999,),
+        ).fetchone() == (
+            "CVMANALYTICS REFRESH FAILURE SENTINEL",
+            None,
+            None,
+            "comercial",
+            1,
+            "1970-01-01T00:00:00Z",
+        )
+        assert connection.execute(
+            "select cnpj, ticker_b3 from companies where cd_cvm = ?", (9512,)
+        ).fetchone() == ("33000167000101", "PETR4")
         assert connection.execute(
             "select value from app_settings where key = ?",
             ("metadata_last_successful_refresh",),
@@ -759,6 +801,7 @@ def test_refresh_failure_fixture_mutation_uses_exact_python_program_and_records_
         "function Test-InputContract", 1
     )[0]
     assert "Invoke-RefreshFailureFixtureMutation" in new_fixture
+    assert "-SentinelCdCvm $refreshFailureSentinelCdCvm" in new_fixture
     assert new_fixture.count("& python -c") == 1
     assert "select cnpj from companies" in new_fixture
 
@@ -777,7 +820,7 @@ def test_refresh_failure_state_probe_is_read_only_argument_safe_and_auditable(
         connection.execute("create table app_settings (key text primary key, value text)")
         connection.commit()
         connection.execute("pragma wal_checkpoint(truncate)")
-        connection.execute("insert into companies values (?, ?)", (9512, None))
+        connection.execute("insert into companies values (?, ?)", (999999, None))
         connection.execute(
             "insert into app_settings values (?, ?)", ("unrelated_setting", "keep-me")
         )
@@ -799,9 +842,12 @@ def test_refresh_failure_state_probe_is_read_only_argument_safe_and_auditable(
             $taskRoot = '{task_root.as_posix()}'
             $refreshFailureRoot = '{refresh_root.as_posix()}'
             $database = '{database.as_posix()}'
-            $probe = Invoke-RefreshFailureStateProbe -DatabasePath $database -CdCvm 9512
+            $probe = Invoke-RefreshFailureStateProbe -DatabasePath $database -SentinelCdCvm 999999
             if ($probe.exit_code -ne 0 -or -not $probe.pid -or -not $probe.state.exists) {{
               throw 'Refresh-failure state probe did not return live WAL-backed state'
+            }}
+            if ($probe.sentinel_cd_cvm -ne 999999 -or $probe.state.sentinel_cd_cvm -ne 999999) {{
+              throw 'Refresh-failure state probe did not record the synthetic sentinel ID'
             }}
             if ($null -ne $probe.state.cnpj -or $null -ne $probe.state.metadata_last_successful_refresh) {{
               throw 'Refresh-failure state probe returned the wrong fixture state'
@@ -822,7 +868,7 @@ def test_refresh_failure_state_probe_is_read_only_argument_safe_and_auditable(
             [IO.File]::WriteAllBytes($brokenDatabase, [byte[]]@())
             $nonzeroThrew = $false
             try {{
-              Invoke-RefreshFailureStateProbe -DatabasePath $brokenDatabase -CdCvm 9512 | Out-Null
+              Invoke-RefreshFailureStateProbe -DatabasePath $brokenDatabase -SentinelCdCvm 999999 | Out-Null
             }} catch {{
               $nonzeroThrew = $_.Exception.Data['exit_code'] -ne 0
               foreach ($name in @('pid','exit_code','program','database','stdout','stderr')) {{
@@ -842,6 +888,7 @@ def test_refresh_failure_state_probe_is_read_only_argument_safe_and_auditable(
                 -ExitCode 0 `
                 -ProgramPath $probe.program `
                 -DatabasePath $database `
+                -SentinelCdCvm 999999 `
                 -StdoutPath $stdout `
                 -StderrPath $stderr | Out-Null
             }} catch {{
@@ -865,6 +912,28 @@ def test_refresh_failure_state_probe_is_read_only_argument_safe_and_auditable(
     assert "Invoke-RefreshFailureStateProbe" in refresh_startup
     assert "post_probe = $postProbe" in refresh_startup
     assert "& python -c" not in refresh_startup
+
+
+def test_refresh_sentinel_preserves_main_ui_company_binding() -> None:
+    controller = CONTROLLER.read_text(encoding="utf-8")
+    assert re.search(r"\[int\]\$CdCvm\s*=\s*9512", controller)
+    assert "$refreshFailureSentinelCdCvm = 999999" in controller
+    wait_for_cdp = controller.split("function Wait-ForCdpBridge", 1)[1].split(
+        "function Invoke-PackagedUi", 1
+    )[0]
+    assert "'--cd-cvm', $CdCvm" in wait_for_cdp
+    new_fixture = controller.split("function New-Fixture", 1)[1].split(
+        "function Test-InputContract", 1
+    )[0]
+    assert "Representative company row is missing from fixture: $CdCvm" in new_fixture
+    assert "-SentinelCdCvm $refreshFailureSentinelCdCvm" in new_fixture
+    refresh_startup = controller.split("function Test-RefreshFailureStartup", 1)[1].split(
+        "function Test-WorkbookOpen", 1
+    )[0]
+    assert "-SentinelCdCvm $refreshFailureSentinelCdCvm" in refresh_startup
+    assert "$postProbe.state.cnpj -ne $null" in refresh_startup
+    assert "$postProbe.state.metadata_last_successful_refresh -ne $null" in refresh_startup
+    assert "Offline refresh failure unexpectedly persisted metadata_last_successful_refresh" in refresh_startup
 
 
 def test_summary_inventory_classifies_locked_artifact_without_losing_primary_failure(
