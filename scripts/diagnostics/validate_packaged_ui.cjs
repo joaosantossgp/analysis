@@ -185,6 +185,10 @@ async function main() {
     results.routes = routes;
     results.console_errors = consoleLogs.length;
     results.external_network_events = networkLogs.length;
+  } catch (error) {
+    results.status = "failed";
+    results.error = error.stack || error.message;
+    throw error;
   } finally {
     writeFailureArtifacts(args.outputDir, { consoleLogs, networkLogs, results });
     if (browser) await browser.close();

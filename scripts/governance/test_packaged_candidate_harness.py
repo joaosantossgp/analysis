@@ -138,3 +138,28 @@ def test_evidence_and_cleanup_contract_is_structured_and_fail_closed() -> None:
     assert "writeFailureArtifacts" in ui_harness
     assert "finally" in ui_harness
     assert "process.exitCode = 1" in ui_harness
+
+
+def test_failure_finalization_and_mutation_targets_are_fail_closed() -> None:
+    controller = CONTROLLER.read_text(encoding="utf-8")
+    ui_harness = UI_HARNESS.read_text(encoding="utf-8")
+    for token in (
+        "function Assert-MutationTargets",
+        "function Write-EvidenceSummary",
+        "function Invoke-RecordedStep",
+        "Get-Process -Name CVMAnalytics",
+        "source-after-manifest.json",
+        "primary_failure",
+        "finally {",
+        "CVMAnalytics\\update_rollback",
+        "CVM_ENERGY_HOURLY_HOT_COLD_MANIFEST",
+        "refresh-failure-before-manifest.json",
+        "refresh-failure-after-manifest.json",
+        "before-only",
+        "unexpected_fixture_database_change",
+        "old_executable_sha256",
+        "rollback_executable_sha256",
+    ):
+        assert token in controller
+    assert "results.status = \"failed\"" in ui_harness
+    assert "results.error" in ui_harness
