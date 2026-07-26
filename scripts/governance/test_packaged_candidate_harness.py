@@ -763,6 +763,110 @@ def test_refresh_failure_fixture_mutation_uses_exact_python_program_and_records_
     assert "select cnpj from companies" in new_fixture
 
 
+def test_refresh_failure_state_probe_is_read_only_argument_safe_and_auditable(
+    tmp_path: Path,
+) -> None:
+    task_root = tmp_path / "refresh failure probe"
+    refresh_root = task_root / "fixture refresh failure"
+    database = refresh_root / "db with spaces" / "cvm financials.db"
+    database.parent.mkdir(parents=True)
+    connection = sqlite3.connect(database)
+    try:
+        assert connection.execute("pragma journal_mode=wal").fetchone() == ("wal",)
+        connection.execute("create table companies (cd_cvm integer primary key, cnpj text)")
+        connection.execute("create table app_settings (key text primary key, value text)")
+        connection.commit()
+        connection.execute("pragma wal_checkpoint(truncate)")
+        connection.execute("insert into companies values (?, ?)", (9512, None))
+        connection.execute(
+            "insert into app_settings values (?, ?)", ("unrelated_setting", "keep-me")
+        )
+        connection.commit()
+        assert database.with_name(database.name + "-wal").is_file()
+        primary_before = database.read_bytes()
+
+        result = _run_powershell_probe(
+            tmp_path,
+            (
+                "Resolve-ApprovedPath",
+                "Assert-Descendant",
+                "Assert-MutationTargets",
+                "Assert-ExistingDescendant",
+                "Read-RefreshFailureStateProbeResult",
+                "Invoke-RefreshFailureStateProbe",
+            ),
+            f"""
+            $taskRoot = '{task_root.as_posix()}'
+            $refreshFailureRoot = '{refresh_root.as_posix()}'
+            $database = '{database.as_posix()}'
+            $probe = Invoke-RefreshFailureStateProbe -DatabasePath $database -CdCvm 9512
+            if ($probe.exit_code -ne 0 -or -not $probe.pid -or -not $probe.state.exists) {{
+              throw 'Refresh-failure state probe did not return live WAL-backed state'
+            }}
+            if ($null -ne $probe.state.cnpj -or $null -ne $probe.state.metadata_last_successful_refresh) {{
+              throw 'Refresh-failure state probe returned the wrong fixture state'
+            }}
+            foreach ($name in @('program','database','stdout','stderr')) {{
+              if (-not $probe[$name]) {{ throw "Missing successful child evidence: $name" }}
+            }}
+            foreach ($artifact in @($probe.program,$probe.stdout,$probe.stderr)) {{
+              if (-not (Test-Path -LiteralPath $artifact)) {{ throw "Missing probe artifact: $artifact" }}
+              Assert-Descendant -Parent $taskRoot -Child $artifact
+            }}
+            $programText = Get-Content -LiteralPath $probe.program -Raw
+            if ($programText -notmatch 'as_uri\\(\\)' -or $programText -notmatch 'mode=ro' -or $programText -match 'immutable=1') {{
+              throw 'Probe does not use a URI-safe read-only SQLite connection'
+            }}
+
+            $brokenDatabase = Join-Path $refreshFailureRoot 'db with spaces/broken.db'
+            [IO.File]::WriteAllBytes($brokenDatabase, [byte[]]@())
+            $nonzeroThrew = $false
+            try {{
+              Invoke-RefreshFailureStateProbe -DatabasePath $brokenDatabase -CdCvm 9512 | Out-Null
+            }} catch {{
+              $nonzeroThrew = $_.Exception.Data['exit_code'] -ne 0
+              foreach ($name in @('pid','exit_code','program','database','stdout','stderr')) {{
+                if ($null -eq $_.Exception.Data[$name]) {{ throw "Nonzero failure lacks child evidence: $name" }}
+              }}
+            }}
+            if (-not $nonzeroThrew) {{ throw 'Nonzero state-probe child was accepted' }}
+
+            $stdout = Join-Path $taskRoot 'refresh-failure-state-probe.stdout.log'
+            $stderr = Join-Path $taskRoot 'refresh-failure-state-probe.stderr.log'
+            [IO.File]::WriteAllText($stdout, '{{not-json')
+            [IO.File]::WriteAllText($stderr, '')
+            $malformedThrew = $false
+            try {{
+              Read-RefreshFailureStateProbeResult `
+                -ChildPid 777 `
+                -ExitCode 0 `
+                -ProgramPath $probe.program `
+                -DatabasePath $database `
+                -StdoutPath $stdout `
+                -StderrPath $stderr | Out-Null
+            }} catch {{
+              $malformedThrew = $_.Exception.Message -match 'JSON'
+              foreach ($name in @('pid','exit_code','program','database','stdout','stderr')) {{
+                if ($null -eq $_.Exception.Data[$name]) {{ throw "Malformed JSON failure lacks child evidence: $name" }}
+              }}
+            }}
+            if (-not $malformedThrew) {{ throw 'Malformed state-probe JSON was accepted' }}
+            """,
+        )
+        assert result.returncode == 0, result.stderr
+        assert database.read_bytes() == primary_before
+    finally:
+        connection.close()
+
+    controller = CONTROLLER.read_text(encoding="utf-8")
+    refresh_startup = controller.split("function Test-RefreshFailureStartup", 1)[1].split(
+        "function Test-WorkbookOpen", 1
+    )[0]
+    assert "Invoke-RefreshFailureStateProbe" in refresh_startup
+    assert "post_probe = $postProbe" in refresh_startup
+    assert "& python -c" not in refresh_startup
+
+
 def test_summary_inventory_classifies_locked_artifact_without_losing_primary_failure(
     tmp_path: Path,
 ) -> None:

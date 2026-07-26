@@ -110,7 +110,7 @@ function Assert-NoReparseTree {
 function Prepare-RunAttempt {
   Assert-NoReparseTree -Root $taskRoot
   $attemptRoot = Join-Path $taskRoot ('attempts\' + [DateTime]::UtcNow.Ticks + '-' + [guid]::NewGuid().ToString('N'))
-  $knownOutputs = @('CVMAnalytics-current-head.zip','fixture','fixture-refresh-failure','updater','ui','refresh-failure-ui','localappdata-diagnostic','localappdata-ui','localappdata-refresh-failure','source-before-manifest.json','source-after-manifest.json','fixture-before-manifest.json','fixture-after-manifest.json','refresh-failure-before-manifest.json','refresh-failure-after-manifest.json','refresh_failure_sql.json','refresh-failure-mutation.py','refresh-failure-mutation.stdout.log','refresh-failure-mutation.stderr.log','evidence-summary.json','evidence-summary-fallback.json','canonical-runtime-lock.json','diagnostic.stdout.log','diagnostic.stderr.log')
+  $knownOutputs = @('CVMAnalytics-current-head.zip','fixture','fixture-refresh-failure','updater','ui','refresh-failure-ui','localappdata-diagnostic','localappdata-ui','localappdata-refresh-failure','source-before-manifest.json','source-after-manifest.json','fixture-before-manifest.json','fixture-after-manifest.json','refresh-failure-before-manifest.json','refresh-failure-after-manifest.json','refresh_failure_sql.json','refresh-failure-mutation.py','refresh-failure-mutation.stdout.log','refresh-failure-mutation.stderr.log','refresh-failure-state-probe.py','refresh-failure-state-probe.stdout.log','refresh-failure-state-probe.stderr.log','evidence-summary.json','evidence-summary-fallback.json','canonical-runtime-lock.json','diagnostic.stdout.log','diagnostic.stderr.log')
   foreach ($name in $knownOutputs) {
     $source = Join-Path $taskRoot $name
     if (Test-Path -LiteralPath $source) {
@@ -537,6 +537,111 @@ function Invoke-PackagedUi {
   return $result
 }
 
+function Read-RefreshFailureStateProbeResult {
+  param(
+    [Parameter(Mandatory)][int]$ChildPid,
+    [Parameter(Mandatory)][int]$ExitCode,
+    [Parameter(Mandatory)][string]$ProgramPath,
+    [Parameter(Mandatory)][string]$DatabasePath,
+    [Parameter(Mandatory)][string]$StdoutPath,
+    [Parameter(Mandatory)][string]$StderrPath
+  )
+  $resolvedProgram = [IO.Path]::GetFullPath($ProgramPath)
+  $resolvedDatabase = [IO.Path]::GetFullPath($DatabasePath)
+  $resolvedStdout = [IO.Path]::GetFullPath($StdoutPath)
+  $resolvedStderr = [IO.Path]::GetFullPath($StderrPath)
+  Assert-ExistingDescendant -Parent $refreshFailureRoot -Child $resolvedDatabase -Label 'Refresh-failure state database'
+  foreach ($artifact in @($resolvedProgram,$resolvedStdout,$resolvedStderr)) {
+    Assert-ExistingDescendant -Parent $taskRoot -Child $artifact -Label 'Refresh-failure state-probe artifact'
+  }
+  $evidence = [ordered]@{
+    pid = $ChildPid
+    exit_code = $ExitCode
+    program = $resolvedProgram
+    database = $resolvedDatabase
+    stdout = $resolvedStdout
+    stderr = $resolvedStderr
+  }
+  if ($ExitCode -ne 0) {
+    $failure = [System.Exception]::new("Could not inspect refresh-failure fixture (exit $ExitCode)")
+    foreach ($key in $evidence.Keys) { $failure.Data[$key] = $evidence[$key] }
+    $failure.Data['details'] = [ordered]@{ stage = 'refresh_failure_state_probe'; program = $resolvedProgram; database = $resolvedDatabase }
+    throw $failure
+  }
+  try {
+    $state = Get-Content -LiteralPath $resolvedStdout -Raw | ConvertFrom-Json -ErrorAction Stop
+    $stateProperties = @($state.PSObject.Properties.Name)
+    foreach ($required in @('exists','cnpj','metadata_last_successful_refresh')) {
+      if ($required -notin $stateProperties) { throw "JSON state is missing property: $required" }
+    }
+  } catch {
+    $failure = [System.Exception]::new("Refresh-failure state probe returned invalid JSON: $($_.Exception.Message)")
+    foreach ($key in $evidence.Keys) { $failure.Data[$key] = $evidence[$key] }
+    $failure.Data['details'] = [ordered]@{ stage = 'refresh_failure_state_probe_parse'; program = $resolvedProgram; database = $resolvedDatabase }
+    throw $failure
+  }
+  $evidence.status = 'pass'
+  $evidence.state = $state
+  return $evidence
+}
+
+function Invoke-RefreshFailureStateProbe {
+  param(
+    [Parameter(Mandatory)][string]$DatabasePath,
+    [Parameter(Mandatory)][int]$CdCvm
+  )
+  $resolvedDatabase = [IO.Path]::GetFullPath($DatabasePath)
+  $programPath = Join-Path $taskRoot 'refresh-failure-state-probe.py'
+  $stdout = Join-Path $taskRoot 'refresh-failure-state-probe.stdout.log'
+  $stderr = Join-Path $taskRoot 'refresh-failure-state-probe.stderr.log'
+  Assert-ExistingDescendant -Parent $refreshFailureRoot -Child $resolvedDatabase -Label 'Refresh-failure state database'
+  Assert-MutationTargets -Paths @($programPath,$stdout,$stderr)
+  $pythonProgram = @'
+import json
+import pathlib
+import sqlite3
+import sys
+
+database_uri = pathlib.Path(sys.argv[1]).resolve().as_uri() + "?mode=ro"
+connection = sqlite3.connect(database_uri, uri=True)
+try:
+    company = connection.execute(
+        "SELECT cnpj FROM companies WHERE cd_cvm = ?",
+        (int(sys.argv[2]),),
+    ).fetchone()
+    refresh = connection.execute(
+        "SELECT value FROM app_settings WHERE key = ?",
+        ("metadata_last_successful_refresh",),
+    ).fetchone()
+finally:
+    connection.close()
+
+print(json.dumps({
+    "exists": company is not None,
+    "cnpj": None if company is None else company[0],
+    "metadata_last_successful_refresh": None if refresh is None else refresh[0],
+}))
+'@
+  [IO.File]::WriteAllText($programPath, $pythonProgram, [Text.UTF8Encoding]::new($false))
+  $python = (Get-Command python -ErrorAction Stop).Source
+  $startInfo = [Diagnostics.ProcessStartInfo]::new()
+  $startInfo.FileName = $python
+  $startInfo.UseShellExecute = $false
+  $startInfo.CreateNoWindow = $true
+  $startInfo.RedirectStandardOutput = $true
+  $startInfo.RedirectStandardError = $true
+  [void]$startInfo.ArgumentList.Add($programPath)
+  [void]$startInfo.ArgumentList.Add($resolvedDatabase)
+  [void]$startInfo.ArgumentList.Add([string]$CdCvm)
+  $probeProcess = [Diagnostics.Process]::Start($startInfo)
+  $stdoutText = $probeProcess.StandardOutput.ReadToEnd()
+  $stderrText = $probeProcess.StandardError.ReadToEnd()
+  $probeProcess.WaitForExit()
+  [IO.File]::WriteAllText($stdout, $stdoutText, [Text.UTF8Encoding]::new($false))
+  [IO.File]::WriteAllText($stderr, $stderrText, [Text.UTF8Encoding]::new($false))
+  return Read-RefreshFailureStateProbeResult -ChildPid $probeProcess.Id -ExitCode $probeProcess.ExitCode -ProgramPath $programPath -DatabasePath $resolvedDatabase -StdoutPath $stdout -StderrPath $stderr
+}
+
 function Test-RefreshFailureStartup {
   param([Parameter(Mandatory)][hashtable]$ExpectedIdentity)
   Assert-Descendant -Parent $taskRoot -Child $refreshFailureRoot
@@ -550,18 +655,23 @@ function Test-RefreshFailureStartup {
   $nodeChild = $null
   $cleanup = $null
   $postProbeExitCode = $null
+  $postProbe = $null
   $result = $null
   try {
     $nodeChild = Wait-ForCdpBridge -Process $p -OutputDir (Join-Path $taskRoot 'refresh-failure-ui') -ProcessStartMs $processStartMs -ExpectedIdentity $ExpectedIdentity -ReadinessOnly
     Start-Sleep -Seconds 13
     if ($p.HasExited) { throw "Refresh-failure candidate exited early: $($p.ExitCode)" }
-    $state = & python -c "import sqlite3,sys,json; c=sqlite3.connect(sys.argv[1]); row=c.execute('select cnpj from companies where cd_cvm=?',(int(sys.argv[2]),)).fetchone(); refresh=c.execute(\"select value from app_settings where key='metadata_last_successful_refresh'\").fetchone(); print(json.dumps({'exists':row is not None,'cnpj':None if row is None else row[0],'metadata_last_successful_refresh':None if refresh is None else refresh[0]})); c.close()" (Join-Path $refreshFailureRoot 'db\cvm_financials.db') $CdCvm
-    $postProbeExitCode = $LASTEXITCODE
-    if ($postProbeExitCode -ne 0) { throw 'Could not inspect refresh-failure fixture' }
-    if (-not (($state | ConvertFrom-Json).exists)) { throw 'Representative company row disappeared during refresh-failure observation' }
-    if ((($state | ConvertFrom-Json).cnpj) -ne $null) { throw 'Offline refresh failure unexpectedly restored the fixture CNPJ' }
-    if ((($state | ConvertFrom-Json).metadata_last_successful_refresh) -ne $null) { throw 'Offline refresh failure unexpectedly persisted metadata_last_successful_refresh' }
-    $result = [ordered]@{ status = 'pass'; pid = $p.Id; node_child = $nodeChild; stayed_alive_after_seconds = 13; state = ($state | ConvertFrom-Json); started_utc = $started.ToString('o'); duration_ms = 0 }
+    try {
+      $postProbe = Invoke-RefreshFailureStateProbe -DatabasePath (Join-Path $refreshFailureRoot 'db\cvm_financials.db') -CdCvm $CdCvm
+      $postProbeExitCode = $postProbe.exit_code
+    } catch {
+      $postProbeExitCode = $_.Exception.Data['exit_code']
+      throw
+    }
+    if (-not $postProbe.state.exists) { throw 'Representative company row disappeared during refresh-failure observation' }
+    if ($postProbe.state.cnpj -ne $null) { throw 'Offline refresh failure unexpectedly restored the fixture CNPJ' }
+    if ($postProbe.state.metadata_last_successful_refresh -ne $null) { throw 'Offline refresh failure unexpectedly persisted metadata_last_successful_refresh' }
+    $result = [ordered]@{ status = 'pass'; pid = $p.Id; node_child = $nodeChild; post_probe = $postProbe; stayed_alive_after_seconds = 13; state = $postProbe.state; started_utc = $started.ToString('o'); duration_ms = 0 }
   } catch {
     $bodyFailure = $_
     Set-ExceptionProcessData -ErrorRecord $bodyFailure -Process $p -ChildResult $nodeChild -Details @{ stage = 'refresh_failure_post_probe'; candidate_pid = $p.Id; post_probe_exit_code = $postProbeExitCode }
