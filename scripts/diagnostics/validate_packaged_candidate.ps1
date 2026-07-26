@@ -553,6 +553,87 @@ function Test-WorkbookOpen {
   }
 }
 
+function Compile-UpdaterStub {
+  param(
+    [Parameter(Mandatory)][ValidatePattern('^[A-Za-z_][A-Za-z0-9_]*$')][string]$ClassName,
+    [Parameter(Mandatory)][ValidateSet('old','staged')][string]$Marker,
+    [Parameter(Mandatory)][string]$OutputPath
+  )
+  $expectedClassName = if ($Marker -eq 'old') { 'OldProgram' } else { 'StagedProgram' }
+  if ($ClassName -cne $expectedClassName) { throw "Updater stub class does not match its controlled marker: $ClassName/$Marker" }
+  $resolvedOutput = [IO.Path]::GetFullPath($OutputPath)
+  if ((Split-Path -Leaf $resolvedOutput) -cne 'CVMAnalytics.exe') { throw "Updater stub output must be named CVMAnalytics.exe: $resolvedOutput" }
+  $compileRoot = Join-Path $taskRoot "updater\compile\$Marker"
+  $sourcePath = Join-Path $compileRoot 'stub.cs'
+  $stdout = Join-Path $compileRoot 'compile.stdout.log'
+  $stderr = Join-Path $compileRoot 'compile.stderr.log'
+  Assert-MutationTargets -Paths @($compileRoot,(Split-Path -Parent $resolvedOutput),$sourcePath,$resolvedOutput,$stdout,$stderr)
+  New-Item -ItemType Directory -Force -Path $compileRoot,(Split-Path -Parent $resolvedOutput) | Out-Null
+  $source = @'
+using System;
+using System.IO;
+public static class {0}
+{{
+    [STAThread]
+    public static void Main()
+    {{
+        File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "relaunch.marker"), "{1}");
+    }}
+}}
+'@ -f $ClassName,$Marker
+  [IO.File]::WriteAllText($sourcePath, $source, [Text.UTF8Encoding]::new($false))
+  $escapedSourcePath = $sourcePath.Replace("'","''")
+  $escapedOutputPath = $resolvedOutput.Replace("'","''")
+  $compileCommand = "`$ErrorActionPreference = 'Stop'`nAdd-Type -Path '$escapedSourcePath' -OutputAssembly '$escapedOutputPath' -OutputType ConsoleApplication"
+  $encodedCommand = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($compileCommand))
+  $windowsPowerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+  if (-not (Test-Path -LiteralPath $windowsPowerShell)) { throw "Built-in Windows PowerShell is unavailable: $windowsPowerShell" }
+  $p = Start-Process $windowsPowerShell -ArgumentList @('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-EncodedCommand',$encodedCommand) -PassThru -Wait -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+  if ($p.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $resolvedOutput)) {
+    $failure = [System.Exception]::new("Updater stub compilation failed for $Marker (exit $($p.ExitCode))")
+    $failure.Data['pid'] = $p.Id
+    $failure.Data['exit_code'] = $p.ExitCode
+    $failure.Data['stdout'] = $stdout
+    $failure.Data['stderr'] = $stderr
+    $failure.Data['details'] = @{ stage = 'compile_updater_stub'; class_name = $ClassName; marker = $Marker; source = $sourcePath; output = $resolvedOutput }
+    throw $failure
+  }
+  return [ordered]@{
+    class_name = $ClassName
+    marker = $Marker
+    source = $sourcePath
+    output = $resolvedOutput
+    stdout = $stdout
+    stderr = $stderr
+    pid = $p.Id
+    exit_code = $p.ExitCode
+    sha256 = (Get-FileHash -LiteralPath $resolvedOutput -Algorithm SHA256).Hash
+  }
+}
+
+function Test-UpdaterExecutableSwap {
+  param(
+    [Parameter(Mandatory)][ValidatePattern('^[0-9A-Fa-f]{64}$')][string]$ExpectedStagedSha256,
+    [Parameter(Mandatory)][string]$CurrentExecutable,
+    [Parameter(Mandatory)][string]$RelaunchMarker
+  )
+  $resolvedCurrent = [IO.Path]::GetFullPath($CurrentExecutable)
+  $resolvedMarker = [IO.Path]::GetFullPath($RelaunchMarker)
+  Assert-ExistingDescendant -Parent $taskRoot -Child $resolvedCurrent -Label 'Post-swap current executable'
+  Assert-ExistingDescendant -Parent $taskRoot -Child $resolvedMarker -Label 'Updater relaunch marker'
+  $currentSha256 = (Get-FileHash -LiteralPath $resolvedCurrent -Algorithm SHA256).Hash
+  if (-not $currentSha256.Equals($ExpectedStagedSha256, [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'Updater did not replace the current executable with the staged executable'
+  }
+  $marker = [IO.File]::ReadAllText($resolvedMarker)
+  if ($marker -cne 'staged') { throw "Updater relaunched the wrong executable marker: $marker" }
+  return [ordered]@{
+    expected_staged_sha256 = $ExpectedStagedSha256
+    current_executable_sha256 = $currentSha256
+    relaunch_marker = $marker
+  }
+}
+
 function Invoke-ScratchUpdaterTest {
   $started = [DateTime]::UtcNow
   $protected = @('data','output','logs','cache','tmp','backup','versions','update_rollback')
@@ -560,16 +641,11 @@ function Invoke-ScratchUpdaterTest {
   Assert-MutationTargets -Paths @($staged, $current, $updaterLocalAppData, (Join-Path $staged 'CVMAnalytics.exe'), (Join-Path $current 'CVMAnalytics.exe'), (Join-Path $staged '_internal'), (Join-Path $current '_internal'), (Join-Path $updaterLocalAppData 'CVMAnalytics'), $rollbackRoot)
   foreach ($name in $protected) { Assert-MutationTargets -Paths @((Join-Path $current $name), (Join-Path $current "$name\sentinel.txt")) }
   foreach ($root in @($staged, $current)) { New-Item -ItemType Directory -Force -Path (Join-Path $root '_internal') | Out-Null }
-  $sourceTemplate = @'
-using System;
-using System.IO;
-public static class {0} {{ [STAThread] public static void Main() {{ File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "relaunch.marker"), "{1}"); }} }}
-'@
-  Add-Type -TypeDefinition ($sourceTemplate -f 'OldProgram','old') -OutputAssembly (Join-Path $current 'CVMAnalytics.exe') -OutputType ConsoleApplication
-  Add-Type -TypeDefinition ($sourceTemplate -f 'StagedProgram','staged') -OutputAssembly (Join-Path $staged 'CVMAnalytics.exe') -OutputType ConsoleApplication
+  $oldCompile = Compile-UpdaterStub -ClassName 'OldProgram' -Marker 'old' -OutputPath (Join-Path $current 'CVMAnalytics.exe')
+  $stagedCompile = Compile-UpdaterStub -ClassName 'StagedProgram' -Marker 'staged' -OutputPath (Join-Path $staged 'CVMAnalytics.exe')
   Set-Content -LiteralPath (Join-Path $current '_internal\version.txt') -Value 'old'
   Set-Content -LiteralPath (Join-Path $staged '_internal\version.txt') -Value 'staged'
-  $oldExecutableSha256 = (Get-FileHash (Join-Path $current 'CVMAnalytics.exe') -Algorithm SHA256).Hash
+  $oldExecutableSha256 = $oldCompile.sha256
   $oldInternalSha256 = (Get-FileHash (Join-Path $current '_internal\version.txt') -Algorithm SHA256).Hash
   foreach ($name in $protected) { New-Item -ItemType Directory -Force -Path (Join-Path $current $name) | Out-Null; Set-Content -LiteralPath (Join-Path $current "$name\sentinel.txt") -Value $name }
   $before = @{}; foreach ($name in $protected) { $before[$name] = (Get-FileHash (Join-Path $current "$name\sentinel.txt") -Algorithm SHA256).Hash }
@@ -578,10 +654,12 @@ public static class {0} {{ [STAThread] public static void Main() {{ File.WriteAl
   $stdout = Join-Path $taskRoot 'updater\controller.stdout.log'
   $stderr = Join-Path $taskRoot 'updater\controller.stderr.log'
   Assert-MutationTargets -Paths @($stdout,$stderr)
+  $stagedExecutableSha256 = (Get-FileHash -LiteralPath (Join-Path $staged 'CVMAnalytics.exe') -Algorithm SHA256).Hash
+  if (-not $stagedExecutableSha256.Equals($stagedCompile.sha256, [StringComparison]::OrdinalIgnoreCase)) { throw 'Staged executable changed after compilation and before updater invocation' }
   $p = Start-Process powershell.exe -ArgumentList @('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$helper,'-New',$staged,'-Current',$current) -Environment $helperEnv -PassThru -Wait -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr
   try {
     if ($p.ExitCode -ne 0) { throw "Updater helper failed: $($p.ExitCode)" }
-    if (-not (Test-Path -LiteralPath (Join-Path $current 'relaunch.marker'))) { throw 'Updater did not relaunch the staged executable' }
+    $swapEvidence = Test-UpdaterExecutableSwap -ExpectedStagedSha256 $stagedExecutableSha256 -CurrentExecutable (Join-Path $current 'CVMAnalytics.exe') -RelaunchMarker (Join-Path $current 'relaunch.marker')
     if ((Get-Content -LiteralPath (Join-Path $current '_internal\version.txt') -Raw).Trim() -ne 'staged') { throw 'Updater did not copy staged _internal files' }
     Assert-Descendant -Parent $taskRoot -Child $rollbackRoot
     $rollback = Get-ChildItem -LiteralPath $rollbackRoot -Directory -ErrorAction SilentlyContinue | Where-Object { (Test-Path -LiteralPath (Join-Path $_.FullName 'CVMAnalytics.exe')) -and (Test-Path -LiteralPath (Join-Path $_.FullName '_internal\version.txt')) } | Select-Object -First 1
@@ -594,7 +672,7 @@ public static class {0} {{ [STAThread] public static void Main() {{ File.WriteAl
     $helperLog = Join-Path $updaterLocalAppData 'CVMAnalytics\update_error.log'
     if (-not (Test-Path -LiteralPath $helperLog) -or (Get-Content -LiteralPath $helperLog -Raw) -notmatch 'relaunch issued OK') { throw 'Updater helper did not record a successful relaunch' }
     foreach ($name in $protected) { if ($before[$name] -ne (Get-FileHash (Join-Path $current "$name\sentinel.txt") -Algorithm SHA256).Hash) { throw "Updater changed protected directory: $name" } }
-    return [ordered]@{ status = 'pass'; started_utc = $started.ToString('o'); duration_ms = [int]([DateTime]::UtcNow - $started).TotalMilliseconds; pid = $p.Id; exit_code = $p.ExitCode; stdout = $stdout; stderr = $stderr; protected_directories = $protected; rollback_path = $rollback.FullName; old_executable_sha256 = $oldExecutableSha256; rollback_executable_sha256 = $rollbackExecutableSha256; old_internal_sha256 = $oldInternalSha256; rollback_internal_sha256 = $rollbackInternalSha256 }
+    return [ordered]@{ status = 'pass'; started_utc = $started.ToString('o'); duration_ms = [int]([DateTime]::UtcNow - $started).TotalMilliseconds; pid = $p.Id; exit_code = $p.ExitCode; stdout = $stdout; stderr = $stderr; old_compile = $oldCompile; staged_compile = $stagedCompile; staged_executable_sha256 = $stagedExecutableSha256; current_executable_sha256 = $swapEvidence.current_executable_sha256; relaunch_marker = $swapEvidence.relaunch_marker; protected_directories = $protected; rollback_path = $rollback.FullName; old_executable_sha256 = $oldExecutableSha256; rollback_executable_sha256 = $rollbackExecutableSha256; old_internal_sha256 = $oldInternalSha256; rollback_internal_sha256 = $rollbackInternalSha256 }
   } catch {
     Set-ExceptionProcessData -ErrorRecord $_ -Process $p -Stdout $stdout -Stderr $stderr -Details @{ stage = 'updater' }
     throw

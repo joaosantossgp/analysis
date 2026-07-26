@@ -544,6 +544,118 @@ def test_failure_producers_and_summary_timing_are_structurally_bound() -> None:
     assert provisional_write < pass_status < duration < final_write
 
 
+def test_updater_stub_compiler_runs_in_windows_powershell_child(tmp_path: Path) -> None:
+    task_root = (tmp_path / "compile-stubs").as_posix().replace("'", "''")
+    result = _run_powershell_probe(
+        tmp_path,
+        (
+            "Resolve-ApprovedPath",
+            "Assert-Descendant",
+            "Assert-MutationTargets",
+            "Compile-UpdaterStub",
+        ),
+        f"""
+        $taskRoot = '{task_root}'
+        New-Item -ItemType Directory -Force -Path $taskRoot | Out-Null
+        $oldPath = Join-Path $taskRoot 'old/CVMAnalytics.exe'
+        $stagedPath = Join-Path $taskRoot 'staged/CVMAnalytics.exe'
+        $oldCompile = Compile-UpdaterStub -ClassName 'OldProgram' -Marker 'old' -OutputPath $oldPath
+        $stagedCompile = Compile-UpdaterStub -ClassName 'StagedProgram' -Marker 'staged' -OutputPath $stagedPath
+        foreach ($compile in @($oldCompile,$stagedCompile)) {{
+          if ($compile.exit_code -ne 0 -or -not $compile.pid -or -not (Test-Path -LiteralPath $compile.source)) {{
+            throw 'Stub compile evidence is incomplete'
+          }}
+          foreach ($artifact in @($compile.output,$compile.stdout,$compile.stderr)) {{
+            if (-not (Test-Path -LiteralPath $artifact)) {{ throw "Missing compile artifact: $artifact" }}
+          }}
+        }}
+        if ($oldCompile.sha256 -eq $stagedCompile.sha256) {{ throw 'Old and staged stub executables are not distinct' }}
+        foreach ($case in @(@{{ path = $oldPath; marker = 'old' }}, @{{ path = $stagedPath; marker = 'staged' }})) {{
+          & $case.path
+          if ($LASTEXITCODE -ne 0) {{ throw "Compiled stub failed: $($case.path)" }}
+          $markerPath = Join-Path (Split-Path -Parent $case.path) 'relaunch.marker'
+          if ((Get-Content -LiteralPath $markerPath -Raw).Trim() -cne $case.marker) {{
+            throw "Compiled stub wrote the wrong marker: $($case.path)"
+          }}
+        }}
+        """,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_updater_executable_swap_verifier_rejects_old_executable_and_marker(tmp_path: Path) -> None:
+    task_root = (tmp_path / "swap-verifier").as_posix().replace("'", "''")
+    result = _run_powershell_probe(
+        tmp_path,
+        (
+            "Resolve-ApprovedPath",
+            "Assert-Descendant",
+            "Assert-ExistingDescendant",
+            "Test-UpdaterExecutableSwap",
+        ),
+        f"""
+        $taskRoot = '{task_root}'
+        $staged = Join-Path $taskRoot 'staged.exe'
+        $current = Join-Path $taskRoot 'current.exe'
+        $marker = Join-Path $taskRoot 'relaunch.marker'
+        New-Item -ItemType Directory -Force -Path $taskRoot | Out-Null
+        Set-Content -LiteralPath $staged -Value 'staged executable'
+        Set-Content -LiteralPath $current -Value 'old executable'
+        [IO.File]::WriteAllText($marker, 'old')
+        $expected = (Get-FileHash -LiteralPath $staged -Algorithm SHA256).Hash
+        $threw = $false
+        try {{
+          Test-UpdaterExecutableSwap -ExpectedStagedSha256 $expected -CurrentExecutable $current -RelaunchMarker $marker | Out-Null
+        }} catch {{ $threw = $true }}
+        if (-not $threw) {{ throw 'Verifier accepted the old executable and old relaunch marker' }}
+
+        Copy-Item -LiteralPath $staged -Destination $current -Force
+        [IO.File]::WriteAllText($marker, 'old')
+        $threw = $false
+        try {{
+          Test-UpdaterExecutableSwap -ExpectedStagedSha256 $expected -CurrentExecutable $current -RelaunchMarker $marker | Out-Null
+        }} catch {{ $threw = $true }}
+        if (-not $threw) {{ throw 'Verifier accepted the old relaunch marker with the staged executable' }}
+
+        Set-Content -LiteralPath $current -Value 'old executable'
+        [IO.File]::WriteAllText($marker, 'staged')
+        $threw = $false
+        try {{
+          Test-UpdaterExecutableSwap -ExpectedStagedSha256 $expected -CurrentExecutable $current -RelaunchMarker $marker | Out-Null
+        }} catch {{ $threw = $true }}
+        if (-not $threw) {{ throw 'Verifier accepted the old executable with the staged relaunch marker' }}
+
+        Copy-Item -LiteralPath $staged -Destination $current -Force
+        [IO.File]::WriteAllText($marker, 'staged')
+        $verified = Test-UpdaterExecutableSwap -ExpectedStagedSha256 $expected -CurrentExecutable $current -RelaunchMarker $marker
+        if ($verified.current_executable_sha256 -ne $expected -or $verified.relaunch_marker -cne 'staged') {{
+          throw 'Verifier did not return exact staged executable/marker evidence'
+        }}
+        """,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_updater_flow_statically_binds_compilation_and_exact_swap_verification() -> None:
+    controller = CONTROLLER.read_text(encoding="utf-8")
+    updater = controller.split("function Invoke-ScratchUpdaterTest", 1)[1].split(
+        "function Compare-PreservationManifest", 1
+    )[0]
+    first_compile = updater.index("Compile-UpdaterStub -ClassName 'OldProgram' -Marker 'old'")
+    second_compile = updater.index("Compile-UpdaterStub -ClassName 'StagedProgram' -Marker 'staged'")
+    staged_hash = updater.index("$stagedExecutableSha256 =")
+    helper_launch = updater.index("'-File',$helper,'-New',$staged,'-Current',$current")
+    exact_verification = updater.index("Test-UpdaterExecutableSwap")
+    assert first_compile < second_compile < staged_hash < helper_launch < exact_verification
+    assert "old_compile" in updater and "staged_compile" in updater
+    assert "current_executable_sha256" in updater and "relaunch_marker" in updater
+
+    compiler = controller.split("function Compile-UpdaterStub", 1)[1].split("function ", 1)[0]
+    assert "powershell.exe" in compiler
+    assert "-EncodedCommand" in compiler
+    assert "Assert-MutationTargets" in compiler
+
+
 def test_node_finalizer_close_failure_is_persisted_and_exits_nonzero(tmp_path: Path) -> None:
     output_dir = tmp_path / "node-close-failure"
     script = tmp_path / "node-close-failure-probe.cjs"
