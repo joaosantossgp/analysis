@@ -109,8 +109,8 @@ function Assert-NoReparseTree {
 
 function Prepare-RunAttempt {
   Assert-NoReparseTree -Root $taskRoot
-  $attemptRoot = Join-Path $taskRoot ('attempts\' + [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssZ'))
-  $knownOutputs = @('CVMAnalytics-current-head.zip','fixture','fixture-refresh-failure','updater','ui','refresh-failure-ui','localappdata-diagnostic','localappdata-ui','localappdata-refresh-failure','source-before-manifest.json','source-after-manifest.json','fixture-before-manifest.json','fixture-after-manifest.json','refresh-failure-before-manifest.json','refresh-failure-after-manifest.json','refresh_failure_sql.json','evidence-summary.json','evidence-summary-fallback.json','diagnostic.stdout.log','diagnostic.stderr.log')
+  $attemptRoot = Join-Path $taskRoot ('attempts\' + [DateTime]::UtcNow.Ticks + '-' + [guid]::NewGuid().ToString('N'))
+  $knownOutputs = @('CVMAnalytics-current-head.zip','fixture','fixture-refresh-failure','updater','ui','refresh-failure-ui','localappdata-diagnostic','localappdata-ui','localappdata-refresh-failure','source-before-manifest.json','source-after-manifest.json','fixture-before-manifest.json','fixture-after-manifest.json','refresh-failure-before-manifest.json','refresh-failure-after-manifest.json','refresh_failure_sql.json','evidence-summary.json','evidence-summary-fallback.json','canonical-runtime-lock.json','diagnostic.stdout.log','diagnostic.stderr.log')
   foreach ($name in $knownOutputs) {
     $source = Join-Path $taskRoot $name
     if (Test-Path -LiteralPath $source) {
@@ -121,7 +121,7 @@ function Prepare-RunAttempt {
     }
   }
   Assert-MutationTargets -Paths @($fixtureRoot,$refreshFailureRoot)
-  if (Test-Path -LiteralPath $fixtureRoot -or Test-Path -LiteralPath $refreshFailureRoot) { throw 'Fresh fixture roots could not be established for this attempt' }
+  if ((Test-Path -LiteralPath $fixtureRoot) -or (Test-Path -LiteralPath $refreshFailureRoot)) { throw 'Fresh fixture roots could not be established for this attempt' }
 }
 
 function Register-SecondaryFailure {
@@ -131,7 +131,7 @@ function Register-SecondaryFailure {
 }
 
 function Invoke-RecordedStep {
-  param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][scriptblock]$Action, [Parameter(Mandatory)][System.Collections.ArrayList]$Results)
+  param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][scriptblock]$Action, [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.ArrayList]$Results)
   $started = [DateTime]::UtcNow
   $bodyFailure = $null
   try {
@@ -427,14 +427,14 @@ function Classify-FixtureManifestChanges {
   $changes = @()
   foreach ($row in @($after)) {
     $prior = $beforeByPath[$row.path]
-    if (-not $prior -or $prior.sha256 -ne $row.sha256 -or $prior.length -ne $row.length) {
+    if (-not $prior -or $prior.status -ne $row.status -or $prior.sha256 -ne $row.sha256 -or $prior.length -ne $row.length) {
       $allowed = if ($Policy -eq 'main') { $row.path -like 'output/*' -or $row.path -like 'logs/*' -or $row.path -like 'cache/*' } else { $row.path -like 'logs/*' -or $row.path -like 'cache/*' } # refresh-failure only permits logs/cache
       $classification = if ($allowed) { 'expected_fixture_runtime_change' } elseif ($row.path -like 'db/*' -or $row.path -like 'metadata/*') { 'unexpected_fixture_database_change' } else { 'unexpected_fixture_change' }
       $changes += [ordered]@{ path = $row.path; classification = $classification; before = $prior; after = $row }
     }
   }
   foreach ($prior in @($before)) {
-    $materializedOptionalRoot = $prior.status -eq 'missing' -and ($prior.path -in @('output','logs','cache')) -and @($afterByPath.Keys | Where-Object { $_ -like "$($prior.path)/*" }).Count -gt 0
+    $materializedOptionalRoot = $prior.status -in @('missing','empty') -and ($prior.path -in @('output','logs','cache')) -and @($afterByPath.Keys | Where-Object { $_ -like "$($prior.path)/*" }).Count -gt 0
     if (-not $afterByPath.ContainsKey($prior.path) -and -not $materializedOptionalRoot) { $changes += [ordered]@{ path = $prior.path; classification = 'before-only'; before = $prior; after = $null } }
   }
   if ($changes | Where-Object { $_.classification -notlike 'expected_*' }) { throw 'Fixture changed outside the narrow output/log/cache allowance' }

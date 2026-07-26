@@ -208,11 +208,11 @@ async function main() {
     throw error;
   } finally {
     results.node_finalizer_errors = [];
-    try { writeFailureArtifacts(args.outputDir, { consoleLogs, networkLogs, results }); }
-    catch (error) { results.node_finalizer_errors.push({ stage: "writeFailureArtifacts", error: error.stack || error.message }); if (!primaryError) primaryError = error; }
     try { if (browser) await browser.close(); }
     catch (error) { results.node_finalizer_errors.push({ stage: "browser.close", error: error.stack || error.message }); if (!primaryError) primaryError = error; }
     if (primaryError && results.status !== "failed") { results.status = "failed"; results.error = primaryError.stack || primaryError.message; }
+    try { writeFailureArtifacts(args.outputDir, { consoleLogs, networkLogs, results }); }
+    catch (error) { results.node_finalizer_errors.push({ stage: "writeFailureArtifacts", error: error.stack || error.message }); if (!primaryError) primaryError = error; }
     if (primaryError && !caughtPrimaryError) throw primaryError;
   }
 }
