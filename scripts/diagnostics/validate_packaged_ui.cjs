@@ -88,6 +88,8 @@ async function main() {
   const pageErrors = [];
   const results = { bridge_results: {}, screenshots: [], status: "running" };
   let browser;
+  let primaryError;
+  let caughtPrimaryError = false;
 
   try {
     browser = await chromium.connectOverCDP(args.cdpUrl);
@@ -199,12 +201,19 @@ async function main() {
     results.console_errors = consoleLogs.length;
     results.external_network_events = networkLogs.length;
   } catch (error) {
+    primaryError = error;
+    caughtPrimaryError = true;
     results.status = "failed";
     results.error = error.stack || error.message;
     throw error;
   } finally {
-    writeFailureArtifacts(args.outputDir, { consoleLogs, networkLogs, results });
-    if (browser) await browser.close();
+    results.node_finalizer_errors = [];
+    try { writeFailureArtifacts(args.outputDir, { consoleLogs, networkLogs, results }); }
+    catch (error) { results.node_finalizer_errors.push({ stage: "writeFailureArtifacts", error: error.stack || error.message }); if (!primaryError) primaryError = error; }
+    try { if (browser) await browser.close(); }
+    catch (error) { results.node_finalizer_errors.push({ stage: "browser.close", error: error.stack || error.message }); if (!primaryError) primaryError = error; }
+    if (primaryError && results.status !== "failed") { results.status = "failed"; results.error = primaryError.stack || primaryError.message; }
+    if (primaryError && !caughtPrimaryError) throw primaryError;
   }
 }
 
