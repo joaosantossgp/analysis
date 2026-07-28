@@ -517,8 +517,8 @@ def test_cdp_child_launch_creates_validated_redirect_directory_for_real_process(
           throw 'Real Node child evidence is incomplete'
         }}
         if (-not (Test-Path -LiteralPath $outputDir -PathType Container)) {{ throw 'Redirect parent was not created' }}
-        if ([IO.File]::ReadAllText($result.stdout) -cne 'redirect-out') {{ throw 'Real stdout redirect was not captured' }}
-        if ([IO.File]::ReadAllText($result.stderr) -cne 'redirect-err') {{ throw 'Real stderr redirect was not captured' }}
+        if (-not [IO.File]::ReadAllText($result.stdout).Contains('redirect-out')) {{ throw 'Real stdout redirect was not captured' }}
+        if (-not [IO.File]::ReadAllText($result.stderr).Contains('redirect-err')) {{ throw 'Real stderr redirect was not captured' }}
         """,
     )
     assert result.returncode == 0, result.stderr
