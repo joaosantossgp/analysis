@@ -4,12 +4,56 @@ import { useQuery } from "@tanstack/react-query";
 import { IdentifierBadge } from "@/components/data/IdentifierBadge";
 import { fetchCompanyInfo, fetchCompanyConnections, type CompanyInfoResult, type CompanyConnectionsResult } from "@/lib/api/companyDetail";
 import { whenBridgeReady } from "@/lib/bridge/adapter";
+import type { CompanyInfo } from "@/lib/bridge/types";
 import { formatCNPJ } from "@/lib/format/cnpj";
 import { StateBanner } from "./feedback/StateBanner";
 
 export interface EntityHeaderProps {
   cdCvm: number;
   activeTab: "overview" | "statements" | "mapping";
+}
+
+type CompanyHeaderClassificationInput = Pick<
+  CompanyInfo,
+  | "gics_sector"
+  | "gics_industry_group"
+  | "gics_industry"
+  | "gics_sub_industry"
+  | "sector_name"
+  | "setor_cvm"
+>;
+
+export type CompanyHeaderClassificationBadge = {
+  label: "Sector" | "Industry Group";
+  value: string;
+  title?: string;
+};
+
+const MISSING_CLASSIFICATION = "—";
+
+export function getCompanyHeaderClassificationBadges(
+  info: CompanyHeaderClassificationInput,
+): CompanyHeaderClassificationBadge[] {
+  const cvmSector = cleanClassification(info.sector_name) || cleanClassification(info.setor_cvm);
+  const lowerGicsLevel =
+    cleanClassification(info.gics_industry) || cleanClassification(info.gics_sub_industry);
+  const industryGroup = cleanClassification(info.gics_industry_group);
+
+  return [
+    {
+      label: "Sector",
+      value: cleanClassification(info.gics_sector) || MISSING_CLASSIFICATION,
+      title: cvmSector ? `CVM sector: ${cvmSector}` : undefined,
+    },
+    {
+      label: "Industry Group",
+      value: industryGroup || MISSING_CLASSIFICATION,
+      title:
+        lowerGicsLevel && !industryGroup
+          ? "Lower GICS classification exists, but industry group is not mapped yet."
+          : undefined,
+    },
+  ];
 }
 
 export function EntityHeader({
@@ -141,19 +185,11 @@ export function EntityHeader({
             </p>
           ) : null}
           <div className="flex flex-wrap gap-2">
-            <IdentifierBadge label="CVM Sector" muted>
-              {info.sector_name ?? info.setor_cvm ?? "sector n/a"}
-            </IdentifierBadge>
-            {info.gics_sector ? (
-              <IdentifierBadge label="GICS Sector" muted>
-                {info.gics_sector}
+            {getCompanyHeaderClassificationBadges(info).map((badge) => (
+              <IdentifierBadge key={badge.label} label={badge.label} muted title={badge.title}>
+                {badge.value}
               </IdentifierBadge>
-            ) : null}
-            {info.gics_sub_industry ?? info.gics_industry ? (
-              <IdentifierBadge label="GICS Sub-industry" muted>
-                {info.gics_sub_industry ?? info.gics_industry}
-              </IdentifierBadge>
-            ) : null}
+            ))}
             <StatusChip tone={info.has_local_financial_reports ? "ok" : "warn"}>
               {localDataLabel}
             </StatusChip>
@@ -243,6 +279,11 @@ export function EntityHeader({
       </dl>
     </article>
   );
+}
+
+function cleanClassification(value: string | null | undefined): string | null {
+  const trimmed = String(value ?? "").trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 function InlineMeta({

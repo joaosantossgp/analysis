@@ -52,6 +52,47 @@ source/method drill-down that is not available in the surrounding UI.
 The first Company Workspace change should improve the usefulness of existing
 surfaces instead of creating another summary layer.
 
+## Design Pattern From Indicator Library
+
+The Indicator Library redesign established a pattern that should guide the
+Company Workspace:
+
+```text
+dense index or evidence table
+-> contextual detail when preserving the current task matters
+-> route navigation when opening a deep issuer workspace
+-> chart/table/source evidence
+-> explicit next action
+```
+
+Apply this pattern to Company screens with the company as the stable context.
+The user should not feel that each sub-tab is a disconnected dashboard. The
+company identity, local data status, period context, source caveats, and
+available actions should remain conceptually attached across Overview,
+Financial Statements, Excel Mapping, and Coverage Status.
+
+Concrete implications:
+
+- The Companies directory is an issuer index. It should emphasize search,
+  filters, coverage/source status, and fast selection over decorative company
+  cards or broad summary panels. Activating a directory row should navigate to
+  `/empresas/:cdCvm`, the deep-work issuer workspace.
+- Company rows and dense company tables should use natural row selection or
+  contextual actions instead of low-value `Open` columns.
+- Detail panels should stay inside the visible workspace, preserve the user's
+  scroll/filter state inside an active issuer workflow, and be resizable or
+  fullscreen when chart/table evidence needs room.
+- Company indicator and market-history previews should use the shared chart
+  grammar established by the Indicator Library and financial indicators:
+  compact controls, visible legends, chart options inside the chart bounds,
+  units and periods near the visualization, and tables for exact audit values.
+- Definitions, formulas, and caveats should appear as inline help or source
+  drill-downs next to the metric, account, or section they explain, not as
+  separate metadata columns or generic helper paragraphs.
+- Source, period, unit, currency, consolidation, and calculation status must
+  stay visible when they affect interpretation, even as redundant copy and
+  decorative containers are removed.
+
 ## Target Overview Hierarchy
 
 1. Company identity and source status
@@ -120,6 +161,22 @@ The Overview is not the whole Company Workspace.
 | Critical Factors | future only | not shown until designed |
 | Valuation | future only | not shown until models/peers exist |
 | Thesis | future only | not shown until factors/model/valuation exist |
+
+## Sub-Tab Design Principles
+
+Company sub-tabs should each own a clear analyst question:
+
+| Sub-tab | Analyst question | Design implication |
+| --- | --- | --- |
+| Overview | Is this company ready, what evidence exists, and what should I inspect next? | Keep identity, command bar, market preview, and company indicators; remove duplicate status panels. |
+| Financial Statements | What did the company officially report, by account and period? | Preserve dense statement tables, source labels, units, statement type, and account-level search. |
+| Excel Mapping | How will official history map into an analyst workbook? | Keep mapping validation, source-line audit, preset behavior, and export handoff; do not imply forecast modeling. |
+| Coverage Status | Why is this company in coverage, what remains incomplete, and what needs review? | Reframe administrative controls as readiness, rationale, checklist, and decision-history evidence. |
+| Future Critical Factors | Which few variables drive the thesis? | Add only after source-backed factors, thresholds, evidence, and review states exist. |
+| Future Valuation/Thesis | What is the value and investment view? | Add only after model, peer, market-data, and source rules are implemented. |
+
+Do not add visible empty tabs for future areas. Document future areas in product
+plans until the route, data contract, and evidence model are real.
 
 ## Copy Rules
 

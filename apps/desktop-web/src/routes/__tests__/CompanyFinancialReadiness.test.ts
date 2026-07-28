@@ -81,4 +81,15 @@ describe("Company Overview financial-readiness states", () => {
       }),
     ).toBe("unknown");
   });
+
+  it("does not keep financial readiness as a standalone Overview section", () => {
+    const sections = Reflect.get(companyDetailPage, "COMPANY_OVERVIEW_SECTIONS");
+
+    expect(sections).toEqual([
+      "company-command-bar",
+      "market-history",
+      "financial-indicators",
+    ]);
+    expect(sections).not.toContain("financial-readiness");
+  });
 });

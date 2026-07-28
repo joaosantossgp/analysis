@@ -6,6 +6,7 @@ import {
   type QueryClient,
   type QueryKey,
 } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 
 import { ExportStatusLine } from "@/components/export/ExportStatusLine";
 import { useExportAction } from "@/components/export/useExportAction";
@@ -36,6 +37,28 @@ const PERIOD_SCOPE_OPTIONS = [
   { value: "full_history", label: "Full history" },
 ] as const;
 
+export const COMPANY_COMMAND_LABELS = {
+  statements: "Statements",
+  excelMapping: "Excel mapping",
+  historyDisclosure: "History range",
+  refreshDetails: "Refresh details",
+  exportScope: "Export scope",
+  exportDetails: "Export details",
+} as const;
+
+export function getCompanyCommandWorkspaceLinks(cdCvm: number) {
+  return [
+    {
+      label: COMPANY_COMMAND_LABELS.statements,
+      to: `/empresas/${cdCvm}/demonstrativos`,
+    },
+    {
+      label: COMPANY_COMMAND_LABELS.excelMapping,
+      to: `/empresas/${cdCvm}/model-mapping`,
+    },
+  ];
+}
+
 type RefreshAction =
   | { type: "incremental" }
   | { type: "history"; startYear: number; endYear: number };
@@ -49,6 +72,7 @@ type Props = {
   className?: string;
   hideExport?: boolean;
   flat?: boolean;
+  showWorkspaceLinks?: boolean;
 };
 
 export function CompanyCommandBar({
@@ -60,6 +84,7 @@ export function CompanyCommandBar({
   className,
   hideExport = false,
   flat = false,
+  showWorkspaceLinks = false,
 }: Props) {
   const [localBridgeReady, setLocalBridgeReady] = useState(false);
   const bridgeReady = bridgeReadyProp ?? localBridgeReady;
@@ -235,8 +260,8 @@ export function CompanyCommandBar({
 
   return (
     <section className={className} aria-label="Company command bar" style={barStyle(needsAttention, flat)}>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex min-w-0 flex-1 items-center gap-2">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex min-w-0 items-center gap-2" style={{ flex: "1 1 320px" }}>
           <StatusDot tone={hasRefreshError ? "error" : needsAttention ? "warn" : "ok"} />
           <p
             role={isActive ? "status" : undefined}
@@ -252,7 +277,17 @@ export function CompanyCommandBar({
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center justify-end gap-2">
+        <div
+          className="flex min-w-0 flex-wrap items-center justify-end gap-2"
+          style={{ flex: "2 1 620px" }}
+        >
+          {showWorkspaceLinks
+            ? getCompanyCommandWorkspaceLinks(cdCvm).map((link) => (
+                <CommandLink key={link.to} to={link.to}>
+                  {link.label}
+                </CommandLink>
+              ))
+            : null}
           <Button
             variant={hasRefreshError || !latestPeriodLabel ? "danger" : "secondary"}
             size="xs"
@@ -270,13 +305,13 @@ export function CompanyCommandBar({
             aria-controls={historyId}
             onClick={() => setShowHistory((value) => !value)}
           >
-            More
+            {COMPANY_COMMAND_LABELS.historyDisclosure}
           </Button>
           <label
             className="flex items-center gap-1"
             style={{ color: "var(--color-text-secondary)", fontSize: "var(--text-xs)" }}
           >
-            <span>History</span>
+            <span>{COMPANY_COMMAND_LABELS.exportScope}</span>
             <Select
               block={false}
               value={periodScope}
@@ -309,7 +344,7 @@ export function CompanyCommandBar({
                 aria-controls={exportDetailsId}
                 onClick={() => setShowExportDetails((value) => !value)}
               >
-                Export details
+                {COMPANY_COMMAND_LABELS.exportDetails}
               </Button>
             </>
           )}
@@ -380,7 +415,7 @@ export function CompanyCommandBar({
               aria-controls={detailsId}
               onClick={() => setShowDetails((value) => !value)}
             >
-              Refresh details
+              {COMPANY_COMMAND_LABELS.refreshDetails}
             </Button>
           </div>
           {yearError ? <p role="alert" style={errorTextStyle}>{yearError}</p> : null}
@@ -430,6 +465,37 @@ export function companyDataInvalidationKeys(cdCvm: number): QueryKey[] {
     ["company-refresh-status"],
     ["company-financial-readiness", cdCvm],
   ];
+}
+
+function CommandLink({
+  to,
+  children,
+}: {
+  to: string;
+  children: ReactNode;
+}) {
+  return (
+    <Link
+      to={to}
+      style={{
+        alignItems: "center",
+        border: "1px solid var(--color-border-default)",
+        borderRadius: "var(--radius-md)",
+        color: "var(--color-text-primary)",
+        display: "inline-flex",
+        fontFamily: "var(--font-sans)",
+        fontSize: "var(--text-xs)",
+        fontWeight: 500,
+        gap: 6,
+        height: 22,
+        justifyContent: "center",
+        padding: "2px 8px",
+        textDecoration: "none",
+      }}
+    >
+      {children}
+    </Link>
+  );
 }
 
 function invalidateCompanyData(queryClient: QueryClient, cdCvm: number) {
