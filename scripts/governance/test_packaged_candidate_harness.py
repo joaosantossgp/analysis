@@ -4,6 +4,7 @@ import json
 import re
 import sqlite3
 import subprocess
+import sys
 import textwrap
 from pathlib import Path
 
@@ -501,6 +502,7 @@ def test_cdp_child_launch_creates_validated_redirect_directory_for_real_process(
             "Assert-Descendant",
             "Assert-MutationTargets",
             "Assert-NoReparseTree",
+            "Add-HiddenWindowStyle",
             "Start-CdpHarnessProcess",
         ),
         f"""
@@ -549,6 +551,7 @@ def test_packaged_diagnostic_evidence_uses_only_bounded_fixture_artifacts(
         ),
         f"""
         $taskRoot = '{task_root}'
+        if (-not $env:USERPROFILE) {{ $env:USERPROFILE = $taskRoot }}
         $fixtureRoot = Join-Path $taskRoot 'fixture'
         $logsRoot = Join-Path $fixtureRoot 'logs/nested'
         $localAppData = Join-Path $taskRoot 'localappdata-diagnostic'
@@ -1014,6 +1017,8 @@ def test_failure_producers_and_summary_timing_are_structurally_bound() -> None:
 
 
 def test_updater_stub_compiler_runs_in_windows_powershell_child(tmp_path: Path) -> None:
+    if sys.platform != "win32":
+        return
     task_root = (tmp_path / "compile-stubs").as_posix().replace("'", "''")
     result = _run_powershell_probe(
         tmp_path,
@@ -1021,6 +1026,7 @@ def test_updater_stub_compiler_runs_in_windows_powershell_child(tmp_path: Path) 
             "Resolve-ApprovedPath",
             "Assert-Descendant",
             "Assert-MutationTargets",
+            "Add-HiddenWindowStyle",
             "Compile-UpdaterStub",
         ),
         f"""

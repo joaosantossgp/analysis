@@ -62,6 +62,15 @@ function Stop-TrackedProcess {
   return [ordered]@{ pid = $Process.Id; exit_code = $Process.ExitCode; exited = $true }
 }
 
+function Add-HiddenWindowStyle {
+  param([Parameter(Mandatory)][hashtable]$StartOptions)
+
+  if ($PSVersionTable.PSEdition -eq 'Desktop' -or $IsWindows) {
+    $StartOptions.WindowStyle = 'Hidden'
+  }
+  return $StartOptions
+}
+
 function Get-ExpectedCandidateIdentity {
   $versionText = Get-Content -LiteralPath (Join-Path $repoRoot 'desktop\__version__.py') -Raw
   if ($versionText -notmatch '__version__\s*=\s*["''](?<version>[^"'']+)["'']') { throw 'Cannot resolve expected candidate version' }
@@ -452,7 +461,16 @@ function Invoke-IsolatedDiagnostic {
   $stdout = Join-Path $taskRoot 'diagnostic.stdout.log'
   $stderr = Join-Path $taskRoot 'diagnostic.stderr.log'
   Assert-MutationTargets -Paths @($stdout, $stderr, $ChildEnvironment.LOCALAPPDATA, $ChildEnvironment.CVM_OUTPUT_DIR, $ChildEnvironment.CVM_LOG_DIR, $ChildEnvironment.CVM_CACHE_DIR, $ChildEnvironment.CVM_DB_DIR, $ChildEnvironment.CVM_METADATA_DIR)
-  $p = Start-Process $candidateExe -ArgumentList '--diagnose-runtime','--non-interactive' -Environment $ChildEnvironment -PassThru -Wait -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+  $startOptions = Add-HiddenWindowStyle @{
+    FilePath = $candidateExe
+    ArgumentList = @('--diagnose-runtime','--non-interactive')
+    Environment = $ChildEnvironment
+    PassThru = $true
+    Wait = $true
+    RedirectStandardOutput = $stdout
+    RedirectStandardError = $stderr
+  }
+  $p = Start-Process @startOptions
   try {
     if ($p.ExitCode -ne 0) { throw "Diagnostic failed: $($p.ExitCode)" }
     $diagnosticEvidence = Read-PackagedDiagnosticEvidence -StdoutPath $stdout -StderrPath $stderr -FixtureRoot $fixtureRoot -ExpectedVersion $ExpectedIdentity.version -LocalAppData $ChildEnvironment.LOCALAPPDATA
@@ -477,7 +495,15 @@ function Start-CdpHarnessProcess {
   Assert-MutationTargets -Paths @($OutputDir,$nodeStdout,$nodeStderr)
   New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
   Assert-NoReparseTree -Root $OutputDir
-  $node = Start-Process (Get-Command node).Source -ArgumentList (@($resolvedHarness) + @($Arguments)) -PassThru -Wait -WindowStyle Hidden -RedirectStandardOutput $nodeStdout -RedirectStandardError $nodeStderr
+  $startOptions = Add-HiddenWindowStyle @{
+    FilePath = (Get-Command node).Source
+    ArgumentList = (@($resolvedHarness) + @($Arguments))
+    PassThru = $true
+    Wait = $true
+    RedirectStandardOutput = $nodeStdout
+    RedirectStandardError = $nodeStderr
+  }
+  $node = Start-Process @startOptions
   return [ordered]@{ pid = $node.Id; exit_code = $node.ExitCode; stdout = $nodeStdout; stderr = $nodeStderr }
 }
 
@@ -505,7 +531,12 @@ function Invoke-PackagedUi {
   $uiEnv.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=$CdpPort --remote-allow-origins=* --proxy-server=http://127.0.0.1:9 --proxy-bypass-list=127.0.0.1;localhost"
   Assert-MutationTargets -Paths @($uiEnv.LOCALAPPDATA, $uiEnv.CVM_OUTPUT_DIR, $uiEnv.CVM_LOG_DIR, $uiEnv.CVM_CACHE_DIR, $uiEnv.CVM_DB_DIR, $uiEnv.CVM_METADATA_DIR, (Join-Path $taskRoot 'ui'))
   $processStartMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
-  $p = Start-Process $candidateExe -Environment $uiEnv -PassThru -WindowStyle Hidden
+  $startOptions = Add-HiddenWindowStyle @{
+    FilePath = $candidateExe
+    Environment = $uiEnv
+    PassThru = $true
+  }
+  $p = Start-Process @startOptions
   $bodyFailure = $null
   $nodeChild = $null
   $cleanup = $null
@@ -655,7 +686,12 @@ function Test-RefreshFailureStartup {
   $failureEnv.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=$CdpPort --remote-allow-origins=* --proxy-server=http://127.0.0.1:9 --proxy-bypass-list=127.0.0.1;localhost"
   Assert-MutationTargets -Paths @($failureEnv.LOCALAPPDATA, $failureEnv.CVM_OUTPUT_DIR, $failureEnv.CVM_LOG_DIR, $failureEnv.CVM_CACHE_DIR, $failureEnv.CVM_DB_DIR, $failureEnv.CVM_METADATA_DIR, (Join-Path $taskRoot 'refresh-failure-ui'))
   $processStartMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
-  $p = Start-Process $candidateExe -Environment $failureEnv -PassThru -WindowStyle Hidden
+  $startOptions = Add-HiddenWindowStyle @{
+    FilePath = $candidateExe
+    Environment = $failureEnv
+    PassThru = $true
+  }
+  $p = Start-Process @startOptions
   $bodyFailure = $null
   $nodeChild = $null
   $cleanup = $null
@@ -769,7 +805,15 @@ public static class {0}
   $encodedCommand = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($compileCommand))
   $windowsPowerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
   if (-not (Test-Path -LiteralPath $windowsPowerShell)) { throw "Built-in Windows PowerShell is unavailable: $windowsPowerShell" }
-  $p = Start-Process $windowsPowerShell -ArgumentList @('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-EncodedCommand',$encodedCommand) -PassThru -Wait -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+  $startOptions = Add-HiddenWindowStyle @{
+    FilePath = $windowsPowerShell
+    ArgumentList = @('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-EncodedCommand',$encodedCommand)
+    PassThru = $true
+    Wait = $true
+    RedirectStandardOutput = $stdout
+    RedirectStandardError = $stderr
+  }
+  $p = Start-Process @startOptions
   if ($p.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $resolvedOutput)) {
     $failure = [System.Exception]::new("Updater stub compilation failed for $Marker (exit $($p.ExitCode))")
     $failure.Data['pid'] = $p.Id
@@ -837,7 +881,16 @@ function Invoke-ScratchUpdaterTest {
   Assert-MutationTargets -Paths @($stdout,$stderr)
   $stagedExecutableSha256 = (Get-FileHash -LiteralPath (Join-Path $staged 'CVMAnalytics.exe') -Algorithm SHA256).Hash
   if (-not $stagedExecutableSha256.Equals($stagedCompile.sha256, [StringComparison]::OrdinalIgnoreCase)) { throw 'Staged executable changed after compilation and before updater invocation' }
-  $p = Start-Process powershell.exe -ArgumentList @('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$helper,'-New',$staged,'-Current',$current) -Environment $helperEnv -PassThru -Wait -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+  $startOptions = Add-HiddenWindowStyle @{
+    FilePath = 'powershell.exe'
+    ArgumentList = @('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$helper,'-New',$staged,'-Current',$current)
+    Environment = $helperEnv
+    PassThru = $true
+    Wait = $true
+    RedirectStandardOutput = $stdout
+    RedirectStandardError = $stderr
+  }
+  $p = Start-Process @startOptions
   try {
     if ($p.ExitCode -ne 0) { throw "Updater helper failed: $($p.ExitCode)" }
     $swapEvidence = Test-UpdaterExecutableSwap -ExpectedStagedSha256 $stagedExecutableSha256 -CurrentExecutable (Join-Path $current 'CVMAnalytics.exe') -RelaunchMarker (Join-Path $current 'relaunch.marker')

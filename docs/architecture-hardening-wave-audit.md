@@ -8,9 +8,11 @@ Epic: https://github.com/joaosantossgp/analisys/issues/398
 
 ## Result
 
-The wave is complete through the current #404 branch head
-`4942992e2b5b8de072906380493b18871e9286b0`, pending PR publication, CI, merge,
-and final Epic reconciliation.
+The package-validation evidence is complete for source/candidate commit
+`4942992e2b5b8de072906380493b18871e9286b0`, pending PR CI, merge, and final
+Epic reconciliation. Later harness-only CI portability edits on the PR branch
+must not be treated as new packaged-runtime observations unless the package
+harness is rerun.
 
 The implemented children preserve the active Vite -> pywebview -> Python ->
 local-store architecture. No task changed database schema, public bridge
@@ -96,7 +98,7 @@ Final package commands:
 | Mode Run | same harness with `-Mode Run` | `2026-07-28T16:00:45.3552049Z` | 333988 ms | PASS | `scratch/architecture-hardening-wave/task-7/20260728T155819Z-validation-run.log` |
 | Four-file governance | `python -m pytest scripts/governance/test_repository_operational_contracts.py scripts/governance/test_frontend_ci_contract.py scripts/diagnostics/test_bridge_method_inventory.py scripts/governance/test_packaged_candidate_harness.py -q` | `2026-07-28T16:06:19.3571475Z` | 16662 ms | PASS, 36 tests | `scratch/architecture-hardening-wave/task-7/20260728T155819Z-post-run-governance.log` |
 
-Final static checks:
+Final static checks before the package run:
 
 | Gate | Command | UTC start | Duration | Result |
 | --- | --- | ---: | ---: | --- |
@@ -151,6 +153,12 @@ Final screenshots:
 Authoritative final summary:
 `scratch/architecture-hardening-wave/task-7/evidence-summary.json`, status
 `pass`, completed `2026-07-28T16:04:15.4281556Z`, summary size 271,883 bytes.
+
+Post-audit CI portability note: after PR #411 exposed Linux PowerShell
+governance failures, the harness was adjusted so `Start-Process -WindowStyle`
+is applied only where supported, and Windows-only executable-compiler probes are
+scoped to Windows. This is a validation-harness portability change only; it does
+not change the packaged app or the recorded packaged-runtime observation above.
 
 ## Bridge Inventory
 
