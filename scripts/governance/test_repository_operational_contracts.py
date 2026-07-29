@@ -158,31 +158,117 @@ def test_worktree_lifecycle_scripts_default_to_main() -> None:
         assert match.group(1) == "main", relative_path
 
 
-def test_release_workflow_requires_exact_sha_candidate_and_protected_publish_gate() -> None:
+def _workflow_run_blocks(workflow: str) -> list[str]:
+    return re.findall(
+        r"(?ms)^\s*run:\s*\|\s*\n(?P<body>.*?)(?=^\s*- name:|^\s*- uses:|^\s*\w[\w-]*:|\Z)",
+        workflow,
+    )
+
+
+def test_release_workflow_uses_env_transport_for_all_dispatch_inputs() -> None:
     workflow = (ROOT / ".github/workflows/release-desktop.yml").read_text(
         encoding="utf-8"
     )
+    run_source = "\n".join(_workflow_run_blocks(workflow))
+    expected_env_names = {
+        "RELEASE_VERSION",
+        "CANDIDATE_SHA",
+        "CANDIDATE_RUN_ID",
+        "LOCAL_DATA_EVIDENCE_ARTIFACT_ID",
+        "PACKAGED_EVIDENCE_ARTIFACT_ID",
+        "API_EVIDENCE_ARTIFACT_ID",
+        "CCEE_EVIDENCE_ARTIFACT_ID",
+        "STRICT_BACKUP_EVIDENCE_ARTIFACT_ID",
+    }
 
+    assert "${{ inputs." not in run_source
+    assert all(f"{name}: ${{{{ inputs." in workflow for name in expected_env_names)
+    assert all(f"$env:{name}" in run_source for name in expected_env_names)
+
+
+def test_release_workflow_keeps_adversarial_dispatch_values_out_of_shell_source() -> None:
+    workflow = (ROOT / ".github/workflows/release-desktop.yml").read_text(
+        encoding="utf-8"
+    )
+    run_source = "\n".join(_workflow_run_blocks(workflow))
+    adversarial_quote_newline = '"; throw "dispatch injection"\n#'
+
+    # Workflow expressions are rendered before PowerShell parses `run:`. The
+    # regression is that no dispatch expression can enter that parse boundary;
+    # it must first become an environment value and then be read as data.
+    assert "${{ inputs." not in run_source
+    assert adversarial_quote_newline not in run_source
+    assert "RELEASE_VERSION: ${{ inputs.version }}" in workflow
+    assert "$env:RELEASE_VERSION" in run_source
+
+
+def test_release_workflow_requires_candidate_bound_evidence_attestations() -> None:
+    workflow = (ROOT / ".github/workflows/release-desktop.yml").read_text(
+        encoding="utf-8"
+    )
     required_fragments = (
-        "workflow_dispatch:",
-        "phase:",
-        "candidate_sha:",
-        "candidate_run_id:",
-        "resolve-candidate:",
-        "build-windows:",
-        "publish-preflight:",
-        "final-publish:",
-        "event=push&branch=main&head_sha=$candidateSha",
-        "actions/upload-artifact@v4",
-        "actions/download-artifact@v4",
-        "release-publication",
-        "contents: write",
-        "candidate-evidence.json",
-        "manual-evidence.json",
-        "softprops/action-gh-release@v2",
+        "release-evidence-attestation.json",
+        "schema_version",
+        "attestation_type",
+        "candidate_sha",
+        "tag_target_sha",
+        "candidate_run_id",
+        "package_artifact_id",
+        "zip_checksum",
+        "workflow_run_id",
+        "$payload.result.manual",
+        "$payload.result.summary",
+        "decision.status",
+        "candidate-diff",
+        "release-policy",
+        "verified-release-evidence.json",
+        "Get-FileHash",
+        "actions/artifacts/$ArtifactId/zip",
     )
     missing = [fragment for fragment in required_fragments if fragment not in workflow]
 
-    assert not missing, f"release evidence gate missing: {', '.join(missing)}"
+    assert not missing, f"release evidence contract missing: {', '.join(missing)}"
+    assert "local_data_evidence_ref" not in workflow
+    assert "api_evidence_basis" not in workflow
+
+
+def test_release_workflow_preserves_updater_version_grammar() -> None:
+    workflow = (ROOT / ".github/workflows/release-desktop.yml").read_text(
+        encoding="utf-8"
+    )
+    version_number = r"(?:0|[1-9][0-9]*)"
+    version_pattern = rf"^{version_number}\.{version_number}\.{version_number}(?:-rc\.{version_number})?$"
+
+    assert version_pattern in workflow
+    assert re.fullmatch(version_pattern, "0.0.0")
+    assert re.fullmatch(version_pattern, "1.2.3-rc.12")
+    for invalid in ("01.2.3", "1.02.3", "1.2.03", "1.2.3-rc.01", "1.2.3-beta"):
+        assert not re.fullmatch(version_pattern, invalid)
+
+
+def test_release_and_ci_actions_are_full_sha_pinned() -> None:
+    for relative_path in (".github/workflows/release-desktop.yml", ".github/workflows/ci.yml"):
+        workflow = (ROOT / relative_path).read_text(encoding="utf-8")
+        uses = re.findall(
+            r"(?m)^\s*(?:-\s+)?uses:\s*([^\s#]+)(?:\s+#\s*(.+))?$",
+            workflow,
+        )
+        assert uses, relative_path
+        for action, comment in uses:
+            assert re.fullmatch(r"[^@]+@[0-9a-f]{40}", action), action
+            assert comment is not None and re.fullmatch(r"v\d+(?:\.\d+){1,2}", comment), action
+
+
+def test_release_workflow_keeps_publish_write_only_and_never_rebuilds_or_retags() -> None:
+    workflow = (ROOT / ".github/workflows/release-desktop.yml").read_text(
+        encoding="utf-8"
+    )
+    final_publish = workflow.split("  final-publish:", maxsplit=1)[1]
+
     assert "push:\n    tags:" not in workflow
     assert workflow.count("contents: write") == 1
+    assert "environment: release-publication" in final_publish
+    assert "actions/download-artifact@" in final_publish
+    assert "build_desktop.ps1" not in final_publish
+    assert "Compress-Archive" not in final_publish
+    assert "git tag " not in final_publish

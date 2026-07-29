@@ -22,60 +22,24 @@ on:
         description: "Successful candidate-phase workflow run ID (required only for publish)."
         required: false
         type: string
-      local_data_evidence_ref:
-        description: "Required for publish: immutable reference for storage and managed-ingestion evidence."
+      local_data_evidence_artifact_id:
+        description: "Required for publish: immutable Actions artifact ID containing local-data attestation JSON."
         required: false
         type: string
-      packaged_evidence_ref:
-        description: "Required for publish: immutable reference for packaged launch/offline/update/Excel evidence."
+      packaged_evidence_artifact_id:
+        description: "Required for publish: immutable Actions artifact ID containing packaged-app attestation JSON."
         required: false
         type: string
-      api_evidence_status:
-        description: "Whether apps/api or shared API contract changes require API-suite evidence."
-        required: false
-        default: not-required
-        type: choice
-        options:
-          - required
-          - not-required
-      api_evidence_basis:
-        description: "Required for publish: diff basis for the API evidence decision."
+      api_evidence_artifact_id:
+        description: "Required for publish: immutable Actions artifact ID containing the typed API applicability attestation."
         required: false
         type: string
-      api_evidence_ref:
-        description: "Required when API evidence is required."
+      ccee_evidence_artifact_id:
+        description: "Required for publish: immutable Actions artifact ID containing the typed CCEE applicability attestation."
         required: false
         type: string
-      ccee_evidence_status:
-        description: "Whether the CCEE managed-ingestion smoke evidence is required."
-        required: false
-        default: not-required
-        type: choice
-        options:
-          - required
-          - not-required
-      ccee_evidence_basis:
-        description: "Required for publish: diff basis for the CCEE evidence decision."
-        required: false
-        type: string
-      ccee_evidence_ref:
-        description: "Required when CCEE evidence is required."
-        required: false
-        type: string
-      strict_backup_evidence_status:
-        description: "Whether release policy selected check_storage_budget.py --fail-on-backups."
-        required: false
-        default: not-required
-        type: choice
-        options:
-          - required
-          - not-required
-      strict_backup_evidence_basis:
-        description: "Required for publish: policy basis for the strict-backup decision."
-        required: false
-        type: string
-      strict_backup_evidence_ref:
-        description: "Required when strict-backup evidence is required."
+      strict_backup_evidence_artifact_id:
+        description: "Required for publish: immutable Actions artifact ID containing the typed rollback-backup policy attestation."
         required: false
         type: string
 
@@ -88,6 +52,9 @@ jobs:
     if: inputs.phase == 'candidate'
     name: Resolve exact candidate and CI gate
     runs-on: ubuntu-latest
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+      CANDIDATE_SHA: ${{ inputs.candidate_sha }}
     outputs:
       version: ${{ steps.resolve.outputs.version }}
       tag: ${{ steps.resolve.outputs.tag }}
@@ -96,9 +63,9 @@ jobs:
       ci_run_id: ${{ steps.resolve.outputs.ci_run_id }}
       ci_run_url: ${{ steps.resolve.outputs.ci_run_url }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          ref: ${{ inputs.candidate_sha }}
+          ref: ${{ env.CANDIDATE_SHA }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -112,11 +79,12 @@ jobs:
           if ($env:GITHUB_REF -ne "refs/heads/main") {
             throw "Release dispatches must run the reviewed workflow from refs/heads/main."
           }
-          $version = "${{ inputs.version }}".Trim()
-          if ($version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+(?:-rc\.[0-9]+)?$') {
+          $version = $env:RELEASE_VERSION.Trim()
+          $releaseVersionPattern = '^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-rc\.(?:0|[1-9][0-9]*))?$'
+          if ($version -notmatch $releaseVersionPattern) {
             throw "Unsupported release version '$version'. Expected X.Y.Z or X.Y.Z-rc.N."
           }
-          $candidateSha = "${{ inputs.candidate_sha }}".Trim().ToLowerInvariant()
+          $candidateSha = $env:CANDIDATE_SHA.Trim().ToLowerInvariant()
           if ($candidateSha -notmatch '^[0-9a-f]{40}$') {
             throw "candidate_sha must be a full 40-character lowercase hexadecimal commit SHA."
           }
@@ -163,7 +131,7 @@ jobs:
       evidence_artifact_id: ${{ steps.upload_evidence.outputs.artifact-id }}
       zip_sha256: ${{ steps.package.outputs.zip_sha256 }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ needs.resolve-candidate.outputs.candidate_sha }}
           fetch-depth: 0
@@ -179,12 +147,12 @@ jobs:
             throw "Windows builder checkout drift: expected $expected, observed $observed."
           }
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.11"
           cache: "pip"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22"
           cache: "npm"
@@ -255,7 +223,7 @@ jobs:
 
       - name: Upload immutable candidate package
         id: upload_package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-candidate-package-${{ needs.resolve-candidate.outputs.version }}-${{ needs.resolve-candidate.outputs.candidate_sha }}
           if-no-files-found: error
@@ -273,6 +241,7 @@ jobs:
               tag = "${{ needs.resolve-candidate.outputs.tag }}"
               candidate_sha = "${{ needs.resolve-candidate.outputs.candidate_sha }}"
               tag_target_sha = "${{ needs.resolve-candidate.outputs.tag_target_sha }}"
+              candidate_run_id = "$env:GITHUB_RUN_ID"
               observed_build_sha = (git rev-parse HEAD).Trim().ToLowerInvariant()
             }
             exact_sha_ci = [ordered]@{
@@ -289,18 +258,16 @@ jobs:
               checksum = "${{ steps.package.outputs.zip_sha256 }}"
             }
             manual_evidence = [ordered]@{
-              local_data = "required: storage budget and managed-ingestion contract results"
-              packaged = "required: launch, Documents path, empty/offline, updater, Excel, clean-install/upgrade"
-              api = "required or not-required with diff basis"
-              ccee = "required or not-required with diff basis"
-              strict_backups = "required or not-required with policy basis"
+              local_data = "required: candidate-bound manual evidence attestation"
+              packaged = "required: candidate-bound manual evidence attestation"
+              conditional = "required: typed candidate-bound applicability attestation"
             }
           }
           $evidence | ConvertTo-Json -Depth 6 | Set-Content -Path candidate-evidence.json -Encoding utf8
 
       - name: Upload immutable candidate evidence
         id: upload_evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-candidate-evidence-${{ needs.resolve-candidate.outputs.version }}-${{ needs.resolve-candidate.outputs.candidate_sha }}
           if-no-files-found: error
@@ -310,17 +277,27 @@ jobs:
     if: inputs.phase == 'publish'
     name: Reverify candidate, CI, and evidence handoff
     runs-on: ubuntu-latest
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+      CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+      CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+      LOCAL_DATA_EVIDENCE_ARTIFACT_ID: ${{ inputs.local_data_evidence_artifact_id }}
+      PACKAGED_EVIDENCE_ARTIFACT_ID: ${{ inputs.packaged_evidence_artifact_id }}
+      API_EVIDENCE_ARTIFACT_ID: ${{ inputs.api_evidence_artifact_id }}
+      CCEE_EVIDENCE_ARTIFACT_ID: ${{ inputs.ccee_evidence_artifact_id }}
+      STRICT_BACKUP_EVIDENCE_ARTIFACT_ID: ${{ inputs.strict_backup_evidence_artifact_id }}
     outputs:
       package_artifact_id: ${{ steps.verify.outputs.package_artifact_id }}
       evidence_artifact_id: ${{ steps.verify.outputs.evidence_artifact_id }}
+      verified_evidence_artifact_id: ${{ steps.upload_verified_evidence.outputs.artifact-id }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          ref: ${{ inputs.candidate_sha }}
+          ref: ${{ env.CANDIDATE_SHA }}
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Re-resolve exact candidate, CI, and immutable artifact identities
+      - name: Re-resolve exact candidate, CI, and candidate artifact identities
         id: verify
         shell: pwsh
         env:
@@ -330,10 +307,11 @@ jobs:
           if ($env:GITHUB_REF -ne "refs/heads/main") {
             throw "Release dispatches must run the reviewed workflow from refs/heads/main."
           }
-          $version = "${{ inputs.version }}".Trim()
-          $candidateSha = "${{ inputs.candidate_sha }}".Trim().ToLowerInvariant()
-          $candidateRunId = "${{ inputs.candidate_run_id }}".Trim()
-          if ($version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+(?:-rc\.[0-9]+)?$' -or $candidateSha -notmatch '^[0-9a-f]{40}$' -or $candidateRunId -notmatch '^[1-9][0-9]*$') {
+          $version = $env:RELEASE_VERSION.Trim()
+          $candidateSha = $env:CANDIDATE_SHA.Trim().ToLowerInvariant()
+          $candidateRunId = $env:CANDIDATE_RUN_ID.Trim()
+          $releaseVersionPattern = '^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-rc\.(?:0|[1-9][0-9]*))?$'
+          if ($version -notmatch $releaseVersionPattern -or $candidateSha -notmatch '^[0-9a-f]{40}$' -or $candidateRunId -notmatch '^[1-9][0-9]*$') {
             throw "Publish requires a supported version, full candidate SHA, and numeric successful candidate_run_id."
           }
           if ((git rev-parse HEAD).Trim().ToLowerInvariant() -ne $candidateSha) {
@@ -366,32 +344,120 @@ jobs:
           "package_artifact_id=$($package[0].id)" >> $env:GITHUB_OUTPUT
           "evidence_artifact_id=$($evidence[0].id)" >> $env:GITHUB_OUTPUT
 
-      - name: Validate explicit manual and conditional evidence declarations
+      - name: Fetch and verify candidate-bound evidence attestations
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_PACKAGE_ARTIFACT_ID: ${{ steps.verify.outputs.package_artifact_id }}
+          CANDIDATE_EVIDENCE_ARTIFACT_ID: ${{ steps.verify.outputs.evidence_artifact_id }}
         run: |
           $ErrorActionPreference = "Stop"
-          $required = @{
-            "local-data evidence" = "${{ inputs.local_data_evidence_ref }}"
-            "packaged evidence" = "${{ inputs.packaged_evidence_ref }}"
-          }
-          foreach ($entry in $required.GetEnumerator()) {
-            if ([string]::IsNullOrWhiteSpace($entry.Value)) {
-              throw "Publish requires $($entry.Key) bound to this candidate."
+          function Read-ActionArtifactJson {
+            param([string]$ArtifactId, [string]$ExpectedEntryName)
+            if ($ArtifactId -notmatch '^[1-9][0-9]*$') {
+              throw "Evidence artifact ID must be a positive decimal Actions artifact ID."
+            }
+            $metadata = (& gh api "/repos/$env:GITHUB_REPOSITORY/actions/artifacts/$ArtifactId" | ConvertFrom-Json)
+            if ($LASTEXITCODE -ne 0 -or $metadata.expired -or -not $metadata.workflow_run.id) {
+              throw "Evidence artifact $ArtifactId is missing, expired, or lacks workflow-run provenance."
+            }
+            $zipPath = Join-Path $env:RUNNER_TEMP "release-evidence-$ArtifactId.zip"
+            & gh api --header "Accept: application/vnd.github+json" --output $zipPath "/repos/$env:GITHUB_REPOSITORY/actions/artifacts/$ArtifactId/zip"
+            if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $zipPath)) {
+              throw "Could not download immutable evidence artifact $ArtifactId."
+            }
+            Add-Type -AssemblyName System.IO.Compression.FileSystem
+            $archive = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
+            try {
+              $files = @($archive.Entries | Where-Object { -not $_.FullName.EndsWith('/') })
+              if ($files.Count -ne 1 -or $files[0].FullName -ne $ExpectedEntryName) {
+                throw "Evidence artifact $ArtifactId must contain exactly $ExpectedEntryName."
+              }
+              $reader = [System.IO.StreamReader]::new($files[0].Open())
+              try { $content = $reader.ReadToEnd() } finally { $reader.Dispose() }
+            } finally {
+              $archive.Dispose()
+            }
+            try { $payload = $content | ConvertFrom-Json -ErrorAction Stop } catch {
+              throw "Evidence artifact $ArtifactId contains invalid JSON."
+            }
+            [pscustomobject]@{
+              artifact_id = "$ArtifactId"
+              workflow_run_id = "$($metadata.workflow_run.id)"
+              zip_sha256 = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+              content_sha256 = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($content))).ToLowerInvariant()
+              payload = $payload
             }
           }
-          $conditional = @(
-            @{ name = "API"; status = "${{ inputs.api_evidence_status }}"; basis = "${{ inputs.api_evidence_basis }}"; reference = "${{ inputs.api_evidence_ref }}" },
-            @{ name = "CCEE"; status = "${{ inputs.ccee_evidence_status }}"; basis = "${{ inputs.ccee_evidence_basis }}"; reference = "${{ inputs.ccee_evidence_ref }}" },
-            @{ name = "strict backup"; status = "${{ inputs.strict_backup_evidence_status }}"; basis = "${{ inputs.strict_backup_evidence_basis }}"; reference = "${{ inputs.strict_backup_evidence_ref }}" }
+          function Assert-AttestationBinding {
+            param($Artifact, [string]$ExpectedType, [string]$CandidateSha, [string]$CandidateRunId, [string]$PackageArtifactId, [string]$ZipChecksum, [switch]$Conditional)
+            $payload = $Artifact.payload
+            if ([string]$payload.schema_version -ne "1" -or $payload.attestation_type -ne $ExpectedType) {
+              throw "Evidence artifact $($Artifact.artifact_id) has an unsupported attestation schema or type."
+            }
+            if ($payload.candidate.candidate_sha -ne $CandidateSha -or $payload.candidate.tag_target_sha -ne $CandidateSha -or [string]$payload.candidate.candidate_run_id -ne $CandidateRunId -or [string]$payload.candidate.package_artifact_id -ne $PackageArtifactId -or $payload.candidate.zip_checksum -ne $ZipChecksum) {
+              throw "Evidence artifact $($Artifact.artifact_id) is not bound to the exact candidate/package/checksum."
+            }
+            if ([string]$payload.producer.workflow_run_id -ne $Artifact.workflow_run_id) {
+              throw "Evidence artifact $($Artifact.artifact_id) producer workflow-run identity differs from Actions metadata."
+            }
+            if (-not $Conditional -and ($payload.result.manual -ne $true -or [string]::IsNullOrWhiteSpace($payload.result.summary))) {
+              throw "Manual evidence artifact $($Artifact.artifact_id) lacks a recorded operator result."
+            }
+            if ($Conditional) {
+              if ($payload.decision.status -notin @("required", "not-required") -or $payload.decision.basis.type -notin @("candidate-diff", "release-policy")) {
+                throw "Conditional evidence artifact $($Artifact.artifact_id) lacks a typed required/not-required decision and basis."
+              }
+              if ($payload.decision.basis.candidate_sha -ne $CandidateSha -or $payload.decision.basis.tag_target_sha -ne $CandidateSha -or [string]::IsNullOrWhiteSpace($payload.decision.basis.summary)) {
+                throw "Conditional evidence artifact $($Artifact.artifact_id) has no candidate-bound policy/diff basis."
+              }
+              if ($payload.decision.status -eq "required" -and ($payload.result.manual -ne $true -or [string]::IsNullOrWhiteSpace($payload.result.summary))) {
+                throw "Required conditional evidence artifact $($Artifact.artifact_id) lacks a recorded manual result."
+              }
+            }
+          }
+          $candidateSha = $env:CANDIDATE_SHA.Trim().ToLowerInvariant()
+          $candidateRunId = $env:CANDIDATE_RUN_ID.Trim()
+          $candidateEvidence = Read-ActionArtifactJson $env:CANDIDATE_EVIDENCE_ARTIFACT_ID "candidate-evidence.json"
+          $candidatePayload = $candidateEvidence.payload
+          if ([string]$candidatePayload.schema_version -ne "1" -or $candidatePayload.candidate.candidate_sha -ne $candidateSha -or $candidatePayload.candidate.tag_target_sha -ne $candidateSha -or [string]$candidatePayload.candidate.candidate_run_id -ne $candidateRunId -or $candidatePayload.candidate.observed_build_sha -ne $candidateSha -or [string]$candidatePayload.package_artifact.id -ne $env:CANDIDATE_PACKAGE_ARTIFACT_ID -or $candidatePayload.package_artifact.checksum -notmatch '^[0-9a-f]{64}$') {
+            throw "Immutable candidate evidence does not bind this exact candidate, run, package artifact, and checksum."
+          }
+          $checksum = $candidatePayload.package_artifact.checksum
+          $manual = @(
+            @{ id = $env:LOCAL_DATA_EVIDENCE_ARTIFACT_ID; type = "manual-local-data" },
+            @{ id = $env:PACKAGED_EVIDENCE_ARTIFACT_ID; type = "manual-packaged" }
           )
-          foreach ($item in $conditional) {
-            if ($item.status -notin @("required", "not-required") -or [string]::IsNullOrWhiteSpace($item.basis)) {
-              throw "$($item.name) evidence must declare required/not-required and a basis."
-            }
-            if ($item.status -eq "required" -and [string]::IsNullOrWhiteSpace($item.reference)) {
-              throw "$($item.name) evidence is required but has no immutable reference."
-            }
+          $conditional = @(
+            @{ id = $env:API_EVIDENCE_ARTIFACT_ID; type = "conditional-api" },
+            @{ id = $env:CCEE_EVIDENCE_ARTIFACT_ID; type = "conditional-ccee" },
+            @{ id = $env:STRICT_BACKUP_EVIDENCE_ARTIFACT_ID; type = "conditional-strict-backup" }
+          )
+          $verified = @()
+          foreach ($item in $manual) {
+            $artifact = Read-ActionArtifactJson $item.id "release-evidence-attestation.json"
+            Assert-AttestationBinding $artifact $item.type $candidateSha $candidateRunId $env:CANDIDATE_PACKAGE_ARTIFACT_ID $checksum
+            $verified += [ordered]@{ artifact_id = $artifact.artifact_id; workflow_run_id = $artifact.workflow_run_id; zip_sha256 = $artifact.zip_sha256; content_sha256 = $artifact.content_sha256; attestation_type = $item.type }
           }
+          foreach ($item in $conditional) {
+            $artifact = Read-ActionArtifactJson $item.id "release-evidence-attestation.json"
+            Assert-AttestationBinding $artifact $item.type $candidateSha $candidateRunId $env:CANDIDATE_PACKAGE_ARTIFACT_ID $checksum -Conditional
+            $verified += [ordered]@{ artifact_id = $artifact.artifact_id; workflow_run_id = $artifact.workflow_run_id; zip_sha256 = $artifact.zip_sha256; content_sha256 = $artifact.content_sha256; attestation_type = $item.type; decision_status = $artifact.payload.decision.status; decision_basis_type = $artifact.payload.decision.basis.type }
+          }
+          [ordered]@{
+            schema_version = 1
+            candidate = [ordered]@{ candidate_sha = $candidateSha; tag_target_sha = $candidateSha; candidate_run_id = $candidateRunId; package_artifact_id = $env:CANDIDATE_PACKAGE_ARTIFACT_ID; zip_checksum = $checksum }
+            candidate_evidence = [ordered]@{ artifact_id = $candidateEvidence.artifact_id; workflow_run_id = $candidateEvidence.workflow_run_id; zip_sha256 = $candidateEvidence.zip_sha256; content_sha256 = $candidateEvidence.content_sha256 }
+            attestations = $verified
+          } | ConvertTo-Json -Depth 6 | Set-Content -Path verified-release-evidence.json -Encoding utf8
+
+      - name: Upload verified evidence binding
+        id: upload_verified_evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-verified-evidence-${{ github.run_id }}
+          if-no-files-found: error
+          path: verified-release-evidence.json
 
   final-publish:
     if: inputs.phase == 'publish'
@@ -402,30 +468,42 @@ jobs:
     permissions:
       contents: write
       actions: read
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+      CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+      CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+      VERIFIED_EVIDENCE_ARTIFACT_ID: ${{ needs.publish-preflight.outputs.verified_evidence_artifact_id }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          ref: ${{ inputs.candidate_sha }}
+          ref: ${{ env.CANDIDATE_SHA }}
           fetch-depth: 0
           persist-credentials: false
 
       - name: Download immutable candidate package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           artifact-ids: ${{ needs.publish-preflight.outputs.package_artifact_id }}
           github-token: ${{ github.token }}
           repository: ${{ github.repository }}
-          run-id: ${{ inputs.candidate_run_id }}
+          run-id: ${{ env.CANDIDATE_RUN_ID }}
           path: candidate-package
 
       - name: Download immutable candidate evidence
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           artifact-ids: ${{ needs.publish-preflight.outputs.evidence_artifact_id }}
           github-token: ${{ github.token }}
           repository: ${{ github.repository }}
-          run-id: ${{ inputs.candidate_run_id }}
+          run-id: ${{ env.CANDIDATE_RUN_ID }}
           path: candidate-evidence
+
+      - name: Download verified manual evidence binding
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          artifact-ids: ${{ env.VERIFIED_EVIDENCE_ARTIFACT_ID }}
+          github-token: ${{ github.token }}
+          path: verified-evidence
 
       - name: Verify the same candidate artifact, tag, and latest CI after approval
         shell: pwsh
@@ -433,8 +511,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = "Stop"
-          $version = "${{ inputs.version }}"
-          $candidateSha = "${{ inputs.candidate_sha }}".ToLowerInvariant()
+          $version = $env:RELEASE_VERSION.Trim()
+          $candidateSha = $env:CANDIDATE_SHA.Trim().ToLowerInvariant()
+          $releaseVersionPattern = '^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-rc\.(?:0|[1-9][0-9]*))?$'
+          if ($version -notmatch $releaseVersionPattern -or $candidateSha -notmatch '^[0-9a-f]{40}$' -or $env:CANDIDATE_RUN_ID -notmatch '^[1-9][0-9]*$') {
+            throw "Final publish requires the updater-compatible version grammar and exact candidate identity."
+          }
           if ((git rev-parse HEAD).Trim().ToLowerInvariant() -ne $candidateSha) {
             throw "Final publish checkout drifted from the candidate SHA."
           }
@@ -451,7 +533,7 @@ jobs:
             throw "Latest exact-SHA push/main CI is absent or not completed/success after approval."
           }
           $evidence = Get-Content candidate-evidence/candidate-evidence.json -Raw | ConvertFrom-Json
-          if ($evidence.candidate.version -ne $version -or $evidence.candidate.candidate_sha -ne $candidateSha -or $evidence.candidate.tag -ne $tag -or $evidence.candidate.tag_target_sha -ne $candidateSha -or $evidence.candidate.observed_build_sha -ne $candidateSha) {
+          if ($evidence.candidate.version -ne $version -or $evidence.candidate.candidate_sha -ne $candidateSha -or $evidence.candidate.tag -ne $tag -or $evidence.candidate.tag_target_sha -ne $candidateSha -or [string]$evidence.candidate.candidate_run_id -ne $env:CANDIDATE_RUN_ID -or $evidence.candidate.observed_build_sha -ne $candidateSha) {
             throw "Candidate evidence identity does not match this publication request."
           }
           if ($evidence.package_artifact.id -ne "${{ needs.publish-preflight.outputs.package_artifact_id }}") {
@@ -467,39 +549,42 @@ jobs:
           if ($checksum -ne $actual -or $actual -ne $evidence.package_artifact.checksum) {
             throw "Downloaded ZIP checksum does not match the immutable candidate evidence."
           }
+          $verified = Get-Content verified-evidence/verified-release-evidence.json -Raw | ConvertFrom-Json
+          if ([string]$verified.schema_version -ne "1" -or $verified.candidate.candidate_sha -ne $candidateSha -or $verified.candidate.tag_target_sha -ne $candidateSha -or [string]$verified.candidate.candidate_run_id -ne $env:CANDIDATE_RUN_ID -or [string]$verified.candidate.package_artifact_id -ne "${{ needs.publish-preflight.outputs.package_artifact_id }}" -or $verified.candidate.zip_checksum -ne $actual -or @($verified.attestations).Count -ne 5) {
+            throw "Verified manual evidence binding does not match the final candidate package."
+          }
 
       - name: Write publication evidence bound to the verified candidate
         shell: pwsh
         run: |
+          $version = $env:RELEASE_VERSION.Trim()
+          $candidateSha = $env:CANDIDATE_SHA.Trim().ToLowerInvariant()
+          $verifiedPath = "verified-evidence/verified-release-evidence.json"
           $evidence = [ordered]@{
             schema_version = 1
-            candidate_sha = "${{ inputs.candidate_sha }}"
-            tag_target_sha = "${{ inputs.candidate_sha }}"
-            version = "${{ inputs.version }}"
-            candidate_run_id = "${{ inputs.candidate_run_id }}"
+            candidate_sha = $candidateSha
+            tag_target_sha = $candidateSha
+            version = $version
+            candidate_run_id = $env:CANDIDATE_RUN_ID
             package_artifact_id = "${{ needs.publish-preflight.outputs.package_artifact_id }}"
-            zip_checksum = (Get-FileHash "candidate-package/CVMAnalytics-windows-v${{ inputs.version }}.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
-            local_data_evidence_ref = "${{ inputs.local_data_evidence_ref }}"
-            packaged_evidence_ref = "${{ inputs.packaged_evidence_ref }}"
-            conditional = @(
-              @{ name = "api"; status = "${{ inputs.api_evidence_status }}"; basis = "${{ inputs.api_evidence_basis }}"; reference = "${{ inputs.api_evidence_ref }}" },
-              @{ name = "ccee"; status = "${{ inputs.ccee_evidence_status }}"; basis = "${{ inputs.ccee_evidence_basis }}"; reference = "${{ inputs.ccee_evidence_ref }}" },
-              @{ name = "strict_backups"; status = "${{ inputs.strict_backup_evidence_status }}"; basis = "${{ inputs.strict_backup_evidence_basis }}"; reference = "${{ inputs.strict_backup_evidence_ref }}" }
-            )
+            zip_checksum = (Get-FileHash "candidate-package/CVMAnalytics-windows-v$version.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
+            verified_evidence_artifact_id = $env:VERIFIED_EVIDENCE_ARTIFACT_ID
+            verified_evidence_content_sha256 = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([IO.File]::ReadAllBytes($verifiedPath))).ToLowerInvariant()
+            attestations = (Get-Content $verifiedPath -Raw | ConvertFrom-Json).attestations
           }
           $evidence | ConvertTo-Json -Depth 5 | Set-Content -Path manual-evidence.json -Encoding utf8
 
       - name: Upload immutable publication evidence before release creation
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: release-publication-evidence-${{ inputs.version }}-${{ inputs.candidate_sha }}-${{ github.run_id }}
+          name: release-publication-evidence-${{ env.RELEASE_VERSION }}-${{ env.CANDIDATE_SHA }}-${{ github.run_id }}
           if-no-files-found: error
           path: manual-evidence.json
 
       - name: Prepare verified release aliases
         shell: pwsh
         run: |
-          $version = "${{ inputs.version }}"
+          $version = $env:RELEASE_VERSION.Trim()
           Copy-Item "candidate-package/CVMAnalytics-windows-v$version.zip" "CVMAnalytics-windows-v$version.zip"
           Copy-Item "candidate-package/CVMAnalytics-windows-v$version.zip.sha256" "CVMAnalytics-windows-v$version.zip.sha256"
           Copy-Item "CVMAnalytics-windows-v$version.zip" "CVMAnalytics-windows.zip"
@@ -507,15 +592,15 @@ jobs:
           "$latestHash  CVMAnalytics-windows.zip" | Out-File -FilePath "CVMAnalytics-windows.zip.sha256" -Encoding utf8 -NoNewline
 
       - name: Publish GitHub Release from verified candidate only
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
-          tag_name: v${{ inputs.version }}
-          name: CVM Analytics v${{ inputs.version }}
-          prerelease: ${{ contains(inputs.version, '-rc.') }}
+          tag_name: v${{ env.RELEASE_VERSION }}
+          name: CVM Analytics v${{ env.RELEASE_VERSION }}
+          prerelease: ${{ contains(env.RELEASE_VERSION, '-rc.') }}
           generate_release_notes: true
           files: |
-            CVMAnalytics-windows-v${{ inputs.version }}.zip
-            CVMAnalytics-windows-v${{ inputs.version }}.zip.sha256
+            CVMAnalytics-windows-v${{ env.RELEASE_VERSION }}.zip
+            CVMAnalytics-windows-v${{ env.RELEASE_VERSION }}.zip.sha256
             CVMAnalytics-windows.zip
             CVMAnalytics-windows.zip.sha256
         env:

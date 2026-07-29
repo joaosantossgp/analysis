@@ -48,16 +48,16 @@ matching `v<version>` tag.
    immutable GitHub Actions artifacts: the versioned ZIP/checksum package and
    `candidate-evidence.json`, which records the candidate SHA, tag target,
    observed builder SHA, exact-CI run, package artifact ID, and ZIP checksum.
-2. **Publish phase** requires the successful candidate run ID plus immutable
-   references to local-data and packaged-app evidence. It requires each
-   conditional check (API tests, CCEE managed-ingestion smoke, and strict
-   rollback-backup policy) to be explicitly `required` or `not-required` with
-   a basis; required checks also need an immutable evidence reference. Before
-   and after protected approval it re-resolves the tag and latest exact-SHA CI.
-   The final job downloads the saved candidate artifacts, verifies their
-   identity and checksum against `candidate-evidence.json`, writes/uploads the
-   publication evidence, then publishes those bytes without rebuilding or
-   retagging. It creates the existing versioned and `latest` asset aliases.
+2. **Publish phase** requires the successful candidate run ID plus five
+   immutable GitHub Actions evidence-artifact IDs: local-data, packaged-app,
+   API applicability, CCEE applicability, and strict-backup applicability.
+   Preflight reads each artifact through the Actions API, hashes its ZIP and
+   JSON content, and accepts only one `release-evidence-attestation.json` file
+   with the schema below. Before and after protected approval it re-resolves the
+   tag and latest exact-SHA CI. The final job downloads the saved candidate and
+   verified-evidence artifacts, verifies their identity and checksum, then
+   publishes those bytes without rebuilding or retagging. It creates the
+   existing versioned and `latest` asset aliases.
 
 Only the final `Publish verified candidate` job has `contents: write`; every
 other release job has read-only repository permissions. Stable `X.Y.Z` remains
@@ -68,10 +68,12 @@ new candidate; the workflow never promotes a different SHA by tag movement.
 The release operator must configure the GitHub environment before any publish
 run. This repository currently has no such protected environment. Create an
 environment named **`release-publication`**, require **João
-(`joaosantossgp`)** as reviewer, and restrict deployment branches to the
-protected `main` branch only. Do not reuse the unprotected `Production`
-environment. The workflow deliberately names this environment but cannot
-create or protect it; its reviewer/branch policy is an external GitHub setting.
+(`joaosantossgp`)** as reviewer, restrict selected deployment branches to the
+protected `main` branch only, and disable administrator bypass. Do not reuse the
+unprotected `Production` environment. This is a release precondition, not a
+best-effort recommendation: the workflow deliberately names the environment but
+cannot create or protect it, so a YAML reference alone provides no approval
+gate.
 
 Flat-root means the ZIP root contains `CVMAnalytics.exe` and `_internal/`
 directly. A wrapper folder breaks the updater contract.
@@ -107,8 +109,8 @@ When release evidence conflicts, use this hierarchy:
    Settings -> Diagnostics in the packaged app for generated build commit and
    build timestamp. Treat this as artifact provenance, not as proof of the
    current checkout.
-5. **Manual and conditional evidence** — use immutable references in
-   `manual-evidence.json` plus the release workflow logs to prove local-data
+5. **Manual and conditional evidence** — use the verified Actions artifact IDs,
+   ZIP/content SHA-256 values, and `manual-evidence.json` to prove local-data
    checks, packaged validation, and every required conditional check. A
    protected-environment approval is not evidence that a manual check ran.
 6. **Packaged validation evidence** — use the release workflow logs, release
@@ -122,6 +124,61 @@ timestamp when available, validation environment, and the results of packaged
 launch, updater/offline, and Excel-open checks. It must also identify the
 candidate run/artifact IDs and ZIP checksum, and bind its manual/conditional
 evidence to those values. User data remains excluded from release artifacts.
+
+### Evidence attestation contract
+
+An operator creates each manual or conditional evidence record as an immutable
+GitHub Actions artifact containing exactly one UTF-8 JSON file named
+`release-evidence-attestation.json`. The publish dispatch accepts the numeric
+artifact IDs, not URLs, comments, free-form text, or mutable files. The workflow
+downloads the artifact through the GitHub API, records its Actions artifact ID,
+producer run ID, ZIP SHA-256, and JSON-content SHA-256, and rejects an expired,
+malformed, multi-file, or mismatched record.
+
+Every record has this candidate binding:
+
+```json
+{
+  "schema_version": 1,
+  "attestation_type": "manual-local-data",
+  "candidate": {
+    "candidate_sha": "<40 lowercase hex>",
+    "tag_target_sha": "<same SHA>",
+    "candidate_run_id": "<candidate Actions run ID>",
+    "package_artifact_id": "<candidate package artifact ID>",
+    "zip_checksum": "<64 lowercase hex>"
+  },
+  "producer": { "workflow_run_id": "<attestation producer run ID>" },
+  "result": { "manual": true, "summary": "<operator record>" }
+}
+```
+
+The two required manual `attestation_type` values are `manual-local-data` and
+`manual-packaged`. They preserve the manual nature of source-data and packaged
+checks: a valid record proves candidate binding and provenance, not that the
+workflow independently reproduced every substantive observation.
+
+The three conditional values are `conditional-api`, `conditional-ccee`, and
+`conditional-strict-backup`. Each additionally requires a typed decision:
+
+```json
+{
+  "decision": {
+    "status": "required",
+    "basis": {
+      "type": "candidate-diff",
+      "candidate_sha": "<same SHA>",
+      "tag_target_sha": "<same SHA>",
+      "summary": "<reviewed changed-path/policy explanation>"
+    }
+  }
+}
+```
+
+`status` is exactly `required` or `not-required`; basis `type` is exactly
+`candidate-diff` or `release-policy`. A required conditional record also needs
+the manual `result` object. These typed, candidate-bound attestations replace
+free-form applicability strings.
 
 ## Updater Contract
 

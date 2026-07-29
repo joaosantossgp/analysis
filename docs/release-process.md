@@ -70,10 +70,12 @@ Release Desktop is manual-only and runs two separate phases from `main`:
    exact-SHA `push/main` CI. The Windows build runs once and uploads immutable
    package and candidate-evidence artifacts.
 2. Complete the local-data and packaged-app validations against that downloaded
-   candidate ZIP. Record immutable evidence references. For API tests, CCEE
-   managed-ingestion smoke, and strict rollback-backup policy, record
-   `required` or `not-required`, a diff/policy basis, and a reference whenever
-   required.
+   candidate ZIP. Store each result as an immutable Actions artifact containing
+   a candidate-bound `release-evidence-attestation.json` record. Create typed
+   API, CCEE, and strict-backup decision attestations too; each declares
+   `required` or `not-required` with a candidate-diff or release-policy basis.
+   Pass the five numeric artifact IDs to publish. URLs, comments, and free-form
+   references are rejected.
 3. Dispatch **publish** with the same version/SHA, candidate run ID, and the
    evidence declarations. It downloads the candidate ZIP and evidence from that
    run, rechecks tag/SHA/latest CI before and after approval, verifies the ZIP
@@ -83,8 +85,10 @@ Release Desktop is manual-only and runs two separate phases from `main`:
 The final publish job is protected by the `release-publication` GitHub
 environment. Before use, configure that environment with João
 (`joaosantossgp`) as required reviewer and a selected-branch policy that allows
-only protected `main`. The workflow has no authority to configure environments;
-do not substitute the existing unprotected `Production` environment.
+only protected `main`, with administrator bypass disabled. This remote
+configuration is a precondition: the workflow has no authority to configure
+environments, and its YAML reference alone cannot provide protected approval.
+Do not substitute the existing unprotected `Production` environment.
 
 Any failed, cancelled, missing, expired, stale, tag-mismatched, or
 checksum/evidence-mismatched gate stops publication. Do not retry by rebuilding
