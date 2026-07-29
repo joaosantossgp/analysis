@@ -497,8 +497,17 @@ class EntityRegistryRepository:
         return claim
 
     def find_identifier_claims(
-        self, namespace: str, raw_value: str, scope_authority: str | None = None
+        self,
+        namespace: str,
+        raw_value: str,
+        scope_authority: str | None = None,
+        scope_country: str | None = None,
+        scope_context: str | None = None,
     ) -> list[IdentifierClaimRecord]:
+        rule = self._get_namespace_rule(namespace)
+        if rule is None:
+            raise EntityRegistryValidationError(f"unknown namespace: {namespace}")
+        self._validate_scope(rule, scope_authority, scope_country, scope_context)
         normalized_value = self._normalize(namespace, raw_value)
         with self._engine.connect() as conn:
             rows = conn.execute(
@@ -508,12 +517,18 @@ class EntityRegistryRepository:
                       AND normalized_value = :normalized_value
                       AND ((scope_authority = :scope_authority)
                            OR (scope_authority IS NULL AND :scope_authority IS NULL))
+                      AND ((scope_country = :scope_country)
+                           OR (scope_country IS NULL AND :scope_country IS NULL))
+                      AND ((scope_context = :scope_context)
+                           OR (scope_context IS NULL AND :scope_context IS NULL))
                     ORDER BY claim_id
                 """),
                 {
                     "namespace": namespace,
                     "normalized_value": normalized_value,
                     "scope_authority": scope_authority,
+                    "scope_country": scope_country,
+                    "scope_context": scope_context,
                 },
             ).mappings().all()
         return [IdentifierClaimRecord(**dict(row)) for row in rows]
@@ -576,9 +591,16 @@ class EntityRegistryRepository:
         return alias
 
     def find_entities_by_identifier(
-        self, namespace: str, raw_value: str, scope_authority: str | None = None
+        self,
+        namespace: str,
+        raw_value: str,
+        scope_authority: str | None = None,
+        scope_country: str | None = None,
+        scope_context: str | None = None,
     ) -> list[EntityRecord]:
-        claims = self.find_identifier_claims(namespace, raw_value, scope_authority)
+        claims = self.find_identifier_claims(
+            namespace, raw_value, scope_authority, scope_country, scope_context
+        )
         entities = [self.get_entity(claim.entity_id) for claim in claims if claim.claim_status == "accepted"]
         return [entity for entity in entities if entity is not None]
 
@@ -791,6 +813,9 @@ class EntityRegistryRepository:
         for required_scope in rule.required_scopes:
             if not values[required_scope] or not str(values[required_scope]).strip():
                 raise EntityRegistryValidationError(f"namespace requires scope {required_scope}")
+        for scope_name, value in values.items():
+            if scope_name not in rule.required_scopes and value is not None:
+                raise EntityRegistryValidationError(f"namespace does not use scope {scope_name}")
         if rule.expected_scope_authority and str(authority).strip().upper() != rule.expected_scope_authority:
             raise EntityRegistryValidationError(
                 f"namespace requires authority {rule.expected_scope_authority}"

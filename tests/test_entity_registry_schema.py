@@ -1,12 +1,71 @@
 from __future__ import annotations
 
+import os
+from types import SimpleNamespace
+from uuid import uuid4
+
 import pytest
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.pool import QueuePool
 from sqlalchemy.exc import IntegrityError
 
+import src.companies.entity_registry_schema as entity_registry_schema
 from src.companies.entity_registry_schema import ensure_entity_registry_schema, validate_entity_registry_schema
 from src.financials.database import init_db_tables
+
+
+def _clone_registry_schema(source_engine, target_engine, replace_sql: str, replacement: str):
+    with source_engine.connect() as conn:
+        statements = conn.execute(text("""
+            SELECT sql FROM sqlite_master
+            WHERE (name LIKE 'entity_registry_%' OR name LIKE 'idx_er_%') AND sql IS NOT NULL
+            ORDER BY CASE type WHEN 'table' THEN 1 WHEN 'index' THEN 2 ELSE 3 END, name
+        """)).scalars().all()
+    replaced = False
+    with target_engine.begin() as conn:
+        for statement in statements:
+            if not replaced and replace_sql in statement:
+                statement = statement.replace(replace_sql, replacement, 1)
+                replaced = True
+            conn.execute(text(statement))
+    assert replaced
+
+
+class _FakePostgresqlResult:
+    def __init__(self, row):
+        self._row = row
+
+    def mappings(self):
+        return self
+
+    def one_or_none(self):
+        return self._row
+
+
+class _FakePostgresqlConnection:
+    def __init__(self, row):
+        self._row = row
+        self.statements: list[str] = []
+
+    def execute(self, statement):
+        self.statements.append(str(statement))
+        return _FakePostgresqlResult(self._row)
+
+
+class _FakePostgresqlEngine:
+    def __init__(self, row):
+        self.dialect = SimpleNamespace(name="postgresql")
+        self.connection = _FakePostgresqlConnection(row)
+
+    def connect(self):
+        class _ConnectionContext:
+            def __enter__(_self):
+                return self.connection
+
+            def __exit__(_self, exc_type, exc, traceback):
+                return False
+
+        return _ConnectionContext()
 
 
 def test_registry_schema_is_idempotent_and_leaves_legacy_rows_untouched(tmp_path):
@@ -136,3 +195,80 @@ def test_schema_validation_rejects_same_name_incomplete_shape_without_ddl(tmp_pa
 
     with pytest.raises(ValueError, match="incomplete"):
         validate_entity_registry_schema(engine)
+
+
+@pytest.mark.parametrize(
+    ("replace_sql", "replacement"),
+    [
+        (
+            "REFERENCES entity_registry_entities(entity_id)\n                    ON DELETE RESTRICT",
+            "REFERENCES entity_registry_evidence(evidence_id)\n                    ON DELETE RESTRICT",
+        ),
+        ("ON DELETE RESTRICT", "ON DELETE CASCADE"),
+        (
+            "namespace, normalized_value, scope_authority, scope_country, scope_context, claim_status",
+            "namespace, claim_status, normalized_value, scope_authority, scope_country, scope_context",
+        ),
+        ("'active', 'retired', 'deprecated'", "'active', 'retired', 'obsolete'"),
+    ],
+)
+def test_schema_validation_rejects_wrong_safety_shape_without_ddl(
+    tmp_path, replace_sql, replacement
+):
+    source = create_engine(f"sqlite:///{tmp_path / 'source.db'}")
+    target = create_engine(f"sqlite:///{tmp_path / 'target.db'}")
+    ensure_entity_registry_schema(source)
+    _clone_registry_schema(source, target, replace_sql, replacement)
+
+    with pytest.raises(ValueError, match="incomplete"):
+        validate_entity_registry_schema(target)
+
+
+def test_postgresql_validator_rejects_decoy_same_named_objects(monkeypatch):
+    source = create_engine("sqlite:///:memory:")
+    ensure_entity_registry_schema(source)
+    engine = _FakePostgresqlEngine(row=None)
+    monkeypatch.setattr(entity_registry_schema, "inspect", lambda _: inspect(source))
+
+    with pytest.raises(ValueError, match="PostgreSQL immutable entity trigger"):
+        validate_entity_registry_schema(engine)
+
+    query = engine.connection.statements[-1]
+    assert "trigger.tgrelid = registry.table_oid" in query
+    assert "trigger.tgfoid = registry.function_oid" in query
+    assert "trigger.tgenabled" in query
+    assert "trigger.tgattr" in query
+    assert "pg_get_functiondef" in query
+
+
+@pytest.mark.skipif(
+    not os.getenv("ENTITY_REGISTRY_POSTGRESQL_TEST_URL"),
+    reason="requires an explicitly configured dedicated PostgreSQL test database",
+)
+def test_live_postgresql_rejects_direct_entity_id_updates():
+    """Opt-in live regression; it is intentionally skipped without a test DSN."""
+    engine = create_engine(os.environ["ENTITY_REGISTRY_POSTGRESQL_TEST_URL"])
+    ensure_entity_registry_schema(engine)
+    validate_entity_registry_schema(engine)
+    entity_id = uuid4().hex
+    with engine.begin() as conn:
+        conn.execute(
+            text("""
+                INSERT INTO entity_registry_entities (
+                    entity_id, entity_kind, lifecycle_status, lifecycle_reason,
+                    created_origin, created_at, updated_at
+                ) VALUES (:entity_id, 'organization', 'active', NULL, 'source_ingestion',
+                          '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00')
+            """),
+            {"entity_id": entity_id},
+        )
+        with pytest.raises(Exception, match="immutable"):
+            with conn.begin_nested():
+                conn.execute(
+                    text("UPDATE entity_registry_entities SET entity_id = :replacement"),
+                    {"replacement": uuid4().hex},
+                )
+        conn.execute(
+            text("DELETE FROM entity_registry_entities WHERE entity_id = :entity_id"),
+            {"entity_id": entity_id},
+        )

@@ -531,8 +531,41 @@ def test_overlapping_weak_ticker_claim_is_preserved_as_review_conflict(repositor
             effective_from="2025-01-01T00:00:00+00:00",
         )
 
-    claims = repository.find_identifier_claims("br.b3.ticker", "PETR4", "B3")
+    claims = repository.find_identifier_claims(
+        "br.b3.ticker", "PETR4", "B3", scope_context="ON"
+    )
     assert {claim.claim_status for claim in claims} == {"accepted", "conflicted"}
+
+
+def test_identifier_reads_require_and_apply_the_complete_namespace_scope(repository):
+    on_share = repository.create_entity("security_class", origin="source_ingestion")
+    pn_share = repository.create_entity("security_class", origin="source_ingestion")
+    evidence = repository.record_evidence(source_class="external", source_reference="source://ticker")
+    for entity, context in ((on_share, "ON"), (pn_share, "PN")):
+        repository.claim_identifier(
+            entity_id=entity.entity_id,
+            namespace="br.b3.ticker",
+            raw_value="ACME3",
+            scope_authority="B3",
+            scope_context=context,
+            identifier_strength="weak",
+            evidence_id=evidence.evidence_id,
+            effective_from="2025-01-01T00:00:00+00:00",
+        )
+
+    claims = repository.find_identifier_claims(
+        "br.b3.ticker", "ACME3", "B3", scope_context="ON"
+    )
+    assert [claim.entity_id for claim in claims] == [on_share.entity_id]
+    assert repository.find_entities_by_identifier(
+        "br.b3.ticker", "ACME3", "B3", scope_context="PN"
+    ) == [pn_share]
+    with pytest.raises(EntityRegistryValidationError, match="scope context"):
+        repository.find_identifier_claims("br.b3.ticker", "ACME3", "B3")
+    with pytest.raises(EntityRegistryValidationError, match="authority B3"):
+        repository.find_identifier_claims(
+            "br.b3.ticker", "ACME3", "CVM", scope_context="ON"
+        )
 
 
 def test_dynamic_regulated_agent_namespace_binds_scope_authority(repository):

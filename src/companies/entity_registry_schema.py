@@ -5,6 +5,8 @@ of the legacy financial database startup initializer or a live migration.
 """
 from __future__ import annotations
 
+import re
+
 from sqlalchemy import Engine, inspect, text
 
 from src.platform.db import configure_sqlite_foreign_keys
@@ -41,6 +43,78 @@ _REQUIRED_TABLES = {
     "entity_registry_organization_facets",
     "entity_registry_lifecycle_events",
     "entity_registry_identifier_guards",
+}
+_REQUIRED_FOREIGN_KEYS = {
+    "entity_registry_identifier_claims": {
+        ("entity_id",): ("entity_registry_entities", ("entity_id",)),
+        ("evidence_id",): ("entity_registry_evidence", ("evidence_id",)),
+    },
+    "entity_registry_alias_claims": {
+        ("entity_id",): ("entity_registry_entities", ("entity_id",)),
+        ("evidence_id",): ("entity_registry_evidence", ("evidence_id",)),
+    },
+    "entity_registry_organization_facets": {
+        ("entity_id",): ("entity_registry_entities", ("entity_id",)),
+        ("evidence_id",): ("entity_registry_evidence", ("evidence_id",)),
+    },
+    "entity_registry_lifecycle_events": {
+        ("entity_id",): ("entity_registry_entities", ("entity_id",)),
+        ("evidence_id",): ("entity_registry_evidence", ("evidence_id",)),
+    },
+}
+_REQUIRED_INDEXES = {
+    "idx_er_entities_kind": ("entity_registry_entities", ("entity_kind", "entity_id"), False),
+    "idx_er_identifier_lookup": (
+        "entity_registry_identifier_claims",
+        ("namespace", "normalized_value", "scope_authority", "scope_country", "scope_context", "claim_status"),
+        False,
+    ),
+    "idx_er_identifier_entity": ("entity_registry_identifier_claims", ("entity_id", "claim_status"), False),
+    "idx_er_alias_entity": ("entity_registry_alias_claims", ("entity_id", "alias_type"), False),
+    "idx_er_facet_lookup": ("entity_registry_organization_facets", ("entity_id", "facet", "eligibility_status"), False),
+    "idx_er_lifecycle_entity": ("entity_registry_lifecycle_events", ("entity_id", "system_from"), False),
+}
+_REQUIRED_CHECK_FRAGMENTS = {
+    "entity_registry_entities": (
+        "entity_kind in ('organization', 'economic_group', 'security_class', 'concession', 'plant_or_asset', 'market_parcel')",
+        "lifecycle_status in ('active', 'retired', 'deprecated')",
+        "created_origin in ('source_ingestion', 'user', 'reviewer', 'derived')",
+    ),
+    "entity_registry_evidence": (
+        "source_class in ('official_primary', 'official_external', 'external', 'derived')",
+        "source_status in ('available', 'unavailable', 'failed', 'unsupported')",
+    ),
+    "entity_registry_identifier_claims": (
+        "length(raw_value) > 0", "length(normalized_value) > 0",
+        "identifier_strength in ('strong', 'weak')",
+        "claim_status in ('accepted', 'conflicted', 'blocked')",
+        "origin in ('source_ingestion', 'user', 'reviewer', 'derived')",
+        "evidence_status in ('available', 'none', 'unavailable', 'failed', 'unsupported')",
+        "effective_to is null or effective_from < effective_to",
+        "system_to is null or system_from < system_to",
+    ),
+    "entity_registry_alias_claims": (
+        "alias_type in ('legal_name', 'trade_name', 'brand', 'ticker_display', 'former_name', 'source_alias')",
+        "length(raw_value) > 0", "origin in ('source_ingestion', 'user', 'reviewer', 'derived')",
+        "evidence_status in ('available', 'none', 'unavailable', 'failed', 'unsupported')",
+        "effective_to is null or effective_from < effective_to",
+        "system_to is null or system_from < system_to",
+    ),
+    "entity_registry_organization_facets": (
+        "facet in ('legal_entity', 'issuer', 'regulated_agent', 'vehicle')",
+        "eligibility_status in ('active', 'inactive')",
+        "origin in ('source_ingestion', 'user', 'reviewer', 'derived')",
+        "evidence_status in ('available', 'none', 'unavailable', 'failed', 'unsupported')",
+        "effective_to is null or effective_from < effective_to",
+        "system_to is null or system_from < system_to",
+    ),
+    "entity_registry_lifecycle_events": (
+        "lifecycle_status in ('active', 'retired', 'deprecated')", "length(reason) > 0",
+        "origin in ('source_ingestion', 'user', 'reviewer', 'derived')",
+        "evidence_status in ('available', 'unavailable', 'failed', 'unsupported')",
+        "effective_to is null or effective_from < effective_to",
+        "system_to is null or system_from < system_to",
+    ),
 }
 
 
@@ -204,7 +278,7 @@ def ensure_entity_registry_schema(engine: Engine) -> None:
         for ddl in (
             "CREATE INDEX IF NOT EXISTS idx_er_entities_kind ON entity_registry_entities(entity_kind, entity_id)",
             "CREATE INDEX IF NOT EXISTS idx_er_identifier_lookup ON entity_registry_identifier_claims("
-            "namespace, normalized_value, scope_authority, claim_status)",
+            "namespace, normalized_value, scope_authority, scope_country, scope_context, claim_status)",
             "CREATE INDEX IF NOT EXISTS idx_er_identifier_entity ON entity_registry_identifier_claims(entity_id, claim_status)",
             "CREATE INDEX IF NOT EXISTS idx_er_alias_entity ON entity_registry_alias_claims(entity_id, alias_type)",
             "CREATE INDEX IF NOT EXISTS idx_er_facet_lookup ON entity_registry_organization_facets(entity_id, facet, eligibility_status)",
@@ -259,7 +333,8 @@ def validate_entity_registry_schema(engine: Engine) -> None:
         },
         "entity_registry_identifier_claims": {
             "claim_id", "entity_id", "namespace", "normalized_value", "scope_authority",
-            "identifier_strength", "claim_status", "evidence_id", "effective_from", "system_from",
+            "scope_country", "scope_context", "identifier_strength", "claim_status", "evidence_id",
+            "effective_from", "system_from",
         },
         "entity_registry_alias_claims": {"alias_id", "entity_id", "alias_type", "effective_from"},
         "entity_registry_organization_facets": {"facet_id", "entity_id", "facet", "eligibility_status"},
@@ -271,31 +346,13 @@ def validate_entity_registry_schema(engine: Engine) -> None:
         if not expected.issubset(actual):
             raise ValueError(f"entity registry schema is incomplete: {table_name} columns")
 
-    expected_foreign_keys = {
-        "entity_registry_identifier_claims": {"entity_id", "evidence_id"},
-        "entity_registry_alias_claims": {"entity_id", "evidence_id"},
-        "entity_registry_organization_facets": {"entity_id", "evidence_id"},
-        "entity_registry_lifecycle_events": {"entity_id", "evidence_id"},
-    }
-    for table_name, expected in expected_foreign_keys.items():
-        actual = {column for foreign_key in inspector.get_foreign_keys(table_name) for column in foreign_key["constrained_columns"]}
-        if not expected.issubset(actual):
-            raise ValueError(f"entity registry schema is incomplete: {table_name} foreign keys")
+    _validate_foreign_keys(engine, inspector)
 
     guard_pk = set(inspector.get_pk_constraint("entity_registry_identifier_guards")["constrained_columns"])
     if guard_pk != {"guard_key"}:
         raise ValueError("entity registry schema is incomplete: identifier guard key")
-    indexes = {
-        index["name"]
-        for table_name in _REQUIRED_TABLES
-        for index in inspector.get_indexes(table_name)
-    }
-    required_indexes = {
-        "idx_er_entities_kind", "idx_er_identifier_lookup", "idx_er_identifier_entity",
-        "idx_er_alias_entity", "idx_er_facet_lookup", "idx_er_lifecycle_entity",
-    }
-    if not required_indexes.issubset(indexes):
-        raise ValueError("entity registry schema is incomplete: required indexes")
+    _validate_indexes(inspector)
+    _validate_check_constraints(inspector, engine.dialect.name)
 
     if engine.dialect.name == "sqlite":
         with engine.connect() as conn:
@@ -303,38 +360,123 @@ def validate_entity_registry_schema(engine: Engine) -> None:
                 SELECT sql FROM sqlite_master
                 WHERE type = 'trigger' AND name = 'entity_registry_entities_no_id_update'
             """)).scalar_one_or_none()
-            table_sql = {
-                name: conn.execute(text("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = :name"), {"name": name}).scalar_one_or_none()
-                for name in _REQUIRED_TABLES
-            }
         if trigger is None or "entity_id is immutable" not in trigger:
             raise ValueError("entity registry schema is incomplete: immutable entity trigger")
-        required_check_fragments = {
-            "entity_registry_entities": "entity_kind IN",
-            "entity_registry_evidence": "source_class IN",
-            "entity_registry_identifier_claims": "identifier_strength IN",
-            "entity_registry_alias_claims": "alias_type IN",
-            "entity_registry_organization_facets": "facet IN",
-            "entity_registry_lifecycle_events": "lifecycle_status IN",
-        }
-        if any(
-            table_sql[name] is None or fragment.upper() not in table_sql[name].upper()
-            for name, fragment in required_check_fragments.items()
-        ):
-            raise ValueError("entity registry schema is incomplete: check constraints")
     elif engine.dialect.name == "postgresql":
         validate_postgresql_registry_safety(engine)
+
+
+def _validate_foreign_keys(engine: Engine, inspector) -> None:
+    for table_name, expected_keys in _REQUIRED_FOREIGN_KEYS.items():
+        actual_keys = {
+            tuple(foreign_key["constrained_columns"]): foreign_key
+            for foreign_key in inspector.get_foreign_keys(table_name)
+        }
+        for constrained_columns, (referred_table, referred_columns) in expected_keys.items():
+            foreign_key = actual_keys.get(constrained_columns)
+            if foreign_key is None or (
+                foreign_key["referred_table"], tuple(foreign_key["referred_columns"])
+            ) != (referred_table, referred_columns):
+                raise ValueError(f"entity registry schema is incomplete: {table_name} foreign keys")
+            ondelete = foreign_key.get("options", {}).get("ondelete")
+            if ondelete is not None and str(ondelete).upper() != "RESTRICT":
+                raise ValueError(f"entity registry schema is incomplete: {table_name} foreign keys")
+
+    if engine.dialect.name == "sqlite":
+        with engine.connect() as conn:
+            for table_name, expected_keys in _REQUIRED_FOREIGN_KEYS.items():
+                actual_keys = {
+                    (row["from"],): row
+                    for row in conn.execute(text(f"PRAGMA foreign_key_list({table_name})")).mappings()
+                }
+                for constrained_columns, (referred_table, referred_columns) in expected_keys.items():
+                    foreign_key = actual_keys.get(constrained_columns)
+                    if foreign_key is None or (
+                        foreign_key["table"], (foreign_key["to"],), str(foreign_key["on_delete"]).upper()
+                    ) != (referred_table, referred_columns, "RESTRICT"):
+                        raise ValueError(f"entity registry schema is incomplete: {table_name} foreign keys")
+
+
+def _validate_indexes(inspector) -> None:
+    for index_name, (table_name, columns, unique) in _REQUIRED_INDEXES.items():
+        index = next(
+            (candidate for candidate in inspector.get_indexes(table_name) if candidate["name"] == index_name),
+            None,
+        )
+        if index is None or tuple(index["column_names"]) != columns or bool(index.get("unique")) != unique:
+            raise ValueError("entity registry schema is incomplete: required indexes")
+
+
+def _validate_check_constraints(inspector, dialect: str) -> None:
+    for table_name, expected_fragments in _REQUIRED_CHECK_FRAGMENTS.items():
+        actual = tuple(
+            _normalize_sql(constraint.get("sqltext", ""))
+            for constraint in inspector.get_check_constraints(table_name)
+        )
+        if any(
+            not _has_required_check_expression(_normalize_sql(fragment), actual, dialect)
+            for fragment in expected_fragments
+        ):
+            raise ValueError("entity registry schema is incomplete: check constraints")
+
+
+def _normalize_sql(value: str) -> str:
+    return " ".join(value.lower().split()).replace("( ", "(").replace(" )", ")")
+
+
+def _has_required_check_expression(expected: str, actual: tuple[str, ...], dialect: str) -> bool:
+    if expected in actual:
+        return True
+    if dialect != "postgresql":
+        return False
+    required_tokens = tuple(re.findall(r"[a-z_]+|'[^']+'|[<>]|\b0\b", expected))
+    return any(all(token in expression for token in required_tokens) for expression in actual)
 
 
 def validate_postgresql_registry_safety(engine: Engine) -> None:
     """Validate PostgreSQL trigger/function safety when an operator supplies a live engine."""
     with engine.connect() as conn:
-        function_exists = conn.execute(text("""
-            SELECT 1 FROM pg_proc WHERE proname = 'entity_registry_prevent_entity_id_update'
-        """)).first()
-        trigger_exists = conn.execute(text("""
-            SELECT 1 FROM pg_trigger
-            WHERE tgname = 'entity_registry_entities_no_id_update' AND NOT tgisinternal
-        """)).first()
-    if function_exists is None or trigger_exists is None:
+        trigger = conn.execute(text("""
+            WITH expected_registry AS (
+                SELECT registry_table.oid AS table_oid, registry_schema.nspname AS table_schema,
+                       registry_function.oid AS function_oid,
+                       function_schema.nspname AS function_schema
+                FROM pg_class AS registry_table
+                JOIN pg_namespace AS registry_schema ON registry_schema.oid = registry_table.relnamespace
+                JOIN pg_proc AS registry_function
+                  ON registry_function.proname = 'entity_registry_prevent_entity_id_update'
+                 AND registry_function.pronamespace = registry_schema.oid
+                 AND registry_function.proargtypes = ''::oidvector
+                JOIN pg_namespace AS function_schema ON function_schema.oid = registry_function.pronamespace
+                WHERE registry_table.oid = to_regclass('entity_registry_entities')
+            )
+            SELECT registry.table_oid, registry.table_schema, registry.function_oid, registry.function_schema,
+                   trigger.tgenabled, trigger.tgtype,
+                   EXISTS (
+                       SELECT 1 FROM unnest(trigger.tgattr) AS attribute_number
+                       JOIN pg_attribute AS attribute
+                         ON attribute.attrelid = registry.table_oid
+                        AND attribute.attnum = attribute_number
+                       WHERE attribute.attname = 'entity_id'
+                   ) AS updates_entity_id,
+                   pg_get_triggerdef(trigger.oid) AS trigger_definition,
+                   pg_get_functiondef(registry.function_oid) AS function_definition
+            FROM expected_registry AS registry
+            JOIN pg_trigger AS trigger
+              ON trigger.tgrelid = registry.table_oid
+             AND trigger.tgfoid = registry.function_oid
+             AND trigger.tgname = 'entity_registry_entities_no_id_update'
+             AND NOT trigger.tgisinternal
+        """)).mappings().one_or_none()
+    if trigger is None or trigger["tgenabled"] != "O" or not trigger["updates_entity_id"]:
+        raise ValueError("entity registry schema is incomplete: PostgreSQL immutable entity trigger")
+    trigger_definition = _normalize_sql(trigger["trigger_definition"])
+    function_definition = _normalize_sql(trigger["function_definition"])
+    if (
+        "before update of entity_id" not in trigger_definition
+        or "for each row" not in trigger_definition
+        or "execute function" not in trigger_definition
+        or "new.entity_id is distinct from old.entity_id" not in function_definition
+        or "entity_id is immutable" not in function_definition
+    ):
         raise ValueError("entity registry schema is incomplete: PostgreSQL immutable entity trigger")
