@@ -139,14 +139,17 @@ evidence to those values. User data remains excluded from release artifacts.
 
 ### Evidence attestation contract
 
-Dispatch **attest** from `main` at the exact candidate SHA with the candidate
-run ID and the operator's manual/conditional summaries. It writes one named,
-immutable Actions artifact per record, each containing exactly one UTF-8 JSON
-file named `release-evidence-attestation.json`. Publish accepts only the
-successful attest run ID. It resolves the five expected artifact names from
-that run, then records their IDs, ZIP SHA-256 values, and JSON-content SHA-256
-values. It rejects expired, malformed, multi-file, mismatched, or untrusted
-producer records.
+Dispatch **attest** from the trusted `main` branch with the candidate run ID
+and the operator's manual/conditional summaries. GitHub dispatch accepts a
+branch or tag ref rather than an arbitrary commit SHA, so this remains valid
+when `main` advances after the candidate, provided the candidate is still an
+ancestor of current `main`. Attest checks out and binds the exact candidate,
+then writes one named, immutable Actions artifact per record, each containing
+exactly one UTF-8 JSON file named `release-evidence-attestation.json`. Publish
+accepts only the successful attest run ID. It resolves the five expected
+artifact names from that run, then records their IDs, ZIP SHA-256 values, and
+JSON-content SHA-256 values. It rejects expired, malformed, multi-file,
+mismatched, or untrusted producer records.
 
 Every record has this candidate binding:
 
@@ -167,7 +170,7 @@ Every record has this candidate binding:
     "workflow_name": "Release Desktop",
     "workflow_path": ".github/workflows/release-desktop.yml",
     "head_ref": "main",
-    "head_sha": "<same SHA>"
+    "workflow_source_sha": "<trusted main workflow SHA; may differ from candidate>"
   },
   "result": { "manual": true, "summary": "<operator record>" }
 }

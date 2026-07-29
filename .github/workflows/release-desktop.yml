@@ -358,8 +358,12 @@ jobs:
           if ($version -notmatch $releaseVersionPattern -or $candidateSha -notmatch '^[0-9a-f]{40}$' -or $candidateRunId -notmatch '^[1-9][0-9]*$') {
             throw "Attest requires a supported version, full candidate SHA, and numeric successful candidate_run_id."
           }
-          if ($env:GITHUB_REF -ne "refs/heads/main" -or $env:GITHUB_SHA.Trim().ToLowerInvariant() -ne $candidateSha) {
-            throw "Attest dispatches must run from trusted main at the exact candidate SHA."
+          if ($env:GITHUB_REF -ne "refs/heads/main") {
+            throw "Attest dispatches must run the reviewed workflow from refs/heads/main."
+          }
+          $workflowSourceSha = $env:GITHUB_SHA.Trim().ToLowerInvariant()
+          if ($workflowSourceSha -notmatch '^[0-9a-f]{40}$') {
+            throw "Attest must identify a full trusted-main workflow source SHA."
           }
           if ((git rev-parse HEAD).Trim().ToLowerInvariant() -ne $candidateSha) {
             throw "Attest checkout does not match candidate SHA."
@@ -416,7 +420,7 @@ jobs:
             }
             return [ordered]@{ status = $status; basis = [ordered]@{ type = $basisType; candidate_sha = $candidateSha; tag_target_sha = $candidateSha; summary = $basisSummary }; result = [ordered]@{ manual = ($status -eq "required"); summary = $resultSummary.Trim() } }
           }
-          $producer = [ordered]@{ workflow_run_id = "$env:GITHUB_RUN_ID"; phase = "attest"; workflow_name = "Release Desktop"; workflow_path = ".github/workflows/release-desktop.yml"; head_ref = "main"; head_sha = $candidateSha }
+          $producer = [ordered]@{ workflow_run_id = "$env:GITHUB_RUN_ID"; phase = "attest"; workflow_name = "Release Desktop"; workflow_path = ".github/workflows/release-desktop.yml"; head_ref = "main"; workflow_source_sha = $workflowSourceSha }
           $candidate = [ordered]@{ candidate_sha = $candidateSha; tag_target_sha = $candidateSha; candidate_run_id = $candidateRunId; package_artifact_id = "$($package[0].id)"; zip_checksum = $checksum }
           function Write-Attestation([string]$Type, $Result, $Decision) {
             $payload = [ordered]@{ schema_version = 1; attestation_type = $Type; candidate = $candidate; producer = $producer; result = $Result }
@@ -546,8 +550,9 @@ jobs:
             throw "Publish requires a numeric trusted attestation_run_id."
           }
           $attestationRun = gh api "/repos/$env:GITHUB_REPOSITORY/actions/runs/$attestationRunId" | ConvertFrom-Json
-          if ($attestationRun.name -ne "Release Desktop" -or $attestationRun.path -ne ".github/workflows/release-desktop.yml" -or $attestationRun.event -ne "workflow_dispatch" -or $attestationRun.conclusion -ne "success" -or $attestationRun.head_branch -ne "main" -or $attestationRun.head_sha -ne $candidateSha) {
-            throw "attestation_run_id must identify a successful trusted-main Release Desktop attest run for this exact SHA."
+          $attestationWorkflowSourceSha = $attestationRun.head_sha.Trim().ToLowerInvariant()
+          if ($attestationRun.name -ne "Release Desktop" -or $attestationRun.path -ne ".github/workflows/release-desktop.yml" -or $attestationRun.event -ne "workflow_dispatch" -or $attestationRun.conclusion -ne "success" -or $attestationRun.head_branch -ne "main" -or $attestationWorkflowSourceSha -notmatch '^[0-9a-f]{40}$') {
+            throw "attestation_run_id must identify a successful trusted-main Release Desktop attest run."
           }
           $attestationArtifacts = gh api "/repos/$env:GITHUB_REPOSITORY/actions/runs/$attestationRunId/artifacts?per_page=100" | ConvertFrom-Json
           function Resolve-AttestationArtifact([string]$Name) {
@@ -568,7 +573,7 @@ jobs:
               throw "Evidence artifact $ArtifactId is not produced by the selected trusted attestation run."
             }
             $producerRun = (& gh api "/repos/$env:GITHUB_REPOSITORY/actions/runs/$($metadata.workflow_run.id)" | ConvertFrom-Json)
-            if ($RequireTrustedProducer -and ($producerRun.name -ne "Release Desktop" -or $producerRun.path -ne ".github/workflows/release-desktop.yml" -or $producerRun.event -ne "workflow_dispatch" -or $producerRun.conclusion -ne "success" -or $producerRun.head_branch -ne "main" -or $producerRun.head_sha -ne $candidateSha)) {
+            if ($RequireTrustedProducer -and ($producerRun.name -ne "Release Desktop" -or $producerRun.path -ne ".github/workflows/release-desktop.yml" -or $producerRun.event -ne "workflow_dispatch" -or $producerRun.conclusion -ne "success" -or $producerRun.head_branch -ne "main" -or $producerRun.head_sha -notmatch '^[0-9a-f]{40}$')) {
               throw "Evidence artifact $ArtifactId was not produced by the successful trusted-main Release Desktop run for this candidate."
             }
             $zipPath = Join-Path $env:RUNNER_TEMP "release-evidence-$ArtifactId.zip"
@@ -601,7 +606,7 @@ jobs:
             }
           }
           function Assert-AttestationBinding {
-            param($Artifact, [string]$ExpectedType, [string]$CandidateSha, [string]$CandidateRunId, [string]$PackageArtifactId, [string]$ZipChecksum, [switch]$Conditional)
+            param($Artifact, [string]$ExpectedType, [string]$CandidateSha, [string]$CandidateRunId, [string]$PackageArtifactId, [string]$ZipChecksum, [string]$WorkflowSourceSha, [switch]$Conditional)
             $payload = $Artifact.payload
             if ([string]$payload.schema_version -ne "1" -or $payload.attestation_type -ne $ExpectedType) {
               throw "Evidence artifact $($Artifact.artifact_id) has an unsupported attestation schema or type."
@@ -612,7 +617,7 @@ jobs:
             if ([string]$payload.producer.workflow_run_id -ne $Artifact.workflow_run_id) {
               throw "Evidence artifact $($Artifact.artifact_id) producer workflow-run identity differs from Actions metadata."
             }
-            if ($payload.producer.phase -ne "attest" -or $payload.producer.workflow_name -ne "Release Desktop" -or $payload.producer.workflow_path -ne ".github/workflows/release-desktop.yml" -or $payload.producer.head_ref -ne "main" -or $payload.producer.head_sha -ne $CandidateSha) {
+            if ($payload.producer.phase -ne "attest" -or $payload.producer.workflow_name -ne "Release Desktop" -or $payload.producer.workflow_path -ne ".github/workflows/release-desktop.yml" -or $payload.producer.head_ref -ne "main" -or $payload.producer.workflow_source_sha -ne $WorkflowSourceSha) {
               throw "Evidence artifact $($Artifact.artifact_id) does not declare the trusted attest producer identity."
             }
             if (-not $Conditional -and ($payload.result.manual -ne $true -or [string]::IsNullOrWhiteSpace($payload.result.summary))) {
@@ -648,12 +653,12 @@ jobs:
           $verified = @()
           foreach ($item in $manual) {
             $artifact = Read-ActionArtifactJson $item.id "release-evidence-attestation.json"
-            Assert-AttestationBinding $artifact $item.type $candidateSha $candidateRunId $env:CANDIDATE_PACKAGE_ARTIFACT_ID $checksum
+            Assert-AttestationBinding $artifact $item.type $candidateSha $candidateRunId $env:CANDIDATE_PACKAGE_ARTIFACT_ID $checksum $attestationWorkflowSourceSha
             $verified += [ordered]@{ artifact_id = $artifact.artifact_id; workflow_run_id = $artifact.workflow_run_id; zip_sha256 = $artifact.zip_sha256; content_sha256 = $artifact.content_sha256; attestation_type = $item.type }
           }
           foreach ($item in $conditional) {
             $artifact = Read-ActionArtifactJson $item.id "release-evidence-attestation.json"
-            Assert-AttestationBinding $artifact $item.type $candidateSha $candidateRunId $env:CANDIDATE_PACKAGE_ARTIFACT_ID $checksum -Conditional
+            Assert-AttestationBinding $artifact $item.type $candidateSha $candidateRunId $env:CANDIDATE_PACKAGE_ARTIFACT_ID $checksum $attestationWorkflowSourceSha -Conditional
             $verified += [ordered]@{ artifact_id = $artifact.artifact_id; workflow_run_id = $artifact.workflow_run_id; zip_sha256 = $artifact.zip_sha256; content_sha256 = $artifact.content_sha256; attestation_type = $item.type; decision_status = $artifact.payload.decision.status; decision_basis_type = $artifact.payload.decision.basis.type }
           }
           [ordered]@{

@@ -72,13 +72,17 @@ Release Desktop is manual-only and runs three separate phases from `main`:
 2. Complete local-data and packaged-app validations against that downloaded
    candidate ZIP. Dispatch **attest** with the same version/SHA, candidate run
    ID, manual summaries, and typed API, CCEE, and strict-backup decisions.
-   Attest only runs when the dispatch itself is trusted `main` at that exact
-   SHA; it rechecks candidate artifact/checksum binding and emits the five
-   named candidate-bound records.
+   Dispatch attest from the trusted `main` branch. GitHub dispatches a branch
+   or tag ref, so `main` may have advanced after the candidate; this is allowed
+   only while the candidate remains an ancestor of current `main`. Attest
+   checks out the exact candidate, rechecks its artifact/checksum binding, and
+   emits the five named candidate-bound records. Each record also identifies
+   the trusted `main` workflow-source SHA separately from the candidate SHA.
 3. Dispatch **publish** with the same version/SHA, candidate run ID, and the
    successful attest run ID. It accepts records only from that successful
-   `Release Desktop` attest run at trusted `main` and the exact candidate SHA,
-   rechecks tag/SHA/latest CI before and after approval, verifies the ZIP
+   `Release Desktop` attest run from trusted `main`, verifies its separately
+   recorded workflow-source SHA and exact candidate binding, rechecks
+   tag/SHA/latest CI before and after approval, verifies the ZIP
    checksum, uploads publication evidence, and only then publishes. It never
    rebuilds the bundle or creates/moves a tag.
 

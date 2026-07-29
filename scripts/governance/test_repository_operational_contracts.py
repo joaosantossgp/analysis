@@ -299,10 +299,10 @@ def test_release_workflow_power_shell_reject_guards_fail_closed_for_provenance_f
         ("$attestationRun.name", "Untrusted workflow"),
         ("$attestationRun.path", ".github/workflows/untrusted.yml"),
         ("$attestationRun.head_branch", "release"),
-        ("$attestationRun.head_sha", "other-sha"),
     ):
         fixture = trusted_run_fixture | {field: rejected_value}
         assert _guard_rejects(trusted_run_guard, fixture)
+    assert "$attestationWorkflowSourceSha -notmatch '^[0-9a-f]{40}$'" in publish
 
     producer_fixture = {
         "$producerRun.name": "Release Desktop",
@@ -351,6 +351,26 @@ def test_release_workflow_power_shell_reject_guards_fail_closed_for_provenance_f
         },
     )
     assert "$candidatePayload.package_artifact.checksum -notmatch '^[0-9a-f]{64}$'" in attest
+
+
+def test_release_workflow_attest_remains_candidate_bound_after_main_advances() -> None:
+    workflow = _release_workflow()
+    jobs = workflow["jobs"]
+    attest = _job_step(jobs["attest-evidence"], "Verify candidate binding and write trusted attestations")["run"]
+    publish = _job_step(jobs["publish-preflight"], "Fetch and verify candidate-bound evidence attestations")["run"]
+
+    dispatch_guard = _throw_guard(attest, "$env:GITHUB_REF")
+    assert _guard_rejects(
+        dispatch_guard,
+        {"$env:GITHUB_REF": "refs/heads/untrusted"},
+    )
+    assert "$env:GITHUB_SHA.Trim().ToLowerInvariant() -ne $candidateSha" not in dispatch_guard
+    assert "git merge-base --is-ancestor $candidateSha origin/main" in attest
+    assert "$workflowSourceSha = $env:GITHUB_SHA.Trim().ToLowerInvariant()" in attest
+    assert "workflow_source_sha = $workflowSourceSha" in attest
+    assert "$attestationRun.head_sha -ne $candidateSha" not in publish
+    assert "$payload.producer.workflow_source_sha -ne $WorkflowSourceSha" in publish
+    assert "$payload.candidate.package_artifact_id -ne $PackageArtifactId" in publish
 
 
 def test_release_workflow_keeps_candidate_evidence_and_publish_preflight_immutable() -> None:
