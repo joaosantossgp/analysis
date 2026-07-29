@@ -14,6 +14,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.financials.database import CVMDatabase
+from src.companies.entity_registry_schema import ensure_entity_registry_schema
 
 
 class _RecorderConn:
@@ -174,3 +175,14 @@ def test_to_sql_with_retry_keeps_default_chunksize_for_postgresql():
 
     assert len(frame.calls) == 1
     assert frame.calls[0]["chunksize"] == 2000
+
+
+def test_registry_schema_uses_portable_ddl_without_startup_integration():
+    engine = _FakeEngine("postgresql")
+
+    ensure_entity_registry_schema(engine)
+
+    ddl_sql = "\n".join(sql for sql, _ in engine.begin_conn.calls)
+    assert "CREATE TABLE IF NOT EXISTS entity_registry_entities" in ddl_sql
+    assert "PRAGMA" not in ddl_sql
+    assert "entity_registry_prevent_entity_id_update" in ddl_sql

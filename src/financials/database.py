@@ -139,6 +139,18 @@ def init_db_tables(engine: Engine) -> None:
     _backfill_companies_metadata(engine)
 
 
+def init_entity_registry_schema(engine: Engine) -> None:
+    """Explicitly create the registry foundation for a fresh or sandbox database.
+
+    This is intentionally not called by ordinary financial-database startup.
+    Installed-database migration, legacy backfill, and cutover require the
+    separately approved catalog/copy/swap runner.
+    """
+    from src.companies.entity_registry_schema import ensure_entity_registry_schema
+
+    ensure_entity_registry_schema(engine)
+
+
 def _backfill_companies_metadata(engine: Engine) -> None:
     """Idempotently backfills missing CNPJ or ticker_b3 values for existing companies in the database locally.
 
