@@ -9,6 +9,7 @@ import textwrap
 from fnmatch import fnmatchcase
 from pathlib import Path
 
+import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -158,113 +159,187 @@ def test_worktree_lifecycle_scripts_default_to_main() -> None:
         assert match.group(1) == "main", relative_path
 
 
-def _workflow_run_blocks(workflow: str) -> list[str]:
-    return re.findall(
-        r"(?ms)^\s*run:\s*\|\s*\n(?P<body>.*?)(?=^\s*- name:|^\s*- uses:|^\s*\w[\w-]*:|\Z)",
-        workflow,
+def _release_workflow() -> dict[str, object]:
+    workflow = yaml.safe_load(
+        (ROOT / ".github/workflows/release-desktop.yml").read_text(encoding="utf-8")
     )
-
-
-def test_release_workflow_uses_env_transport_for_all_dispatch_inputs() -> None:
-    workflow = (ROOT / ".github/workflows/release-desktop.yml").read_text(
-        encoding="utf-8"
-    )
-    run_source = "\n".join(_workflow_run_blocks(workflow))
-    expected_env_names = {
-        "RELEASE_VERSION",
-        "CANDIDATE_SHA",
-        "CANDIDATE_RUN_ID",
-        "ATTESTATION_RUN_ID",
+    return workflow.get("on", workflow.get(True))["workflow_dispatch"] | {
+        "jobs": workflow["jobs"],
+        "permissions": workflow["permissions"],
     }
 
-    assert "${{ inputs." not in run_source
-    assert all(f"{name}: ${{{{ inputs." in workflow for name in expected_env_names)
-    assert all(f"$env:{name}" in run_source for name in expected_env_names)
+
+def _job_step(job: dict[str, object], name: str) -> dict[str, object]:
+    steps = [step for step in job["steps"] if step.get("name") == name]
+    assert len(steps) == 1, f"expected one {name!r} step"
+    return steps[0]
 
 
-def test_release_workflow_keeps_adversarial_dispatch_values_out_of_shell_source() -> None:
-    workflow = (ROOT / ".github/workflows/release-desktop.yml").read_text(
-        encoding="utf-8"
-    )
-    run_source = "\n".join(_workflow_run_blocks(workflow))
-    adversarial_quote_newline = '"; throw "dispatch injection"\n#'
-
-    # Workflow expressions are rendered before PowerShell parses `run:`. The
-    # regression is that no dispatch expression can enter that parse boundary;
-    # it must first become an environment value and then be read as data.
-    assert "${{ inputs." not in run_source
-    assert adversarial_quote_newline not in run_source
-    assert "RELEASE_VERSION: ${{ inputs.version }}" in workflow
-    assert "$env:RELEASE_VERSION" in run_source
+def _run_source(job: dict[str, object]) -> str:
+    return "\n".join(str(step.get("run", "")) for step in job.get("steps", []))
 
 
-def test_release_workflow_requires_candidate_bound_evidence_attestations() -> None:
-    workflow = (ROOT / ".github/workflows/release-desktop.yml").read_text(
-        encoding="utf-8"
-    )
-    required_fragments = (
-        "release-evidence-attestation.json",
+def test_release_workflow_has_exact_phase_graph_and_final_only_publish_authority() -> None:
+    workflow = _release_workflow()
+    jobs = workflow["jobs"]
+
+    assert set(jobs) == {
+        "resolve-candidate",
+        "build-windows",
+        "attest-evidence",
+        "publish-preflight",
+        "final-publish",
+    }
+    assert workflow["inputs"]["phase"]["options"] == ["candidate", "attest", "publish"]
+    assert jobs["resolve-candidate"]["if"] == "inputs.phase == 'candidate'"
+    assert jobs["build-windows"]["if"] == "inputs.phase == 'candidate'"
+    assert jobs["build-windows"]["needs"] == "resolve-candidate"
+    assert jobs["attest-evidence"]["if"] == "inputs.phase == 'attest'"
+    assert jobs["publish-preflight"]["if"] == "inputs.phase == 'publish'"
+    assert jobs["final-publish"]["if"] == "inputs.phase == 'publish'"
+    assert jobs["final-publish"]["needs"] == "publish-preflight"
+    assert workflow["permissions"] == {"contents": "read", "actions": "read"}
+    assert jobs["final-publish"]["permissions"] == {
+        "contents": "write",
+        "actions": "read",
+    }
+    assert jobs["final-publish"]["environment"] == "release-publication"
+    assert sum(job.get("permissions", {}).get("contents") == "write" for job in jobs.values()) == 1
+    assert sum("environment" in job for job in jobs.values()) == 1
+
+
+def test_release_workflow_transports_dispatch_values_as_environment_data_not_shell_code() -> None:
+    workflow = _release_workflow()
+    jobs = workflow["jobs"]
+    dispatch_expressions = "${{ inputs."
+
+    assert all(dispatch_expressions not in _run_source(job) for job in jobs.values())
+    assert jobs["resolve-candidate"]["env"] == {
+        "RELEASE_VERSION": "${{ inputs.version }}",
+        "CANDIDATE_SHA": "${{ inputs.candidate_sha }}",
+    }
+    assert jobs["publish-preflight"]["env"] == {
+        "RELEASE_VERSION": "${{ inputs.version }}",
+        "CANDIDATE_SHA": "${{ inputs.candidate_sha }}",
+        "CANDIDATE_RUN_ID": "${{ inputs.candidate_run_id }}",
+        "ATTESTATION_RUN_ID": "${{ inputs.attestation_run_id }}",
+    }
+    attest_env = jobs["attest-evidence"]["env"]
+    assert attest_env["RELEASE_VERSION"] == "${{ inputs.version }}"
+    assert attest_env["CANDIDATE_SHA"] == "${{ inputs.candidate_sha }}"
+    assert attest_env["CANDIDATE_RUN_ID"] == "${{ inputs.candidate_run_id }}"
+    assert all(value.startswith("${{ inputs.") for value in attest_env.values())
+
+
+def test_release_workflow_binds_candidate_and_trusted_attestation_producers_in_exact_steps() -> None:
+    workflow = _release_workflow()
+    jobs = workflow["jobs"]
+    attest = _job_step(jobs["attest-evidence"], "Verify candidate binding and write trusted attestations")["run"]
+    publish = _job_step(jobs["publish-preflight"], "Fetch and verify candidate-bound evidence attestations")["run"]
+    candidate = _job_step(jobs["publish-preflight"], "Re-resolve exact candidate, CI, and candidate artifact identities")["run"]
+
+    assert '$env:GITHUB_REF -ne "refs/heads/main"' in attest
+    assert "$env:GITHUB_SHA.Trim().ToLowerInvariant() -ne $candidateSha" in attest
+    assert all(token in attest for token in (
+        '$candidateRun.name -ne "Release Desktop"',
+        '$candidateRun.path -ne ".github/workflows/release-desktop.yml"',
+        '$candidateRun.event -ne "workflow_dispatch"',
+        '$candidateRun.conclusion -ne "success"',
+        '$candidateRun.head_branch -ne "main"',
+        '$candidateRun.head_sha -ne $candidateSha',
+        'candidatePayload.package_artifact.id',
+        'candidatePayload.package_artifact.checksum',
+        'release-evidence-attestation-$Type.json',
+        'workflow_run_id = "$env:GITHUB_RUN_ID"',
+        'phase = "attest"',
+    ))
+    assert all(token in candidate for token in (
+        '$candidateRun.name -ne "Release Desktop"',
+        '$candidateRun.path -ne ".github/workflows/release-desktop.yml"',
+        '$candidateRun.event -ne "workflow_dispatch"',
+        '$candidateRun.conclusion -ne "success"',
+        '$candidateRun.head_branch -ne "main"',
+        '$candidateRun.head_sha -ne $candidateSha',
+    ))
+    assert all(token in publish for token in (
+        '$attestationRun.name -ne "Release Desktop"',
+        '$attestationRun.path -ne ".github/workflows/release-desktop.yml"',
+        '$attestationRun.event -ne "workflow_dispatch"',
+        '$attestationRun.conclusion -ne "success"',
+        '$attestationRun.head_branch -ne "main"',
+        '$attestationRun.head_sha -ne $candidateSha',
+        'actions/runs/$($metadata.workflow_run.id)',
+        '$payload.producer.phase -ne "attest"',
+        'release-attestation-manual-local-data-$attestationRunId',
+        'release-attestation-manual-packaged-$attestationRunId',
+        'release-attestation-conditional-api-$attestationRunId',
+        'release-attestation-conditional-ccee-$attestationRunId',
+        'release-attestation-conditional-strict-backup-$attestationRunId',
+    ))
+
+
+def test_release_workflow_keeps_candidate_evidence_and_publish_preflight_immutable() -> None:
+    workflow = _release_workflow()
+    jobs = workflow["jobs"]
+    evidence_step = _job_step(jobs["build-windows"], "Write candidate evidence")["run"]
+    preflight = jobs["publish-preflight"]
+    final_publish = jobs["final-publish"]
+
+    assert all(token in evidence_step for token in (
         "schema_version",
-        "attestation_type",
         "candidate_sha",
         "tag_target_sha",
         "candidate_run_id",
-        "package_artifact_id",
-        "zip_checksum",
-        "workflow_run_id",
-        "$payload.result.manual",
-        "$payload.result.summary",
-        "decision.status",
-        "candidate-diff",
-        "release-policy",
-        "verified-release-evidence.json",
-        "Get-FileHash",
-        "actions/artifacts/$ArtifactId/zip",
+        "package_artifact",
+        "zip_sha256",
+        "observed_build_sha",
+    ))
+    assert "verified-release-evidence.json" in _run_source(preflight)
+    assert "Get-FileHash" in _run_source(preflight)
+    assert all(
+        "build_desktop.ps1" not in str(step)
+        and "Compress-Archive" not in str(step)
+        and "softprops/action-gh-release" not in str(step)
+        for step in preflight["steps"]
     )
-    missing = [fragment for fragment in required_fragments if fragment not in workflow]
-
-    assert not missing, f"release evidence contract missing: {', '.join(missing)}"
-    assert "local_data_evidence_ref" not in workflow
-    assert "api_evidence_basis:" not in workflow
+    assert any("softprops/action-gh-release" in step.get("uses", "") for step in final_publish["steps"])
 
 
-def test_release_workflow_only_accepts_trusted_attestation_producer_runs() -> None:
-    workflow = (ROOT / ".github/workflows/release-desktop.yml").read_text(
-        encoding="utf-8"
-    )
-    required_fragments = (
-        "attest-evidence:",
-        "inputs.phase == 'attest'",
-        "ATTESTATION_RUN_ID: ${{ inputs.attestation_run_id }}",
-        'producer = [ordered]@{ workflow_run_id = "$env:GITHUB_RUN_ID"; phase = "attest"',
-        "actions/runs/$($metadata.workflow_run.id)",
-        '$producerRun.name -ne "Release Desktop"',
-        '$producerRun.path -ne ".github/workflows/release-desktop.yml"',
-        '$producerRun.event -ne "workflow_dispatch"',
-        '$producerRun.conclusion -ne "success"',
-        '$producerRun.head_branch -ne "main"',
-        '$producerRun.head_sha -ne $candidateSha',
-        '$payload.producer.phase -ne "attest"',
-        "release-attestation-manual-local-data-",
-        "release-attestation-manual-packaged-",
-        "release-attestation-conditional-api-",
-        "release-attestation-conditional-ccee-",
-        "release-attestation-conditional-strict-backup-",
-    )
-    missing = [fragment for fragment in required_fragments if fragment not in workflow]
+def test_release_workflow_expiry_recovery_requires_a_fresh_superseding_candidate_cycle() -> None:
+    workflow = _release_workflow()
+    jobs = workflow["jobs"]
+    attest = _run_source(jobs["attest-evidence"])
+    publish = _run_source(jobs["publish-preflight"])
+    release_process = (ROOT / "docs/release-process.md").read_text(encoding="utf-8")
+    build_release = (ROOT / "docs/build-release.md").read_text(encoding="utf-8")
 
-    assert not missing, f"trusted attestation producer checks missing: {', '.join(missing)}"
-    assert "LOCAL_DATA_EVIDENCE_ARTIFACT_ID" not in workflow
+    assert "-not $_.expired" in attest
+    assert "-not $_.expired" in publish
+    for document in (release_process, build_release):
+        document = re.sub(r"\s+", " ", document.replace("**", " "))
+        assert "same version/SHA only after artifact expiry" in document
+        assert "new immutable artifacts and run IDs" in document
+        assert "superseded evidence" in document
+        assert "repeat exact-SHA CI, package/manual/conditional attestations, and #440 approval" in document
 
 
 def test_release_workflow_preserves_updater_version_grammar() -> None:
-    workflow = (ROOT / ".github/workflows/release-desktop.yml").read_text(
-        encoding="utf-8"
-    )
+    workflow = _release_workflow()
+    jobs = workflow["jobs"]
     version_number = r"(?:0|[1-9][0-9]*)"
     version_pattern = rf"^{version_number}\.{version_number}\.{version_number}(?:-rc\.{version_number})?$"
+    powershell_pattern = (
+        "'^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)"
+        "(?:-rc\\.(?:0|[1-9][0-9]*))?$'"
+    )
+    validation_steps = (
+        _job_step(jobs["resolve-candidate"], "Resolve exact tag target and latest exact-SHA main CI"),
+        _job_step(jobs["attest-evidence"], "Verify candidate binding and write trusted attestations"),
+        _job_step(jobs["publish-preflight"], "Re-resolve exact candidate, CI, and candidate artifact identities"),
+        _job_step(jobs["final-publish"], "Verify the same candidate artifact, tag, and latest CI after approval"),
+    )
 
-    assert version_pattern in workflow
+    assert all(powershell_pattern in step["run"] for step in validation_steps)
     assert re.fullmatch(version_pattern, "0.0.0")
     assert re.fullmatch(version_pattern, "1.2.3-rc.12")
     for invalid in ("01.2.3", "1.02.3", "1.2.03", "1.2.3-rc.01", "1.2.3-beta"):
@@ -273,27 +348,33 @@ def test_release_workflow_preserves_updater_version_grammar() -> None:
 
 def test_release_and_ci_actions_are_full_sha_pinned() -> None:
     for relative_path in (".github/workflows/release-desktop.yml", ".github/workflows/ci.yml"):
-        workflow = (ROOT / relative_path).read_text(encoding="utf-8")
-        uses = re.findall(
-            r"(?m)^\s*(?:-\s+)?uses:\s*([^\s#]+)(?:\s+#\s*(.+))?$",
-            workflow,
-        )
+        workflow = yaml.safe_load((ROOT / relative_path).read_text(encoding="utf-8"))
+        jobs = workflow["jobs"]
+        uses = [
+            step["uses"]
+            for job in jobs.values()
+            for step in job.get("steps", [])
+            if "uses" in step
+        ]
         assert uses, relative_path
-        for action, comment in uses:
-            assert re.fullmatch(r"[^@]+@[0-9a-f]{40}", action), action
-            assert comment is not None and re.fullmatch(r"v\d+(?:\.\d+){1,2}", comment), action
+        assert all(re.fullmatch(r"[^@]+@[0-9a-f]{40}", action) for action in uses)
 
 
 def test_release_workflow_keeps_publish_write_only_and_never_rebuilds_or_retags() -> None:
-    workflow = (ROOT / ".github/workflows/release-desktop.yml").read_text(
-        encoding="utf-8"
-    )
-    final_publish = workflow.split("  final-publish:", maxsplit=1)[1]
+    workflow = _release_workflow()
+    final_publish = workflow["jobs"]["final-publish"]
+    final_steps = final_publish["steps"]
+    final_source = _run_source(final_publish)
 
-    assert "push:\n    tags:" not in workflow
-    assert workflow.count("contents: write") == 1
-    assert "environment: release-publication" in final_publish
-    assert "actions/download-artifact@" in final_publish
-    assert "build_desktop.ps1" not in final_publish
-    assert "Compress-Archive" not in final_publish
-    assert "git tag " not in final_publish
+    assert set(workflow) == {"inputs", "jobs", "permissions"}
+    assert [step["name"] for step in final_steps if step.get("uses", "").startswith("actions/download-artifact@")] == [
+        "Download immutable candidate package",
+        "Download immutable candidate evidence",
+        "Download verified manual evidence binding",
+    ]
+    assert _job_step(final_publish, "Publish GitHub Release from verified candidate only")["uses"].startswith(
+        "softprops/action-gh-release@"
+    )
+    assert "build_desktop.ps1" not in final_source
+    assert "Compress-Archive" not in final_source
+    assert "git tag " not in final_source

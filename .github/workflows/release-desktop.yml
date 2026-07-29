@@ -3,6 +3,8 @@ name: Release Desktop
 on:
   workflow_dispatch:
     inputs:
+      # After artifact expiry, dispatch a fresh candidate cycle for the same
+      # version/SHA; the expired run is superseded evidence and cannot publish.
       phase:
         description: "Candidate builds once; attest records trusted evidence; publish consumes both."
         required: true

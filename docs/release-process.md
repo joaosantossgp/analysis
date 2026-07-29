@@ -88,8 +88,15 @@ or weaken its remote reviewer, protected-branch, or bypass settings.
 
 Any failed, cancelled, missing, expired, stale, tag-mismatched, or
 checksum/evidence-mismatched gate stops publication. Do not retry by rebuilding
-or retagging. Start a new candidate only when the intended source or immutable
-candidate itself has changed; otherwise correct the missing evidence and run the
-publish phase against the original candidate artifact.
+or retagging while the accepted candidate artifacts remain available; correct
+missing evidence and run publish against that original candidate artifact.
+
+The sole retention exception is a fresh candidate cycle for the **same
+version/SHA only after artifact expiry**. It creates **new immutable artifacts
+and run IDs**, and must repeat **exact-SHA CI, package/manual/conditional attestations,
+and #440 approval**, and can publish only that replacement candidate. Keep the
+expired run IDs as **superseded evidence** in the release record; they cannot be
+reused by attest or publish. This exception does not permit a new tag, retag, or
+substitution while the original immutable artifacts are still available.
 
 See [`build-release.md`](build-release.md) for the full checklist.

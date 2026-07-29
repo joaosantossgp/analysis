@@ -72,6 +72,18 @@ Publication uses the protected `release-publication` environment. Its reviewer,
 protected-`main` branch policy, and administrator-bypass settings are remote
 configuration; do not replace or weaken them in workflow code.
 
+### Artifact-expiry recovery
+
+An expired candidate, candidate-evidence, or attestation artifact cannot be
+repaired or published. The recovery exception is a fresh candidate cycle for
+the **same version/SHA only after artifact expiry**. It creates **new immutable
+artifacts and run IDs**, and must repeat **exact-SHA CI, package/manual/conditional
+attestations, and #440 approval**, and publishes only the replacement candidate.
+The expired run IDs remain **superseded evidence** in the release record and
+cannot be supplied to publish. This exception does not allow rebuilding,
+retagging, or substituting artifacts for a candidate whose artifacts remain
+available.
+
 Flat-root means the ZIP root contains `CVMAnalytics.exe` and `_internal/`
 directly. A wrapper folder breaks the updater contract.
 
