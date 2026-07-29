@@ -158,6 +158,96 @@ affect interpretation.
 - If a screen feels busy, first reduce duplication and unclear hierarchy before
   removing analytical content.
 
+### Analytical Workspace Patterns
+
+The Indicator Library detail redesign establishes a reusable pattern for dense
+analytical pages across the app. Treat it as the baseline for Companies,
+Sectors, Coverage, Indicators, News, and future Modeling surfaces when the user
+must select an entity or metric and inspect evidence without losing context.
+
+**Index plus detail.** A table, list, or grid is usually an index into analysis,
+not the final destination. It should support search, filtering, comparison, and
+selection. Selecting a row should open the relevant evidence or actions in
+place when that preserves an active analytical task. Navigation is appropriate
+when the selection opens a deeper workspace, such as a Companies directory row
+opening `/empresas/:cdCvm` as the issuer workspace.
+
+**Detail preserves context.** Detail panels, drawers, and inspectors should
+stay within the visible work area, respect the right content margin, and follow
+the user's scroll position. On wide screens, prefer a right-side panel that
+compresses the index. On narrow screens, stack the detail below the index. When
+the evidence is chart-heavy or table-heavy, allow resizing and fullscreen
+inspection instead of making the whole page wider.
+
+**Charts are first-class evidence.** When a time series exists, a chart should
+usually be the primary preview, with the table available for audit and exact
+values. Use a shared chart grammar: compact controls, chart-type switching,
+options inside the chart bounds, visible legends, editable series where
+supported, explicit units/periods, and empty/error states close to the chart.
+
+**Metadata belongs near the evidence.** Unit and period belong with the chart,
+table header, or value. Source and domain belong immediately near the evidence
+they qualify. Definitions belong behind inline help next to the indicator,
+metric, column, or page title. Internal ids, implementation paths, and broad
+metadata grids should stay out of the primary visual hierarchy unless the user
+is in an audit or source-review workflow.
+
+**Selection replaces redundant commands.** Avoid dedicated `Open` columns and
+repeated action buttons when row selection is the natural action. Keep
+favorites, help, status, and row-level actions attached to the object they
+modify, not spread across low-value columns.
+
+**Panels are bounded tools, not floating dashboards.** A side panel should be
+anchored to the table or workspace it explains. It must not float outside the
+page margin, cover unrelated navigation, or make the source table unusable at a
+normal laptop width.
+
+**Useful catalogs open useful data.** A library, directory, or hub should not
+stop at metadata when local data is available. It should open a useful chart,
+table, source state, or action directly. If only a definition is available, the
+UI must say so plainly instead of implying that data failed to load.
+
+### Company Workspace Pattern
+
+The Company area should become the clearest expression of the app's design
+system because it is the main issuer-level analyst workspace.
+
+**Company identity is the workspace spine.** Company name, ticker, CVM id,
+CNPJ, sector classification, local data status, latest period, and mapped
+operating connections anchor the workspace. Sub-tabs should feel like different
+modes of work on the same company, not separate dashboards.
+
+**The directory is an index.** The Companies page should optimize for selecting,
+filtering, comparing, and prioritizing issuers. It should not become a generic
+company-card dashboard. Dense rows, coverage/source status, and direct
+selection matter more than decorative summaries.
+
+**Overview answers readiness, evidence, and next action.** The first company
+screen should answer: is this company ready for analysis, what evidence is
+available, and what should the analyst inspect next? It should reuse the
+identity header, command bar, market preview, and company indicators instead of
+adding redundant readiness cards.
+
+**Sub-tabs are workflow modes.** Financial Statements is the official evidence
+surface. Excel Mapping is the export/model-mapping surface, not a forecast
+model. Coverage Status is coverage readiness and setup context, not only
+administration. Future Critical Factors, Peers, Valuation, and Thesis tabs
+should appear only when they have source-backed behavior.
+
+**Company-specific indicators stay inside the Company workspace.** Do not move
+issuer metrics into the general Indicator Library. The Library owns macro,
+sector, system, market, and benchmark indicators that open without an entity
+selector. Company metrics belong next to company identity, company periods,
+company source state, and company exports.
+
+**Evidence panels should drill down in place.** Company indicator rows, market
+series, statement accounts, coverage checklist items, and mapping rows should
+prefer contextual detail panels or bounded drill-downs before adding new pages.
+Navigation remains appropriate when the user is intentionally entering a deep
+workspace. In the Companies directory, row activation should navigate to
+`/empresas/:cdCvm`; inside the issuer workspace, contextual detail should
+preserve the current analytical context whenever practical.
+
 ## 2. Colors
 
 The palette is a restrained dark-neutral system with one operational teal accent and a small chart vocabulary.

@@ -90,6 +90,35 @@ labels, decorative containers, and low-value text. Less is not useful when it
 removes the source, period, unit, method, caveat, or next action an analyst
 needs to trust the result.
 
+### Workspace Continuity
+
+Analytical screens should preserve the user's working context when the user is
+already inside an active analysis. A directory, library, table, or grid is an
+index into evidence and action; it should avoid losing scroll position, filter
+state, or comparison context merely to inspect one item.
+
+The preferred pattern is:
+
+```text
+index or table
+-> contextual detail panel
+-> chart/table/source evidence
+-> explicit next action or deeper workspace
+```
+
+Use side panels, drawers, or in-place drill-downs when they help the analyst
+inspect an indicator, company, account, source, checklist item, or mapping row
+without leaving the current task. These panels must remain bounded to the
+workspace, preserve the source table, and support larger inspection through
+resizing or fullscreen when the evidence requires it.
+
+Navigation to a new route remains appropriate for deep workspaces such as
+Financial Statements, Excel Mapping, Coverage, future Models, and Valuation.
+It is also appropriate when a directory row opens the workspace itself: Companies
+directory row activation should navigate to `/empresas/:cdCvm`, the deep-work
+issuer workspace. Once inside that workspace, dense analytical lists should
+preserve context whenever practical.
+
 ### Excel-Grade Output
 
 Excel is a central product output, not an afterthought. Workbooks must be
@@ -240,6 +269,26 @@ Target direction:
   Critical Factors, Peers, Valuation, Model/Excel, Notes, Sources, Events, and
   Risks.
 - Make company pages feel like an analysis workspace, not only a registry.
+- Treat company identity as the workspace spine: name, ticker, CVM id, CNPJ,
+  sectors, local data status, latest period, source readiness, and mapped
+  operating connections should remain the anchor as the user moves across
+  sub-tabs.
+- Treat sub-tabs as workflow modes for the same issuer, not separate dashboard
+  pages. Overview should answer readiness, available evidence, and next action;
+  Financial Statements should preserve official account-level evidence; Excel
+  Mapping should stay focused on export/model mapping until forecasting exists;
+  Coverage should explain coverage readiness and remaining work, not only
+  administrative membership.
+- Prefer contextual drill-downs from company tables and panels before creating
+  new routes. Company indicator rows, market series, statement accounts,
+  mapping lines, coverage checklist items, and source statuses should open
+  useful detail without losing the current company context when practical.
+- Treat the Companies directory as the entry point into issuer analysis: row
+  activation should navigate to `/empresas/:cdCvm`, while contextual panels are
+  preferred after the analyst is already working inside that issuer workspace.
+- Keep company-specific metrics inside the Company Workspace. The general
+  Indicator Library is for indicators that open without selecting an issuer or
+  asset.
 
 Company analysis must clearly separate consolidated vs individual, quarterly
 isolated vs accumulated, reported vs calculated, official vs external, actual
