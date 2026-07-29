@@ -1,11 +1,13 @@
 """Typed local repository for the canonical entity registry foundation."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
+import time
 from uuid import uuid4
 
 from sqlalchemy import Engine, text
+from sqlalchemy.exc import OperationalError
 
 from src.companies.entity_registry_schema import (
     ALIAS_TYPES,
@@ -13,10 +15,11 @@ from src.companies.entity_registry_schema import (
     IDENTIFIER_CLAIM_STATUSES,
     IDENTIFIER_STRENGTHS,
     LIFECYCLE_STATUSES,
+    ORGANIZATION_FACETS,
     ORIGINS,
     SOURCE_CLASSES,
     SOURCE_STATUSES,
-    ensure_entity_registry_schema,
+    validate_entity_registry_schema,
 )
 
 
@@ -82,6 +85,36 @@ class AliasClaimRecord:
     system_to: str | None
 
 
+@dataclass(frozen=True)
+class OrganizationFacetRecord:
+    facet_id: str
+    entity_id: str
+    facet: str
+    eligibility_status: str
+    origin: str
+    evidence_id: str | None
+    evidence_status: str
+    effective_from: str
+    effective_to: str | None
+    system_from: str
+    system_to: str | None
+
+
+@dataclass(frozen=True)
+class LifecycleEventRecord:
+    lifecycle_event_id: str
+    entity_id: str
+    lifecycle_status: str
+    reason: str
+    origin: str
+    evidence_id: str
+    evidence_status: str
+    effective_from: str
+    effective_to: str | None
+    system_from: str
+    system_to: str | None
+
+
 class EntityRegistryError(ValueError):
     """Base typed failure for registry commands."""
 
@@ -103,18 +136,17 @@ class EntityRegistryConflictError(EntityRegistryError):
 class _NamespaceRule:
     normalizer_version: str
     eligible_kind: str
-    required_scope: str
+    required_scopes: tuple[str, ...]
+    required_organization_facet: str | None
     strong_requires_official_evidence: bool
 
 
 _NAMESPACE_RULES = {
-    "br.cvm.cd_cvm": _NamespaceRule("trim-exact/v1", "organization", "authority", True),
-    "br.cnpj": _NamespaceRule("digits-only/v1", "organization", "country", True),
-    "br.b3.ticker": _NamespaceRule("trim-exact/v1", "security_class", "context", False),
-    "br.aneel.ceg": _NamespaceRule("trim-exact/v1", "plant_or_asset", "authority", True),
-    "br.ccee.plant_parcel": _NamespaceRule("trim-exact/v1", "market_parcel", "authority", True),
-    "br.aneel.regulated_agent_code": _NamespaceRule("trim-exact/v1", "organization", "context", False),
-    "br.aneel.concession_code": _NamespaceRule("trim-exact/v1", "concession", "context", False),
+    "br.cvm.cd_cvm": _NamespaceRule("trim-exact/v1", "organization", ("authority",), "issuer", True),
+    "br.cnpj": _NamespaceRule("digits-only/v1", "organization", ("country",), "legal_entity", True),
+    "br.b3.ticker": _NamespaceRule("trim-exact/v1", "security_class", ("authority", "context"), None, False),
+    "br.aneel.ceg": _NamespaceRule("trim-exact/v1", "plant_or_asset", ("authority",), None, True),
+    "br.ccee.plant_parcel": _NamespaceRule("trim-exact/v1", "market_parcel", ("authority",), None, True),
 }
 
 
@@ -123,7 +155,7 @@ class EntityRegistryRepository:
 
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
-        ensure_entity_registry_schema(engine)
+        validate_entity_registry_schema(engine)
 
     def create_entity(self, entity_kind: str, *, origin: str) -> EntityRecord:
         self._require_allowed("entity kind", entity_kind, ENTITY_KINDS)
@@ -139,7 +171,6 @@ class EntityRegistryRepository:
             updated_at=now,
         )
         with self._engine.begin() as conn:
-            self._enable_sqlite_foreign_keys(conn)
             conn.execute(
                 text("""
                     INSERT INTO entity_registry_entities (
@@ -157,7 +188,28 @@ class EntityRegistryRepository:
     def get_entity(self, entity_id: str) -> EntityRecord | None:
         with self._engine.connect() as conn:
             row = conn.execute(
-                text("SELECT * FROM entity_registry_entities WHERE entity_id = :entity_id"),
+                text("""
+                    SELECT entity_id, entity_kind,
+                           COALESCE((
+                               SELECT lifecycle_status
+                               FROM entity_registry_lifecycle_events
+                               WHERE entity_id = entity_registry_entities.entity_id
+                                 AND system_to IS NULL
+                               ORDER BY system_from DESC, lifecycle_event_id DESC
+                               LIMIT 1
+                           ), lifecycle_status) AS lifecycle_status,
+                           COALESCE((
+                               SELECT reason
+                               FROM entity_registry_lifecycle_events
+                               WHERE entity_id = entity_registry_entities.entity_id
+                                 AND system_to IS NULL
+                               ORDER BY system_from DESC, lifecycle_event_id DESC
+                               LIMIT 1
+                           ), lifecycle_reason) AS lifecycle_reason,
+                           created_origin, created_at, updated_at
+                    FROM entity_registry_entities
+                    WHERE entity_id = :entity_id
+                """),
                 {"entity_id": entity_id},
             ).mappings().one_or_none()
         return EntityRecord(**dict(row)) if row else None
@@ -168,35 +220,70 @@ class EntityRegistryRepository:
         *,
         lifecycle_status: str,
         reason: str,
+        evidence_id: str | None = None,
+        origin: str = "source_ingestion",
+        effective_from: str | None = None,
+        effective_to: str | None = None,
         replacement_entity_id: str | None = None,
     ) -> EntityRecord:
         if replacement_entity_id is not None:
             raise EntityRegistryValidationError("entity_id is immutable and cannot be replaced")
         self._require_allowed("lifecycle status", lifecycle_status, LIFECYCLE_STATUSES)
+        self._require_allowed("origin", origin, ORIGINS)
         if not reason.strip():
             raise EntityRegistryValidationError("lifecycle reason is required")
-        updated_at = _utc_now()
+        evidence = self._get_evidence(evidence_id)
+        if evidence is None:
+            raise EntityRegistryValidationError("lifecycle change requires evidence")
+        now = _utc_now()
+        effective_from = effective_from or now
+        if effective_to is not None and effective_from >= effective_to:
+            raise EntityRegistryValidationError("invalid effective interval")
+        event = LifecycleEventRecord(
+            lifecycle_event_id=uuid4().hex,
+            entity_id=entity_id,
+            lifecycle_status=lifecycle_status,
+            reason=reason,
+            origin=origin,
+            evidence_id=evidence.evidence_id,
+            evidence_status=evidence.source_status,
+            effective_from=effective_from,
+            effective_to=effective_to,
+            system_from=now,
+            system_to=None,
+        )
         with self._engine.begin() as conn:
             result = conn.execute(
                 text("""
-                    UPDATE entity_registry_entities
-                    SET lifecycle_status = :lifecycle_status,
-                        lifecycle_reason = :reason,
-                        updated_at = :updated_at
-                    WHERE entity_id = :entity_id
+                    INSERT INTO entity_registry_lifecycle_events (
+                        lifecycle_event_id, entity_id, lifecycle_status, reason, origin,
+                        evidence_id, evidence_status, effective_from, effective_to,
+                        system_from, system_to
+                    ) VALUES (
+                        :lifecycle_event_id, :entity_id, :lifecycle_status, :reason, :origin,
+                        :evidence_id, :evidence_status, :effective_from, :effective_to,
+                        :system_from, :system_to
+                    )
                 """),
-                {
-                    "entity_id": entity_id,
-                    "lifecycle_status": lifecycle_status,
-                    "reason": reason,
-                    "updated_at": updated_at,
-                },
+                event.__dict__,
             )
-            if result.rowcount != 1:
+            if result.rowcount not in (None, 1):
                 raise EntityRegistryValidationError(f"unknown entity_id: {entity_id}")
         entity = self.get_entity(entity_id)
         assert entity is not None
         return entity
+
+    def get_lifecycle_events(self, entity_id: str) -> list[LifecycleEventRecord]:
+        with self._engine.connect() as conn:
+            rows = conn.execute(
+                text("""
+                    SELECT * FROM entity_registry_lifecycle_events
+                    WHERE entity_id = :entity_id
+                    ORDER BY system_from, lifecycle_event_id
+                """),
+                {"entity_id": entity_id},
+            ).mappings().all()
+        return [LifecycleEventRecord(**dict(row)) for row in rows]
 
     def record_evidence(
         self,
@@ -241,6 +328,61 @@ class EntityRegistryRepository:
             )
         return evidence
 
+    def add_organization_facet(
+        self,
+        *,
+        entity_id: str,
+        facet: str,
+        evidence_id: str | None,
+        effective_from: str | None = None,
+        effective_to: str | None = None,
+        origin: str = "source_ingestion",
+        eligibility_status: str = "active",
+    ) -> OrganizationFacetRecord:
+        entity = self.get_entity(entity_id)
+        if entity is None:
+            raise EntityRegistryValidationError(f"unknown entity_id: {entity_id}")
+        if entity.entity_kind != "organization":
+            raise EntityRegistryValidationError("organization facets require an organization")
+        self._require_allowed("organization facet", facet, ORGANIZATION_FACETS)
+        self._require_allowed("origin", origin, ORIGINS)
+        if eligibility_status not in {"active", "inactive"}:
+            raise EntityRegistryValidationError(f"invalid facet eligibility status: {eligibility_status}")
+        evidence = self._get_evidence(evidence_id)
+        if evidence_id is not None and evidence is None:
+            raise EntityRegistryValidationError(f"unknown evidence_id: {evidence_id}")
+        now = _utc_now()
+        effective_from = effective_from or now
+        if effective_to is not None and effective_from >= effective_to:
+            raise EntityRegistryValidationError("invalid effective interval")
+        record = OrganizationFacetRecord(
+            facet_id=uuid4().hex,
+            entity_id=entity_id,
+            facet=facet,
+            eligibility_status=eligibility_status,
+            origin=origin,
+            evidence_id=evidence_id,
+            evidence_status=evidence.source_status if evidence else "none",
+            effective_from=effective_from,
+            effective_to=effective_to,
+            system_from=now,
+            system_to=None,
+        )
+        with self._engine.begin() as conn:
+            conn.execute(
+                text("""
+                    INSERT INTO entity_registry_organization_facets (
+                        facet_id, entity_id, facet, eligibility_status, origin, evidence_id,
+                        evidence_status, effective_from, effective_to, system_from, system_to
+                    ) VALUES (
+                        :facet_id, :entity_id, :facet, :eligibility_status, :origin, :evidence_id,
+                        :evidence_status, :effective_from, :effective_to, :system_from, :system_to
+                    )
+                """),
+                record.__dict__,
+            )
+        return record
+
     def claim_identifier(
         self,
         *,
@@ -258,7 +400,7 @@ class EntityRegistryRepository:
     ) -> IdentifierClaimRecord:
         self._require_allowed("identifier strength", identifier_strength, IDENTIFIER_STRENGTHS)
         self._require_allowed("origin", origin, ORIGINS)
-        rule = _NAMESPACE_RULES.get(namespace)
+        rule = self._get_namespace_rule(namespace)
         if rule is None:
             raise EntityRegistryValidationError(f"unknown namespace: {namespace}")
         entity = self.get_entity(entity_id)
@@ -268,14 +410,19 @@ class EntityRegistryRepository:
             raise EntityRegistryValidationError(
                 f"namespace {namespace} is ineligible for entity kind {entity.entity_kind}"
             )
-        self._validate_scope(rule.required_scope, scope_authority, scope_country, scope_context)
+        self._validate_scope(rule.required_scopes, scope_authority, scope_country, scope_context)
         normalized_value = self._normalize(namespace, raw_value)
         evidence = self._get_evidence(evidence_id)
         if identifier_strength == "strong":
-            if evidence is None or not rule.strong_requires_official_evidence or evidence.source_class not in {
-                "official_primary", "official_external"
-            }:
-                raise EntityRegistryValidationError("strong identifier requires qualifying official evidence")
+            if (
+                evidence is None
+                or not rule.strong_requires_official_evidence
+                or evidence.source_class not in {"official_primary", "official_external"}
+                or evidence.source_status != "available"
+            ):
+                raise EntityRegistryValidationError(
+                    "strong identifier requires available official evidence"
+                )
         elif evidence is None and evidence_id is not None:
             raise EntityRegistryValidationError(f"unknown evidence_id: {evidence_id}")
 
@@ -283,19 +430,15 @@ class EntityRegistryRepository:
         effective_from = effective_from or now
         if effective_to is not None and effective_from >= effective_to:
             raise EntityRegistryValidationError("invalid effective interval")
+        if rule.required_organization_facet is not None:
+            self._require_active_organization_facet(
+                entity_id,
+                rule.required_organization_facet,
+                effective_from,
+                effective_to,
+            )
         claim_id = uuid4().hex
-        collision = identifier_strength == "strong" and self._find_active_strong_collision(
-            namespace,
-            normalized_value,
-            scope_authority,
-            scope_country,
-            scope_context,
-            entity_id,
-            effective_from,
-            effective_to,
-        )
-        claim_status = "conflicted" if collision else "accepted"
-        claim = IdentifierClaimRecord(
+        claim = self._build_identifier_claim(
             claim_id=claim_id,
             entity_id=entity_id,
             namespace=namespace,
@@ -306,33 +449,14 @@ class EntityRegistryRepository:
             scope_country=scope_country,
             scope_context=scope_context,
             identifier_strength=identifier_strength,
-            claim_status=claim_status,
             origin=origin,
             evidence_id=evidence_id,
-            evidence_status="linked" if evidence else "none",
+            evidence_status=evidence.source_status if evidence else "none",
             effective_from=effective_from,
             effective_to=effective_to,
             system_from=now,
-            system_to=None,
         )
-        with self._engine.begin() as conn:
-            self._enable_sqlite_foreign_keys(conn)
-            conn.execute(
-                text("""
-                    INSERT INTO entity_registry_identifier_claims (
-                        claim_id, entity_id, namespace, raw_value, normalized_value,
-                        normalizer_version, scope_authority, scope_country, scope_context,
-                        identifier_strength, claim_status, origin, evidence_id, evidence_status,
-                        effective_from, effective_to, system_from, system_to
-                    ) VALUES (
-                        :claim_id, :entity_id, :namespace, :raw_value, :normalized_value,
-                        :normalizer_version, :scope_authority, :scope_country, :scope_context,
-                        :identifier_strength, :claim_status, :origin, :evidence_id, :evidence_status,
-                        :effective_from, :effective_to, :system_from, :system_to
-                    )
-                """),
-                claim.__dict__,
-            )
+        claim, collision = self._write_identifier_claim_atomically(claim)
         if collision:
             raise EntityRegistryConflictError("duplicate_strong_id", claim_id)
         return claim
@@ -392,14 +516,13 @@ class EntityRegistryRepository:
             locale=locale,
             origin=origin,
             evidence_id=evidence_id,
-            evidence_status="linked" if evidence else "none",
+            evidence_status=evidence.source_status if evidence else "none",
             effective_from=effective_from,
             effective_to=effective_to,
             system_from=now,
             system_to=None,
         )
         with self._engine.begin() as conn:
-            self._enable_sqlite_foreign_keys(conn)
             conn.execute(
                 text("""
                     INSERT INTO entity_registry_alias_claims (
@@ -423,48 +546,145 @@ class EntityRegistryRepository:
         entities = [self.get_entity(claim.entity_id) for claim in claims if claim.claim_status == "accepted"]
         return [entity for entity in entities if entity is not None]
 
+    def _build_identifier_claim(self, **values) -> IdentifierClaimRecord:
+        return IdentifierClaimRecord(claim_status="accepted", system_to=None, **values)
+
+    def _write_identifier_claim_atomically(
+        self, claim: IdentifierClaimRecord
+    ) -> tuple[IdentifierClaimRecord, bool]:
+        for attempt in range(3):
+            try:
+                with self._engine.begin() as conn:
+                    collision = False
+                    if claim.identifier_strength == "strong":
+                        self._serialize_strong_identifier_guard(conn, claim)
+                        collision = self._find_active_strong_collision(conn, claim)
+                    persisted = replace(claim, claim_status="conflicted" if collision else "accepted")
+                    conn.execute(
+                        text("""
+                            INSERT INTO entity_registry_identifier_claims (
+                                claim_id, entity_id, namespace, raw_value, normalized_value,
+                                normalizer_version, scope_authority, scope_country, scope_context,
+                                identifier_strength, claim_status, origin, evidence_id, evidence_status,
+                                effective_from, effective_to, system_from, system_to
+                            ) VALUES (
+                                :claim_id, :entity_id, :namespace, :raw_value, :normalized_value,
+                                :normalizer_version, :scope_authority, :scope_country, :scope_context,
+                                :identifier_strength, :claim_status, :origin, :evidence_id, :evidence_status,
+                                :effective_from, :effective_to, :system_from, :system_to
+                            )
+                        """),
+                        persisted.__dict__,
+                    )
+                return persisted, collision
+            except OperationalError as error:
+                if not self._is_retryable_write_conflict(error) or attempt == 2:
+                    raise
+                time.sleep(0.05 * (attempt + 1))
+        raise AssertionError("unreachable retry state")
+
+    def _serialize_strong_identifier_guard(self, conn, claim: IdentifierClaimRecord) -> None:
+        conn.execute(
+            text("""
+                INSERT INTO entity_registry_identifier_guards (guard_key, updated_at)
+                VALUES (:guard_key, :updated_at)
+                ON CONFLICT (guard_key) DO UPDATE SET updated_at = :updated_at
+            """),
+            {
+                "guard_key": self._strong_identifier_guard_key(claim),
+                "updated_at": claim.system_from,
+            },
+        )
+
+    @staticmethod
+    def _strong_identifier_guard_key(claim: IdentifierClaimRecord) -> str:
+        return "\x1f".join(
+            value or "<null>"
+            for value in (
+                claim.namespace,
+                claim.normalized_value,
+                claim.scope_authority,
+                claim.scope_country,
+                claim.scope_context,
+            )
+        )
+
     def _find_active_strong_collision(
         self,
-        namespace: str,
-        normalized_value: str,
-        scope_authority: str | None,
-        scope_country: str | None,
-        scope_context: str | None,
-        entity_id: str,
-        effective_from: str,
-        effective_to: str | None,
+        conn,
+        claim: IdentifierClaimRecord,
     ) -> bool:
+        row = conn.execute(
+            text("""
+                SELECT 1 FROM entity_registry_identifier_claims
+                WHERE namespace = :namespace
+                  AND normalized_value = :normalized_value
+                  AND identifier_strength = 'strong'
+                  AND claim_status = 'accepted'
+                  AND entity_id <> :entity_id
+                  AND ((scope_authority = :scope_authority)
+                       OR (scope_authority IS NULL AND :scope_authority IS NULL))
+                  AND ((scope_country = :scope_country)
+                       OR (scope_country IS NULL AND :scope_country IS NULL))
+                  AND ((scope_context = :scope_context)
+                       OR (scope_context IS NULL AND :scope_context IS NULL))
+                  AND (effective_to IS NULL OR effective_to > :effective_from)
+                  AND (:effective_to IS NULL OR effective_from < :effective_to)
+                LIMIT 1
+            """),
+            {
+                "namespace": claim.namespace,
+                "normalized_value": claim.normalized_value,
+                "scope_authority": claim.scope_authority,
+                "scope_country": claim.scope_country,
+                "scope_context": claim.scope_context,
+                "entity_id": claim.entity_id,
+                "effective_from": claim.effective_from,
+                "effective_to": claim.effective_to,
+            },
+        ).first()
+        return row is not None
+
+    def _require_active_organization_facet(
+        self, entity_id: str, facet: str, effective_from: str, effective_to: str | None
+    ) -> None:
         with self._engine.connect() as conn:
             row = conn.execute(
                 text("""
-                    SELECT 1 FROM entity_registry_identifier_claims
-                    WHERE namespace = :namespace
-                      AND normalized_value = :normalized_value
-                      AND identifier_strength = 'strong'
-                      AND claim_status = 'accepted'
-                      AND entity_id <> :entity_id
-                      AND ((scope_authority = :scope_authority)
-                           OR (scope_authority IS NULL AND :scope_authority IS NULL))
-                      AND ((scope_country = :scope_country)
-                           OR (scope_country IS NULL AND :scope_country IS NULL))
-                      AND ((scope_context = :scope_context)
-                           OR (scope_context IS NULL AND :scope_context IS NULL))
+                    SELECT 1 FROM entity_registry_organization_facets
+                    WHERE entity_id = :entity_id
+                      AND facet = :facet
+                      AND eligibility_status = 'active'
+                      AND system_to IS NULL
                       AND (effective_to IS NULL OR effective_to > :effective_from)
                       AND (:effective_to IS NULL OR effective_from < :effective_to)
                     LIMIT 1
                 """),
                 {
-                    "namespace": namespace,
-                    "normalized_value": normalized_value,
-                    "scope_authority": scope_authority,
-                    "scope_country": scope_country,
-                    "scope_context": scope_context,
                     "entity_id": entity_id,
+                    "facet": facet,
                     "effective_from": effective_from,
                     "effective_to": effective_to,
                 },
             ).first()
-        return row is not None
+        if row is None:
+            raise EntityRegistryValidationError(f"namespace requires active {facet} facet")
+
+    def _get_namespace_rule(self, namespace: str) -> _NamespaceRule | None:
+        rule = _NAMESPACE_RULES.get(namespace)
+        if rule is not None:
+            return rule
+        if namespace.startswith("br.") and namespace.endswith(".regulated_agent_code"):
+            return _NamespaceRule(
+                "trim-exact/v1", "organization", ("authority", "context"), "regulated_agent", False
+            )
+        if namespace.startswith("br.") and namespace.endswith(".concession_code"):
+            return _NamespaceRule("trim-exact/v1", "concession", ("authority", "context"), None, False)
+        return None
+
+    @staticmethod
+    def _is_retryable_write_conflict(error: OperationalError) -> bool:
+        return "locked" in str(error).lower() or "serialization" in str(error).lower()
 
     def _get_evidence(self, evidence_id: str | None) -> EvidenceRecord | None:
         if evidence_id is None:
@@ -478,7 +698,7 @@ class EntityRegistryRepository:
 
     @staticmethod
     def _normalize(namespace: str, raw_value: str) -> str:
-        if namespace not in _NAMESPACE_RULES:
+        if EntityRegistryRepository._get_namespace_rule_static(namespace) is None:
             raise EntityRegistryValidationError(f"unknown namespace: {namespace}")
         if not isinstance(raw_value, str) or not raw_value.strip():
             raise EntityRegistryValidationError("malformed identifier value")
@@ -491,24 +711,34 @@ class EntityRegistryRepository:
 
     @staticmethod
     def _validate_scope(
-        required_scope: str,
+        required_scopes: tuple[str, ...],
         authority: str | None,
         country: str | None,
         context: str | None,
     ) -> None:
         values = {"authority": authority, "country": country, "context": context}
-        if not values[required_scope] or not str(values[required_scope]).strip():
-            raise EntityRegistryValidationError(f"namespace requires scope {required_scope}")
+        for required_scope in required_scopes:
+            if not values[required_scope] or not str(values[required_scope]).strip():
+                raise EntityRegistryValidationError(f"namespace requires scope {required_scope}")
 
     @staticmethod
     def _require_allowed(label: str, value: str, allowed: tuple[str, ...]) -> None:
         if value not in allowed:
             raise EntityRegistryValidationError(f"invalid {label}: {value}")
 
-    def _enable_sqlite_foreign_keys(self, conn) -> None:
-        if self._engine.dialect.name == "sqlite":
-            conn.execute(text("PRAGMA foreign_keys = ON"))
+    @staticmethod
+    def _get_namespace_rule_static(namespace: str) -> _NamespaceRule | None:
+        rule = _NAMESPACE_RULES.get(namespace)
+        if rule is not None:
+            return rule
+        if namespace.startswith("br.") and namespace.endswith(".regulated_agent_code"):
+            return _NamespaceRule(
+                "trim-exact/v1", "organization", ("authority", "context"), "regulated_agent", False
+            )
+        if namespace.startswith("br.") and namespace.endswith(".concession_code"):
+            return _NamespaceRule("trim-exact/v1", "concession", ("authority", "context"), None, False)
+        return None
 
 
 def _utc_now() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    return datetime.now(timezone.utc).isoformat()

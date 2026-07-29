@@ -5,7 +5,9 @@ of the legacy financial database startup initializer or a live migration.
 """
 from __future__ import annotations
 
-from sqlalchemy import Engine, text
+from sqlalchemy import Engine, inspect, text
+
+from src.platform.db import configure_sqlite_foreign_keys
 
 
 ENTITY_KINDS = (
@@ -30,6 +32,16 @@ ALIAS_TYPES = (
     "former_name",
     "source_alias",
 )
+ORGANIZATION_FACETS = ("legal_entity", "issuer", "regulated_agent", "vehicle")
+_REQUIRED_TABLES = {
+    "entity_registry_entities",
+    "entity_registry_evidence",
+    "entity_registry_identifier_claims",
+    "entity_registry_alias_claims",
+    "entity_registry_organization_facets",
+    "entity_registry_lifecycle_events",
+    "entity_registry_identifier_guards",
+}
 
 
 def ensure_entity_registry_schema(engine: Engine) -> None:
@@ -40,6 +52,7 @@ def ensure_entity_registry_schema(engine: Engine) -> None:
     future work.
     """
     dialect = engine.dialect.name
+    configure_sqlite_foreign_keys(engine)
     if dialect == "sqlite":
         with engine.connect() as conn:
             conn.execute(text("PRAGMA foreign_keys = ON"))
@@ -81,6 +94,58 @@ def ensure_entity_registry_schema(engine: Engine) -> None:
             )
         """))
         conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS entity_registry_organization_facets (
+                facet_id TEXT PRIMARY KEY,
+                entity_id TEXT NOT NULL REFERENCES entity_registry_entities(entity_id)
+                    ON DELETE RESTRICT,
+                facet TEXT NOT NULL CHECK (facet IN (
+                    'legal_entity', 'issuer', 'regulated_agent', 'vehicle'
+                )),
+                eligibility_status TEXT NOT NULL CHECK (eligibility_status IN ('active', 'inactive')),
+                origin TEXT NOT NULL CHECK (origin IN ('source_ingestion', 'user', 'reviewer', 'derived')),
+                evidence_id TEXT REFERENCES entity_registry_evidence(evidence_id)
+                    ON DELETE RESTRICT,
+                evidence_status TEXT NOT NULL CHECK (evidence_status IN (
+                    'available', 'none', 'unavailable', 'failed', 'unsupported'
+                )),
+                effective_from TEXT NOT NULL,
+                effective_to TEXT,
+                system_from TEXT NOT NULL,
+                system_to TEXT,
+                CHECK (effective_to IS NULL OR effective_from < effective_to),
+                CHECK (system_to IS NULL OR system_from < system_to)
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS entity_registry_lifecycle_events (
+                lifecycle_event_id TEXT PRIMARY KEY,
+                entity_id TEXT NOT NULL REFERENCES entity_registry_entities(entity_id)
+                    ON DELETE RESTRICT,
+                lifecycle_status TEXT NOT NULL CHECK (lifecycle_status IN (
+                    'active', 'retired', 'deprecated'
+                )),
+                reason TEXT NOT NULL CHECK (length(reason) > 0),
+                origin TEXT NOT NULL CHECK (origin IN ('source_ingestion', 'user', 'reviewer', 'derived')),
+                evidence_id TEXT NOT NULL REFERENCES entity_registry_evidence(evidence_id)
+                    ON DELETE RESTRICT,
+                evidence_status TEXT NOT NULL CHECK (evidence_status IN (
+                    'available', 'unavailable', 'failed', 'unsupported'
+                )),
+                effective_from TEXT NOT NULL,
+                effective_to TEXT,
+                system_from TEXT NOT NULL,
+                system_to TEXT,
+                CHECK (effective_to IS NULL OR effective_from < effective_to),
+                CHECK (system_to IS NULL OR system_from < system_to)
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS entity_registry_identifier_guards (
+                guard_key TEXT PRIMARY KEY,
+                updated_at TEXT NOT NULL
+            )
+        """))
+        conn.execute(text("""
             CREATE TABLE IF NOT EXISTS entity_registry_identifier_claims (
                 claim_id TEXT PRIMARY KEY,
                 entity_id TEXT NOT NULL REFERENCES entity_registry_entities(entity_id)
@@ -98,7 +163,7 @@ def ensure_entity_registry_schema(engine: Engine) -> None:
                 evidence_id TEXT REFERENCES entity_registry_evidence(evidence_id)
                     ON DELETE RESTRICT,
                 evidence_status TEXT NOT NULL CHECK (evidence_status IN (
-                    'linked', 'none', 'unavailable', 'failed', 'unsupported'
+                    'available', 'none', 'unavailable', 'failed', 'unsupported'
                 )),
                 effective_from TEXT NOT NULL,
                 effective_to TEXT,
@@ -123,7 +188,7 @@ def ensure_entity_registry_schema(engine: Engine) -> None:
                 evidence_id TEXT REFERENCES entity_registry_evidence(evidence_id)
                     ON DELETE RESTRICT,
                 evidence_status TEXT NOT NULL CHECK (evidence_status IN (
-                    'linked', 'none', 'unavailable', 'failed', 'unsupported'
+                    'available', 'none', 'unavailable', 'failed', 'unsupported'
                 )),
                 effective_from TEXT NOT NULL,
                 effective_to TEXT,
@@ -140,6 +205,8 @@ def ensure_entity_registry_schema(engine: Engine) -> None:
             "namespace, normalized_value, scope_authority, claim_status)",
             "CREATE INDEX IF NOT EXISTS idx_er_identifier_entity ON entity_registry_identifier_claims(entity_id, claim_status)",
             "CREATE INDEX IF NOT EXISTS idx_er_alias_entity ON entity_registry_alias_claims(entity_id, alias_type)",
+            "CREATE INDEX IF NOT EXISTS idx_er_facet_lookup ON entity_registry_organization_facets(entity_id, facet, eligibility_status)",
+            "CREATE INDEX IF NOT EXISTS idx_er_lifecycle_entity ON entity_registry_lifecycle_events(entity_id, system_from)",
         ):
             conn.execute(text(ddl))
 
@@ -151,3 +218,33 @@ def ensure_entity_registry_schema(engine: Engine) -> None:
                     SELECT RAISE(ABORT, 'entity_id is immutable');
                 END
             """))
+        elif dialect == "postgresql":
+            conn.execute(text("""
+                CREATE OR REPLACE FUNCTION entity_registry_prevent_entity_id_update()
+                RETURNS trigger LANGUAGE plpgsql AS $$
+                BEGIN
+                    IF NEW.entity_id IS DISTINCT FROM OLD.entity_id THEN
+                        RAISE EXCEPTION 'entity_id is immutable';
+                    END IF;
+                    RETURN NEW;
+                END;
+                $$
+            """))
+            conn.execute(text("""
+                DROP TRIGGER IF EXISTS entity_registry_entities_no_id_update
+                ON entity_registry_entities
+            """))
+            conn.execute(text("""
+                CREATE TRIGGER entity_registry_entities_no_id_update
+                BEFORE UPDATE OF entity_id ON entity_registry_entities
+                FOR EACH ROW EXECUTE FUNCTION entity_registry_prevent_entity_id_update()
+            """))
+
+
+def validate_entity_registry_schema(engine: Engine) -> None:
+    """Validate an already-provisioned registry schema without emitting DDL."""
+    configure_sqlite_foreign_keys(engine)
+    tables = set(inspect(engine).get_table_names())
+    missing = sorted(_REQUIRED_TABLES - tables)
+    if missing:
+        raise ValueError(f"entity registry schema is missing: {', '.join(missing)}")

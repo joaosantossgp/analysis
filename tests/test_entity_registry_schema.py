@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import pytest
 from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.exc import IntegrityError
 
 from src.companies.entity_registry_schema import ensure_entity_registry_schema
 from src.financials.database import init_db_tables
@@ -45,3 +47,38 @@ def test_normal_startup_does_not_create_registry_tables(tmp_path):
     init_db_tables(engine)
 
     assert "entity_registry_entities" not in inspect(engine).get_table_names()
+
+
+def test_sqlite_schema_rejects_direct_entity_id_updates_and_orphans(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'registry.db'}")
+    ensure_entity_registry_schema(engine)
+    with engine.begin() as conn:
+        conn.execute(
+            text("""
+                INSERT INTO entity_registry_entities (
+                    entity_id, entity_kind, lifecycle_status, lifecycle_reason,
+                    created_origin, created_at, updated_at
+                ) VALUES ('entity-1', 'organization', 'active', NULL,
+                          'source_ingestion', '2026-01-01T00:00:00+00:00',
+                          '2026-01-01T00:00:00+00:00')
+            """)
+        )
+
+    with pytest.raises(Exception, match="immutable"):
+        with engine.begin() as conn:
+            conn.execute(text("UPDATE entity_registry_entities SET entity_id = 'entity-2'"))
+
+    with pytest.raises(IntegrityError):
+        with engine.begin() as conn:
+            conn.execute(
+                text("""
+                    INSERT INTO entity_registry_alias_claims (
+                        alias_id, entity_id, alias_type, raw_value, locale, origin,
+                        evidence_id, evidence_status, effective_from, effective_to,
+                        system_from, system_to
+                    ) VALUES ('alias-1', 'missing-entity', 'trade_name', 'ORPHAN', NULL,
+                              'source_ingestion', NULL, 'none',
+                              '2026-01-01T00:00:00+00:00', NULL,
+                              '2026-01-01T00:00:00+00:00', NULL)
+                """)
+            )

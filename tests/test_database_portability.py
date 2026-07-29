@@ -185,3 +185,4 @@ def test_registry_schema_uses_portable_ddl_without_startup_integration():
     ddl_sql = "\n".join(sql for sql, _ in engine.begin_conn.calls)
     assert "CREATE TABLE IF NOT EXISTS entity_registry_entities" in ddl_sql
     assert "PRAGMA" not in ddl_sql
+    assert "entity_registry_prevent_entity_id_update" in ddl_sql
