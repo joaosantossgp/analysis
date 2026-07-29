@@ -1,6 +1,9 @@
 # Canonical Entity Registry Contract
 
-Status: proposed for João's decision.
+Status: approved by João on 2026-07-29 (Issue #415, approval comment
+`5120697192`). This approval authorizes this decision record and preparation
+of #416 only; it does not authorize Wave 1 DDL, migration, release, or
+publication.
 
 Issue: #415. Depends on #414. Blocks the implementation work in #417, #418,
 and #419. Task type: decision only; this document does not authorize DDL,
@@ -18,8 +21,10 @@ and Energy identifiers as external facts while safely answering historical
 questions. It deliberately does not prescribe physical table names or DDL;
 those belong to #417 and #418 after #416 approves the migration/release plan.
 
-João must approve this proposed contract before Wave 1 starts. This record is
-not evidence that João has approved it.
+João approved this contract on 2026-07-29 (Issue #415, approval comment
+`5120697192`). The approval authorizes this decision record and preparation of
+#416 only. #415 alone does not authorize Wave 1 DDL, migration, release, or
+publication.
 
 ## Evidence and active boundary
 
