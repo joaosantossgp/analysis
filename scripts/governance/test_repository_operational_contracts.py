@@ -179,6 +179,47 @@ def _run_source(job: dict[str, object]) -> str:
     return "\n".join(str(step.get("run", "")) for step in job.get("steps", []))
 
 
+_THROW_GUARD = re.compile(
+    r"if\s*\((?P<condition>[^\n{}()]*(?:\([^\n{}()]*\)[^\n{}()]*)*)\)\s*\{\s*throw\b",
+    re.MULTILINE,
+)
+_PS_COMPARISON = re.compile(
+    r"(?P<left>(?:\[string\])?\$[\w:]+(?:\.\w+)*)\s*"
+    r"(?P<operator>-ne|-eq)\s*"
+    r'(?P<right>"[^"]*"|\d+|(?:\[string\])?\$[\w:]+(?:\.\w+)*)'
+)
+
+
+def _throw_guard(script: str, required_member: str) -> str:
+    executable_source = re.sub(r"(?m)^\s*#.*$", "", script)
+    executable_source = re.sub(r"'[^']*'", "'literal'", executable_source)
+    guards = [
+        match.group("condition")
+        for match in _THROW_GUARD.finditer(executable_source)
+        if required_member in match.group("condition")
+    ]
+    assert len(guards) == 1, f"expected one executable throw guard for {required_member}"
+    return guards[0]
+
+
+def _guard_rejects(guard: str, fixture: dict[str, str]) -> bool:
+    comparisons = list(_PS_COMPARISON.finditer(guard))
+    assert comparisons, f"no supported PowerShell comparisons in guard: {guard}"
+    assert "-and" not in guard, f"reject guard must not weaken mismatches with -and: {guard}"
+    assert all(match.group("operator") == "-ne" for match in comparisons)
+    assert guard.count("-or") >= len(comparisons) - 1
+
+    def value(token: str) -> str:
+        token = token.removeprefix("[string]")
+        if token.startswith('"'):
+            return token[1:-1]
+        if token.isdecimal():
+            return token
+        return fixture[token]
+
+    return any(value(match.group("left")) != value(match.group("right")) for match in comparisons)
+
+
 def test_release_workflow_has_exact_phase_graph_and_final_only_publish_authority() -> None:
     workflow = _release_workflow()
     jobs = workflow["jobs"]
@@ -231,51 +272,85 @@ def test_release_workflow_transports_dispatch_values_as_environment_data_not_she
     assert all(value.startswith("${{ inputs.") for value in attest_env.values())
 
 
-def test_release_workflow_binds_candidate_and_trusted_attestation_producers_in_exact_steps() -> None:
+def test_release_workflow_power_shell_reject_guards_fail_closed_for_provenance_fixtures() -> None:
     workflow = _release_workflow()
     jobs = workflow["jobs"]
+    resolve = _job_step(jobs["resolve-candidate"], "Resolve exact tag target and latest exact-SHA main CI")["run"]
     attest = _job_step(jobs["attest-evidence"], "Verify candidate binding and write trusted attestations")["run"]
     publish = _job_step(jobs["publish-preflight"], "Fetch and verify candidate-bound evidence attestations")["run"]
-    candidate = _job_step(jobs["publish-preflight"], "Re-resolve exact candidate, CI, and candidate artifact identities")["run"]
+    final = _job_step(jobs["final-publish"], "Verify the same candidate artifact, tag, and latest CI after approval")["run"]
 
-    assert '$env:GITHUB_REF -ne "refs/heads/main"' in attest
-    assert "$env:GITHUB_SHA.Trim().ToLowerInvariant() -ne $candidateSha" in attest
-    assert all(token in attest for token in (
-        '$candidateRun.name -ne "Release Desktop"',
-        '$candidateRun.path -ne ".github/workflows/release-desktop.yml"',
-        '$candidateRun.event -ne "workflow_dispatch"',
-        '$candidateRun.conclusion -ne "success"',
-        '$candidateRun.head_branch -ne "main"',
-        '$candidateRun.head_sha -ne $candidateSha',
-        'candidatePayload.package_artifact.id',
-        'candidatePayload.package_artifact.checksum',
-        'release-evidence-attestation-$Type.json',
-        'workflow_run_id = "$env:GITHUB_RUN_ID"',
-        'phase = "attest"',
-    ))
-    assert all(token in candidate for token in (
-        '$candidateRun.name -ne "Release Desktop"',
-        '$candidateRun.path -ne ".github/workflows/release-desktop.yml"',
-        '$candidateRun.event -ne "workflow_dispatch"',
-        '$candidateRun.conclusion -ne "success"',
-        '$candidateRun.head_branch -ne "main"',
-        '$candidateRun.head_sha -ne $candidateSha',
-    ))
-    assert all(token in publish for token in (
-        '$attestationRun.name -ne "Release Desktop"',
-        '$attestationRun.path -ne ".github/workflows/release-desktop.yml"',
-        '$attestationRun.event -ne "workflow_dispatch"',
-        '$attestationRun.conclusion -ne "success"',
-        '$attestationRun.head_branch -ne "main"',
-        '$attestationRun.head_sha -ne $candidateSha',
-        'actions/runs/$($metadata.workflow_run.id)',
-        '$payload.producer.phase -ne "attest"',
-        'release-attestation-manual-local-data-$attestationRunId',
-        'release-attestation-manual-packaged-$attestationRunId',
-        'release-attestation-conditional-api-$attestationRunId',
-        'release-attestation-conditional-ccee-$attestationRunId',
-        'release-attestation-conditional-strict-backup-$attestationRunId',
-    ))
+    tag_guard = _throw_guard(resolve, "$tagTargetSha")
+    assert _guard_rejects(tag_guard, {"$tagTargetSha": "drift", "$candidateSha": "candidate"})
+
+    trusted_run_fixture = {
+        "$attestationRun.name": "Release Desktop",
+        "$attestationRun.path": ".github/workflows/release-desktop.yml",
+        "$attestationRun.event": "workflow_dispatch",
+        "$attestationRun.conclusion": "success",
+        "$attestationRun.head_branch": "main",
+        "$attestationRun.head_sha": "candidate",
+        "$candidateSha": "candidate",
+    }
+    trusted_run_guard = _throw_guard(publish, "$attestationRun.name")
+    for field, rejected_value in (
+        ("$attestationRun.conclusion", "failed"),
+        ("$attestationRun.conclusion", "cancelled"),
+        ("$attestationRun.name", "Untrusted workflow"),
+        ("$attestationRun.path", ".github/workflows/untrusted.yml"),
+        ("$attestationRun.head_branch", "release"),
+        ("$attestationRun.head_sha", "other-sha"),
+    ):
+        fixture = trusted_run_fixture | {field: rejected_value}
+        assert _guard_rejects(trusted_run_guard, fixture)
+
+    producer_fixture = {
+        "$producerRun.name": "Release Desktop",
+        "$producerRun.path": ".github/workflows/release-desktop.yml",
+        "$producerRun.event": "workflow_dispatch",
+        "$producerRun.conclusion": "success",
+        "$producerRun.head_branch": "main",
+        "$producerRun.head_sha": "candidate",
+        "$candidateSha": "candidate",
+    }
+    producer_guard = _throw_guard(publish, "$producerRun.name")
+    assert producer_guard.startswith("$RequireTrustedProducer -and (")
+    producer_guard = producer_guard.removeprefix("$RequireTrustedProducer -and (").removesuffix(")")
+    assert "Read-ActionArtifactJson $item.id \"release-evidence-attestation.json\"" in publish
+    assert _guard_rejects(producer_guard, producer_fixture | {"$producerRun.conclusion": "failed"})
+    assert _guard_rejects(producer_guard, producer_fixture | {"$producerRun.path": ".github/workflows/other.yml"})
+
+    artifact_count_guard = _throw_guard(publish, "$matches.Count")
+    assert _guard_rejects(artifact_count_guard, {"$matches.Count": "0"})
+    assert "Where-Object { $_.name -eq $Name -and -not $_.expired }" in publish
+    assert "Resolve-AttestationArtifact \"release-attestation-manual-local-data-$attestationRunId\"" in publish
+
+    package_guard = _throw_guard(publish, "$candidatePayload.package_artifact.id")
+    assert _guard_rejects(
+        package_guard,
+        {
+            "$candidatePayload.schema_version": "1",
+            "$candidatePayload.candidate.candidate_sha": "candidate",
+            "$candidatePayload.candidate.tag_target_sha": "candidate",
+            "$candidatePayload.candidate.candidate_run_id": "run",
+            "$candidatePayload.candidate.observed_build_sha": "candidate",
+            "$candidatePayload.package_artifact.id": "wrong-artifact",
+            "$candidateSha": "candidate",
+            "$candidateRunId": "run",
+            "$env:CANDIDATE_PACKAGE_ARTIFACT_ID": "package-artifact",
+        },
+    )
+
+    checksum_guard = _throw_guard(final, "$checksum -ne $actual")
+    assert _guard_rejects(
+        checksum_guard,
+        {
+            "$checksum": "declared-checksum",
+            "$actual": "actual-checksum",
+            "$evidence.package_artifact.checksum": "actual-checksum",
+        },
+    )
+    assert "$candidatePayload.package_artifact.checksum -notmatch '^[0-9a-f]{64}$'" in attest
 
 
 def test_release_workflow_keeps_candidate_evidence_and_publish_preflight_immutable() -> None:
@@ -320,7 +395,8 @@ def test_release_workflow_expiry_recovery_requires_a_fresh_superseding_candidate
         assert "same version/SHA only after artifact expiry" in document
         assert "new immutable artifacts and run IDs" in document
         assert "superseded evidence" in document
-        assert "repeat exact-SHA CI, package/manual/conditional attestations, and #440 approval" in document
+        assert "revalidate the latest successful exact-SHA CI" in document
+        assert "repeat package/manual/conditional attestations and #440 approval" in document
 
 
 def test_release_workflow_preserves_updater_version_grammar() -> None:

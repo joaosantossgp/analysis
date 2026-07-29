@@ -93,10 +93,12 @@ missing evidence and run publish against that original candidate artifact.
 
 The sole retention exception is a fresh candidate cycle for the **same
 version/SHA only after artifact expiry**. It creates **new immutable artifacts
-and run IDs**, and must repeat **exact-SHA CI, package/manual/conditional attestations,
-and #440 approval**, and can publish only that replacement candidate. Keep the
-expired run IDs as **superseded evidence** in the release record; they cannot be
-reused by attest or publish. This exception does not permit a new tag, retag, or
-substitution while the original immutable artifacts are still available.
+and run IDs**, must **revalidate the latest successful exact-SHA CI**, and must
+**repeat package/manual/conditional attestations and #440 approval**. It can
+publish only that replacement candidate; the workflow does not create a new
+`push/main` CI run for an unchanged historical SHA. Keep the expired run IDs as
+**superseded evidence** in the release record; they cannot be reused by attest
+or publish. This exception does not permit a new tag, retag, or substitution
+while the original immutable artifacts are still available.
 
 See [`build-release.md`](build-release.md) for the full checklist.

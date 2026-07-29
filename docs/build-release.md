@@ -77,8 +77,10 @@ configuration; do not replace or weaken them in workflow code.
 An expired candidate, candidate-evidence, or attestation artifact cannot be
 repaired or published. The recovery exception is a fresh candidate cycle for
 the **same version/SHA only after artifact expiry**. It creates **new immutable
-artifacts and run IDs**, and must repeat **exact-SHA CI, package/manual/conditional
-attestations, and #440 approval**, and publishes only the replacement candidate.
+artifacts and run IDs**, must **revalidate the latest successful exact-SHA CI**,
+and must **repeat package/manual/conditional attestations and #440 approval**.
+It publishes only the replacement candidate; the workflow does not claim to
+create a new `push/main` CI run for an unchanged historical SHA.
 The expired run IDs remain **superseded evidence** in the release record and
 cannot be supplied to publish. This exception does not allow rebuilding,
 retagging, or substituting artifacts for a candidate whose artifacts remain
