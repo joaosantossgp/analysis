@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Preserve the current Company Workspace work in reviewable branches, clear the working tree, update `main` to `origin/main`, and remove the five npm audit vulnerabilities without changing product behavior.
+**Goal:** Preserve the current Company Workspace work in reviewable branches, clear the working tree, update `main` to `origin/main`, and apply the accepted partial npm audit remediation while documenting the remaining React Router audit exception.
 
 **Architecture:** Treat the local Company Workspace edits and dependency security work as separate deliverables. First capture the product work on a feature branch, then fast-forward `main`, rebase the feature branch, and create a second branch from the updated `main` for the lockfile-only security update. Do not merge either branch as part of this plan.
 
@@ -33,6 +33,17 @@ At planning time, `main` is 25 commits behind `origin/main` and has zero local c
 | `@babel/core` | `7.29.0` | `7.29.7` |
 
 `npm audit fix --dry-run` also updates 21 non-vulnerable transitive packages in the same lockfile resolution. This is expected and must be reviewed as one generated `package-lock.json` change.
+
+## Execution Update - 2026-07-28
+
+After the initial plan was written, the user explicitly accepted committing a partial npm remediation with the two remaining high React Router audit records documented as a temporary exception. The exception record is `docs/diagnostics/react-router-audit-exception-2026-07.md`.
+
+The accepted security outcome is not a clean audit. It resolves the Vite, PostCSS, and Babel Core records, updates React Router packages to the latest compatible 7.x versions, and leaves these two high records expected in `npm --prefix apps/desktop-web audit --json`:
+
+- `react-router`: GHSA-qwww-vcr4-c8h2, affected range `>=7.12.0 <8.3.0`.
+- `react-router-dom`: direct dependency affected via `react-router`.
+
+This exception must be re-evaluated per `docs/diagnostics/react-router-audit-exception-2026-07.md`, including on every dependency refresh and every release. Remove the exception only when a compatible fixed `react-router-dom` release is available and validated, or when a validated routing migration removes the affected dependency path.
 
 ## Local Change Disposition
 
@@ -215,11 +226,12 @@ Expected: rebase completes. If conflicts occur, resolve only affected Company Wo
 
 **Files:**
 - Modify: `apps/desktop-web/package-lock.json`
+- Create: `docs/diagnostics/react-router-audit-exception-2026-07.md`
 - Preserve: `apps/desktop-web/package.json`
 
 **Consumes:** Updated `main` from Task 2.
 
-**Produces:** A clean, reviewable `codex/dependency-security-2026-07` branch with zero npm audit vulnerabilities.
+**Produces:** A clean, reviewable `codex/dependency-security-2026-07` branch with the accepted partial npm audit remediation and a documented temporary exception for the two remaining high React Router records.
 
 - [ ] **Step 1: Create a security branch from updated main**
 
@@ -255,7 +267,7 @@ npm --prefix apps/desktop-web ls vite react-router-dom react-router postcss @bab
 npm --prefix apps/desktop-web audit
 ```
 
-Expected: Vite is at least `6.4.3`; React Router packages are at least `7.18.2`; PostCSS is at least `8.5.24`; Babel Core is at least `7.29.7`; `npm audit` reports `found 0 vulnerabilities`.
+Expected: Vite is at least `6.4.3`; React Router packages are at least `7.18.2`; PostCSS is at least `8.5.24`; Babel Core is at least `7.29.7`; `npm audit` remains non-zero only for the two documented high React Router records covered by `docs/diagnostics/react-router-audit-exception-2026-07.md`.
 
 - [ ] **Step 4: Run full frontend compatibility validation**
 
@@ -274,14 +286,14 @@ Expected: all commands exit with status `0`.
 Run:
 
 ```powershell
-git add apps/desktop-web/package-lock.json
+git add apps/desktop-web/package-lock.json docs/diagnostics/react-router-audit-exception-2026-07.md
 git diff --cached --check
 git diff --cached --name-only
-git commit -m "chore(web): resolve npm audit vulnerabilities"
+git commit -m "chore(web): document partial npm audit remediation"
 git status --short
 ```
 
-Expected: only `apps/desktop-web/package-lock.json` is committed and the branch is clean.
+Expected: only `apps/desktop-web/package-lock.json` and `docs/diagnostics/react-router-audit-exception-2026-07.md` are committed and the branch is clean.
 
 ### Task 4: Final Branch and Main Verification
 
@@ -326,11 +338,11 @@ git diff --name-only main...codex/dependency-security-2026-07
 git log --oneline main..codex/dependency-security-2026-07
 ```
 
-Expected: no whitespace errors; only `apps/desktop-web/package-lock.json` differs; one security commit is present.
+Expected: no whitespace errors; only `apps/desktop-web/package-lock.json` and `docs/diagnostics/react-router-audit-exception-2026-07.md` differ; one security commit is present; the two high React Router audit records are documented as a temporary exception rather than treated as resolved.
 
 ## Plan Self-Review
 
-- Coverage: preserves current product work, removes local-only skill/audit state, fast-forwards `main`, separates dependency remediation, and specifies validation for the five audit records.
+- Coverage: preserves current product work, removes local-only skill/audit state, fast-forwards `main`, separates dependency remediation, and records the accepted partial remediation plus the two remaining high React Router audit records.
 - Scope: the Company Workspace branch and security branch have independent write-sets and can be reviewed independently.
 - Risk: the only product decision requiring confirmation is whether Company directory selection should navigate directly or open contextual detail. This plan selects direct navigation and requires the docs to state that exception accurately.
 - No merge, push, pull request, reset, or deletion of intended source changes is authorized by this plan.
