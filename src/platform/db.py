@@ -37,13 +37,20 @@ def configure_sqlite_foreign_keys(engine: Engine) -> None:
     if engine.dialect.name != "sqlite" or getattr(engine, "_cvm_fk_hook", False):
         return
 
-    @event.listens_for(engine, "connect")
-    def _enable_foreign_keys(dbapi_connection, _connection_record) -> None:
+    def _enable_foreign_keys(dbapi_connection) -> None:
         cursor = dbapi_connection.cursor()
         try:
             cursor.execute("PRAGMA foreign_keys = ON")
         finally:
             cursor.close()
+
+    @event.listens_for(engine, "connect")
+    def _enable_foreign_keys_on_connect(dbapi_connection, _connection_record) -> None:
+        _enable_foreign_keys(dbapi_connection)
+
+    @event.listens_for(engine, "checkout")
+    def _enable_foreign_keys_on_checkout(dbapi_connection, _connection_record, _connection_proxy) -> None:
+        _enable_foreign_keys(dbapi_connection)
 
     setattr(engine, "_cvm_fk_hook", True)
 

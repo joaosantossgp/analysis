@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import pytest
 from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.pool import QueuePool
 from sqlalchemy.exc import IntegrityError
 
-from src.companies.entity_registry_schema import ensure_entity_registry_schema
+from src.companies.entity_registry_schema import ensure_entity_registry_schema, validate_entity_registry_schema
 from src.financials.database import init_db_tables
 
 
@@ -82,3 +83,56 @@ def test_sqlite_schema_rejects_direct_entity_id_updates_and_orphans(tmp_path):
                               '2026-01-01T00:00:00+00:00', NULL)
                 """)
             )
+
+
+def test_schema_enables_foreign_keys_for_preexisting_pooled_connections(tmp_path):
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'pooled.db'}",
+        poolclass=QueuePool,
+        pool_size=2,
+        max_overflow=0,
+    )
+    first = engine.connect()
+    second = engine.connect()
+    first.execute(text("PRAGMA foreign_keys = OFF"))
+    second.execute(text("PRAGMA foreign_keys = OFF"))
+    first.close()
+    second.close()
+
+    ensure_entity_registry_schema(engine)
+
+    for index in range(2):
+        with engine.connect() as connection:
+            assert connection.execute(text("PRAGMA foreign_keys")).scalar_one() == 1
+            with pytest.raises(IntegrityError):
+                with connection.begin_nested():
+                    connection.execute(
+                        text("""
+                            INSERT INTO entity_registry_alias_claims (
+                                alias_id, entity_id, alias_type, raw_value, origin,
+                                evidence_status, effective_from, system_from
+                            ) VALUES (:alias_id, 'orphan', 'trade_name', 'ORPHAN',
+                                      'source_ingestion', 'none',
+                                      '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00')
+                        """),
+                        {"alias_id": f"orphan-{index}"},
+                    )
+
+
+def test_schema_validation_rejects_same_name_incomplete_shape_without_ddl(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'incomplete.db'}")
+    table_names = (
+        "entity_registry_entities",
+        "entity_registry_evidence",
+        "entity_registry_identifier_claims",
+        "entity_registry_alias_claims",
+        "entity_registry_organization_facets",
+        "entity_registry_lifecycle_events",
+        "entity_registry_identifier_guards",
+    )
+    with engine.begin() as conn:
+        for table_name in table_names:
+            conn.execute(text(f"CREATE TABLE {table_name} (id TEXT PRIMARY KEY)"))
+
+    with pytest.raises(ValueError, match="incomplete"):
+        validate_entity_registry_schema(engine)

@@ -85,6 +85,8 @@ def ensure_entity_registry_schema(engine: Engine) -> None:
                 source_status TEXT NOT NULL CHECK (source_status IN (
                     'available', 'unavailable', 'failed', 'unsupported'
                 )),
+                source_authority TEXT,
+                qualified_namespace TEXT,
                 source_reference TEXT NOT NULL,
                 source_snapshot_reference TEXT,
                 raw_payload_reference TEXT,
@@ -244,7 +246,95 @@ def ensure_entity_registry_schema(engine: Engine) -> None:
 def validate_entity_registry_schema(engine: Engine) -> None:
     """Validate an already-provisioned registry schema without emitting DDL."""
     configure_sqlite_foreign_keys(engine)
-    tables = set(inspect(engine).get_table_names())
+    inspector = inspect(engine)
+    tables = set(inspector.get_table_names())
     missing = sorted(_REQUIRED_TABLES - tables)
     if missing:
         raise ValueError(f"entity registry schema is missing: {', '.join(missing)}")
+    required_columns = {
+        "entity_registry_entities": {"entity_id", "entity_kind", "lifecycle_status", "created_origin"},
+        "entity_registry_evidence": {
+            "evidence_id", "source_class", "source_status", "source_authority",
+            "qualified_namespace", "source_reference",
+        },
+        "entity_registry_identifier_claims": {
+            "claim_id", "entity_id", "namespace", "normalized_value", "scope_authority",
+            "identifier_strength", "claim_status", "evidence_id", "effective_from", "system_from",
+        },
+        "entity_registry_alias_claims": {"alias_id", "entity_id", "alias_type", "effective_from"},
+        "entity_registry_organization_facets": {"facet_id", "entity_id", "facet", "eligibility_status"},
+        "entity_registry_lifecycle_events": {"lifecycle_event_id", "entity_id", "lifecycle_status", "evidence_id"},
+        "entity_registry_identifier_guards": {"guard_key", "updated_at"},
+    }
+    for table_name, expected in required_columns.items():
+        actual = {column["name"] for column in inspector.get_columns(table_name)}
+        if not expected.issubset(actual):
+            raise ValueError(f"entity registry schema is incomplete: {table_name} columns")
+
+    expected_foreign_keys = {
+        "entity_registry_identifier_claims": {"entity_id", "evidence_id"},
+        "entity_registry_alias_claims": {"entity_id", "evidence_id"},
+        "entity_registry_organization_facets": {"entity_id", "evidence_id"},
+        "entity_registry_lifecycle_events": {"entity_id", "evidence_id"},
+    }
+    for table_name, expected in expected_foreign_keys.items():
+        actual = {column for foreign_key in inspector.get_foreign_keys(table_name) for column in foreign_key["constrained_columns"]}
+        if not expected.issubset(actual):
+            raise ValueError(f"entity registry schema is incomplete: {table_name} foreign keys")
+
+    guard_pk = set(inspector.get_pk_constraint("entity_registry_identifier_guards")["constrained_columns"])
+    if guard_pk != {"guard_key"}:
+        raise ValueError("entity registry schema is incomplete: identifier guard key")
+    indexes = {
+        index["name"]
+        for table_name in _REQUIRED_TABLES
+        for index in inspector.get_indexes(table_name)
+    }
+    required_indexes = {
+        "idx_er_entities_kind", "idx_er_identifier_lookup", "idx_er_identifier_entity",
+        "idx_er_alias_entity", "idx_er_facet_lookup", "idx_er_lifecycle_entity",
+    }
+    if not required_indexes.issubset(indexes):
+        raise ValueError("entity registry schema is incomplete: required indexes")
+
+    if engine.dialect.name == "sqlite":
+        with engine.connect() as conn:
+            trigger = conn.execute(text("""
+                SELECT sql FROM sqlite_master
+                WHERE type = 'trigger' AND name = 'entity_registry_entities_no_id_update'
+            """)).scalar_one_or_none()
+            table_sql = {
+                name: conn.execute(text("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = :name"), {"name": name}).scalar_one_or_none()
+                for name in _REQUIRED_TABLES
+            }
+        if trigger is None or "entity_id is immutable" not in trigger:
+            raise ValueError("entity registry schema is incomplete: immutable entity trigger")
+        required_check_fragments = {
+            "entity_registry_entities": "entity_kind IN",
+            "entity_registry_evidence": "source_class IN",
+            "entity_registry_identifier_claims": "identifier_strength IN",
+            "entity_registry_alias_claims": "alias_type IN",
+            "entity_registry_organization_facets": "facet IN",
+            "entity_registry_lifecycle_events": "lifecycle_status IN",
+        }
+        if any(
+            table_sql[name] is None or fragment.upper() not in table_sql[name].upper()
+            for name, fragment in required_check_fragments.items()
+        ):
+            raise ValueError("entity registry schema is incomplete: check constraints")
+    elif engine.dialect.name == "postgresql":
+        validate_postgresql_registry_safety(engine)
+
+
+def validate_postgresql_registry_safety(engine: Engine) -> None:
+    """Validate PostgreSQL trigger/function safety when an operator supplies a live engine."""
+    with engine.connect() as conn:
+        function_exists = conn.execute(text("""
+            SELECT 1 FROM pg_proc WHERE proname = 'entity_registry_prevent_entity_id_update'
+        """)).first()
+        trigger_exists = conn.execute(text("""
+            SELECT 1 FROM pg_trigger
+            WHERE tgname = 'entity_registry_entities_no_id_update' AND NOT tgisinternal
+        """)).first()
+    if function_exists is None or trigger_exists is None:
+        raise ValueError("entity registry schema is incomplete: PostgreSQL immutable entity trigger")
