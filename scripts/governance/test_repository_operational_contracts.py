@@ -332,11 +332,13 @@ def test_release_workflow_power_shell_reject_guards_fail_closed_for_provenance_f
             "$candidatePayload.schema_version": "1",
             "$candidatePayload.candidate.candidate_sha": "candidate",
             "$candidatePayload.candidate.tag_target_sha": "candidate",
+            "$candidatePayload.candidate.workflow_source_sha": "trusted-main-source",
             "$candidatePayload.candidate.candidate_run_id": "run",
             "$candidatePayload.candidate.observed_build_sha": "candidate",
             "$candidatePayload.package_artifact.id": "wrong-artifact",
             "$candidateSha": "candidate",
             "$candidateRunId": "run",
+            "$candidateWorkflowSourceSha": "trusted-main-source",
             "$env:CANDIDATE_PACKAGE_ARTIFACT_ID": "package-artifact",
         },
     )
@@ -371,6 +373,54 @@ def test_release_workflow_attest_remains_candidate_bound_after_main_advances() -
     assert "$attestationRun.head_sha -ne $candidateSha" not in publish
     assert "$payload.producer.workflow_source_sha -ne $WorkflowSourceSha" in publish
     assert "$payload.candidate.package_artifact_id -ne $PackageArtifactId" in publish
+
+
+def test_release_workflow_recovery_carries_historical_candidate_identity_through_publish() -> None:
+    workflow = _release_workflow()
+    jobs = workflow["jobs"]
+    resolve = _job_step(jobs["resolve-candidate"], "Resolve exact tag target and latest exact-SHA main CI")["run"]
+    candidate_evidence = _job_step(jobs["build-windows"], "Write candidate evidence")["run"]
+    attest = _job_step(jobs["attest-evidence"], "Verify candidate binding and write trusted attestations")["run"]
+    publish_verify = _job_step(jobs["publish-preflight"], "Re-resolve exact candidate, CI, and candidate artifact identities")["run"]
+    publish = _job_step(jobs["publish-preflight"], "Fetch and verify candidate-bound evidence attestations")["run"]
+    final = _job_step(jobs["final-publish"], "Verify the same candidate artifact, tag, and latest CI after approval")["run"]
+    publication_evidence = _job_step(jobs["final-publish"], "Write publication evidence bound to the verified candidate")["run"]
+
+    candidate_ref_guard = _throw_guard(resolve, "$env:GITHUB_REF")
+    assert _guard_rejects(candidate_ref_guard, {"$env:GITHUB_REF": "refs/heads/untrusted"})
+    assert "$candidateWorkflowSourceSha = $env:GITHUB_SHA.Trim().ToLowerInvariant()" in resolve
+    assert "workflow_source_sha=$candidateWorkflowSourceSha" in resolve
+    assert 'workflow_source_sha = "${{ needs.resolve-candidate.outputs.workflow_source_sha }}"' in candidate_evidence
+
+    candidate_run_guard = _throw_guard(attest, "$candidateRun.name")
+    assert "$candidateRun.head_sha -ne $candidateSha" not in candidate_run_guard
+    assert "$candidateWorkflowSourceSha = $candidateRun.head_sha.Trim().ToLowerInvariant()" in attest
+    candidate_binding_guard = _throw_guard(attest, "$candidatePayload.candidate.workflow_source_sha")
+    assert _guard_rejects(
+        candidate_binding_guard,
+        {
+            "$candidatePayload.schema_version": "1",
+            "$candidatePayload.candidate.candidate_sha": "historical-candidate",
+            "$candidatePayload.candidate.tag_target_sha": "historical-candidate",
+            "$candidatePayload.candidate.candidate_run_id": "replacement-run",
+            "$candidatePayload.candidate.observed_build_sha": "historical-candidate",
+            "$candidatePayload.candidate.workflow_source_sha": "substituted-main-source",
+            "$candidatePayload.package_artifact.id": "package-artifact",
+            "$candidatePayload.package_artifact.checksum": "a" * 64,
+            "$candidateSha": "historical-candidate",
+            "$candidateRunId": "replacement-run",
+            "$candidateWorkflowSourceSha": "trusted-later-main-source",
+            "$package[0].id": "package-artifact",
+        },
+    )
+
+    publish_candidate_guard = _throw_guard(publish_verify, "$candidateRun.name")
+    assert "$candidateRun.head_sha -ne $candidateSha" not in publish_candidate_guard
+    assert "$candidateWorkflowSourceSha = $candidateRun.head_sha.Trim().ToLowerInvariant()" in publish_verify
+    assert "$candidatePayload.candidate.workflow_source_sha -ne $candidateWorkflowSourceSha" in publish
+    assert "workflow_source_sha = $candidateWorkflowSourceSha" in publish
+    assert "$verified.candidate.workflow_source_sha -ne $evidence.candidate.workflow_source_sha" in final
+    assert "candidate_workflow_source_sha = $verified.candidate.workflow_source_sha" in publication_evidence
 
 
 def test_release_workflow_keeps_candidate_evidence_and_publish_preflight_immutable() -> None:

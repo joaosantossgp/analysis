@@ -68,7 +68,10 @@ Release Desktop is manual-only and runs three separate phases from `main`:
    already-existing `v<version>` tag. It rejects malformed stable/RC versions,
    a non-main SHA, a tag target mismatch, or any missing/failed/cancelled/latest
    exact-SHA `push/main` CI. The Windows build runs once and uploads immutable
-   package and candidate-evidence artifacts.
+   package and candidate-evidence artifacts. The candidate workflow runs from
+   trusted `main`, records its workflow-source SHA separately, and checks out
+   the requested candidate SHA for every build and identity check. This permits
+   a replacement candidate for a historical SHA after `main` advances.
 2. Complete local-data and packaged-app validations against that downloaded
    candidate ZIP. Dispatch **attest** with the same version/SHA, candidate run
    ID, manual summaries, and typed API, CCEE, and strict-backup decisions.
@@ -81,7 +84,8 @@ Release Desktop is manual-only and runs three separate phases from `main`:
 3. Dispatch **publish** with the same version/SHA, candidate run ID, and the
    successful attest run ID. It accepts records only from that successful
    `Release Desktop` attest run from trusted `main`, verifies its separately
-   recorded workflow-source SHA and exact candidate binding, rechecks
+   recorded workflow-source SHA and the candidate run's separately recorded
+   workflow-source SHA and exact candidate binding, rechecks
    tag/SHA/latest CI before and after approval, verifies the ZIP
    checksum, uploads publication evidence, and only then publishes. It never
    rebuilds the bundle or creates/moves a tag.

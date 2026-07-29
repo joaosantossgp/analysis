@@ -34,8 +34,8 @@ GICS/ticker mapping CSVs. It must not bundle a user database.
 
 ## GitHub Release Workflow
 
-`.github/workflows/release-desktop.yml` is a manual, two-phase release gate.
-It does not run on tag push. Both phases must be dispatched from `main` with a
+`.github/workflows/release-desktop.yml` is a manual, three-phase release gate.
+It does not run on tag push. All phases must be dispatched from `main` with a
 full 40-character `candidate_sha`, a supported version, and an already-existing
 matching `v<version>` tag.
 
@@ -47,16 +47,21 @@ matching `v<version>` tag.
    runtime version and build provenance, then builds only once. It uploads two
    immutable GitHub Actions artifacts: the versioned ZIP/checksum package and
    `candidate-evidence.json`, which records the candidate SHA, tag target,
-   observed builder SHA, exact-CI run, package artifact ID, and ZIP checksum.
-2. **Attest phase** runs only from trusted `main` at the exact candidate SHA.
-   It re-verifies the successful candidate run, immutable artifacts, and
-   checksum before producing five named evidence artifacts. Operator summaries
-   remain explicitly manual evidence; the workflow attests their provenance and
-   candidate binding, not the underlying observation.
+   observed builder SHA, exact-CI run, package artifact ID, ZIP checksum, and
+   the separately recorded trusted-`main` workflow-source SHA. A candidate
+   replacement may therefore be dispatched from later `main` while the builder
+   still checks out the historical candidate SHA.
+2. **Attest phase** runs from trusted `main` and checks out the exact candidate
+   SHA. It re-verifies the successful candidate run, including its trusted-main
+   workflow-source SHA, immutable artifacts, and checksum before producing five
+   named evidence artifacts. Operator summaries remain explicitly manual
+   evidence; the workflow attests their provenance and candidate binding, not
+   the underlying observation.
 3. **Publish phase** accepts the trusted attest run ID, not arbitrary artifact
    IDs. It resolves the five exact artifact names from that run and rejects any
    mismatch in workflow name/path, dispatch event, successful conclusion,
-   `main` ref, candidate SHA, Actions metadata, or declared producer fields.
+   `main` ref, candidate SHA, workflow-source SHA, Actions metadata, or
+   declared producer fields.
    Before and after protected approval it re-resolves the tag and latest
    exact-SHA CI. The final job downloads the saved candidate and verified
    evidence, verifies identity and checksum, then publishes those bytes without
@@ -81,6 +86,9 @@ artifacts and run IDs**, must **revalidate the latest successful exact-SHA CI**,
 and must **repeat package/manual/conditional attestations and #440 approval**.
 It publishes only the replacement candidate; the workflow does not claim to
 create a new `push/main` CI run for an unchanged historical SHA.
+If `main` has advanced, dispatch the replacement from trusted `main`; its
+workflow-source SHA is recorded separately and the replacement build still
+verifies and checks out the requested historical candidate SHA.
 The expired run IDs remain **superseded evidence** in the release record and
 cannot be supplied to publish. This exception does not allow rebuilding,
 retagging, or substituting artifacts for a candidate whose artifacts remain
@@ -160,6 +168,7 @@ Every record has this candidate binding:
   "candidate": {
     "candidate_sha": "<40 lowercase hex>",
     "tag_target_sha": "<same SHA>",
+    "workflow_source_sha": "<trusted main candidate workflow SHA; may differ from candidate>",
     "candidate_run_id": "<candidate Actions run ID>",
     "package_artifact_id": "<candidate package artifact ID>",
     "zip_checksum": "<64 lowercase hex>"

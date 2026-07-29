@@ -103,6 +103,7 @@ jobs:
       tag: ${{ steps.resolve.outputs.tag }}
       candidate_sha: ${{ steps.resolve.outputs.candidate_sha }}
       tag_target_sha: ${{ steps.resolve.outputs.tag_target_sha }}
+      workflow_source_sha: ${{ steps.resolve.outputs.workflow_source_sha }}
       ci_run_id: ${{ steps.resolve.outputs.ci_run_id }}
       ci_run_url: ${{ steps.resolve.outputs.ci_run_url }}
     steps:
@@ -121,6 +122,10 @@ jobs:
           $ErrorActionPreference = "Stop"
           if ($env:GITHUB_REF -ne "refs/heads/main") {
             throw "Release dispatches must run the reviewed workflow from refs/heads/main."
+          }
+          $candidateWorkflowSourceSha = $env:GITHUB_SHA.Trim().ToLowerInvariant()
+          if ($candidateWorkflowSourceSha -notmatch '^[0-9a-f]{40}$') {
+            throw "Candidate must identify a full trusted-main workflow source SHA."
           }
           $version = $env:RELEASE_VERSION.Trim()
           $releaseVersionPattern = '^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-rc\.(?:0|[1-9][0-9]*))?$'
@@ -161,6 +166,7 @@ jobs:
           "tag=$tag" >> $env:GITHUB_OUTPUT
           "candidate_sha=$candidateSha" >> $env:GITHUB_OUTPUT
           "tag_target_sha=$tagTargetSha" >> $env:GITHUB_OUTPUT
+          "workflow_source_sha=$candidateWorkflowSourceSha" >> $env:GITHUB_OUTPUT
           "ci_run_id=$($latest.id)" >> $env:GITHUB_OUTPUT
           "ci_run_url=$($latest.html_url)" >> $env:GITHUB_OUTPUT
 
@@ -284,6 +290,7 @@ jobs:
               tag = "${{ needs.resolve-candidate.outputs.tag }}"
               candidate_sha = "${{ needs.resolve-candidate.outputs.candidate_sha }}"
               tag_target_sha = "${{ needs.resolve-candidate.outputs.tag_target_sha }}"
+              workflow_source_sha = "${{ needs.resolve-candidate.outputs.workflow_source_sha }}"
               candidate_run_id = "$env:GITHUB_RUN_ID"
               observed_build_sha = (git rev-parse HEAD).Trim().ToLowerInvariant()
             }
@@ -376,7 +383,8 @@ jobs:
             throw "Candidate is stale or the tag target no longer matches the candidate SHA."
           }
           $candidateRun = gh api "/repos/$env:GITHUB_REPOSITORY/actions/runs/$candidateRunId" | ConvertFrom-Json
-          if ($candidateRun.name -ne "Release Desktop" -or $candidateRun.path -ne ".github/workflows/release-desktop.yml" -or $candidateRun.event -ne "workflow_dispatch" -or $candidateRun.conclusion -ne "success" -or $candidateRun.head_branch -ne "main" -or $candidateRun.head_sha -ne $candidateSha) {
+          $candidateWorkflowSourceSha = $candidateRun.head_sha.Trim().ToLowerInvariant()
+          if ($candidateRun.name -ne "Release Desktop" -or $candidateRun.path -ne ".github/workflows/release-desktop.yml" -or $candidateRun.event -ne "workflow_dispatch" -or $candidateRun.conclusion -ne "success" -or $candidateRun.head_branch -ne "main" -or $candidateWorkflowSourceSha -notmatch '^[0-9a-f]{40}$') {
             throw "candidate_run_id must identify the successful trusted-main candidate run for this exact SHA."
           }
           $artifacts = gh api "/repos/$env:GITHUB_REPOSITORY/actions/runs/$candidateRunId/artifacts?per_page=100" | ConvertFrom-Json
@@ -398,7 +406,7 @@ jobs:
             $reader = [System.IO.StreamReader]::new($entry[0].Open())
             try { $candidatePayload = $reader.ReadToEnd() | ConvertFrom-Json -ErrorAction Stop } finally { $reader.Dispose() }
           } finally { $archive.Dispose() }
-          if ([string]$candidatePayload.schema_version -ne "1" -or $candidatePayload.candidate.candidate_sha -ne $candidateSha -or $candidatePayload.candidate.tag_target_sha -ne $candidateSha -or [string]$candidatePayload.candidate.candidate_run_id -ne $candidateRunId -or $candidatePayload.candidate.observed_build_sha -ne $candidateSha -or [string]$candidatePayload.package_artifact.id -ne "$($package[0].id)" -or $candidatePayload.package_artifact.checksum -notmatch '^[0-9a-f]{64}$') {
+          if ([string]$candidatePayload.schema_version -ne "1" -or $candidatePayload.candidate.candidate_sha -ne $candidateSha -or $candidatePayload.candidate.tag_target_sha -ne $candidateSha -or [string]$candidatePayload.candidate.workflow_source_sha -ne $candidateWorkflowSourceSha -or [string]$candidatePayload.candidate.candidate_run_id -ne $candidateRunId -or $candidatePayload.candidate.observed_build_sha -ne $candidateSha -or [string]$candidatePayload.package_artifact.id -ne "$($package[0].id)" -or $candidatePayload.package_artifact.checksum -notmatch '^[0-9a-f]{64}$') {
             throw "Immutable candidate evidence does not bind this exact candidate, run, package artifact, and checksum."
           }
           $checksum = $candidatePayload.package_artifact.checksum
@@ -421,7 +429,7 @@ jobs:
             return [ordered]@{ status = $status; basis = [ordered]@{ type = $basisType; candidate_sha = $candidateSha; tag_target_sha = $candidateSha; summary = $basisSummary }; result = [ordered]@{ manual = ($status -eq "required"); summary = $resultSummary.Trim() } }
           }
           $producer = [ordered]@{ workflow_run_id = "$env:GITHUB_RUN_ID"; phase = "attest"; workflow_name = "Release Desktop"; workflow_path = ".github/workflows/release-desktop.yml"; head_ref = "main"; workflow_source_sha = $workflowSourceSha }
-          $candidate = [ordered]@{ candidate_sha = $candidateSha; tag_target_sha = $candidateSha; candidate_run_id = $candidateRunId; package_artifact_id = "$($package[0].id)"; zip_checksum = $checksum }
+          $candidate = [ordered]@{ candidate_sha = $candidateSha; tag_target_sha = $candidateSha; workflow_source_sha = $candidateWorkflowSourceSha; candidate_run_id = $candidateRunId; package_artifact_id = "$($package[0].id)"; zip_checksum = $checksum }
           function Write-Attestation([string]$Type, $Result, $Decision) {
             $payload = [ordered]@{ schema_version = 1; attestation_type = $Type; candidate = $candidate; producer = $producer; result = $Result }
             if ($null -ne $Decision) { $payload.decision = [ordered]@{ status = $Decision.status; basis = $Decision.basis }; $payload.result = $Decision.result }
@@ -480,6 +488,7 @@ jobs:
     outputs:
       package_artifact_id: ${{ steps.verify.outputs.package_artifact_id }}
       evidence_artifact_id: ${{ steps.verify.outputs.evidence_artifact_id }}
+      candidate_workflow_source_sha: ${{ steps.verify.outputs.candidate_workflow_source_sha }}
       verified_evidence_artifact_id: ${{ steps.upload_verified_evidence.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -521,7 +530,8 @@ jobs:
             throw "Latest exact-SHA push/main CI is absent or not completed/success."
           }
           $candidateRun = gh api "/repos/$env:GITHUB_REPOSITORY/actions/runs/$candidateRunId" | ConvertFrom-Json
-          if ($candidateRun.name -ne "Release Desktop" -or $candidateRun.path -ne ".github/workflows/release-desktop.yml" -or $candidateRun.event -ne "workflow_dispatch" -or $candidateRun.conclusion -ne "success" -or $candidateRun.head_branch -ne "main" -or $candidateRun.head_sha -ne $candidateSha) {
+          $candidateWorkflowSourceSha = $candidateRun.head_sha.Trim().ToLowerInvariant()
+          if ($candidateRun.name -ne "Release Desktop" -or $candidateRun.path -ne ".github/workflows/release-desktop.yml" -or $candidateRun.event -ne "workflow_dispatch" -or $candidateRun.conclusion -ne "success" -or $candidateRun.head_branch -ne "main" -or $candidateWorkflowSourceSha -notmatch '^[0-9a-f]{40}$') {
             throw "candidate_run_id must identify the successful trusted-main Release Desktop candidate run."
           }
           $artifacts = gh api "/repos/$env:GITHUB_REPOSITORY/actions/runs/$candidateRunId/artifacts?per_page=100" | ConvertFrom-Json
@@ -534,6 +544,7 @@ jobs:
           }
           "package_artifact_id=$($package[0].id)" >> $env:GITHUB_OUTPUT
           "evidence_artifact_id=$($evidence[0].id)" >> $env:GITHUB_OUTPUT
+          "candidate_workflow_source_sha=$candidateWorkflowSourceSha" >> $env:GITHUB_OUTPUT
 
       - name: Fetch and verify candidate-bound evidence attestations
         shell: pwsh
@@ -541,13 +552,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           CANDIDATE_PACKAGE_ARTIFACT_ID: ${{ steps.verify.outputs.package_artifact_id }}
           CANDIDATE_EVIDENCE_ARTIFACT_ID: ${{ steps.verify.outputs.evidence_artifact_id }}
+          CANDIDATE_WORKFLOW_SOURCE_SHA: ${{ steps.verify.outputs.candidate_workflow_source_sha }}
         run: |
           $ErrorActionPreference = "Stop"
           $candidateSha = $env:CANDIDATE_SHA.Trim().ToLowerInvariant()
           $candidateRunId = $env:CANDIDATE_RUN_ID.Trim()
+          $candidateWorkflowSourceSha = $env:CANDIDATE_WORKFLOW_SOURCE_SHA.Trim().ToLowerInvariant()
           $attestationRunId = $env:ATTESTATION_RUN_ID.Trim()
           if ($attestationRunId -notmatch '^[1-9][0-9]*$') {
             throw "Publish requires a numeric trusted attestation_run_id."
+          }
+          if ($candidateWorkflowSourceSha -notmatch '^[0-9a-f]{40}$') {
+            throw "Publish requires a full trusted-main candidate workflow source SHA."
           }
           $attestationRun = gh api "/repos/$env:GITHUB_REPOSITORY/actions/runs/$attestationRunId" | ConvertFrom-Json
           $attestationWorkflowSourceSha = $attestationRun.head_sha.Trim().ToLowerInvariant()
@@ -606,12 +622,12 @@ jobs:
             }
           }
           function Assert-AttestationBinding {
-            param($Artifact, [string]$ExpectedType, [string]$CandidateSha, [string]$CandidateRunId, [string]$PackageArtifactId, [string]$ZipChecksum, [string]$WorkflowSourceSha, [switch]$Conditional)
+            param($Artifact, [string]$ExpectedType, [string]$CandidateSha, [string]$CandidateRunId, [string]$CandidateWorkflowSourceSha, [string]$PackageArtifactId, [string]$ZipChecksum, [string]$WorkflowSourceSha, [switch]$Conditional)
             $payload = $Artifact.payload
             if ([string]$payload.schema_version -ne "1" -or $payload.attestation_type -ne $ExpectedType) {
               throw "Evidence artifact $($Artifact.artifact_id) has an unsupported attestation schema or type."
             }
-            if ($payload.candidate.candidate_sha -ne $CandidateSha -or $payload.candidate.tag_target_sha -ne $CandidateSha -or [string]$payload.candidate.candidate_run_id -ne $CandidateRunId -or [string]$payload.candidate.package_artifact_id -ne $PackageArtifactId -or $payload.candidate.zip_checksum -ne $ZipChecksum) {
+            if ($payload.candidate.candidate_sha -ne $CandidateSha -or $payload.candidate.tag_target_sha -ne $CandidateSha -or $payload.candidate.workflow_source_sha -ne $CandidateWorkflowSourceSha -or [string]$payload.candidate.candidate_run_id -ne $CandidateRunId -or [string]$payload.candidate.package_artifact_id -ne $PackageArtifactId -or $payload.candidate.zip_checksum -ne $ZipChecksum) {
               throw "Evidence artifact $($Artifact.artifact_id) is not bound to the exact candidate/package/checksum."
             }
             if ([string]$payload.producer.workflow_run_id -ne $Artifact.workflow_run_id) {
@@ -637,7 +653,7 @@ jobs:
           }
           $candidateEvidence = Read-ActionArtifactJson $env:CANDIDATE_EVIDENCE_ARTIFACT_ID "candidate-evidence.json" $false
           $candidatePayload = $candidateEvidence.payload
-          if ([string]$candidatePayload.schema_version -ne "1" -or $candidatePayload.candidate.candidate_sha -ne $candidateSha -or $candidatePayload.candidate.tag_target_sha -ne $candidateSha -or [string]$candidatePayload.candidate.candidate_run_id -ne $candidateRunId -or $candidatePayload.candidate.observed_build_sha -ne $candidateSha -or [string]$candidatePayload.package_artifact.id -ne $env:CANDIDATE_PACKAGE_ARTIFACT_ID -or $candidatePayload.package_artifact.checksum -notmatch '^[0-9a-f]{64}$') {
+          if ([string]$candidatePayload.schema_version -ne "1" -or $candidatePayload.candidate.candidate_sha -ne $candidateSha -or $candidatePayload.candidate.tag_target_sha -ne $candidateSha -or $candidatePayload.candidate.workflow_source_sha -ne $candidateWorkflowSourceSha -or [string]$candidatePayload.candidate.candidate_run_id -ne $candidateRunId -or $candidatePayload.candidate.observed_build_sha -ne $candidateSha -or [string]$candidatePayload.package_artifact.id -ne $env:CANDIDATE_PACKAGE_ARTIFACT_ID -or $candidatePayload.package_artifact.checksum -notmatch '^[0-9a-f]{64}$') {
             throw "Immutable candidate evidence does not bind this exact candidate, run, package artifact, and checksum."
           }
           $checksum = $candidatePayload.package_artifact.checksum
@@ -653,17 +669,17 @@ jobs:
           $verified = @()
           foreach ($item in $manual) {
             $artifact = Read-ActionArtifactJson $item.id "release-evidence-attestation.json"
-            Assert-AttestationBinding $artifact $item.type $candidateSha $candidateRunId $env:CANDIDATE_PACKAGE_ARTIFACT_ID $checksum $attestationWorkflowSourceSha
+            Assert-AttestationBinding $artifact $item.type $candidateSha $candidateRunId $candidateWorkflowSourceSha $env:CANDIDATE_PACKAGE_ARTIFACT_ID $checksum $attestationWorkflowSourceSha
             $verified += [ordered]@{ artifact_id = $artifact.artifact_id; workflow_run_id = $artifact.workflow_run_id; zip_sha256 = $artifact.zip_sha256; content_sha256 = $artifact.content_sha256; attestation_type = $item.type }
           }
           foreach ($item in $conditional) {
             $artifact = Read-ActionArtifactJson $item.id "release-evidence-attestation.json"
-            Assert-AttestationBinding $artifact $item.type $candidateSha $candidateRunId $env:CANDIDATE_PACKAGE_ARTIFACT_ID $checksum $attestationWorkflowSourceSha -Conditional
+            Assert-AttestationBinding $artifact $item.type $candidateSha $candidateRunId $candidateWorkflowSourceSha $env:CANDIDATE_PACKAGE_ARTIFACT_ID $checksum $attestationWorkflowSourceSha -Conditional
             $verified += [ordered]@{ artifact_id = $artifact.artifact_id; workflow_run_id = $artifact.workflow_run_id; zip_sha256 = $artifact.zip_sha256; content_sha256 = $artifact.content_sha256; attestation_type = $item.type; decision_status = $artifact.payload.decision.status; decision_basis_type = $artifact.payload.decision.basis.type }
           }
           [ordered]@{
             schema_version = 1
-            candidate = [ordered]@{ candidate_sha = $candidateSha; tag_target_sha = $candidateSha; candidate_run_id = $candidateRunId; package_artifact_id = $env:CANDIDATE_PACKAGE_ARTIFACT_ID; zip_checksum = $checksum }
+            candidate = [ordered]@{ candidate_sha = $candidateSha; tag_target_sha = $candidateSha; workflow_source_sha = $candidateWorkflowSourceSha; candidate_run_id = $candidateRunId; package_artifact_id = $env:CANDIDATE_PACKAGE_ARTIFACT_ID; zip_checksum = $checksum }
             candidate_evidence = [ordered]@{ artifact_id = $candidateEvidence.artifact_id; workflow_run_id = $candidateEvidence.workflow_run_id; zip_sha256 = $candidateEvidence.zip_sha256; content_sha256 = $candidateEvidence.content_sha256 }
             attestations = $verified
           } | ConvertTo-Json -Depth 6 | Set-Content -Path verified-release-evidence.json -Encoding utf8
@@ -750,7 +766,7 @@ jobs:
             throw "Latest exact-SHA push/main CI is absent or not completed/success after approval."
           }
           $evidence = Get-Content candidate-evidence/candidate-evidence.json -Raw | ConvertFrom-Json
-          if ($evidence.candidate.version -ne $version -or $evidence.candidate.candidate_sha -ne $candidateSha -or $evidence.candidate.tag -ne $tag -or $evidence.candidate.tag_target_sha -ne $candidateSha -or [string]$evidence.candidate.candidate_run_id -ne $env:CANDIDATE_RUN_ID -or $evidence.candidate.observed_build_sha -ne $candidateSha) {
+          if ($evidence.candidate.version -ne $version -or $evidence.candidate.candidate_sha -ne $candidateSha -or $evidence.candidate.tag -ne $tag -or $evidence.candidate.tag_target_sha -ne $candidateSha -or $evidence.candidate.workflow_source_sha -notmatch '^[0-9a-f]{40}$' -or [string]$evidence.candidate.candidate_run_id -ne $env:CANDIDATE_RUN_ID -or $evidence.candidate.observed_build_sha -ne $candidateSha) {
             throw "Candidate evidence identity does not match this publication request."
           }
           if ($evidence.package_artifact.id -ne "${{ needs.publish-preflight.outputs.package_artifact_id }}") {
@@ -767,7 +783,7 @@ jobs:
             throw "Downloaded ZIP checksum does not match the immutable candidate evidence."
           }
           $verified = Get-Content verified-evidence/verified-release-evidence.json -Raw | ConvertFrom-Json
-          if ([string]$verified.schema_version -ne "1" -or $verified.candidate.candidate_sha -ne $candidateSha -or $verified.candidate.tag_target_sha -ne $candidateSha -or [string]$verified.candidate.candidate_run_id -ne $env:CANDIDATE_RUN_ID -or [string]$verified.candidate.package_artifact_id -ne "${{ needs.publish-preflight.outputs.package_artifact_id }}" -or $verified.candidate.zip_checksum -ne $actual -or @($verified.attestations).Count -ne 5) {
+          if ([string]$verified.schema_version -ne "1" -or $verified.candidate.candidate_sha -ne $candidateSha -or $verified.candidate.tag_target_sha -ne $candidateSha -or $verified.candidate.workflow_source_sha -ne $evidence.candidate.workflow_source_sha -or [string]$verified.candidate.candidate_run_id -ne $env:CANDIDATE_RUN_ID -or [string]$verified.candidate.package_artifact_id -ne "${{ needs.publish-preflight.outputs.package_artifact_id }}" -or $verified.candidate.zip_checksum -ne $actual -or @($verified.attestations).Count -ne 5) {
             throw "Verified manual evidence binding does not match the final candidate package."
           }
 
@@ -777,17 +793,19 @@ jobs:
           $version = $env:RELEASE_VERSION.Trim()
           $candidateSha = $env:CANDIDATE_SHA.Trim().ToLowerInvariant()
           $verifiedPath = "verified-evidence/verified-release-evidence.json"
+          $verified = Get-Content $verifiedPath -Raw | ConvertFrom-Json
           $evidence = [ordered]@{
             schema_version = 1
             candidate_sha = $candidateSha
             tag_target_sha = $candidateSha
             version = $version
             candidate_run_id = $env:CANDIDATE_RUN_ID
+            candidate_workflow_source_sha = $verified.candidate.workflow_source_sha
             package_artifact_id = "${{ needs.publish-preflight.outputs.package_artifact_id }}"
             zip_checksum = (Get-FileHash "candidate-package/CVMAnalytics-windows-v$version.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
             verified_evidence_artifact_id = $env:VERIFIED_EVIDENCE_ARTIFACT_ID
             verified_evidence_content_sha256 = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([IO.File]::ReadAllBytes($verifiedPath))).ToLowerInvariant()
-            attestations = (Get-Content $verifiedPath -Raw | ConvertFrom-Json).attestations
+            attestations = $verified.attestations
           }
           $evidence | ConvertTo-Json -Depth 5 | Set-Content -Path manual-evidence.json -Encoding utf8
 
