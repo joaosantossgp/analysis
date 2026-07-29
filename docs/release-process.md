@@ -62,33 +62,29 @@ no-network/latest-version states, and Excel open-without-repair.
 
 ## Exact-SHA Candidate and Publication Gate
 
-Release Desktop is manual-only and runs two separate phases from `main`:
+Release Desktop is manual-only and runs three separate phases from `main`:
 
 1. Dispatch **candidate** with the version, full candidate SHA, and its
    already-existing `v<version>` tag. It rejects malformed stable/RC versions,
    a non-main SHA, a tag target mismatch, or any missing/failed/cancelled/latest
    exact-SHA `push/main` CI. The Windows build runs once and uploads immutable
    package and candidate-evidence artifacts.
-2. Complete the local-data and packaged-app validations against that downloaded
-   candidate ZIP. Store each result as an immutable Actions artifact containing
-   a candidate-bound `release-evidence-attestation.json` record. Create typed
-   API, CCEE, and strict-backup decision attestations too; each declares
-   `required` or `not-required` with a candidate-diff or release-policy basis.
-   Pass the five numeric artifact IDs to publish. URLs, comments, and free-form
-   references are rejected.
+2. Complete local-data and packaged-app validations against that downloaded
+   candidate ZIP. Dispatch **attest** with the same version/SHA, candidate run
+   ID, manual summaries, and typed API, CCEE, and strict-backup decisions.
+   Attest only runs when the dispatch itself is trusted `main` at that exact
+   SHA; it rechecks candidate artifact/checksum binding and emits the five
+   named candidate-bound records.
 3. Dispatch **publish** with the same version/SHA, candidate run ID, and the
-   evidence declarations. It downloads the candidate ZIP and evidence from that
-   run, rechecks tag/SHA/latest CI before and after approval, verifies the ZIP
+   successful attest run ID. It accepts records only from that successful
+   `Release Desktop` attest run at trusted `main` and the exact candidate SHA,
+   rechecks tag/SHA/latest CI before and after approval, verifies the ZIP
    checksum, uploads publication evidence, and only then publishes. It never
    rebuilds the bundle or creates/moves a tag.
 
-The final publish job is protected by the `release-publication` GitHub
-environment. Before use, configure that environment with João
-(`joaosantossgp`) as required reviewer and a selected-branch policy that allows
-only protected `main`, with administrator bypass disabled. This remote
-configuration is a precondition: the workflow has no authority to configure
-environments, and its YAML reference alone cannot provide protected approval.
-Do not substitute the existing unprotected `Production` environment.
+The final publish job is protected by the configured `release-publication`
+GitHub environment. Do not substitute the unprotected `Production` environment
+or weaken its remote reviewer, protected-branch, or bypass settings.
 
 Any failed, cancelled, missing, expired, stale, tag-mismatched, or
 checksum/evidence-mismatched gate stops publication. Do not retry by rebuilding

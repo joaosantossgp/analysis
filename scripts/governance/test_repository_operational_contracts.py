@@ -174,11 +174,7 @@ def test_release_workflow_uses_env_transport_for_all_dispatch_inputs() -> None:
         "RELEASE_VERSION",
         "CANDIDATE_SHA",
         "CANDIDATE_RUN_ID",
-        "LOCAL_DATA_EVIDENCE_ARTIFACT_ID",
-        "PACKAGED_EVIDENCE_ARTIFACT_ID",
-        "API_EVIDENCE_ARTIFACT_ID",
-        "CCEE_EVIDENCE_ARTIFACT_ID",
-        "STRICT_BACKUP_EVIDENCE_ARTIFACT_ID",
+        "ATTESTATION_RUN_ID",
     }
 
     assert "${{ inputs." not in run_source
@@ -229,7 +225,36 @@ def test_release_workflow_requires_candidate_bound_evidence_attestations() -> No
 
     assert not missing, f"release evidence contract missing: {', '.join(missing)}"
     assert "local_data_evidence_ref" not in workflow
-    assert "api_evidence_basis" not in workflow
+    assert "api_evidence_basis:" not in workflow
+
+
+def test_release_workflow_only_accepts_trusted_attestation_producer_runs() -> None:
+    workflow = (ROOT / ".github/workflows/release-desktop.yml").read_text(
+        encoding="utf-8"
+    )
+    required_fragments = (
+        "attest-evidence:",
+        "inputs.phase == 'attest'",
+        "ATTESTATION_RUN_ID: ${{ inputs.attestation_run_id }}",
+        'producer = [ordered]@{ workflow_run_id = "$env:GITHUB_RUN_ID"; phase = "attest"',
+        "actions/runs/$($metadata.workflow_run.id)",
+        '$producerRun.name -ne "Release Desktop"',
+        '$producerRun.path -ne ".github/workflows/release-desktop.yml"',
+        '$producerRun.event -ne "workflow_dispatch"',
+        '$producerRun.conclusion -ne "success"',
+        '$producerRun.head_branch -ne "main"',
+        '$producerRun.head_sha -ne $candidateSha',
+        '$payload.producer.phase -ne "attest"',
+        "release-attestation-manual-local-data-",
+        "release-attestation-manual-packaged-",
+        "release-attestation-conditional-api-",
+        "release-attestation-conditional-ccee-",
+        "release-attestation-conditional-strict-backup-",
+    )
+    missing = [fragment for fragment in required_fragments if fragment not in workflow]
+
+    assert not missing, f"trusted attestation producer checks missing: {', '.join(missing)}"
+    assert "LOCAL_DATA_EVIDENCE_ARTIFACT_ID" not in workflow
 
 
 def test_release_workflow_preserves_updater_version_grammar() -> None:

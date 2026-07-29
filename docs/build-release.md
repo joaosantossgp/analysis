@@ -48,16 +48,19 @@ matching `v<version>` tag.
    immutable GitHub Actions artifacts: the versioned ZIP/checksum package and
    `candidate-evidence.json`, which records the candidate SHA, tag target,
    observed builder SHA, exact-CI run, package artifact ID, and ZIP checksum.
-2. **Publish phase** requires the successful candidate run ID plus five
-   immutable GitHub Actions evidence-artifact IDs: local-data, packaged-app,
-   API applicability, CCEE applicability, and strict-backup applicability.
-   Preflight reads each artifact through the Actions API, hashes its ZIP and
-   JSON content, and accepts only one `release-evidence-attestation.json` file
-   with the schema below. Before and after protected approval it re-resolves the
-   tag and latest exact-SHA CI. The final job downloads the saved candidate and
-   verified-evidence artifacts, verifies their identity and checksum, then
-   publishes those bytes without rebuilding or retagging. It creates the
-   existing versioned and `latest` asset aliases.
+2. **Attest phase** runs only from trusted `main` at the exact candidate SHA.
+   It re-verifies the successful candidate run, immutable artifacts, and
+   checksum before producing five named evidence artifacts. Operator summaries
+   remain explicitly manual evidence; the workflow attests their provenance and
+   candidate binding, not the underlying observation.
+3. **Publish phase** accepts the trusted attest run ID, not arbitrary artifact
+   IDs. It resolves the five exact artifact names from that run and rejects any
+   mismatch in workflow name/path, dispatch event, successful conclusion,
+   `main` ref, candidate SHA, Actions metadata, or declared producer fields.
+   Before and after protected approval it re-resolves the tag and latest
+   exact-SHA CI. The final job downloads the saved candidate and verified
+   evidence, verifies identity and checksum, then publishes those bytes without
+   rebuilding or retagging.
 
 Only the final `Publish verified candidate` job has `contents: write`; every
 other release job has read-only repository permissions. Stable `X.Y.Z` remains
@@ -65,15 +68,9 @@ a normal release and `X.Y.Z-rc.N` remains a prerelease. A stable release must
 therefore use the approved same-SHA candidate evidence or a separately approved
 new candidate; the workflow never promotes a different SHA by tag movement.
 
-The release operator must configure the GitHub environment before any publish
-run. This repository currently has no such protected environment. Create an
-environment named **`release-publication`**, require **João
-(`joaosantossgp`)** as reviewer, restrict selected deployment branches to the
-protected `main` branch only, and disable administrator bypass. Do not reuse the
-unprotected `Production` environment. This is a release precondition, not a
-best-effort recommendation: the workflow deliberately names the environment but
-cannot create or protect it, so a YAML reference alone provides no approval
-gate.
+Publication uses the protected `release-publication` environment. Its reviewer,
+protected-`main` branch policy, and administrator-bypass settings are remote
+configuration; do not replace or weaken them in workflow code.
 
 Flat-root means the ZIP root contains `CVMAnalytics.exe` and `_internal/`
 directly. A wrapper folder breaks the updater contract.
@@ -109,10 +106,11 @@ When release evidence conflicts, use this hierarchy:
    Settings -> Diagnostics in the packaged app for generated build commit and
    build timestamp. Treat this as artifact provenance, not as proof of the
    current checkout.
-5. **Manual and conditional evidence** — use the verified Actions artifact IDs,
-   ZIP/content SHA-256 values, and `manual-evidence.json` to prove local-data
-   checks, packaged validation, and every required conditional check. A
-   protected-environment approval is not evidence that a manual check ran.
+5. **Manual and conditional evidence** — use the verified trusted-attest run,
+   expected artifact identities, ZIP/content SHA-256 values, and
+   `manual-evidence.json` to prove local-data checks, packaged validation, and
+   every required conditional check. A protected-environment approval is not
+   evidence that a manual check ran.
 6. **Packaged validation evidence** — use the release workflow logs, release
    notes, and manual packaged-app validation records to prove the built artifact
    launched correctly, used the expected data root, handled offline/update
@@ -127,13 +125,14 @@ evidence to those values. User data remains excluded from release artifacts.
 
 ### Evidence attestation contract
 
-An operator creates each manual or conditional evidence record as an immutable
-GitHub Actions artifact containing exactly one UTF-8 JSON file named
-`release-evidence-attestation.json`. The publish dispatch accepts the numeric
-artifact IDs, not URLs, comments, free-form text, or mutable files. The workflow
-downloads the artifact through the GitHub API, records its Actions artifact ID,
-producer run ID, ZIP SHA-256, and JSON-content SHA-256, and rejects an expired,
-malformed, multi-file, or mismatched record.
+Dispatch **attest** from `main` at the exact candidate SHA with the candidate
+run ID and the operator's manual/conditional summaries. It writes one named,
+immutable Actions artifact per record, each containing exactly one UTF-8 JSON
+file named `release-evidence-attestation.json`. Publish accepts only the
+successful attest run ID. It resolves the five expected artifact names from
+that run, then records their IDs, ZIP SHA-256 values, and JSON-content SHA-256
+values. It rejects expired, malformed, multi-file, mismatched, or untrusted
+producer records.
 
 Every record has this candidate binding:
 
@@ -148,7 +147,14 @@ Every record has this candidate binding:
     "package_artifact_id": "<candidate package artifact ID>",
     "zip_checksum": "<64 lowercase hex>"
   },
-  "producer": { "workflow_run_id": "<attestation producer run ID>" },
+  "producer": {
+    "workflow_run_id": "<attestation producer run ID>",
+    "phase": "attest",
+    "workflow_name": "Release Desktop",
+    "workflow_path": ".github/workflows/release-desktop.yml",
+    "head_ref": "main",
+    "head_sha": "<same SHA>"
+  },
   "result": { "manual": true, "summary": "<operator record>" }
 }
 ```

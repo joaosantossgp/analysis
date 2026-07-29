@@ -4,11 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       phase:
-        description: "Candidate builds once; publish consumes a verified candidate."
+        description: "Candidate builds once; attest records trusted evidence; publish consumes both."
         required: true
         type: choice
         options:
           - candidate
+          - attest
           - publish
       version:
         description: "Version without v (X.Y.Z or X.Y.Z-rc.N). The matching tag must already exist."
@@ -19,27 +20,67 @@ on:
         required: true
         type: string
       candidate_run_id:
-        description: "Successful candidate-phase workflow run ID (required only for publish)."
+        description: "Successful candidate-phase workflow run ID (required for attest and publish)."
         required: false
         type: string
-      local_data_evidence_artifact_id:
-        description: "Required for publish: immutable Actions artifact ID containing local-data attestation JSON."
+      attestation_run_id:
+        description: "Successful trusted attest-phase workflow run ID (required only for publish)."
         required: false
         type: string
-      packaged_evidence_artifact_id:
-        description: "Required for publish: immutable Actions artifact ID containing packaged-app attestation JSON."
+      local_data_evidence_summary:
+        description: "Required for attest: human local-data verification summary."
         required: false
         type: string
-      api_evidence_artifact_id:
-        description: "Required for publish: immutable Actions artifact ID containing the typed API applicability attestation."
+      packaged_evidence_summary:
+        description: "Required for attest: human packaged-app verification summary."
         required: false
         type: string
-      ccee_evidence_artifact_id:
-        description: "Required for publish: immutable Actions artifact ID containing the typed CCEE applicability attestation."
+      api_evidence_status:
+        description: "Required for attest: API evidence decision (required or not-required)."
         required: false
         type: string
-      strict_backup_evidence_artifact_id:
-        description: "Required for publish: immutable Actions artifact ID containing the typed rollback-backup policy attestation."
+      api_evidence_basis_type:
+        description: "Required for attest: API decision basis (candidate-diff or release-policy)."
+        required: false
+        type: string
+      api_evidence_basis_summary:
+        description: "Required for attest: API decision basis summary."
+        required: false
+        type: string
+      api_evidence_result_summary:
+        description: "Required when API evidence is required: human result summary."
+        required: false
+        type: string
+      ccee_evidence_status:
+        description: "Required for attest: CCEE evidence decision (required or not-required)."
+        required: false
+        type: string
+      ccee_evidence_basis_type:
+        description: "Required for attest: CCEE decision basis (candidate-diff or release-policy)."
+        required: false
+        type: string
+      ccee_evidence_basis_summary:
+        description: "Required for attest: CCEE decision basis summary."
+        required: false
+        type: string
+      ccee_evidence_result_summary:
+        description: "Required when CCEE evidence is required: human result summary."
+        required: false
+        type: string
+      strict_backup_evidence_status:
+        description: "Required for attest: rollback-backup decision (required or not-required)."
+        required: false
+        type: string
+      strict_backup_evidence_basis_type:
+        description: "Required for attest: rollback-backup decision basis (candidate-diff or release-policy)."
+        required: false
+        type: string
+      strict_backup_evidence_basis_summary:
+        description: "Required for attest: rollback-backup decision basis summary."
+        required: false
+        type: string
+      strict_backup_evidence_result_summary:
+        description: "Required when rollback-backup evidence is required: human result summary."
         required: false
         type: string
 
@@ -273,6 +314,154 @@ jobs:
           if-no-files-found: error
           path: candidate-evidence.json
 
+  attest-evidence:
+    if: inputs.phase == 'attest'
+    name: Attest release evidence from trusted main
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+      CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+      CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+      LOCAL_DATA_EVIDENCE_SUMMARY: ${{ inputs.local_data_evidence_summary }}
+      PACKAGED_EVIDENCE_SUMMARY: ${{ inputs.packaged_evidence_summary }}
+      API_EVIDENCE_STATUS: ${{ inputs.api_evidence_status }}
+      API_EVIDENCE_BASIS_TYPE: ${{ inputs.api_evidence_basis_type }}
+      API_EVIDENCE_BASIS_SUMMARY: ${{ inputs.api_evidence_basis_summary }}
+      API_EVIDENCE_RESULT_SUMMARY: ${{ inputs.api_evidence_result_summary }}
+      CCEE_EVIDENCE_STATUS: ${{ inputs.ccee_evidence_status }}
+      CCEE_EVIDENCE_BASIS_TYPE: ${{ inputs.ccee_evidence_basis_type }}
+      CCEE_EVIDENCE_BASIS_SUMMARY: ${{ inputs.ccee_evidence_basis_summary }}
+      CCEE_EVIDENCE_RESULT_SUMMARY: ${{ inputs.ccee_evidence_result_summary }}
+      STRICT_BACKUP_EVIDENCE_STATUS: ${{ inputs.strict_backup_evidence_status }}
+      STRICT_BACKUP_EVIDENCE_BASIS_TYPE: ${{ inputs.strict_backup_evidence_basis_type }}
+      STRICT_BACKUP_EVIDENCE_BASIS_SUMMARY: ${{ inputs.strict_backup_evidence_basis_summary }}
+      STRICT_BACKUP_EVIDENCE_RESULT_SUMMARY: ${{ inputs.strict_backup_evidence_result_summary }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify candidate binding and write trusted attestations
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $version = $env:RELEASE_VERSION.Trim()
+          $candidateSha = $env:CANDIDATE_SHA.Trim().ToLowerInvariant()
+          $candidateRunId = $env:CANDIDATE_RUN_ID.Trim()
+          $releaseVersionPattern = '^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-rc\.(?:0|[1-9][0-9]*))?$'
+          if ($version -notmatch $releaseVersionPattern -or $candidateSha -notmatch '^[0-9a-f]{40}$' -or $candidateRunId -notmatch '^[1-9][0-9]*$') {
+            throw "Attest requires a supported version, full candidate SHA, and numeric successful candidate_run_id."
+          }
+          if ($env:GITHUB_REF -ne "refs/heads/main" -or $env:GITHUB_SHA.Trim().ToLowerInvariant() -ne $candidateSha) {
+            throw "Attest dispatches must run from trusted main at the exact candidate SHA."
+          }
+          if ((git rev-parse HEAD).Trim().ToLowerInvariant() -ne $candidateSha) {
+            throw "Attest checkout does not match candidate SHA."
+          }
+          $tag = "v$version"
+          git fetch --no-tags origin main
+          git fetch --force origin "refs/tags/$tag`:refs/tags/$tag"
+          git merge-base --is-ancestor $candidateSha origin/main
+          if ($LASTEXITCODE -ne 0 -or (git rev-parse "$tag^{commit}").Trim().ToLowerInvariant() -ne $candidateSha) {
+            throw "Candidate is stale or the tag target no longer matches the candidate SHA."
+          }
+          $candidateRun = gh api "/repos/$env:GITHUB_REPOSITORY/actions/runs/$candidateRunId" | ConvertFrom-Json
+          if ($candidateRun.name -ne "Release Desktop" -or $candidateRun.path -ne ".github/workflows/release-desktop.yml" -or $candidateRun.event -ne "workflow_dispatch" -or $candidateRun.conclusion -ne "success" -or $candidateRun.head_branch -ne "main" -or $candidateRun.head_sha -ne $candidateSha) {
+            throw "candidate_run_id must identify the successful trusted-main candidate run for this exact SHA."
+          }
+          $artifacts = gh api "/repos/$env:GITHUB_REPOSITORY/actions/runs/$candidateRunId/artifacts?per_page=100" | ConvertFrom-Json
+          $packageName = "release-candidate-package-$version-$candidateSha"
+          $evidenceName = "release-candidate-evidence-$version-$candidateSha"
+          $package = @($artifacts.artifacts | Where-Object { $_.name -eq $packageName -and -not $_.expired })
+          $evidence = @($artifacts.artifacts | Where-Object { $_.name -eq $evidenceName -and -not $_.expired })
+          if ($package.Count -ne 1 -or $evidence.Count -ne 1) {
+            throw "Candidate run must retain one non-expired package and evidence artifact for this exact version/SHA."
+          }
+          $candidateEvidenceZip = Join-Path $env:RUNNER_TEMP "candidate-evidence-$($evidence[0].id).zip"
+          & gh api --header "Accept: application/vnd.github+json" --output $candidateEvidenceZip "/repos/$env:GITHUB_REPOSITORY/actions/artifacts/$($evidence[0].id)/zip"
+          if ($LASTEXITCODE -ne 0) { throw "Could not download immutable candidate evidence." }
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive = [System.IO.Compression.ZipFile]::OpenRead($candidateEvidenceZip)
+          try {
+            $entry = @($archive.Entries | Where-Object { $_.FullName -eq "candidate-evidence.json" })
+            if ($entry.Count -ne 1) { throw "Candidate evidence artifact must contain candidate-evidence.json." }
+            $reader = [System.IO.StreamReader]::new($entry[0].Open())
+            try { $candidatePayload = $reader.ReadToEnd() | ConvertFrom-Json -ErrorAction Stop } finally { $reader.Dispose() }
+          } finally { $archive.Dispose() }
+          if ([string]$candidatePayload.schema_version -ne "1" -or $candidatePayload.candidate.candidate_sha -ne $candidateSha -or $candidatePayload.candidate.tag_target_sha -ne $candidateSha -or [string]$candidatePayload.candidate.candidate_run_id -ne $candidateRunId -or $candidatePayload.candidate.observed_build_sha -ne $candidateSha -or [string]$candidatePayload.package_artifact.id -ne "$($package[0].id)" -or $candidatePayload.package_artifact.checksum -notmatch '^[0-9a-f]{64}$') {
+            throw "Immutable candidate evidence does not bind this exact candidate, run, package artifact, and checksum."
+          }
+          $checksum = $candidatePayload.package_artifact.checksum
+          function Require-Text([string]$Name) {
+            $value = [string](Get-Item "Env:$Name").Value
+            if ([string]::IsNullOrWhiteSpace($value)) { throw "$Name is required for trusted attestation." }
+            return $value.Trim()
+          }
+          function New-ConditionalDecision([string]$Prefix) {
+            $status = Require-Text "${Prefix}_STATUS"
+            $basisType = Require-Text "${Prefix}_BASIS_TYPE"
+            $basisSummary = Require-Text "${Prefix}_BASIS_SUMMARY"
+            $resultSummary = [string](Get-Item "Env:${Prefix}_RESULT_SUMMARY").Value
+            if ($status -notin @("required", "not-required") -or $basisType -notin @("candidate-diff", "release-policy")) {
+              throw "$Prefix must use required/not-required and candidate-diff/release-policy."
+            }
+            if ($status -eq "required" -and [string]::IsNullOrWhiteSpace($resultSummary)) {
+              throw "$Prefix result summary is required when the decision is required."
+            }
+            return [ordered]@{ status = $status; basis = [ordered]@{ type = $basisType; candidate_sha = $candidateSha; tag_target_sha = $candidateSha; summary = $basisSummary }; result = [ordered]@{ manual = ($status -eq "required"); summary = $resultSummary.Trim() } }
+          }
+          $producer = [ordered]@{ workflow_run_id = "$env:GITHUB_RUN_ID"; phase = "attest"; workflow_name = "Release Desktop"; workflow_path = ".github/workflows/release-desktop.yml"; head_ref = "main"; head_sha = $candidateSha }
+          $candidate = [ordered]@{ candidate_sha = $candidateSha; tag_target_sha = $candidateSha; candidate_run_id = $candidateRunId; package_artifact_id = "$($package[0].id)"; zip_checksum = $checksum }
+          function Write-Attestation([string]$Type, $Result, $Decision) {
+            $payload = [ordered]@{ schema_version = 1; attestation_type = $Type; candidate = $candidate; producer = $producer; result = $Result }
+            if ($null -ne $Decision) { $payload.decision = [ordered]@{ status = $Decision.status; basis = $Decision.basis }; $payload.result = $Decision.result }
+            $payload | ConvertTo-Json -Depth 8 | Set-Content -Path "release-evidence-attestation-$Type.json" -Encoding utf8
+          }
+          Write-Attestation "manual-local-data" ([ordered]@{ manual = $true; summary = (Require-Text "LOCAL_DATA_EVIDENCE_SUMMARY") }) $null
+          Write-Attestation "manual-packaged" ([ordered]@{ manual = $true; summary = (Require-Text "PACKAGED_EVIDENCE_SUMMARY") }) $null
+          Write-Attestation "conditional-api" $null (New-ConditionalDecision "API_EVIDENCE")
+          Write-Attestation "conditional-ccee" $null (New-ConditionalDecision "CCEE_EVIDENCE")
+          Write-Attestation "conditional-strict-backup" $null (New-ConditionalDecision "STRICT_BACKUP_EVIDENCE")
+
+      - name: Upload local-data attestation
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-attestation-manual-local-data-${{ github.run_id }}
+          if-no-files-found: error
+          path: release-evidence-attestation-manual-local-data.json
+
+      - name: Upload packaged-app attestation
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-attestation-manual-packaged-${{ github.run_id }}
+          if-no-files-found: error
+          path: release-evidence-attestation-manual-packaged.json
+
+      - name: Upload API attestation
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-attestation-conditional-api-${{ github.run_id }}
+          if-no-files-found: error
+          path: release-evidence-attestation-conditional-api.json
+
+      - name: Upload CCEE attestation
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-attestation-conditional-ccee-${{ github.run_id }}
+          if-no-files-found: error
+          path: release-evidence-attestation-conditional-ccee.json
+
+      - name: Upload rollback-backup attestation
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-attestation-conditional-strict-backup-${{ github.run_id }}
+          if-no-files-found: error
+          path: release-evidence-attestation-conditional-strict-backup.json
+
   publish-preflight:
     if: inputs.phase == 'publish'
     name: Reverify candidate, CI, and evidence handoff
@@ -281,11 +470,7 @@ jobs:
       RELEASE_VERSION: ${{ inputs.version }}
       CANDIDATE_SHA: ${{ inputs.candidate_sha }}
       CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
-      LOCAL_DATA_EVIDENCE_ARTIFACT_ID: ${{ inputs.local_data_evidence_artifact_id }}
-      PACKAGED_EVIDENCE_ARTIFACT_ID: ${{ inputs.packaged_evidence_artifact_id }}
-      API_EVIDENCE_ARTIFACT_ID: ${{ inputs.api_evidence_artifact_id }}
-      CCEE_EVIDENCE_ARTIFACT_ID: ${{ inputs.ccee_evidence_artifact_id }}
-      STRICT_BACKUP_EVIDENCE_ARTIFACT_ID: ${{ inputs.strict_backup_evidence_artifact_id }}
+      ATTESTATION_RUN_ID: ${{ inputs.attestation_run_id }}
     outputs:
       package_artifact_id: ${{ steps.verify.outputs.package_artifact_id }}
       evidence_artifact_id: ${{ steps.verify.outputs.evidence_artifact_id }}
@@ -330,8 +515,8 @@ jobs:
             throw "Latest exact-SHA push/main CI is absent or not completed/success."
           }
           $candidateRun = gh api "/repos/$env:GITHUB_REPOSITORY/actions/runs/$candidateRunId" | ConvertFrom-Json
-          if ($candidateRun.name -ne "Release Desktop" -or $candidateRun.event -ne "workflow_dispatch" -or $candidateRun.conclusion -ne "success") {
-            throw "candidate_run_id must identify a successful Release Desktop workflow_dispatch run."
+          if ($candidateRun.name -ne "Release Desktop" -or $candidateRun.path -ne ".github/workflows/release-desktop.yml" -or $candidateRun.event -ne "workflow_dispatch" -or $candidateRun.conclusion -ne "success" -or $candidateRun.head_branch -ne "main" -or $candidateRun.head_sha -ne $candidateSha) {
+            throw "candidate_run_id must identify the successful trusted-main Release Desktop candidate run."
           }
           $artifacts = gh api "/repos/$env:GITHUB_REPOSITORY/actions/runs/$candidateRunId/artifacts?per_page=100" | ConvertFrom-Json
           $packageName = "release-candidate-package-$version-$candidateSha"
@@ -352,14 +537,37 @@ jobs:
           CANDIDATE_EVIDENCE_ARTIFACT_ID: ${{ steps.verify.outputs.evidence_artifact_id }}
         run: |
           $ErrorActionPreference = "Stop"
+          $candidateSha = $env:CANDIDATE_SHA.Trim().ToLowerInvariant()
+          $candidateRunId = $env:CANDIDATE_RUN_ID.Trim()
+          $attestationRunId = $env:ATTESTATION_RUN_ID.Trim()
+          if ($attestationRunId -notmatch '^[1-9][0-9]*$') {
+            throw "Publish requires a numeric trusted attestation_run_id."
+          }
+          $attestationRun = gh api "/repos/$env:GITHUB_REPOSITORY/actions/runs/$attestationRunId" | ConvertFrom-Json
+          if ($attestationRun.name -ne "Release Desktop" -or $attestationRun.path -ne ".github/workflows/release-desktop.yml" -or $attestationRun.event -ne "workflow_dispatch" -or $attestationRun.conclusion -ne "success" -or $attestationRun.head_branch -ne "main" -or $attestationRun.head_sha -ne $candidateSha) {
+            throw "attestation_run_id must identify a successful trusted-main Release Desktop attest run for this exact SHA."
+          }
+          $attestationArtifacts = gh api "/repos/$env:GITHUB_REPOSITORY/actions/runs/$attestationRunId/artifacts?per_page=100" | ConvertFrom-Json
+          function Resolve-AttestationArtifact([string]$Name) {
+            $matches = @($attestationArtifacts.artifacts | Where-Object { $_.name -eq $Name -and -not $_.expired })
+            if ($matches.Count -ne 1) { throw "Trusted attestation run must retain exactly one non-expired '$Name' artifact." }
+            return "$($matches[0].id)"
+          }
           function Read-ActionArtifactJson {
-            param([string]$ArtifactId, [string]$ExpectedEntryName)
+            param([string]$ArtifactId, [string]$ExpectedEntryName, [bool]$RequireTrustedProducer = $true)
             if ($ArtifactId -notmatch '^[1-9][0-9]*$') {
               throw "Evidence artifact ID must be a positive decimal Actions artifact ID."
             }
             $metadata = (& gh api "/repos/$env:GITHUB_REPOSITORY/actions/artifacts/$ArtifactId" | ConvertFrom-Json)
             if ($LASTEXITCODE -ne 0 -or $metadata.expired -or -not $metadata.workflow_run.id) {
               throw "Evidence artifact $ArtifactId is missing, expired, or lacks workflow-run provenance."
+            }
+            if ($RequireTrustedProducer -and [string]$metadata.workflow_run.id -ne $attestationRunId) {
+              throw "Evidence artifact $ArtifactId is not produced by the selected trusted attestation run."
+            }
+            $producerRun = (& gh api "/repos/$env:GITHUB_REPOSITORY/actions/runs/$($metadata.workflow_run.id)" | ConvertFrom-Json)
+            if ($RequireTrustedProducer -and ($producerRun.name -ne "Release Desktop" -or $producerRun.path -ne ".github/workflows/release-desktop.yml" -or $producerRun.event -ne "workflow_dispatch" -or $producerRun.conclusion -ne "success" -or $producerRun.head_branch -ne "main" -or $producerRun.head_sha -ne $candidateSha)) {
+              throw "Evidence artifact $ArtifactId was not produced by the successful trusted-main Release Desktop run for this candidate."
             }
             $zipPath = Join-Path $env:RUNNER_TEMP "release-evidence-$ArtifactId.zip"
             & gh api --header "Accept: application/vnd.github+json" --output $zipPath "/repos/$env:GITHUB_REPOSITORY/actions/artifacts/$ArtifactId/zip"
@@ -384,6 +592,7 @@ jobs:
             [pscustomobject]@{
               artifact_id = "$ArtifactId"
               workflow_run_id = "$($metadata.workflow_run.id)"
+              producer_run = $producerRun
               zip_sha256 = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
               content_sha256 = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($content))).ToLowerInvariant()
               payload = $payload
@@ -401,6 +610,9 @@ jobs:
             if ([string]$payload.producer.workflow_run_id -ne $Artifact.workflow_run_id) {
               throw "Evidence artifact $($Artifact.artifact_id) producer workflow-run identity differs from Actions metadata."
             }
+            if ($payload.producer.phase -ne "attest" -or $payload.producer.workflow_name -ne "Release Desktop" -or $payload.producer.workflow_path -ne ".github/workflows/release-desktop.yml" -or $payload.producer.head_ref -ne "main" -or $payload.producer.head_sha -ne $CandidateSha) {
+              throw "Evidence artifact $($Artifact.artifact_id) does not declare the trusted attest producer identity."
+            }
             if (-not $Conditional -and ($payload.result.manual -ne $true -or [string]::IsNullOrWhiteSpace($payload.result.summary))) {
               throw "Manual evidence artifact $($Artifact.artifact_id) lacks a recorded operator result."
             }
@@ -416,22 +628,20 @@ jobs:
               }
             }
           }
-          $candidateSha = $env:CANDIDATE_SHA.Trim().ToLowerInvariant()
-          $candidateRunId = $env:CANDIDATE_RUN_ID.Trim()
-          $candidateEvidence = Read-ActionArtifactJson $env:CANDIDATE_EVIDENCE_ARTIFACT_ID "candidate-evidence.json"
+          $candidateEvidence = Read-ActionArtifactJson $env:CANDIDATE_EVIDENCE_ARTIFACT_ID "candidate-evidence.json" $false
           $candidatePayload = $candidateEvidence.payload
           if ([string]$candidatePayload.schema_version -ne "1" -or $candidatePayload.candidate.candidate_sha -ne $candidateSha -or $candidatePayload.candidate.tag_target_sha -ne $candidateSha -or [string]$candidatePayload.candidate.candidate_run_id -ne $candidateRunId -or $candidatePayload.candidate.observed_build_sha -ne $candidateSha -or [string]$candidatePayload.package_artifact.id -ne $env:CANDIDATE_PACKAGE_ARTIFACT_ID -or $candidatePayload.package_artifact.checksum -notmatch '^[0-9a-f]{64}$') {
             throw "Immutable candidate evidence does not bind this exact candidate, run, package artifact, and checksum."
           }
           $checksum = $candidatePayload.package_artifact.checksum
           $manual = @(
-            @{ id = $env:LOCAL_DATA_EVIDENCE_ARTIFACT_ID; type = "manual-local-data" },
-            @{ id = $env:PACKAGED_EVIDENCE_ARTIFACT_ID; type = "manual-packaged" }
+            @{ id = Resolve-AttestationArtifact "release-attestation-manual-local-data-$attestationRunId"; type = "manual-local-data" },
+            @{ id = Resolve-AttestationArtifact "release-attestation-manual-packaged-$attestationRunId"; type = "manual-packaged" }
           )
           $conditional = @(
-            @{ id = $env:API_EVIDENCE_ARTIFACT_ID; type = "conditional-api" },
-            @{ id = $env:CCEE_EVIDENCE_ARTIFACT_ID; type = "conditional-ccee" },
-            @{ id = $env:STRICT_BACKUP_EVIDENCE_ARTIFACT_ID; type = "conditional-strict-backup" }
+            @{ id = Resolve-AttestationArtifact "release-attestation-conditional-api-$attestationRunId"; type = "conditional-api" },
+            @{ id = Resolve-AttestationArtifact "release-attestation-conditional-ccee-$attestationRunId"; type = "conditional-ccee" },
+            @{ id = Resolve-AttestationArtifact "release-attestation-conditional-strict-backup-$attestationRunId"; type = "conditional-strict-backup" }
           )
           $verified = @()
           foreach ($item in $manual) {
