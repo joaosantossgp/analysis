@@ -1,24 +1,183 @@
 name: Release Desktop
 
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
     inputs:
-      version:
-        description: "Version to release (e.g. 0.2.0 — without the v prefix)"
+      phase:
+        description: "Candidate builds once; publish consumes a verified candidate."
         required: true
+        type: choice
+        options:
+          - candidate
+          - publish
+      version:
+        description: "Version without v (X.Y.Z or X.Y.Z-rc.N). The matching tag must already exist."
+        required: true
+        type: string
+      candidate_sha:
+        description: "Full 40-character commit SHA that the existing tag must resolve to."
+        required: true
+        type: string
+      candidate_run_id:
+        description: "Successful candidate-phase workflow run ID (required only for publish)."
+        required: false
+        type: string
+      local_data_evidence_ref:
+        description: "Required for publish: immutable reference for storage and managed-ingestion evidence."
+        required: false
+        type: string
+      packaged_evidence_ref:
+        description: "Required for publish: immutable reference for packaged launch/offline/update/Excel evidence."
+        required: false
+        type: string
+      api_evidence_status:
+        description: "Whether apps/api or shared API contract changes require API-suite evidence."
+        required: false
+        default: not-required
+        type: choice
+        options:
+          - required
+          - not-required
+      api_evidence_basis:
+        description: "Required for publish: diff basis for the API evidence decision."
+        required: false
+        type: string
+      api_evidence_ref:
+        description: "Required when API evidence is required."
+        required: false
+        type: string
+      ccee_evidence_status:
+        description: "Whether the CCEE managed-ingestion smoke evidence is required."
+        required: false
+        default: not-required
+        type: choice
+        options:
+          - required
+          - not-required
+      ccee_evidence_basis:
+        description: "Required for publish: diff basis for the CCEE evidence decision."
+        required: false
+        type: string
+      ccee_evidence_ref:
+        description: "Required when CCEE evidence is required."
+        required: false
+        type: string
+      strict_backup_evidence_status:
+        description: "Whether release policy selected check_storage_budget.py --fail-on-backups."
+        required: false
+        default: not-required
+        type: choice
+        options:
+          - required
+          - not-required
+      strict_backup_evidence_basis:
+        description: "Required for publish: policy basis for the strict-backup decision."
+        required: false
+        type: string
+      strict_backup_evidence_ref:
+        description: "Required when strict-backup evidence is required."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  actions: read
 
 jobs:
-  build-windows:
-    name: Build & publish Windows bundle
-    runs-on: windows-latest
-    permissions:
-      contents: write  # needed to create GitHub Releases
-
+  resolve-candidate:
+    if: inputs.phase == 'candidate'
+    name: Resolve exact candidate and CI gate
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      tag: ${{ steps.resolve.outputs.tag }}
+      candidate_sha: ${{ steps.resolve.outputs.candidate_sha }}
+      tag_target_sha: ${{ steps.resolve.outputs.tag_target_sha }}
+      ci_run_id: ${{ steps.resolve.outputs.ci_run_id }}
+      ci_run_url: ${{ steps.resolve.outputs.ci_run_url }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve exact tag target and latest exact-SHA main CI
+        id: resolve
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          if ($env:GITHUB_REF -ne "refs/heads/main") {
+            throw "Release dispatches must run the reviewed workflow from refs/heads/main."
+          }
+          $version = "${{ inputs.version }}".Trim()
+          if ($version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+(?:-rc\.[0-9]+)?$') {
+            throw "Unsupported release version '$version'. Expected X.Y.Z or X.Y.Z-rc.N."
+          }
+          $candidateSha = "${{ inputs.candidate_sha }}".Trim().ToLowerInvariant()
+          if ($candidateSha -notmatch '^[0-9a-f]{40}$') {
+            throw "candidate_sha must be a full 40-character lowercase hexadecimal commit SHA."
+          }
+          $observedSha = (git rev-parse HEAD).Trim().ToLowerInvariant()
+          if ($observedSha -ne $candidateSha) {
+            throw "Checkout drift: expected $candidateSha, observed $observedSha."
+          }
+          $tag = "v$version"
+          git fetch --no-tags origin main
+          git fetch --force origin "refs/tags/$tag`:refs/tags/$tag"
+          git merge-base --is-ancestor $candidateSha origin/main
+          if ($LASTEXITCODE -ne 0) {
+            throw "Candidate $candidateSha is not reachable from origin/main."
+          }
+          $tagTargetSha = (git rev-parse "$tag^{commit}").Trim().ToLowerInvariant()
+          if ($tagTargetSha -ne $candidateSha) {
+            throw "Tag target mismatch: $tag resolves to $tagTargetSha, expected $candidateSha."
+          }
+          $runs = gh api "/repos/$env:GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?event=push&branch=main&head_sha=$candidateSha&per_page=100" | ConvertFrom-Json
+          $exactRuns = @($runs.workflow_runs | Where-Object {
+            $_.event -eq "push" -and $_.head_branch -eq "main" -and $_.head_sha -eq $candidateSha
+          } | Sort-Object -Property @{ Expression = { $_.created_at }; Descending = $true }, @{ Expression = { $_.run_attempt }; Descending = $true })
+          if ($exactRuns.Count -eq 0) {
+            throw "No push/main CI run exists for exact candidate SHA $candidateSha."
+          }
+          $latest = $exactRuns[0]
+          if ($latest.status -ne "completed" -or $latest.conclusion -ne "success") {
+            throw "Latest exact-SHA push/main CI run $($latest.id) is $($latest.status)/$($latest.conclusion), not completed/success."
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "candidate_sha=$candidateSha" >> $env:GITHUB_OUTPUT
+          "tag_target_sha=$tagTargetSha" >> $env:GITHUB_OUTPUT
+          "ci_run_id=$($latest.id)" >> $env:GITHUB_OUTPUT
+          "ci_run_url=$($latest.html_url)" >> $env:GITHUB_OUTPUT
+
+  build-windows:
+    if: inputs.phase == 'candidate'
+    name: Build immutable Windows candidate
+    needs: resolve-candidate
+    runs-on: windows-latest
+    outputs:
+      package_artifact_id: ${{ steps.upload_package.outputs.artifact-id }}
+      evidence_artifact_id: ${{ steps.upload_evidence.outputs.artifact-id }}
+      zip_sha256: ${{ steps.package.outputs.zip_sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-candidate.outputs.candidate_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify Windows builder checkout
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $expected = "${{ needs.resolve-candidate.outputs.candidate_sha }}"
+          $observed = (git rev-parse HEAD).Trim().ToLowerInvariant()
+          if ($observed -ne $expected) {
+            throw "Windows builder checkout drift: expected $expected, observed $observed."
+          }
 
       - uses: actions/setup-python@v5
         with:
@@ -37,91 +196,327 @@ jobs:
       - name: Install Vite desktop UI dependencies
         run: npm ci --prefix apps/desktop-web
 
-      - name: Resolve version
-        id: ver
+      - name: Build desktop bundle once
         shell: pwsh
         run: |
-          $raw = "${{ github.event.inputs.version }}"
-          if (-not $raw) {
-            $raw = "${{ github.ref_name }}" -replace '^v', ''
-          }
-          if ($raw -match '^[0-9]+\.[0-9]+\.[0-9]+$') {
-            $prerelease = "false"
-          } elseif ($raw -match '^[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$') {
-            $prerelease = "true"
-          } else {
-            throw "Unsupported release version '$raw'. Expected X.Y.Z or X.Y.Z-rc.N."
-          }
-          echo "VERSION=$raw" >> $env:GITHUB_OUTPUT
-          echo "TAG=v$raw" >> $env:GITHUB_OUTPUT
-          echo "PRERELEASE=$prerelease" >> $env:GITHUB_OUTPUT
+          .\desktop\build_desktop.ps1 -Version "${{ needs.resolve-candidate.outputs.version }}"
 
-      - name: Build desktop bundle
+      - name: Verify bundled version and build provenance
         shell: pwsh
         run: |
-          .\desktop\build_desktop.ps1 -Version "${{ steps.ver.outputs.VERSION }}"
+          $ErrorActionPreference = "Stop"
+          $expectedVersion = "${{ needs.resolve-candidate.outputs.version }}"
+          $expectedSha = "${{ needs.resolve-candidate.outputs.candidate_sha }}"
+          $observedSha = (git rev-parse HEAD).Trim().ToLowerInvariant()
+          if ($observedSha -ne $expectedSha) {
+            throw "Builder HEAD drift after build: expected $expectedSha, observed $observedSha."
+          }
+          $versionSource = Get-Content desktop\__version__.py -Raw
+          if ($versionSource -notmatch '__version__\s*=\s*"([^"]+)"') {
+            throw "Could not parse desktop/__version__.py."
+          }
+          if ($Matches[1] -ne $expectedVersion) {
+            throw "Version drift: bundled version '$($Matches[1])' != '$expectedVersion'."
+          }
+          $buildInfo = Get-Content desktop\_build_info.py -Raw
+          if ($buildInfo -notmatch 'build_commit\s*=\s*"([0-9a-f]+)"') {
+            throw "Could not parse build_commit from desktop/_build_info.py."
+          }
+          if (-not $expectedSha.StartsWith($Matches[1].ToLowerInvariant())) {
+            throw "Build provenance commit '$($Matches[1])' does not match $expectedSha."
+          }
 
-      - name: Verify bundled version matches tag
+      - name: Package candidate artifact
+        id: package
         shell: pwsh
         run: |
-          $expected = "${{ steps.ver.outputs.VERSION }}"
-          $line = (Get-Content desktop\__version__.py -Raw)
-          if ($line -notmatch '__version__\s*=\s*"([^"]+)"') {
-            throw "Could not parse __version__ from desktop\__version__.py"
+          $ErrorActionPreference = "Stop"
+          $version = "${{ needs.resolve-candidate.outputs.version }}"
+          $expectedSha = "${{ needs.resolve-candidate.outputs.candidate_sha }}"
+          $observedSha = (git rev-parse HEAD).Trim().ToLowerInvariant()
+          if ($observedSha -ne $expectedSha) {
+            throw "Builder HEAD drift before packaging: expected $expectedSha, observed $observedSha."
           }
-          $bundled = $Matches[1]
-          Write-Host "[release] expected=$expected bundled=$bundled"
-          if ($bundled -ne $expected) {
-            throw "Version drift: bundled __version__ '$bundled' != release tag '$expected'. Aborting release."
-          }
-
-      - name: Package release artifact
-        id: pkg
-        shell: pwsh
-        run: |
-          $ver  = "${{ steps.ver.outputs.VERSION }}"
-          $zip  = "CVMAnalytics-windows-v$ver.zip"
-          $latestZip = "CVMAnalytics-windows.zip"
-
-          # Compress-Archive with -Path "dir" includes the directory as the
-          # archive root, producing a CVMAnalytics/ wrapper. The auto-updater
-          # contract (desktop/update_helper.ps1 allowlist) requires a FLAT
-          # root with CVMAnalytics.exe + _internal/ at the top of the zip.
-          # Use -Path "dir\*" so contents are written without a wrapper.
+          $zip = "CVMAnalytics-windows-v$version.zip"
           Compress-Archive -Path dist\CVMAnalytics\* -DestinationPath $zip
-
-          Copy-Item $zip $latestZip
-          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $zip" | Out-File -FilePath "$zip.sha256" -Encoding utf8 -NoNewline
-          $latestHash = (Get-FileHash $latestZip -Algorithm SHA256).Hash.ToLower()
-          "$latestHash  $latestZip" | Out-File -FilePath "$latestZip.sha256" -Encoding utf8 -NoNewline
-          echo "ZIP=$zip" >> $env:GITHUB_OUTPUT
-          echo "LATEST_ZIP=$latestZip" >> $env:GITHUB_OUTPUT
-
-          # Verify the resulting zip has a flat root before publishing.
           Add-Type -AssemblyName System.IO.Compression.FileSystem
           $archive = [System.IO.Compression.ZipFile]::OpenRead($zip)
           try {
             $roots = @($archive.Entries | ForEach-Object { ($_.FullName -split '/')[0] } | Sort-Object -Unique)
-            Write-Host "[release] zip roots: $($roots -join ', ')"
             if (-not ($roots -contains 'CVMAnalytics.exe' -and $roots -contains '_internal')) {
-              throw "Release zip layout invalid. Roots: $($roots -join ', '). Expected to contain CVMAnalytics.exe and _internal at the archive root."
+              throw "Release ZIP must have CVMAnalytics.exe and _internal at its flat root."
             }
           } finally {
             $archive.Dispose()
           }
+          "zip_sha256=$hash" >> $env:GITHUB_OUTPUT
 
-      - name: Publish GitHub Release
+      - name: Upload immutable candidate package
+        id: upload_package
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-candidate-package-${{ needs.resolve-candidate.outputs.version }}-${{ needs.resolve-candidate.outputs.candidate_sha }}
+          if-no-files-found: error
+          path: |
+            CVMAnalytics-windows-v${{ needs.resolve-candidate.outputs.version }}.zip
+            CVMAnalytics-windows-v${{ needs.resolve-candidate.outputs.version }}.zip.sha256
+
+      - name: Write candidate evidence
+        shell: pwsh
+        run: |
+          $evidence = [ordered]@{
+            schema_version = 1
+            candidate = [ordered]@{
+              version = "${{ needs.resolve-candidate.outputs.version }}"
+              tag = "${{ needs.resolve-candidate.outputs.tag }}"
+              candidate_sha = "${{ needs.resolve-candidate.outputs.candidate_sha }}"
+              tag_target_sha = "${{ needs.resolve-candidate.outputs.tag_target_sha }}"
+              observed_build_sha = (git rev-parse HEAD).Trim().ToLowerInvariant()
+            }
+            exact_sha_ci = [ordered]@{
+              event = "push"
+              branch = "main"
+              run_id = "${{ needs.resolve-candidate.outputs.ci_run_id }}"
+              run_url = "${{ needs.resolve-candidate.outputs.ci_run_url }}"
+              conclusion = "success"
+            }
+            package_artifact = [ordered]@{
+              id = "${{ steps.upload_package.outputs.artifact-id }}"
+              name = "release-candidate-package-${{ needs.resolve-candidate.outputs.version }}-${{ needs.resolve-candidate.outputs.candidate_sha }}"
+              zip = "CVMAnalytics-windows-v${{ needs.resolve-candidate.outputs.version }}.zip"
+              checksum = "${{ steps.package.outputs.zip_sha256 }}"
+            }
+            manual_evidence = [ordered]@{
+              local_data = "required: storage budget and managed-ingestion contract results"
+              packaged = "required: launch, Documents path, empty/offline, updater, Excel, clean-install/upgrade"
+              api = "required or not-required with diff basis"
+              ccee = "required or not-required with diff basis"
+              strict_backups = "required or not-required with policy basis"
+            }
+          }
+          $evidence | ConvertTo-Json -Depth 6 | Set-Content -Path candidate-evidence.json -Encoding utf8
+
+      - name: Upload immutable candidate evidence
+        id: upload_evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-candidate-evidence-${{ needs.resolve-candidate.outputs.version }}-${{ needs.resolve-candidate.outputs.candidate_sha }}
+          if-no-files-found: error
+          path: candidate-evidence.json
+
+  publish-preflight:
+    if: inputs.phase == 'publish'
+    name: Reverify candidate, CI, and evidence handoff
+    runs-on: ubuntu-latest
+    outputs:
+      package_artifact_id: ${{ steps.verify.outputs.package_artifact_id }}
+      evidence_artifact_id: ${{ steps.verify.outputs.evidence_artifact_id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Re-resolve exact candidate, CI, and immutable artifact identities
+        id: verify
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          if ($env:GITHUB_REF -ne "refs/heads/main") {
+            throw "Release dispatches must run the reviewed workflow from refs/heads/main."
+          }
+          $version = "${{ inputs.version }}".Trim()
+          $candidateSha = "${{ inputs.candidate_sha }}".Trim().ToLowerInvariant()
+          $candidateRunId = "${{ inputs.candidate_run_id }}".Trim()
+          if ($version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+(?:-rc\.[0-9]+)?$' -or $candidateSha -notmatch '^[0-9a-f]{40}$' -or $candidateRunId -notmatch '^[1-9][0-9]*$') {
+            throw "Publish requires a supported version, full candidate SHA, and numeric successful candidate_run_id."
+          }
+          if ((git rev-parse HEAD).Trim().ToLowerInvariant() -ne $candidateSha) {
+            throw "Publish checkout does not match candidate SHA."
+          }
+          $tag = "v$version"
+          git fetch --no-tags origin main
+          git fetch --force origin "refs/tags/$tag`:refs/tags/$tag"
+          git merge-base --is-ancestor $candidateSha origin/main
+          if ($LASTEXITCODE -ne 0 -or (git rev-parse "$tag^{commit}").Trim().ToLowerInvariant() -ne $candidateSha) {
+            throw "Candidate is stale or the tag target no longer matches the candidate SHA."
+          }
+          $runs = gh api "/repos/$env:GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?event=push&branch=main&head_sha=$candidateSha&per_page=100" | ConvertFrom-Json
+          $latest = @($runs.workflow_runs | Where-Object { $_.event -eq "push" -and $_.head_branch -eq "main" -and $_.head_sha -eq $candidateSha } | Sort-Object -Property @{ Expression = { $_.created_at }; Descending = $true }, @{ Expression = { $_.run_attempt }; Descending = $true } | Select-Object -First 1)
+          if ($latest.Count -ne 1 -or $latest[0].status -ne "completed" -or $latest[0].conclusion -ne "success") {
+            throw "Latest exact-SHA push/main CI is absent or not completed/success."
+          }
+          $candidateRun = gh api "/repos/$env:GITHUB_REPOSITORY/actions/runs/$candidateRunId" | ConvertFrom-Json
+          if ($candidateRun.name -ne "Release Desktop" -or $candidateRun.event -ne "workflow_dispatch" -or $candidateRun.conclusion -ne "success") {
+            throw "candidate_run_id must identify a successful Release Desktop workflow_dispatch run."
+          }
+          $artifacts = gh api "/repos/$env:GITHUB_REPOSITORY/actions/runs/$candidateRunId/artifacts?per_page=100" | ConvertFrom-Json
+          $packageName = "release-candidate-package-$version-$candidateSha"
+          $evidenceName = "release-candidate-evidence-$version-$candidateSha"
+          $package = @($artifacts.artifacts | Where-Object { $_.name -eq $packageName -and -not $_.expired })
+          $evidence = @($artifacts.artifacts | Where-Object { $_.name -eq $evidenceName -and -not $_.expired })
+          if ($package.Count -ne 1 -or $evidence.Count -ne 1) {
+            throw "Candidate run must retain one non-expired package and evidence artifact for this exact version/SHA."
+          }
+          "package_artifact_id=$($package[0].id)" >> $env:GITHUB_OUTPUT
+          "evidence_artifact_id=$($evidence[0].id)" >> $env:GITHUB_OUTPUT
+
+      - name: Validate explicit manual and conditional evidence declarations
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $required = @{
+            "local-data evidence" = "${{ inputs.local_data_evidence_ref }}"
+            "packaged evidence" = "${{ inputs.packaged_evidence_ref }}"
+          }
+          foreach ($entry in $required.GetEnumerator()) {
+            if ([string]::IsNullOrWhiteSpace($entry.Value)) {
+              throw "Publish requires $($entry.Key) bound to this candidate."
+            }
+          }
+          $conditional = @(
+            @{ name = "API"; status = "${{ inputs.api_evidence_status }}"; basis = "${{ inputs.api_evidence_basis }}"; reference = "${{ inputs.api_evidence_ref }}" },
+            @{ name = "CCEE"; status = "${{ inputs.ccee_evidence_status }}"; basis = "${{ inputs.ccee_evidence_basis }}"; reference = "${{ inputs.ccee_evidence_ref }}" },
+            @{ name = "strict backup"; status = "${{ inputs.strict_backup_evidence_status }}"; basis = "${{ inputs.strict_backup_evidence_basis }}"; reference = "${{ inputs.strict_backup_evidence_ref }}" }
+          )
+          foreach ($item in $conditional) {
+            if ($item.status -notin @("required", "not-required") -or [string]::IsNullOrWhiteSpace($item.basis)) {
+              throw "$($item.name) evidence must declare required/not-required and a basis."
+            }
+            if ($item.status -eq "required" -and [string]::IsNullOrWhiteSpace($item.reference)) {
+              throw "$($item.name) evidence is required but has no immutable reference."
+            }
+          }
+
+  final-publish:
+    if: inputs.phase == 'publish'
+    name: Publish verified candidate
+    needs: publish-preflight
+    runs-on: ubuntu-latest
+    environment: release-publication
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download immutable candidate package
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ needs.publish-preflight.outputs.package_artifact_id }}
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.candidate_run_id }}
+          path: candidate-package
+
+      - name: Download immutable candidate evidence
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ needs.publish-preflight.outputs.evidence_artifact_id }}
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.candidate_run_id }}
+          path: candidate-evidence
+
+      - name: Verify the same candidate artifact, tag, and latest CI after approval
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $version = "${{ inputs.version }}"
+          $candidateSha = "${{ inputs.candidate_sha }}".ToLowerInvariant()
+          if ((git rev-parse HEAD).Trim().ToLowerInvariant() -ne $candidateSha) {
+            throw "Final publish checkout drifted from the candidate SHA."
+          }
+          $tag = "v$version"
+          git fetch --no-tags origin main
+          git fetch --force origin "refs/tags/$tag`:refs/tags/$tag"
+          git merge-base --is-ancestor $candidateSha origin/main
+          if ($LASTEXITCODE -ne 0 -or (git rev-parse "$tag^{commit}").Trim().ToLowerInvariant() -ne $candidateSha) {
+            throw "Final tag/main identity check failed; refusing to publish."
+          }
+          $runs = gh api "/repos/$env:GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?event=push&branch=main&head_sha=$candidateSha&per_page=100" | ConvertFrom-Json
+          $latest = @($runs.workflow_runs | Where-Object { $_.event -eq "push" -and $_.head_branch -eq "main" -and $_.head_sha -eq $candidateSha } | Sort-Object -Property @{ Expression = { $_.created_at }; Descending = $true }, @{ Expression = { $_.run_attempt }; Descending = $true } | Select-Object -First 1)
+          if ($latest.Count -ne 1 -or $latest[0].status -ne "completed" -or $latest[0].conclusion -ne "success") {
+            throw "Latest exact-SHA push/main CI is absent or not completed/success after approval."
+          }
+          $evidence = Get-Content candidate-evidence/candidate-evidence.json -Raw | ConvertFrom-Json
+          if ($evidence.candidate.version -ne $version -or $evidence.candidate.candidate_sha -ne $candidateSha -or $evidence.candidate.tag -ne $tag -or $evidence.candidate.tag_target_sha -ne $candidateSha -or $evidence.candidate.observed_build_sha -ne $candidateSha) {
+            throw "Candidate evidence identity does not match this publication request."
+          }
+          if ($evidence.package_artifact.id -ne "${{ needs.publish-preflight.outputs.package_artifact_id }}") {
+            throw "Candidate evidence package artifact identity differs from the selected immutable artifact."
+          }
+          $zip = "candidate-package/CVMAnalytics-windows-v$version.zip"
+          $checksumFile = "$zip.sha256"
+          if (-not (Test-Path $zip) -or -not (Test-Path $checksumFile)) {
+            throw "Downloaded immutable candidate package is incomplete."
+          }
+          $checksum = (Get-Content $checksumFile -Raw).Trim() -split '\s+' | Select-Object -First 1
+          $actual = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($checksum -ne $actual -or $actual -ne $evidence.package_artifact.checksum) {
+            throw "Downloaded ZIP checksum does not match the immutable candidate evidence."
+          }
+
+      - name: Write publication evidence bound to the verified candidate
+        shell: pwsh
+        run: |
+          $evidence = [ordered]@{
+            schema_version = 1
+            candidate_sha = "${{ inputs.candidate_sha }}"
+            tag_target_sha = "${{ inputs.candidate_sha }}"
+            version = "${{ inputs.version }}"
+            candidate_run_id = "${{ inputs.candidate_run_id }}"
+            package_artifact_id = "${{ needs.publish-preflight.outputs.package_artifact_id }}"
+            zip_checksum = (Get-FileHash "candidate-package/CVMAnalytics-windows-v${{ inputs.version }}.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
+            local_data_evidence_ref = "${{ inputs.local_data_evidence_ref }}"
+            packaged_evidence_ref = "${{ inputs.packaged_evidence_ref }}"
+            conditional = @(
+              @{ name = "api"; status = "${{ inputs.api_evidence_status }}"; basis = "${{ inputs.api_evidence_basis }}"; reference = "${{ inputs.api_evidence_ref }}" },
+              @{ name = "ccee"; status = "${{ inputs.ccee_evidence_status }}"; basis = "${{ inputs.ccee_evidence_basis }}"; reference = "${{ inputs.ccee_evidence_ref }}" },
+              @{ name = "strict_backups"; status = "${{ inputs.strict_backup_evidence_status }}"; basis = "${{ inputs.strict_backup_evidence_basis }}"; reference = "${{ inputs.strict_backup_evidence_ref }}" }
+            )
+          }
+          $evidence | ConvertTo-Json -Depth 5 | Set-Content -Path manual-evidence.json -Encoding utf8
+
+      - name: Upload immutable publication evidence before release creation
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-publication-evidence-${{ inputs.version }}-${{ inputs.candidate_sha }}-${{ github.run_id }}
+          if-no-files-found: error
+          path: manual-evidence.json
+
+      - name: Prepare verified release aliases
+        shell: pwsh
+        run: |
+          $version = "${{ inputs.version }}"
+          Copy-Item "candidate-package/CVMAnalytics-windows-v$version.zip" "CVMAnalytics-windows-v$version.zip"
+          Copy-Item "candidate-package/CVMAnalytics-windows-v$version.zip.sha256" "CVMAnalytics-windows-v$version.zip.sha256"
+          Copy-Item "CVMAnalytics-windows-v$version.zip" "CVMAnalytics-windows.zip"
+          $latestHash = (Get-FileHash "CVMAnalytics-windows.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$latestHash  CVMAnalytics-windows.zip" | Out-File -FilePath "CVMAnalytics-windows.zip.sha256" -Encoding utf8 -NoNewline
+
+      - name: Publish GitHub Release from verified candidate only
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.ver.outputs.TAG }}
-          name: "CVM Analytics ${{ steps.ver.outputs.TAG }}"
-          prerelease: ${{ steps.ver.outputs.PRERELEASE }}
+          tag_name: v${{ inputs.version }}
+          name: CVM Analytics v${{ inputs.version }}
+          prerelease: ${{ contains(inputs.version, '-rc.') }}
           generate_release_notes: true
           files: |
-            ${{ steps.pkg.outputs.ZIP }}
-            ${{ steps.pkg.outputs.ZIP }}.sha256
-            ${{ steps.pkg.outputs.LATEST_ZIP }}
-            ${{ steps.pkg.outputs.LATEST_ZIP }}.sha256
+            CVMAnalytics-windows-v${{ inputs.version }}.zip
+            CVMAnalytics-windows-v${{ inputs.version }}.zip.sha256
+            CVMAnalytics-windows.zip
+            CVMAnalytics-windows.zip.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

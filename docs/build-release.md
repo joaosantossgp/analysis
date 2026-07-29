@@ -34,18 +34,44 @@ GICS/ticker mapping CSVs. It must not bundle a user database.
 
 ## GitHub Release Workflow
 
-`.github/workflows/release-desktop.yml` is the release pipeline. It:
+`.github/workflows/release-desktop.yml` is a manual, two-phase release gate.
+It does not run on tag push. Both phases must be dispatched from `main` with a
+full 40-character `candidate_sha`, a supported version, and an already-existing
+matching `v<version>` tag.
 
-- installs Python 3.11 dependencies;
-- installs Node 22 dependencies for `apps/desktop-web`;
-- runs `desktop/build_desktop.ps1 -Version <version>`;
-- verifies bundled `desktop/__version__.py` matches the tag/input version;
-- creates a flat-root ZIP from `dist\CVMAnalytics\*`;
-- publishes:
-  - `CVMAnalytics-windows-v<version>.zip`;
-  - `CVMAnalytics-windows-v<version>.zip.sha256`;
-  - `CVMAnalytics-windows.zip`;
-  - `CVMAnalytics-windows.zip.sha256`.
+1. **Candidate phase** resolves the annotated or lightweight tag to its peeled
+   commit target, verifies that it is the exact candidate SHA and is reachable
+   from `origin/main`, and requires the latest `CI` `push/main` run for that
+   exact SHA to be `completed/success`. The Windows builder checks out that SHA,
+   verifies observed `HEAD` before and after the build, verifies the injected
+   runtime version and build provenance, then builds only once. It uploads two
+   immutable GitHub Actions artifacts: the versioned ZIP/checksum package and
+   `candidate-evidence.json`, which records the candidate SHA, tag target,
+   observed builder SHA, exact-CI run, package artifact ID, and ZIP checksum.
+2. **Publish phase** requires the successful candidate run ID plus immutable
+   references to local-data and packaged-app evidence. It requires each
+   conditional check (API tests, CCEE managed-ingestion smoke, and strict
+   rollback-backup policy) to be explicitly `required` or `not-required` with
+   a basis; required checks also need an immutable evidence reference. Before
+   and after protected approval it re-resolves the tag and latest exact-SHA CI.
+   The final job downloads the saved candidate artifacts, verifies their
+   identity and checksum against `candidate-evidence.json`, writes/uploads the
+   publication evidence, then publishes those bytes without rebuilding or
+   retagging. It creates the existing versioned and `latest` asset aliases.
+
+Only the final `Publish verified candidate` job has `contents: write`; every
+other release job has read-only repository permissions. Stable `X.Y.Z` remains
+a normal release and `X.Y.Z-rc.N` remains a prerelease. A stable release must
+therefore use the approved same-SHA candidate evidence or a separately approved
+new candidate; the workflow never promotes a different SHA by tag movement.
+
+The release operator must configure the GitHub environment before any publish
+run. This repository currently has no such protected environment. Create an
+environment named **`release-publication`**, require **João
+(`joaosantossgp`)** as reviewer, and restrict deployment branches to the
+protected `main` branch only. Do not reuse the unprotected `Production`
+environment. The workflow deliberately names this environment but cannot
+create or protect it; its reviewer/branch policy is an external GitHub setting.
 
 Flat-root means the ZIP root contains `CVMAnalytics.exe` and `_internal/`
 directly. A wrapper folder breaks the updater contract.
@@ -65,19 +91,27 @@ directly. A wrapper folder breaks the updater contract.
 
 When release evidence conflicts, use this hierarchy:
 
-1. **Release tag and commit** — verify the checkout with `git describe --tags
+1. **Immutable candidate evidence** — verify the full candidate SHA, peeled tag
+   target, observed Windows-builder SHA, exact `push/main` CI run, immutable
+   package artifact ID, and ZIP checksum in `candidate-evidence.json`. The
+   publish phase must re-check every value before it creates a release.
+2. **Release tag and commit** — verify the checkout with `git describe --tags
    --exact-match HEAD`, `git tag --points-at HEAD`, and `git rev-parse HEAD`.
-   The tag and commit identify the source tree that should have produced the
-   release.
-2. **Bundled runtime version** — verify `desktop/__version__.py` in the source
+   The tag target must equal the immutable candidate SHA; no tag is created or
+   moved by the release workflow.
+3. **Bundled runtime version** — verify `desktop/__version__.py` in the source
    tree or packaged bundle. The release workflow passes the exact version into
    `desktop/build_desktop.ps1 -Version <version>` and fails if the bundled
    runtime version does not match the release input.
-3. **Generated build provenance** — inspect `desktop/_build_info.py` or
+4. **Generated build provenance** — inspect `desktop/_build_info.py` or
    Settings -> Diagnostics in the packaged app for generated build commit and
    build timestamp. Treat this as artifact provenance, not as proof of the
    current checkout.
-4. **Packaged validation evidence** — use the release workflow logs, release
+5. **Manual and conditional evidence** — use immutable references in
+   `manual-evidence.json` plus the release workflow logs to prove local-data
+   checks, packaged validation, and every required conditional check. A
+   protected-environment approval is not evidence that a manual check ran.
+6. **Packaged validation evidence** — use the release workflow logs, release
    notes, and manual packaged-app validation records to prove the built artifact
    launched correctly, used the expected data root, handled offline/update
    states, preserved user data, and exported Excel files that open without
@@ -85,8 +119,9 @@ When release evidence conflicts, use this hierarchy:
 
 Each release record should identify tag, commit, bundled runtime version, build
 timestamp when available, validation environment, and the results of packaged
-launch, updater/offline, and Excel-open checks. User data remains excluded from
-release artifacts.
+launch, updater/offline, and Excel-open checks. It must also identify the
+candidate run/artifact IDs and ZIP checksum, and bind its manual/conditional
+evidence to those values. User data remains excluded from release artifacts.
 
 ## Updater Contract
 

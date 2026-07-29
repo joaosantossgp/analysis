@@ -156,3 +156,33 @@ def test_worktree_lifecycle_scripts_default_to_main() -> None:
         match = re.search(r'\[string\]\$Base\s*=\s*"([^"]+)"', source)
         assert match is not None, relative_path
         assert match.group(1) == "main", relative_path
+
+
+def test_release_workflow_requires_exact_sha_candidate_and_protected_publish_gate() -> None:
+    workflow = (ROOT / ".github/workflows/release-desktop.yml").read_text(
+        encoding="utf-8"
+    )
+
+    required_fragments = (
+        "workflow_dispatch:",
+        "phase:",
+        "candidate_sha:",
+        "candidate_run_id:",
+        "resolve-candidate:",
+        "build-windows:",
+        "publish-preflight:",
+        "final-publish:",
+        "event=push&branch=main&head_sha=$candidateSha",
+        "actions/upload-artifact@v4",
+        "actions/download-artifact@v4",
+        "release-publication",
+        "contents: write",
+        "candidate-evidence.json",
+        "manual-evidence.json",
+        "softprops/action-gh-release@v2",
+    )
+    missing = [fragment for fragment in required_fragments if fragment not in workflow]
+
+    assert not missing, f"release evidence gate missing: {', '.join(missing)}"
+    assert "push:\n    tags:" not in workflow
+    assert workflow.count("contents: write") == 1
