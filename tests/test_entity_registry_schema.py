@@ -278,6 +278,46 @@ def test_postgresql_validator_rejects_non_enforcing_immutable_trigger(monkeypatc
         validate_entity_registry_schema(engine)
 
 
+def test_postgresql_validator_rejects_unreachable_immutable_exception(monkeypatch):
+    source = create_engine("sqlite:///:memory:")
+    ensure_entity_registry_schema(source)
+    engine = _FakePostgresqlEngine({
+        "tgenabled": "O",
+        "updates_entity_id": True,
+        "trigger_definition": (
+            "CREATE TRIGGER entity_registry_entities_no_id_update BEFORE UPDATE OF entity_id "
+            "ON entity_registry_entities FOR EACH ROW EXECUTE FUNCTION "
+            "entity_registry_prevent_entity_id_update()"
+        ),
+        "function_definition": (
+            "CREATE FUNCTION entity_registry_prevent_entity_id_update() RETURNS trigger "
+            "LANGUAGE plpgsql AS $$ BEGIN IF FALSE THEN RAISE EXCEPTION 'entity_id is immutable'; "
+            "END IF; RETURN NEW; END; $$"
+        ),
+    })
+    monkeypatch.setattr(entity_registry_schema, "inspect", lambda _: _PostgresqlInspector(inspect(source)))
+
+    with pytest.raises(ValueError, match="PostgreSQL immutable entity trigger"):
+        validate_entity_registry_schema(engine)
+
+
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "CHECK (effective_to IS NULL OR effective_from < effective_to OR TRUE)",
+        "CHECK (other_column = 1 OR (effective_to IS NULL OR effective_from < effective_to))",
+    ],
+)
+def test_postgresql_check_validator_rejects_weakened_or_unrelated_expressions(expression):
+    expected = "effective_to is null or effective_from < effective_to"
+
+    assert not entity_registry_schema._has_required_check_expression(
+        entity_registry_schema._normalize_sql(expected),
+        (entity_registry_schema._normalize_sql(expression),),
+        "postgresql",
+    )
+
+
 def test_postgresql_validator_rejects_missing_fk_delete_action_metadata():
     source = create_engine("sqlite:///:memory:")
     ensure_entity_registry_schema(source)

@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+import re
 import time
 from uuid import uuid4
 
@@ -155,6 +156,7 @@ _NAMESPACE_RULES = {
     "br.cnpj": _NamespaceRule(
         "digits-only/v1", "organization", ("country",), "legal_entity", True,
         expected_scope_country="BR", expected_evidence_authorities=("CVM", "RECEITA_FEDERAL"),
+        overlap_requires_review=True,
     ),
     "br.b3.ticker": _NamespaceRule(
         "trim-exact/v1", "security_class", ("authority", "context"), None, False,
@@ -163,12 +165,17 @@ _NAMESPACE_RULES = {
     "br.aneel.ceg": _NamespaceRule(
         "trim-exact/v1", "plant_or_asset", ("authority",), None, True,
         expected_scope_authority="ANEEL", expected_evidence_authorities=("ANEEL",),
+        overlap_requires_review=True,
     ),
     "br.ccee.plant_parcel": _NamespaceRule(
         "trim-exact/v1", "market_parcel", ("authority",), None, True,
         expected_scope_authority="CCEE", expected_evidence_authorities=("CCEE",),
+        overlap_requires_review=True,
     ),
 }
+_DYNAMIC_NAMESPACE_PATTERN = re.compile(
+    r"^br\.([a-z][a-z0-9_]*)\.(regulated_agent_code|concession_code)$"
+)
 
 
 class EntityRegistryRepository:
@@ -257,9 +264,9 @@ class EntityRegistryRepository:
         if evidence is None:
             raise EntityRegistryValidationError("lifecycle change requires evidence")
         now = _utc_now()
-        effective_from = effective_from or now
-        if effective_to is not None and effective_from >= effective_to:
-            raise EntityRegistryValidationError("invalid effective interval")
+        effective_from, effective_to = self._canonicalize_effective_interval(
+            effective_from, effective_to, now
+        )
         event = LifecycleEventRecord(
             lifecycle_event_id=uuid4().hex,
             entity_id=entity_id,
@@ -274,6 +281,7 @@ class EntityRegistryRepository:
             system_to=None,
         )
         with self._engine.begin() as conn:
+            self._serialize_entity_lifecycle_guard(conn, entity_id)
             result = conn.execute(
                 text("""
                     INSERT INTO entity_registry_lifecycle_events (
@@ -377,10 +385,9 @@ class EntityRegistryRepository:
         if evidence_id is not None and evidence is None:
             raise EntityRegistryValidationError(f"unknown evidence_id: {evidence_id}")
         now = _utc_now()
-        effective_from = effective_from or now
-        if effective_to is not None and effective_from >= effective_to:
-            raise EntityRegistryValidationError("invalid effective interval")
-        self._require_attachment_allowed(entity_id, effective_from, effective_to)
+        effective_from, effective_to = self._canonicalize_effective_interval(
+            effective_from, effective_to, now
+        )
         record = OrganizationFacetRecord(
             facet_id=uuid4().hex,
             entity_id=entity_id,
@@ -395,6 +402,8 @@ class EntityRegistryRepository:
             system_to=None,
         )
         with self._engine.begin() as conn:
+            self._serialize_entity_lifecycle_guard(conn, entity_id)
+            self._require_attachment_allowed(conn, entity_id, effective_from, effective_to)
             conn.execute(
                 text("""
                     INSERT INTO entity_registry_organization_facets (
@@ -462,10 +471,9 @@ class EntityRegistryRepository:
             raise EntityRegistryValidationError(f"unknown evidence_id: {evidence_id}")
 
         now = _utc_now()
-        effective_from = effective_from or now
-        if effective_to is not None and effective_from >= effective_to:
-            raise EntityRegistryValidationError("invalid effective interval")
-        self._require_attachment_allowed(entity_id, effective_from, effective_to)
+        effective_from, effective_to = self._canonicalize_effective_interval(
+            effective_from, effective_to, now
+        )
         if rule.required_organization_facet is not None:
             self._require_active_organization_facet(
                 entity_id,
@@ -559,10 +567,9 @@ class EntityRegistryRepository:
         if evidence_id is not None and evidence is None:
             raise EntityRegistryValidationError(f"unknown evidence_id: {evidence_id}")
         now = _utc_now()
-        effective_from = effective_from or now
-        if effective_to is not None and effective_from >= effective_to:
-            raise EntityRegistryValidationError("invalid effective interval")
-        self._require_attachment_allowed(entity_id, effective_from, effective_to)
+        effective_from, effective_to = self._canonicalize_effective_interval(
+            effective_from, effective_to, now
+        )
         alias = AliasClaimRecord(
             alias_id=uuid4().hex,
             entity_id=entity_id,
@@ -578,6 +585,8 @@ class EntityRegistryRepository:
             system_to=None,
         )
         with self._engine.begin() as conn:
+            self._serialize_entity_lifecycle_guard(conn, entity_id)
+            self._require_attachment_allowed(conn, entity_id, effective_from, effective_to)
             conn.execute(
                 text("""
                     INSERT INTO entity_registry_alias_claims (
@@ -619,9 +628,16 @@ class EntityRegistryRepository:
                 with self._engine.begin() as conn:
                     collision = False
                     rule = self._get_namespace_rule(claim.namespace)
-                    if claim.identifier_strength == "strong" or (rule and rule.overlap_requires_review):
+                    policy_collision = bool(rule and rule.overlap_requires_review)
+                    self._serialize_entity_lifecycle_guard(conn, claim.entity_id)
+                    self._require_attachment_allowed(
+                        conn, claim.entity_id, claim.effective_from, claim.effective_to
+                    )
+                    if claim.identifier_strength == "strong" or policy_collision:
                         self._serialize_strong_identifier_guard(conn, claim)
-                        collision = self._find_active_strong_collision(conn, claim)
+                        collision = self._find_active_strong_collision(
+                            conn, claim, policy_collision=policy_collision
+                        )
                     persisted = replace(claim, claim_status="conflicted" if collision else "accepted")
                     conn.execute(
                         text("""
@@ -676,13 +692,15 @@ class EntityRegistryRepository:
         self,
         conn,
         claim: IdentifierClaimRecord,
+        *,
+        policy_collision: bool,
     ) -> bool:
         row = conn.execute(
             text("""
                 SELECT 1 FROM entity_registry_identifier_claims
                 WHERE namespace = :namespace
                   AND normalized_value = :normalized_value
-                  AND identifier_strength = :identifier_strength
+                  AND (:policy_collision = 1 OR identifier_strength = :identifier_strength)
                   AND claim_status = 'accepted'
                   AND entity_id <> :entity_id
                   AND ((scope_authority = :scope_authority)
@@ -703,6 +721,7 @@ class EntityRegistryRepository:
                 "scope_context": claim.scope_context,
                 "entity_id": claim.entity_id,
                 "identifier_strength": claim.identifier_strength,
+                "policy_collision": int(policy_collision),
                 "effective_from": claim.effective_from,
                 "effective_to": claim.effective_to,
             },
@@ -734,26 +753,33 @@ class EntityRegistryRepository:
         if row is None:
             raise EntityRegistryValidationError(f"namespace requires active {facet} facet")
 
+    def _serialize_entity_lifecycle_guard(self, conn, entity_id: str) -> None:
+        result = conn.execute(
+            text("UPDATE entity_registry_entities SET updated_at = updated_at WHERE entity_id = :entity_id"),
+            {"entity_id": entity_id},
+        )
+        if result.rowcount not in (None, 1):
+            raise EntityRegistryValidationError(f"unknown entity_id: {entity_id}")
+
     def _require_attachment_allowed(
-        self, entity_id: str, effective_from: str, effective_to: str | None
+        self, conn, entity_id: str, effective_from: str, effective_to: str | None
     ) -> None:
-        with self._engine.connect() as conn:
-            row = conn.execute(
-                text("""
-                    SELECT 1 FROM entity_registry_lifecycle_events
-                    WHERE entity_id = :entity_id
-                      AND lifecycle_status IN ('retired', 'deprecated')
-                      AND system_to IS NULL
-                      AND (effective_to IS NULL OR effective_to > :effective_from)
-                      AND (:effective_to IS NULL OR effective_from < :effective_to)
-                    LIMIT 1
-                """),
-                {
-                    "entity_id": entity_id,
-                    "effective_from": effective_from,
-                    "effective_to": effective_to,
-                },
-            ).first()
+        row = conn.execute(
+            text("""
+                SELECT 1 FROM entity_registry_lifecycle_events
+                WHERE entity_id = :entity_id
+                  AND lifecycle_status IN ('retired', 'deprecated')
+                  AND system_to IS NULL
+                  AND (effective_to IS NULL OR effective_to > :effective_from)
+                  AND (:effective_to IS NULL OR effective_from < :effective_to)
+                LIMIT 1
+            """),
+            {
+                "entity_id": entity_id,
+                "effective_from": effective_from,
+                "effective_to": effective_to,
+            },
+        ).first()
         if row is not None:
             raise EntityRegistryValidationError(
                 "retired or deprecated entity rejects forward attachment without lineage authorization"
@@ -763,21 +789,7 @@ class EntityRegistryRepository:
         rule = _NAMESPACE_RULES.get(namespace)
         if rule is not None:
             return rule
-        if namespace.startswith("br.") and namespace.endswith(".regulated_agent_code"):
-            authority = namespace.split(".")[1].upper()
-            return _NamespaceRule(
-                "trim-exact/v1", "organization", ("authority", "context"), "regulated_agent", False,
-                expected_scope_authority=authority, expected_evidence_authorities=(authority,),
-                overlap_requires_review=True,
-            )
-        if namespace.startswith("br.") and namespace.endswith(".concession_code"):
-            authority = namespace.split(".")[1].upper()
-            return _NamespaceRule(
-                "trim-exact/v1", "concession", ("authority", "context"), None, False,
-                expected_scope_authority=authority, expected_evidence_authorities=(authority,),
-                overlap_requires_review=True,
-            )
-        return None
+        return self._get_dynamic_namespace_rule(namespace)
 
     @staticmethod
     def _is_retryable_write_conflict(error: OperationalError) -> bool:
@@ -864,21 +876,48 @@ class EntityRegistryRepository:
         rule = _NAMESPACE_RULES.get(namespace)
         if rule is not None:
             return rule
-        if namespace.startswith("br.") and namespace.endswith(".regulated_agent_code"):
-            authority = namespace.split(".")[1].upper()
+        return EntityRegistryRepository._get_dynamic_namespace_rule(namespace)
+
+    @staticmethod
+    def _get_dynamic_namespace_rule(namespace: str) -> _NamespaceRule | None:
+        match = _DYNAMIC_NAMESPACE_PATTERN.fullmatch(namespace)
+        if match is None:
+            return None
+        authority, value_class = match.groups()
+        authority = authority.upper()
+        if value_class == "regulated_agent_code":
             return _NamespaceRule(
                 "trim-exact/v1", "organization", ("authority", "context"), "regulated_agent", False,
                 expected_scope_authority=authority, expected_evidence_authorities=(authority,),
                 overlap_requires_review=True,
             )
-        if namespace.startswith("br.") and namespace.endswith(".concession_code"):
-            authority = namespace.split(".")[1].upper()
-            return _NamespaceRule(
-                "trim-exact/v1", "concession", ("authority", "context"), None, False,
-                expected_scope_authority=authority, expected_evidence_authorities=(authority,),
-                overlap_requires_review=True,
-            )
-        return None
+        return _NamespaceRule(
+            "trim-exact/v1", "concession", ("authority", "context"), None, False,
+            expected_scope_authority=authority, expected_evidence_authorities=(authority,),
+            overlap_requires_review=True,
+        )
+
+    @staticmethod
+    def _canonicalize_utc_instant(value: str) -> str:
+        if not isinstance(value, str) or "T" not in value:
+            raise EntityRegistryValidationError("UTC instant is required")
+        try:
+            instant = datetime.fromisoformat(value)
+        except ValueError as error:
+            raise EntityRegistryValidationError("UTC instant is required") from error
+        if instant.tzinfo is None or instant.utcoffset() != timedelta(0):
+            raise EntityRegistryValidationError("UTC instant is required")
+        return instant.astimezone(timezone.utc).isoformat()
+
+    @classmethod
+    def _canonicalize_effective_interval(
+        cls, effective_from: str | None, effective_to: str | None, now: str
+    ) -> tuple[str, str | None]:
+        canonical_from = cls._canonicalize_utc_instant(effective_from or now)
+        canonical_to = cls._canonicalize_utc_instant(effective_to) if effective_to is not None else None
+        if canonical_to is not None and canonical_from >= canonical_to:
+            raise EntityRegistryValidationError("invalid effective interval")
+        return canonical_from, canonical_to
 
 
 def _utc_now() -> str:

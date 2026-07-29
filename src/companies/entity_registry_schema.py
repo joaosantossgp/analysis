@@ -425,12 +425,41 @@ def _normalize_sql(value: str) -> str:
 
 
 def _has_required_check_expression(expected: str, actual: tuple[str, ...], dialect: str) -> bool:
-    if expected in actual:
-        return True
-    if dialect != "postgresql":
-        return False
-    required_tokens = tuple(re.findall(r"[a-z_]+|'[^']+'|[<>]|\b0\b", expected))
-    return any(all(token in expression for token in required_tokens) for expression in actual)
+    expected_expression = _canonicalize_check_expression(expected, dialect)
+    return any(
+        _canonicalize_check_expression(expression, dialect) == expected_expression
+        for expression in actual
+    )
+
+
+def _canonicalize_check_expression(expression: str, dialect: str) -> str:
+    normalized = _normalize_sql(expression)
+    if normalized.startswith("check "):
+        normalized = normalized[6:]
+    normalized = _strip_outer_parentheses(normalized)
+    if dialect == "postgresql":
+        normalized = re.sub(r"::(?:text|character varying|varchar)(?:\[\])?", "", normalized)
+        normalized = re.sub(r"= any \(array\[([^\]]+)\]\)", r"in (\1)", normalized)
+    normalized = re.sub(r"\(([^()]+)\)", r"\1", normalized)
+    return _normalize_sql(normalized)
+
+
+def _strip_outer_parentheses(expression: str) -> str:
+    while expression.startswith("(") and expression.endswith(")"):
+        depth = 0
+        encloses_all = True
+        for index, character in enumerate(expression):
+            if character == "(":
+                depth += 1
+            elif character == ")":
+                depth -= 1
+                if depth == 0 and index != len(expression) - 1:
+                    encloses_all = False
+                    break
+        if not encloses_all or depth != 0:
+            break
+        expression = expression[1:-1].strip()
+    return expression
 
 
 def validate_postgresql_registry_safety(engine: Engine) -> None:
@@ -476,8 +505,12 @@ def validate_postgresql_registry_safety(engine: Engine) -> None:
         "before update of entity_id" not in trigger_definition
         or "for each row" not in trigger_definition
         or "execute function" not in trigger_definition
-        or "new.entity_id is distinct from old.entity_id" not in function_definition
-        or "raise exception" not in function_definition
-        or "entity_id is immutable" not in function_definition
+        or _postgresql_function_body(function_definition)
+        != "begin if new.entity_id is distinct from old.entity_id then raise exception 'entity_id is immutable'; end if; return new; end;"
     ):
         raise ValueError("entity registry schema is incomplete: PostgreSQL immutable entity trigger")
+
+
+def _postgresql_function_body(function_definition: str) -> str | None:
+    match = re.search(r"\bas\s+\$[a-z0-9_]*\$\s*(.*?)\s*\$[a-z0-9_]*\$", function_definition, re.DOTALL)
+    return _normalize_sql(match.group(1)) if match else None

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from queue import Queue
-from threading import Barrier, Thread
+from threading import Barrier, Event, Thread
 
 import pytest
 from sqlalchemy import create_engine
@@ -702,3 +702,186 @@ def test_overlapping_weak_regulated_agent_claim_is_review_conflict(repository):
             identifier_strength="weak",
             evidence_id=evidence.evidence_id,
         )
+
+
+@pytest.mark.parametrize(
+    ("namespace", "kind", "raw_value", "scope"),
+    [
+        ("br.cnpj", "organization", "33.000.167/0001-01", {"scope_country": "BR"}),
+        ("br.aneel.ceg", "plant_or_asset", "CEG-001", {"scope_authority": "ANEEL"}),
+        ("br.ccee.plant_parcel", "market_parcel", "PARCEL-001", {"scope_authority": "CCEE"}),
+    ],
+)
+def test_policy_collision_namespaces_preserve_overlapping_weak_claims_for_review(
+    repository, namespace, kind, raw_value, scope
+):
+    first = repository.create_entity(kind, origin="source_ingestion")
+    second = repository.create_entity(kind, origin="source_ingestion")
+    evidence = repository.record_evidence(source_class="external", source_reference="source://weak")
+    if namespace == "br.cnpj":
+        for entity in (first, second):
+            _add_organization_facet(repository, entity.entity_id, "legal_entity", evidence.evidence_id)
+
+    repository.claim_identifier(
+        entity_id=first.entity_id,
+        namespace=namespace,
+        raw_value=raw_value,
+        identifier_strength="weak",
+        evidence_id=evidence.evidence_id,
+        effective_from="2025-01-01T00:00:00+00:00",
+        **scope,
+    )
+
+    with pytest.raises(EntityRegistryConflictError, match="identifier_overlap"):
+        repository.claim_identifier(
+            entity_id=second.entity_id,
+            namespace=namespace,
+            raw_value=raw_value,
+            identifier_strength="weak",
+            evidence_id=evidence.evidence_id,
+            effective_from="2025-01-01T00:00:00+00:00",
+            **scope,
+        )
+
+    claims = repository.find_identifier_claims(namespace, raw_value, **scope)
+    assert {claim.claim_status for claim in claims} == {"accepted", "conflicted"}
+
+
+@pytest.mark.parametrize(
+    "namespace",
+    [
+        "br.aneel.extra.regulated_agent_code",
+        "br..regulated_agent_code",
+        "br.aneel.regulated_agent_code.extra",
+        "br.aneel.extra.concession_code",
+        "br..concession_code",
+        "br.aneel.concession_code.extra",
+    ],
+)
+def test_dynamic_namespaces_require_exact_declared_grammar(repository, namespace):
+    entity = repository.create_entity("organization", origin="source_ingestion")
+    evidence = repository.record_evidence(source_class="external", source_reference="source://namespace")
+
+    with pytest.raises(EntityRegistryValidationError, match="unknown namespace"):
+        repository.claim_identifier(
+            entity_id=entity.entity_id,
+            namespace=namespace,
+            raw_value="123",
+            identifier_strength="weak",
+            evidence_id=evidence.evidence_id,
+        )
+
+
+@pytest.mark.parametrize("invalid_instant", ["not-a-utc-instant", "2026-01-01", "2026-01-01T00:00:00-03:00"])
+def test_temporal_commands_reject_malformed_date_only_and_non_utc_instants(repository, invalid_instant):
+    entity = repository.create_entity("organization", origin="source_ingestion")
+    evidence = _official_evidence(repository)
+
+    with pytest.raises(EntityRegistryValidationError, match="UTC instant"):
+        repository.change_lifecycle(
+            entity.entity_id, lifecycle_status="retired", reason="bad time",
+            evidence_id=evidence.evidence_id, effective_from=invalid_instant,
+        )
+    with pytest.raises(EntityRegistryValidationError, match="UTC instant"):
+        repository.add_organization_facet(
+            entity_id=entity.entity_id, facet="issuer", evidence_id=evidence.evidence_id,
+            effective_from=invalid_instant,
+        )
+    with pytest.raises(EntityRegistryValidationError, match="UTC instant"):
+        repository.claim_alias(
+            entity_id=entity.entity_id, alias_type="trade_name", raw_value="ACME",
+            evidence_id=evidence.evidence_id, effective_from=invalid_instant,
+        )
+    with pytest.raises(EntityRegistryValidationError, match="UTC instant"):
+        repository.claim_identifier(
+            entity_id=entity.entity_id, namespace="br.cvm.cd_cvm", raw_value="9512",
+            scope_authority="CVM", identifier_strength="strong", evidence_id=evidence.evidence_id,
+            effective_from=invalid_instant,
+        )
+
+
+def test_temporal_commands_canonicalize_utc_instants_and_reject_invalid_intervals(repository):
+    entity = repository.create_entity("organization", origin="source_ingestion")
+    evidence = _official_evidence(repository)
+    facet = repository.add_organization_facet(
+        entity_id=entity.entity_id, facet="issuer", evidence_id=evidence.evidence_id,
+        effective_from="2026-01-01T00:00:00Z",
+    )
+    assert facet.effective_from == "2026-01-01T00:00:00+00:00"
+
+    with pytest.raises(EntityRegistryValidationError, match="invalid effective interval"):
+        repository.claim_alias(
+            entity_id=entity.entity_id, alias_type="trade_name", raw_value="ACME",
+            evidence_id=evidence.evidence_id, effective_from="2026-01-02T00:00:00+00:00",
+            effective_to="2026-01-01T00:00:00Z",
+        )
+
+
+@pytest.mark.parametrize("attachment_kind", ["identifier", "alias", "facet"])
+def test_lifecycle_transition_cannot_commit_during_attachment_admission(
+    tmp_path, monkeypatch, attachment_kind
+):
+    engine = create_engine(f"sqlite:///{tmp_path / f'{attachment_kind}.db'}", connect_args={"timeout": 5})
+    ensure_entity_registry_schema(engine)
+    repository = EntityRegistryRepository(engine)
+    entity = repository.create_entity("organization", origin="source_ingestion")
+    evidence = _official_evidence(repository)
+    _add_organization_facet(repository, entity.entity_id, "issuer", evidence.evidence_id)
+    admission_entered = Event()
+    release_admission = Event()
+    lifecycle_finished = Event()
+    errors: Queue[Exception] = Queue()
+    original = repository._require_attachment_allowed
+
+    def pause_admission(conn, entity_id, effective_from, effective_to):
+        admission_entered.set()
+        assert release_admission.wait(timeout=5)
+        return original(conn, entity_id, effective_from, effective_to)
+
+    monkeypatch.setattr(repository, "_require_attachment_allowed", pause_admission)
+
+    def attach() -> None:
+        try:
+            if attachment_kind == "identifier":
+                repository.claim_identifier(
+                    entity_id=entity.entity_id, namespace="br.cvm.cd_cvm", raw_value="9512",
+                    scope_authority="CVM", identifier_strength="strong", evidence_id=evidence.evidence_id,
+                    effective_from="2026-01-01T00:00:00+00:00",
+                )
+            elif attachment_kind == "alias":
+                repository.claim_alias(
+                    entity_id=entity.entity_id, alias_type="trade_name", raw_value="ACME",
+                    evidence_id=evidence.evidence_id, effective_from="2026-01-01T00:00:00+00:00",
+                )
+            else:
+                repository.add_organization_facet(
+                    entity_id=entity.entity_id, facet="legal_entity", evidence_id=evidence.evidence_id,
+                    effective_from="2026-01-01T00:00:00+00:00",
+                )
+        except Exception as error:  # asserted after both serialized commands finish
+            errors.put(error)
+
+    def retire() -> None:
+        try:
+            repository.change_lifecycle(
+                entity.entity_id, lifecycle_status="retired", reason="retirement",
+                evidence_id=evidence.evidence_id, effective_from="2025-01-01T00:00:00+00:00",
+            )
+        except Exception as error:  # asserted after both serialized commands finish
+            errors.put(error)
+        finally:
+            lifecycle_finished.set()
+
+    attachment_worker = Thread(target=attach)
+    attachment_worker.start()
+    assert admission_entered.wait(timeout=5)
+    lifecycle_worker = Thread(target=retire)
+    lifecycle_worker.start()
+    assert not lifecycle_finished.wait(timeout=0.2)
+    release_admission.set()
+    attachment_worker.join(timeout=10)
+    lifecycle_worker.join(timeout=10)
+
+    assert not attachment_worker.is_alive()
+    assert not lifecycle_worker.is_alive()
+    assert errors.empty()
