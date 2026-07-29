@@ -28,7 +28,7 @@ requires release validation to establish.
 | Concern | Evidence at recorded SHA | Consequence for a registry change |
 |---|---|---|
 | Main database initialization | `src/financials/database.py::init_db_tables` (`:24-139`) is called by `CVMDatabase._init_db` (`:277-279`) and FastAPI lifespan (`apps/api/app/main.py:60-66`). It branches for SQLite (WAL, SQLite PK/REAL) versus PostgreSQL (SERIAL/DOUBLE PRECISION and concurrent index DDL at `database.py:31-40,127-136`), creates base DDL, and delegates supplementary table setup. | There is no verified general migration runner/version table. Existing upgrades are idempotent `CREATE TABLE IF NOT EXISTS` plus targeted `ALTER TABLE` helpers. Any compatibility/rollback plan must validate both SQLite and PostgreSQL. |
-| Canonical company row today | `companies` is created at `src/financials/database.py:76-94`: `cd_cvm` primary key; name, commercial name, CNPJ, CVM/analytical sector, four GICS columns, type, B3 ticker, coverage rank, active flag, and timestamp. | `cd_cvm` is the primary persisted company key. The table already carries GICS fields but does not, from this DDL alone, establish four-level taxonomy governance, provenance, confidence, or manual-override audit fields. |
+| Canonical company row today | `companies` is created at `src/financials/database.py:76-94`: `cd_cvm` primary key; name, commercial name, CNPJ, CVM/analytical sector, four GICS levels plus `gics_sector_slug`, type, B3 ticker, coverage rank, active flag, and timestamp. | `cd_cvm` is the primary persisted company key. The table already carries GICS fields but does not, from this DDL alone, establish four-level taxonomy governance, provenance, confidence, or manual-override audit fields. |
 | Existing metadata repair | `init_db_tables` invokes `_ensure_company_columns` at `database.py:102-108` and `_backfill_companies_metadata` at `:138-139`; their definitions are `:142-208` and `:210-240`. `_ensure_company_columns` adds absent columns dynamically. | Schema evolution is distributed code, not a centrally audited sequence; a registry proposal needs an explicit compatibility/rollback plan. |
 | Resolver | `src/companies/identity.py::CompanyIdentityResolver` (`:79-316`) resolves `cd_cvm` through an in-process cache, DB, synchronous CVM catalog fallback, and CSV ticker hints; it also offers ticker/CNPJ/batch methods. `_resolve_uncached` performs DB lookup at `:123-180`, then `CompanyCatalogService.lookup_company` at `:182-188`. | Resolver behavior and persisted company rows are related but not one declared authoritative entity-registry interface. Changes must inventory all resolver consumers and cannot assume offline-only resolution. |
 | GICS overlap | The main DDL includes GICS columns, and `data/import/gics_mapping*.csv` exists. GitHub issue #397 remains open and requires canonical taxonomy, deterministic mapping, source/confidence, explicit unknowns, and auditable local overrides. | #397 owns classification-policy implementation. #414 records the baseline only; it must not make CVM labels appear as GICS or introduce a second mapping path. |
@@ -81,8 +81,11 @@ identity registry or an Energy/company causality model.
 
 `src/refresh/jobs.py::ensure_refresh_runtime_tables_for_connection` is defined
 at `:183-185`; its wrapper `ensure_refresh_runtime_tables` calls it at
-`:178-181`, and `RefreshJobRepository.__init__` calls the wrapper at `:379-385`.
-It creates/extends `company_refresh_status`, `refresh_jobs`, and
+`:178-181`, and `RefreshJobRepository.ensure_schema` calls the wrapper at
+`:383-385` (the constructor at `:379-381` only assigns the engine). Repository
+operations can instead call the connection-level helper directly; for example,
+`get_active_job_for_company` does so at `:386-388`. It creates/extends
+`company_refresh_status`, `refresh_jobs`, and
 `refresh_job_enqueue_counter`, including indexes and the active-company unique
 index. Refresh transport and result shapes are defined in
 `src/platform/contracts.py`.
@@ -130,6 +133,19 @@ on first access (`:1187-1203`). This update/delete behavior is a material
 Energy migration: use a copied Energy database plus a tested rollback/backup
 plan before exercising it. Its real-data outcomes remain **Needs validation**;
 this dossier did not initialize an Energy database.
+
+The migration is not verified as atomic on partial table failure. Each of the
+eight table moves catches and suppresses exceptions (`:1161-1172`), but the
+outer `engine.begin()` can then commit (`:1181-1184`) and, once a target mapping
+is selected, the old distributor row is deleted regardless of per-table errors
+after the loop (`:1174-1177`). A
+failed table can therefore leave facts keyed to the old ID after its identity
+row is removed. `UPDATE OR IGNORE` also permits a conflict to leave old rows
+unchanged before the following delete removes them (`:1163-1169`), creating
+data-loss risk. Before any production use, require copied-database testing,
+atomic failure/rollback behavior, and post-migration counts plus referential
+reconciliation for all eight tables; do not accept a backup alone as proof of
+integrity.
 
 This is a separate Energy/asset model, not proof that a company master is
 shared or that a listed issuer has a causal relation to a system indicator.
