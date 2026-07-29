@@ -171,14 +171,15 @@ where available, status, and raw payload reference:
 | `external` | Reputable third-party/provider evidence | Policy may select only if allowed |
 | `derived` | Deterministic evidence derived from input lineage | Only under explicit policy |
 
-`evidence_free` is an explicit assertion state, not an evidence class. A
-user-authored assertion without evidence MUST retain `origin=user`,
-`evidence_free`, actor, reason, and interval; it MUST NOT be labeled official or
-silently substituted for a missing source. A user-authored assertion backed by
-official evidence remains `origin=user` plus its independent official evidence
-link; neither fact overwrites the other. Resolution eligibility evaluates the
-assertion state, origin route, and qualifying evidence together, including an
-explicit policy route when evidence-free assertions are allowed.
+Zero evidence is represented by `evidence_status = none`. It is neither an
+evidence source class nor an assertion lifecycle state. A user-authored
+assertion without evidence MUST retain `origin=user`, `evidence_status = none`,
+actor, reason, and interval; it MUST NOT be labeled official or silently
+substituted for a missing source. A user-authored assertion backed by official
+evidence remains `origin=user` plus its independent official evidence link;
+neither fact overwrites the other. Resolution eligibility evaluates assertion
+state, origin route, and qualifying evidence together, including an explicit
+policy route that permits `evidence_status = none`.
 
 Assertion state is one of `draft`, `submitted`, `accepted`, `rejected`,
 `superseded`, `withdrawn`, `conflicted`, or `blocked`. `accepted` means it
@@ -242,7 +243,7 @@ must be explicitly modeled rather than bypassing cycle validation.
 Canonical is a query result, not a mutable flag on an entity or assertion. A
 resolution policy is versioned and binds exactly one `(domain, attribute)` pair
 to: optional consumer scope, eligible base kinds/facets, assertion state/origin
-routes, qualifying evidence/evidence-free routes, namespace rules where
+routes, qualifying evidence or `evidence_status = none` routes, namespace rules where
 relevant, precedence/tie behavior, temporal semantics, conflict treatment, and
 override rules. Every policy version has an immutable `policy_id` and version,
 plus activation/effective and system intervals. Examples include
@@ -344,7 +345,7 @@ queries are out of scope absent a later measured decision.
 | Control change | Control dimension claim changes interval, independent of ownership/voting/accounting | As-of read shows control basis without inferring other dimensions |
 | Competing claims | Persist both claims and conflict record | Resolution returns policy-selected answer only if determinable; otherwise conflict |
 | Retroactive correction | New assertion with earlier effective time and later system time supersedes prior belief | Old system-as-of reproduces former answer; current belief reflects correction |
-| User override | Scoped `origin=user` assertion/override with explicit evidence-free state, reason, interval, policy | Visible as override; never presented as official evidence |
+| User override | Scoped `origin=user` assertion/override with `evidence_status = none`, reason, interval, policy | Visible as override; never presented as official evidence |
 
 ## Alternatives considered
 
