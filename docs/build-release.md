@@ -34,18 +34,65 @@ GICS/ticker mapping CSVs. It must not bundle a user database.
 
 ## GitHub Release Workflow
 
-`.github/workflows/release-desktop.yml` is the release pipeline. It:
+`.github/workflows/release-desktop.yml` is a manual, three-phase release gate.
+It does not run on tag push. All phases must be dispatched from `main` with a
+full 40-character `candidate_sha`, a supported version, and an already-existing
+matching `v<version>` tag.
 
-- installs Python 3.11 dependencies;
-- installs Node 22 dependencies for `apps/desktop-web`;
-- runs `desktop/build_desktop.ps1 -Version <version>`;
-- verifies bundled `desktop/__version__.py` matches the tag/input version;
-- creates a flat-root ZIP from `dist\CVMAnalytics\*`;
-- publishes:
-  - `CVMAnalytics-windows-v<version>.zip`;
-  - `CVMAnalytics-windows-v<version>.zip.sha256`;
-  - `CVMAnalytics-windows.zip`;
-  - `CVMAnalytics-windows.zip.sha256`.
+1. **Candidate phase** resolves the annotated or lightweight tag to its peeled
+   commit target, verifies that it is the exact candidate SHA and is reachable
+   from `origin/main`, and requires the latest `CI` `push/main` run for that
+   exact SHA to be `completed/success`. The Windows builder checks out that SHA,
+   verifies observed `HEAD` before and after the build, verifies the injected
+   runtime version and build provenance, then builds only once. It uploads two
+   immutable GitHub Actions artifacts: the versioned ZIP/checksum package and
+   `candidate-evidence.json`, which records the candidate SHA, tag target,
+   observed builder SHA, exact-CI run, package artifact ID, ZIP checksum, and
+   the separately recorded trusted-`main` workflow-source SHA. A candidate
+   replacement may therefore be dispatched from later `main` while the builder
+   still checks out the historical candidate SHA.
+2. **Attest phase** runs from trusted `main` and checks out the exact candidate
+   SHA. It re-verifies the successful candidate run, including its trusted-main
+   workflow-source SHA, immutable artifacts, and checksum before producing five
+   named evidence artifacts. Operator summaries remain explicitly manual
+   evidence; the workflow attests their provenance and candidate binding, not
+   the underlying observation.
+3. **Publish phase** accepts the trusted attest run ID, not arbitrary artifact
+   IDs. It resolves the five exact artifact names from that run and rejects any
+   mismatch in workflow name/path, dispatch event, successful conclusion,
+   `main` ref, candidate SHA, workflow-source SHA, Actions metadata, or
+   declared producer fields.
+   Before and after protected approval it re-resolves the tag and latest
+   exact-SHA CI. The final job downloads the saved candidate and verified
+   evidence, verifies identity and checksum, then publishes those bytes without
+   rebuilding or retagging.
+
+Only the final `Publish verified candidate` job has `contents: write`; every
+other release job has read-only repository permissions. Stable `X.Y.Z` remains
+a normal release and `X.Y.Z-rc.N` remains a prerelease. A stable release must
+therefore use the approved same-SHA candidate evidence or a separately approved
+new candidate; the workflow never promotes a different SHA by tag movement.
+
+Publication uses the protected `release-publication` environment. Its reviewer,
+protected-`main` branch policy, and administrator-bypass settings are remote
+configuration; do not replace or weaken them in workflow code.
+
+### Artifact-expiry recovery
+
+An expired candidate, candidate-evidence, or attestation artifact cannot be
+repaired or published. The recovery exception is a fresh candidate cycle for
+the **same version/SHA only after artifact expiry**. It creates **new immutable
+artifacts and run IDs**, must **revalidate the latest successful exact-SHA CI**,
+and must **repeat package/manual/conditional attestations and #440 approval**.
+It publishes only the replacement candidate; the workflow does not claim to
+create a new `push/main` CI run for an unchanged historical SHA.
+If `main` has advanced, dispatch the replacement from trusted `main`; its
+workflow-source SHA is recorded separately and the replacement build still
+verifies and checks out the requested historical candidate SHA.
+The expired run IDs remain **superseded evidence** in the release record and
+cannot be supplied to publish. This exception does not allow rebuilding,
+retagging, or substituting artifacts for a candidate whose artifacts remain
+available.
 
 Flat-root means the ZIP root contains `CVMAnalytics.exe` and `_internal/`
 directly. A wrapper folder breaks the updater contract.
@@ -65,19 +112,28 @@ directly. A wrapper folder breaks the updater contract.
 
 When release evidence conflicts, use this hierarchy:
 
-1. **Release tag and commit** — verify the checkout with `git describe --tags
+1. **Immutable candidate evidence** — verify the full candidate SHA, peeled tag
+   target, observed Windows-builder SHA, exact `push/main` CI run, immutable
+   package artifact ID, and ZIP checksum in `candidate-evidence.json`. The
+   publish phase must re-check every value before it creates a release.
+2. **Release tag and commit** — verify the checkout with `git describe --tags
    --exact-match HEAD`, `git tag --points-at HEAD`, and `git rev-parse HEAD`.
-   The tag and commit identify the source tree that should have produced the
-   release.
-2. **Bundled runtime version** — verify `desktop/__version__.py` in the source
+   The tag target must equal the immutable candidate SHA; no tag is created or
+   moved by the release workflow.
+3. **Bundled runtime version** — verify `desktop/__version__.py` in the source
    tree or packaged bundle. The release workflow passes the exact version into
    `desktop/build_desktop.ps1 -Version <version>` and fails if the bundled
    runtime version does not match the release input.
-3. **Generated build provenance** — inspect `desktop/_build_info.py` or
+4. **Generated build provenance** — inspect `desktop/_build_info.py` or
    Settings -> Diagnostics in the packaged app for generated build commit and
    build timestamp. Treat this as artifact provenance, not as proof of the
    current checkout.
-4. **Packaged validation evidence** — use the release workflow logs, release
+5. **Manual and conditional evidence** — use the verified trusted-attest run,
+   expected artifact identities, ZIP/content SHA-256 values, and
+   `manual-evidence.json` to prove local-data checks, packaged validation, and
+   every required conditional check. A protected-environment approval is not
+   evidence that a manual check ran.
+6. **Packaged validation evidence** — use the release workflow logs, release
    notes, and manual packaged-app validation records to prove the built artifact
    launched correctly, used the expected data root, handled offline/update
    states, preserved user data, and exported Excel files that open without
@@ -85,8 +141,76 @@ When release evidence conflicts, use this hierarchy:
 
 Each release record should identify tag, commit, bundled runtime version, build
 timestamp when available, validation environment, and the results of packaged
-launch, updater/offline, and Excel-open checks. User data remains excluded from
-release artifacts.
+launch, updater/offline, and Excel-open checks. It must also identify the
+candidate run/artifact IDs and ZIP checksum, and bind its manual/conditional
+evidence to those values. User data remains excluded from release artifacts.
+
+### Evidence attestation contract
+
+Dispatch **attest** from the trusted `main` branch with the candidate run ID
+and the operator's manual/conditional summaries. GitHub dispatch accepts a
+branch or tag ref rather than an arbitrary commit SHA, so this remains valid
+when `main` advances after the candidate, provided the candidate is still an
+ancestor of current `main`. Attest checks out and binds the exact candidate,
+then writes one named, immutable Actions artifact per record, each containing
+exactly one UTF-8 JSON file named `release-evidence-attestation.json`. Publish
+accepts only the successful attest run ID. It resolves the five expected
+artifact names from that run, then records their IDs, ZIP SHA-256 values, and
+JSON-content SHA-256 values. It rejects expired, malformed, multi-file,
+mismatched, or untrusted producer records.
+
+Every record has this candidate binding:
+
+```json
+{
+  "schema_version": 1,
+  "attestation_type": "manual-local-data",
+  "candidate": {
+    "candidate_sha": "<40 lowercase hex>",
+    "tag_target_sha": "<same SHA>",
+    "workflow_source_sha": "<trusted main candidate workflow SHA; may differ from candidate>",
+    "candidate_run_id": "<candidate Actions run ID>",
+    "package_artifact_id": "<candidate package artifact ID>",
+    "zip_checksum": "<64 lowercase hex>"
+  },
+  "producer": {
+    "workflow_run_id": "<attestation producer run ID>",
+    "phase": "attest",
+    "workflow_name": "Release Desktop",
+    "workflow_path": ".github/workflows/release-desktop.yml",
+    "head_ref": "main",
+    "workflow_source_sha": "<trusted main workflow SHA; may differ from candidate>"
+  },
+  "result": { "manual": true, "summary": "<operator record>" }
+}
+```
+
+The two required manual `attestation_type` values are `manual-local-data` and
+`manual-packaged`. They preserve the manual nature of source-data and packaged
+checks: a valid record proves candidate binding and provenance, not that the
+workflow independently reproduced every substantive observation.
+
+The three conditional values are `conditional-api`, `conditional-ccee`, and
+`conditional-strict-backup`. Each additionally requires a typed decision:
+
+```json
+{
+  "decision": {
+    "status": "required",
+    "basis": {
+      "type": "candidate-diff",
+      "candidate_sha": "<same SHA>",
+      "tag_target_sha": "<same SHA>",
+      "summary": "<reviewed changed-path/policy explanation>"
+    }
+  }
+}
+```
+
+`status` is exactly `required` or `not-required`; basis `type` is exactly
+`candidate-diff` or `release-policy`. A required conditional record also needs
+the manual `result` object. These typed, candidate-bound attestations replace
+free-form applicability strings.
 
 ## Updater Contract
 

@@ -60,4 +60,53 @@ Manual release validation must include packaged app launch, clean install,
 update over previous version, offline already-downloaded data read, updater
 no-network/latest-version states, and Excel open-without-repair.
 
+## Exact-SHA Candidate and Publication Gate
+
+Release Desktop is manual-only and runs three separate phases from `main`:
+
+1. Dispatch **candidate** with the version, full candidate SHA, and its
+   already-existing `v<version>` tag. It rejects malformed stable/RC versions,
+   a non-main SHA, a tag target mismatch, or any missing/failed/cancelled/latest
+   exact-SHA `push/main` CI. The Windows build runs once and uploads immutable
+   package and candidate-evidence artifacts. The candidate workflow runs from
+   trusted `main`, records its workflow-source SHA separately, and checks out
+   the requested candidate SHA for every build and identity check. This permits
+   a replacement candidate for a historical SHA after `main` advances.
+2. Complete local-data and packaged-app validations against that downloaded
+   candidate ZIP. Dispatch **attest** with the same version/SHA, candidate run
+   ID, manual summaries, and typed API, CCEE, and strict-backup decisions.
+   Dispatch attest from the trusted `main` branch. GitHub dispatches a branch
+   or tag ref, so `main` may have advanced after the candidate; this is allowed
+   only while the candidate remains an ancestor of current `main`. Attest
+   checks out the exact candidate, rechecks its artifact/checksum binding, and
+   emits the five named candidate-bound records. Each record also identifies
+   the trusted `main` workflow-source SHA separately from the candidate SHA.
+3. Dispatch **publish** with the same version/SHA, candidate run ID, and the
+   successful attest run ID. It accepts records only from that successful
+   `Release Desktop` attest run from trusted `main`, verifies its separately
+   recorded workflow-source SHA and the candidate run's separately recorded
+   workflow-source SHA and exact candidate binding, rechecks
+   tag/SHA/latest CI before and after approval, verifies the ZIP
+   checksum, uploads publication evidence, and only then publishes. It never
+   rebuilds the bundle or creates/moves a tag.
+
+The final publish job is protected by the configured `release-publication`
+GitHub environment. Do not substitute the unprotected `Production` environment
+or weaken its remote reviewer, protected-branch, or bypass settings.
+
+Any failed, cancelled, missing, expired, stale, tag-mismatched, or
+checksum/evidence-mismatched gate stops publication. Do not retry by rebuilding
+or retagging while the accepted candidate artifacts remain available; correct
+missing evidence and run publish against that original candidate artifact.
+
+The sole retention exception is a fresh candidate cycle for the **same
+version/SHA only after artifact expiry**. It creates **new immutable artifacts
+and run IDs**, must **revalidate the latest successful exact-SHA CI**, and must
+**repeat package/manual/conditional attestations and #440 approval**. It can
+publish only that replacement candidate; the workflow does not create a new
+`push/main` CI run for an unchanged historical SHA. Keep the expired run IDs as
+**superseded evidence** in the release record; they cannot be reused by attest
+or publish. This exception does not permit a new tag, retag, or substitution
+while the original immutable artifacts are still available.
+
 See [`build-release.md`](build-release.md) for the full checklist.
