@@ -5,6 +5,7 @@ type IdentifierBadgeProps = {
   children: ReactNode;
   muted?: boolean;
   className?: string;
+  title?: string;
 };
 
 export function IdentifierBadge({
@@ -12,6 +13,7 @@ export function IdentifierBadge({
   children,
   muted = false,
   className,
+  title,
 }: IdentifierBadgeProps) {
   const style: CSSProperties = {
     alignItems: "center",
@@ -30,7 +32,7 @@ export function IdentifierBadge({
   };
 
   return (
-    <span className={className} style={style}>
+    <span className={className} style={style} title={title}>
       {label ? (
         <span style={{ color: "var(--color-text-tertiary)" }}>{label}</span>
       ) : null}
