@@ -436,7 +436,9 @@ class EntityRegistryRepository:
             raise EntityRegistryValidationError(
                 f"namespace {namespace} is ineligible for entity kind {entity.entity_kind}"
             )
-        self._validate_scope(rule, scope_authority, scope_country, scope_context)
+        scope_authority, scope_country, scope_context = self._canonicalize_scope(
+            rule, scope_authority, scope_country, scope_context
+        )
         normalized_value = self._normalize(namespace, raw_value)
         evidence = self._get_evidence(evidence_id)
         if identifier_strength == "strong":
@@ -507,7 +509,9 @@ class EntityRegistryRepository:
         rule = self._get_namespace_rule(namespace)
         if rule is None:
             raise EntityRegistryValidationError(f"unknown namespace: {namespace}")
-        self._validate_scope(rule, scope_authority, scope_country, scope_context)
+        scope_authority, scope_country, scope_context = self._canonicalize_scope(
+            rule, scope_authority, scope_country, scope_context
+        )
         normalized_value = self._normalize(namespace, raw_value)
         with self._engine.connect() as conn:
             rows = conn.execute(
@@ -824,6 +828,31 @@ class EntityRegistryRepository:
             raise EntityRegistryValidationError(
                 f"namespace requires country {rule.expected_scope_country}"
             )
+
+    @classmethod
+    def _canonicalize_scope(
+        cls,
+        rule: _NamespaceRule,
+        authority: str | None,
+        country: str | None,
+        context: str | None,
+    ) -> tuple[str | None, str | None, str | None]:
+        canonical_scope = (
+            cls._canonicalize_scope_value(authority, uppercase=True),
+            cls._canonicalize_scope_value(country, uppercase=True),
+            cls._canonicalize_scope_value(context, uppercase=False),
+        )
+        cls._validate_scope(rule, *canonical_scope)
+        return canonical_scope
+
+    @staticmethod
+    def _canonicalize_scope_value(value: str | None, *, uppercase: bool) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise EntityRegistryValidationError("scope values must be strings")
+        canonical = value.strip()
+        return canonical.upper() if uppercase else canonical
 
     @staticmethod
     def _require_allowed(label: str, value: str, allowed: tuple[str, ...]) -> None:

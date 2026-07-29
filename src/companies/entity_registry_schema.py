@@ -379,7 +379,7 @@ def _validate_foreign_keys(engine: Engine, inspector) -> None:
             ) != (referred_table, referred_columns):
                 raise ValueError(f"entity registry schema is incomplete: {table_name} foreign keys")
             ondelete = foreign_key.get("options", {}).get("ondelete")
-            if ondelete is not None and str(ondelete).upper() != "RESTRICT":
+            if engine.dialect.name != "sqlite" and str(ondelete).upper() != "RESTRICT":
                 raise ValueError(f"entity registry schema is incomplete: {table_name} foreign keys")
 
     if engine.dialect.name == "sqlite":
@@ -477,6 +477,7 @@ def validate_postgresql_registry_safety(engine: Engine) -> None:
         or "for each row" not in trigger_definition
         or "execute function" not in trigger_definition
         or "new.entity_id is distinct from old.entity_id" not in function_definition
+        or "raise exception" not in function_definition
         or "entity_id is immutable" not in function_definition
     ):
         raise ValueError("entity registry schema is incomplete: PostgreSQL immutable entity trigger")

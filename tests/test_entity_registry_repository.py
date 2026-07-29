@@ -568,6 +568,97 @@ def test_identifier_reads_require_and_apply_the_complete_namespace_scope(reposit
         )
 
 
+def test_scope_values_are_canonicalized_for_strong_collisions_and_reads(repository):
+    first = repository.create_entity("organization", origin="source_ingestion")
+    second = repository.create_entity("organization", origin="source_ingestion")
+    evidence = _official_evidence(repository)
+    for entity in (first, second):
+        _add_organization_facet(repository, entity.entity_id, "issuer", evidence.evidence_id)
+    repository.claim_identifier(
+        entity_id=first.entity_id,
+        namespace="br.cvm.cd_cvm",
+        raw_value="9512",
+        scope_authority=" cvm ",
+        identifier_strength="strong",
+        evidence_id=evidence.evidence_id,
+    )
+
+    with pytest.raises(EntityRegistryConflictError, match="duplicate_strong_id"):
+        repository.claim_identifier(
+            entity_id=second.entity_id,
+            namespace="br.cvm.cd_cvm",
+            raw_value="9512",
+            scope_authority="CVM",
+            identifier_strength="strong",
+            evidence_id=evidence.evidence_id,
+        )
+
+    claims = repository.find_identifier_claims("br.cvm.cd_cvm", "9512", " cvm ")
+    assert {claim.scope_authority for claim in claims} == {"CVM"}
+    assert {claim.entity_id for claim in claims} == {first.entity_id, second.entity_id}
+
+
+def test_country_scope_values_are_canonicalized_for_strong_collisions(repository):
+    first = repository.create_entity("organization", origin="source_ingestion")
+    second = repository.create_entity("organization", origin="source_ingestion")
+    evidence = _official_evidence(repository, namespace="br.cnpj")
+    for entity in (first, second):
+        _add_organization_facet(repository, entity.entity_id, "legal_entity", evidence.evidence_id)
+    repository.claim_identifier(
+        entity_id=first.entity_id,
+        namespace="br.cnpj",
+        raw_value="33.000.167/0001-01",
+        scope_country=" br ",
+        identifier_strength="strong",
+        evidence_id=evidence.evidence_id,
+    )
+
+    with pytest.raises(EntityRegistryConflictError, match="duplicate_strong_id"):
+        repository.claim_identifier(
+            entity_id=second.entity_id,
+            namespace="br.cnpj",
+            raw_value="33.000.167/0001-01",
+            scope_country="BR",
+            identifier_strength="strong",
+            evidence_id=evidence.evidence_id,
+        )
+
+    claims = repository.find_identifier_claims("br.cnpj", "33.000.167/0001-01", None, " br ")
+    assert {claim.scope_country for claim in claims} == {"BR"}
+
+
+def test_scope_values_are_canonicalized_for_weak_ticker_conflicts(repository):
+    first = repository.create_entity("security_class", origin="source_ingestion")
+    second = repository.create_entity("security_class", origin="source_ingestion")
+    evidence = repository.record_evidence(source_class="external", source_reference="source://ticker")
+    repository.claim_identifier(
+        entity_id=first.entity_id,
+        namespace="br.b3.ticker",
+        raw_value="ACME3",
+        scope_authority=" b3 ",
+        scope_context=" ON ",
+        identifier_strength="weak",
+        evidence_id=evidence.evidence_id,
+        effective_from="2025-01-01T00:00:00+00:00",
+    )
+
+    with pytest.raises(EntityRegistryConflictError, match="identifier_overlap"):
+        repository.claim_identifier(
+            entity_id=second.entity_id,
+            namespace="br.b3.ticker",
+            raw_value="ACME3",
+            scope_authority="B3",
+            scope_context="ON",
+            identifier_strength="weak",
+            evidence_id=evidence.evidence_id,
+            effective_from="2025-01-01T00:00:00+00:00",
+        )
+
+    assert repository.find_entities_by_identifier(
+        "br.b3.ticker", "ACME3", " b3 ", scope_context=" ON "
+    ) == [first]
+
+
 def test_dynamic_regulated_agent_namespace_binds_scope_authority(repository):
     entity = repository.create_entity("organization", origin="source_ingestion")
     evidence = repository.record_evidence(source_class="external", source_reference="source://agent")

@@ -68,6 +68,20 @@ class _FakePostgresqlEngine:
         return _ConnectionContext()
 
 
+class _PostgresqlInspector:
+    def __init__(self, inspector):
+        self._inspector = inspector
+
+    def __getattr__(self, name):
+        return getattr(self._inspector, name)
+
+    def get_foreign_keys(self, table_name):
+        return [
+            {**foreign_key, "options": {**foreign_key.get("options", {}), "ondelete": "RESTRICT"}}
+            for foreign_key in self._inspector.get_foreign_keys(table_name)
+        ]
+
+
 def test_registry_schema_is_idempotent_and_leaves_legacy_rows_untouched(tmp_path):
     engine = create_engine(f"sqlite:///{tmp_path / 'registry.db'}")
     init_db_tables(engine)
@@ -228,7 +242,7 @@ def test_postgresql_validator_rejects_decoy_same_named_objects(monkeypatch):
     source = create_engine("sqlite:///:memory:")
     ensure_entity_registry_schema(source)
     engine = _FakePostgresqlEngine(row=None)
-    monkeypatch.setattr(entity_registry_schema, "inspect", lambda _: inspect(source))
+    monkeypatch.setattr(entity_registry_schema, "inspect", lambda _: _PostgresqlInspector(inspect(source)))
 
     with pytest.raises(ValueError, match="PostgreSQL immutable entity trigger"):
         validate_entity_registry_schema(engine)
@@ -239,6 +253,38 @@ def test_postgresql_validator_rejects_decoy_same_named_objects(monkeypatch):
     assert "trigger.tgenabled" in query
     assert "trigger.tgattr" in query
     assert "pg_get_functiondef" in query
+
+
+def test_postgresql_validator_rejects_non_enforcing_immutable_trigger(monkeypatch):
+    source = create_engine("sqlite:///:memory:")
+    ensure_entity_registry_schema(source)
+    engine = _FakePostgresqlEngine({
+        "tgenabled": "O",
+        "updates_entity_id": True,
+        "trigger_definition": (
+            "CREATE TRIGGER entity_registry_entities_no_id_update BEFORE UPDATE OF entity_id "
+            "ON entity_registry_entities FOR EACH ROW EXECUTE FUNCTION "
+            "entity_registry_prevent_entity_id_update()"
+        ),
+        "function_definition": (
+            "CREATE FUNCTION entity_registry_prevent_entity_id_update() RETURNS trigger "
+            "LANGUAGE plpgsql AS $$ BEGIN IF NEW.entity_id IS DISTINCT FROM OLD.entity_id "
+            "THEN RAISE NOTICE 'entity_id is immutable'; END IF; RETURN NEW; END; $$"
+        ),
+    })
+    monkeypatch.setattr(entity_registry_schema, "inspect", lambda _: _PostgresqlInspector(inspect(source)))
+
+    with pytest.raises(ValueError, match="PostgreSQL immutable entity trigger"):
+        validate_entity_registry_schema(engine)
+
+
+def test_postgresql_validator_rejects_missing_fk_delete_action_metadata():
+    source = create_engine("sqlite:///:memory:")
+    ensure_entity_registry_schema(source)
+    engine = _FakePostgresqlEngine(row=None)
+
+    with pytest.raises(ValueError, match="foreign keys"):
+        entity_registry_schema._validate_foreign_keys(engine, inspect(source))
 
 
 @pytest.mark.skipif(
