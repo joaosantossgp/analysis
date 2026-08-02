@@ -4,10 +4,12 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from sqlalchemy import create_engine, event, text
+from sqlalchemy.exc import OperationalError
 
 from src.companies.entity_registry import EntityRegistryRepository
 from src.companies.entity_registry_schema import ensure_entity_registry_schema
 from src.companies.entity_relationships import (
+    EntityRelationshipConcurrencyError,
     EntityRelationshipRepository,
     EntityRelationshipValidationError,
 )
@@ -346,3 +348,11 @@ def test_sqlite_actual_relationship_read_uses_subject_and_object_indexes(reposit
         details = [row[-1] for row in conn.exec_driver_sql(f"EXPLAIN QUERY PLAN {statement}", parameters)]
     assert any("idx_er_relationship_subject" in detail for detail in details)
     assert any("idx_er_relationship_object" in detail for detail in details)
+
+
+def test_retryable_database_conflicts_raise_explicit_relationship_error(repositories):
+    _registry, relationships = repositories
+    database_error = OperationalError("INSERT", {}, Exception("database is locked"))
+    with pytest.raises(EntityRelationshipConcurrencyError, match="retry"):
+        with relationships._write_connection("entity-1") as conn:
+            raise database_error

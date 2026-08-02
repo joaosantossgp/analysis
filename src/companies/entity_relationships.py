@@ -12,6 +12,7 @@ import json
 from uuid import uuid4
 
 from sqlalchemy import Engine, text
+from sqlalchemy.exc import OperationalError
 
 from src.companies.entity_registry_schema import (
     ASSERTION_STATES,
@@ -32,6 +33,10 @@ class EntityRelationshipError(ValueError):
 
 class EntityRelationshipValidationError(EntityRelationshipError):
     """A relationship command violates the registry contract."""
+
+
+class EntityRelationshipConcurrencyError(EntityRelationshipError):
+    """A serialized relationship command can be safely retried by its caller."""
 
 
 @dataclass(frozen=True)
@@ -100,17 +105,30 @@ class EntityRelationshipRepository:
                 conn.exec_driver_sql("BEGIN IMMEDIATE")
                 try:
                     yield conn
+                except OperationalError as error:
+                    conn.rollback()
+                    self._raise_retryable_concurrency_error(error)
                 except Exception:
                     conn.rollback()
                     raise
                 else:
                     conn.commit()
                 return
-            with conn.begin():
-                if self._engine.dialect.name == "postgresql":
-                    for key in sorted(set(lock_keys)):
-                        conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": f"entity-registry:{key}"})
-                yield conn
+            try:
+                with conn.begin():
+                    if self._engine.dialect.name == "postgresql":
+                        for key in sorted(set(lock_keys)):
+                            conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": f"entity-registry:{key}"})
+                    yield conn
+            except OperationalError as error:
+                self._raise_retryable_concurrency_error(error)
+
+    @staticmethod
+    def _raise_retryable_concurrency_error(error: OperationalError) -> None:
+        message = str(error).lower()
+        if "database is locked" in message or "serialize" in message or "deadlock" in message:
+            raise EntityRelationshipConcurrencyError("concurrent relationship write conflict; retry the command") from error
+        raise error
 
     def record_assertion(
         self,
