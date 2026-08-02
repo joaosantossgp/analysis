@@ -39,6 +39,10 @@ class EntityRelationshipConcurrencyError(EntityRelationshipError):
     """A serialized relationship command can be safely retried by its caller."""
 
 
+class EntityRelationshipTraversalBlockedError(EntityRelationshipError):
+    """A bounded graph validation could not complete within its safety limit."""
+
+
 @dataclass(frozen=True)
 class AssertionRecord:
     assertion_id: str
@@ -93,6 +97,8 @@ class LineageRecord:
 class EntityRelationshipRepository:
     """Persist auditable bitemporal claims without implicit latest reads."""
 
+    MAX_TRAVERSAL_DEPTH = 16
+
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
         validate_entity_registry_schema(engine)
@@ -102,8 +108,8 @@ class EntityRelationshipRepository:
         """Serialize graph writes without relying on a check-then-insert race."""
         with self._engine.connect() as conn:
             if self._engine.dialect.name == "sqlite":
-                conn.exec_driver_sql("BEGIN IMMEDIATE")
                 try:
+                    conn.exec_driver_sql("BEGIN IMMEDIATE")
                     yield conn
                 except OperationalError as error:
                     conn.rollback()
@@ -277,6 +283,8 @@ class EntityRelationshipRepository:
             assertion = self._assertion_row(conn, assertion_id)
             if assertion is None or assertion["subject_entity_id"] != subject_entity_id or assertion["assertion_state"] != "accepted" or assertion["system_to"] is not None:
                 raise EntityRelationshipValidationError("relationship assertion must belong to its subject entity")
+            if not self._covers_interval(assertion["effective_from"], assertion["effective_to"], effective_from, effective_to):
+                raise EntityRelationshipValidationError("assertion must cover edge interval")
             if dimension == "control" and relationship_status == "accepted":
                 self._reject_exclusive_overlap(conn, subject_entity_id, effective_from, effective_to)
                 self._reject_relationship_cycle(conn, subject_entity_id, object_entity_id, "control", effective_from, effective_to)
@@ -313,6 +321,7 @@ class EntityRelationshipRepository:
                   AND relationship.effective_from <= :effective_as_of AND (relationship.effective_to IS NULL OR relationship.effective_to > :effective_as_of)
                   AND relationship.system_from <= :system_as_of AND (relationship.system_to IS NULL OR relationship.system_to > :system_as_of)
                   AND assertion.system_from <= :system_as_of AND (assertion.system_to IS NULL OR assertion.system_to > :system_as_of)
+                  AND assertion.effective_from <= :effective_as_of AND (assertion.effective_to IS NULL OR assertion.effective_to > :effective_as_of)
                 ORDER BY relationship.dimension, relationship.relationship_id
             """), {
                 "entity_id": entity_id, "dimension": dimension, "effective_as_of": effective_as_of,
@@ -352,6 +361,8 @@ class EntityRelationshipRepository:
             assertion = self._assertion_row(conn, assertion_id)
             if assertion is None or assertion["subject_entity_id"] != predecessor_entity_id or assertion["assertion_state"] != "accepted" or assertion["system_to"] is not None:
                 raise EntityRelationshipValidationError("lineage assertion must belong to predecessor entity")
+            if not self._covers_interval(assertion["effective_from"], assertion["effective_to"], effective_from, effective_to):
+                raise EntityRelationshipValidationError("assertion must cover edge interval")
             if predicate != "legal_continuation" and lineage_status == "accepted":
                 self._reject_lineage_cycle(conn, predecessor_entity_id, successor_entity_id, effective_from, effective_to)
             conn.execute(text("""
@@ -379,6 +390,7 @@ class EntityRelationshipRepository:
                   AND lineage.effective_from <= :effective_as_of AND (lineage.effective_to IS NULL OR lineage.effective_to > :effective_as_of)
                   AND lineage.system_from <= :system_as_of AND (lineage.system_to IS NULL OR lineage.system_to > :system_as_of)
                   AND assertion.system_from <= :system_as_of AND (assertion.system_to IS NULL OR assertion.system_to > :system_as_of)
+                  AND assertion.effective_from <= :effective_as_of AND (assertion.effective_to IS NULL OR assertion.effective_to > :effective_as_of)
                 ORDER BY lineage.lineage_id
             """), {
                 "entity_id": entity_id, "effective_as_of": effective_as_of, "system_as_of": system_as_of,
@@ -497,45 +509,63 @@ class EntityRelationshipRepository:
     def _reject_relationship_cycle(conn, subject_entity_id: str, object_entity_id: str, dimension: str, effective_from: str, effective_to: str | None) -> None:
         if subject_entity_id == object_entity_id:
             raise EntityRelationshipValidationError("cycle detected")
-        rows = conn.execute(text("""
-            SELECT relationship.subject_entity_id, relationship.object_entity_id,
-                   relationship.effective_from, relationship.effective_to
-            FROM entity_registry_relationships relationship
-            JOIN entity_registry_assertions assertion ON assertion.assertion_id = relationship.assertion_id
-            WHERE relationship.dimension = :dimension AND relationship.relationship_status = 'accepted'
-              AND relationship.system_to IS NULL AND assertion.assertion_state = 'accepted' AND assertion.system_to IS NULL
-        """), {"dimension": dimension}).mappings().all()
-        if EntityRelationshipRepository._has_temporal_path(
-            rows, object_entity_id, subject_entity_id, effective_from, effective_to,
+        if EntityRelationshipRepository._has_relationship_path(
+            conn, object_entity_id, subject_entity_id, dimension, effective_from, effective_to,
         ):
             raise EntityRelationshipValidationError("cycle detected")
 
     @staticmethod
     def _reject_lineage_cycle(conn, predecessor_entity_id: str, successor_entity_id: str, effective_from: str, effective_to: str | None) -> None:
-        rows = conn.execute(text("""
-            SELECT lineage.predecessor_entity_id AS subject_entity_id, lineage.successor_entity_id AS object_entity_id,
-                   lineage.effective_from, lineage.effective_to
-            FROM entity_registry_lineage lineage
-            JOIN entity_registry_assertions assertion ON assertion.assertion_id = lineage.assertion_id
-            WHERE lineage.predicate <> 'legal_continuation' AND lineage.lineage_status = 'accepted'
-              AND lineage.system_to IS NULL AND assertion.assertion_state = 'accepted' AND assertion.system_to IS NULL
-        """)).mappings().all()
-        if EntityRelationshipRepository._has_temporal_path(
-            rows, successor_entity_id, predecessor_entity_id, effective_from, effective_to,
+        if EntityRelationshipRepository._has_lineage_path(
+            conn, successor_entity_id, predecessor_entity_id, effective_from, effective_to,
         ):
             raise EntityRelationshipValidationError("cycle detected")
 
-    @staticmethod
-    def _has_temporal_path(rows, start: str, target: str, effective_from: str, effective_to: str | None) -> bool:
+    @classmethod
+    def _has_relationship_path(cls, conn, start, target, dimension, effective_from, effective_to) -> bool:
         stack = [(start, effective_from, effective_to, {start})]
         while stack:
             entity_id, window_start, window_to, visited = stack.pop()
+            if len(visited) > cls.MAX_TRAVERSAL_DEPTH:
+                raise EntityRelationshipTraversalBlockedError("relationship traversal limit exceeded")
+            rows = conn.execute(text("""
+                SELECT relationship.object_entity_id, relationship.effective_from, relationship.effective_to
+                FROM entity_registry_relationships relationship
+                JOIN entity_registry_assertions assertion ON assertion.assertion_id = relationship.assertion_id
+                WHERE relationship.subject_entity_id = :entity_id AND relationship.dimension = :dimension
+                  AND relationship.relationship_status = 'accepted' AND relationship.system_to IS NULL
+                  AND assertion.assertion_state = 'accepted' AND assertion.system_to IS NULL
+            """), {"entity_id": entity_id, "dimension": dimension}).mappings().all()
             for row in rows:
-                if row["subject_entity_id"] != entity_id:
-                    continue
-                overlap = EntityRelationshipRepository._intersect_intervals(
+                overlap = cls._intersect_intervals(
                     window_start, window_to, row["effective_from"], row["effective_to"],
                 )
+                if overlap is None:
+                    continue
+                next_entity = row["object_entity_id"]
+                if next_entity == target:
+                    return True
+                if next_entity not in visited:
+                    stack.append((next_entity, overlap[0], overlap[1], visited | {next_entity}))
+        return False
+
+    @classmethod
+    def _has_lineage_path(cls, conn, start, target, effective_from, effective_to) -> bool:
+        stack = [(start, effective_from, effective_to, {start})]
+        while stack:
+            entity_id, window_start, window_to, visited = stack.pop()
+            if len(visited) > cls.MAX_TRAVERSAL_DEPTH:
+                raise EntityRelationshipTraversalBlockedError("lineage traversal limit exceeded")
+            rows = conn.execute(text("""
+                SELECT lineage.successor_entity_id AS object_entity_id, lineage.effective_from, lineage.effective_to
+                FROM entity_registry_lineage lineage
+                JOIN entity_registry_assertions assertion ON assertion.assertion_id = lineage.assertion_id
+                WHERE lineage.predecessor_entity_id = :entity_id AND lineage.predicate <> 'legal_continuation'
+                  AND lineage.lineage_status = 'accepted' AND lineage.system_to IS NULL
+                  AND assertion.assertion_state = 'accepted' AND assertion.system_to IS NULL
+            """), {"entity_id": entity_id}).mappings().all()
+            for row in rows:
+                overlap = cls._intersect_intervals(window_start, window_to, row["effective_from"], row["effective_to"])
                 if overlap is None:
                     continue
                 next_entity = row["object_entity_id"]
@@ -551,6 +581,10 @@ class EntityRelationshipRepository:
         ends = [end for end in (end_a, end_b) if end is not None]
         end = min(ends) if ends else None
         return None if end is not None and start >= end else (start, end)
+
+    @staticmethod
+    def _covers_interval(start, end, requested_start, requested_end) -> bool:
+        return start <= requested_start and (end is None or (requested_end is not None and requested_end <= end))
 
 
 def _utc_now() -> str:

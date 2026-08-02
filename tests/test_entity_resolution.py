@@ -71,6 +71,13 @@ def test_conflicted_candidates_are_not_arbitrarily_resolved(repositories):
         ).mappings().one()
     assert conflict["resolution_status"] == "unresolved"
     assert set(json.loads(conflict["assertion_ids_json"])) == {first.assertion_id, second.assertion_id}
+    with resolution._engine.connect() as conn:
+        conflict_id = conn.execute(text("SELECT conflict_id FROM entity_registry_conflicts")).scalar_one()
+    resolved = resolution.transition_conflict(conflict_id, actor_id="reviewer", reason="review completed")
+    reversed_ = resolution.transition_conflict(resolved, actor_id="reviewer", reason="reopened", reverses_conflict_id=resolved)
+    with resolution._engine.connect() as conn:
+        states = conn.execute(text("SELECT resolution_status FROM entity_registry_conflicts ORDER BY system_from")).scalars().all()
+    assert states == ["unresolved", "resolved", "reversed"]
 
 
 def test_override_is_scoped_and_unknown_policy_is_rejected(repositories):
@@ -123,14 +130,49 @@ def test_policy_activation_preserves_prior_system_as_of_and_replaces_current_ver
     v2 = resolution.activate_policy_version(
         prior_policy_id=v1.policy_id, prior_version=v1.version,
         effective_from="2025-01-01T00:00:00+00:00",
+        origin_precedence=("source_ingestion", "reviewer", "user"),
     )
     current = resolution.resolve(entity.entity_id, domain="company.display", attribute="legal_name", effective_as_of="2025-06-01T00:00:00+00:00")
     historical = resolution.resolve(
         entity.entity_id, domain="company.display", attribute="legal_name", effective_as_of="2024-06-01T00:00:00+00:00",
         system_as_of=v1.system_from,
     )
+    current_past = resolution.resolve(
+        entity.entity_id, domain="company.display", attribute="legal_name", effective_as_of="2024-06-01T00:00:00+00:00",
+    )
     assert current.policy_id == v2.policy_id and current.policy_version == 2
     assert historical.policy_id == v1.policy_id and historical.policy_version == 1
+    assert current_past.policy_id == v1.policy_id and current_past.policy_version == 1
+    assert v2.origin_precedence == ("source_ingestion", "reviewer", "user")
+
+    with pytest.raises(EntityResolutionValidationError, match="successor versions require activation"):
+        resolution.create_policy(
+            domain="company.display", attribute="legal_name", consumer_scope=None,
+            eligible_assertion_states=("accepted",), eligible_origins=("user",),
+            eligible_evidence_statuses=("available",), origin_precedence=("user",),
+            allows_user_override=False, effective_from="2025-01-01T00:00:00+00:00",
+            policy_id=v1.policy_id, version=3,
+        )
+
+
+def test_override_requires_policy_activation_to_cover_its_complete_interval(repositories):
+    registry, relationships, resolution = repositories
+    entity = registry.create_entity("organization", origin="source_ingestion")
+    assertion = _assertion(registry, relationships, entity.entity_id, value="Source", origin="user")
+    policy = _policy(resolution)
+    with pytest.raises(EntityResolutionValidationError, match="policy must cover override interval"):
+        resolution.record_override(
+            entity_id=entity.entity_id, domain="company.display", attribute="legal_name", policy_id=policy.policy_id,
+            policy_version=policy.version, assertion_id=assertion.assertion_id, actor_id="analyst", reason="choice",
+            effective_from="2023-01-01T00:00:00+00:00",
+        )
+    resolution.activate_policy_version(prior_policy_id=policy.policy_id, prior_version=policy.version, effective_from="2025-01-01T00:00:00+00:00")
+    with pytest.raises(EntityResolutionValidationError, match="policy is not current"):
+        resolution.record_override(
+            entity_id=entity.entity_id, domain="company.display", attribute="legal_name", policy_id=policy.policy_id,
+            policy_version=policy.version, assertion_id=assertion.assertion_id, actor_id="analyst", reason="stale",
+            effective_from="2024-01-01T00:00:00+00:00",
+        )
 
 
 def test_override_rejects_cross_scope_reversal_and_policy_ineligible_assertion(repositories):

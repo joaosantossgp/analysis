@@ -104,8 +104,8 @@ class EntityResolutionRepository:
     ) -> ResolutionPolicyRecord:
         self._nonempty("domain", domain)
         self._nonempty("attribute", attribute)
-        if not isinstance(version, int) or version < 1:
-            raise EntityResolutionValidationError("policy version must be positive")
+        if version != 1:
+            raise EntityResolutionValidationError("successor versions require activation")
         states = self._allowed_values("eligible assertion state", eligible_assertion_states, ASSERTION_STATES)
         origins = self._allowed_values("eligible origin", eligible_origins, ORIGINS)
         evidence_statuses = self._allowed_values(
@@ -125,60 +125,57 @@ class EntityResolutionRepository:
         with self._engine.begin() as conn:
             duplicate = conn.execute(text("""
                 SELECT 1 FROM entity_registry_resolution_policies
-                WHERE policy_id = :policy_id AND version = :version
-            """), {"policy_id": record.policy_id, "version": record.version}).first()
+                WHERE policy_id = :policy_id
+            """), {"policy_id": record.policy_id}).first()
             if duplicate is not None:
-                raise EntityResolutionValidationError("policy id and version are immutable")
-            conn.execute(text("""
-                INSERT INTO entity_registry_resolution_policies (
-                    policy_id, version, domain, attribute, consumer_scope, eligible_assertion_states_json,
-                    eligible_origins_json, eligible_evidence_statuses_json, origin_precedence_json,
-                    allows_user_override, effective_from, effective_to, system_from, system_to
-                ) VALUES (
-                    :policy_id, :version, :domain, :attribute, :consumer_scope, :states, :origins,
-                    :evidence_statuses, :precedence, :allows_user_override, :effective_from, :effective_to,
-                    :system_from, :system_to
-                )
-            """), {
-                **record.__dict__, "states": json.dumps(record.eligible_assertion_states),
-                "origins": json.dumps(record.eligible_origins),
-                "evidence_statuses": json.dumps(record.eligible_evidence_statuses),
-                "precedence": json.dumps(record.origin_precedence),
-                "allows_user_override": int(record.allows_user_override),
-            })
+                raise EntityResolutionValidationError("policy id is immutable")
+            self._insert_policy(conn, record)
+            self._insert_activation(conn, record, record.effective_from, record.effective_to, record.system_from)
         return record
 
     def activate_policy_version(
-        self, *, prior_policy_id: str, prior_version: int, effective_from: str
+        self, *, prior_policy_id: str, prior_version: int, effective_from: str,
+        eligible_assertion_states: tuple[str, ...] | None = None,
+        eligible_origins: tuple[str, ...] | None = None,
+        eligible_evidence_statuses: tuple[str, ...] | None = None,
+        origin_precedence: tuple[str, ...] | None = None,
+        allows_user_override: bool | None = None,
     ) -> ResolutionPolicyRecord:
         """Append a successor policy and close the prior system belief atomically."""
         effective_from = self._as_of("effective_from", effective_from)
         with self._engine.begin() as conn:
             prior = self._policy_by_id(conn, prior_policy_id, prior_version)
-            if prior is None or prior.system_to is not None:
+            activation = self._current_activation(conn, prior_policy_id, prior_version)
+            if prior is None or activation is None:
                 raise EntityResolutionValidationError("prior policy is not active")
-            if effective_from <= prior.effective_from:
+            if effective_from <= activation["effective_from"]:
                 raise EntityResolutionValidationError("successor policy must start after prior policy")
-            now = _after(prior.system_from, _utc_now())
+            now = _after(activation["system_from"], _utc_now())
+            states = self._allowed_values("eligible assertion state", eligible_assertion_states or prior.eligible_assertion_states, ASSERTION_STATES)
+            origins = self._allowed_values("eligible origin", eligible_origins or prior.eligible_origins, ORIGINS)
+            evidence_statuses = self._allowed_values("eligible evidence status", eligible_evidence_statuses or prior.eligible_evidence_statuses, ("none", *SOURCE_STATUSES))
+            precedence = self._allowed_values("origin precedence", origin_precedence or prior.origin_precedence, origins)
+            if set(precedence) != set(origins):
+                raise EntityResolutionValidationError("origin precedence must cover every eligible origin exactly once")
             record = ResolutionPolicyRecord(
                 policy_id=prior.policy_id, version=prior.version + 1, domain=prior.domain,
                 attribute=prior.attribute, consumer_scope=prior.consumer_scope,
-                eligible_assertion_states=prior.eligible_assertion_states,
-                eligible_origins=prior.eligible_origins,
-                eligible_evidence_statuses=prior.eligible_evidence_statuses,
-                origin_precedence=prior.origin_precedence,
-                allows_user_override=prior.allows_user_override,
+                eligible_assertion_states=states, eligible_origins=origins,
+                eligible_evidence_statuses=evidence_statuses, origin_precedence=precedence,
+                allows_user_override=prior.allows_user_override if allows_user_override is None else bool(allows_user_override),
                 effective_from=effective_from, effective_to=None, system_from=now, system_to=None,
             )
             duplicate = self._policy_by_id(conn, record.policy_id, record.version)
             if duplicate is not None:
                 raise EntityResolutionValidationError("successor policy version already exists")
             conn.execute(text("""
-                UPDATE entity_registry_resolution_policies
+                UPDATE entity_registry_policy_activations
                 SET system_to = :system_to
-                WHERE policy_id = :policy_id AND version = :version AND system_to IS NULL
-            """), {"system_to": now, "policy_id": prior.policy_id, "version": prior.version})
+                WHERE activation_id = :activation_id AND system_to IS NULL
+            """), {"system_to": now, "activation_id": activation["activation_id"]})
+            self._insert_activation(conn, prior, activation["effective_from"], effective_from, now, activation["activation_id"])
             self._insert_policy(conn, record)
+            self._insert_activation(conn, record, effective_from, None, now, activation["activation_id"])
         return record
 
     def record_override(
@@ -209,6 +206,8 @@ class EntityResolutionRepository:
                 raise EntityResolutionValidationError("override must match policy domain, attribute, and consumer scope")
             if not policy.allows_user_override:
                 raise EntityResolutionValidationError("policy does not allow user override")
+            if not self._policy_covers_current_interval(conn, policy, effective_from, effective_to):
+                raise EntityResolutionValidationError("policy must cover override interval or policy is not current")
             assertion = conn.execute(text("SELECT * FROM entity_registry_assertions WHERE assertion_id = :assertion_id"), {"assertion_id": assertion_id}).mappings().one_or_none()
             if assertion is None or (assertion["subject_entity_id"], assertion["domain"], assertion["attribute"]) != (entity_id, domain, attribute):
                 raise EntityResolutionValidationError("override assertion must match entity and policy attribute")
@@ -271,7 +270,7 @@ class EntityResolutionRepository:
                 if policy_id is None or policy_version is None:
                     raise EntityResolutionValidationError("policy_id and policy_version must be pinned together")
                 policy = self._policy_by_id(conn, policy_id, policy_version)
-                policies = [policy] if policy and self._is_applicable(policy, domain, attribute, scope, effective, system) else []
+                policies = [policy] if policy and self._policy_active_at(conn, policy, effective, system) and self._is_applicable(policy, domain, attribute, scope) else []
             else:
                 policies = self._applicable_policies(conn, domain, attribute, scope, effective, system)
         base = dict(
@@ -302,18 +301,20 @@ class EntityResolutionRepository:
         best_rank = min(rankings[item.origin] for item in eligible)
         candidates = [item for item in eligible if rankings[item.origin] == best_rank]
         if len(candidates) != 1:
-            self._record_conflict(entity_id, domain, attribute, candidates, effective)
+            self._record_conflict(entity_id, domain, attribute, policy, candidates, effective, system)
             return ResolutionResult(status="conflicted", reason="conflict_unresolved", policy_id=policy.policy_id, policy_version=policy.version, assertion_ids=tuple(item.assertion_id for item in candidates), override_id=None, **base)
         return ResolutionResult(status="resolved", reason=None, policy_id=policy.policy_id, policy_version=policy.version, assertion_ids=(candidates[0].assertion_id,), override_id=None, **base)
 
     def _applicable_policies(self, conn, domain, attribute, scope, effective, system) -> list[ResolutionPolicyRecord]:
         rows = conn.execute(text("""
-            SELECT * FROM entity_registry_resolution_policies
-            WHERE domain = :domain AND attribute = :attribute
-              AND ((consumer_scope = :scope) OR (consumer_scope IS NULL AND :scope IS NULL))
-              AND effective_from <= :effective AND (effective_to IS NULL OR effective_to > :effective)
-              AND system_from <= :system AND (system_to IS NULL OR system_to > :system)
-            ORDER BY policy_id, version
+            SELECT policy.* FROM entity_registry_resolution_policies policy
+            JOIN entity_registry_policy_activations activation
+              ON activation.policy_id = policy.policy_id AND activation.policy_version = policy.version
+            WHERE policy.domain = :domain AND policy.attribute = :attribute
+              AND ((policy.consumer_scope = :scope) OR (policy.consumer_scope IS NULL AND :scope IS NULL))
+              AND activation.effective_from <= :effective AND (activation.effective_to IS NULL OR activation.effective_to > :effective)
+              AND activation.system_from <= :system AND (activation.system_to IS NULL OR activation.system_to > :system)
+            ORDER BY policy.policy_id, policy.version
         """), {"domain": domain, "attribute": attribute, "scope": scope, "effective": effective, "system": system}).mappings().all()
         return [self._policy_record(row) for row in rows]
 
@@ -357,24 +358,59 @@ class EntityResolutionRepository:
             "precedence": json.dumps(record.origin_precedence), "allows_user_override": int(record.allows_user_override),
         })
 
-    def _record_conflict(self, entity_id, domain, attribute, candidates, effective_from) -> None:
+    def _record_conflict(self, entity_id, domain, attribute, policy, candidates, effective_from, system_from) -> None:
         assertion_ids = tuple(sorted(item.assertion_id for item in candidates))
+        dedup_key = json.dumps((entity_id, domain, attribute, policy.policy_id, policy.version, assertion_ids), separators=(",", ":"))
+        overlap_from = max(item.effective_from for item in candidates)
+        ends = [item.effective_to for item in candidates if item.effective_to is not None]
+        overlap_to = min(ends) if ends else None
         with self._engine.begin() as conn:
             existing = conn.execute(text("""
                 SELECT 1 FROM entity_registry_conflicts
                 WHERE entity_id = :entity_id AND domain = :domain AND attribute = :attribute
-                  AND assertion_ids_json = :assertion_ids AND resolution_status = 'unresolved'
-            """), {"entity_id": entity_id, "domain": domain, "attribute": attribute, "assertion_ids": json.dumps(assertion_ids)}).first()
+                  AND dedup_key = :dedup_key AND resolution_status = 'unresolved' AND system_to IS NULL
+            """), {"entity_id": entity_id, "domain": domain, "attribute": attribute,
+                "dedup_key": dedup_key}).first()
             if existing is None:
                 conn.execute(text("""
                     INSERT INTO entity_registry_conflicts (
-                        conflict_id, entity_id, domain, attribute, assertion_ids_json, effective_from,
-                        effective_to, detected_at, resolution_status, resolved_at
-                    ) VALUES (:conflict_id, :entity_id, :domain, :attribute, :assertion_ids, :effective_from,
-                        NULL, :detected_at, 'unresolved', NULL)
+                        conflict_id, entity_id, domain, attribute, assertion_ids_json, dedup_key, policy_id, policy_version,
+                        effective_from, effective_to, system_from, system_to, detected_at, detected_actor,
+                        resolution_status, resolved_at
+                    ) VALUES (:conflict_id, :entity_id, :domain, :attribute, :assertion_ids, :dedup_key, :policy_id, :policy_version,
+                        :effective_from, :effective_to, :system_from, NULL, :detected_at, 'system:resolution',
+                        'unresolved', NULL)
                 """), {"conflict_id": uuid4().hex, "entity_id": entity_id, "domain": domain,
-                    "attribute": attribute, "assertion_ids": json.dumps(assertion_ids), "effective_from": effective_from,
-                    "detected_at": _utc_now()})
+                    "attribute": attribute, "assertion_ids": json.dumps(assertion_ids), "dedup_key": dedup_key, "policy_id": policy.policy_id,
+                    "policy_version": policy.version, "effective_from": overlap_from, "effective_to": overlap_to,
+                    "system_from": system_from, "detected_at": _utc_now()})
+
+    def transition_conflict(self, conflict_id: str, *, actor_id: str, reason: str, reverses_conflict_id: str | None = None) -> str:
+        """Append a resolution or reversal while retaining the prior conflict belief."""
+        self._nonempty("actor_id", actor_id)
+        self._nonempty("reason", reason)
+        with self._engine.begin() as conn:
+            current = conn.execute(text("SELECT * FROM entity_registry_conflicts WHERE conflict_id = :conflict_id"), {"conflict_id": conflict_id}).mappings().one_or_none()
+            if current is None or current["system_to"] is not None:
+                raise EntityResolutionValidationError("conflict is not current")
+            if reverses_conflict_id is not None and reverses_conflict_id != conflict_id:
+                raise EntityResolutionValidationError("conflict reversal must reference the current conflict")
+            status = "reversed" if reverses_conflict_id is not None else "resolved"
+            now = _after(current["system_from"], _utc_now())
+            conn.execute(text("UPDATE entity_registry_conflicts SET system_to = :now WHERE conflict_id = :conflict_id"), {"now": now, "conflict_id": conflict_id})
+            next_id = uuid4().hex
+            conn.execute(text("""
+                INSERT INTO entity_registry_conflicts (
+                    conflict_id, entity_id, domain, attribute, assertion_ids_json, dedup_key, policy_id, policy_version,
+                    effective_from, effective_to, system_from, system_to, detected_at, detected_actor,
+                    resolution_status, resolved_at, resolution_reason
+                ) VALUES (:conflict_id, :entity_id, :domain, :attribute, :assertion_ids_json, :dedup_key, :policy_id, :policy_version,
+                    :effective_from, :effective_to, :system_from, NULL, :detected_at, :detected_actor,
+                    :resolution_status, :resolved_at, :resolution_reason)
+            """), {**dict(current), "conflict_id": next_id, "system_from": now, "system_to": None,
+                "detected_at": current["detected_at"], "detected_actor": actor_id.strip(), "resolution_status": status,
+                "resolved_at": now, "resolution_reason": reason.strip()})
+        return next_id
 
     def _policy_by_id(self, conn, policy_id, version) -> ResolutionPolicyRecord | None:
         row = conn.execute(text("SELECT * FROM entity_registry_resolution_policies WHERE policy_id = :policy_id AND version = :version"), {"policy_id": policy_id, "version": version}).mappings().one_or_none()
@@ -399,13 +435,41 @@ class EntityResolutionRepository:
         )
 
     @staticmethod
-    def _is_applicable(policy, domain, attribute, scope, effective, system) -> bool:
-        return (
-            (policy.domain, policy.attribute, policy.consumer_scope) == (domain, attribute, scope)
-            and policy.effective_from <= effective
-            and (policy.effective_to is None or policy.effective_to > effective)
-            and policy.system_from <= system
-            and (policy.system_to is None or policy.system_to > system)
+    def _is_applicable(policy, domain, attribute, scope) -> bool:
+        return (policy.domain, policy.attribute, policy.consumer_scope) == (domain, attribute, scope)
+
+    def _insert_activation(self, conn, policy, effective_from, effective_to, system_from, supersedes_activation_id=None):
+        conn.execute(text("""
+            INSERT INTO entity_registry_policy_activations (
+                activation_id, policy_id, policy_version, domain, attribute, consumer_scope,
+                effective_from, effective_to, system_from, system_to, supersedes_activation_id
+            ) VALUES (:activation_id, :policy_id, :policy_version, :domain, :attribute, :consumer_scope,
+                :effective_from, :effective_to, :system_from, NULL, :supersedes_activation_id)
+        """), {"activation_id": uuid4().hex, "policy_id": policy.policy_id, "policy_version": policy.version,
+            "domain": policy.domain, "attribute": policy.attribute, "consumer_scope": policy.consumer_scope,
+            "effective_from": effective_from, "effective_to": effective_to, "system_from": system_from,
+            "supersedes_activation_id": supersedes_activation_id})
+
+    @staticmethod
+    def _current_activation(conn, policy_id, version):
+        return conn.execute(text("""
+            SELECT * FROM entity_registry_policy_activations
+            WHERE policy_id = :policy_id AND policy_version = :version AND system_to IS NULL
+            ORDER BY system_from DESC LIMIT 1
+        """), {"policy_id": policy_id, "version": version}).mappings().one_or_none()
+
+    def _policy_active_at(self, conn, policy, effective, system):
+        return conn.execute(text("""
+            SELECT 1 FROM entity_registry_policy_activations
+            WHERE policy_id = :policy_id AND policy_version = :version
+              AND effective_from <= :effective AND (effective_to IS NULL OR effective_to > :effective)
+              AND system_from <= :system AND (system_to IS NULL OR system_to > :system)
+        """), {"policy_id": policy.policy_id, "version": policy.version, "effective": effective, "system": system}).first() is not None
+
+    def _policy_covers_current_interval(self, conn, policy, effective_from, effective_to):
+        activation = self._current_activation(conn, policy.policy_id, policy.version)
+        return activation is not None and self._covers(
+            activation["effective_from"], activation["effective_to"], effective_from, effective_to,
         )
 
     @staticmethod

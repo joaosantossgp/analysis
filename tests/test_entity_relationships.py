@@ -228,33 +228,33 @@ def test_sequential_inverse_control_and_current_assertion_corrections_keep_bitem
     first_relationship = relationships.record_relationship(
         subject_entity_id=first.entity_id, object_entity_id=second.entity_id, dimension="control",
         payload={"basis": "old"}, assertion_id=first_assertion.assertion_id,
-        effective_from="2020-01-01T00:00:00+00:00", effective_to="2021-01-01T00:00:00+00:00",
+        effective_from="2024-01-01T00:00:00+00:00", effective_to="2025-01-01T00:00:00+00:00",
     )
     successor = registry.create_entity("organization", origin="source_ingestion")
     first_lineage = relationships.record_lineage(
         predecessor_entity_id=first.entity_id, successor_entity_id=successor.entity_id,
         predicate="merged_into", assertion_id=first_assertion.assertion_id,
-        effective_from="2020-01-01T00:00:00+00:00", effective_to="2021-01-01T00:00:00+00:00",
+        effective_from="2024-01-01T00:00:00+00:00", effective_to="2025-01-01T00:00:00+00:00",
     )
     relationships.record_relationship(
         subject_entity_id=second.entity_id, object_entity_id=first.entity_id, dimension="control",
         payload={"basis": "new"}, assertion_id=second_assertion.assertion_id,
-        effective_from="2021-01-01T00:00:00+00:00",
+        effective_from="2025-01-01T00:00:00+00:00",
     )
     corrected = relationships.record_assertion(
         subject_entity_id=first.entity_id, domain="energy.distribution", attribute="control",
         value={"status": "corrected"}, origin="user", actor_id="analyst", evidence_id=None,
-        reason="correct control evidence", effective_from="2020-01-01T00:00:00+00:00",
+        reason="correct control evidence", effective_from="2024-01-01T00:00:00+00:00",
         supersedes_assertion_id=first_assertion.assertion_id,
     )
-    assert not relationships.find_relationships(first.entity_id, effective_as_of="2020-06-01T00:00:00+00:00")
+    assert not relationships.find_relationships(first.entity_id, effective_as_of="2024-06-01T00:00:00+00:00")
     history = relationships.find_relationships(
-        first.entity_id, effective_as_of="2020-06-01T00:00:00+00:00", system_as_of=first_relationship.system_from
+        first.entity_id, effective_as_of="2024-06-01T00:00:00+00:00", system_as_of=first_relationship.system_from
     )
     assert [row.relationship_id for row in history] == [first_relationship.relationship_id]
-    assert not relationships.find_lineage(first.entity_id, effective_as_of="2020-06-01T00:00:00+00:00")
+    assert not relationships.find_lineage(first.entity_id, effective_as_of="2024-06-01T00:00:00+00:00")
     lineage_history = relationships.find_lineage(
-        first.entity_id, effective_as_of="2020-06-01T00:00:00+00:00", system_as_of=first_lineage.system_from
+        first.entity_id, effective_as_of="2024-06-01T00:00:00+00:00", system_as_of=first_lineage.system_from
     )
     assert [row.lineage_id for row in lineage_history] == [first_lineage.lineage_id]
     assert corrected.supersedes_assertion_id == first_assertion.assertion_id
@@ -316,9 +316,8 @@ def test_existing_foundation_requires_explicit_migration_authorization(tmp_path)
         ):
             conn.execute(text(f"DROP TABLE {table_name}"))
 
-    with pytest.raises(ValueError, match="migration_authorized=True"):
+    with pytest.raises(ValueError, match="partial"):
         ensure_entity_registry_schema(engine)
-    ensure_entity_registry_schema(engine, migration_authorized=True)
 
 
 def test_sqlite_actual_relationship_read_uses_subject_and_object_indexes(repositories):
@@ -356,3 +355,73 @@ def test_retryable_database_conflicts_raise_explicit_relationship_error(reposito
     with pytest.raises(EntityRelationshipConcurrencyError, match="retry"):
         with relationships._write_connection("entity-1") as conn:
             raise database_error
+
+
+def test_sqlite_lock_acquisition_failure_is_translated_to_retryable_error(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'locked.db'}", connect_args={"timeout": 0.01})
+    ensure_entity_registry_schema(engine)
+    relationships = EntityRelationshipRepository(engine)
+    with engine.connect() as lock_connection:
+        lock_connection.exec_driver_sql("BEGIN IMMEDIATE")
+        with pytest.raises(EntityRelationshipConcurrencyError, match="retry"):
+            with relationships._write_connection("entity-1"):
+                pass
+        lock_connection.rollback()
+
+
+def test_cycle_validation_blocks_when_bounded_traversal_limit_is_exceeded(repositories, monkeypatch):
+    registry, relationships = repositories
+    first = registry.create_entity("organization", origin="source_ingestion")
+    second = registry.create_entity("organization", origin="source_ingestion")
+    third = registry.create_entity("organization", origin="source_ingestion")
+    first_assertion = _assertion(registry, relationships, first.entity_id)
+    second_assertion = _assertion(registry, relationships, second.entity_id)
+    third_assertion = _assertion(registry, relationships, third.entity_id)
+    relationships.record_relationship(subject_entity_id=first.entity_id, object_entity_id=second.entity_id,
+        dimension="control", payload={"basis": "x"}, assertion_id=first_assertion.assertion_id,
+        effective_from="2024-01-01T00:00:00+00:00")
+    relationships.record_relationship(subject_entity_id=second.entity_id, object_entity_id=third.entity_id,
+        dimension="control", payload={"basis": "x"}, assertion_id=second_assertion.assertion_id,
+        effective_from="2024-01-01T00:00:00+00:00")
+    monkeypatch.setattr(EntityRelationshipRepository, "MAX_TRAVERSAL_DEPTH", 1)
+    with pytest.raises(Exception, match="traversal limit"):
+        relationships.record_relationship(subject_entity_id=third.entity_id, object_entity_id=first.entity_id,
+            dimension="control", payload={"basis": "x"}, assertion_id=third_assertion.assertion_id,
+            effective_from="2024-01-01T00:00:00+00:00")
+
+
+def test_edges_require_complete_effective_coverage_from_supporting_assertion(repositories):
+    registry, relationships = repositories
+    subject = registry.create_entity("organization", origin="source_ingestion")
+    object_ = registry.create_entity("organization", origin="source_ingestion")
+    evidence = registry.record_evidence(source_class="official_primary", source_reference="cvm://narrow")
+    assertion = relationships.record_assertion(
+        subject_entity_id=subject.entity_id, domain="company", attribute="control", value={"value": "x"},
+        origin="source_ingestion", actor_id="import", evidence_id=evidence.evidence_id,
+        effective_from="2024-01-01T00:00:00+00:00", effective_to="2025-01-01T00:00:00+00:00",
+    )
+    with pytest.raises(EntityRelationshipValidationError, match="assertion must cover edge interval"):
+        relationships.record_relationship(
+            subject_entity_id=subject.entity_id, object_entity_id=object_.entity_id, dimension="control",
+            payload={"basis": "x"}, assertion_id=assertion.assertion_id,
+            effective_from="2024-06-01T00:00:00+00:00", effective_to="2025-06-01T00:00:00+00:00",
+        )
+    with pytest.raises(EntityRelationshipValidationError, match="assertion must cover edge interval"):
+        relationships.record_lineage(
+            predecessor_entity_id=subject.entity_id, successor_entity_id=object_.entity_id,
+            predicate="merged_into", assertion_id=assertion.assertion_id,
+            effective_from="2024-06-01T00:00:00+00:00", effective_to="2025-06-01T00:00:00+00:00",
+        )
+
+
+def test_concession_holder_remains_a_typed_operational_role(repositories):
+    registry, relationships = repositories
+    subject = registry.create_entity("concession", origin="source_ingestion")
+    holder = registry.create_entity("organization", origin="source_ingestion")
+    assertion = _assertion(registry, relationships, subject.entity_id)
+    record = relationships.record_relationship(
+        subject_entity_id=subject.entity_id, object_entity_id=holder.entity_id, dimension="operational_role",
+        operational_role="concession_holder", payload={"basis": "grant"}, assertion_id=assertion.assertion_id,
+        effective_from="2024-01-01T00:00:00+00:00",
+    )
+    assert record.operational_role == "concession_holder"

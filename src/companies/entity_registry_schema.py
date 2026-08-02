@@ -43,7 +43,7 @@ RELATIONSHIP_DIMENSIONS = (
     "legal_ownership", "voting_interest", "economic_interest", "control",
     "accounting_treatment", "operational_role", "holder",
 )
-OPERATIONAL_ROLES = ("owner", "operator", "service_provider")
+OPERATIONAL_ROLES = ("owner", "operator", "concession_holder", "service_provider")
 REVIEW_STATUSES = ("pending", "accepted", "rejected", "needs_review")
 RELATIONSHIP_STATUSES = ("accepted", "rejected", "superseded", "withdrawn", "conflicted", "blocked")
 LINEAGE_STATUSES = RELATIONSHIP_STATUSES
@@ -63,11 +63,12 @@ _REQUIRED_TABLES = {
     "entity_registry_lineage",
     "entity_registry_resolution_policies",
     "entity_registry_resolution_overrides",
+    "entity_registry_policy_activations",
     "entity_registry_conflicts",
 }
 _FOUNDATION_TABLES = _REQUIRED_TABLES - {
     "entity_registry_assertions", "entity_registry_relationships", "entity_registry_lineage",
-    "entity_registry_resolution_policies", "entity_registry_resolution_overrides", "entity_registry_conflicts",
+    "entity_registry_resolution_policies", "entity_registry_resolution_overrides", "entity_registry_policy_activations", "entity_registry_conflicts",
 }
 _REQUIRED_FOREIGN_KEYS = {
     "entity_registry_identifier_claims": {
@@ -138,6 +139,11 @@ _REQUIRED_INDEXES = {
     "idx_er_lineage_successor": ("entity_registry_lineage", ("successor_entity_id", "effective_from"), False),
     "idx_er_policy_lookup": (
         "entity_registry_resolution_policies",
+        ("domain", "attribute", "consumer_scope", "effective_from", "system_from"),
+        False,
+    ),
+    "idx_er_policy_activation_lookup": (
+        "entity_registry_policy_activations",
         ("domain", "attribute", "consumer_scope", "effective_from", "system_from"),
         False,
     ),
@@ -221,7 +227,7 @@ _REQUIRED_CHECK_FRAGMENTS = {
 }
 
 
-def ensure_entity_registry_schema(engine: Engine, *, migration_authorized: bool = False) -> None:
+def ensure_entity_registry_schema(engine: Engine) -> None:
     """Idempotently create registry tables in an explicit fresh/sandbox call.
 
     This function is intentionally separate from ``init_db_tables``.  The
@@ -235,8 +241,8 @@ def ensure_entity_registry_schema(engine: Engine, *, migration_authorized: bool 
         # SQLAlchemy engines remain fail-closed against partial registries.
         existing_tables = set()
     missing_tables = _REQUIRED_TABLES - existing_tables
-    if existing_tables & _FOUNDATION_TABLES and missing_tables and not migration_authorized:
-        raise ValueError("entity registry upgrade requires migration_authorized=True")
+    if existing_tables & _FOUNDATION_TABLES and missing_tables:
+        raise ValueError("partial entity registry schema requires an approved migration")
     dialect = engine.dialect.name
     configure_sqlite_foreign_keys(engine)
     if dialect == "sqlite":
@@ -509,17 +515,42 @@ def ensure_entity_registry_schema(engine: Engine, *, migration_authorized: bool 
             )
         """))
         conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS entity_registry_policy_activations (
+                activation_id TEXT PRIMARY KEY,
+                policy_id TEXT NOT NULL,
+                policy_version INTEGER NOT NULL,
+                domain TEXT NOT NULL,
+                attribute TEXT NOT NULL,
+                consumer_scope TEXT,
+                effective_from TEXT NOT NULL,
+                effective_to TEXT,
+                system_from TEXT NOT NULL,
+                system_to TEXT,
+                supersedes_activation_id TEXT REFERENCES entity_registry_policy_activations(activation_id) ON DELETE RESTRICT,
+                FOREIGN KEY (policy_id, policy_version) REFERENCES entity_registry_resolution_policies(policy_id, version) ON DELETE RESTRICT,
+                CHECK (effective_to IS NULL OR effective_from < effective_to),
+                CHECK (system_to IS NULL OR system_from < system_to)
+            )
+        """))
+        conn.execute(text("""
             CREATE TABLE IF NOT EXISTS entity_registry_conflicts (
                 conflict_id TEXT PRIMARY KEY,
                 entity_id TEXT NOT NULL REFERENCES entity_registry_entities(entity_id) ON DELETE RESTRICT,
                 domain TEXT NOT NULL,
                 attribute TEXT NOT NULL,
                 assertion_ids_json TEXT NOT NULL,
+                dedup_key TEXT NOT NULL,
+                policy_id TEXT NOT NULL,
+                policy_version INTEGER NOT NULL,
                 effective_from TEXT NOT NULL,
                 effective_to TEXT,
+                system_from TEXT NOT NULL,
+                system_to TEXT,
                 detected_at TEXT NOT NULL,
+                detected_actor TEXT NOT NULL,
                 resolution_status TEXT NOT NULL CHECK (resolution_status IN ('unresolved', 'resolved', 'reversed')),
                 resolved_at TEXT,
+                resolution_reason TEXT,
                 CHECK (effective_to IS NULL OR effective_from < effective_to)
             )
         """))
@@ -538,8 +569,10 @@ def ensure_entity_registry_schema(engine: Engine, *, migration_authorized: bool 
             "CREATE INDEX IF NOT EXISTS idx_er_lineage_predecessor ON entity_registry_lineage(predecessor_entity_id, effective_from)",
             "CREATE INDEX IF NOT EXISTS idx_er_lineage_successor ON entity_registry_lineage(successor_entity_id, effective_from)",
             "CREATE INDEX IF NOT EXISTS idx_er_policy_lookup ON entity_registry_resolution_policies(domain, attribute, consumer_scope, effective_from, system_from)",
+            "CREATE INDEX IF NOT EXISTS idx_er_policy_activation_lookup ON entity_registry_policy_activations(domain, attribute, consumer_scope, effective_from, system_from)",
             "CREATE INDEX IF NOT EXISTS idx_er_override_lookup ON entity_registry_resolution_overrides(entity_id, policy_id, policy_version, effective_from, system_from)",
             "CREATE INDEX IF NOT EXISTS idx_er_conflict_lookup ON entity_registry_conflicts(entity_id, domain, attribute, resolution_status)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_er_conflict_unresolved_dedup ON entity_registry_conflicts(dedup_key) WHERE system_to IS NULL",
         ):
             conn.execute(text(ddl))
 
@@ -619,9 +652,13 @@ def validate_entity_registry_schema(engine: Engine) -> None:
             "override_id", "entity_id", "domain", "attribute", "consumer_scope", "policy_id", "policy_version",
             "assertion_id", "actor_id", "reason", "reverses_override_id", "effective_from", "system_from",
         },
+        "entity_registry_policy_activations": {
+            "activation_id", "policy_id", "policy_version", "domain", "attribute", "consumer_scope",
+            "effective_from", "system_from", "supersedes_activation_id",
+        },
         "entity_registry_conflicts": {
-            "conflict_id", "entity_id", "domain", "attribute", "assertion_ids_json", "effective_from",
-            "detected_at", "resolution_status",
+            "conflict_id", "entity_id", "domain", "attribute", "assertion_ids_json", "dedup_key", "policy_id",
+            "policy_version", "effective_from", "system_from", "detected_at", "detected_actor", "resolution_status",
         },
     }
     for table_name, expected in required_columns.items():
