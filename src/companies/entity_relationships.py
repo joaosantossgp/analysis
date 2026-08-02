@@ -114,6 +114,8 @@ class EntityRelationshipRepository:
             self._require_entity(conn, subject_entity_id)
             self._require_attachment_allowed(conn, subject_entity_id, effective_from, effective_to)
             evidence_status = self._evidence_status(conn, evidence_id)
+            if evidence_id is None and origin != "user":
+                raise EntityRelationshipValidationError("evidence-free assertion requires origin=user")
             if supersedes_assertion_id is not None:
                 prior = self._assertion_row(conn, supersedes_assertion_id)
                 if prior is None:

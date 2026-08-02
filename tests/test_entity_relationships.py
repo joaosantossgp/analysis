@@ -76,7 +76,7 @@ def test_correction_closes_prior_system_belief_without_erasing_assertion(reposit
         domain="energy.distribution",
         attribute="control",
         value={"status": "corrected"},
-        origin="reviewer",
+        origin="user",
         actor_id="reviewer-1",
         evidence_id=None,
         effective_from="2024-01-01T00:00:00+00:00",
@@ -98,6 +98,23 @@ def test_correction_closes_prior_system_belief_without_erasing_assertion(reposit
     )
     assert [row.assertion_id for row in history] == [prior.assertion_id]
     assert [row.assertion_id for row in current] == [correction.assertion_id]
+
+
+def test_evidence_free_assertion_requires_user_origin(repositories):
+    registry, relationships = repositories
+    entity = registry.create_entity("organization", origin="source_ingestion")
+
+    with pytest.raises(EntityRelationshipValidationError, match="evidence-free assertion requires origin=user"):
+        relationships.record_assertion(
+            subject_entity_id=entity.entity_id,
+            domain="company",
+            attribute="status",
+            value={"value": "unverified"},
+            origin="source_ingestion",
+            actor_id="importer",
+            evidence_id=None,
+            effective_from="2024-01-01T00:00:00+00:00",
+        )
 
 
 def test_rejects_control_overlap_cycles_and_retired_entity_attachments(repositories):
