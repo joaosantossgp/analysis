@@ -148,6 +148,39 @@ class EntityResolutionRepository:
             })
         return record
 
+    def activate_policy_version(
+        self, *, prior_policy_id: str, prior_version: int, effective_from: str
+    ) -> ResolutionPolicyRecord:
+        """Append a successor policy and close the prior system belief atomically."""
+        effective_from = self._as_of("effective_from", effective_from)
+        with self._engine.begin() as conn:
+            prior = self._policy_by_id(conn, prior_policy_id, prior_version)
+            if prior is None or prior.system_to is not None:
+                raise EntityResolutionValidationError("prior policy is not active")
+            if effective_from <= prior.effective_from:
+                raise EntityResolutionValidationError("successor policy must start after prior policy")
+            now = _after(prior.system_from, _utc_now())
+            record = ResolutionPolicyRecord(
+                policy_id=prior.policy_id, version=prior.version + 1, domain=prior.domain,
+                attribute=prior.attribute, consumer_scope=prior.consumer_scope,
+                eligible_assertion_states=prior.eligible_assertion_states,
+                eligible_origins=prior.eligible_origins,
+                eligible_evidence_statuses=prior.eligible_evidence_statuses,
+                origin_precedence=prior.origin_precedence,
+                allows_user_override=prior.allows_user_override,
+                effective_from=effective_from, effective_to=None, system_from=now, system_to=None,
+            )
+            duplicate = self._policy_by_id(conn, record.policy_id, record.version)
+            if duplicate is not None:
+                raise EntityResolutionValidationError("successor policy version already exists")
+            conn.execute(text("""
+                UPDATE entity_registry_resolution_policies
+                SET system_to = :system_to
+                WHERE policy_id = :policy_id AND version = :version AND system_to IS NULL
+            """), {"system_to": now, "policy_id": prior.policy_id, "version": prior.version})
+            self._insert_policy(conn, record)
+        return record
+
     def record_override(
         self,
         *,
@@ -179,12 +212,23 @@ class EntityResolutionRepository:
             assertion = conn.execute(text("SELECT * FROM entity_registry_assertions WHERE assertion_id = :assertion_id"), {"assertion_id": assertion_id}).mappings().one_or_none()
             if assertion is None or (assertion["subject_entity_id"], assertion["domain"], assertion["attribute"]) != (entity_id, domain, attribute):
                 raise EntityResolutionValidationError("override assertion must match entity and policy attribute")
+            assertion_record = self._relationships._assertion_record(assertion)
+            if assertion_record.origin != "user" or not self._eligible(assertion_record, policy):
+                raise EntityResolutionValidationError("override assertion must be eligible under policy")
+            if not self._covers(assertion_record.effective_from, assertion_record.effective_to, effective_from, effective_to) or assertion_record.system_to is not None:
+                raise EntityResolutionValidationError("override assertion must be active for override interval")
             if reverses_override_id is not None:
                 prior = conn.execute(text("SELECT * FROM entity_registry_resolution_overrides WHERE override_id = :override_id"), {"override_id": reverses_override_id}).mappings().one_or_none()
                 if prior is None:
                     raise EntityResolutionValidationError("unknown reversed override")
                 if prior["system_to"] is not None:
                     raise EntityResolutionValidationError("override is already reversed")
+                prior_scope = (
+                    prior["entity_id"], prior["domain"], prior["attribute"], prior["consumer_scope"],
+                    prior["policy_id"], prior["policy_version"],
+                )
+                if prior_scope != (entity_id, domain, attribute, scope, policy_id, policy_version):
+                    raise EntityResolutionValidationError("reversal must match override scope")
                 now = _after(prior["system_from"], _utc_now())
                 conn.execute(text("UPDATE entity_registry_resolution_overrides SET system_to = :now WHERE override_id = :override_id"), {"now": now, "override_id": reverses_override_id})
             else:
@@ -258,6 +302,7 @@ class EntityResolutionRepository:
         best_rank = min(rankings[item.origin] for item in eligible)
         candidates = [item for item in eligible if rankings[item.origin] == best_rank]
         if len(candidates) != 1:
+            self._record_conflict(entity_id, domain, attribute, candidates, effective)
             return ResolutionResult(status="conflicted", reason="conflict_unresolved", policy_id=policy.policy_id, policy_version=policy.version, assertion_ids=tuple(item.assertion_id for item in candidates), override_id=None, **base)
         return ResolutionResult(status="resolved", reason=None, policy_id=policy.policy_id, policy_version=policy.version, assertion_ids=(candidates[0].assertion_id,), override_id=None, **base)
 
@@ -276,12 +321,60 @@ class EntityResolutionRepository:
         if not policy.allows_user_override:
             return []
         rows = conn.execute(text("""
-            SELECT * FROM entity_registry_resolution_overrides
+            SELECT override.* FROM entity_registry_resolution_overrides override
             WHERE entity_id = :entity_id AND policy_id = :policy_id AND policy_version = :policy_version
-              AND effective_from <= :effective AND (effective_to IS NULL OR effective_to > :effective)
-              AND system_from <= :system AND (system_to IS NULL OR system_to > :system)
+              AND override.effective_from <= :effective AND (override.effective_to IS NULL OR override.effective_to > :effective)
+              AND override.system_from <= :system AND (override.system_to IS NULL OR override.system_to > :system)
         """), {"entity_id": entity_id, "policy_id": policy.policy_id, "policy_version": policy.version, "effective": effective, "system": system}).mappings().all()
-        return [ResolutionOverrideRecord(**dict(row)) for row in rows]
+        records = []
+        for row in rows:
+            assertion_row = conn.execute(text("SELECT * FROM entity_registry_assertions WHERE assertion_id = :assertion_id"), {"assertion_id": row["assertion_id"]}).mappings().one_or_none()
+            if assertion_row is None:
+                continue
+            assertion = self._relationships._assertion_record(assertion_row)
+            if (
+                assertion.origin == "user" and self._eligible(assertion, policy)
+                and assertion.effective_from <= effective
+                and (assertion.effective_to is None or assertion.effective_to > effective)
+                and assertion.system_from <= system
+                and (assertion.system_to is None or assertion.system_to > system)
+            ):
+                records.append(ResolutionOverrideRecord(**{key: row[key] for key in ResolutionOverrideRecord.__dataclass_fields__}))
+        return records
+
+    def _insert_policy(self, conn, record: ResolutionPolicyRecord) -> None:
+        conn.execute(text("""
+            INSERT INTO entity_registry_resolution_policies (
+                policy_id, version, domain, attribute, consumer_scope, eligible_assertion_states_json,
+                eligible_origins_json, eligible_evidence_statuses_json, origin_precedence_json,
+                allows_user_override, effective_from, effective_to, system_from, system_to
+            ) VALUES (:policy_id, :version, :domain, :attribute, :consumer_scope, :states, :origins,
+                :evidence_statuses, :precedence, :allows_user_override, :effective_from, :effective_to,
+                :system_from, :system_to)
+        """), {
+            **record.__dict__, "states": json.dumps(record.eligible_assertion_states),
+            "origins": json.dumps(record.eligible_origins), "evidence_statuses": json.dumps(record.eligible_evidence_statuses),
+            "precedence": json.dumps(record.origin_precedence), "allows_user_override": int(record.allows_user_override),
+        })
+
+    def _record_conflict(self, entity_id, domain, attribute, candidates, effective_from) -> None:
+        assertion_ids = tuple(sorted(item.assertion_id for item in candidates))
+        with self._engine.begin() as conn:
+            existing = conn.execute(text("""
+                SELECT 1 FROM entity_registry_conflicts
+                WHERE entity_id = :entity_id AND domain = :domain AND attribute = :attribute
+                  AND assertion_ids_json = :assertion_ids AND resolution_status = 'unresolved'
+            """), {"entity_id": entity_id, "domain": domain, "attribute": attribute, "assertion_ids": json.dumps(assertion_ids)}).first()
+            if existing is None:
+                conn.execute(text("""
+                    INSERT INTO entity_registry_conflicts (
+                        conflict_id, entity_id, domain, attribute, assertion_ids_json, effective_from,
+                        effective_to, detected_at, resolution_status, resolved_at
+                    ) VALUES (:conflict_id, :entity_id, :domain, :attribute, :assertion_ids, :effective_from,
+                        NULL, :detected_at, 'unresolved', NULL)
+                """), {"conflict_id": uuid4().hex, "entity_id": entity_id, "domain": domain,
+                    "attribute": attribute, "assertion_ids": json.dumps(assertion_ids), "effective_from": effective_from,
+                    "detected_at": _utc_now()})
 
     def _policy_by_id(self, conn, policy_id, version) -> ResolutionPolicyRecord | None:
         row = conn.execute(text("SELECT * FROM entity_registry_resolution_policies WHERE policy_id = :policy_id AND version = :version"), {"policy_id": policy_id, "version": version}).mappings().one_or_none()
@@ -314,6 +407,10 @@ class EntityResolutionRepository:
             and policy.system_from <= system
             and (policy.system_to is None or policy.system_to > system)
         )
+
+    @staticmethod
+    def _covers(start, end, requested_start, requested_end) -> bool:
+        return start <= requested_start and (end is None or (requested_end is not None and requested_end <= end))
 
     @staticmethod
     def _nonempty(label: str, value: str) -> None:

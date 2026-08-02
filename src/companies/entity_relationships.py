@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from contextlib import contextmanager
 import json
 from uuid import uuid4
 
@@ -14,10 +15,13 @@ from sqlalchemy import Engine, text
 
 from src.companies.entity_registry_schema import (
     ASSERTION_STATES,
+    LINEAGE_STATUSES,
     LINEAGE_PREDICATES,
     OPERATIONAL_ROLES,
     ORIGINS,
     RELATIONSHIP_DIMENSIONS,
+    RELATIONSHIP_STATUSES,
+    REVIEW_STATUSES,
     validate_entity_registry_schema,
 )
 
@@ -43,6 +47,7 @@ class AssertionRecord:
     actor_id: str
     evidence_id: str | None
     evidence_status: str
+    reason: str | None
     supersedes_assertion_id: str | None
     effective_from: str
     effective_to: str | None
@@ -73,6 +78,7 @@ class LineageRecord:
     successor_entity_id: str
     predicate: str
     assertion_id: str
+    lineage_status: str
     effective_from: str
     effective_to: str | None
     system_from: str
@@ -85,6 +91,26 @@ class EntityRelationshipRepository:
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
         validate_entity_registry_schema(engine)
+
+    @contextmanager
+    def _write_connection(self, *lock_keys: str):
+        """Serialize graph writes without relying on a check-then-insert race."""
+        with self._engine.connect() as conn:
+            if self._engine.dialect.name == "sqlite":
+                conn.exec_driver_sql("BEGIN IMMEDIATE")
+                try:
+                    yield conn
+                except Exception:
+                    conn.rollback()
+                    raise
+                else:
+                    conn.commit()
+                return
+            with conn.begin():
+                if self._engine.dialect.name == "postgresql":
+                    for key in sorted(set(lock_keys)):
+                        conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": f"entity-registry:{key}"})
+                yield conn
 
     def record_assertion(
         self,
@@ -100,6 +126,7 @@ class EntityRelationshipRepository:
         effective_to: str | None = None,
         assertion_state: str = "accepted",
         review_status: str = "accepted",
+        reason: str | None = None,
         supersedes_assertion_id: str | None = None,
     ) -> AssertionRecord:
         self._require_nonempty("domain", domain)
@@ -107,15 +134,18 @@ class EntityRelationshipRepository:
         self._require_nonempty("actor_id", actor_id)
         self._require_allowed("origin", origin, ORIGINS)
         self._require_allowed("assertion state", assertion_state, ASSERTION_STATES)
+        self._require_allowed("review status", review_status, REVIEW_STATUSES)
         effective_from, effective_to = self._interval(effective_from, effective_to)
         value_json = self._serialize_json(value, "assertion value")
         now = _utc_now()
-        with self._engine.begin() as conn:
+        with self._write_connection(subject_entity_id) as conn:
             self._require_entity(conn, subject_entity_id)
             self._require_attachment_allowed(conn, subject_entity_id, effective_from, effective_to)
             evidence_status = self._evidence_status(conn, evidence_id)
             if evidence_id is None and origin != "user":
                 raise EntityRelationshipValidationError("evidence-free assertion requires origin=user")
+            if evidence_id is None and (not isinstance(reason, str) or not reason.strip()):
+                raise EntityRelationshipValidationError("evidence-free assertion requires reason")
             if supersedes_assertion_id is not None:
                 prior = self._assertion_row(conn, supersedes_assertion_id)
                 if prior is None:
@@ -143,6 +173,7 @@ class EntityRelationshipRepository:
                 actor_id=actor_id.strip(),
                 evidence_id=evidence_id,
                 evidence_status=evidence_status,
+                reason=reason.strip() if isinstance(reason, str) and reason.strip() else None,
                 supersedes_assertion_id=supersedes_assertion_id,
                 effective_from=effective_from,
                 effective_to=effective_to,
@@ -154,11 +185,11 @@ class EntityRelationshipRepository:
             conn.execute(text("""
                 INSERT INTO entity_registry_assertions (
                     assertion_id, subject_entity_id, domain, attribute, value_json, assertion_state,
-                    review_status, origin, actor_id, evidence_id, evidence_status, supersedes_assertion_id,
+                    review_status, origin, actor_id, evidence_id, evidence_status, reason, supersedes_assertion_id,
                     effective_from, effective_to, system_from, system_to
                 ) VALUES (
                     :assertion_id, :subject_entity_id, :domain, :attribute, :value_json, :assertion_state,
-                    :review_status, :origin, :actor_id, :evidence_id, :evidence_status, :supersedes_assertion_id,
+                    :review_status, :origin, :actor_id, :evidence_id, :evidence_status, :reason, :supersedes_assertion_id,
                     :effective_from, :effective_to, :system_from, :system_to
                 )
             """), values)
@@ -204,6 +235,7 @@ class EntityRelationshipRepository:
         relationship_status: str = "accepted",
     ) -> RelationshipRecord:
         self._require_allowed("relationship dimension", dimension, RELATIONSHIP_DIMENSIONS)
+        self._require_allowed("relationship status", relationship_status, RELATIONSHIP_STATUSES)
         if dimension == "operational_role":
             if operational_role is None:
                 raise EntityRelationshipValidationError("operational role is required")
@@ -219,17 +251,17 @@ class EntityRelationshipRepository:
             payload=payload, assertion_id=assertion_id, relationship_status=relationship_status,
             effective_from=effective_from, effective_to=effective_to, system_from=_utc_now(), system_to=None,
         )
-        with self._engine.begin() as conn:
+        with self._write_connection(subject_entity_id, object_entity_id) as conn:
             self._require_entity(conn, subject_entity_id)
             self._require_entity(conn, object_entity_id)
             self._require_attachment_allowed(conn, subject_entity_id, effective_from, effective_to)
             self._require_attachment_allowed(conn, object_entity_id, effective_from, effective_to)
             assertion = self._assertion_row(conn, assertion_id)
-            if assertion is None or assertion["subject_entity_id"] != subject_entity_id:
+            if assertion is None or assertion["subject_entity_id"] != subject_entity_id or assertion["assertion_state"] != "accepted" or assertion["system_to"] is not None:
                 raise EntityRelationshipValidationError("relationship assertion must belong to its subject entity")
-            if dimension == "control":
+            if dimension == "control" and relationship_status == "accepted":
                 self._reject_exclusive_overlap(conn, subject_entity_id, effective_from, effective_to)
-                self._reject_relationship_cycle(conn, subject_entity_id, object_entity_id, "control")
+                self._reject_relationship_cycle(conn, subject_entity_id, object_entity_id, "control", effective_from, effective_to)
             values = {**record.__dict__, "payload_json": payload_json}
             values.pop("payload")
             conn.execute(text("""
@@ -255,12 +287,15 @@ class EntityRelationshipRepository:
         system_as_of = self._as_of("system_as_of", system_as_of or _utc_now())
         with self._engine.connect() as conn:
             rows = conn.execute(text("""
-                SELECT * FROM entity_registry_relationships
-                WHERE (subject_entity_id = :entity_id OR object_entity_id = :entity_id)
-                  AND (:dimension IS NULL OR dimension = :dimension)
-                  AND effective_from <= :effective_as_of AND (effective_to IS NULL OR effective_to > :effective_as_of)
-                  AND system_from <= :system_as_of AND (system_to IS NULL OR system_to > :system_as_of)
-                ORDER BY dimension, relationship_id
+                SELECT relationship.* FROM entity_registry_relationships relationship
+                JOIN entity_registry_assertions assertion ON assertion.assertion_id = relationship.assertion_id
+                WHERE (relationship.subject_entity_id = :entity_id OR relationship.object_entity_id = :entity_id)
+                  AND (:dimension IS NULL OR relationship.dimension = :dimension)
+                  AND relationship.relationship_status = 'accepted' AND assertion.assertion_state = 'accepted'
+                  AND relationship.effective_from <= :effective_as_of AND (relationship.effective_to IS NULL OR relationship.effective_to > :effective_as_of)
+                  AND relationship.system_from <= :system_as_of AND (relationship.system_to IS NULL OR relationship.system_to > :system_as_of)
+                  AND assertion.system_from <= :system_as_of AND (assertion.system_to IS NULL OR assertion.system_to > :system_as_of)
+                ORDER BY relationship.dimension, relationship.relationship_id
             """), {
                 "entity_id": entity_id, "dimension": dimension, "effective_as_of": effective_as_of,
                 "system_as_of": system_as_of,
@@ -276,8 +311,10 @@ class EntityRelationshipRepository:
         assertion_id: str,
         effective_from: str,
         effective_to: str | None = None,
+        lineage_status: str = "accepted",
     ) -> LineageRecord:
         self._require_allowed("lineage predicate", predicate, LINEAGE_PREDICATES)
+        self._require_allowed("lineage status", lineage_status, LINEAGE_STATUSES)
         if predicate == "legal_continuation":
             if predecessor_entity_id != successor_entity_id:
                 raise EntityRelationshipValidationError("legal_continuation requires the same entity")
@@ -287,24 +324,24 @@ class EntityRelationshipRepository:
         record = LineageRecord(
             lineage_id=uuid4().hex, predecessor_entity_id=predecessor_entity_id,
             successor_entity_id=successor_entity_id, predicate=predicate, assertion_id=assertion_id,
-            effective_from=effective_from, effective_to=effective_to, system_from=_utc_now(), system_to=None,
+            effective_from=effective_from, effective_to=effective_to, lineage_status=lineage_status, system_from=_utc_now(), system_to=None,
         )
-        with self._engine.begin() as conn:
+        with self._write_connection(predecessor_entity_id, successor_entity_id) as conn:
             self._require_entity(conn, predecessor_entity_id)
             self._require_entity(conn, successor_entity_id)
             self._require_attachment_allowed(conn, predecessor_entity_id, effective_from, effective_to)
             self._require_attachment_allowed(conn, successor_entity_id, effective_from, effective_to)
             assertion = self._assertion_row(conn, assertion_id)
-            if assertion is None or assertion["subject_entity_id"] != predecessor_entity_id:
+            if assertion is None or assertion["subject_entity_id"] != predecessor_entity_id or assertion["assertion_state"] != "accepted" or assertion["system_to"] is not None:
                 raise EntityRelationshipValidationError("lineage assertion must belong to predecessor entity")
-            if predicate != "legal_continuation":
-                self._reject_lineage_cycle(conn, predecessor_entity_id, successor_entity_id)
+            if predicate != "legal_continuation" and lineage_status == "accepted":
+                self._reject_lineage_cycle(conn, predecessor_entity_id, successor_entity_id, effective_from, effective_to)
             conn.execute(text("""
                 INSERT INTO entity_registry_lineage (
-                    lineage_id, predecessor_entity_id, successor_entity_id, predicate, assertion_id,
+                    lineage_id, predecessor_entity_id, successor_entity_id, predicate, assertion_id, lineage_status,
                     effective_from, effective_to, system_from, system_to
                 ) VALUES (
-                    :lineage_id, :predecessor_entity_id, :successor_entity_id, :predicate, :assertion_id,
+                    :lineage_id, :predecessor_entity_id, :successor_entity_id, :predicate, :assertion_id, :lineage_status,
                     :effective_from, :effective_to, :system_from, :system_to
                 )
             """), record.__dict__)
@@ -317,11 +354,14 @@ class EntityRelationshipRepository:
         system_as_of = self._as_of("system_as_of", system_as_of or _utc_now())
         with self._engine.connect() as conn:
             rows = conn.execute(text("""
-                SELECT * FROM entity_registry_lineage
-                WHERE (predecessor_entity_id = :entity_id OR successor_entity_id = :entity_id)
-                  AND effective_from <= :effective_as_of AND (effective_to IS NULL OR effective_to > :effective_as_of)
-                  AND system_from <= :system_as_of AND (system_to IS NULL OR system_to > :system_as_of)
-                ORDER BY lineage_id
+                SELECT lineage.* FROM entity_registry_lineage lineage
+                JOIN entity_registry_assertions assertion ON assertion.assertion_id = lineage.assertion_id
+                WHERE (lineage.predecessor_entity_id = :entity_id OR lineage.successor_entity_id = :entity_id)
+                  AND lineage.lineage_status = 'accepted' AND assertion.assertion_state = 'accepted'
+                  AND lineage.effective_from <= :effective_as_of AND (lineage.effective_to IS NULL OR lineage.effective_to > :effective_as_of)
+                  AND lineage.system_from <= :system_as_of AND (lineage.system_to IS NULL OR lineage.system_to > :system_as_of)
+                  AND assertion.system_from <= :system_as_of AND (assertion.system_to IS NULL OR assertion.system_to > :system_as_of)
+                ORDER BY lineage.lineage_id
             """), {
                 "entity_id": entity_id, "effective_as_of": effective_as_of, "system_as_of": system_as_of,
             }).mappings().all()
@@ -421,10 +461,13 @@ class EntityRelationshipRepository:
     @staticmethod
     def _reject_exclusive_overlap(conn, subject_entity_id: str, effective_from: str, effective_to: str | None) -> None:
         overlap = conn.execute(text("""
-            SELECT 1 FROM entity_registry_relationships
-            WHERE subject_entity_id = :subject_entity_id AND dimension = 'control' AND system_to IS NULL
-              AND (effective_to IS NULL OR effective_to > :effective_from)
-              AND (:effective_to IS NULL OR effective_from < :effective_to)
+            SELECT 1 FROM entity_registry_relationships relationship
+            JOIN entity_registry_assertions assertion ON assertion.assertion_id = relationship.assertion_id
+            WHERE relationship.subject_entity_id = :subject_entity_id AND relationship.dimension = 'control'
+              AND relationship.relationship_status = 'accepted' AND relationship.system_to IS NULL
+              AND assertion.assertion_state = 'accepted' AND assertion.system_to IS NULL
+              AND (relationship.effective_to IS NULL OR relationship.effective_to > :effective_from)
+              AND (:effective_to IS NULL OR relationship.effective_from < :effective_to)
             LIMIT 1
         """), {
             "subject_entity_id": subject_entity_id, "effective_from": effective_from, "effective_to": effective_to,
@@ -433,41 +476,63 @@ class EntityRelationshipRepository:
             raise EntityRelationshipValidationError("exclusive relationship overlap")
 
     @staticmethod
-    def _reject_relationship_cycle(conn, subject_entity_id: str, object_entity_id: str, dimension: str) -> None:
+    def _reject_relationship_cycle(conn, subject_entity_id: str, object_entity_id: str, dimension: str, effective_from: str, effective_to: str | None) -> None:
         if subject_entity_id == object_entity_id:
             raise EntityRelationshipValidationError("cycle detected")
-        cycle = conn.execute(text("""
-            WITH RECURSIVE reachable(entity_id) AS (
-                SELECT object_entity_id FROM entity_registry_relationships
-                WHERE subject_entity_id = :object_entity_id AND dimension = :dimension AND system_to IS NULL
-                UNION
-                SELECT relationship.object_entity_id FROM entity_registry_relationships relationship
-                JOIN reachable ON relationship.subject_entity_id = reachable.entity_id
-                WHERE relationship.dimension = :dimension AND relationship.system_to IS NULL
-            ) SELECT 1 FROM reachable WHERE entity_id = :subject_entity_id LIMIT 1
-        """), {
-            "subject_entity_id": subject_entity_id, "object_entity_id": object_entity_id, "dimension": dimension,
-        }).first()
-        if cycle is not None:
+        rows = conn.execute(text("""
+            SELECT relationship.subject_entity_id, relationship.object_entity_id,
+                   relationship.effective_from, relationship.effective_to
+            FROM entity_registry_relationships relationship
+            JOIN entity_registry_assertions assertion ON assertion.assertion_id = relationship.assertion_id
+            WHERE relationship.dimension = :dimension AND relationship.relationship_status = 'accepted'
+              AND relationship.system_to IS NULL AND assertion.assertion_state = 'accepted' AND assertion.system_to IS NULL
+        """), {"dimension": dimension}).mappings().all()
+        if EntityRelationshipRepository._has_temporal_path(
+            rows, object_entity_id, subject_entity_id, effective_from, effective_to,
+        ):
             raise EntityRelationshipValidationError("cycle detected")
 
     @staticmethod
-    def _reject_lineage_cycle(conn, predecessor_entity_id: str, successor_entity_id: str) -> None:
-        cycle = conn.execute(text("""
-            WITH RECURSIVE reachable(entity_id) AS (
-                SELECT successor_entity_id FROM entity_registry_lineage
-                WHERE predecessor_entity_id = :successor_entity_id AND system_to IS NULL
-                  AND predicate <> 'legal_continuation'
-                UNION
-                SELECT lineage.successor_entity_id FROM entity_registry_lineage lineage
-                JOIN reachable ON lineage.predecessor_entity_id = reachable.entity_id
-                WHERE lineage.system_to IS NULL AND lineage.predicate <> 'legal_continuation'
-            ) SELECT 1 FROM reachable WHERE entity_id = :predecessor_entity_id LIMIT 1
-        """), {
-            "predecessor_entity_id": predecessor_entity_id, "successor_entity_id": successor_entity_id,
-        }).first()
-        if cycle is not None:
+    def _reject_lineage_cycle(conn, predecessor_entity_id: str, successor_entity_id: str, effective_from: str, effective_to: str | None) -> None:
+        rows = conn.execute(text("""
+            SELECT lineage.predecessor_entity_id AS subject_entity_id, lineage.successor_entity_id AS object_entity_id,
+                   lineage.effective_from, lineage.effective_to
+            FROM entity_registry_lineage lineage
+            JOIN entity_registry_assertions assertion ON assertion.assertion_id = lineage.assertion_id
+            WHERE lineage.predicate <> 'legal_continuation' AND lineage.lineage_status = 'accepted'
+              AND lineage.system_to IS NULL AND assertion.assertion_state = 'accepted' AND assertion.system_to IS NULL
+        """)).mappings().all()
+        if EntityRelationshipRepository._has_temporal_path(
+            rows, successor_entity_id, predecessor_entity_id, effective_from, effective_to,
+        ):
             raise EntityRelationshipValidationError("cycle detected")
+
+    @staticmethod
+    def _has_temporal_path(rows, start: str, target: str, effective_from: str, effective_to: str | None) -> bool:
+        stack = [(start, effective_from, effective_to, {start})]
+        while stack:
+            entity_id, window_start, window_to, visited = stack.pop()
+            for row in rows:
+                if row["subject_entity_id"] != entity_id:
+                    continue
+                overlap = EntityRelationshipRepository._intersect_intervals(
+                    window_start, window_to, row["effective_from"], row["effective_to"],
+                )
+                if overlap is None:
+                    continue
+                next_entity = row["object_entity_id"]
+                if next_entity == target:
+                    return True
+                if next_entity not in visited:
+                    stack.append((next_entity, overlap[0], overlap[1], visited | {next_entity}))
+        return False
+
+    @staticmethod
+    def _intersect_intervals(start_a: str, end_a: str | None, start_b: str, end_b: str | None):
+        start = max(start_a, start_b)
+        ends = [end for end in (end_a, end_b) if end is not None]
+        end = min(ends) if ends else None
+        return None if end is not None and start >= end else (start, end)
 
 
 def _utc_now() -> str:
