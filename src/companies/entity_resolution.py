@@ -407,9 +407,6 @@ class EntityResolutionRepository:
                         "policy_version": policy.version, "effective_from": overlap_from, "effective_to": overlap_to,
                         "system_from": detected_at, "detected_at": detected_at,
                         "queried_effective_as_of": effective_from, "queried_system_as_of": queried_system_as_of})
-        except IntegrityError:
-            # A concurrent reader persisted the same unresolved conflict.
-            return
         except OperationalError as exc:
             if any(token in str(exc).lower() for token in ("locked", "busy", "serialize", "deadlock")):
                 # The concurrent resolver owns the short-lived conflict write.
@@ -422,12 +419,12 @@ class EntityResolutionRepository:
         self._nonempty("reason", reason)
         if origin not in ORIGINS:
             raise EntityResolutionValidationError("invalid conflict transition origin")
-        with self._engine.begin() as conn:
+        with self._conflict_write(conflict_id) as conn:
             current = conn.execute(text("SELECT * FROM entity_registry_conflicts WHERE conflict_id = :conflict_id"), {"conflict_id": conflict_id}).mappings().one_or_none()
             if current is None:
                 raise EntityResolutionValidationError("conflict is not current")
             if current["system_to"] is not None:
-                raise EntityResolutionValidationError("conflict transition requires unresolved -> resolved")
+                raise EntityResolutionConcurrencyError("concurrent conflict transition; retry")
             if current["resolution_status"] == "unresolved":
                 if reverses_conflict_id is not None:
                     raise EntityResolutionValidationError("conflict transition requires unresolved -> resolved")
@@ -439,7 +436,13 @@ class EntityResolutionRepository:
             else:
                 raise EntityResolutionValidationError("conflict transition requires unresolved -> resolved")
             now = _after(current["system_from"], _utc_now())
-            conn.execute(text("UPDATE entity_registry_conflicts SET system_to = :now WHERE conflict_id = :conflict_id"), {"now": now, "conflict_id": conflict_id})
+            closed = conn.execute(text("""
+                UPDATE entity_registry_conflicts
+                SET system_to = :now
+                WHERE conflict_id = :conflict_id AND system_to IS NULL
+            """), {"now": now, "conflict_id": conflict_id})
+            if closed.rowcount != 1:
+                raise EntityResolutionConcurrencyError("concurrent conflict transition; retry")
             next_id = uuid4().hex
             conn.execute(text("""
                 INSERT INTO entity_registry_conflicts (
@@ -517,6 +520,37 @@ class EntityResolutionRepository:
             detail = str(exc).lower()
             if any(token in detail for token in ("locked", "busy", "serialize", "deadlock")):
                 raise EntityResolutionConcurrencyError("concurrent override reversal; retry") from exc
+            raise
+        finally:
+            conn.close()
+
+    @contextmanager
+    def _conflict_write(self, conflict_id: str):
+        """Serialise conflict lifecycle transitions and type concurrent losers."""
+        conn = self._engine.connect()
+        try:
+            if self._engine.dialect.name == "sqlite":
+                conn.exec_driver_sql("BEGIN IMMEDIATE")
+            else:
+                conn.begin()
+                if self._engine.dialect.name == "postgresql":
+                    conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:conflict_id))"), {"conflict_id": conflict_id})
+            try:
+                yield conn
+            except Exception:
+                conn.rollback()
+                raise
+            else:
+                conn.commit()
+        except IntegrityError as exc:
+            if any(token in str(exc).lower() for token in ("unique", "duplicate")):
+                raise EntityResolutionConcurrencyError("concurrent conflict transition; retry") from exc
+            raise
+        except OperationalError as exc:
+            if conn.in_transaction():
+                conn.rollback()
+            if any(token in str(exc).lower() for token in ("locked", "busy", "serialize", "deadlock")):
+                raise EntityResolutionConcurrencyError("concurrent conflict transition; retry") from exc
             raise
         finally:
             conn.close()

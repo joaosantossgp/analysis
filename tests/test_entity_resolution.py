@@ -5,6 +5,7 @@ from threading import Barrier, Lock
 import pytest
 import json
 from sqlalchemy import create_engine, event, text
+from sqlalchemy.exc import IntegrityError
 
 from src.companies.entity_registry import EntityRegistryRepository
 from src.companies.entity_registry_schema import ensure_entity_registry_schema
@@ -232,7 +233,7 @@ def test_historical_resolution_conflict_uses_detection_time_and_transition_matri
     assert row["system_from"] > historical_system
     assert row["detected_actor"] == "system:resolution"
     resolved = resolution.transition_conflict(row["conflict_id"], actor_id="reviewer", reason="decided")
-    with pytest.raises(EntityResolutionValidationError, match="requires unresolved"):
+    with pytest.raises(EntityResolutionConcurrencyError, match="retry"):
         resolution.transition_conflict(row["conflict_id"], actor_id="reviewer", reason="repeat")
     reversed_ = resolution.transition_conflict(resolved, actor_id="supervisor", origin="reviewer", reason="reopen", reverses_conflict_id=resolved)
     with resolution._engine.connect() as conn:
@@ -337,6 +338,87 @@ def test_sqlite_concurrent_conflict_detection_returns_conflicted_without_databas
     finally:
         event.remove(engine, "before_cursor_execute", synchronize_first_inserts)
     assert outcomes == ["conflicted", "conflicted"]
+
+
+def test_unexpected_conflict_integrity_error_is_not_masked(repositories):
+    registry, relationships, resolution = repositories
+    entity = registry.create_entity("organization", origin="source_ingestion")
+    _assertion(registry, relationships, entity.entity_id, value="A")
+    _assertion(registry, relationships, entity.entity_id, value="B")
+    _policy(resolution)
+
+    def fail_conflict_insert(_conn, _cursor, statement, _parameters, _context, _executemany):
+        if "INSERT INTO entity_registry_conflicts" in statement:
+            raise IntegrityError("INSERT", {}, Exception("foreign key constraint failed"))
+
+    event.listen(resolution._engine, "before_cursor_execute", fail_conflict_insert)
+    try:
+        with pytest.raises(IntegrityError, match="foreign key constraint failed"):
+            resolution.resolve(
+                entity.entity_id, domain="company.display", attribute="legal_name",
+                effective_as_of="2024-06-01T00:00:00+00:00",
+            )
+    finally:
+        event.remove(resolution._engine, "before_cursor_execute", fail_conflict_insert)
+
+
+def test_sqlite_concurrent_conflict_resolution_returns_typed_retry_for_loser(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'resolve-conflict.db'}", connect_args={"timeout": 0.01})
+    ensure_entity_registry_schema(engine)
+    registry = EntityRegistryRepository(engine)
+    relationships = EntityRelationshipRepository(engine)
+    entity = registry.create_entity("organization", origin="source_ingestion")
+    _assertion(registry, relationships, entity.entity_id, value="A")
+    _assertion(registry, relationships, entity.entity_id, value="B")
+    resolution = EntityResolutionRepository(engine)
+    _policy(resolution)
+    resolution.resolve(entity.entity_id, domain="company.display", attribute="legal_name", effective_as_of="2024-06-01T00:00:00+00:00")
+    with engine.connect() as conn:
+        conflict_id = conn.execute(text("SELECT conflict_id FROM entity_registry_conflicts WHERE system_to IS NULL")).scalar_one()
+
+    def resolve_conflict():
+        try:
+            return EntityResolutionRepository(engine).transition_conflict(conflict_id, actor_id="reviewer", reason="decided")
+        except EntityResolutionConcurrencyError:
+            return "retry"
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        outcomes = list(executor.map(lambda _: resolve_conflict(), range(2)))
+    assert outcomes.count("retry") == 1
+    with engine.connect() as conn:
+        current_statuses = conn.execute(text("SELECT resolution_status FROM entity_registry_conflicts WHERE system_to IS NULL")).scalars().all()
+    assert current_statuses == ["resolved"]
+
+
+def test_sqlite_concurrent_conflict_reversal_returns_typed_retry_for_loser(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'reverse-conflict.db'}", connect_args={"timeout": 0.01})
+    ensure_entity_registry_schema(engine)
+    registry = EntityRegistryRepository(engine)
+    relationships = EntityRelationshipRepository(engine)
+    entity = registry.create_entity("organization", origin="source_ingestion")
+    _assertion(registry, relationships, entity.entity_id, value="A")
+    _assertion(registry, relationships, entity.entity_id, value="B")
+    resolution = EntityResolutionRepository(engine)
+    _policy(resolution)
+    resolution.resolve(entity.entity_id, domain="company.display", attribute="legal_name", effective_as_of="2024-06-01T00:00:00+00:00")
+    with engine.connect() as conn:
+        unresolved_id = conn.execute(text("SELECT conflict_id FROM entity_registry_conflicts WHERE system_to IS NULL")).scalar_one()
+    resolved_id = resolution.transition_conflict(unresolved_id, actor_id="reviewer", reason="decided")
+
+    def reverse_conflict():
+        try:
+            return EntityResolutionRepository(engine).transition_conflict(
+                resolved_id, actor_id="reviewer", reason="reopen", reverses_conflict_id=resolved_id,
+            )
+        except EntityResolutionConcurrencyError:
+            return "retry"
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        outcomes = list(executor.map(lambda _: reverse_conflict(), range(2)))
+    assert outcomes.count("retry") == 1
+    with engine.connect() as conn:
+        current_statuses = conn.execute(text("SELECT resolution_status FROM entity_registry_conflicts WHERE system_to IS NULL")).scalars().all()
+    assert current_statuses == ["reversed"]
 
 
 def test_override_rejects_cross_scope_reversal_and_policy_ineligible_assertion(repositories):
