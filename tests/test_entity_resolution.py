@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier, Lock
 import pytest
 import json
 from sqlalchemy import create_engine, event, text
@@ -8,7 +9,11 @@ from sqlalchemy import create_engine, event, text
 from src.companies.entity_registry import EntityRegistryRepository
 from src.companies.entity_registry_schema import ensure_entity_registry_schema
 from src.companies.entity_relationships import EntityRelationshipRepository
-from src.companies.entity_resolution import EntityResolutionRepository, EntityResolutionValidationError
+from src.companies.entity_resolution import (
+    EntityResolutionConcurrencyError,
+    EntityResolutionRepository,
+    EntityResolutionValidationError,
+)
 
 
 @pytest.fixture
@@ -187,11 +192,30 @@ def test_policy_successor_cannot_fill_an_intentional_finite_gap(repositories):
             prior_policy_id=policy.policy_id, prior_version=policy.version,
             effective_from="2026-01-01T00:00:00+00:00",
         )
-    with pytest.raises(EntityResolutionValidationError, match="within predecessor effective interval"):
-        resolution.activate_policy_version(
-            prior_policy_id=policy.policy_id, prior_version=policy.version,
-            effective_from="2025-01-01T00:00:00+00:00",
-        )
+
+
+def test_policy_successor_at_finite_boundary_is_contiguous(repositories):
+    registry, relationships, resolution = repositories
+    entity = registry.create_entity("organization", origin="source_ingestion")
+    _assertion(registry, relationships, entity.entity_id, value="Source")
+    first = _policy(resolution, effective_to="2025-01-01T00:00:00+00:00")
+
+    second = resolution.activate_policy_version(
+        prior_policy_id=first.policy_id,
+        prior_version=first.version,
+        effective_from="2025-01-01T00:00:00+00:00",
+    )
+
+    before = resolution.resolve(
+        entity.entity_id, domain="company.display", attribute="legal_name",
+        effective_as_of="2024-12-31T23:59:59+00:00",
+    )
+    at_boundary = resolution.resolve(
+        entity.entity_id, domain="company.display", attribute="legal_name",
+        effective_as_of="2025-01-01T00:00:00+00:00",
+    )
+    assert before.policy_version == first.version
+    assert at_boundary.policy_version == second.version
 
 
 def test_historical_resolution_conflict_uses_detection_time_and_transition_matrix(repositories):
@@ -239,6 +263,80 @@ def test_sqlite_concurrent_policy_activation_returns_one_successor(tmp_path):
     with ThreadPoolExecutor(max_workers=2) as executor:
         outcomes = list(executor.map(lambda _: activate(), range(2)))
     assert set(outcomes) == {"blocked", 2}
+
+
+def test_sqlite_concurrent_override_reversal_creates_one_current_successor(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'override.db'}", connect_args={"timeout": 0.01})
+    ensure_entity_registry_schema(engine)
+    registry = EntityRegistryRepository(engine)
+    relationships = EntityRelationshipRepository(engine)
+    entity = registry.create_entity("organization", origin="source_ingestion")
+    assertion = _assertion(registry, relationships, entity.entity_id, value="Source", origin="user")
+    policy = _policy(EntityResolutionRepository(engine))
+    first = EntityResolutionRepository(engine).record_override(
+        entity_id=entity.entity_id, domain="company.display", attribute="legal_name",
+        policy_id=policy.policy_id, policy_version=policy.version, assertion_id=assertion.assertion_id,
+        actor_id="analyst", reason="choice", effective_from="2024-01-01T00:00:00+00:00",
+    )
+
+    def reverse():
+        try:
+            return EntityResolutionRepository(engine).record_override(
+                entity_id=entity.entity_id, domain="company.display", attribute="legal_name",
+                policy_id=policy.policy_id, policy_version=policy.version, assertion_id=assertion.assertion_id,
+                actor_id="analyst", reason="reversal", effective_from="2024-01-01T00:00:00+00:00",
+                reverses_override_id=first.override_id,
+            ).override_id
+        except EntityResolutionConcurrencyError:
+            return "retry"
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        outcomes = list(executor.map(lambda _: reverse(), range(2)))
+    assert outcomes.count("retry") == 1
+    with engine.connect() as conn:
+        current = conn.execute(text("SELECT override_id FROM entity_registry_resolution_overrides WHERE system_to IS NULL")).scalars().all()
+    assert len(current) == 1
+
+
+def test_sqlite_concurrent_conflict_detection_returns_conflicted_without_database_error(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'conflict.db'}", connect_args={"timeout": 0.01})
+    ensure_entity_registry_schema(engine)
+    registry = EntityRegistryRepository(engine)
+    relationships = EntityRelationshipRepository(engine)
+    entity = registry.create_entity("organization", origin="source_ingestion")
+    _assertion(registry, relationships, entity.entity_id, value="A")
+    _assertion(registry, relationships, entity.entity_id, value="B")
+    _policy(EntityResolutionRepository(engine))
+    first_insert = Barrier(2)
+    insert_count = 0
+    insert_lock = Lock()
+
+    def synchronize_first_inserts(_conn, _cursor, statement, _parameters, _context, _executemany):
+        nonlocal insert_count
+        if "INSERT INTO entity_registry_conflicts" not in statement:
+            return
+        with insert_lock:
+            insert_count += 1
+            synchronize = insert_count <= 2
+        if synchronize:
+            first_insert.wait(timeout=3)
+
+    def resolve():
+        try:
+            return EntityResolutionRepository(engine).resolve(
+                entity.entity_id, domain="company.display", attribute="legal_name",
+                effective_as_of="2024-06-01T00:00:00+00:00",
+            ).status
+        except Exception as error:  # Regression: no raw SQLite lock/index error may escape resolve.
+            return type(error).__name__
+
+    event.listen(engine, "before_cursor_execute", synchronize_first_inserts)
+    try:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            outcomes = list(executor.map(lambda _: resolve(), range(2)))
+    finally:
+        event.remove(engine, "before_cursor_execute", synchronize_first_inserts)
+    assert outcomes == ["conflicted", "conflicted"]
 
 
 def test_override_rejects_cross_scope_reversal_and_policy_ineligible_assertion(repositories):

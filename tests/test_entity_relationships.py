@@ -415,6 +415,52 @@ def test_cycle_validation_blocks_on_wide_fanout_budget(repositories, monkeypatch
             effective_from="2024-01-01T00:00:00+00:00")
 
 
+def test_cycle_traversal_limits_each_relationship_and_lineage_query(repositories, monkeypatch):
+    registry, relationships = repositories
+    subject = registry.create_entity("organization", origin="source_ingestion")
+    first = registry.create_entity("organization", origin="source_ingestion")
+    second = registry.create_entity("organization", origin="source_ingestion")
+    target = registry.create_entity("organization", origin="source_ingestion")
+    assertion = _assertion(registry, relationships, subject.entity_id)
+    relationships.record_relationship(subject_entity_id=subject.entity_id, object_entity_id=first.entity_id,
+        dimension="legal_ownership", payload={"basis": "x"}, assertion_id=assertion.assertion_id,
+        effective_from="2024-01-01T00:00:00+00:00")
+    relationships.record_relationship(subject_entity_id=subject.entity_id, object_entity_id=second.entity_id,
+        dimension="legal_ownership", payload={"basis": "x"}, assertion_id=assertion.assertion_id,
+        effective_from="2024-01-01T00:00:00+00:00")
+    relationships.record_lineage(predecessor_entity_id=subject.entity_id, successor_entity_id=first.entity_id,
+        predicate="merged_into", assertion_id=assertion.assertion_id,
+        effective_from="2024-01-01T00:00:00+00:00")
+    relationships.record_lineage(predecessor_entity_id=subject.entity_id, successor_entity_id=second.entity_id,
+        predicate="merged_into", assertion_id=assertion.assertion_id,
+        effective_from="2024-01-01T00:00:00+00:00")
+    monkeypatch.setattr(EntityRelationshipRepository, "MAX_TRAVERSAL_EDGES", 1)
+    statements = []
+
+    def capture(_conn, _cursor, statement, parameters, _context, _executemany):
+        if "entity_registry_relationships relationship" in statement or "entity_registry_lineage lineage" in statement:
+            statements.append((statement, parameters))
+
+    event.listen(relationships._engine, "before_cursor_execute", capture)
+    try:
+        with relationships._engine.connect() as conn:
+            with pytest.raises(Exception, match="traversal limit"):
+                relationships._has_relationship_path(
+                    conn, subject.entity_id, target.entity_id, "legal_ownership",
+                    "2024-01-01T00:00:00+00:00", None,
+                )
+            with pytest.raises(Exception, match="traversal limit"):
+                relationships._has_lineage_path(
+                    conn, subject.entity_id, target.entity_id,
+                    "2024-01-01T00:00:00+00:00", None,
+                )
+    finally:
+        event.remove(relationships._engine, "before_cursor_execute", capture)
+    assert len(statements) == 2
+    assert all("LIMIT" in statement.upper() for statement, _parameters in statements)
+    assert all((parameters["fetch_limit"] if isinstance(parameters, dict) else parameters[-1]) == 2 for _statement, parameters in statements)
+
+
 def test_cycle_validation_does_not_count_historical_lineage_noise(repositories, monkeypatch):
     registry, relationships = repositories
     subject = registry.create_entity("organization", origin="source_ingestion")

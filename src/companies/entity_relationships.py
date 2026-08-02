@@ -532,6 +532,9 @@ class EntityRelationshipRepository:
             entity_id, window_start, window_to, visited = stack.pop()
             if len(visited) > cls.MAX_TRAVERSAL_DEPTH:
                 raise EntityRelationshipTraversalBlockedError("relationship traversal limit exceeded")
+            remaining_edges = cls.MAX_TRAVERSAL_EDGES - traversed_edges
+            if remaining_edges < 0:
+                raise EntityRelationshipTraversalBlockedError("relationship traversal limit exceeded")
             rows = conn.execute(text("""
                 SELECT relationship.object_entity_id, relationship.effective_from, relationship.effective_to
                 FROM entity_registry_relationships relationship
@@ -541,11 +544,14 @@ class EntityRelationshipRepository:
                   AND assertion.assertion_state = 'accepted' AND assertion.system_to IS NULL
                   AND (relationship.effective_to IS NULL OR relationship.effective_to > :window_start)
                   AND (:window_to IS NULL OR relationship.effective_from < :window_to)
+                ORDER BY relationship.relationship_id
+                LIMIT :fetch_limit
             """), {"entity_id": entity_id, "dimension": dimension,
-                    "window_start": window_start, "window_to": window_to}).mappings().all()
-            traversed_edges += len(rows)
-            if traversed_edges > cls.MAX_TRAVERSAL_EDGES:
+                    "window_start": window_start, "window_to": window_to,
+                    "fetch_limit": remaining_edges + 1}).mappings().all()
+            if len(rows) > remaining_edges:
                 raise EntityRelationshipTraversalBlockedError("relationship traversal limit exceeded")
+            traversed_edges += len(rows)
             for row in rows:
                 overlap = cls._intersect_intervals(
                     window_start, window_to, row["effective_from"], row["effective_to"],
@@ -571,6 +577,9 @@ class EntityRelationshipRepository:
             entity_id, window_start, window_to, visited = stack.pop()
             if len(visited) > cls.MAX_TRAVERSAL_DEPTH:
                 raise EntityRelationshipTraversalBlockedError("lineage traversal limit exceeded")
+            remaining_edges = cls.MAX_TRAVERSAL_EDGES - traversed_edges
+            if remaining_edges < 0:
+                raise EntityRelationshipTraversalBlockedError("lineage traversal limit exceeded")
             rows = conn.execute(text("""
                 SELECT lineage.successor_entity_id AS object_entity_id, lineage.effective_from, lineage.effective_to
                 FROM entity_registry_lineage lineage
@@ -580,11 +589,13 @@ class EntityRelationshipRepository:
                   AND assertion.assertion_state = 'accepted' AND assertion.system_to IS NULL
                   AND (lineage.effective_to IS NULL OR lineage.effective_to > :window_start)
                   AND (:window_to IS NULL OR lineage.effective_from < :window_to)
+                ORDER BY lineage.lineage_id
+                LIMIT :fetch_limit
             """), {"entity_id": entity_id, "window_start": window_start,
-                    "window_to": window_to}).mappings().all()
-            traversed_edges += len(rows)
-            if traversed_edges > cls.MAX_TRAVERSAL_EDGES:
+                    "window_to": window_to, "fetch_limit": remaining_edges + 1}).mappings().all()
+            if len(rows) > remaining_edges:
                 raise EntityRelationshipTraversalBlockedError("lineage traversal limit exceeded")
+            traversed_edges += len(rows)
             for row in rows:
                 overlap = cls._intersect_intervals(window_start, window_to, row["effective_from"], row["effective_to"])
                 if overlap is None:
