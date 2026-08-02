@@ -98,6 +98,8 @@ class EntityRelationshipRepository:
     """Persist auditable bitemporal claims without implicit latest reads."""
 
     MAX_TRAVERSAL_DEPTH = 16
+    MAX_TRAVERSAL_NODES = 128
+    MAX_TRAVERSAL_EDGES = 256
 
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
@@ -524,6 +526,8 @@ class EntityRelationshipRepository:
     @classmethod
     def _has_relationship_path(cls, conn, start, target, dimension, effective_from, effective_to) -> bool:
         stack = [(start, effective_from, effective_to, {start})]
+        traversed_nodes = {start}
+        traversed_edges = 0
         while stack:
             entity_id, window_start, window_to, visited = stack.pop()
             if len(visited) > cls.MAX_TRAVERSAL_DEPTH:
@@ -535,7 +539,13 @@ class EntityRelationshipRepository:
                 WHERE relationship.subject_entity_id = :entity_id AND relationship.dimension = :dimension
                   AND relationship.relationship_status = 'accepted' AND relationship.system_to IS NULL
                   AND assertion.assertion_state = 'accepted' AND assertion.system_to IS NULL
-            """), {"entity_id": entity_id, "dimension": dimension}).mappings().all()
+                  AND (relationship.effective_to IS NULL OR relationship.effective_to > :window_start)
+                  AND (:window_to IS NULL OR relationship.effective_from < :window_to)
+            """), {"entity_id": entity_id, "dimension": dimension,
+                    "window_start": window_start, "window_to": window_to}).mappings().all()
+            traversed_edges += len(rows)
+            if traversed_edges > cls.MAX_TRAVERSAL_EDGES:
+                raise EntityRelationshipTraversalBlockedError("relationship traversal limit exceeded")
             for row in rows:
                 overlap = cls._intersect_intervals(
                     window_start, window_to, row["effective_from"], row["effective_to"],
@@ -546,12 +556,17 @@ class EntityRelationshipRepository:
                 if next_entity == target:
                     return True
                 if next_entity not in visited:
+                    traversed_nodes.add(next_entity)
+                    if len(traversed_nodes) > cls.MAX_TRAVERSAL_NODES:
+                        raise EntityRelationshipTraversalBlockedError("relationship traversal limit exceeded")
                     stack.append((next_entity, overlap[0], overlap[1], visited | {next_entity}))
         return False
 
     @classmethod
     def _has_lineage_path(cls, conn, start, target, effective_from, effective_to) -> bool:
         stack = [(start, effective_from, effective_to, {start})]
+        traversed_nodes = {start}
+        traversed_edges = 0
         while stack:
             entity_id, window_start, window_to, visited = stack.pop()
             if len(visited) > cls.MAX_TRAVERSAL_DEPTH:
@@ -563,7 +578,13 @@ class EntityRelationshipRepository:
                 WHERE lineage.predecessor_entity_id = :entity_id AND lineage.predicate <> 'legal_continuation'
                   AND lineage.lineage_status = 'accepted' AND lineage.system_to IS NULL
                   AND assertion.assertion_state = 'accepted' AND assertion.system_to IS NULL
-            """), {"entity_id": entity_id}).mappings().all()
+                  AND (lineage.effective_to IS NULL OR lineage.effective_to > :window_start)
+                  AND (:window_to IS NULL OR lineage.effective_from < :window_to)
+            """), {"entity_id": entity_id, "window_start": window_start,
+                    "window_to": window_to}).mappings().all()
+            traversed_edges += len(rows)
+            if traversed_edges > cls.MAX_TRAVERSAL_EDGES:
+                raise EntityRelationshipTraversalBlockedError("lineage traversal limit exceeded")
             for row in rows:
                 overlap = cls._intersect_intervals(window_start, window_to, row["effective_from"], row["effective_to"])
                 if overlap is None:
@@ -572,6 +593,9 @@ class EntityRelationshipRepository:
                 if next_entity == target:
                     return True
                 if next_entity not in visited:
+                    traversed_nodes.add(next_entity)
+                    if len(traversed_nodes) > cls.MAX_TRAVERSAL_NODES:
+                        raise EntityRelationshipTraversalBlockedError("lineage traversal limit exceeded")
                     stack.append((next_entity, overlap[0], overlap[1], visited | {next_entity}))
         return False
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import pytest
 import json
 from sqlalchemy import create_engine, event, text
@@ -26,12 +27,12 @@ def _assertion(registry, relationships, entity_id, *, value, origin="source_inge
     )
 
 
-def _policy(resolution):
+def _policy(resolution, *, effective_to=None):
     return resolution.create_policy(
         domain="company.display", attribute="legal_name", consumer_scope=None,
         eligible_assertion_states=("accepted",), eligible_origins=("user", "reviewer", "source_ingestion"),
         eligible_evidence_statuses=("available", "none"), origin_precedence=("user", "reviewer", "source_ingestion"),
-        allows_user_override=True, effective_from="2024-01-01T00:00:00+00:00",
+        allows_user_override=True, effective_from="2024-01-01T00:00:00+00:00", effective_to=effective_to,
     )
 
 
@@ -166,13 +167,78 @@ def test_override_requires_policy_activation_to_cover_its_complete_interval(repo
             policy_version=policy.version, assertion_id=assertion.assertion_id, actor_id="analyst", reason="choice",
             effective_from="2023-01-01T00:00:00+00:00",
         )
-    resolution.activate_policy_version(prior_policy_id=policy.policy_id, prior_version=policy.version, effective_from="2025-01-01T00:00:00+00:00")
+    resolution.activate_policy_version(
+        prior_policy_id=policy.policy_id, prior_version=policy.version,
+        effective_from="2025-01-01T00:00:00+00:00",
+    )
     with pytest.raises(EntityResolutionValidationError, match="policy is not current"):
         resolution.record_override(
             entity_id=entity.entity_id, domain="company.display", attribute="legal_name", policy_id=policy.policy_id,
             policy_version=policy.version, assertion_id=assertion.assertion_id, actor_id="analyst", reason="stale",
             effective_from="2024-01-01T00:00:00+00:00",
         )
+
+
+def test_policy_successor_cannot_fill_an_intentional_finite_gap(repositories):
+    _registry, _relationships, resolution = repositories
+    policy = _policy(resolution, effective_to="2025-01-01T00:00:00+00:00")
+    with pytest.raises(EntityResolutionValidationError, match="within predecessor effective interval"):
+        resolution.activate_policy_version(
+            prior_policy_id=policy.policy_id, prior_version=policy.version,
+            effective_from="2026-01-01T00:00:00+00:00",
+        )
+    with pytest.raises(EntityResolutionValidationError, match="within predecessor effective interval"):
+        resolution.activate_policy_version(
+            prior_policy_id=policy.policy_id, prior_version=policy.version,
+            effective_from="2025-01-01T00:00:00+00:00",
+        )
+
+
+def test_historical_resolution_conflict_uses_detection_time_and_transition_matrix(repositories):
+    registry, relationships, resolution = repositories
+    entity = registry.create_entity("organization", origin="source_ingestion")
+    first = _assertion(registry, relationships, entity.entity_id, value="A")
+    second = _assertion(registry, relationships, entity.entity_id, value="B")
+    policy = _policy(resolution)
+    historical_system = policy.system_from
+    resolution.resolve(entity.entity_id, domain="company.display", attribute="legal_name",
+        effective_as_of="2024-06-01T00:00:00+00:00", system_as_of=historical_system)
+    with resolution._engine.connect() as conn:
+        row = conn.execute(text("SELECT * FROM entity_registry_conflicts")).mappings().one()
+    assert row["system_from"] > historical_system
+    assert row["detected_actor"] == "system:resolution"
+    resolved = resolution.transition_conflict(row["conflict_id"], actor_id="reviewer", reason="decided")
+    with pytest.raises(EntityResolutionValidationError, match="requires unresolved"):
+        resolution.transition_conflict(row["conflict_id"], actor_id="reviewer", reason="repeat")
+    reversed_ = resolution.transition_conflict(resolved, actor_id="supervisor", origin="reviewer", reason="reopen", reverses_conflict_id=resolved)
+    with resolution._engine.connect() as conn:
+        final = conn.execute(text("SELECT * FROM entity_registry_conflicts WHERE conflict_id = :conflict_id"), {"conflict_id": reversed_}).mappings().one()
+    assert final["detected_actor"] == "system:resolution"
+    assert (final["resolved_actor"], final["resolved_origin"]) == ("reviewer", "reviewer")
+    assert (final["reversed_actor"], final["reversed_origin"]) == ("supervisor", "reviewer")
+
+
+def test_sqlite_concurrent_policy_activation_returns_one_successor(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'policy.db'}", connect_args={"timeout": 0.01})
+    ensure_entity_registry_schema(engine)
+    first = EntityResolutionRepository(engine).create_policy(
+        domain="company.display", attribute="legal_name", consumer_scope=None,
+        eligible_assertion_states=("accepted",), eligible_origins=("user",),
+        eligible_evidence_statuses=("available",), origin_precedence=("user",),
+        allows_user_override=True, effective_from="2024-01-01T00:00:00+00:00",
+    )
+
+    def activate():
+        try:
+            return EntityResolutionRepository(engine).activate_policy_version(
+                prior_policy_id=first.policy_id, prior_version=1, effective_from="2025-01-01T00:00:00+00:00"
+            ).version
+        except EntityResolutionValidationError:
+            return "blocked"
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        outcomes = list(executor.map(lambda _: activate(), range(2)))
+    assert set(outcomes) == {"blocked", 2}
 
 
 def test_override_rejects_cross_scope_reversal_and_policy_ineligible_assertion(repositories):

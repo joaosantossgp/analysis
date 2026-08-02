@@ -5,8 +5,10 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import json
 from uuid import uuid4
+from contextlib import contextmanager
 
 from sqlalchemy import Engine, text
+from sqlalchemy.exc import OperationalError
 
 from src.companies.entity_registry_schema import (
     ASSERTION_STATES,
@@ -23,6 +25,10 @@ class EntityResolutionError(ValueError):
 
 class EntityResolutionValidationError(EntityResolutionError):
     """A policy or override is invalid under the registry contract."""
+
+
+class EntityResolutionConcurrencyError(EntityResolutionValidationError):
+    """A serialised policy activation lost a write race and can be retried."""
 
 
 @dataclass(frozen=True)
@@ -143,13 +149,17 @@ class EntityResolutionRepository:
     ) -> ResolutionPolicyRecord:
         """Append a successor policy and close the prior system belief atomically."""
         effective_from = self._as_of("effective_from", effective_from)
-        with self._engine.begin() as conn:
+        with self._policy_write(prior_policy_id) as conn:
             prior = self._policy_by_id(conn, prior_policy_id, prior_version)
             activation = self._current_activation(conn, prior_policy_id, prior_version)
-            if prior is None or activation is None:
+            if prior is None:
                 raise EntityResolutionValidationError("prior policy is not active")
+            if activation is None:
+                raise EntityResolutionConcurrencyError("concurrent policy activation; retry")
             if effective_from <= activation["effective_from"]:
                 raise EntityResolutionValidationError("successor policy must start after prior policy")
+            if activation["effective_to"] is not None and effective_from >= activation["effective_to"]:
+                raise EntityResolutionValidationError("successor policy must start within predecessor effective interval")
             now = _after(activation["system_from"], _utc_now())
             states = self._allowed_values("eligible assertion state", eligible_assertion_states or prior.eligible_assertion_states, ASSERTION_STATES)
             origins = self._allowed_values("eligible origin", eligible_origins or prior.eligible_origins, ORIGINS)
@@ -168,11 +178,13 @@ class EntityResolutionRepository:
             duplicate = self._policy_by_id(conn, record.policy_id, record.version)
             if duplicate is not None:
                 raise EntityResolutionValidationError("successor policy version already exists")
-            conn.execute(text("""
+            closed = conn.execute(text("""
                 UPDATE entity_registry_policy_activations
                 SET system_to = :system_to
                 WHERE activation_id = :activation_id AND system_to IS NULL
             """), {"system_to": now, "activation_id": activation["activation_id"]})
+            if closed.rowcount != 1:
+                raise EntityResolutionConcurrencyError("concurrent policy activation; retry")
             self._insert_activation(conn, prior, activation["effective_from"], effective_from, now, activation["activation_id"])
             self._insert_policy(conn, record)
             self._insert_activation(conn, record, effective_from, None, now, activation["activation_id"])
@@ -358,12 +370,13 @@ class EntityResolutionRepository:
             "precedence": json.dumps(record.origin_precedence), "allows_user_override": int(record.allows_user_override),
         })
 
-    def _record_conflict(self, entity_id, domain, attribute, policy, candidates, effective_from, system_from) -> None:
+    def _record_conflict(self, entity_id, domain, attribute, policy, candidates, effective_from, queried_system_as_of) -> None:
         assertion_ids = tuple(sorted(item.assertion_id for item in candidates))
         dedup_key = json.dumps((entity_id, domain, attribute, policy.policy_id, policy.version, assertion_ids), separators=(",", ":"))
         overlap_from = max(item.effective_from for item in candidates)
         ends = [item.effective_to for item in candidates if item.effective_to is not None]
         overlap_to = min(ends) if ends else None
+        detected_at = _utc_now()
         with self._engine.begin() as conn:
             existing = conn.execute(text("""
                 SELECT 1 FROM entity_registry_conflicts
@@ -376,26 +389,38 @@ class EntityResolutionRepository:
                     INSERT INTO entity_registry_conflicts (
                         conflict_id, entity_id, domain, attribute, assertion_ids_json, dedup_key, policy_id, policy_version,
                         effective_from, effective_to, system_from, system_to, detected_at, detected_actor,
-                        resolution_status, resolved_at
+                        detected_origin, queried_effective_as_of, queried_system_as_of, resolution_status, resolved_at
                     ) VALUES (:conflict_id, :entity_id, :domain, :attribute, :assertion_ids, :dedup_key, :policy_id, :policy_version,
                         :effective_from, :effective_to, :system_from, NULL, :detected_at, 'system:resolution',
-                        'unresolved', NULL)
+                        'system', :queried_effective_as_of, :queried_system_as_of, 'unresolved', NULL)
                 """), {"conflict_id": uuid4().hex, "entity_id": entity_id, "domain": domain,
                     "attribute": attribute, "assertion_ids": json.dumps(assertion_ids), "dedup_key": dedup_key, "policy_id": policy.policy_id,
                     "policy_version": policy.version, "effective_from": overlap_from, "effective_to": overlap_to,
-                    "system_from": system_from, "detected_at": _utc_now()})
+                    "system_from": detected_at, "detected_at": detected_at,
+                    "queried_effective_as_of": effective_from, "queried_system_as_of": queried_system_as_of})
 
-    def transition_conflict(self, conflict_id: str, *, actor_id: str, reason: str, reverses_conflict_id: str | None = None) -> str:
+    def transition_conflict(self, conflict_id: str, *, actor_id: str, reason: str, reverses_conflict_id: str | None = None, origin: str = "reviewer") -> str:
         """Append a resolution or reversal while retaining the prior conflict belief."""
         self._nonempty("actor_id", actor_id)
         self._nonempty("reason", reason)
+        if origin not in ORIGINS:
+            raise EntityResolutionValidationError("invalid conflict transition origin")
         with self._engine.begin() as conn:
             current = conn.execute(text("SELECT * FROM entity_registry_conflicts WHERE conflict_id = :conflict_id"), {"conflict_id": conflict_id}).mappings().one_or_none()
-            if current is None or current["system_to"] is not None:
+            if current is None:
                 raise EntityResolutionValidationError("conflict is not current")
-            if reverses_conflict_id is not None and reverses_conflict_id != conflict_id:
-                raise EntityResolutionValidationError("conflict reversal must reference the current conflict")
-            status = "reversed" if reverses_conflict_id is not None else "resolved"
+            if current["system_to"] is not None:
+                raise EntityResolutionValidationError("conflict transition requires unresolved -> resolved")
+            if current["resolution_status"] == "unresolved":
+                if reverses_conflict_id is not None:
+                    raise EntityResolutionValidationError("conflict transition requires unresolved -> resolved")
+                status = "resolved"
+            elif current["resolution_status"] == "resolved":
+                if reverses_conflict_id != conflict_id:
+                    raise EntityResolutionValidationError("conflict transition requires resolved -> reversed")
+                status = "reversed"
+            else:
+                raise EntityResolutionValidationError("conflict transition requires unresolved -> resolved")
             now = _after(current["system_from"], _utc_now())
             conn.execute(text("UPDATE entity_registry_conflicts SET system_to = :now WHERE conflict_id = :conflict_id"), {"now": now, "conflict_id": conflict_id})
             next_id = uuid4().hex
@@ -403,14 +428,53 @@ class EntityResolutionRepository:
                 INSERT INTO entity_registry_conflicts (
                     conflict_id, entity_id, domain, attribute, assertion_ids_json, dedup_key, policy_id, policy_version,
                     effective_from, effective_to, system_from, system_to, detected_at, detected_actor,
-                    resolution_status, resolved_at, resolution_reason
+                    detected_origin, queried_effective_as_of, queried_system_as_of, resolution_status, resolved_at,
+                    resolved_actor, resolved_origin, resolution_reason, reversed_at, reversed_actor, reversed_origin,
+                    reversal_reason
                 ) VALUES (:conflict_id, :entity_id, :domain, :attribute, :assertion_ids_json, :dedup_key, :policy_id, :policy_version,
                     :effective_from, :effective_to, :system_from, NULL, :detected_at, :detected_actor,
-                    :resolution_status, :resolved_at, :resolution_reason)
+                    :detected_origin, :queried_effective_as_of, :queried_system_as_of, :resolution_status, :resolved_at,
+                    :resolved_actor, :resolved_origin, :resolution_reason, :reversed_at, :reversed_actor, :reversed_origin,
+                    :reversal_reason)
             """), {**dict(current), "conflict_id": next_id, "system_from": now, "system_to": None,
-                "detected_at": current["detected_at"], "detected_actor": actor_id.strip(), "resolution_status": status,
-                "resolved_at": now, "resolution_reason": reason.strip()})
+                "resolution_status": status,
+                "resolved_at": now if status == "resolved" else current["resolved_at"],
+                "resolved_actor": actor_id.strip() if status == "resolved" else current["resolved_actor"],
+                "resolved_origin": origin if status == "resolved" else current["resolved_origin"],
+                "resolution_reason": reason.strip() if status == "resolved" else current["resolution_reason"],
+                "reversed_at": now if status == "reversed" else None,
+                "reversed_actor": actor_id.strip() if status == "reversed" else None,
+                "reversed_origin": origin if status == "reversed" else None,
+                "reversal_reason": reason.strip() if status == "reversed" else None})
         return next_id
+
+    @contextmanager
+    def _policy_write(self, policy_id: str):
+        """Serialise activation writes by policy key across supported dialects."""
+        conn = self._engine.connect()
+        try:
+            if self._engine.dialect.name == "sqlite":
+                conn.exec_driver_sql("BEGIN IMMEDIATE")
+            else:
+                conn.begin()
+                if self._engine.dialect.name == "postgresql":
+                    conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:policy_id))"), {"policy_id": policy_id})
+            try:
+                yield conn
+            except Exception:
+                conn.rollback()
+                raise
+            else:
+                conn.commit()
+        except OperationalError as exc:
+            if conn.in_transaction():
+                conn.rollback()
+            detail = str(exc).lower()
+            if any(token in detail for token in ("locked", "busy", "serialize", "deadlock")):
+                raise EntityResolutionConcurrencyError("concurrent policy activation; retry") from exc
+            raise
+        finally:
+            conn.close()
 
     def _policy_by_id(self, conn, policy_id, version) -> ResolutionPolicyRecord | None:
         row = conn.execute(text("SELECT * FROM entity_registry_resolution_policies WHERE policy_id = :policy_id AND version = :version"), {"policy_id": policy_id, "version": version}).mappings().one_or_none()

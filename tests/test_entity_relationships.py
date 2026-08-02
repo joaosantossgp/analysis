@@ -22,7 +22,10 @@ def repositories():
     return EntityRegistryRepository(engine), EntityRelationshipRepository(engine)
 
 
-def _assertion(registry, relationships, entity_id, *, value="controller"):
+def _assertion(
+    registry, relationships, entity_id, *, value="controller",
+    effective_from="2024-01-01T00:00:00+00:00", effective_to=None,
+):
     evidence = registry.record_evidence(
         source_class="official_primary",
         source_reference="aneel://decision/1",
@@ -36,7 +39,8 @@ def _assertion(registry, relationships, entity_id, *, value="controller"):
         origin="source_ingestion",
         actor_id="aneel-import",
         evidence_id=evidence.evidence_id,
-        effective_from="2024-01-01T00:00:00+00:00",
+        effective_from=effective_from,
+        effective_to=effective_to,
     )
 
 
@@ -388,6 +392,46 @@ def test_cycle_validation_blocks_when_bounded_traversal_limit_is_exceeded(reposi
         relationships.record_relationship(subject_entity_id=third.entity_id, object_entity_id=first.entity_id,
             dimension="control", payload={"basis": "x"}, assertion_id=third_assertion.assertion_id,
             effective_from="2024-01-01T00:00:00+00:00")
+
+
+def test_cycle_validation_blocks_on_wide_fanout_budget(repositories, monkeypatch):
+    registry, relationships = repositories
+    subject = registry.create_entity("organization", origin="source_ingestion")
+    first = registry.create_entity("organization", origin="source_ingestion")
+    second = registry.create_entity("organization", origin="source_ingestion")
+    third = registry.create_entity("organization", origin="source_ingestion")
+    assertion = _assertion(registry, relationships, subject.entity_id)
+    relationships.record_lineage(predecessor_entity_id=subject.entity_id, successor_entity_id=first.entity_id,
+        predicate="merged_into", assertion_id=assertion.assertion_id,
+        effective_from="2024-01-01T00:00:00+00:00")
+    relationships.record_lineage(predecessor_entity_id=subject.entity_id, successor_entity_id=second.entity_id,
+        predicate="merged_into", assertion_id=assertion.assertion_id,
+        effective_from="2024-01-01T00:00:00+00:00")
+    monkeypatch.setattr(EntityRelationshipRepository, "MAX_TRAVERSAL_EDGES", 1)
+    third_assertion = _assertion(registry, relationships, third.entity_id)
+    with pytest.raises(Exception, match="traversal limit"):
+        relationships.record_lineage(predecessor_entity_id=third.entity_id, successor_entity_id=subject.entity_id,
+            predicate="merged_into", assertion_id=third_assertion.assertion_id,
+            effective_from="2024-01-01T00:00:00+00:00")
+
+
+def test_cycle_validation_does_not_count_historical_lineage_noise(repositories, monkeypatch):
+    registry, relationships = repositories
+    subject = registry.create_entity("organization", origin="source_ingestion")
+    historic = registry.create_entity("organization", origin="source_ingestion")
+    candidate = registry.create_entity("organization", origin="source_ingestion")
+    assertion = _assertion(
+        registry, relationships, subject.entity_id,
+        effective_from="2020-01-01T00:00:00+00:00",
+    )
+    relationships.record_lineage(predecessor_entity_id=subject.entity_id, successor_entity_id=historic.entity_id,
+        predicate="merged_into", assertion_id=assertion.assertion_id,
+        effective_from="2020-01-01T00:00:00+00:00", effective_to="2021-01-01T00:00:00+00:00")
+    monkeypatch.setattr(EntityRelationshipRepository, "MAX_TRAVERSAL_EDGES", 0)
+    candidate_assertion = _assertion(registry, relationships, candidate.entity_id)
+    relationships.record_lineage(predecessor_entity_id=candidate.entity_id, successor_entity_id=subject.entity_id,
+        predicate="merged_into", assertion_id=candidate_assertion.assertion_id,
+        effective_from="2024-01-01T00:00:00+00:00")
 
 
 def test_edges_require_complete_effective_coverage_from_supporting_assertion(repositories):

@@ -548,9 +548,18 @@ def ensure_entity_registry_schema(engine: Engine) -> None:
                 system_to TEXT,
                 detected_at TEXT NOT NULL,
                 detected_actor TEXT NOT NULL,
+                detected_origin TEXT NOT NULL,
+                queried_effective_as_of TEXT NOT NULL,
+                queried_system_as_of TEXT NOT NULL,
                 resolution_status TEXT NOT NULL CHECK (resolution_status IN ('unresolved', 'resolved', 'reversed')),
                 resolved_at TEXT,
+                resolved_actor TEXT,
+                resolved_origin TEXT,
                 resolution_reason TEXT,
+                reversed_at TEXT,
+                reversed_actor TEXT,
+                reversed_origin TEXT,
+                reversal_reason TEXT,
                 CHECK (effective_to IS NULL OR effective_from < effective_to)
             )
         """))
@@ -658,7 +667,8 @@ def validate_entity_registry_schema(engine: Engine) -> None:
         },
         "entity_registry_conflicts": {
             "conflict_id", "entity_id", "domain", "attribute", "assertion_ids_json", "dedup_key", "policy_id",
-            "policy_version", "effective_from", "system_from", "detected_at", "detected_actor", "resolution_status",
+            "policy_version", "effective_from", "system_from", "detected_at", "detected_actor", "detected_origin",
+            "queried_effective_as_of", "queried_system_as_of", "resolution_status",
         },
     }
     for table_name, expected in required_columns.items():
