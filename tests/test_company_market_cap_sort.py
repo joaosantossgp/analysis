@@ -49,11 +49,15 @@ class _FakeCatalog:
     """Catalog with specific test entries."""
     def __init__(self, entries: list):
         self._entries = entries
+        self.list_entries_calls = 0
+        self.lookup_calls = 0
 
     def lookup_company(self, cd_cvm: int):
+        self.lookup_calls += 1
         return next((entry for entry in self._entries if entry.cd_cvm == cd_cvm), None)
 
     def list_entries(self):
+        self.list_entries_calls += 1
         return self._entries
 
     def search_companies(self, *, q: str, limit: int, exclude_codes=None):
@@ -473,6 +477,29 @@ def test_synthetic_company_name_uses_catalog_display_name(tmp_path):
     ])
 
     assert non_placeholder_svc.get_company_info(25658).company_name == "Stored Name"
+
+
+def test_directory_searches_catalog_name_without_per_item_identity_resolution(tmp_path):
+    """Directory search indexes catalog display names once instead of resolving each row."""
+    catalog_name = "AGROGALAXY PARTICIPAÇÕES S.A. - EM RECUPERAÇÃO JUDICIAL"
+    svc = _seed_db(tmp_path, [_company(25658, "CVM_25658", "AGXY3")])
+    catalog = _FakeCatalog([_FakeCatalogEntry(25658, catalog_name, "AGXY3")])
+    svc._company_catalog = catalog  # type: ignore[assignment]
+    _write_snapshot(
+        Path(svc.settings.paths.company_universe_snapshot_path),
+        [_snap_row("AGXY3.SA", 100_000_000.0, 1, cd_cvm="25658", mapping_status="mapped")],
+    )
+
+    with patch(
+        "src.companies.identity.CompanyIdentityResolver.resolve",
+        side_effect=AssertionError("directory must not resolve identity per company"),
+    ) as resolve:
+        page = svc.list_companies(search="RECUPERAÇÃO JUDICIAL", page=1, page_size=10)
+
+    assert [item.company_name for item in page.items] == [catalog_name]
+    assert resolve.call_count == 0
+    assert catalog.lookup_calls == 0
+    assert catalog.list_entries_calls == 2
 
 
 def test_snapshot_ticker_fills_null_db_ticker(tmp_path):

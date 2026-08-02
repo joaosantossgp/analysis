@@ -450,6 +450,17 @@ class ReadServiceQueryMixin:
     def _is_synthetic_company_name(value: object, cd_cvm: int) -> bool:
         return isinstance(value, str) and value.strip().casefold() == f"cvm_{cd_cvm}".casefold()
 
+    def _catalog_display_names_by_cd_cvm(self) -> dict[int, str]:
+        try:
+            entries = self.company_catalog.list_entries()
+        except CompanyCatalogUnavailableError:
+            return {}
+        return {
+            int(entry.cd_cvm): company_name
+            for entry in entries
+            if (company_name := str(entry.company_name or "").strip())
+        }
+
     def _enrich_company_identity_fallback(
         self,
         payload: dict[str, Any],
@@ -770,6 +781,14 @@ class ReadServiceQueryMixin:
             if use_local_universe
             else self._merge_catalog_with_db(include_years=False)
         )
+        catalog_display_names = self._catalog_display_names_by_cd_cvm()
+        all_items = [
+            replace(item, company_name=catalog_display_names[item.cd_cvm])
+            if self._is_synthetic_company_name(item.company_name, item.cd_cvm)
+            and item.cd_cvm in catalog_display_names
+            else item
+            for item in all_items
+        ]
 
         # Filter DB companies
         filtered: list[CompanySearchResult] = []
@@ -791,19 +810,6 @@ class ReadServiceQueryMixin:
         enriched: list[CompanySearchResult] = []
         mapped_count = 0
         for item in filtered:
-            identity_payload = self._enrich_company_identity_fallback(
-                {
-                    "cd_cvm": item.cd_cvm,
-                    "company_name": item.company_name,
-                    "ticker_b3": item.ticker_b3,
-                },
-                default_cd_cvm=item.cd_cvm,
-            )
-            item = replace(
-                item,
-                company_name=str(identity_payload.get("company_name") or item.company_name),
-                ticker_b3=identity_payload.get("ticker_b3") or item.ticker_b3,
-            )
             entry = by_cd_cvm.get(item.cd_cvm)
             if entry is None and item.ticker_b3:
                 # DB may store ticker with or without .SA suffix — normalise
