@@ -51,7 +51,7 @@ class _FakeCatalog:
         self._entries = entries
 
     def lookup_company(self, cd_cvm: int):
-        return None
+        return next((entry for entry in self._entries if entry.cd_cvm == cd_cvm), None)
 
     def list_entries(self):
         return self._entries
@@ -446,6 +446,33 @@ def test_catalog_companies_not_in_db_appear_as_stubs(tmp_path):
     assert names[0] == "Alpha Corp"   # higher market cap
     assert names[1] == "Beta Corp"
     assert "BETA3" in tickers
+
+
+def test_synthetic_company_name_uses_catalog_display_name(tmp_path):
+    """Synthetic DB names use the catalog name while real DB names remain authoritative."""
+    catalog_name = "AGROGALAXY PARTICIPAÇÕES S.A. - EM RECUPERAÇÃO JUDICIAL"
+    svc = _seed_db(tmp_path, [_company(25658, "CVM_25658", "AGXY3")])
+    svc._company_catalog = _FakeCatalog([  # type: ignore[assignment]
+        _FakeCatalogEntry(25658, catalog_name, "AGXY3"),
+    ])
+    snapshot_path = Path(svc.settings.paths.company_universe_snapshot_path)
+    _write_snapshot(snapshot_path, [
+        _snap_row("AGXY3.SA", 100_000_000.0, 1, cd_cvm="25658", mapping_status="mapped"),
+    ])
+
+    page = svc.list_companies(search="AGXY3", page=1, page_size=10)
+    company_info = svc.get_company_info(25658)
+
+    assert page.items[0].company_name == catalog_name
+    assert company_info is not None
+    assert company_info.company_name == catalog_name
+
+    non_placeholder_svc = _seed_db(tmp_path / "non-placeholder", [_company(25658, "Stored Name", "AGXY3")])
+    non_placeholder_svc._company_catalog = _FakeCatalog([  # type: ignore[assignment]
+        _FakeCatalogEntry(25658, catalog_name, "AGXY3"),
+    ])
+
+    assert non_placeholder_svc.get_company_info(25658).company_name == "Stored Name"
 
 
 def test_snapshot_ticker_fills_null_db_ticker(tmp_path):
