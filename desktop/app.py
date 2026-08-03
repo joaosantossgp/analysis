@@ -955,6 +955,29 @@ def _start_vite_static_server(dist: Path) -> tuple[object, int]:
     return server, port
 
 
+def _stop_vite_dev_server(proc: subprocess.Popen[bytes] | None) -> None:
+    if proc is None:
+        return
+
+    try:
+        if os.name == "nt":
+            subprocess.run(
+                ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return
+
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+    except (OSError, subprocess.SubprocessError):
+        return
+
+
 def _start_vite_dev_server() -> tuple[subprocess.Popen[bytes] | None, str]:
     vite_dir = _vite_app_dir()
     if not (vite_dir / "package.json").exists():
@@ -991,7 +1014,7 @@ def _start_vite_dev_server() -> tuple[subprocess.Popen[bytes] | None, str]:
         stderr=subprocess.DEVNULL,
     )
     if not _wait_for_port(port, timeout=30):
-        proc.terminate()
+        _stop_vite_dev_server(proc)
         sys.exit(
             f"[desktop] Vite dev server nao respondeu na porta {port} "
             "apos 30s."
@@ -1230,8 +1253,7 @@ def main() -> None:
         webview.start(debug=debug_mode)
     finally:
         lockfile.release()
-        if server_proc is not None:
-            server_proc.terminate()
+        _stop_vite_dev_server(server_proc)
         if static_server is not None:
             try:
                 static_server.shutdown()  # type: ignore[attr-defined]

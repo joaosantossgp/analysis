@@ -446,26 +446,56 @@ class ReadServiceQueryMixin:
             "ticker_b3": entry.ticker_b3,
         }
 
+    @staticmethod
+    def _is_synthetic_company_name(value: object, cd_cvm: int) -> bool:
+        return isinstance(value, str) and value.strip().casefold() == f"cvm_{cd_cvm}".casefold()
+
+    def _catalog_display_names_by_cd_cvm(self) -> dict[int, str]:
+        try:
+            entries = self.company_catalog.list_entries()
+        except CompanyCatalogUnavailableError:
+            return {}
+        return {
+            int(entry.cd_cvm): company_name
+            for entry in entries
+            if (company_name := str(entry.company_name or "").strip())
+        }
+
     def _enrich_company_identity_fallback(
         self,
         payload: dict[str, Any],
         *,
         default_cd_cvm: int,
     ) -> dict[str, Any]:
-        if payload.get("ticker_b3") and payload.get("cnpj"):
+        resolved_cd_cvm = int(payload.get("cd_cvm") or default_cd_cvm)
+        has_synthetic_name = self._is_synthetic_company_name(
+            payload.get("company_name"),
+            resolved_cd_cvm,
+        )
+        if payload.get("ticker_b3") and payload.get("cnpj") and not has_synthetic_name:
             return payload
         try:
             from src.companies.identity import CompanyIdentityResolver  # noqa: PLC0415
 
             identity = CompanyIdentityResolver(engine=self.engine).resolve(
-                int(payload.get("cd_cvm") or default_cd_cvm)
+                resolved_cd_cvm
             )
         except Exception:
             identity = None
-        if identity is None:
-            return payload
 
         enriched = dict(payload)
+        if has_synthetic_name:
+            try:
+                catalog_identity = self.company_catalog.lookup_company(resolved_cd_cvm)
+            except Exception:
+                catalog_identity = None
+            catalog_name = str(getattr(catalog_identity, "company_name", "") or "").strip()
+            if catalog_name:
+                enriched["company_name"] = catalog_name
+
+        if identity is None:
+            return enriched
+
         if not enriched.get("ticker_b3") and identity.ticker_b3:
             ticker = str(identity.ticker_b3).strip().upper()
             if ticker.endswith(".SA"):
@@ -751,6 +781,14 @@ class ReadServiceQueryMixin:
             if use_local_universe
             else self._merge_catalog_with_db(include_years=False)
         )
+        catalog_display_names = self._catalog_display_names_by_cd_cvm()
+        all_items = [
+            replace(item, company_name=catalog_display_names[item.cd_cvm])
+            if self._is_synthetic_company_name(item.company_name, item.cd_cvm)
+            and item.cd_cvm in catalog_display_names
+            else item
+            for item in all_items
+        ]
 
         # Filter DB companies
         filtered: list[CompanySearchResult] = []

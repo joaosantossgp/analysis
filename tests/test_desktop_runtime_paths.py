@@ -3,9 +3,51 @@ from __future__ import annotations
 import sqlite3
 from os import environ
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from desktop import app
+
+
+def test_stop_vite_dev_server_uses_taskkill_for_the_windows_process_tree(
+) -> None:
+    proc = Mock(pid=4242)
+
+    with patch.object(app.subprocess, "run") as run:
+        with patch.object(app.os, "name", "nt"):
+            app._stop_vite_dev_server(proc)
+
+    run.assert_called_once_with(
+        ["taskkill", "/PID", "4242", "/T", "/F"],
+        check=False,
+        stdout=app.subprocess.DEVNULL,
+        stderr=app.subprocess.DEVNULL,
+    )
+    proc.terminate.assert_not_called()
+
+
+def test_stop_vite_dev_server_terminates_and_waits_on_non_windows(
+) -> None:
+    proc = Mock()
+
+    with patch.object(app.os, "name", "posix"):
+        app._stop_vite_dev_server(proc)
+
+    proc.terminate.assert_called_once_with()
+    proc.wait.assert_called_once_with(timeout=5)
+    proc.kill.assert_not_called()
+
+
+def test_stop_vite_dev_server_kills_after_non_windows_wait_timeout(
+) -> None:
+    proc = Mock()
+    proc.wait.side_effect = app.subprocess.TimeoutExpired("vite", 5)
+
+    with patch.object(app.os, "name", "posix"):
+        app._stop_vite_dev_server(proc)
+
+    proc.terminate.assert_called_once_with()
+    proc.wait.assert_called_once_with(timeout=5)
+    proc.kill.assert_called_once_with()
 
 
 def test_configure_dev_data_paths_defaults_to_documents_root(
