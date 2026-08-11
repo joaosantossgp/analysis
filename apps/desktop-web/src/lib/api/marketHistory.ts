@@ -3,6 +3,7 @@ import type {
   CompanyMarketHistoryStatus,
   CompanyMarketHistoryResult,
   CompanyMarketHistoryRefreshResult,
+  CompanyMarketHistoryAllRefreshResult,
 } from "../bridge/types";
 
 const BROWSER_REASON =
@@ -74,6 +75,23 @@ export async function triggerMarketHistoryRefresh(
     ticker: ticker ?? null,
   });
   if (result.error) {
+    throw new Error(result.error);
+  }
+  return { mode: "desktop", result };
+}
+
+export type MarketHistoryAllRefreshResultUI =
+  | { mode: "desktop"; result: CompanyMarketHistoryAllRefreshResult }
+  | { mode: "browser"; result: null; reason: string };
+
+export async function triggerAllMarketHistoryRefresh(
+  cdCvm: number,
+): Promise<MarketHistoryAllRefreshResultUI> {
+  if (getBridgeMode() === "browser") {
+    return { mode: "browser", result: null, reason: BROWSER_REASON };
+  }
+  const result = await callBridge("refresh_all_company_market_history", { cd_cvm: cdCvm });
+  if (result.error && result.attempted_count == null) {
     throw new Error(result.error);
   }
   return { mode: "desktop", result };

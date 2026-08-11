@@ -1,5 +1,4 @@
-# Compatibility wrapper for the default dev desktop workflow.
-# Dev mode points at the shared Documents data directory by default.
+# Explicit shared-release-data dev workflow.
 #
 # WARNING: This uses the same database as the installed release app.
 # Destructive actions (database reset, onboarding reset) affect real user data.

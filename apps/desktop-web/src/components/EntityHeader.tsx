@@ -11,6 +11,7 @@ import { StateBanner } from "./feedback/StateBanner";
 export interface EntityHeaderProps {
   cdCvm: number;
   activeTab: "overview" | "statements" | "mapping";
+  rightPanel?: ReactNode;
 }
 
 type CompanyHeaderClassificationInput = Pick<
@@ -24,7 +25,7 @@ type CompanyHeaderClassificationInput = Pick<
 >;
 
 export type CompanyHeaderClassificationBadge = {
-  label: "Sector" | "Industry Group";
+  label: "Sector" | "Industry Group" | "Industry" | "Sub-industry";
   value: string;
   title?: string;
 };
@@ -35,8 +36,6 @@ export function getCompanyHeaderClassificationBadges(
   info: CompanyHeaderClassificationInput,
 ): CompanyHeaderClassificationBadge[] {
   const cvmSector = cleanClassification(info.sector_name) || cleanClassification(info.setor_cvm);
-  const lowerGicsLevel =
-    cleanClassification(info.gics_industry) || cleanClassification(info.gics_sub_industry);
   const industryGroup = cleanClassification(info.gics_industry_group);
 
   return [
@@ -48,17 +47,33 @@ export function getCompanyHeaderClassificationBadges(
     {
       label: "Industry Group",
       value: industryGroup || MISSING_CLASSIFICATION,
-      title:
-        lowerGicsLevel && !industryGroup
-          ? "Lower GICS classification exists, but industry group is not mapped yet."
-          : undefined,
     },
+    { label: "Industry", value: cleanClassification(info.gics_industry) || MISSING_CLASSIFICATION },
+    { label: "Sub-industry", value: cleanClassification(info.gics_sub_industry) || MISSING_CLASSIFICATION },
   ];
+}
+
+export function formatCompanyPeriodCoverage(
+  latestPeriod: string | null | undefined,
+  yearsAvailable: number | null | undefined,
+): string {
+  const period = String(latestPeriod ?? "").trim();
+  const fullYears = typeof yearsAvailable === "number" && Number.isInteger(yearsAvailable)
+    ? yearsAvailable
+    : null;
+  if (!period || fullYears == null || fullYears <= 0) {
+    return period || MISSING_CLASSIFICATION;
+  }
+
+  const quarterMatch = /^(?<quarter>[1-4])Q\d{2}$/.exec(period);
+  const quarterCount = fullYears * 4 + (quarterMatch ? Number(quarterMatch.groups?.quarter) : 0);
+  return `${period} · ${fullYears}Y · ${quarterCount}Q`;
 }
 
 export function EntityHeader({
   cdCvm,
   activeTab: _activeTab,
+  rightPanel,
 }: EntityHeaderProps) {
   const [bridgeReady, setBridgeReady] = useState(false);
 
@@ -124,17 +139,13 @@ export function EntityHeader({
   }
 
   const info = query.data.info;
-  const subtitle = info.nome_comercial && info.nome_comercial !== info.company_name
-    ? info.nome_comercial
-    : null;
   const latestPeriodDisplay = info.latest_financial_period_display;
-  const localDataLabel = info.has_local_financial_reports ? "local data" : "no local data";
+  const periodCoverage = formatCompanyPeriodCoverage(latestPeriodDisplay, info.readable_years_count);
   const dataFreshnessMessage = latestPeriodDisplay
     ? `Updated through ${latestPeriodDisplay}.`
     : info.has_local_financial_reports
       ? "Local financial rows exist, but no complete BPA/BPP/DRE/DFC period is available."
       : "No local financial statements found for this company.";
-  const yearsAvailableLabel = info.readable_years_count === 1 ? "1 year available" : `${info.readable_years_count} years available`;
 
   return (
     <article
@@ -142,13 +153,17 @@ export function EntityHeader({
         background: "var(--color-surface-2)",
         border: "1px solid var(--color-border-subtle)",
         borderRadius: "var(--radius-md)",
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
         overflow: "hidden",
       }}
     >
       <header
-        className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]"
+        className={rightPanel ? "grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(620px,0.9fr)]" : undefined}
         style={{
           borderBottom: "1px solid var(--color-border-subtle)",
+          flex: 1,
           padding: "14px 16px 12px",
         }}
       >
@@ -170,36 +185,15 @@ export function EntityHeader({
             {info.ticker_b3 ? (
               <IdentifierBadge label="B3">{info.ticker_b3}</IdentifierBadge>
             ) : null}
-            <IdentifierBadge label="CVM" muted>{info.cd_cvm}</IdentifierBadge>
           </div>
-          {subtitle ? (
-            <p
-              className="truncate"
-              style={{
-                color: "var(--color-text-secondary)",
-                fontSize: "var(--text-xs)",
-                margin: 0,
-              }}
-            >
-              {subtitle}
-            </p>
-          ) : null}
           <div className="flex flex-wrap gap-2">
             {getCompanyHeaderClassificationBadges(info).map((badge) => (
               <IdentifierBadge key={badge.label} label={badge.label} muted title={badge.title}>
                 {badge.value}
               </IdentifierBadge>
             ))}
-            <StatusChip tone={info.has_local_financial_reports ? "ok" : "warn"}>
-              {localDataLabel}
-            </StatusChip>
             {connections && (
               <>
-                {connections.has_financials && (
-                  <ConnectionChip color="amber" title="Has financial statements in the local database">
-                    Financials
-                  </ConnectionChip>
-                )}
                 {connections.mapped_distributors > 0 && (
                   <ConnectionChip
                     color="sky"
@@ -221,41 +215,7 @@ export function EntityHeader({
           </div>
         </div>
 
-        <div className="flex min-w-[180px] flex-col items-start gap-1 lg:items-end lg:text-right">
-          <span
-            style={{
-              color: "var(--color-text-tertiary)",
-              fontSize: "var(--text-2xs)",
-              fontWeight: 650,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-            }}
-          >
-            Data through
-          </span>
-          <span
-            className="font-mono"
-            style={{
-              color: latestPeriodDisplay ? "var(--color-text-primary)" : "var(--color-state-warn)",
-              fontSize: "var(--text-2xl)",
-              fontVariantNumeric: "tabular-nums",
-              fontWeight: 700,
-              lineHeight: 1,
-            }}
-            title={dataFreshnessMessage}
-          >
-            {latestPeriodDisplay ?? "—"}
-          </span>
-          <span
-            className="font-mono"
-            style={{
-              color: latestPeriodDisplay ? "var(--color-text-tertiary)" : "var(--color-state-warn)",
-              fontSize: "var(--text-2xs)",
-            }}
-          >
-            local read model
-          </span>
-        </div>
+        {rightPanel ? <aside className="min-w-0">{rightPanel}</aside> : null}
       </header>
 
       <dl
@@ -270,12 +230,8 @@ export function EntityHeader({
         }}
       >
         <InlineMeta label="CNPJ" value={formatCNPJ(info.cnpj)} mono />
-        <InlineMeta label="Years available" value={yearsAvailableLabel} mono />
-        <InlineMeta
-          label={info.is_active === false ? "Historical ticker" : "Ticker"}
-          value={info.ticker_b3 ? info.ticker_b3 : "Not available"}
-          mono
-        />
+        <InlineMeta label="CVM" value={String(info.cd_cvm)} mono />
+        <InlineMeta label="Latest available period" value={periodCoverage} mono title={dataFreshnessMessage} />
       </dl>
     </article>
   );
@@ -290,10 +246,12 @@ function InlineMeta({
   label,
   value,
   mono = false,
+  title,
 }: {
   label: string;
   value: string | null;
   mono?: boolean;
+  title?: string;
 }) {
   return (
     <div className="flex min-w-0 items-baseline gap-1.5">
@@ -315,40 +273,11 @@ function InlineMeta({
           fontSize: "var(--text-xs)",
           margin: 0,
         }}
-        title={value ?? undefined}
+        title={title ?? value ?? undefined}
       >
         {value ?? "—"}
       </dd>
     </div>
-  );
-}
-
-function StatusChip({
-  tone,
-  children,
-}: {
-  tone: "ok" | "warn";
-  children: ReactNode;
-}) {
-  const color = tone === "ok" ? "var(--color-state-ok)" : "var(--color-state-warn)";
-  return (
-    <span
-      style={{
-        alignItems: "center",
-        border: `1px solid ${color}`,
-        borderRadius: "var(--radius-sm)",
-        color,
-        display: "inline-flex",
-        fontFamily: "var(--font-mono)",
-        fontSize: "var(--text-xs)",
-        gap: 5,
-        minHeight: 22,
-        padding: "2px 7px",
-      }}
-    >
-      <span aria-hidden="true">{tone === "ok" ? "●" : "▲"}</span>
-      {children}
-    </span>
   );
 }
 
@@ -357,12 +286,11 @@ function ConnectionChip({
   title,
   children,
 }: {
-  color: "amber" | "sky" | "emerald";
+  color: "sky" | "emerald";
   title?: string;
   children: ReactNode;
 }) {
   const palette = {
-    amber: { bg: "rgba(245,158,11,0.08)", border: "rgba(245,158,11,0.25)", text: "rgb(251,191,36)" },
     sky:   { bg: "rgba(14,165,233,0.08)", border: "rgba(14,165,233,0.25)", text: "rgb(56,189,248)" },
     emerald: { bg: "rgba(16,185,129,0.08)", border: "rgba(16,185,129,0.25)", text: "rgb(52,211,153)" },
   }[color];

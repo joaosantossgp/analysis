@@ -8,6 +8,7 @@ import {
   MARKET_MAX_SELECTED_SERIES,
   MARKET_PERIOD_OPTIONS,
   normalizeMarketChartType,
+  sanitizeMarketMetricSelection,
   type MarketPeriod,
   type MarketSeriesId,
   type MarketView,
@@ -16,10 +17,11 @@ import {
 const STORAGE_KEY = "cvm:market-history:chart-config:v1";
 
 export interface MarketHistoryChartConfig {
-  view: MarketView;
+  selectedViews: MarketView[];
   period: MarketPeriod;
   selectedSeriesByView: Record<MarketView, MarketSeriesId[]>;
-  chartTypeByView: Record<MarketView, ChartType>;
+  seriesStyles: Partial<Record<MarketSeriesId, { color?: string; type?: ChartType }>>;
+  chartType: ChartType;
   smooth: boolean;
   markers: boolean;
   legend: boolean;
@@ -35,7 +37,7 @@ const NON_CUSTOM_PERIODS = MARKET_PERIOD_OPTIONS.map((option) => option.value).f
 
 function defaultConfig(): MarketHistoryChartConfig {
   return {
-    view: "price",
+    selectedViews: ["price"],
     period: "1Y",
     selectedSeriesByView: {
       price: [...MARKET_DEFAULT_SERIES.price],
@@ -43,7 +45,8 @@ function defaultConfig(): MarketHistoryChartConfig {
       yield: [...MARKET_DEFAULT_SERIES.yield],
       volume: [...MARKET_DEFAULT_SERIES.volume],
     },
-    chartTypeByView: { ...MARKET_DEFAULT_CHART_TYPE },
+    seriesStyles: {},
+    chartType: MARKET_DEFAULT_CHART_TYPE.price,
     smooth: false,
     markers: true,
     legend: true,
@@ -81,13 +84,18 @@ function sanitizeConfig(raw: unknown): MarketHistoryChartConfig {
   const base = defaultConfig();
   if (!raw || typeof raw !== "object") return base;
   const obj = raw as Record<string, unknown>;
-  const view = isMarketView(obj.view) ? obj.view : base.view;
+  const selectedViews = sanitizeMarketMetricSelection(
+    Array.isArray(obj.selectedViews)
+      ? obj.selectedViews.filter(isMarketView)
+      : [isMarketView(obj.view) ? obj.view : base.selectedViews[0]],
+  );
   const period =
     typeof obj.period === "string" && NON_CUSTOM_PERIODS.includes(obj.period as Exclude<MarketPeriod, "custom">)
       ? (obj.period as MarketPeriod)
       : base.period;
 
   const selectedRaw = (obj.selectedSeriesByView ?? {}) as Record<string, unknown>;
+  const styleRaw = (obj.seriesStyles ?? {}) as Record<string, unknown>;
   const typeRaw = (obj.chartTypeByView ?? {}) as Record<string, unknown>;
   const selectedSeriesByView = MARKET_VIEWS.reduce(
     (acc, item) => {
@@ -96,19 +104,26 @@ function sanitizeConfig(raw: unknown): MarketHistoryChartConfig {
     },
     {} as Record<MarketView, MarketSeriesId[]>,
   );
-  const chartTypeByView = MARKET_VIEWS.reduce(
-    (acc, item) => {
-      acc[item] = normalizeMarketChartType(item, typeRaw[item] as ChartType);
-      return acc;
-    },
-    {} as Record<MarketView, ChartType>,
+  const legacyView = selectedViews[0];
+  const chartType = normalizeMarketChartType(
+    selectedViews,
+    (obj.chartType as ChartType | undefined) ?? (typeRaw[legacyView] as ChartType),
   );
 
   return {
-    view,
+    selectedViews,
     period,
     selectedSeriesByView,
-    chartTypeByView,
+    seriesStyles: Object.fromEntries(
+      Object.entries(styleRaw).flatMap(([id, style]) => {
+        if (!style || typeof style !== "object") return [];
+        const value = style as Record<string, unknown>;
+        const color = typeof value.color === "string" && /^#[0-9a-f]{6}$/i.test(value.color) ? value.color : undefined;
+        const type = value.type === "line" || value.type === "bar" || value.type === "area" ? value.type : undefined;
+        return color || type ? [[id, { ...(color ? { color } : {}), ...(type ? { type } : {}) }]] : [];
+      }),
+    ) as MarketHistoryChartConfig["seriesStyles"],
+    chartType,
     smooth: typeof obj.smooth === "boolean" ? obj.smooth : base.smooth,
     markers: typeof obj.markers === "boolean" ? obj.markers : base.markers,
     legend: typeof obj.legend === "boolean" ? obj.legend : base.legend,
@@ -136,7 +151,7 @@ function persistableConfig(config: MarketHistoryChartConfig): MarketHistoryChart
 }
 
 export function chartAestheticsForMarketConfig(config: MarketHistoryChartConfig): ChartAesthetics {
-  const type = normalizeMarketChartType(config.view, config.chartTypeByView[config.view]);
+  const type = normalizeMarketChartType(config.selectedViews, config.chartType);
   return {
     type,
     smooth: type === "bar" ? false : config.smooth,
@@ -144,7 +159,7 @@ export function chartAestheticsForMarketConfig(config: MarketHistoryChartConfig)
     legend: config.legend,
     grid: config.grid,
     dataLabels: config.dataLabels,
-    indexMode: config.view === "price" ? config.indexMode : false,
+    indexMode: config.selectedViews.length === 1 && config.selectedViews[0] === "price" ? config.indexMode : false,
   };
 }
 
@@ -168,8 +183,15 @@ export function useMarketHistoryConfig() {
 
   const chart = useMemo(() => chartAestheticsForMarketConfig(config), [config]);
 
-  const setView = useCallback((view: MarketView) => {
-    setConfig((current) => (current.view === view ? current : { ...current, view }));
+  const setSelectedViews = useCallback((selectedViews: MarketView[]) => {
+    setConfig((current) => {
+      const next = sanitizeMarketMetricSelection(selectedViews);
+      return {
+        ...current,
+        selectedViews: next,
+        chartType: normalizeMarketChartType(next, current.chartType),
+      };
+    });
   }, []);
 
   const setPeriod = useCallback((period: MarketPeriod) => {
@@ -186,13 +208,17 @@ export function useMarketHistoryConfig() {
     }));
   }, []);
 
-  const setChartType = useCallback((view: MarketView, type: ChartType) => {
+  const setChartType = useCallback((type: ChartType) => {
     setConfig((current) => ({
       ...current,
-      chartTypeByView: {
-        ...current.chartTypeByView,
-        [view]: normalizeMarketChartType(view, type),
-      },
+      chartType: normalizeMarketChartType(current.selectedViews, type),
+    }));
+  }, []);
+
+  const setSeriesStyle = useCallback((id: MarketSeriesId, patch: { color?: string; type?: ChartType }) => {
+    setConfig((current) => ({
+      ...current,
+      seriesStyles: { ...current.seriesStyles, [id]: { ...current.seriesStyles[id], ...patch } },
     }));
   }, []);
 
@@ -211,10 +237,11 @@ export function useMarketHistoryConfig() {
   return {
     config,
     chart,
-    setView,
+    setSelectedViews,
     setPeriod,
     setSelectedSeries,
     setChartType,
+    setSeriesStyle,
     setChartOptions,
     storageKey: STORAGE_KEY,
   };

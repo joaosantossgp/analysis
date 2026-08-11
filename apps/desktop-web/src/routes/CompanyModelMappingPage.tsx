@@ -77,7 +77,7 @@ type StatementGroupSummary = {
   rowIds: string;
 };
 
-export function CompanyModelMappingPage() {
+export function CompanyModelMappingPage({ windowMode = false }: { windowMode?: boolean }) {
   const params = useParams<{ cdCvm: string }>();
   const cdCvm = Number.parseInt(params.cdCvm ?? "", 10);
   const queryClient = useQueryClient();
@@ -398,20 +398,24 @@ export function CompanyModelMappingPage() {
 
   return (
     <section className="space-y-4">
-      <EntityHeader cdCvm={cdCvm} activeTab="mapping" />
+      {!windowMode ? <EntityHeader cdCvm={cdCvm} activeTab="mapping" /> : null}
       <Panel
         dense
         title="Excel Mapping"
         subtitle="Map local CVM statement lines to the Excel Model sheet, then export a saved preset."
       >
-        <CompanyCommandBar
-          cdCvm={cdCvm}
-          bridgeReady={bridgeReady}
-          latestPeriod={workspace.company.latest_financial_period_display}
-          hideExport
-          flat
-        />
-        <hr className="my-3 border-t border-[var(--color-border-subtle)]" />
+        {!windowMode ? (
+          <>
+            <CompanyCommandBar
+              cdCvm={cdCvm}
+              bridgeReady={bridgeReady}
+              latestPeriod={workspace.company.latest_financial_period_display}
+              hideExport
+              flat
+            />
+            <hr className="my-3 border-t border-[var(--color-border-subtle)]" />
+          </>
+        ) : null}
         <BuilderCommandBar
           companyName={workspace.company.company_name}
           ticker={workspace.company.ticker_b3}

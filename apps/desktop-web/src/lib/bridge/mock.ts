@@ -2358,6 +2358,11 @@ export function createMockBridge(): Partial<BridgeApi> {
       error: "[mock] Excel export not available in browser/mock mode",
     }),
 
+    open_company_excel_mapping_window: async () => ({
+      ok: false,
+      error: "[mock] Excel Mapping windows are not available in browser/mock mode",
+    }),
+
     export_company_market_history_excel: async () => ({
       ok: false,
       error: "[mock] Market-history Excel export not available in browser/mock mode",
@@ -2717,18 +2722,6 @@ export function createMockBridge(): Partial<BridgeApi> {
       warnings: [],
     }),
 
-    fetch_latest_market_cap: async () => ({
-      ok: true,
-      status: {
-        available: true,
-        row_count: 1,
-        as_of_date: `${YEAR}-01-01`,
-        downloaded_at: NOW,
-        source: "mock-fixture",
-        warnings: [],
-      },
-    }),
-
     get_company_market_history_status: async (params: { cd_cvm: number; ticker?: string | null }) => {
       const cdCvm = Number(params?.cd_cvm ?? 9512);
       const ticker = resolveMockTicker(cdCvm, params?.ticker);
@@ -2931,6 +2924,36 @@ export function createMockBridge(): Partial<BridgeApi> {
         provider_warnings: [],
         completion_timestamp: NOW,
         refresh_duration_seconds: 0.12,
+      };
+    },
+
+    refresh_all_company_market_history: async (params: { cd_cvm: number }) => {
+      const cdCvm = Number(params?.cd_cvm ?? 9512);
+      const tickers = resolveMockCompanyTickers(cdCvm);
+      const results = tickers.map((ticker) => ({
+        ok: true,
+        ticker,
+        requested_start_date: null,
+        requested_end_date: null,
+        provider_date_range: "2024-06-08 to 2026-06-08",
+        downloaded_rows: 730,
+        inserted_rows: 730,
+        updated_rows: 0,
+        unchanged_rows: 0,
+        rejected_rows: 0,
+        provider_warnings: [],
+        completion_timestamp: NOW,
+        refresh_duration_seconds: 0.12,
+      }));
+      DOWNLOADED_MARKET_HISTORIES.add(cdCvm);
+      return {
+        ok: results.length > 0,
+        cd_cvm: cdCvm,
+        attempted_count: results.length,
+        success_count: results.length,
+        failure_count: 0,
+        results,
+        error: results.length ? null : "No ticker resolved",
       };
     },
 

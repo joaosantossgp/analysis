@@ -58,6 +58,8 @@ export interface IndicatorSelection {
   axis: "auto" | AxisSide;
   /** "auto" uses the global chart type; otherwise forces a per-series type. */
   type: "auto" | ChartType;
+  /** Optional analyst-selected color, persisted with this chart selection. */
+  color?: string;
 }
 
 /** The full, persisted workspace configuration. */

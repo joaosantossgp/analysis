@@ -587,6 +587,45 @@ class MarketHistoryService:
             "refresh_duration_seconds": round(time.perf_counter() - t0, 3),
         }
 
+    def refresh_all_market_history(self, cd_cvm: int) -> dict[str, Any]:
+        """Refresh each resolved ticker sequentially and retain per-ticker outcomes."""
+        tickers = resolve_company_tickers(cd_cvm, self.read_service)
+        if not tickers:
+            return {
+                "ok": False,
+                "cd_cvm": cd_cvm,
+                "attempted_count": 0,
+                "success_count": 0,
+                "failure_count": 0,
+                "results": [],
+                "error": "No ticker resolved for this CVM code.",
+            }
+
+        results: list[dict[str, Any]] = []
+        for ticker in tickers:
+            try:
+                result = self.refresh_market_history(cd_cvm, ticker=ticker)
+            except Exception as exc:
+                logger.exception(
+                    "Unexpected market-history refresh error for CVM %s ticker %s",
+                    cd_cvm,
+                    ticker,
+                )
+                result = {"ok": False, "ticker": ticker, "error": str(exc)}
+            results.append(result)
+
+        success_count = sum(1 for result in results if result.get("ok") is True)
+        failure_count = len(results) - success_count
+        return {
+            "ok": failure_count == 0,
+            "cd_cvm": cd_cvm,
+            "attempted_count": len(results),
+            "success_count": success_count,
+            "failure_count": failure_count,
+            "results": results,
+            "error": None if failure_count == 0 else "One or more ticker refreshes failed.",
+        }
+
     def get_market_history(
         self,
         cd_cvm: int,

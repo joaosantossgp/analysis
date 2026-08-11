@@ -1,12 +1,12 @@
-import { lazy, Suspense, useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
+import { lazy, Suspense } from "react";
+import { HashRouter, Navigate, Route, Routes, useNavigate } from "react-router-dom";
 
 import { useCommandPalette } from "./components/command/useCommandPalette";
 import { StateBanner } from "./components/feedback/StateBanner";
 import { TerminalShell } from "./components/shell/TerminalShell";
-import { fetchOnboardingState } from "./lib/api/onboarding";
-import { whenBridgeReady } from "./lib/bridge/adapter";
+import { isExcelMappingWindow } from "./lib/windowMode";
+import { useGlobalHotkeys } from "./lib/keyboard/useGlobalHotkeys";
+import { DEV_DESIGN_SYSTEM_PATH, resolveDevDesignSystemShortcut } from "./lib/keyboard/devDesignSystemShortcut";
 
 // Route pages are lazy-loaded so the initial bundle only ships the shell,
 // command palette, and routing logic. Each route chunk is fetched on first
@@ -19,9 +19,6 @@ const CompaniesPage = lazy(() =>
 );
 const CompanyDetailPage = lazy(() =>
   import("./routes/CompanyDetailPage").then((m) => ({ default: m.CompanyDetailPage })),
-);
-const CompanyUniversePage = lazy(() =>
-  import("./routes/CompanyUniversePage").then((m) => ({ default: m.CompanyUniversePage })),
 );
 const CompanyKpisPage = lazy(() =>
   import("./routes/CompanyKpisPage").then((m) => ({ default: m.CompanyKpisPage })),
@@ -47,6 +44,9 @@ const SettingsModule = lazy(() =>
 const DevDataOpsPage = lazy(() =>
   import("./routes/DevDataOpsPage").then((m) => ({ default: m.DevDataOpsPage })),
 );
+const DevDesignSystemPage = import.meta.env.DEV
+  ? lazy(() => import("./routes/DevDesignSystemPage").then((m) => ({ default: m.DevDesignSystemPage })))
+  : null;
 const CountryKpisPage = lazy(() =>
   import("./routes/CountryKpisPage").then((m) => ({ default: m.CountryKpisPage })),
 );
@@ -61,9 +61,6 @@ const NewsPage = lazy(() =>
 );
 const CommandBar = lazy(() =>
   import("./components/command/CommandBar").then((m) => ({ default: m.CommandBar })),
-);
-const FirstRunOnboarding = lazy(() =>
-  import("./components/onboarding/FirstRunOnboarding").then((m) => ({ default: m.FirstRunOnboarding })),
 );
 
 function RouteFallback() {
@@ -80,69 +77,32 @@ function RouteFallback() {
 export function App() {
   return (
     <HashRouter>
-      <AppShellWithPalette />
+      {isExcelMappingWindow(window.location.search) ? <ExcelMappingWindowApp /> : <AppShellWithPalette />}
     </HashRouter>
+  );
+}
+
+function ExcelMappingWindowApp() {
+  return (
+    <Suspense fallback={<RouteFallback />}>
+      <Routes>
+        <Route
+          path="/empresas/:cdCvm/model-mapping"
+          element={<CompanyModelMappingPage windowMode />}
+        />
+        <Route path="*" element={<Navigate to="/empresas" replace />} />
+      </Routes>
+    </Suspense>
   );
 }
 
 function AppShellWithPalette() {
   const palette = useCommandPalette();
-  const [bridgeReady, setBridgeReady] = useState(false);
-  const [onboardingDismissed, setOnboardingDismissed] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    whenBridgeReady().then(() => {
-      if (!cancelled) setBridgeReady(true);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const onboardingQuery = useQuery({
-    queryKey: ["onboarding-state"],
-    queryFn: fetchOnboardingState,
-    enabled: bridgeReady && !onboardingDismissed,
-    staleTime: 5_000,
-  });
-
-  const onboardingState =
-    onboardingQuery.data?.mode === "desktop" ? onboardingQuery.data.state : null;
-  if (onboardingState?.should_show && !onboardingDismissed) {
-    return (
-      <Suspense
-        fallback={
-          <div style={{ padding: "24px 20px" }}>
-            <StateBanner variant="loading" title="Loading setup…" />
-          </div>
-        }
-      >
-        <FirstRunOnboarding
-          initialState={onboardingState}
-          onDone={() => setOnboardingDismissed(true)}
-        />
-      </Suspense>
-    );
-  }
-
-  const setupError = onboardingQuery.isError ? (
-    <StateBanner
-      variant="warning"
-      title="Setup status unavailable"
-      message={
-        onboardingQuery.error instanceof Error
-          ? onboardingQuery.error.message
-          : String(onboardingQuery.error)
-      }
-      size="dense"
-    />
-  ) : null;
 
   return (
     <>
+      {import.meta.env.DEV ? <DevDesignSystemShortcut /> : null}
       <TerminalShell onOpenPalette={palette.open_}>
-        {setupError}
         <Suspense fallback={<RouteFallback />}>
           <Routes>
             <Route path="/" element={<HomePage />} />
@@ -160,7 +120,7 @@ function AppShellWithPalette() {
             <Route path="/atualizar-base" element={<Navigate to="/settings/updates" replace />} />
             <Route path="/data-coverage" element={<Navigate to="/settings/coverage" replace />} />
             <Route path="/status" element={<Navigate to="/settings/diagnostics" replace />} />
-            <Route path="/company-universe" element={<CompanyUniversePage />} />
+            <Route path="/company-universe" element={<Navigate to="/settings/updates" replace />} />
             <Route path="/setores" element={<SectorsPage />} />
             <Route path="/setores/:slug" element={<SectorDetailPage />} />
             <Route
@@ -194,6 +154,7 @@ function AppShellWithPalette() {
             {/* Backwards-compat: old bookmarks/deep links to the macro module. */}
             <Route path="/country-kpis" element={<Navigate to="/indicators" replace />} />
             <Route path="/dev/data-ops" element={<DevDataOpsPage />} />
+            {DevDesignSystemPage ? <Route path={DEV_DESIGN_SYSTEM_PATH} element={<DevDesignSystemPage />} /> : null}
           </Routes>
         </Suspense>
       </TerminalShell>
@@ -208,4 +169,17 @@ function AppShellWithPalette() {
       ) : null}
     </>
   );
+}
+
+function DevDesignSystemShortcut() {
+  const navigate = useNavigate();
+
+  useGlobalHotkeys("ctrl+alt+d", (event) => {
+    const destination = resolveDevDesignSystemShortcut(event);
+    if (!destination) return;
+    event.preventDefault();
+    navigate(destination);
+  });
+
+  return null;
 }

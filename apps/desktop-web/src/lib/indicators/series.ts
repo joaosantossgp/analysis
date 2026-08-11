@@ -144,7 +144,7 @@ export function resolveSeries(
       id: sel.id,
       label: String(row.KPI_NOME ?? sel.id),
       unit: indexMode ? "number" : unit,
-      color: SERIES_PALETTE[colorIndex % SERIES_PALETTE.length],
+      color: sel.color ?? SERIES_PALETTE[colorIndex % SERIES_PALETTE.length],
       type: sel.type === "auto" ? globalType : sel.type,
       axis,
       points,

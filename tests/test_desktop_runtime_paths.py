@@ -50,21 +50,22 @@ def test_stop_vite_dev_server_kills_after_non_windows_wait_timeout(
     proc.kill.assert_called_once_with()
 
 
-def test_configure_dev_data_paths_defaults_to_documents_root(
+def test_configure_dev_data_paths_defaults_to_isolated_project_root(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(app.sys, "frozen", False, raising=False)
+    monkeypatch.setattr(app, "_repo_root", lambda: tmp_path / "repo")
 
     with patch.dict(environ, {"USERPROFILE": str(tmp_path)}, clear=True):
         app._configure_bundled_data_paths()
 
-        data_root = tmp_path / "Documents" / "CVMAnalytics"
+        data_root = tmp_path / "repo" / "data" / "dev-runtime"
         assert Path(app.os.environ["CVM_DATA_DIR"]) == data_root
         assert Path(app.os.environ["CVM_DB_DIR"]) == data_root / "db"
         assert Path(app.os.environ["SQLITE_PATH"]) == data_root / "db" / "cvm_financials.db"
         assert Path(app.os.environ["CVM_NEWS_DB"]) == data_root / "db" / "news.db"
-        assert app.os.environ["CVMANALYTICS_USE_RELEASE_DATA"] == "1"
+        assert "CVMANALYTICS_USE_RELEASE_DATA" not in app.os.environ
 
 
 def test_configure_dev_data_paths_provisions_sqlite_parent(
@@ -72,13 +73,17 @@ def test_configure_dev_data_paths_provisions_sqlite_parent(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(app.sys, "frozen", False, raising=False)
+    monkeypatch.setattr(app, "_repo_root", lambda: tmp_path / "repo")
 
     with patch.dict(environ, {"USERPROFILE": str(tmp_path)}, clear=True):
         app._configure_bundled_data_paths()
+        app._ensure_db_initialized()
 
         db_path = Path(app.os.environ["SQLITE_PATH"])
         with sqlite3.connect(str(db_path)) as conn:
-            assert conn.execute("SELECT 1").fetchone() == (1,)
+            assert conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'companies'"
+            ).fetchone() == ("companies",)
 
 
 def test_configure_dev_data_paths_preserves_explicit_data_dir(

@@ -1,16 +1,14 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Checkbox } from "@/components/ui/Checkbox";
 import { PeriodSelect, type PeriodSelectOption } from "@/components/ui/PeriodSelect";
 import type {
   ChartAesthetics,
-  ChartType,
   Frequency,
   IndicatorDef,
 } from "@/lib/indicators/types";
 
 import { IndicatorPicker } from "./IndicatorPicker";
-import { Segmented } from "./Segmented";
 
 interface IndicatorControlsProps {
   periodValue?: string;
@@ -33,6 +31,8 @@ interface IndicatorControlsProps {
 
   chart: ChartAesthetics;
   onChartChange: (patch: Partial<ChartAesthetics>) => void;
+  optionsContent?: ReactNode;
+  showLegendOption?: boolean;
 }
 
 const FREQUENCY_OPTIONS = (quarterlyAvailable: boolean) =>
@@ -45,12 +45,6 @@ const FREQUENCY_OPTIONS = (quarterlyAvailable: boolean) =>
       title: quarterlyAvailable ? undefined : "No quarterly (LTM) data for this company",
     },
   ];
-
-const CHART_TYPE_OPTIONS = [
-  { value: "line" as const, label: "Line" },
-  { value: "bar" as const, label: "Bar" },
-  { value: "area" as const, label: "Area" },
-];
 
 export function IndicatorControls({
   periodValue,
@@ -67,13 +61,25 @@ export function IndicatorControls({
   maxSelected,
   chart,
   onChartChange,
+  optionsContent,
+  showLegendOption = true,
 }: IndicatorControlsProps) {
   const [showOptions, setShowOptions] = useState(false);
+  const optionsRef = useRef<HTMLDivElement>(null);
   const smoothDisabled = chart.type === "bar";
+
+  useEffect(() => {
+    if (!showOptions) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setShowOptions(false);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [showOptions]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      <div className="chart-toolbar">
+      <div className="chart-toolbar company-chart-toolbar">
         {periodValue && periodOptions && onPeriodChange ? (
           <Field label="Period">
             <PeriodSelect
@@ -87,11 +93,11 @@ export function IndicatorControls({
 
         {showFrequency ? (
           <Field label="Frequency">
-            <Segmented
+            <PeriodSelect<Frequency>
               ariaLabel="Frequency"
               value={frequency}
               options={FREQUENCY_OPTIONS(quarterlyAvailable)}
-              onChange={(v) => onFrequencyChange(v as Frequency)}
+              onChange={onFrequencyChange}
             />
           </Field>
         ) : null}
@@ -106,16 +112,7 @@ export function IndicatorControls({
           />
         </Field>
 
-        <Field label="Chart">
-          <Segmented
-            ariaLabel="Chart type"
-            value={chart.type}
-            options={CHART_TYPE_OPTIONS}
-            onChange={(v) => onChartChange({ type: v as ChartType })}
-          />
-        </Field>
-
-        <div className="chart-toolbar__actions">
+        <div ref={optionsRef} className="chart-toolbar__actions" style={{ position: "relative" }}>
           <button
             type="button"
             aria-expanded={showOptions}
@@ -138,52 +135,83 @@ export function IndicatorControls({
               {showOptions ? "▴" : "▾"}
             </span>
           </button>
+
+          {showOptions ? (
+            <>
+              <button
+                type="button"
+                aria-label="Close chart options"
+                tabIndex={-1}
+                onClick={() => setShowOptions(false)}
+                style={{
+                  position: "fixed",
+                  inset: 0,
+                  zIndex: 40,
+                  background: "transparent",
+                  border: "none",
+                  cursor: "default",
+                }}
+              />
+              <div
+                role="dialog"
+                aria-label="Financial chart options"
+                className="flex flex-wrap items-center gap-x-5 gap-y-2"
+                style={{
+                  position: "absolute",
+                  top: "calc(100% + 6px)",
+                  right: 0,
+                  zIndex: 50,
+                  width: "min(340px, calc(100vw - 32px))",
+                  background: "var(--color-surface-2)",
+                  border: "1px solid var(--color-border-default)",
+                  borderRadius: "var(--radius-md)",
+                  boxShadow: "var(--shadow-overlay)",
+                  padding: "10px 12px",
+                }}
+              >
+                <Checkbox
+                  label="Smooth lines"
+                  checked={chart.smooth}
+                  disabled={smoothDisabled}
+                  onChange={(e) => onChartChange({ smooth: e.currentTarget.checked })}
+                />
+                <Checkbox
+                  label="Markers"
+                  checked={chart.markers}
+                  onChange={(e) => onChartChange({ markers: e.currentTarget.checked })}
+                />
+                {showLegendOption ? (
+                  <Checkbox
+                    label="Legend"
+                    checked={chart.legend}
+                    onChange={(e) => onChartChange({ legend: e.currentTarget.checked })}
+                  />
+                ) : null}
+                <Checkbox
+                  label="Grid"
+                  checked={chart.grid}
+                  onChange={(e) => onChartChange({ grid: e.currentTarget.checked })}
+                />
+                <Checkbox
+                  label="Data labels"
+                  checked={chart.dataLabels}
+                  onChange={(e) => onChartChange({ dataLabels: e.currentTarget.checked })}
+                />
+                <Checkbox
+                  label="Index (base 100)"
+                  checked={chart.indexMode}
+                  onChange={(e) => onChartChange({ indexMode: e.currentTarget.checked })}
+                />
+                {optionsContent ? (
+                  <div className="w-full" style={{ borderTop: "1px solid var(--color-border-subtle)", paddingTop: 8 }}>
+                    {optionsContent}
+                  </div>
+                ) : null}
+              </div>
+            </>
+          ) : null}
         </div>
       </div>
-
-      {showOptions ? (
-        <div
-          className="flex flex-wrap items-center gap-x-5 gap-y-2"
-          style={{
-            background: "var(--color-surface-1)",
-            border: "1px solid var(--color-border-subtle)",
-            borderRadius: "var(--radius-sm)",
-            padding: "8px 12px",
-          }}
-        >
-          <Checkbox
-            label="Smooth lines"
-            checked={chart.smooth}
-            disabled={smoothDisabled}
-            onChange={(e) => onChartChange({ smooth: e.currentTarget.checked })}
-          />
-          <Checkbox
-            label="Markers"
-            checked={chart.markers}
-            onChange={(e) => onChartChange({ markers: e.currentTarget.checked })}
-          />
-          <Checkbox
-            label="Legend"
-            checked={chart.legend}
-            onChange={(e) => onChartChange({ legend: e.currentTarget.checked })}
-          />
-          <Checkbox
-            label="Grid"
-            checked={chart.grid}
-            onChange={(e) => onChartChange({ grid: e.currentTarget.checked })}
-          />
-          <Checkbox
-            label="Data labels"
-            checked={chart.dataLabels}
-            onChange={(e) => onChartChange({ dataLabels: e.currentTarget.checked })}
-          />
-          <Checkbox
-            label="Index (base 100)"
-            checked={chart.indexMode}
-            onChange={(e) => onChartChange({ indexMode: e.currentTarget.checked })}
-          />
-        </div>
-      ) : null}
     </div>
   );
 }

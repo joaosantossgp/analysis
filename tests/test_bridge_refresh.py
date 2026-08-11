@@ -386,7 +386,10 @@ def test_bridge_onboarding_starts_refresh_with_resolved_company_ids():
     assert fake_service.invalidated is True
 
 
-def test_start_data_update_returns_blocked_without_dispatching_when_universe_unavailable():
+def test_start_data_update_returns_blocked_without_dispatching_when_universe_unavailable(
+    tmp_path,
+    monkeypatch,
+):
     class FakeOnboarding:
         def get_company_universe_by_preset(self, preset):
             raise CompanyUniverseUnavailableError("missing market-cap source")
@@ -401,8 +404,20 @@ def test_start_data_update_returns_blocked_without_dispatching_when_universe_una
 
     bridge = CVMBridge()
     fake_manager = FakeManager()
+    market_cap_fetches = []
+    from src.companies.market_cap import MarketCapService
+
+    monkeypatch.setattr(
+        MarketCapService,
+        "fetch_from_yahoo_finance",
+        lambda *_args, **_kwargs: market_cap_fetches.append(True),
+    )
     bridge._onboarding_service = FakeOnboarding()
     bridge._refresh_manager = fake_manager
+    bridge._service = SimpleNamespace(
+        settings=build_settings(project_root=tmp_path),
+        invalidate_read_caches=lambda: None,
+    )
     bridge._resolve_data_update_settings = lambda: {
         "universe_preset": "top_200",
         "batch_size": 100,
@@ -427,6 +442,7 @@ def test_start_data_update_returns_blocked_without_dispatching_when_universe_una
     assert response["job_id"] is None
     assert "missing market-cap source" in response["message"]
     assert fake_manager.called is False
+    assert market_cap_fetches == []
 
 
 def test_start_data_update_blocked_writes_packaged_runtime_log(tmp_path, monkeypatch):
@@ -461,3 +477,38 @@ def test_start_data_update_blocked_writes_packaged_runtime_log(tmp_path, monkeyp
     assert "start_data_update blocked" in log_text
     assert "company_universe_unavailable" in log_text
     assert "missing market-cap source" in log_text
+
+
+def test_refresh_all_company_market_history_invalidates_cached_reads(tmp_path, monkeypatch):
+    class FakeMarketHistoryService:
+        def __init__(self, *, settings, read_service):
+            assert settings.paths.db_path.parent == tmp_path / "data" / "db"
+            assert read_service is bridge._service
+
+        def refresh_all_market_history(self, cd_cvm):
+            assert cd_cvm == 9512
+            return {
+                "ok": True,
+                "cd_cvm": 9512,
+                "attempted_count": 2,
+                "success_count": 2,
+                "failure_count": 0,
+                "results": [],
+            }
+
+    invalidations = []
+    bridge = CVMBridge()
+    bridge._service = SimpleNamespace(
+        settings=build_settings(project_root=tmp_path),
+        invalidate_read_caches=lambda: invalidations.append(True),
+    )
+    monkeypatch.setattr(
+        "src.companies.market_history.MarketHistoryService",
+        FakeMarketHistoryService,
+    )
+
+    response = bridge.refresh_all_company_market_history({"cd_cvm": 9512})
+
+    assert response["ok"] is True
+    assert response["success_count"] == 2
+    assert invalidations == [True]

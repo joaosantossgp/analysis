@@ -2,21 +2,17 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 
-import { CompanyCommandBar } from "@/components/CompanyCommandBar";
+import { CompanyCommandBar, CompanyExportCard } from "@/components/CompanyCommandBar";
 import { EntityHeader } from "@/components/EntityHeader";
 import { MarketHistoryPanel } from "@/components/MarketHistoryPanel";
 import { StateBanner } from "@/components/feedback/StateBanner";
 import { Panel } from "@/components/surface/Panel";
-import { IndicatorChart } from "@/components/indicators/IndicatorChart";
+import { DEFAULT_INDICATOR_CHART_HEIGHT, IndicatorChart } from "@/components/indicators/IndicatorChart";
 import { IndicatorControls } from "@/components/indicators/IndicatorControls";
-import { IndicatorLegend } from "@/components/indicators/IndicatorLegend";
-import { IndicatorTable } from "@/components/indicators/IndicatorTable";
-import { formatValue } from "@/lib/indicators/format";
+import { EditableSeriesLegend } from "@/components/indicators/IndicatorLegend";
 import {
-  fetchCompanyInfo,
   fetchCompanyKpis,
   fetchCompanyYears,
-  type CompanyInfoResult,
   type CompanyKpisResult,
   type CompanyYearsResultUI,
 } from "@/lib/api/companyDetail";
@@ -24,19 +20,10 @@ import { whenBridgeReady } from "@/lib/bridge/adapter";
 import type {
   CompanyFinancialReadiness,
   KPIBundle,
-  TabularData,
-  TabularRow,
 } from "@/lib/bridge/types";
-import { formatUnit } from "@/lib/formatters";
-import { buildIndicatorDefs, categoryLabel, defaultSelectedIds } from "@/lib/indicators/catalog";
+import { buildIndicatorDefs, defaultSelectedIds } from "@/lib/indicators/catalog";
 import { resolveSeries, selectPeriods } from "@/lib/indicators/series";
-import type {
-  AxisSide,
-  ChartType,
-  Frequency,
-  IndicatorSelection,
-  ResolvedSeries,
-} from "@/lib/indicators/types";
+import type { ChartType, Frequency, IndicatorSelection } from "@/lib/indicators/types";
 import { useIndicatorConfig } from "@/lib/indicators/useIndicatorConfig";
 
 const MAX_SELECTED = 6;
@@ -54,6 +41,16 @@ const YEAR_PERIOD_OPTIONS: Array<{ value: YearPeriodPreset; label: string }> = [
   { value: "last10", label: "Last 10" },
   { value: "all", label: "All" },
 ];
+
+export function selectedYearsForPreset(
+  years: number[],
+  preset: YearPeriodPreset,
+): number[] {
+  const sortedYears = [...years].sort((a, b) => a - b);
+  if (preset === "all") return sortedYears;
+  const count = preset === "last10" ? 10 : DEFAULT_RECENT_YEARS;
+  return sortedYears.slice(-count);
+}
 
 // ---------------------------------------------------------------------------
 // Page root
@@ -82,7 +79,11 @@ export function CompanyDetailPage() {
 
   return (
     <section className="space-y-4">
-      <EntityHeader cdCvm={cdCvm} activeTab="overview" />
+      <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(260px,1fr)_minmax(260px,1fr)]">
+        <EntityHeader cdCvm={cdCvm} activeTab="overview" />
+        <CompanyCommandBar cdCvm={cdCvm} bridgeReady={bridgeReady} hideExport downloadControls />
+        <CompanyExportCard cdCvm={cdCvm} />
+      </div>
       <CompanyReferenceWorkspace cdCvm={cdCvm} bridgeReady={bridgeReady} />
     </section>
   );
@@ -99,12 +100,6 @@ function CompanyReferenceWorkspace({
   cdCvm: number;
   bridgeReady: boolean;
 }) {
-  const companyQuery = useQuery<CompanyInfoResult>({
-    queryKey: ["company-info", cdCvm],
-    queryFn: () => fetchCompanyInfo(cdCvm),
-    enabled: bridgeReady,
-  });
-
   const yearsQuery = useQuery<CompanyYearsResultUI>({
     queryKey: ["company-years", cdCvm],
     queryFn: () => fetchCompanyYears(cdCvm),
@@ -116,16 +111,12 @@ function CompanyReferenceWorkspace({
     [yearsQuery.data],
   );
 
-  // Default: last DEFAULT_RECENT_YEARS years, re-computed when years load.
-  const [selectedYears, setSelectedYears] = useState<number[]>([]);
+  const [yearPreset, setYearPreset] = useState<YearPeriodPreset>("last5");
   const sortedYears = useMemo(() => [...allYears].sort((a, b) => a - b), [allYears]);
-
-  useEffect(() => {
-    if (selectedYears.length === 0 && sortedYears.length > 0) {
-      const desc = [...sortedYears].sort((a, b) => b - a);
-      setSelectedYears(desc.slice(0, DEFAULT_RECENT_YEARS).sort((a, b) => a - b));
-    }
-  }, [sortedYears, selectedYears.length]);
+  const selectedYears = useMemo(
+    () => selectedYearsForPreset(sortedYears, yearPreset),
+    [sortedYears, yearPreset],
+  );
 
   const kpiQuery = useQuery<CompanyKpisResult>({
     queryKey: ["company-kpis", cdCvm, selectedYears.join(",")],
@@ -133,20 +124,10 @@ function CompanyReferenceWorkspace({
     enabled: bridgeReady && selectedYears.length > 0,
   });
 
-  const info =
-    companyQuery.data?.mode === "desktop" ? companyQuery.data.info : null;
   const bundle = kpiQuery.data?.mode === "desktop" ? kpiQuery.data.bundle : null;
 
   return (
     <div className="space-y-4">
-      <CompanyCommandBar
-        cdCvm={cdCvm}
-        bridgeReady={bridgeReady}
-        latestPeriod={info?.latest_financial_period_display ?? null}
-        yearsAvailable={info?.readable_years_count ?? null}
-        lastModelUpdatedAt={info?.read_model_updated_at ?? null}
-        showWorkspaceLinks
-      />
 
       {/* Two-column analytical workspace */}
       <AnalyticalWorkspace
@@ -157,11 +138,13 @@ function CompanyReferenceWorkspace({
         kpiQuery={kpiQuery}
         sortedYears={sortedYears}
         selectedYears={selectedYears}
-        onSelectedYearsChange={setSelectedYears}
+        yearPreset={yearPreset}
+        onYearPresetChange={setYearPreset}
       />
     </div>
   );
 }
+
 
 type FinancialReadinessDisplayState =
   | "ready"
@@ -209,7 +192,8 @@ function AnalyticalWorkspace({
   kpiQuery,
   sortedYears,
   selectedYears,
-  onSelectedYearsChange,
+  yearPreset,
+  onYearPresetChange,
 }: {
   cdCvm: number;
   bridgeReady: boolean;
@@ -218,32 +202,34 @@ function AnalyticalWorkspace({
   kpiQuery: UseQueryResult<CompanyKpisResult>;
   sortedYears: number[];
   selectedYears: number[];
-  onSelectedYearsChange: (years: number[]) => void;
+  yearPreset: YearPeriodPreset;
+  onYearPresetChange: (preset: YearPeriodPreset) => void;
 }) {
   return (
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "minmax(0, 0.95fr) minmax(0, 1.05fr)",
+        gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
         gap: "var(--spacing-4, 16px)",
-        alignItems: "start",
+        alignItems: "stretch",
       }}
       className="workspace-grid"
     >
       {/* Left: Historical market data */}
-      <div className="min-w-0">
+      <div className="min-w-0" style={{ display: "flex" }}>
         <MarketHistoryPanel cdCvm={cdCvm} bridgeReady={bridgeReady} compact />
       </div>
 
       {/* Right: Financial indicator chart */}
-      <div className="min-w-0">
+      <div className="min-w-0" style={{ display: "flex" }}>
         <CompactIndicatorPanel
           bundle={bundle}
           yearsQuery={yearsQuery}
           kpiQuery={kpiQuery}
           sortedYears={sortedYears}
           selectedYears={selectedYears}
-          onSelectedYearsChange={onSelectedYearsChange}
+          yearPreset={yearPreset}
+          onYearPresetChange={onYearPresetChange}
           bridgeReady={bridgeReady}
         />
       </div>
@@ -261,7 +247,8 @@ interface CompactIndicatorPanelProps {
   kpiQuery: UseQueryResult<CompanyKpisResult>;
   sortedYears: number[];
   selectedYears: number[];
-  onSelectedYearsChange: (years: number[]) => void;
+  yearPreset: YearPeriodPreset;
+  onYearPresetChange: (preset: YearPeriodPreset) => void;
   bridgeReady: boolean;
 }
 
@@ -271,7 +258,8 @@ function CompactIndicatorPanel({
   kpiQuery,
   sortedYears,
   selectedYears,
-  onSelectedYearsChange,
+  yearPreset,
+  onYearPresetChange,
   bridgeReady,
 }: CompactIndicatorPanelProps) {
   // Independent indicator config (persisted to localStorage, shared with any
@@ -281,7 +269,7 @@ function CompactIndicatorPanel({
 
   if (!bridgeReady || yearsQuery.isLoading) {
     return (
-      <Panel title="Financial indicators" subtitle="Loading…">
+      <Panel title="Financial Indicators">
         <StateBanner variant="loading" title="Loading years…" />
       </Panel>
     );
@@ -289,7 +277,7 @@ function CompactIndicatorPanel({
 
   if (yearsQuery.isError) {
     return (
-      <Panel title="Financial indicators" subtitle="Year data unavailable">
+      <Panel title="Financial Indicators">
         <StateBanner
           variant="error"
           onRetry={() => yearsQuery.refetch()}
@@ -305,7 +293,7 @@ function CompactIndicatorPanel({
 
   if (yearsQuery.data?.mode === "browser") {
     return (
-      <Panel title="Financial indicators" subtitle="">
+      <Panel title="Financial Indicators">
         <StateBanner variant="browser-only" message={yearsQuery.data.reason} />
       </Panel>
     );
@@ -313,7 +301,7 @@ function CompactIndicatorPanel({
 
   if (sortedYears.length === 0) {
     return (
-      <Panel title="Financial indicators" subtitle="No annual data">
+      <Panel title="Financial Indicators">
         <StateBanner
           variant="empty"
           title="No financial history yet"
@@ -325,7 +313,7 @@ function CompactIndicatorPanel({
 
   if (kpiQuery.isLoading) {
     return (
-      <Panel title="Financial indicators" subtitle="Loading…">
+      <Panel title="Financial Indicators">
         <StateBanner variant="loading" title="Loading indicators…" />
       </Panel>
     );
@@ -333,7 +321,7 @@ function CompactIndicatorPanel({
 
   if (kpiQuery.isError) {
     return (
-      <Panel title="Financial indicators" subtitle="Indicator data unavailable">
+      <Panel title="Financial Indicators">
         <StateBanner
           variant="error"
           onRetry={() => kpiQuery.refetch()}
@@ -349,7 +337,7 @@ function CompactIndicatorPanel({
 
   if (kpiQuery.data?.mode === "browser") {
     return (
-      <Panel title="Financial indicators" subtitle="">
+      <Panel title="Financial Indicators">
         <StateBanner variant="browser-only" message={kpiQuery.data.reason} />
       </Panel>
     );
@@ -357,7 +345,7 @@ function CompactIndicatorPanel({
 
   if (!bundle) {
     return (
-      <Panel title="Financial indicators" subtitle="No data">
+      <Panel title="Financial Indicators">
         <StateBanner
           variant="empty"
           title="No indicators"
@@ -370,9 +358,9 @@ function CompactIndicatorPanel({
   return (
     <IndicatorChartPanel
       bundle={bundle}
-      sortedYears={sortedYears}
       selectedYears={selectedYears}
-      onSelectedYearsChange={onSelectedYearsChange}
+      yearPreset={yearPreset}
+      onYearPresetChange={onYearPresetChange}
       frequency={frequency}
       setFrequency={setFrequency}
       chart={chart}
@@ -389,9 +377,9 @@ function CompactIndicatorPanel({
 
 function IndicatorChartPanel({
   bundle,
-  sortedYears,
   selectedYears,
-  onSelectedYearsChange,
+  yearPreset,
+  onYearPresetChange,
   frequency,
   setFrequency,
   chart,
@@ -400,9 +388,9 @@ function IndicatorChartPanel({
   setSelected,
 }: {
   bundle: KPIBundle;
-  sortedYears: number[];
   selectedYears: number[];
-  onSelectedYearsChange: (years: number[]) => void;
+  yearPreset: YearPeriodPreset;
+  onYearPresetChange: (preset: YearPeriodPreset) => void;
   frequency: Frequency;
   setFrequency: (f: Frequency) => void;
   chart: ReturnType<typeof useIndicatorConfig>["config"]["chart"];
@@ -446,31 +434,19 @@ function IndicatorChartPanel({
     if (frequency === "quarterly" && !quarterlyAvailable) setFrequency("annual");
   }, [frequency, quarterlyAvailable, setFrequency]);
 
-  const selectionById = useMemo(
-    () => new Map(config.selected.map((s) => [s.id, s] as const)),
-    [config.selected],
-  );
-
   const plottable = useMemo(
     () => config.selected.filter((s) => defsById.get(s.id)?.available),
     [config.selected, defsById],
   );
-  const plottableIds = useMemo(() => plottable.map((s) => s.id), [plottable]);
 
   const series = useMemo(
     () => resolveSeries(activeTable, periods, plottable, chart.type, chart.indexMode),
     [activeTable, periods, plottable, chart.type, chart.indexMode],
   );
-  const latestMoves = useMemo(
-    () => buildLatestMoves(series, periods, chart.indexMode),
-    [series, periods, chart.indexMode],
+  const selectionById = useMemo(
+    () => new Map(config.selected.map((selection) => [selection.id, selection] as const)),
+    [config.selected],
   );
-
-  const showAxisControls = useMemo(
-    () => new Set(series.map((s) => s.unit)).size > 1,
-    [series],
-  );
-
   const selectedExistingCount = config.selected.filter((s) => defsById.has(s.id)).length;
   const droppedCount = selectedExistingCount - plottable.length;
   const noIndicatorsAtAll = annualDefs.filter((d) => d.available).length === 0;
@@ -484,45 +460,19 @@ function IndicatorChartPanel({
     }
   }
 
-  function setAxis(id: string, axis: "auto" | AxisSide) {
-    setSelected(config.selected.map((s) => (s.id === id ? { ...s, axis } : s)));
-  }
-
-  function setType(id: string, type: "auto" | ChartType) {
-    setSelected(config.selected.map((s) => (s.id === id ? { ...s, type } : s)));
-  }
-
-  function yearsForPreset(preset: YearPeriodPreset) {
-    const desc = [...sortedYears].sort((a, b) => b - a);
-    if (preset === "all") return [...sortedYears];
-    const count = preset === "last10" ? 10 : 5;
-    return desc.slice(0, count).sort((a, b) => a - b);
-  }
-
-  function currentYearPreset(): YearPeriodPreset {
-    for (const option of YEAR_PERIOD_OPTIONS) {
-      const target = yearsForPreset(option.value);
-      if (target.length === selectedYears.length && target.every((year, index) => year === selectedYears[index])) {
-        return option.value;
-      }
-    }
-    return "last5";
+  function setSeriesStyle(id: string, patch: { color?: string; type?: ChartType }) {
+    setSelected(config.selected.map((selection) => selection.id === id ? { ...selection, ...patch } : selection));
   }
 
   function setYearPreset(preset: string) {
-    onSelectedYearsChange(yearsForPreset(preset as YearPeriodPreset));
+    onYearPresetChange(preset as YearPeriodPreset);
   }
 
-  const methodology =
-    frequency === "annual"
-      ? "CVM DFP/ITR · Annual KPIs at fiscal-year close."
-      : "CVM DFP/ITR · Quarterly flow metrics are LTM; balance-sheet metrics use quarter-end values.";
-
   return (
-    <div className="space-y-3">
+    <div style={{ flex: 1, minWidth: 0 }}>
       <Panel
-        title="Financial indicators"
-        subtitle={methodology}
+        title="Financial Indicators"
+        dense
         actions={
           <span
             className="font-mono"
@@ -531,11 +481,12 @@ function IndicatorChartPanel({
             {series.length}/{config.selected.length} plotted
           </span>
         }
+        style={{ display: "flex", flexDirection: "column", height: "100%" }}
       >
-        <div className="space-y-3">
-          {/* Indicator controls: frequency + picker + chart type */}
+        <div className="space-y-3" style={{ flex: 1 }}>
+          {/* Keep primary analytical choices visible; place configuration and series editing under Options. */}
           <IndicatorControls
-            periodValue={currentYearPreset()}
+            periodValue={yearPreset}
             periodOptions={YEAR_PERIOD_OPTIONS}
             onPeriodChange={setYearPreset}
             frequency={frequency}
@@ -547,16 +498,8 @@ function IndicatorChartPanel({
             maxSelected={MAX_SELECTED}
             chart={chart}
             onChartChange={setChart}
+            showLegendOption={false}
           />
-
-          <IndicatorMetadataRow
-            selectedYears={selectedYears}
-            frequency={frequency}
-            plottedCount={series.length}
-            selectedCount={config.selected.length}
-          />
-
-          <LatestMovesSummary moves={latestMoves} />
 
           {/* Chart area with state machine */}
           <ChartArea
@@ -567,8 +510,15 @@ function IndicatorChartPanel({
             selectedCount={config.selected.length}
             plottedCount={series.length}
           >
-            <IndicatorChart series={series} periods={periods} config={chart} />
+            <IndicatorChart
+              series={series}
+              periods={periods}
+              config={chart}
+              height={DEFAULT_INDICATOR_CHART_HEIGHT}
+            />
           </ChartArea>
+
+          {chart.legend ? <EditableSeriesLegend series={series} stylesById={new Map([...selectionById].map(([id, selection]) => [id, { color: selection.color, type: selection.type === "auto" ? undefined : selection.type }]))} onSetColor={(id, color) => setSeriesStyle(id, { color })} onSetType={(id, type) => setSeriesStyle(id, { type })} /> : null}
 
           {/* Dropped indicators warning */}
           {droppedCount > 0 ? (
@@ -584,417 +534,9 @@ function IndicatorChartPanel({
             </p>
           ) : null}
 
-          {/* Legend */}
-          {chart.legend && series.length > 0 ? (
-            <IndicatorLegend
-              series={series}
-              selectionById={selectionById}
-              indexMode={chart.indexMode}
-              showAxisControls={showAxisControls}
-              onSetAxis={setAxis}
-              onSetType={setType}
-              onRemove={(id) => toggleIndicator(id)}
-            />
-          ) : null}
         </div>
       </Panel>
 
-      {/* Collapsed disclosure: underlying indicator data table */}
-      {series.length > 0 && periods.length > 0 ? (
-        <details
-          style={{
-            background: "var(--color-surface-2)",
-            border: "1px solid var(--color-border-subtle)",
-            borderRadius: "var(--radius-md)",
-            overflow: "hidden",
-          }}
-        >
-          <summary
-            style={{
-              color: "var(--color-text-tertiary)",
-              cursor: "pointer",
-              fontSize: "var(--text-xs)",
-              fontWeight: 500,
-              letterSpacing: "0.03em",
-              listStyle: "none",
-              padding: "8px 14px",
-              userSelect: "none",
-            }}
-            className="focus-visible:outline focus-visible:outline-1"
-          >
-            <span aria-hidden="true" style={{ marginRight: 6 }}>▸</span>
-            View underlying data
-            <span style={{ color: "var(--color-text-muted)", marginLeft: 6 }}>
-              {series.length} indicator{series.length !== 1 ? "s" : ""} · {periods.length} period{periods.length !== 1 ? "s" : ""}
-            </span>
-          </summary>
-          <div style={{ borderTop: "1px solid var(--color-border-subtle)" }}>
-            <IndicatorMethodAudit
-              table={activeTable}
-              selectedIds={plottableIds}
-              frequency={frequency}
-              indexMode={chart.indexMode}
-            />
-            <IndicatorTable table={activeTable} periods={periods} selectedIds={plottableIds} />
-          </div>
-        </details>
-      ) : null}
-    </div>
-  );
-}
-
-interface IndicatorAuditRow {
-  id: string;
-  label: string;
-  category: string;
-  unit: string;
-  method: string;
-  basis: string;
-  formula: string;
-}
-
-function IndicatorMethodAudit({
-  table,
-  selectedIds,
-  frequency,
-  indexMode,
-}: {
-  table: TabularData;
-  selectedIds: string[];
-  frequency: Frequency;
-  indexMode: boolean;
-}) {
-  const rows = useMemo(
-    () => buildIndicatorAuditRows(table, selectedIds, frequency, indexMode),
-    [table, selectedIds, frequency, indexMode],
-  );
-  if (rows.length === 0) return null;
-  return (
-    <section
-      aria-label="Indicator source and method"
-      style={{
-        borderBottom: "1px solid var(--color-border-subtle)",
-        padding: "10px 14px 12px",
-      }}
-    >
-      <div
-        className="mb-2 flex flex-wrap items-baseline justify-between gap-2"
-      >
-        <h3
-          style={{
-            color: "var(--color-text-primary)",
-            fontSize: "var(--text-sm)",
-            fontWeight: 650,
-            margin: 0,
-          }}
-        >
-          Source and method
-        </h3>
-        <p
-          style={{
-            color: "var(--color-text-tertiary)",
-            fontSize: "var(--text-2xs)",
-            margin: 0,
-          }}
-        >
-          Local CVM statements · KPI engine · selected indicators
-        </p>
-      </div>
-      <div className="grid gap-2">
-        {rows.map((row) => (
-          <div
-            key={row.id}
-            className="grid gap-2 lg:grid-cols-[minmax(10rem,1.1fr)_minmax(12rem,1.8fr)]"
-            style={{
-              borderTop: "1px solid var(--color-border-subtle)",
-              paddingTop: 8,
-            }}
-          >
-            <div className="min-w-0">
-              <p
-                className="truncate"
-                style={{
-                  color: "var(--color-text-primary)",
-                  fontSize: "var(--text-xs)",
-                  fontWeight: 650,
-                  margin: 0,
-                }}
-                title={row.label}
-              >
-                {row.label}
-              </p>
-              <p
-                className="truncate font-mono"
-                style={{
-                  color: "var(--color-text-tertiary)",
-                  fontSize: "var(--text-2xs)",
-                  margin: "2px 0 0",
-                }}
-                title={`${row.id} · ${row.category} · ${row.unit}`}
-              >
-                {row.id} · {row.category} · {row.unit}
-              </p>
-            </div>
-            <div className="grid min-w-0 gap-1 sm:grid-cols-[minmax(8rem,0.7fr)_minmax(10rem,1fr)_minmax(12rem,1.3fr)]">
-              <AuditMeta label="Method" value={row.method} />
-              <AuditMeta label="Basis" value={row.basis} />
-              <AuditMeta label="Formula" value={row.formula} mono />
-            </div>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function AuditMeta({
-  label,
-  value,
-  mono = false,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-}) {
-  return (
-    <div className="min-w-0">
-      <p
-        style={{
-          color: "var(--color-text-tertiary)",
-          fontSize: "var(--text-2xs)",
-          letterSpacing: "0.04em",
-          margin: 0,
-          textTransform: "uppercase",
-        }}
-      >
-        {label}
-      </p>
-      <p
-        className={mono ? "truncate font-mono" : "truncate"}
-        style={{
-          color: "var(--color-text-secondary)",
-          fontSize: "var(--text-xs)",
-          margin: "1px 0 0",
-        }}
-        title={value}
-      >
-        {value}
-      </p>
-    </div>
-  );
-}
-
-function buildIndicatorAuditRows(
-  table: TabularData,
-  selectedIds: string[],
-  frequency: Frequency,
-  indexMode: boolean,
-): IndicatorAuditRow[] {
-  const order = new Map(selectedIds.map((id, index) => [id, index] as const));
-  return table.rows
-    .filter((row) => order.has(rowId(row)))
-    .sort((a, b) => (order.get(rowId(a)) ?? 0) - (order.get(rowId(b)) ?? 0))
-    .map((row) => {
-      const id = rowId(row);
-      const rawFormula = String(row.FORMULA ?? "").trim();
-      const unit = indexMode ? "Index (100)" : formatUnit(row.FORMAT_TYPE);
-      const basis =
-        frequency === "annual"
-          ? "Annual fiscal close"
-          : "Quarterly view; LTM for flow metrics";
-      return {
-        id,
-        label: String(row.KPI_NOME ?? id),
-        category: categoryLabel(String(row.CATEGORIA ?? "—")),
-        unit,
-        method: "Calculated KPI",
-        basis,
-        formula: rawFormula || "Formula metadata unavailable",
-      };
-    });
-}
-
-function rowId(row: TabularRow): string {
-  return String(row.KPI_ID ?? "").trim();
-}
-
-interface LatestMove {
-  id: string;
-  label: string;
-  color: string;
-  latestPeriod: string;
-  latestValue: string;
-  changeLabel: string;
-}
-
-function LatestMovesSummary({ moves }: { moves: LatestMove[] }) {
-  if (moves.length === 0) return null;
-  return (
-    <div
-      aria-label="Latest indicator moves"
-      className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4"
-      style={{
-        borderTop: "1px solid var(--color-border-subtle)",
-        paddingTop: 10,
-      }}
-    >
-      {moves.map((move) => (
-        <div
-          key={move.id}
-          className="min-w-0"
-          style={{
-            borderLeft: `2px solid ${move.color}`,
-            paddingLeft: 9,
-          }}
-        >
-          <p
-            className="truncate"
-            style={{
-              color: "var(--color-text-tertiary)",
-              fontSize: "var(--text-2xs)",
-              letterSpacing: "0.04em",
-              margin: 0,
-              textTransform: "uppercase",
-            }}
-            title={move.label}
-          >
-            {move.label}
-          </p>
-          <p
-            className="truncate font-mono"
-            style={{
-              color: "var(--color-text-primary)",
-              fontSize: "var(--text-sm)",
-              fontWeight: 650,
-              margin: "2px 0 0",
-            }}
-            title={`${move.latestValue} in ${move.latestPeriod}`}
-          >
-            {move.latestValue}
-            <span
-              style={{
-                color: "var(--color-text-tertiary)",
-                fontSize: "var(--text-2xs)",
-                marginLeft: 6,
-              }}
-            >
-              {move.latestPeriod}
-            </span>
-          </p>
-          <p
-            className="truncate font-mono"
-            style={{
-              color: "var(--color-text-secondary)",
-              fontSize: "var(--text-2xs)",
-              margin: "1px 0 0",
-            }}
-            title={move.changeLabel}
-          >
-            {move.changeLabel}
-          </p>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function buildLatestMoves(
-  series: ResolvedSeries[],
-  periods: string[],
-  indexMode: boolean,
-): LatestMove[] {
-  return series.map((item) => {
-    const latestIndex = findPreviousFiniteIndex(item.points, item.points.length - 1);
-    if (latestIndex === -1) return null;
-    const previousIndex = findPreviousFiniteIndex(item.points, latestIndex - 1);
-    const latestValue = item.points[latestIndex];
-    if (latestValue === null) return null;
-    const changeLabel =
-      previousIndex === -1 || item.points[previousIndex] === null
-        ? "No prior period"
-        : `${formatSignedChange(latestValue - item.points[previousIndex], item.unit, indexMode)} vs ${periods[previousIndex]}`;
-    return {
-      id: item.id,
-      label: item.label,
-      color: item.color,
-      latestPeriod: periods[latestIndex] ?? "Latest",
-      latestValue: formatValue(latestValue, item.unit, indexMode),
-      changeLabel,
-    };
-  }).filter((move): move is LatestMove => move !== null);
-}
-
-function findPreviousFiniteIndex(points: Array<number | null>, startIndex: number): number {
-  for (let index = startIndex; index >= 0; index -= 1) {
-    const value = points[index];
-    if (typeof value === "number" && Number.isFinite(value)) return index;
-  }
-  return -1;
-}
-
-function formatSignedChange(value: number, unit: ResolvedSeries["unit"], indexMode: boolean): string {
-  if (Math.abs(value) < 0.000001) return unit === "pct" && !indexMode ? "0.0 pp" : "0";
-  const sign = value > 0 ? "+" : "";
-  if (indexMode) return `${sign}${value.toFixed(1)}`;
-  if (unit === "pct") return `${sign}${(value * 100).toFixed(1)} pp`;
-  if (unit === "ratio") return `${sign}${value.toFixed(1)}x`;
-  return `${sign}${formatValue(value, unit, false)}`;
-}
-
-function IndicatorMetadataRow({
-  selectedYears,
-  frequency,
-  plottedCount,
-  selectedCount,
-}: {
-  selectedYears: number[];
-  frequency: Frequency;
-  plottedCount: number;
-  selectedCount: number;
-}) {
-  const first = selectedYears[0];
-  const last = selectedYears[selectedYears.length - 1];
-  return (
-    <div
-      className="market-summary-row"
-      style={{
-        alignItems: "baseline",
-        color: "var(--color-text-secondary)",
-        display: "flex",
-        flexWrap: "wrap",
-        gap: "4px 8px",
-        minHeight: 24,
-      }}
-    >
-      <span className="flex items-baseline gap-1.5">
-        <span
-          className="font-mono"
-          style={{ color: "var(--color-text-primary)", fontSize: "var(--text-sm)", fontWeight: 650 }}
-        >
-          {first && last ? `${first}-${last}` : "No period"}
-        </span>
-        <span style={{ color: "var(--color-text-tertiary)", fontSize: "var(--text-2xs)" }}>period</span>
-      </span>
-      <span className="flex items-baseline gap-1.5">
-        <span style={{ color: "var(--color-text-tertiary)" }}>·</span>
-        <span
-          className="font-mono"
-          style={{ color: "var(--color-text-primary)", fontSize: "var(--text-sm)", fontWeight: 650 }}
-        >
-          {frequency === "annual" ? "Annual" : "Quarterly"}
-        </span>
-        <span style={{ color: "var(--color-text-tertiary)", fontSize: "var(--text-2xs)" }}>frequency</span>
-      </span>
-      <span className="flex items-baseline gap-1.5">
-        <span style={{ color: "var(--color-text-tertiary)" }}>·</span>
-        <span
-          className="font-mono"
-          style={{ color: "var(--color-text-primary)", fontSize: "var(--text-sm)", fontWeight: 650 }}
-        >
-          {plottedCount}/{selectedCount}
-        </span>
-        <span style={{ color: "var(--color-text-tertiary)", fontSize: "var(--text-2xs)" }}>plotted</span>
-      </span>
     </div>
   );
 }

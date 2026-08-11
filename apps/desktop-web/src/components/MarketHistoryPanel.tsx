@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { StateBanner } from "@/components/feedback/StateBanner";
-import { IndicatorChart } from "@/components/indicators/IndicatorChart";
+import { DEFAULT_INDICATOR_CHART_HEIGHT, IndicatorChart } from "@/components/indicators/IndicatorChart";
 import { IndicatorPicker } from "@/components/indicators/IndicatorPicker";
-import { Segmented } from "@/components/indicators/Segmented";
+import { EditableSeriesLegend } from "@/components/indicators/IndicatorLegend";
 import { Panel } from "@/components/surface/Panel";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
@@ -12,20 +12,18 @@ import { PeriodSelect } from "@/components/ui/PeriodSelect";
 import { exportMarketHistoryWorkbook } from "@/lib/api/exports";
 import { fetchMarketHistory, fetchMarketHistoryStatus, triggerMarketHistoryRefresh } from "@/lib/api/marketHistory";
 import type { CompanyMarketHistoryObservation, CompanyMarketHistorySummary } from "@/lib/bridge/types";
-import { formatValue } from "@/lib/indicators/format";
-import type { ChartAesthetics, ChartType, ResolvedSeries } from "@/lib/indicators/types";
+import type { ChartAesthetics } from "@/lib/indicators/types";
 import {
-  MARKET_CHART_TYPES,
   MARKET_MAX_SELECTED_SERIES,
+  MARKET_SERIES_DEFS,
   MARKET_PERIOD_OPTIONS,
-  MARKET_VIEW_LABEL,
   MARKET_VIEW_OPTIONS,
   buildMarketChartSeries,
   buildMarketPeriods,
+  canEnableMarketMetric,
   formatMarketDateTick,
   getAvailableMarketSeries,
   getMarketSeriesPickerDefs,
-  normalizeMarketChartType,
   sanitizeMarketSeriesSelection,
   shouldRenderMarketMarkers,
   type MarketPeriod,
@@ -40,8 +38,6 @@ interface MarketHistoryPanelProps {
   compact?: boolean;
 }
 
-const CHART_HEIGHT = 320;
-
 export function MarketHistoryPanel({ cdCvm, bridgeReady, compact = false }: MarketHistoryPanelProps) {
   const queryClient = useQueryClient();
   const [customStart, setCustomStart] = useState<string>("");
@@ -51,15 +47,15 @@ export function MarketHistoryPanel({ cdCvm, bridgeReady, compact = false }: Mark
   const {
     config,
     chart,
-    setView,
+    setSelectedViews,
     setPeriod,
     setSelectedSeries,
-    setChartType,
+    setSeriesStyle,
     setChartOptions,
   } = useMarketHistoryConfig();
 
   const selectedPeriod = config.period;
-  const marketView = config.view;
+  const selectedViews = config.selectedViews;
 
   useEffect(() => {
     setActiveTicker("");
@@ -144,33 +140,45 @@ export function MarketHistoryPanel({ cdCvm, bridgeReady, compact = false }: Mark
   });
 
   const availableSeriesIds = useMemo(
-    () => getAvailableMarketSeries(observations, marketView),
-    [observations, marketView],
+    () => getAvailableMarketSeries(observations, selectedViews),
+    [observations, selectedViews],
   );
   const selectedSeriesIds = useMemo(
     () =>
       sanitizeMarketSeriesSelection(
-        marketView,
-        config.selectedSeriesByView[marketView],
+        selectedViews,
+        selectedViews.flatMap((view) => config.selectedSeriesByView[view]),
         availableSeriesIds,
       ),
-    [availableSeriesIds, config.selectedSeriesByView, marketView],
+    [availableSeriesIds, config.selectedSeriesByView, selectedViews],
   );
   const pickerDefs = useMemo(
-    () => getMarketSeriesPickerDefs(observations, marketView),
-    [observations, marketView],
+    () => getMarketSeriesPickerDefs(observations, selectedViews),
+    [observations, selectedViews],
+  );
+  const metricPickerDefs = useMemo(
+    () => MARKET_VIEW_OPTIONS.map((option) => ({
+      id: option.value,
+      label: option.label,
+      category: "Market metrics",
+      unit: "number" as const,
+      isPlaceholder: false,
+      available: true,
+    })),
+    [],
   );
   const periods = useMemo(() => buildMarketPeriods(observations), [observations]);
   const series = useMemo(
     () =>
       buildMarketChartSeries({
         observations,
-        view: marketView,
+        views: selectedViews,
         selectedIds: selectedSeriesIds,
-        chartType: config.chartTypeByView[marketView],
+        chartType: config.chartType,
         indexMode: chart.indexMode,
+        seriesStyles: config.seriesStyles,
       }),
-    [chart.indexMode, config.chartTypeByView, marketView, observations, selectedSeriesIds],
+    [chart.indexMode, config.chartType, config.seriesStyles, observations, selectedSeriesIds, selectedViews],
   );
   const chartForMarket = useMemo(
     () => ({
@@ -188,10 +196,10 @@ export function MarketHistoryPanel({ cdCvm, bridgeReady, compact = false }: Mark
         customStart: selectedPeriod === "custom" ? customStart : null,
         customEnd: selectedPeriod === "custom" ? customEnd : null,
         interval,
-        view: marketView,
+        view: selectedViews.join(","),
         selectedSeries: selectedSeriesIds,
-        valueMode: marketView === "price" && chart.indexMode ? "base_100" : null,
-        chartType: config.chartTypeByView[marketView],
+        valueMode: selectedViews.length === 1 && selectedViews[0] === "price" && chart.indexMode ? "base_100" : null,
+        chartType: config.chartType,
       }),
   });
   const exportResult = exportMutation.data?.mode === "desktop" ? exportMutation.data.result : null;
@@ -223,23 +231,28 @@ export function MarketHistoryPanel({ cdCvm, bridgeReady, compact = false }: Mark
 
   function toggleSeries(id: string) {
     const seriesId = id as MarketSeriesId;
-    const exists = selectedSeriesIds.includes(seriesId);
+    const view = MARKET_SERIES_DEFS[seriesId]?.view;
+    if (!view) return;
+    const selectedForView = config.selectedSeriesByView[view];
+    const exists = selectedForView.includes(seriesId);
     const next = exists
-      ? selectedSeriesIds.filter((item) => item !== seriesId)
-      : selectedSeriesIds.length < MARKET_MAX_SELECTED_SERIES[marketView]
-        ? [...selectedSeriesIds, seriesId]
-        : selectedSeriesIds;
-    setSelectedSeries(marketView, next);
+      ? selectedForView.filter((item) => item !== seriesId)
+      : selectedForView.length < MARKET_MAX_SELECTED_SERIES[view]
+        ? [...selectedForView, seriesId]
+        : selectedForView;
+    setSelectedSeries(view, next);
   }
 
-  function handleViewChange(view: MarketView) {
-    setView(view);
-    setChartType(view, normalizeMarketChartType(view, config.chartTypeByView[view]));
+  function toggleMetric(view: MarketView) {
+    const next = selectedViews.includes(view)
+      ? selectedViews.filter((item) => item !== view)
+      : [...selectedViews, view];
+    setSelectedViews(next);
   }
 
   if (!bridgeReady || (statusQuery.isLoading && !activeTicker)) {
     return (
-      <Panel title="Historical market data" subtitle="Market price, return, dividend yield, and volume.">
+      <Panel title="Historical Market Data" subtitle="Market price, return, dividend yield, and volume.">
         <StateBanner variant="loading" title="Loading market history status..." />
       </Panel>
     );
@@ -247,7 +260,7 @@ export function MarketHistoryPanel({ cdCvm, bridgeReady, compact = false }: Mark
 
   if (statusQuery.isError) {
     return (
-      <Panel title="Historical market data" subtitle="Yahoo Finance · Unofficial free source">
+      <Panel title="Historical Market Data">
         <StateBanner
           variant="error"
           title="Integration error"
@@ -259,7 +272,7 @@ export function MarketHistoryPanel({ cdCvm, bridgeReady, compact = false }: Mark
 
   if (statusQuery.data?.mode === "browser") {
     return (
-      <Panel title="Historical market data" subtitle="Yahoo Finance · Unofficial free source">
+      <Panel title="Historical Market Data">
         <StateBanner variant="browser-only" message={statusQuery.data.reason} />
       </Panel>
     );
@@ -267,7 +280,7 @@ export function MarketHistoryPanel({ cdCvm, bridgeReady, compact = false }: Mark
 
   if (!ticker && !activeTicker) {
     return (
-      <Panel title="Historical market data" subtitle="Yahoo Finance · Unofficial free source">
+      <Panel title="Historical Market Data">
         <StateBanner
           variant="empty"
           title="No ticker resolved"
@@ -280,8 +293,7 @@ export function MarketHistoryPanel({ cdCvm, bridgeReady, compact = false }: Mark
   if (historyQuery.isError && observations.length === 0) {
     return (
       <Panel
-        title="Historical market data"
-        subtitle="Yahoo Finance · Unofficial free source"
+        title="Historical Market Data"
         actions={
           <MarketActions
             hasLocalData={hasLocalData}
@@ -307,31 +319,48 @@ export function MarketHistoryPanel({ cdCvm, bridgeReady, compact = false }: Mark
 
   return (
     <Panel
-      title="Historical market data"
-      subtitle={
-        <MarketSubtitle
-          ticker={activeTicker || ticker}
-          availableTickers={availableTickers}
-          activeTicker={activeTicker || ticker}
-          onTickerChange={setActiveTicker}
-        />
+      title={
+        <span className="flex flex-wrap items-center gap-2">
+          <span>Historical Market Data</span>
+          {availableTickers.length > 1 ? (
+            <MarketTickerSelect
+              availableTickers={availableTickers}
+              activeTicker={activeTicker || ticker}
+              onTickerChange={setActiveTicker}
+            />
+          ) : null}
+        </span>
       }
       actions={
-        <MarketActions
-          hasLocalData={hasLocalData}
-          isStale={isStale}
-          isError={historyQuery.isError}
-          isUpdating={refreshMutation.isPending}
-          isExporting={exportMutation.isPending}
-          exportDisabledReason={exportDisabledReason}
-          lastDownloaded={lastDownloaded}
-          onRefresh={handleRefresh}
-          onExport={() => exportMutation.mutate()}
-        />
+        hasLocalData ? (
+          <StatusBadge
+            {...getMarketDataStatus({
+              hasLocalData,
+              isStale,
+              isError: historyQuery.isError,
+              isUpdating: refreshMutation.isPending,
+              lastDownloaded,
+            })}
+          />
+        ) : (
+          <MarketActions
+            hasLocalData={hasLocalData}
+            isStale={isStale}
+            isError={historyQuery.isError}
+            isUpdating={refreshMutation.isPending}
+            isExporting={exportMutation.isPending}
+            exportDisabledReason={exportDisabledReason}
+            lastDownloaded={lastDownloaded}
+            onRefresh={handleRefresh}
+            onExport={() => exportMutation.mutate()}
+            showStatus={false}
+          />
+        )
       }
       dense={compact}
+      style={{ display: "flex", flex: 1, flexDirection: "column", height: "100%" }}
     >
-      <div className="space-y-3">
+      <div className="space-y-3" style={{ flex: 1 }}>
         {!hasLocalData ? (
           <StateBanner
             variant="empty"
@@ -370,16 +399,17 @@ export function MarketHistoryPanel({ cdCvm, bridgeReady, compact = false }: Mark
           <>
             <MarketControls
               period={selectedPeriod}
-              view={marketView}
+              selectedViews={selectedViews}
               chart={chart}
               selectedSeriesIds={selectedSeriesIds}
               pickerDefs={pickerDefs}
+              metricPickerDefs={metricPickerDefs}
               showOptions={showOptions}
               onPeriodChange={setPeriod}
-              onViewChange={handleViewChange}
+              onToggleMetric={toggleMetric}
               onToggleSeries={toggleSeries}
-              onChartTypeChange={(type) => setChartType(marketView, type)}
               onToggleOptions={() => setShowOptions((value) => !value)}
+              onCloseOptions={() => setShowOptions(false)}
               onChartOptionsChange={setChartOptions}
             />
 
@@ -393,9 +423,9 @@ export function MarketHistoryPanel({ cdCvm, bridgeReady, compact = false }: Mark
               />
             ) : null}
 
-            {summary && !isCustomRangeInvalid ? (
+            {summary && !isCustomRangeInvalid && selectedViews.length === 1 ? (
               <MarketSummaryRow
-                view={marketView}
+                view={selectedViews[0]}
                 summary={summary}
                 observations={observations}
               />
@@ -407,33 +437,19 @@ export function MarketHistoryPanel({ cdCvm, bridgeReady, compact = false }: Mark
               observationsCount={observations.length}
               availableSeriesCount={availableSeriesIds.length}
               selectedSeriesCount={selectedSeriesIds.length}
-              view={marketView}
             >
               <IndicatorChart
                 series={series}
                 periods={periods}
                 config={chartForMarket}
-                height={CHART_HEIGHT}
+                height={DEFAULT_INDICATOR_CHART_HEIGHT}
                 xTickFormatter={formatMarketDateTick}
               />
             </MarketChartState>
 
-            {chart.legend && series.length > 0 ? (
-              <MarketLegend
-                series={series}
-                indexMode={chartForMarket.indexMode}
-                canRemove={selectedSeriesIds.length > 1}
-                onRemove={(id) => {
-                  const seriesId = id as MarketSeriesId;
-                  setSelectedSeries(
-                    marketView,
-                    selectedSeriesIds.filter((item) => item !== seriesId),
-                  );
-                }}
-              />
-            ) : null}
+            {chartForMarket.legend ? <EditableSeriesLegend series={series} stylesById={new Map(Object.entries(config.seriesStyles))} onSetColor={(id, color) => setSeriesStyle(id as MarketSeriesId, { color })} onSetType={(id, type) => setSeriesStyle(id as MarketSeriesId, { type })} /> : null}
 
-            {marketView === "yield" ? (
+            {selectedViews.includes("yield") ? (
               <DividendHistoryDisclosure dividendEvents={dividendEvents} />
             ) : null}
           </>
@@ -443,39 +459,28 @@ export function MarketHistoryPanel({ cdCvm, bridgeReady, compact = false }: Mark
   );
 }
 
-function MarketSubtitle({
-  ticker,
+function MarketTickerSelect({
   availableTickers,
   activeTicker,
   onTickerChange,
 }: {
-  ticker: string;
   availableTickers: string[];
   activeTicker: string;
   onTickerChange: (ticker: string) => void;
 }) {
   return (
-    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-      <span>Yahoo Finance</span>
-      <span className="flex items-center gap-1 text-2xs">
-        <span>· Ticker</span>
-        {availableTickers.length > 1 ? (
-          <select
-            value={activeTicker}
-            onChange={(event) => onTickerChange(event.target.value)}
-            className="rounded border border-[var(--color-border-default)] bg-[var(--color-surface-2)] px-1.5 py-0.5 font-mono text-2xs font-semibold text-cyan-300 focus:outline-none focus:border-cyan-500"
-          >
-            {availableTickers.map((item) => (
-              <option key={item} value={item} className="bg-[var(--color-surface-3)] text-[var(--color-text-primary)]">
-                {getShareClassLabel(item)}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <span className="font-mono font-semibold text-cyan-300">{ticker.replace(".SA", "")}</span>
-        )}
-      </span>
-    </span>
+    <select
+      aria-label="Market ticker"
+      value={activeTicker}
+      onChange={(event) => onTickerChange(event.target.value)}
+      className="rounded border border-[var(--color-border-default)] bg-[var(--color-surface-2)] px-1.5 py-0.5 font-mono text-2xs font-semibold text-cyan-300 focus:outline-none focus:border-cyan-500"
+    >
+      {availableTickers.map((item) => (
+        <option key={item} value={item} className="bg-[var(--color-surface-3)] text-[var(--color-text-primary)]">
+          {getShareClassLabel(item)}
+        </option>
+      ))}
+    </select>
   );
 }
 
@@ -489,6 +494,7 @@ function MarketActions({
   lastDownloaded,
   onRefresh,
   onExport,
+  showStatus = true,
 }: {
   hasLocalData: boolean;
   isStale: boolean;
@@ -499,49 +505,20 @@ function MarketActions({
   lastDownloaded: string | null;
   onRefresh: () => void;
   onExport: () => void;
+  showStatus?: boolean;
 }) {
-  const label = isUpdating
-    ? "updating"
-    : isError
-      ? "error"
-      : !hasLocalData
-        ? "no local data"
-        : isStale
-          ? "stale"
-          : "offline ready";
-  const tone = isUpdating || isStale || !hasLocalData ? "warn" : isError ? "error" : "ok";
-  const statusTitle = isStale && lastDownloaded
-    ? `Cache stale. Local market history remains usable. Local data from ${formatDate(lastDownloaded.slice(0, 10))}.`
-    : isStale
-      ? "Cache stale. Local market history remains usable."
-      : isError
-        ? "Refresh failed. Cached local data remains visible when available."
-        : undefined;
+  const status = getMarketDataStatus({ hasLocalData, isStale, isError, isUpdating, lastDownloaded });
   return (
-    <div className="flex flex-wrap items-center justify-end gap-2">
-      <StatusBadge
-        label={isStale && lastDownloaded ? `${label} · ${formatDate(lastDownloaded.slice(0, 10))}` : label}
-        tone={tone}
-        title={statusTitle}
-      />
+    <div className="flex flex-wrap items-center gap-2">
+      {showStatus ? <StatusBadge label={status.label} tone={status.tone} title={status.title} /> : null}
       <button
         type="button"
         disabled={isUpdating}
         onClick={onRefresh}
         className="font-mono focus-visible:outline focus-visible:outline-1"
-        style={{
-          background: "var(--color-surface-1)",
-          border: "1px solid var(--color-border-default)",
-          borderRadius: "var(--radius-md)",
-          color: "var(--color-text-secondary)",
-          cursor: isUpdating ? "not-allowed" : "pointer",
-          fontSize: "var(--text-xs)",
-          height: 26,
-          outlineColor: "var(--color-border-focus)",
-          padding: "0 10px",
-        }}
+        style={marketActionButtonStyle(isUpdating)}
       >
-        {hasLocalData ? "Update Data" : "Download History"}
+        {hasLocalData ? "Update data" : "Download history"}
       </button>
       <Button
         type="button"
@@ -557,6 +534,43 @@ function MarketActions({
       </Button>
     </div>
   );
+}
+
+export function getMarketDataStatus({
+  hasLocalData,
+  isStale,
+  isError,
+  isUpdating,
+  lastDownloaded,
+}: {
+  hasLocalData: boolean;
+  isStale: boolean;
+  isError: boolean;
+  isUpdating: boolean;
+  lastDownloaded: string | null;
+}) {
+  const label = isUpdating
+    ? "Updating"
+    : isError
+      ? "Update failed"
+      : !hasLocalData
+        ? "No local data"
+        : isStale
+          ? "Stale"
+          : "Current";
+  const tone = isUpdating || isStale || !hasLocalData ? "warn" : isError ? "error" : "ok";
+  const statusTitle = isStale && lastDownloaded
+    ? `Cache stale. Local market history remains usable. Local data from ${formatDate(lastDownloaded.slice(0, 10))}.`
+    : isStale
+      ? "Cache stale. Local market history remains usable."
+      : isError
+        ? "Refresh failed. Cached local data remains visible when available."
+        : undefined;
+  return {
+    label: isStale && lastDownloaded ? `${label} · ${formatDate(lastDownloaded.slice(0, 10))}` : label,
+    tone,
+    title: statusTitle,
+  } as const;
 }
 
 function StatusBadge({ label, tone, title }: { label: string; tone: "ok" | "warn" | "error"; title?: string }) {
@@ -585,44 +599,65 @@ function StatusBadge({ label, tone, title }: { label: string; tone: "ok" | "warn
   );
 }
 
+function marketActionButtonStyle(disabled: boolean) {
+  return {
+    background: "var(--color-surface-1)",
+    border: "1px solid var(--color-border-default)",
+    borderRadius: "var(--radius-md)",
+    color: "var(--color-text-secondary)",
+    cursor: disabled ? "not-allowed" : "pointer",
+    fontSize: "var(--text-xs)",
+    height: 26,
+    outlineColor: "var(--color-border-focus)",
+    padding: "0 10px",
+  };
+}
+
 function MarketControls({
   period,
-  view,
+  selectedViews,
   chart,
   selectedSeriesIds,
   pickerDefs,
+  metricPickerDefs,
   showOptions,
   onPeriodChange,
-  onViewChange,
+  onToggleMetric,
   onToggleSeries,
-  onChartTypeChange,
   onToggleOptions,
+  onCloseOptions,
   onChartOptionsChange,
 }: {
   period: MarketPeriod;
-  view: MarketView;
+  selectedViews: MarketView[];
   chart: ChartAesthetics;
   selectedSeriesIds: MarketSeriesId[];
   pickerDefs: ReturnType<typeof getMarketSeriesPickerDefs>;
+  metricPickerDefs: ReturnType<typeof getMarketSeriesPickerDefs>;
   showOptions: boolean;
   onPeriodChange: (period: MarketPeriod) => void;
-  onViewChange: (view: MarketView) => void;
+  onToggleMetric: (view: MarketView) => void;
   onToggleSeries: (id: string) => void;
-  onChartTypeChange: (type: ChartType) => void;
   onToggleOptions: () => void;
+  onCloseOptions: () => void;
   onChartOptionsChange: (patch: Partial<Omit<ChartAesthetics, "type">>) => void;
 }) {
-  const chartTypeOptions = MARKET_CHART_TYPES[view].map((type) => ({
-    value: type,
-    label: type[0].toUpperCase() + type.slice(1),
-  }));
+  const optionsRef = useRef<HTMLDivElement>(null);
   const smoothDisabled = chart.type === "bar";
-  const indexDisabled = view !== "price";
-  const maxSelected = MARKET_MAX_SELECTED_SERIES[view];
+  const indexDisabled = selectedViews.length !== 1 || selectedViews[0] !== "price";
+
+  useEffect(() => {
+    if (!showOptions) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onCloseOptions();
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [onCloseOptions, showOptions]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      <div className="chart-toolbar">
+      <div className="chart-toolbar company-chart-toolbar">
         <Field label="Period">
           <PeriodSelect<MarketPeriod>
             ariaLabel="Market period"
@@ -632,12 +667,18 @@ function MarketControls({
           />
         </Field>
 
-        <Field label="View">
-          <Segmented
-            ariaLabel="Market view"
-            value={view}
-            options={MARKET_VIEW_OPTIONS}
-            onChange={(value) => onViewChange(value)}
+        <Field label="Metrics">
+          <IndicatorPicker
+            label="Metrics"
+            defs={metricPickerDefs}
+            selectedIds={selectedViews}
+            maxSelected={MARKET_VIEW_OPTIONS.length}
+            onToggle={(id) => onToggleMetric(id as MarketView)}
+            getDisabledReason={(id, checked) => {
+              const metric = id as MarketView;
+              if (checked && selectedViews.length === 1) return "required";
+              return !checked && !canEnableMarketMetric(selectedViews, metric) ? "two units" : null;
+            }}
           />
         </Field>
 
@@ -647,20 +688,11 @@ function MarketControls({
             defs={pickerDefs}
             selectedIds={selectedSeriesIds}
             onToggle={onToggleSeries}
-            maxSelected={maxSelected}
+            maxSelected={6}
           />
         </Field>
 
-        <Field label="Chart">
-          <Segmented
-            ariaLabel="Market chart type"
-            value={chart.type}
-            options={chartTypeOptions}
-            onChange={(value) => onChartTypeChange(value)}
-          />
-        </Field>
-
-        <div className="chart-toolbar__actions">
+        <div ref={optionsRef} className="chart-toolbar__actions" style={{ position: "relative" }}>
           <button
             type="button"
             aria-expanded={showOptions}
@@ -683,55 +715,79 @@ function MarketControls({
               {showOptions ? "▴" : "▾"}
             </span>
           </button>
+
+          {showOptions ? (
+            <>
+              <button
+                type="button"
+                aria-label="Close chart options"
+                tabIndex={-1}
+                onClick={onCloseOptions}
+                style={{
+                  position: "fixed",
+                  inset: 0,
+                  zIndex: 40,
+                  background: "transparent",
+                  border: "none",
+                  cursor: "default",
+                }}
+              />
+              <div
+                role="dialog"
+                aria-label="Market chart options"
+                className="flex flex-wrap items-center gap-x-5 gap-y-2"
+                style={{
+                  position: "absolute",
+                  top: "calc(100% + 6px)",
+                  right: 0,
+                  zIndex: 50,
+                  width: "min(340px, calc(100vw - 32px))",
+                  background: "var(--color-surface-2)",
+                  border: "1px solid var(--color-border-default)",
+                  borderRadius: "var(--radius-md)",
+                  boxShadow: "var(--shadow-overlay)",
+                  padding: "10px 12px",
+                }}
+              >
+                <Checkbox
+                  label="Smooth lines"
+                  checked={chart.smooth}
+                  disabled={smoothDisabled}
+                  title={smoothDisabled ? "Smooth lines apply only to line and area charts." : undefined}
+                  onChange={(event) => onChartOptionsChange({ smooth: event.currentTarget.checked })}
+                />
+                <Checkbox
+                  label="Markers"
+                  checked={chart.markers}
+                  onChange={(event) => onChartOptionsChange({ markers: event.currentTarget.checked })}
+                />
+                <Checkbox
+                  label="Legend"
+                  checked={chart.legend}
+                  onChange={(event) => onChartOptionsChange({ legend: event.currentTarget.checked })}
+                />
+                <Checkbox
+                  label="Grid"
+                  checked={chart.grid}
+                  onChange={(event) => onChartOptionsChange({ grid: event.currentTarget.checked })}
+                />
+                <Checkbox
+                  label="Data labels"
+                  checked={chart.dataLabels}
+                  onChange={(event) => onChartOptionsChange({ dataLabels: event.currentTarget.checked })}
+                />
+                <Checkbox
+                  label="Index (base 100)"
+                  checked={chart.indexMode}
+                  disabled={indexDisabled}
+                  title={indexDisabled ? "Base-100 indexing is only enabled for price series." : undefined}
+                  onChange={(event) => onChartOptionsChange({ indexMode: event.currentTarget.checked })}
+                />
+              </div>
+            </>
+          ) : null}
         </div>
       </div>
-
-      {showOptions ? (
-        <div
-          className="flex flex-wrap items-center gap-x-5 gap-y-2"
-          style={{
-            background: "var(--color-surface-1)",
-            border: "1px solid var(--color-border-subtle)",
-            borderRadius: "var(--radius-sm)",
-            padding: "8px 12px",
-          }}
-        >
-          <Checkbox
-            label="Smooth lines"
-            checked={chart.smooth}
-            disabled={smoothDisabled}
-            title={smoothDisabled ? "Smooth lines apply only to line and area charts." : undefined}
-            onChange={(event) => onChartOptionsChange({ smooth: event.currentTarget.checked })}
-          />
-          <Checkbox
-            label="Markers"
-            checked={chart.markers}
-            onChange={(event) => onChartOptionsChange({ markers: event.currentTarget.checked })}
-          />
-          <Checkbox
-            label="Legend"
-            checked={chart.legend}
-            onChange={(event) => onChartOptionsChange({ legend: event.currentTarget.checked })}
-          />
-          <Checkbox
-            label="Grid"
-            checked={chart.grid}
-            onChange={(event) => onChartOptionsChange({ grid: event.currentTarget.checked })}
-          />
-          <Checkbox
-            label="Data labels"
-            checked={chart.dataLabels}
-            onChange={(event) => onChartOptionsChange({ dataLabels: event.currentTarget.checked })}
-          />
-          <Checkbox
-            label="Index (base 100)"
-            checked={chart.indexMode}
-            disabled={indexDisabled}
-            title={indexDisabled ? "Base-100 indexing is only enabled for price series." : undefined}
-            onChange={(event) => onChartOptionsChange({ indexMode: event.currentTarget.checked })}
-          />
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -798,7 +854,6 @@ function MarketChartState({
   observationsCount,
   availableSeriesCount,
   selectedSeriesCount,
-  view,
   children,
 }: {
   historyLoading: boolean;
@@ -806,7 +861,6 @@ function MarketChartState({
   observationsCount: number;
   availableSeriesCount: number;
   selectedSeriesCount: number;
-  view: MarketView;
   children: ReactNode;
 }) {
   if (customRangeInvalid) {
@@ -828,8 +882,8 @@ function MarketChartState({
     return (
       <StateBanner
         variant="empty"
-        title={`No ${MARKET_VIEW_LABEL[view].toLowerCase()} series available`}
-        message="The current market-history payload does not contain a plottable series for this view."
+        title="No market series available"
+        message="The current market-history payload does not contain a plottable series for the selected metrics."
       />
     );
   }
@@ -939,89 +993,6 @@ function MetricChip({
         {label}
       </span>
     </span>
-  );
-}
-
-function MarketLegend({
-  series,
-  indexMode,
-  canRemove,
-  onRemove,
-}: {
-  series: ResolvedSeries[];
-  indexMode: boolean;
-  canRemove: boolean;
-  onRemove: (id: string) => void;
-}) {
-  return (
-    <ul className="flex flex-wrap" style={{ gap: 8, listStyle: "none", margin: 0, minWidth: 0, padding: 0 }}>
-      {series.map((item) => (
-        <li
-          key={item.id}
-          className="flex items-center"
-          style={{
-            background: "var(--color-surface-1)",
-            border: "1px solid var(--color-border-subtle)",
-            borderRadius: "var(--radius-sm)",
-            gap: 8,
-            maxWidth: "100%",
-            minWidth: 0,
-            padding: "4px 6px",
-          }}
-        >
-          <span aria-hidden="true" style={{ background: item.color, borderRadius: 1, flexShrink: 0, height: 10, width: 10 }} />
-          <span
-            className="truncate"
-            style={{ color: "var(--color-text-primary)", fontSize: "var(--text-xs)", minWidth: 0 }}
-            title={item.label}
-          >
-            {item.label}
-          </span>
-          <span
-            className="font-mono"
-            style={{
-              color: "var(--color-text-secondary)",
-              fontSize: "var(--text-xs)",
-              fontVariantNumeric: "tabular-nums",
-            }}
-          >
-            {formatValue(item.latest, item.unit, indexMode)}
-          </span>
-          {canRemove ? (
-            <>
-              <span aria-hidden="true" style={{ background: "var(--color-border-subtle)", height: 14, width: 1 }} />
-              <MiniButton onClick={() => onRemove(item.id)} title="Remove from chart">
-                ×
-              </MiniButton>
-            </>
-          ) : null}
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function MiniButton({ children, onClick, title }: { children: ReactNode; onClick: () => void; title: string }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={title}
-      className="font-mono focus-visible:outline focus-visible:outline-1"
-      style={{
-        background: "transparent",
-        border: "1px solid var(--color-border-default)",
-        borderRadius: "var(--radius-sm)",
-        color: "var(--color-text-tertiary)",
-        cursor: "pointer",
-        fontSize: "var(--text-2xs)",
-        lineHeight: 1,
-        outlineColor: "var(--color-border-focus)",
-        padding: "3px 5px",
-      }}
-    >
-      {children}
-    </button>
   );
 }
 

@@ -10,9 +10,8 @@ Uso:
   python -m desktop.app --diagnose-runtime  # write diagnostics log and exit
 
 Dev data path:
-  By default, --dev mode uses the same Documents path as the packaged release
-  app (%USERPROFILE%\\Documents\\CVMAnalytics) for data parity. Writes remain
-  blocked unless CVMANALYTICS_ALLOW_RELEASE_DATA_WRITES=1 is explicitly set.
+  By default, --dev mode uses an isolated writable project path
+  (data/dev-runtime). The packaged release continues to use Documents.
   Set CVM_DATA_DIR=<path> to use an arbitrary or isolated data directory.
 
 Phase 5B (v0.15.0): the packaged desktop runtime is Vite only. The legacy
@@ -115,6 +114,11 @@ def _user_data_root() -> Path:
     return Path(base) / _USER_DATA_DIR_NAME
 
 
+def _dev_data_root() -> Path:
+    """Writable, isolated development data root; never used by packaged builds."""
+    return _repo_root() / "data" / "dev-runtime"
+
+
 def _legacy_install_data_root() -> Path | None:
     """Pre-Phase-0 location of the runtime DB: <exe-dir>/data."""
     if not _bundled():
@@ -125,7 +129,8 @@ def _legacy_install_data_root() -> Path | None:
 def _configure_bundled_data_paths() -> None:
     if not _bundled():
         if not os.environ.get("CVM_DATA_DIR"):
-            user_root = _user_data_root()
+            use_release_data = os.environ.get("CVMANALYTICS_USE_RELEASE_DATA", "").strip().lower() in {"1", "true", "yes"}
+            user_root = _user_data_root() if use_release_data else _dev_data_root()
             db_dir = user_root / "db"
             output_dir = user_root / "output"
             logs_dir = user_root / "logs"
@@ -134,7 +139,8 @@ def _configure_bundled_data_paths() -> None:
             for path in (user_root, db_dir, output_dir, logs_dir, cache_dir):
                 path.mkdir(parents=True, exist_ok=True)
 
-            os.environ.setdefault("CVMANALYTICS_USE_RELEASE_DATA", "1")
+            if not use_release_data:
+                os.environ.pop("CVMANALYTICS_USE_RELEASE_DATA", None)
             os.environ["CVM_DATA_DIR"] = str(user_root)
             os.environ.setdefault("CVM_DB_DIR", str(db_dir))
             os.environ.setdefault("SQLITE_PATH", str(db_dir / "cvm_financials.db"))
@@ -718,21 +724,21 @@ def _ensure_db_initialized() -> None:
     Idempotent: SQLAlchemy's metadata.create_all is a no-op when the tables
     already exist. Guarantees that a fresh bundled install — where the
     migrator found neither a target nor a legacy DB — still ends with a
-    usable schema before the bridge serves its first request.
+    usable schema before the bridge serves its first request. This applies to
+    the isolated development data directory as well.
     """
-    if not _bundled():
-        return
     try:
         from src.financials.database import init_db_tables  # noqa: PLC0415
         from src.platform.db import build_engine  # noqa: PLC0415
+        from src.platform.settings import build_settings  # noqa: PLC0415
 
-        engine = build_engine()
+        engine = build_engine(build_settings())
         try:
             init_db_tables(engine)
         finally:
             engine.dispose()
     except Exception as exc:
-        _log_recovery(_user_data_root(), f"init_db_tables failed: {exc!r}")
+        _log_recovery(Path(os.environ.get("CVM_DATA_DIR", _user_data_root())), f"init_db_tables failed: {exc!r}")
 
 
 def _locate_gics_mapping_csv() -> Path | None:
@@ -1218,6 +1224,43 @@ def main() -> None:
         static_server, port = _start_vite_static_server(dist)
         url = f"http://127.0.0.1:{port}/"
         print(f"[desktop] vite mode: serving {dist} on {url}")
+
+    excel_mapping_windows: dict[int, object] = {}
+    excel_mapping_windows_lock = threading.RLock()
+
+    def open_excel_mapping_window(cd_cvm: int) -> dict[str, object]:
+        with excel_mapping_windows_lock:
+            existing = excel_mapping_windows.get(cd_cvm)
+            if existing is not None:
+                try:
+                    existing.restore()  # type: ignore[attr-defined]
+                    existing.show()  # type: ignore[attr-defined]
+                    return {"ok": True, "reused": True}
+                except Exception:
+                    excel_mapping_windows.pop(cd_cvm, None)
+
+            window = webview.create_window(
+                f"Excel Mapping — CVM {cd_cvm}",
+                url=f"{url}?window=excel-mapping#/empresas/{cd_cvm}/model-mapping",
+                js_api=bridge,
+                width=1180,
+                height=780,
+                min_size=(900, 600),
+                background_color=_BG,
+            )
+            if window is None:
+                return {"ok": False, "error": "Could not create the Excel Mapping window."}
+
+            excel_mapping_windows[cd_cvm] = window
+
+            def forget_window(*_args: object) -> None:
+                with excel_mapping_windows_lock:
+                    excel_mapping_windows.pop(cd_cvm, None)
+
+            window.events.closed += forget_window
+            return {"ok": True, "reused": False}
+
+    bridge.set_excel_mapping_window_opener(open_excel_mapping_window)
 
     webview.create_window(
         "CVM Analytics",

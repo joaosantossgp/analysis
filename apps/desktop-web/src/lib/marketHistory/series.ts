@@ -44,6 +44,15 @@ export const MARKET_VIEW_LABEL: Record<MarketView, string> = {
   volume: "Volume",
 };
 
+export const MARKET_VIEW_UNIT: Record<MarketView, IndicatorUnit> = {
+  price: "brl",
+  return: "pct",
+  yield: "pct",
+  volume: "volume",
+};
+
+export const MARKET_MAX_UNITS = 2;
+
 export const MARKET_CHART_TYPES: Record<MarketView, ChartType[]> = {
   price: ["line", "area"],
   return: ["line", "area"],
@@ -125,12 +134,35 @@ export const MARKET_SERIES_DEFS: Record<MarketSeriesId, MarketSeriesDefinition> 
   },
 };
 
-const MARKET_SERIES_BY_VIEW: Record<MarketView, MarketSeriesId[]> = {
-  price: ["adjusted_close", "close"],
-  return: ["price_return_index", "total_return_index"],
-  yield: ["ttm_dividend_yield"],
-  volume: ["volume"],
-};
+function uniqueViews(views: MarketView[]): MarketView[] {
+  return views.filter((view, index) => views.indexOf(view) === index);
+}
+
+export function sanitizeMarketMetricSelection(views: MarketView[]): MarketView[] {
+  const selected = uniqueViews(views).filter((view) => MARKET_VIEW_OPTIONS.some((option) => option.value === view));
+  if (selected.length === 0) return ["price"];
+
+  const units = new Set<IndicatorUnit>();
+  return selected.filter((view) => {
+    const unit = MARKET_VIEW_UNIT[view];
+    if (units.has(unit) || units.size < MARKET_MAX_UNITS) {
+      units.add(unit);
+      return true;
+    }
+    return false;
+  });
+}
+
+export function canEnableMarketMetric(selectedViews: MarketView[], candidate: MarketView): boolean {
+  if (selectedViews.includes(candidate)) return true;
+  const units = new Set(selectedViews.map((view) => MARKET_VIEW_UNIT[view]));
+  return units.has(MARKET_VIEW_UNIT[candidate]) || units.size < MARKET_MAX_UNITS;
+}
+
+function seriesForViews(views: MarketView[]): MarketSeriesId[] {
+  const selected = new Set(views);
+  return (Object.keys(MARKET_SERIES_DEFS) as MarketSeriesId[]).filter((id) => selected.has(MARKET_SERIES_DEFS[id].view));
+}
 
 function numericOrNull(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -163,26 +195,26 @@ function rawPointForSeries(
 
 export function getAvailableMarketSeries(
   observations: CompanyMarketHistoryObservation[],
-  view: MarketView,
+  views: MarketView[],
 ): MarketSeriesId[] {
-  return MARKET_SERIES_BY_VIEW[view].filter((seriesId) =>
+  return seriesForViews(sanitizeMarketMetricSelection(views)).filter((seriesId) =>
     observations.some((observation) => rawPointForSeries(observation, seriesId) !== null),
   );
 }
 
 export function getMarketSeriesPickerDefs(
   observations: CompanyMarketHistoryObservation[],
-  view: MarketView,
+  views: MarketView[],
 ): IndicatorDef[] {
-  const available = new Set(getAvailableMarketSeries(observations, view));
-  return MARKET_SERIES_BY_VIEW[view]
+  const available = new Set(getAvailableMarketSeries(observations, views));
+  return seriesForViews(sanitizeMarketMetricSelection(views))
     .filter((id) => available.has(id))
     .map((id) => {
       const def = MARKET_SERIES_DEFS[id];
       return {
         id,
         label: def.label,
-        category: MARKET_VIEW_LABEL[view],
+        category: MARKET_VIEW_LABEL[def.view],
         unit: def.unit,
         isPlaceholder: false,
         available: true,
@@ -191,48 +223,58 @@ export function getMarketSeriesPickerDefs(
 }
 
 export function sanitizeMarketSeriesSelection(
-  view: MarketView,
+  views: MarketView[],
   selectedIds: MarketSeriesId[],
   availableIds: MarketSeriesId[],
 ): MarketSeriesId[] {
   const available = new Set(availableIds);
-  return selectedIds.filter((id) => MARKET_SERIES_DEFS[id]?.view === view && available.has(id));
+  const selectedViews = new Set(sanitizeMarketMetricSelection(views));
+  return selectedIds.filter((id) => selectedViews.has(MARKET_SERIES_DEFS[id]?.view) && available.has(id));
 }
 
-export function normalizeMarketChartType(view: MarketView, chartType: ChartType): ChartType {
-  return MARKET_CHART_TYPES[view].includes(chartType) ? chartType : MARKET_DEFAULT_CHART_TYPE[view];
+export function normalizeMarketChartType(views: MarketView[], chartType: ChartType): ChartType {
+  const selected = sanitizeMarketMetricSelection(views);
+  const supported = MARKET_CHART_TYPES[selected[0]].filter((type) =>
+    selected.every((view) => MARKET_CHART_TYPES[view].includes(type)),
+  );
+  return supported.includes(chartType) ? chartType : supported[0] ?? "line";
 }
 
 export function buildMarketChartSeries({
   observations,
-  view,
+  views,
   selectedIds,
   chartType,
   indexMode,
+  seriesStyles = {},
 }: {
   observations: CompanyMarketHistoryObservation[];
-  view: MarketView;
+  views: MarketView[];
   selectedIds: MarketSeriesId[];
   chartType: ChartType;
   indexMode: boolean;
+  seriesStyles?: Partial<Record<MarketSeriesId, { color?: string; type?: ChartType }>>;
 }): ResolvedSeries[] {
-  const available = getAvailableMarketSeries(observations, view);
-  const seriesIds = sanitizeMarketSeriesSelection(view, selectedIds, available);
-  const effectiveIndexMode = view === "price" && indexMode;
+  const selectedViews = sanitizeMarketMetricSelection(views);
+  const available = getAvailableMarketSeries(observations, selectedViews);
+  const seriesIds = sanitizeMarketSeriesSelection(selectedViews, selectedIds, available);
+  const effectiveIndexMode = selectedViews.length === 1 && selectedViews[0] === "price" && indexMode;
+  const units = [...new Set(seriesIds.map((id) => MARKET_SERIES_DEFS[id].unit))];
+  const primaryUnit = units[0] ?? "number";
 
   return seriesIds.map((id, index) => {
     const def = MARKET_SERIES_DEFS[id];
     const rawPoints = observations.map((observation) => rawPointForSeries(observation, id));
     const points = effectiveIndexMode ? indexToBase100(rawPoints) : rawPoints;
     const isSecondaryClose =
-      view === "price" && id === "close" && seriesIds.includes("adjusted_close");
+      MARKET_SERIES_DEFS[id].view === "price" && id === "close" && seriesIds.includes("adjusted_close");
     return {
       id,
       label: def.label,
       unit: effectiveIndexMode ? "number" : def.unit,
-      color: SERIES_PALETTE[index % SERIES_PALETTE.length],
-      type: normalizeMarketChartType(view, chartType),
-      axis: "left",
+      color: seriesStyles[id]?.color ?? SERIES_PALETTE[index % SERIES_PALETTE.length],
+      type: seriesStyles[id]?.type ?? normalizeMarketChartType(selectedViews, chartType),
+      axis: units.length > 1 && def.unit !== primaryUnit ? "right" : "left",
       points,
       latest: latestFinite(points),
       opacity: isSecondaryClose ? 0.55 : 1,

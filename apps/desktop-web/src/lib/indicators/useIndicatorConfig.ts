@@ -43,10 +43,12 @@ function sanitizeSelection(raw: unknown): IndicatorSelection[] {
     if (typeof id !== "string" || id.length === 0) continue;
     const axis = (item as { axis?: unknown }).axis;
     const type = (item as { type?: unknown }).type;
+    const color = (item as { color?: unknown }).color;
     out.push({
       id,
       axis: axis === "left" || axis === "right" ? axis : "auto",
       type: type === "line" || type === "bar" || type === "area" ? type : "auto",
+      ...(typeof color === "string" && /^#[0-9a-f]{6}$/i.test(color) ? { color } : {}),
     });
   }
   return out;
