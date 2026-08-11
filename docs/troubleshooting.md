@@ -23,6 +23,8 @@ Key local paths:
 |---|---|
 | App opens but has no financial data | Confirm `db/cvm_financials.db` exists and run Settings -> Updates for target companies |
 | Browser preview shows no data | `npm run dev` has no pywebview bridge; use `python -m desktop.app --dev` or `npm run dev:mock` |
+| `ModuleNotFoundError: webview` or another declared package | Run `python -m desktop.app --repair-dev-environment --dev`; do not install the missing package globally. |
+| Bootstrap fails before the app opens | Read the printed command, exit code, and output; confirm Python 3.11+, Node.js 22+, permissions, and network access, then run the repair command. |
 | Writes are blocked in dev | Dev mode is using release Documents data; set isolated `CVM_DATA_DIR` or explicitly allow writes |
 | Another instance warning | A live process owns `{data_dir}/runtime.lock`; close the other process before writes |
 | Update Base cannot start Top N universe | Market-cap ranking source unavailable; choose `all`, import a snapshot, or resolve Yahoo Finance/network issue |
@@ -50,6 +52,9 @@ path before changing code. Avoid deleting user databases as a first response.
 - Packaged app runs from `dist/CVMAnalytics/CVMAnalytics.exe` and serves bundled
   Vite assets from `_internal/desktop-web`.
 - `python -m desktop.app --dev` uses the Vite dev server but the real bridge.
+- Source-mode startup provisions `.venv` from `requirements.txt`; frozen builds
+  bypass this bootstrap because PyInstaller bundles their Python runtime and
+  dependencies.
 - Browser-only Vite preview does not have a real bridge.
 - Packaged app writes to Documents by default; dev mode also points there unless
   `CVM_DATA_DIR` is set.

@@ -7,15 +7,36 @@
 - Windows for packaged desktop validation
 - WebView2/.NET requirements for pywebview on Windows
 
-Install dependencies:
+## Normal Desktop Development Setup
+
+After installing Python and Node.js, run one command from the repository root:
 
 ```powershell
-pip install -r requirements.txt
-npm ci --prefix apps/desktop-web
+python -m desktop.app --dev
 ```
 
-CI installs `requirements.txt`, `apps/api/requirements-dev.txt`, and runs
-frontend checks with Node 22.
+On the first run, the launcher creates `.venv` with the Python interpreter that
+started it, installs the root `requirements.txt` manifest, validates Node.js
+22+, and runs `npm ci` in `apps/desktop-web`. On later runs it compares stored
+SHA-256 fingerprints of `requirements.txt` and `package-lock.json`; pip/npm do
+not run again unless the corresponding manifest changed.
+
+The environment is isolated at `.venv`; the app does not install runtime
+packages into the developer's global Python installation. The root
+`requirements.txt` is the canonical desktop/core Python manifest. CI installs
+that manifest, `apps/api/requirements-dev.txt`, and uses Node 22.
+
+If provisioning fails, the launcher prints the failed command, exit code, and
+output. Resolve the named Python, Node, npm, permission, or network issue, then
+run one of these commands:
+
+```powershell
+# Reinstall declared Python and frontend dependencies in the existing .venv.
+python -m desktop.app --repair-dev-environment --dev
+
+# Delete and recreate only the repository-local .venv, then synchronize again.
+python -m desktop.app --rebuild-dev-environment --dev
+```
 
 ## Isolated Worktree Bootstrap
 

@@ -69,17 +69,27 @@ checks need network access.
 
 ## Developer Commands
 
-Install dependencies:
-
-```powershell
-pip install -r requirements.txt
-npm --prefix apps/desktop-web install
-```
+For desktop development, install Python 3.11+ and Node.js 22+ once, then run
+the normal command. It creates the repository-local `.venv`, installs the
+declared Python dependencies, and synchronizes the Vite dependencies when
+needed; no manual `pip install` or virtual-environment activation is required.
 
 Run the desktop app with the real Python bridge and Vite dev server:
 
 ```powershell
 python -m desktop.app --dev
+```
+
+To re-synchronize declared dependencies, run:
+
+```powershell
+python -m desktop.app --repair-dev-environment --dev
+```
+
+To recreate the isolated environment completely, run:
+
+```powershell
+python -m desktop.app --rebuild-dev-environment --dev
 ```
 
 Run frontend checks:
