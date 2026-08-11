@@ -43,26 +43,30 @@ Entre na pasta do projeto:
 cd C:\caminho\para\analisys
 ```
 
-Crie e ative a `.venv` se necessario:
+Para desenvolvimento desktop, Python 3.11+ e Node.js 22+ sao os unicos
+pre-requisitos. Depois de instala-los, use apenas este comando na raiz do
+repositorio:
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
+python -m desktop.app --dev
 ```
 
-Instale as dependencias Python:
+Na primeira execucao, o launcher cria `.venv`, instala as dependencias Python
+de `requirements.txt`, valida o Node.js e executa `npm ci` para a interface
+Vite. Nas proximas execucoes, pip e npm nao rodam de novo sem uma mudanca em
+`requirements.txt` ou `package-lock.json`. Nao e necessario ativar a `.venv`
+nem instalar modulos Python individualmente.
+
+Para reparar as dependencias declaradas:
 
 ```powershell
-pip install -r requirements.txt
-pip install -r apps/api/requirements-dev.txt
+python -m desktop.app --repair-dev-environment --dev
 ```
 
-Se for trabalhar na interface desktop:
+Para recriar a `.venv` completamente:
 
 ```powershell
-cd apps/desktop-web
-npm install
-cd ..\..
+python -m desktop.app --rebuild-dev-environment --dev
 ```
 
 Sessoes interativas normais NAO usam worktrees, lanes nem `pr_complete.ps1`.
@@ -324,9 +328,9 @@ await window.pywebview.api.get_companies({page: 1, page_size: 5})
 
 | O que aconteceu                             | O que fazer                                                                          |
 | ------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `ModuleNotFoundError` ao abrir o desktop    | Use `python -m desktop.app --dev` para rodar o app.                                  |
-| `python` nao reconhecido                    | Instale o Python e coloque no `PATH`.                                                |
-| `runtime_doctor.py` falha com `venv-broken` | Recrie a `.venv` com `python -m venv .venv`.                                         |
+| `ModuleNotFoundError` ao abrir o desktop    | Rode `python -m desktop.app --repair-dev-environment --dev`; nao instale o modulo individualmente. |
+| `python` nao reconhecido                    | Instale Python 3.11+ e habilite a opcao para adiciona-lo ao `PATH`.                  |
+| `runtime_doctor.py` falha com `venv-broken` | Rode `python -m desktop.app --rebuild-dev-environment --dev`.                        |
 | App desktop abre sem empresas               | Rode `setup_db.py`, `setup_companies_table.py` e atualize dados.                     |
 | API responde `503`                          | Valide o banco, tabelas obrigatorias e o `runtime_doctor.py`.                        |
 | Erro de permissao no PowerShell             | Rode `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.                          |

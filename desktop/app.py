@@ -34,10 +34,22 @@ import tempfile
 import threading
 import time
 
-from desktop import lockfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Source mode starts with whatever Python the developer invoked. Provision and
+# re-exec into the repository-local environment before importing pywebview or
+# bridge modules. Frozen builds already contain their Python dependencies.
+if __name__ == "__main__":
+    from desktop.dev_bootstrap import BootstrapError, bootstrap_and_reexec_if_needed
+
+    try:
+        sys.argv = [sys.argv[0], *bootstrap_and_reexec_if_needed(sys.argv[1:])]
+    except BootstrapError as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(1) from exc
+
+from desktop import lockfile
 import webview
 
 from desktop.bridge import CVMBridge
