@@ -81,6 +81,35 @@ def test_resolve_company_tickers_success(tmp_path):
     assert "VALE4.SA" in vale_tickers
 
 
+def test_refresh_all_market_history_runs_every_ticker_and_keeps_partial_failure(tmp_path, monkeypatch):
+    service, _ = _setup_history_service(tmp_path, {9512: {"ticker_b3": "PETR4"}})
+    calls = []
+
+    monkeypatch.setattr(
+        "src.companies.market_history.resolve_company_tickers",
+        lambda *_args, **_kwargs: ["PETR4.SA", "PETR3.SA"],
+    )
+
+    def refresh_one(cd_cvm, *, ticker=None, start_date=None, end_date=None):
+        calls.append(ticker)
+        return {
+            "ok": ticker == "PETR4.SA",
+            "ticker": ticker,
+            "error": None if ticker == "PETR4.SA" else "Provider unavailable",
+        }
+
+    monkeypatch.setattr(service, "refresh_market_history", refresh_one)
+
+    result = service.refresh_all_market_history(9512)
+
+    assert calls == ["PETR4.SA", "PETR3.SA"]
+    assert result["ok"] is False
+    assert result["attempted_count"] == 2
+    assert result["success_count"] == 1
+    assert result["failure_count"] == 1
+    assert result["results"][1]["error"] == "Provider unavailable"
+
+
 def test_eletrobras_market_history_uses_axia_yahoo_alias(tmp_path, monkeypatch):
     catalog_info = {2437: {"ticker_b3": "ELET3"}}
     service, read_service = _setup_history_service(tmp_path, catalog_info)

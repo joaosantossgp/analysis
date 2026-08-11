@@ -39,13 +39,13 @@ which only runs when `sys.frozen=True` (packaged build).
 Override with `CVMANALYTICS_DATA_DIR` env var to redirect the release app to a
 different location (useful for staging or operator installs).
 
-## Data directory — dev mode (default: shared Documents data)
+## Data directory — dev mode (default: isolated writable data)
 
-When running `python -m desktop.app --dev`, the app uses the same user-visible
-data root as the packaged release app:
+When running `python -m desktop.app --dev`, the app uses an isolated project
+data root:
 
 ```
-%USERPROFILE%\Documents\CVMAnalytics\
+<repo>\data\dev-runtime\
 ├── db\
 │   └── cvm_financials.db
 │   └── energy_kpis.db
@@ -55,18 +55,14 @@ data root as the packaged release app:
 └── raw\
 ```
 
-This keeps dev lookups aligned with the real database used by the `.exe`.
-
-In dev, `desktop.app` sets `CVMANALYTICS_USE_RELEASE_DATA=1` automatically when
-it points at Documents. Settings -> Diagnostics shows the shared-data warning and
-destructive bridge actions remain blocked unless explicitly allowed.
+This root starts clean and accepts updates without modifying the release database.
 
 `CVM_DATA_DIR` takes precedence. Set it explicitly when you need a sandbox or
 isolated fixture data.
 
 ## Dev commands
 
-### Default dev (shared Documents data)
+### Default dev (isolated writable data)
 
 ```powershell
 # From repo root
@@ -77,8 +73,7 @@ python -m desktop.app --dev
 .\scripts\release\dev-desktop.ps1 --debug    # opens DevTools
 ```
 
-Data lives in `%USERPROFILE%\Documents\CVMAnalytics\` — same as the release app.
-Writes are blocked by default in dev shared-data mode.
+Data lives in `<repo>\data\dev-runtime`. Updates and exports are enabled.
 
 ### Dev with custom data directory
 
@@ -130,7 +125,7 @@ The Status strip shows **BRIDGE · MOCK** in violet and Settings -> Diagnostics 
 
 | Variable | Default (dev) | Purpose |
 |----------|---------------|---------|
-| `CVM_DATA_DIR` | `%USERPROFILE%\Documents\CVMAnalytics` | Root data directory (all modes); set explicitly for isolated data |
+| `CVM_DATA_DIR` | `<repo>\data\dev-runtime` | Root data directory in dev; packaged release uses `%USERPROFILE%\Documents\CVMAnalytics` |
 | `CVMANALYTICS_USE_RELEASE_DATA` | `1` in desktop dev shared-data mode | Marks dev as using the release Documents path |
 | `CVMANALYTICS_ALLOW_RELEASE_DATA_WRITES` | — | Set to `1` to allow destructive bridge calls in dev+release-data mode (normally blocked) |
 | `CVMANALYTICS_CONCURRENT_LOCK_DETECTED` | — | Set automatically at startup when another process holds the same data directory lock; forces read-only mode |

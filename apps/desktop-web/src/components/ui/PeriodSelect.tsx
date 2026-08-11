@@ -1,6 +1,8 @@
 export interface PeriodSelectOption<T extends string> {
   value: T;
   label: string;
+  disabled?: boolean;
+  title?: string;
 }
 
 interface PeriodSelectProps<T extends string> {
@@ -27,6 +29,8 @@ export function PeriodSelect<T extends string>({
         <option
           key={option.value}
           value={option.value}
+          disabled={option.disabled}
+          title={option.title}
           className="bg-[var(--color-surface-3)] text-[var(--color-text-primary)]"
         >
           {option.label}

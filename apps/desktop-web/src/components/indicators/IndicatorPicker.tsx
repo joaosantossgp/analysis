@@ -13,6 +13,8 @@ interface IndicatorPickerProps {
   maxSelected?: number;
   /** Noun shown on the trigger button ("Indicators", "Countries", …). */
   label?: string;
+  /** Optional domain rule for temporarily unavailable selections. */
+  getDisabledReason?: (id: string, checked: boolean) => string | null;
 }
 
 /**
@@ -27,6 +29,7 @@ export function IndicatorPicker({
   onToggle,
   maxSelected = 6,
   label = "Indicators",
+  getDisabledReason,
 }: IndicatorPickerProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -137,14 +140,15 @@ export function IndicatorPicker({
                 {group.items.map((def) => {
                   const checked = selectedSet.has(def.id);
                   const blockedByLimit = !checked && atLimit;
-                  const disabled = !def.available || blockedByLimit;
+                  const selectionReason = getDisabledReason?.(def.id, checked) ?? null;
+                  const disabled = !def.available || blockedByLimit || selectionReason !== null;
                   const reason = !def.available
                     ? def.isPlaceholder
                       ? "planned"
                       : "n/a"
                     : blockedByLimit
                       ? "max"
-                      : null;
+                      : selectionReason;
                   return (
                     <label
                       key={def.id}

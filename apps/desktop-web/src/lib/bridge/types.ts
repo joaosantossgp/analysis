@@ -287,6 +287,8 @@ export type CompaniesQuery = {
   sector_slug?: string | null;
   page?: number;
   page_size?: number;
+  sort_by?: "company" | "ticker" | "sector" | "industryGroup" | "marketCap" | "data" | "years" | "cvm";
+  sort_direction?: "asc" | "desc";
 };
 
 export type CompanyInfo = {
@@ -453,6 +455,12 @@ export type RefreshDispatchResponse = {
   status_reason_message?: string | null;
   is_retry_allowed?: boolean;
   error?: string;
+};
+
+export type OpenCompanyExcelMappingWindowResult = {
+  ok: boolean;
+  reused?: boolean;
+  error?: string | null;
 };
 
 export type DataUpdateSettings = {
@@ -1519,6 +1527,16 @@ export interface CompanyMarketHistoryRefreshResult {
   error?: string;
 }
 
+export interface CompanyMarketHistoryAllRefreshResult {
+  ok: boolean;
+  cd_cvm: number;
+  attempted_count: number;
+  success_count: number;
+  failure_count: number;
+  results: CompanyMarketHistoryRefreshResult[];
+  error?: string | null;
+}
+
 /**
  * Complete bridge method surface. Add new methods here as Phase 1 grows.
  * Keep parameter shapes loose (Record<string, unknown>) — Python normalises
@@ -1568,6 +1586,7 @@ export interface BridgeApi {
   get_company_market_history_status(params: Record<string, unknown>): Promise<CompanyMarketHistoryStatus>;
   get_company_market_history(params: Record<string, unknown>): Promise<CompanyMarketHistoryResult>;
   refresh_company_market_history(params: Record<string, unknown>): Promise<CompanyMarketHistoryRefreshResult>;
+  refresh_all_company_market_history(params: Record<string, unknown>): Promise<CompanyMarketHistoryAllRefreshResult>;
   get_company_statement(params: Record<string, unknown>): Promise<StatementMatrix>;
   get_base_health(params: Record<string, unknown>): Promise<BaseHealthSnapshot>;
   request_refresh(params: Record<string, unknown>): Promise<RefreshDispatchResponse>;
@@ -1587,7 +1606,6 @@ export interface BridgeApi {
   get_market_cap_list(params?: Record<string, unknown>): Promise<{ ok: boolean; error?: string; items: MarketCapEntry[] }>;
   import_market_cap_snapshot(params: { csv_content?: string; file_path?: string }): Promise<MarketCapImportResponse>;
   get_market_cap_status(params?: Record<string, unknown>): Promise<MarketCapStatus>;
-  fetch_latest_market_cap(params?: Record<string, unknown>): Promise<MarketCapImportResponse>;
   get_database_diagnostics(params?: Record<string, unknown>): Promise<DatabaseDiagnostics>;
   get_data_coverage(params?: Record<string, unknown>): Promise<DataCoverageResponse>;
   set_company_ignored(params: Record<string, unknown>): Promise<SetCompanyIgnoredResponse>;
@@ -1595,6 +1613,9 @@ export interface BridgeApi {
   get_sectors(params?: Record<string, unknown>): Promise<SectorDirectoryResponse>;
   get_sector_detail(params: Record<string, unknown>): Promise<SectorDetailResponse>;
   export_company_excel(params: Record<string, unknown>): Promise<ExportCompanyResult>;
+  open_company_excel_mapping_window(
+    params: { cd_cvm: number },
+  ): Promise<OpenCompanyExcelMappingWindowResult>;
   export_company_market_history_excel(params: Record<string, unknown>): Promise<ExportMarketHistoryResult>;
   get_output_dir(params?: Record<string, unknown>): Promise<OutputDirInfo>;
   get_excel_mapping_workspace(params: Record<string, unknown>): Promise<ExcelMappingWorkspace>;

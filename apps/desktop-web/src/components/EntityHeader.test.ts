@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { getCompanyHeaderClassificationBadges } from "./EntityHeader";
+import {
+  formatCompanyPeriodCoverage,
+  getCompanyHeaderClassificationBadges,
+} from "./EntityHeader";
 
 describe("EntityHeader classification badges", () => {
-  it("uses the first two visible GICS levels in the company header", () => {
+  it("uses all four official GICS levels in the company header", () => {
     const badges = getCompanyHeaderClassificationBadges({
       gics_sector: "Energy",
       gics_industry_group: "Energy",
@@ -16,6 +19,8 @@ describe("EntityHeader classification badges", () => {
     expect(badges.map((badge) => [badge.label, badge.value])).toEqual([
       ["Sector", "Energy"],
       ["Industry Group", "Energy"],
+      ["Industry", "Oil, Gas & Consumable Fuels"],
+      ["Sub-industry", "Integrated Oil & Gas"],
     ]);
   });
 
@@ -29,8 +34,13 @@ describe("EntityHeader classification badges", () => {
       setor_cvm: "Financeiro",
     });
 
-    expect(badges.map((badge) => badge.value)).toEqual(["—", "—"]);
+    expect(badges.map((badge) => badge.value)).toEqual(["—", "—", "Banks", "Diversified Banks"]);
     expect(badges.map((badge) => badge.value)).not.toContain("Financeiro");
-    expect(badges.map((badge) => badge.value)).not.toContain("Banks");
+  });
+});
+
+describe("EntityHeader period coverage", () => {
+  it("summarizes a partial current year in quarters beside the available-year count", () => {
+    expect(formatCompanyPeriodCoverage("2Q26", 9)).toBe("2Q26 · 9Y · 38Q");
   });
 });

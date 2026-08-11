@@ -13,7 +13,7 @@ import { NavLink, useLocation, useParams } from "react-router-dom";
 
 type Tab = { to: string; label: string; end?: boolean; activeOn?: string[] };
 
-function subNavFor(pathname: string, params: Record<string, string | undefined>, activeUniverseId: string | null): Tab[] {
+export function subNavFor(pathname: string, params: Record<string, string | undefined>, activeUniverseId: string | null): Tab[] {
   // Company detail subtabs (Overview / Indicadores / Demonstrativos).
   const cdMatch = pathname.match(/^\/empresas\/([^/]+)/);
   if (cdMatch) {
@@ -21,7 +21,6 @@ function subNavFor(pathname: string, params: Record<string, string | undefined>,
     return [
       { to: `/empresas/${cdCvm}`, label: "Overview", end: true },
       { to: `/empresas/${cdCvm}/demonstrativos`, label: "Financial Statements" },
-      { to: `/empresas/${cdCvm}/model-mapping`, label: "Excel Mapping" },
       { to: `/empresas/${cdCvm}/coverage`, label: "Coverage Status" },
     ];
   }

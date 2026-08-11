@@ -47,6 +47,8 @@ export async function fetchCompanies(
     sector_slug: query.sector_slug ?? null,
     page: query.page ?? 1,
     page_size: query.page_size ?? 20,
+    sort_by: query.sort_by ?? "marketCap",
+    sort_direction: query.sort_direction ?? "desc",
   };
   const page = await callBridge("get_companies", params);
   if (page.error) {

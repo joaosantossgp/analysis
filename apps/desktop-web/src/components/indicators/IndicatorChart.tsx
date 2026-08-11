@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 
-import { axisUnitSymbol, formatAxisTick, formatValue } from "@/lib/indicators/format";
+import { formatAxisTick, formatValue } from "@/lib/indicators/format";
 import type { AxisSide, ChartAesthetics, ResolvedSeries } from "@/lib/indicators/types";
 
 import { useElementWidth } from "./useElementSize";
@@ -34,6 +34,8 @@ const PAD_TOP = 16;
 const PAD_BOTTOM = 30;
 const PAD_LEFT = 64;
 const TICK_TARGET = 4; // aim for ~4 intervals (5 ticks)
+
+export const DEFAULT_INDICATOR_CHART_HEIGHT = 320;
 
 /** Round a span to a human-friendly magnitude (1 / 2 / 5 × 10ⁿ). */
 function niceNum(range: number, round: boolean): number {
@@ -142,7 +144,7 @@ function xLabelPosition(index: number, count: number, centerX: (i: number) => nu
   return { x: centerX(index), anchor: "middle" as const };
 }
 
-export function IndicatorChart({ series, periods, config, height = 320, xTickFormatter }: IndicatorChartProps) {
+export function IndicatorChart({ series, periods, config, height = DEFAULT_INDICATOR_CHART_HEIGHT, xTickFormatter }: IndicatorChartProps) {
   const [wrapRef, width] = useElementWidth<HTMLDivElement>();
   const [hover, setHover] = useState<number | null>(null);
 
@@ -302,28 +304,6 @@ export function IndicatorChart({ series, periods, config, height = 320, xTickFor
             ) : null}
           </g>
         ))}
-
-        {/* Axis unit captions */}
-        <text
-          x={PAD_LEFT - 8}
-          y={PAD_TOP - 5}
-          textAnchor="end"
-          fill="var(--color-text-tertiary)"
-          style={{ fontSize: "var(--text-2xs)" }}
-        >
-          {axisUnitSymbol(unitLeft, config.indexMode)}
-        </text>
-        {hasRightAxis ? (
-          <text
-            x={w - padRight + 8}
-            y={PAD_TOP - 5}
-            textAnchor="start"
-            fill="var(--color-text-tertiary)"
-            style={{ fontSize: "var(--text-2xs)" }}
-          >
-            {axisUnitSymbol(unitRight, config.indexMode)}
-          </text>
-        ) : null}
 
         {/* X labels */}
         {periods.map((label, i) => {

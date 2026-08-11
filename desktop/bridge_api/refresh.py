@@ -469,19 +469,6 @@ class RefreshBridgeMixin:
                 "error": str(exc)
             })
 
-    def fetch_latest_market_cap(self, params=None) -> dict:
-        if not self._is_write_allowed():
-            return self._sanitize_for_json(self._write_blocked_response("fetch_latest_market_cap"))
-        try:
-            from src.companies.market_cap import MarketCapService  # noqa: PLC0415
-            svc = self._svc()
-            market_cap_service = MarketCapService(settings=svc.settings, read_service=svc)
-            status = market_cap_service.fetch_from_yahoo_finance()
-            self._svc().invalidate_read_caches()
-            return self._sanitize_for_json({"ok": True, "status": status})
-        except Exception as exc:
-            return self._sanitize_for_json({"ok": False, "error": str(exc)})
-
     def get_data_update_settings(self, params=None) -> dict:
         try:
             return self._sanitize_for_json(self._resolve_data_update_settings())
@@ -569,50 +556,6 @@ class RefreshBridgeMixin:
                 "settings": settings,
             })
         except CompanyUniverseUnavailableError as exc:
-            # Universe unavailable — try an inline market-cap fetch when auto-refresh
-            # is enabled and the provider is yahoo_finance.  This covers the first-run
-            # case where no snapshot exists yet: the refresh job would create one, but
-            # it needs the universe to start.  Fetching here breaks the chicken-and-egg.
-            svc_settings = self._svc().settings
-            if (
-                svc_settings.market_cap_auto_refresh
-                and svc_settings.market_cap_provider in ("yahoo_finance", "yfinance")
-            ):
-                try:
-                    logger.info(
-                        "start_data_update: universe unavailable, fetching market-cap snapshot inline"
-                    )
-                    from src.companies.market_cap import MarketCapService  # noqa: PLC0415
-                    from src.financials.read_service import CVMReadService  # noqa: PLC0415
-
-                    _rs = CVMReadService(settings=svc_settings)
-                    MarketCapService(settings=svc_settings, read_service=_rs).fetch_from_yahoo_finance()
-                    # Retry universe resolution with the freshly created snapshot
-                    self._svc().invalidate_read_caches()
-                    self._clear_data_coverage_cache()
-                    selection = self._onboarding().get_company_universe_by_preset(
-                        str(settings["universe_preset"])
-                    )
-                    refresh_params["company_ids"] = list(selection.company_ids)
-                    dispatch = self._refresh().request_refresh(refresh_params)
-                    if str(dispatch.get("status") or "").lower() not in {
-                        "error",
-                        "already_running",
-                    }:
-                        self._write_app_settings(settings)
-                    self._svc().invalidate_read_caches()
-                    self._clear_data_coverage_cache()
-                    return self._sanitize_for_json({
-                        **dispatch,
-                        "selection": selection.to_dict(),
-                        "settings": settings,
-                    })
-                except Exception as fetch_exc:
-                    logger.warning(
-                        "start_data_update: inline market-cap fetch failed: %s", fetch_exc
-                    )
-                    # Fall through to the blocked response below
-
             logger.warning("start_data_update blocked: company universe unavailable: %s", exc)
             self._append_runtime_log(
                 f"start_data_update blocked: company_universe_unavailable: {exc}"

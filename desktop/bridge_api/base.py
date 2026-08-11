@@ -15,7 +15,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 logger = logging.getLogger("desktop.bridge")
 
@@ -56,6 +56,24 @@ class BaseBridgeMixin:
         self._latest_update_status: dict | None = None
         self._update_progress: dict = {"status": "idle", "percent": 0, "error": None}
         self._update_lock = threading.Lock()
+        self._excel_mapping_window_opener: Callable[[int], dict[str, object]] | None = None
+
+    def set_excel_mapping_window_opener(
+        self,
+        opener: Callable[[int], dict[str, object]],
+    ) -> None:
+        self._excel_mapping_window_opener = opener
+
+    def open_company_excel_mapping_window(self, params: dict | None = None) -> dict[str, object]:
+        try:
+            cd_cvm = int((params or {}).get("cd_cvm") or 0)
+        except (TypeError, ValueError):
+            cd_cvm = 0
+        if cd_cvm <= 0:
+            return {"ok": False, "error": "A valid CVM code is required."}
+        if self._excel_mapping_window_opener is None:
+            return {"ok": False, "error": "Excel Mapping windows are unavailable."}
+        return self._excel_mapping_window_opener(cd_cvm)
 
     def _svc(self):
         if self._service is None:

@@ -305,6 +305,24 @@ class CompanyBridgeMixin:
         except Exception as exc:
             return {"error": str(exc)}
 
+    def refresh_all_company_market_history(self, params=None) -> dict:
+        """Refresh local market history for every ticker resolved for one issuer."""
+        p = params or {}
+        try:
+            cd_cvm = int(p.get("cd_cvm", 0))
+            if not cd_cvm:
+                return {"error": "cd_cvm is required"}
+
+            from src.companies.market_history import MarketHistoryService  # noqa: PLC0415
+
+            svc = self._svc()
+            market_history = MarketHistoryService(settings=svc.settings, read_service=svc)
+            result = market_history.refresh_all_market_history(cd_cvm)
+            svc.invalidate_read_caches()
+            return self._sanitize_for_json(result)
+        except Exception as exc:
+            return {"error": str(exc)}
+
     def get_company_statement(self, params=None) -> dict:
         p = params or {}
         try:

@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
-import type { MarketCapSortMeta } from "@/lib/bridge/types";
-
 import {
   fetchCompanies,
   fetchCompanyFilters,
@@ -17,6 +15,11 @@ import { StateBanner } from "@/components/feedback/StateBanner";
 
 const PAGE_SIZE = 25;
 
+export type CompanyDirectorySort = {
+  sortBy: (typeof COMPANY_DIRECTORY_COLUMNS)[number]["id"];
+  sortDirection: "asc" | "desc";
+};
+
 export const COMPANY_DIRECTORY_COLUMNS = [
   { id: "company", label: "Company", align: "left" },
   { id: "ticker", label: "Ticker", align: "left" },
@@ -27,6 +30,16 @@ export const COMPANY_DIRECTORY_COLUMNS = [
   { id: "years", label: "Years", align: "left" },
   { id: "cvm", label: "CVM", align: "left" },
 ] as const;
+
+export function getNextCompanyDirectorySort(
+  current: CompanyDirectorySort | null,
+  sortBy: CompanyDirectorySort["sortBy"],
+): CompanyDirectorySort {
+  return {
+    sortBy,
+    sortDirection: current?.sortBy === sortBy && current.sortDirection === "asc" ? "desc" : "asc",
+  };
+}
 
 export function getCompanyDirectoryRoute(cdCvm: number): string {
   return `/empresas/${cdCvm}`;
@@ -51,6 +64,7 @@ export function CompaniesTable() {
   const urlSearch = searchParams.get("search") ?? "";
   const urlSector = searchParams.get("sector") ?? "";
   const urlPage = clampPage(searchParams.get("page"));
+  const urlSort = getCompanyDirectorySort(searchParams);
 
   const [searchInput, setSearchInput] = useState(urlSearch);
   const [bridgeReady, setBridgeReady] = useState(false);
@@ -95,7 +109,7 @@ export function CompaniesTable() {
   const query = useQuery<CompaniesResult>({
     queryKey: [
       "companies",
-      { search: urlSearch, sector: urlSector, page: urlPage, pageSize: PAGE_SIZE },
+      { search: urlSearch, sector: urlSector, page: urlPage, pageSize: PAGE_SIZE, ...urlSort },
     ],
     queryFn: () =>
       fetchCompanies({
@@ -103,6 +117,8 @@ export function CompaniesTable() {
         sector_slug: urlSector || null,
         page: urlPage,
         page_size: PAGE_SIZE,
+        sort_by: urlSort.sortBy,
+        sort_direction: urlSort.sortDirection,
       }),
     enabled: bridgeReady,
     placeholderData: keepPreviousData,
@@ -135,13 +151,16 @@ export function CompaniesTable() {
   const totalPages = pagination?.total_pages ?? 1;
   const hasNext = pagination?.has_next ?? false;
   const hasPrev = pagination?.has_previous ?? false;
-  const mktMeta = page$?.market_cap_sort_meta ?? null;
 
   const sectors =
     filtersQuery.data?.mode === "desktop" ? filtersQuery.data.sectors : [];
   const activeSector = useMemo(
     () => sectors.find((s) => s.sector_slug === urlSector) ?? null,
     [sectors, urlSector],
+  );
+  const sortedItems = useMemo(
+    () => sortCompanyDirectoryItems(items, urlSort),
+    [items, urlSort],
   );
 
   const setUrl = (mut: (next: URLSearchParams) => void) => {
@@ -162,6 +181,15 @@ export function CompaniesTable() {
     setUrl((p) => {
       if (next > 1) p.set("page", String(next));
       else p.delete("page");
+    });
+  };
+
+  const onSort = (sortBy: CompanyDirectorySort["sortBy"]) => {
+    const nextSort = getNextCompanyDirectorySort(urlSort, sortBy);
+    setUrl((p) => {
+      p.set("sort", nextSort.sortBy);
+      p.set("direction", nextSort.sortDirection);
+      p.delete("page");
     });
   };
 
@@ -218,15 +246,15 @@ export function CompaniesTable() {
         onResetAll={onResetAll}
       />
 
-      {mktMeta ? <MarketCapBanner meta={mktMeta} /> : null}
-
       <Body
         query={query}
-        items={items}
+        items={sortedItems}
         isDesktop={isDesktop}
         hasFilters={hasActiveFilters}
         onResetAll={onResetAll}
         coverageMap={coverageMap}
+        sort={urlSort}
+        onSort={onSort}
       />
 
       {isDesktop && totalItems > 0 ? (
@@ -247,6 +275,46 @@ function clampPage(raw: string | null): number {
   const n = Number.parseInt(raw ?? "1", 10);
   if (!Number.isFinite(n) || n < 1) return 1;
   return n;
+}
+function getCompanyDirectorySort(searchParams: URLSearchParams): CompanyDirectorySort {
+  const sortBy = searchParams.get("sort");
+  const matchedColumn = COMPANY_DIRECTORY_COLUMNS.find((column) => column.id === sortBy);
+  const sortDirection = searchParams.get("direction");
+  return {
+    sortBy: matchedColumn?.id ?? "marketCap",
+    sortDirection: sortDirection === "asc" ? "asc" : "desc",
+  };
+}
+
+function sortCompanyDirectoryItems<T extends {
+  company_name: string;
+  ticker_b3: string | null;
+  gics_sector?: string | null;
+  gics_industry_group?: string | null;
+  market_cap_brl?: number | null;
+  has_financial_data: boolean;
+  anos_disponiveis: number[];
+  cd_cvm: number;
+}>(items: T[], sort: CompanyDirectorySort): T[] {
+  const valueFor = (item: T): string | number => {
+    switch (sort.sortBy) {
+      case "ticker": return item.ticker_b3 ?? "";
+      case "sector": return item.gics_sector ?? "";
+      case "industryGroup": return item.gics_industry_group ?? "";
+      case "marketCap": return item.market_cap_brl ?? Number.NEGATIVE_INFINITY;
+      case "data": return item.has_financial_data ? 1 : 0;
+      case "years": return item.anos_disponiveis.length;
+      case "cvm": return item.cd_cvm;
+      default: return item.company_name;
+    }
+  };
+  const factor = sort.sortDirection === "asc" ? 1 : -1;
+  return [...items].sort((a, b) => {
+    const left = valueFor(a);
+    const right = valueFor(b);
+    if (typeof left === "number" && typeof right === "number") return (left - right) * factor;
+    return String(left).localeCompare(String(right), "en-US", { sensitivity: "base" }) * factor;
+  });
 }
 
 function Status({
@@ -298,31 +366,27 @@ function FilterBar({
   return (
     <div className="mb-3 flex flex-wrap items-end gap-2">
       <div className="min-w-[260px] flex-1">
-        <label
-          htmlFor="company-search"
-          className="mb-1 block text-[10px] uppercase tracking-widest text-zinc-500"
-        >
-          Search
-        </label>
+        <div className="relative">
+          <svg aria-hidden="true" viewBox="0 0 24 24" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-500" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="11" cy="11" r="6" />
+            <path d="m16 16 4 4" />
+          </svg>
         <input
           id="company-search"
+          aria-label="Search companies"
           type="search"
           autoComplete="off"
           spellCheck={false}
           placeholder="Company name, ticker, or CVM code…"
           value={searchInput}
           onChange={(event) => onSearchInput(event.target.value)}
-          className="w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-cyan-600 focus:outline-none focus:ring-1 focus:ring-cyan-600"
+          className="w-full rounded border border-zinc-700 bg-zinc-950 py-2 pl-9 pr-3 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-cyan-600 focus:outline-none focus:ring-1 focus:ring-cyan-600"
         />
+        </div>
       </div>
       <div className="min-w-[220px]">
-        <label
-          htmlFor="company-sector"
-          className="mb-1 block text-[10px] uppercase tracking-widest text-zinc-500"
-        >
-          Sector (GICS)
-        </label>
         <select
+          aria-label="Filter by sector"
           id="company-sector"
           value={selectedSector}
           onChange={(event) => onSectorChange(event.target.value)}
@@ -409,6 +473,8 @@ function Body({
   hasFilters,
   onResetAll,
   coverageMap,
+  sort,
+  onSort,
 }: {
   query: ReturnType<typeof useQuery<CompaniesResult>>;
   items: NonNullable<(CompaniesResult & { mode: "desktop" })["page"]>["items"];
@@ -416,6 +482,8 @@ function Body({
   hasFilters: boolean;
   onResetAll: () => void;
   coverageMap: Map<number, string>;
+  sort: CompanyDirectorySort;
+  onSort: (sortBy: CompanyDirectorySort["sortBy"]) => void;
 }) {
   if (query.isError) {
     return (
@@ -458,15 +526,19 @@ function Body({
       />
     );
   }
-  return <CompaniesGrid items={items} coverageMap={coverageMap} />;
+  return <CompaniesGrid items={items} coverageMap={coverageMap} sort={sort} onSort={onSort} />;
 }
 
 function CompaniesGrid({
   items,
   coverageMap,
+  sort,
+  onSort,
 }: {
   items: NonNullable<(CompaniesResult & { mode: "desktop" })["page"]>["items"];
   coverageMap: Map<number, string>;
+  sort: CompanyDirectorySort;
+  onSort: (sortBy: CompanyDirectorySort["sortBy"]) => void;
 }) {
   return (
     <div className="overflow-hidden rounded border border-zinc-800">
@@ -480,8 +552,12 @@ function CompaniesGrid({
                 className={`px-3 py-2 font-medium ${column.align === "right" ? "text-right" : ""} ${
                   column.align === "center" ? "text-center" : ""
                 }`}
+                aria-sort={sort.sortBy === column.id ? (sort.sortDirection === "asc" ? "ascending" : "descending") : "none"}
               >
-                {column.label}
+                <button type="button" onClick={() => onSort(column.id)} className="inline-flex items-center gap-1 hover:text-zinc-300 focus-visible:outline focus-visible:outline-1 focus-visible:outline-cyan-600">
+                  {column.label}
+                  {sort.sortBy === column.id ? <span aria-hidden="true">{sort.sortDirection === "asc" ? "↑" : "↓"}</span> : null}
+                </button>
               </th>
             ))}
           </tr>
@@ -709,23 +785,4 @@ function formatMarketCap(brl: number): string {
   if (brl >= 1e9) return `R$ ${(brl / 1e9).toFixed(1)}B`;
   if (brl >= 1e6) return `R$ ${(brl / 1e6).toFixed(0)}M`;
   return `R$ ${brl.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
-}
-
-function MarketCapBanner({ meta }: { meta: MarketCapSortMeta }) {
-  return (
-    <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded border border-zinc-800 bg-zinc-900/40 px-3 py-1.5 text-[11px] text-zinc-400">
-      <span className="font-medium text-zinc-300">↓ Sorted by market cap</span>
-      <span>·</span>
-      <span>
-        {meta.mapped_count.toLocaleString("en-US")} of{" "}
-        {meta.total_in_snapshot.toLocaleString("en-US")} B3 companies ranked
-      </span>
-      <span>·</span>
-      <span title="Yahoo Finance is an unofficial free source, not official B3/CVM data.">
-        Source: Yahoo Finance (unofficial/free)
-      </span>
-      <span>·</span>
-      <span>Snapshot: {meta.as_of_date}</span>
-    </div>
-  );
 }

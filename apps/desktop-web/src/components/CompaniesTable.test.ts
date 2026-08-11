@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   COMPANY_DIRECTORY_COLUMNS,
+  getNextCompanyDirectorySort,
   getCompanyDirectoryIndustryGroupLabel,
   getCompanyDirectoryRoute,
   getCompanyDirectorySectorLabel,
@@ -58,5 +59,16 @@ describe("Companies directory table contract", () => {
         gics_sub_industry: "Banks",
       }),
     ).toBe("—");
+  });
+
+  it("toggles a selected directory column between ascending and descending order", () => {
+    expect(getNextCompanyDirectorySort(null, "company")).toEqual({
+      sortBy: "company",
+      sortDirection: "asc",
+    });
+    expect(getNextCompanyDirectorySort({ sortBy: "company", sortDirection: "asc" }, "company")).toEqual({
+      sortBy: "company",
+      sortDirection: "desc",
+    });
   });
 });

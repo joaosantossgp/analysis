@@ -257,6 +257,25 @@ body {
   flex-shrink: 0;
 }
 
+.company-chart-toolbar {
+  grid-template-columns: max-content max-content max-content minmax(0, 1fr) max-content;
+}
+
+.company-chart-toolbar .chart-toolbar__field:nth-child(1),
+.company-chart-toolbar .chart-toolbar__field:nth-child(2),
+.company-chart-toolbar .chart-toolbar__field:nth-child(3) {
+  grid-row: 1;
+}
+
+.company-chart-toolbar .chart-toolbar__field:nth-child(1) { grid-column: 1; }
+.company-chart-toolbar .chart-toolbar__field:nth-child(2) { grid-column: 2; }
+.company-chart-toolbar .chart-toolbar__field:nth-child(3) { grid-column: 3; }
+
+.company-chart-toolbar .chart-toolbar__actions {
+  grid-column: 5;
+  grid-row: 1;
+}
+
 .indicator-library-chart-tools .chart-toolbar {
   align-items: center;
   grid-template-columns: minmax(0, 1fr) max-content;
@@ -318,6 +337,90 @@ body {
   min-width: 84px;
   outline-color: var(--color-border-focus);
   padding: 0 8px;
+}
+
+/* Development-only design reference. These classes are intentionally scoped
+   so the reference demonstrates the production token vocabulary without
+   becoming a second application theme. */
+.design-reference-page {
+  margin: 0 auto;
+  max-width: 1180px;
+  padding: 24px 20px 48px;
+}
+
+.design-reference-header {
+  align-items: end;
+  border-bottom: 1px solid var(--color-border-subtle);
+  display: flex;
+  gap: 24px;
+  justify-content: space-between;
+  padding-bottom: 16px;
+}
+
+.design-reference-header h1,
+.design-reference-section-heading h2,
+.design-reference-rule h3,
+.design-reference-specimen h3 {
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.design-reference-header h1 { font-size: var(--text-2xl); line-height: 1.1; }
+.design-reference-header p,
+.design-reference-section-heading p,
+.design-reference-rule p,
+.design-reference-specimen p { color: var(--color-text-secondary); font-size: var(--text-sm); margin: 5px 0 0; }
+.design-reference-eyebrow { color: var(--color-action-primary) !important; font-family: var(--font-mono); font-size: var(--text-2xs) !important; letter-spacing: .06em; margin: 0 0 6px !important; text-transform: uppercase; }
+
+.design-reference-nav { display: flex; flex-wrap: wrap; gap: 10px; justify-content: end; }
+.design-reference-nav a { border-bottom: 1px solid transparent; color: var(--color-text-secondary); font-size: var(--text-xs); padding: 3px 0; text-decoration: none; transition: color 120ms ease-out, border-color 120ms ease-out; }
+.design-reference-nav a:hover { border-color: var(--color-action-primary); color: var(--color-text-primary); }
+
+.design-reference-section { border-bottom: 1px solid var(--color-border-subtle); padding: 24px 0; scroll-margin-top: 16px; }
+.design-reference-section-heading { margin-bottom: 14px; }
+.design-reference-section-heading h2 { font-size: var(--text-lg); }
+.design-reference-rule-grid, .design-reference-component-grid, .design-reference-composition-grid { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.design-reference-rule, .design-reference-specimen { background: var(--color-surface-2); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); padding: 12px; }
+.design-reference-rule h3, .design-reference-specimen h3 { font-size: var(--text-sm); }
+.design-reference-foundations { display: grid; gap: 20px; grid-template-columns: minmax(0, 1fr) minmax(280px, .8fr); }
+.design-reference-token-grid { display: grid; gap: 8px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.design-reference-token { align-items: center; display: flex; gap: 8px; min-width: 0; }
+.design-reference-token > span { border: 1px solid var(--color-border-strong); border-radius: var(--radius-sm); flex: 0 0 22px; height: 22px; }
+.design-reference-token strong { display: block; font-size: var(--text-xs); font-weight: 500; }
+.design-reference-token code { color: var(--color-text-tertiary); font-family: var(--font-mono); font-size: var(--text-2xs); }
+.design-reference-foundation-notes dl { display: grid; gap: 7px; grid-template-columns: 88px 1fr; margin: 0; }
+.design-reference-foundation-notes dt { color: var(--color-text-tertiary); font-size: var(--text-xs); }
+.design-reference-foundation-notes dd { color: var(--color-text-secondary); font-size: var(--text-xs); margin: 0; }
+.design-reference-chart-palette { display: flex; gap: 6px; margin-top: 14px; }
+.design-reference-chart-palette span { border-radius: 1px; height: 12px; width: 24px; }
+.design-reference-specimen { display: flex; flex-direction: column; gap: 14px; min-height: 132px; }
+.design-reference-specimen-content { align-items: center; display: flex; flex: 1; }
+.design-reference-icons { align-items: center; color: var(--color-text-secondary); display: flex; gap: 14px; }
+.design-reference-motion-grid { display: grid; gap: 24px; grid-template-columns: minmax(0, 1fr) minmax(260px, .8fr); }
+.design-reference-list { color: var(--color-text-secondary); font-size: var(--text-sm); line-height: 1.55; margin: 0 0 14px; padding-left: 18px; }
+.design-reference-motion-stage { background: var(--color-surface-2); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); min-height: 132px; overflow: hidden; padding: 14px; position: relative; }
+.design-reference-motion-popover { background: var(--color-surface-3); border: 1px solid var(--color-border-default); border-radius: var(--radius-md); display: flex; flex-direction: column; gap: 3px; opacity: 0; padding: 10px; pointer-events: none; position: absolute; right: 14px; top: 14px; transform: translateY(-4px); transition: opacity 180ms ease, transform 180ms ease; width: min(220px, calc(100% - 28px)); }
+.design-reference-motion-popover.is-open { opacity: 1; transform: translateY(0); }
+.design-reference-motion-popover strong { color: var(--color-text-primary); font-size: var(--text-xs); }
+.design-reference-motion-popover span { color: var(--color-text-secondary); font-size: var(--text-2xs); }
+.design-reference-progress { background: var(--color-surface-4); bottom: 14px; height: 3px; left: 14px; overflow: hidden; position: absolute; right: 14px; }
+.design-reference-progress span { background: var(--color-id-ticker); display: block; height: 100%; transition: width 180ms ease; }
+.design-reference-identity { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; }
+.design-reference-identity strong { font-size: var(--text-md); }.design-reference-identity span { color: var(--color-text-secondary); font-size: var(--text-xs); }.design-reference-identity span:first-of-type { color: var(--color-id-ticker); }
+.design-reference-mini-chart { align-items: end; border-bottom: 1px solid var(--color-border-subtle); display: flex; gap: 12%; height: 72px; padding: 0 10% 8px; }.design-reference-mini-chart span { background: var(--color-chart-1); display: block; height: 32%; width: 8px; }.design-reference-mini-chart span:nth-child(2) { height: 54%; }.design-reference-mini-chart span:nth-child(3) { height: 42%; }.design-reference-mini-chart span:nth-child(4) { height: 76%; }
+.design-reference-do-dont { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 10px; }.design-reference-do-dont .design-reference-rule:first-child { border-color: color-mix(in srgb, var(--color-state-ok) 40%, var(--color-border-subtle)); }.design-reference-do-dont .design-reference-rule:last-child { border-color: color-mix(in srgb, var(--color-state-warn) 40%, var(--color-border-subtle)); }
+
+@media (prefers-reduced-motion: reduce) {
+  .design-reference-nav a,
+  .design-reference-motion-popover,
+  .design-reference-progress span { transition-duration: 0ms; }
+}
+
+@media (max-width: 760px) {
+  .design-reference-header, .design-reference-foundations, .design-reference-motion-grid { align-items: start; flex-direction: column; grid-template-columns: 1fr; }
+  .design-reference-nav { justify-content: start; }
+  .design-reference-rule-grid, .design-reference-component-grid, .design-reference-composition-grid, .design-reference-do-dont { grid-template-columns: 1fr; }
+  .design-reference-token-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (min-width: 1800px) {

@@ -8,10 +8,11 @@ import {
 } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 
-import { ExportStatusLine } from "@/components/export/ExportStatusLine";
 import { useExportAction } from "@/components/export/useExportAction";
 import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
 import { Select } from "@/components/ui/Select";
+import { openCompanyExcelMappingWindow } from "@/lib/api/companyWindows";
 import {
   companyRefreshProgress,
   fetchCompanyRefreshStatus,
@@ -24,8 +25,16 @@ import {
   fetchCompanyInfo,
   type CompanyInfoResult,
 } from "@/lib/api/companyDetail";
+import {
+  triggerAllMarketHistoryRefresh,
+  type MarketHistoryAllRefreshResultUI,
+} from "@/lib/api/marketHistory";
 import { whenBridgeReady } from "@/lib/bridge/adapter";
-import type { CompanyRefreshStatus, RefreshDispatchResponse } from "@/lib/bridge/types";
+import type {
+  CompanyMarketHistoryAllRefreshResult,
+  CompanyRefreshStatus,
+  RefreshDispatchResponse,
+} from "@/lib/bridge/types";
 
 const ACTIVE_POLL_MS = 2_000;
 const CVM_MIN_YEAR = 2010;
@@ -37,13 +46,51 @@ const PERIOD_SCOPE_OPTIONS = [
   { value: "full_history", label: "Full history" },
 ] as const;
 
+type HistoryScope = (typeof PERIOD_SCOPE_OPTIONS)[number]["value"];
+
+export type OnDemandUpdateSources = {
+  cvm: boolean;
+  market: boolean;
+};
+
+const ON_DEMAND_UPDATE_SOURCES_STORAGE_KEY = "company_on_demand_update_sources";
+
+export function loadOnDemandUpdateSources(raw: string | null): OnDemandUpdateSources {
+  try {
+    const value = raw ? JSON.parse(raw) : null;
+    return { cvm: value?.cvm !== false, market: value?.market !== false };
+  } catch {
+    return { cvm: true, market: true };
+  }
+}
+
+export function updateSourcesEnabled(sources: OnDemandUpdateSources): boolean {
+  return sources.cvm || sources.market;
+}
+
+export function selectedOnDemandRefreshSources(
+  sources: OnDemandUpdateSources,
+): Array<keyof OnDemandUpdateSources> {
+  return (Object.keys(sources) as Array<keyof OnDemandUpdateSources>).filter((source) => sources[source]);
+}
+
+export function historyPresetRange(scope: HistoryScope, endYear: number) {
+  const startYear =
+    scope === "last_3_years"
+      ? endYear - 2
+      : scope === "last_5_years"
+        ? endYear - 4
+        : scope === "last_10_years"
+          ? endYear - 9
+          : CVM_MIN_YEAR;
+  return { startYear, endYear };
+}
+
 export const COMPANY_COMMAND_LABELS = {
   statements: "Statements",
-  excelMapping: "Excel mapping",
+  excelMappingWindow: "Open Excel Mapping in a separate window",
   historyDisclosure: "History range",
   refreshDetails: "Refresh details",
-  exportScope: "Export scope",
-  exportDetails: "Export details",
 } as const;
 
 export function getCompanyCommandWorkspaceLinks(cdCvm: number) {
@@ -51,10 +98,6 @@ export function getCompanyCommandWorkspaceLinks(cdCvm: number) {
     {
       label: COMPANY_COMMAND_LABELS.statements,
       to: `/empresas/${cdCvm}/demonstrativos`,
-    },
-    {
-      label: COMPANY_COMMAND_LABELS.excelMapping,
-      to: `/empresas/${cdCvm}/model-mapping`,
     },
   ];
 }
@@ -72,8 +115,90 @@ type Props = {
   className?: string;
   hideExport?: boolean;
   flat?: boolean;
+  compact?: boolean;
   showWorkspaceLinks?: boolean;
+  downloadControls?: boolean;
 };
+
+export function CompanyExportCard({ cdCvm }: { cdCvm: number }) {
+  const [periodScope, setPeriodScope] = useState("last_5_years");
+  const [mappingWindowError, setMappingWindowError] = useState<string | null>(null);
+  const exportAction = useExportAction({ cdCvm, periodScope });
+
+  async function openMappingWindow() {
+    setMappingWindowError(null);
+    try {
+      const response = await openCompanyExcelMappingWindow(cdCvm);
+      if (response.mode === "browser") {
+        setMappingWindowError(response.reason);
+      } else if (!response.result.ok) {
+        setMappingWindowError(response.result.error ?? "Could not open Excel Mapping.");
+      }
+    } catch (error) {
+      setMappingWindowError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  return (
+    <section
+      aria-label="Company export"
+      style={{ ...barStyle(false, false), display: "flex", height: "100%", position: "relative" }}
+    >
+      <div className="flex w-full flex-1 flex-col gap-2">
+        <label className="flex" aria-label="Export period">
+          <Select
+            block
+            value={periodScope}
+            onChange={(event) => setPeriodScope(event.target.value)}
+            style={{ fontSize: "var(--text-xs)", height: 24, padding: "1px 22px 1px 7px" }}
+          >
+            {PERIOD_SCOPE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </Select>
+        </label>
+        <div className="flex min-h-0 flex-1" style={{ paddingBottom: 5, paddingRight: 5 }}>
+          <Button
+            variant="primary"
+            size="xs"
+            disabled={!exportAction.isDesktop || exportAction.isRunning}
+            loading={exportAction.isRunning}
+            onClick={() => exportAction.run()}
+            style={{
+              borderBottomRightRadius: 0,
+              flex: 1,
+              height: "100%",
+              width: "100%",
+            }}
+          >
+            <SpreadsheetIcon />
+            {exportAction.isRunning ? "Exporting" : "Export Excel"}
+          </Button>
+        </div>
+        {exportAction.status === "success" ? (
+          <TransientNotice noticeKey={`export:${exportAction.lastRunAt?.getTime() ?? 0}`} tone="success">
+            {`Workbook exported${exportAction.result?.file_name ? `: ${exportAction.result.file_name}` : "."}`}
+          </TransientNotice>
+        ) : exportAction.status === "error" ? (
+          <Notice tone="error" role="alert">{exportAction.errorMessage ?? "Export failed."}</Notice>
+        ) : null}
+        {mappingWindowError ? <Notice tone="error" role="alert">{mappingWindowError}</Notice> : null}
+      </div>
+      <button
+        type="button"
+        className="focus-visible:outline focus-visible:outline-1 focus-visible:outline-cyan-600"
+        aria-label={COMPANY_COMMAND_LABELS.excelMappingWindow}
+        title={COMPANY_COMMAND_LABELS.excelMappingWindow}
+        onClick={() => void openMappingWindow()}
+        style={mappingWindowButtonStyle}
+      >
+        <OpenInWindowIcon />
+      </button>
+    </section>
+  );
+}
 
 export function CompanyCommandBar({
   cdCvm,
@@ -84,21 +209,37 @@ export function CompanyCommandBar({
   className,
   hideExport = false,
   flat = false,
+  compact: _compact = false,
   showWorkspaceLinks = false,
+  downloadControls = false,
 }: Props) {
   const [localBridgeReady, setLocalBridgeReady] = useState(false);
   const bridgeReady = bridgeReadyProp ?? localBridgeReady;
   const queryClient = useQueryClient();
   const wasActiveRef = useRef(false);
+  const commandBarRef = useRef<HTMLElement | null>(null);
   const currentYear = new Date().getFullYear();
 
   const [periodScope, setPeriodScope] = useState("last_5_years");
+  const [historyScope, setHistoryScope] = useState<HistoryScope>("last_5_years");
   const [showHistory, setShowHistory] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
-  const [showExportDetails, setShowExportDetails] = useState(false);
   const [startYear, setStartYear] = useState(currentYear - 4);
   const [endYear, setEndYear] = useState(currentYear);
   const [yearError, setYearError] = useState<string | null>(null);
+  const [updateSources, setUpdateSources] = useState<OnDemandUpdateSources>(() =>
+    typeof window === "undefined"
+      ? { cvm: true, market: true }
+      : loadOnDemandUpdateSources(window.localStorage.getItem(ON_DEMAND_UPDATE_SOURCES_STORAGE_KEY)),
+  );
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(ON_DEMAND_UPDATE_SOURCES_STORAGE_KEY, JSON.stringify(updateSources));
+    } catch {
+      // Preference remains usable for this session when storage is unavailable.
+    }
+  }, [updateSources]);
 
   useEffect(() => {
     if (bridgeReadyProp !== undefined) return;
@@ -110,6 +251,22 @@ export function CompanyCommandBar({
       cancelled = true;
     };
   }, [bridgeReadyProp]);
+
+  useEffect(() => {
+    if (!downloadControls || !showHistory) return;
+    const closeOnOutsidePointer = (event: MouseEvent) => {
+      if (!commandBarRef.current?.contains(event.target as Node)) setShowHistory(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setShowHistory(false);
+    };
+    document.addEventListener("mousedown", closeOnOutsidePointer);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeOnOutsidePointer);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [downloadControls, showHistory]);
 
   const infoQuery = useQuery<CompanyInfoResult>({
     queryKey: ["company-info", cdCvm],
@@ -170,6 +327,11 @@ export function CompanyCommandBar({
     },
   });
 
+  const marketRefreshMutation = useMutation<MarketHistoryAllRefreshResultUI, Error>({
+    mutationFn: () => triggerAllMarketHistoryRefresh(cdCvm),
+    onSuccess: () => invalidateMarketHistoryData(queryClient, cdCvm),
+  });
+
   const exportAction = useExportAction({ cdCvm, periodScope });
   const browserReason =
     statusQuery.data?.mode === "browser" ? statusQuery.data.reason : null;
@@ -177,19 +339,18 @@ export function CompanyCommandBar({
     latestPeriod ??
     info?.latest_financial_period_display ??
     (status?.latest_readable_year != null ? `FY${status.latest_readable_year}` : null);
-  const coverageYears =
-    yearsAvailable ?? info?.readable_years_count ?? status?.readable_years_count ?? null;
-  const lastRefreshAt =
-    status?.last_success_at ??
-    status?.read_model_updated_at ??
-    lastModelUpdatedAt ??
-    info?.read_model_updated_at ??
-    null;
   const refreshState =
     !bridgeReady || statusQuery.isLoading ? "loading" : normalizedTrackingState(status);
+  const marketRefreshResult =
+    marketRefreshMutation.data?.mode === "desktop"
+      ? marketRefreshMutation.data.result
+      : null;
+  const hasMarketRefreshFailure =
+    marketRefreshMutation.isError || Boolean(marketRefreshResult && !marketRefreshResult.ok);
   const hasRefreshError =
     statusQuery.isError ||
     refreshMutation.isError ||
+    hasMarketRefreshFailure ||
     Boolean(status?.last_error) ||
     refreshState === "error" ||
     refreshState === "stalled";
@@ -198,34 +359,34 @@ export function CompanyCommandBar({
     hasRefreshError ||
     (!latestPeriodLabel && !status?.has_readable_current_data);
   const updateDisabled =
-    !bridgeReady || Boolean(browserReason) || isActive || refreshMutation.isPending;
+    !bridgeReady || Boolean(browserReason) || refreshMutation.isPending || marketRefreshMutation.isPending || (updateSources.cvm && isActive) || !updateSourcesEnabled(updateSources);
+  const historyDisabled =
+    !bridgeReady || Boolean(browserReason) || isActive || refreshMutation.isPending || marketRefreshMutation.isPending;
   const pendingIncremental =
-    refreshMutation.isPending && refreshMutation.variables?.type === "incremental";
+    (refreshMutation.isPending && refreshMutation.variables?.type === "incremental") || marketRefreshMutation.isPending;
   const pendingHistory =
     refreshMutation.isPending && refreshMutation.variables?.type === "history";
   const progress = companyRefreshProgress(status);
-  const isTerminalRefreshState =
-    !isActive && ["success", "no_data", "error", "stalled"].includes(String(refreshState));
   const dispatchJobId = refreshMutation.data?.job_id ?? null;
   const statusJobId = status?.job_id ?? null;
-  const terminalStateMatchesDispatch =
-    isTerminalRefreshState && (!dispatchJobId || !statusJobId || dispatchJobId === statusJobId);
+  const terminalStateMatchesDispatch = shouldShowRefreshOutcome(
+    dispatchJobId,
+    statusJobId,
+    refreshState,
+  );
   const showDispatchNotice = Boolean(refreshMutation.data) && !terminalStateMatchesDispatch;
   const showOutcomeNotice = Boolean(status) && terminalStateMatchesDispatch;
+  const hasRefreshFeedback =
+    isActive ||
+    Boolean(browserReason) ||
+    statusQuery.isError ||
+    refreshMutation.isError ||
+    hasMarketRefreshFailure ||
+    Boolean(marketRefreshResult) ||
+    showDispatchNotice ||
+    showOutcomeNotice;
   const historyId = `company-command-history-${cdCvm}`;
   const detailsId = `company-command-details-${cdCvm}`;
-  const exportDetailsId = `company-command-export-${cdCvm}`;
-  const statusText = buildStatusText({
-    browserReason: Boolean(browserReason),
-    hasRefreshError,
-    isActive,
-    latestPeriodLabel,
-    loading: refreshState === "loading",
-    lastRefreshAt,
-    coverageYears,
-    status,
-  });
-
   function validateYears(): boolean {
     if (!Number.isFinite(startYear) || startYear < CVM_MIN_YEAR) {
       setYearError(`Minimum start year: ${CVM_MIN_YEAR}.`);
@@ -244,42 +405,97 @@ export function CompanyCommandBar({
   }
 
   function applyPreset(preset: "3y" | "5y" | "10y" | "full") {
-    const end = currentYear;
-    const start =
+    const scope =
       preset === "3y"
-        ? end - 2
+        ? "last_3_years"
         : preset === "5y"
-          ? end - 4
+          ? "last_5_years"
           : preset === "10y"
-            ? end - 9
-            : CVM_MIN_YEAR;
-    setStartYear(start);
-    setEndYear(end);
+            ? "last_10_years"
+            : "full_history";
+    const range = historyPresetRange(scope, currentYear);
+    setStartYear(range.startYear);
+    setEndYear(range.endYear);
     setYearError(null);
   }
 
-  return (
-    <section className={className} aria-label="Company command bar" style={barStyle(needsAttention, flat)}>
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex min-w-0 items-center gap-2" style={{ flex: "1 1 320px" }}>
-          <StatusDot tone={hasRefreshError ? "error" : needsAttention ? "warn" : "ok"} />
-          <p
-            role={isActive ? "status" : undefined}
-            className="min-w-0 truncate font-mono"
-            style={{
-              color: "var(--color-text-secondary)",
-              fontSize: "var(--text-xs)",
-              margin: 0,
-            }}
-            title={statusText}
-          >
-            {statusText}
-          </p>
-        </div>
+  function selectHistoryScope(scope: HistoryScope) {
+    setHistoryScope(scope);
+    const range = historyPresetRange(scope, currentYear);
+    setStartYear(range.startYear);
+    setEndYear(range.endYear);
+    setYearError(null);
+  }
 
+  function downloadHistory() {
+    if (!validateYears()) return;
+    refreshMutation.mutate({ type: "history", startYear, endYear });
+  }
+
+  function updateCompanyData() {
+    const selectedSources = selectedOnDemandRefreshSources(updateSources);
+    if (selectedSources.includes("cvm")) {
+      refreshMutation.mutate({ type: "incremental" });
+    } else {
+      refreshMutation.reset();
+    }
+    if (selectedSources.includes("market")) {
+      marketRefreshMutation.mutate();
+    } else {
+      marketRefreshMutation.reset();
+    }
+  }
+
+  return (
+    <section
+      ref={downloadControls ? commandBarRef : undefined}
+      className={className}
+      aria-label="Company command bar"
+      style={{ ...barStyle(needsAttention, flat), ...(downloadControls ? { display: "flex", flexDirection: "column", height: "100%", position: "relative" } : {}) }}
+    >
+      {downloadControls ? (
+        <div className="flex w-full flex-1 flex-col gap-2" style={{ paddingBottom: 5, paddingRight: 5 }}>
+          <label className="flex" aria-label="History download period">
+            <Select
+              block
+              value={historyScope}
+              onChange={(event) => selectHistoryScope(event.target.value as HistoryScope)}
+              style={{ fontSize: "var(--text-xs)", height: 24, padding: "1px 22px 1px 7px" }}
+            >
+              {PERIOD_SCOPE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.value === "full_history" ? option.label : `Last ${option.label}`}
+                </option>
+              ))}
+            </Select>
+          </label>
+          <Button
+            variant="primary"
+            size="xs"
+            disabled={historyDisabled}
+            loading={pendingHistory}
+            onClick={downloadHistory}
+            style={{ flex: 1, minHeight: 34, width: "100%" }}
+          >
+            <DownloadIcon />
+            {pendingHistory ? `Downloading ${startYear}-${endYear}` : "Download history"}
+          </Button>
+          <Button
+            variant="primary"
+            size="xs"
+            disabled={updateDisabled}
+            loading={pendingIncremental}
+            onClick={updateCompanyData}
+            style={{ flex: 1, minHeight: 34, width: "100%" }}
+          >
+            <RefreshIcon />
+            {hasRefreshError ? "Retry update" : pendingIncremental ? "Updating data" : updateSourcesEnabled(updateSources) ? "Update data" : "Select a source"}
+          </Button>
+        </div>
+      ) : (
+        <div className={hideExport ? "flex flex-wrap items-center gap-2" : "grid items-start gap-3 sm:grid-cols-[minmax(0,1fr)_172px]"}>
         <div
           className="flex min-w-0 flex-wrap items-center justify-end gap-2"
-          style={{ flex: "2 1 620px" }}
         >
           {showWorkspaceLinks
             ? getCompanyCommandWorkspaceLinks(cdCvm).map((link) => (
@@ -293,9 +509,9 @@ export function CompanyCommandBar({
             size="xs"
             disabled={updateDisabled}
             loading={pendingIncremental}
-            onClick={() => refreshMutation.mutate({ type: "incremental" })}
+            onClick={updateCompanyData}
           >
-            {hasRefreshError ? "Retry update" : "Update data"}
+            {hasRefreshError ? "Retry update" : updateSourcesEnabled(updateSources) ? "Update data" : "Select a source"}
           </Button>
           <Button
             type="button"
@@ -307,63 +523,158 @@ export function CompanyCommandBar({
           >
             {COMPANY_COMMAND_LABELS.historyDisclosure}
           </Button>
-          <label
-            className="flex items-center gap-1"
-            style={{ color: "var(--color-text-secondary)", fontSize: "var(--text-xs)" }}
-          >
-            <span>{COMPANY_COMMAND_LABELS.exportScope}</span>
-            <Select
-              block={false}
-              value={periodScope}
-              onChange={(event) => setPeriodScope(event.target.value)}
-              style={{ fontSize: "var(--text-xs)", height: 22, padding: "1px 22px 1px 7px" }}
-            >
-              {PERIOD_SCOPE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </Select>
-          </label>
-          {!hideExport && (
-            <>
-              <Button
-                variant="primary"
-                size="xs"
-                disabled={!exportAction.isDesktop || exportAction.isRunning}
-                loading={exportAction.isRunning}
-                onClick={() => exportAction.run()}
-              >
-                {exportAction.isRunning ? "Exporting" : "Export Excel"}
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="xs"
-                aria-expanded={showExportDetails}
-                aria-controls={exportDetailsId}
-                onClick={() => setShowExportDetails((value) => !value)}
-              >
-                {COMPANY_COMMAND_LABELS.exportDetails}
-              </Button>
-            </>
-          )}
         </div>
+        {!hideExport ? (
+          <div
+            className="flex flex-col gap-2"
+            role="group"
+            aria-label="Export controls"
+            style={{
+              background: "var(--color-surface-2)",
+              border: "1px solid var(--color-border-default)",
+              borderRadius: "var(--radius-md)",
+              padding: "8px",
+            }}
+          >
+            <span
+              style={{
+                color: "var(--color-text-tertiary)",
+                fontSize: "var(--text-2xs)",
+                fontWeight: 600,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+              }}
+            >
+              Export
+            </span>
+            <label className="flex" aria-label="Export period">
+              <Select
+                block
+                value={periodScope}
+                onChange={(event) => setPeriodScope(event.target.value)}
+                style={{ fontSize: "var(--text-xs)", height: 24, padding: "1px 22px 1px 7px" }}
+              >
+                {PERIOD_SCOPE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </Select>
+            </label>
+            <Button
+              variant="primary"
+              size="xs"
+              disabled={!exportAction.isDesktop || exportAction.isRunning}
+              loading={exportAction.isRunning}
+              onClick={() => exportAction.run()}
+              style={{ width: "100%" }}
+              >
+                <SpreadsheetIcon />
+                {exportAction.isRunning ? "Exporting" : "Export Excel"}
+            </Button>
+          </div>
+        ) : null}
       </div>
+      )}
 
-      {isActive ? <ActiveProgress status={status} progress={progress} isFetching={statusQuery.isFetching} /> : null}
+      {downloadControls ? (
+        <>
+          <button
+            type="button"
+            className="focus-visible:outline focus-visible:outline-1 focus-visible:outline-cyan-600"
+            aria-label="Choose custom history range"
+            aria-expanded={showHistory}
+            aria-controls={historyId}
+            title="Choose custom history range"
+            onClick={() => setShowHistory((value) => !value)}
+            style={mappingWindowButtonStyle}
+          >
+            <OpenInWindowIcon />
+          </button>
+          <HistoryRangePopover
+            id={historyId}
+            open={showHistory}
+            startYear={startYear}
+            endYear={endYear}
+            minYear={CVM_MIN_YEAR}
+            maxYear={currentYear}
+            hasError={Boolean(yearError)}
+            error={yearError}
+            disabled={historyDisabled}
+            loading={pendingHistory}
+            sources={updateSources}
+            onSourcesChange={setUpdateSources}
+            onStartYearChange={(value) => {
+              setStartYear(value);
+              setYearError(null);
+            }}
+            onEndYearChange={(value) => {
+              setEndYear(value);
+              setYearError(null);
+            }}
+            onDownload={() => {
+              if (!validateYears()) return;
+              setShowHistory(false);
+              refreshMutation.mutate({ type: "history", startYear, endYear });
+            }}
+          />
+        </>
+      ) : null}
 
-      {browserReason || statusQuery.isError || refreshMutation.isError || showDispatchNotice || showOutcomeNotice ? (
+      {downloadControls && hasRefreshFeedback ? (
+        <div style={feedbackPopoverStyle}>
+          {isActive ? <ActiveProgress status={status} progress={progress} isFetching={statusQuery.isFetching} /> : null}
+          {browserReason || statusQuery.isError || refreshMutation.isError || hasMarketRefreshFailure || marketRefreshResult || showDispatchNotice || showOutcomeNotice ? (
+            <div className={isActive ? "mt-2" : undefined}>
+              {browserReason ? <Notice tone="warning">{browserReason}</Notice> : null}
+              {statusQuery.isError ? <ErrorNotice error={statusQuery.error} /> : null}
+              {refreshMutation.isError ? <ErrorNotice error={refreshMutation.error} /> : null}
+              {marketRefreshMutation.isError ? <ErrorNotice error={marketRefreshMutation.error} /> : null}
+              {marketRefreshResult ? (
+                <TransientNotice
+                  noticeKey={`market-history:${marketRefreshResult.success_count}:${marketRefreshResult.failure_count}:${marketRefreshResult.attempted_count}`}
+                  tone={marketRefreshResult.ok ? "success" : "warning"}
+                >
+                  {formatMarketHistoryRefreshMessage(marketRefreshResult)}
+                </TransientNotice>
+              ) : null}
+              {showDispatchNotice && refreshMutation.data ? <DispatchNotice result={refreshMutation.data} /> : null}
+              {showOutcomeNotice ? (
+                <TransientNotice noticeKey={`${dispatchJobId}:${refreshState}`} tone="success">
+                  {formatRefreshSuccessMessage(status)}
+                </TransientNotice>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {!downloadControls && isActive ? <ActiveProgress status={status} progress={progress} isFetching={statusQuery.isFetching} /> : null}
+
+      {!downloadControls && (browserReason || statusQuery.isError || refreshMutation.isError || hasMarketRefreshFailure || marketRefreshResult || showDispatchNotice || showOutcomeNotice) ? (
         <div className="mt-2">
           {browserReason ? <Notice tone="warning">{browserReason}</Notice> : null}
           {statusQuery.isError ? <ErrorNotice error={statusQuery.error} /> : null}
           {refreshMutation.isError ? <ErrorNotice error={refreshMutation.error} /> : null}
+          {marketRefreshMutation.isError ? <ErrorNotice error={marketRefreshMutation.error} /> : null}
+          {marketRefreshResult ? (
+            <TransientNotice
+              noticeKey={`market-history:${marketRefreshResult.success_count}:${marketRefreshResult.failure_count}:${marketRefreshResult.attempted_count}`}
+              tone={marketRefreshResult.ok ? "success" : "warning"}
+            >
+              {formatMarketHistoryRefreshMessage(marketRefreshResult)}
+            </TransientNotice>
+          ) : null}
           {showDispatchNotice && refreshMutation.data ? <DispatchNotice result={refreshMutation.data} /> : null}
-          {showOutcomeNotice ? <RefreshOutcomeNotice status={status} /> : null}
+          {showOutcomeNotice ? (
+            <TransientNotice noticeKey={`${dispatchJobId}:${refreshState}`} tone="success">
+              {formatRefreshSuccessMessage(status)}
+            </TransientNotice>
+          ) : null}
         </div>
       ) : null}
 
-      {showHistory ? (
+      {showHistory && !downloadControls ? (
         <div id={historyId} className="mt-2" style={disclosureStyle}>
           <div className="flex flex-wrap items-end gap-2">
             {(["3y", "5y", "10y", "full"] as const).map((preset) => (
@@ -400,10 +711,7 @@ export function CompanyCommandBar({
               size="xs"
               disabled={updateDisabled}
               loading={pendingHistory}
-              onClick={() => {
-                if (!validateYears()) return;
-                refreshMutation.mutate({ type: "history", startYear, endYear });
-              }}
+              onClick={downloadHistory}
             >
               {pendingHistory ? `Downloading ${startYear}-${endYear}...` : "Download selected history"}
             </Button>
@@ -427,25 +735,14 @@ export function CompanyCommandBar({
         </div>
       ) : null}
 
-      {!hideExport && showExportDetails ? (
-        <div id={exportDetailsId} className="mt-2" style={disclosureStyle}>
-          <ExportStatusLine
-            status={exportAction.status}
-            message={exportStatusMessage(exportAction.status, exportAction.errorMessage)}
-            result={exportAction.result}
-            outputDir={exportAction.outputDir}
-            outputDirMissing={exportAction.outputDirMissing}
-            timestamp={exportAction.lastRunAt}
-          />
-        </div>
-      ) : !hideExport && (exportAction.status === "success" || exportAction.status === "error") ? (
+      {!hideExport && exportAction.status === "success" ? (
         <div className="mt-2">
-          <Notice tone={exportAction.status === "success" ? "success" : "error"} role={exportAction.status === "success" ? "status" : "alert"}>
-            {exportAction.status === "success"
-              ? `Workbook exported successfully${exportAction.result?.file_name ? `: ${exportAction.result.file_name}` : "."}`
-              : exportAction.errorMessage ?? "Export failed."}
-          </Notice>
+          <TransientNotice noticeKey={`export:${exportAction.lastRunAt?.getTime() ?? 0}`} tone="success">
+            {`Workbook exported${exportAction.result?.file_name ? `: ${exportAction.result.file_name}` : "."}`}
+          </TransientNotice>
         </div>
+      ) : !hideExport && exportAction.status === "error" ? (
+        <div className="mt-2"><Notice tone="error" role="alert">{exportAction.errorMessage ?? "Export failed."}</Notice></div>
       ) : null}
     </section>
   );
@@ -464,7 +761,15 @@ export function companyDataInvalidationKeys(cdCvm: number): QueryKey[] {
     ["refresh-jobs"],
     ["company-refresh-status"],
     ["company-financial-readiness", cdCvm],
+    ["market-history", cdCvm],
+    ["market-history-status", cdCvm],
   ];
+}
+
+function invalidateMarketHistoryData(queryClient: QueryClient, cdCvm: number) {
+  for (const queryKey of [["market-history", cdCvm], ["market-history-status", cdCvm]] as QueryKey[]) {
+    void queryClient.invalidateQueries({ queryKey });
+  }
 }
 
 function CommandLink({
@@ -504,45 +809,6 @@ function invalidateCompanyData(queryClient: QueryClient, cdCvm: number) {
   }
 }
 
-function buildStatusText({
-  browserReason,
-  hasRefreshError,
-  isActive,
-  latestPeriodLabel,
-  loading,
-  lastRefreshAt,
-  coverageYears,
-  status,
-}: {
-  browserReason: boolean;
-  hasRefreshError: boolean;
-  isActive: boolean;
-  latestPeriodLabel: string | null;
-  loading: boolean;
-  lastRefreshAt: string | null;
-  coverageYears: number | null;
-  status: CompanyRefreshStatus | null;
-}) {
-  if (browserReason) return "Desktop runtime required for local update and export actions";
-  if (loading) return "Loading local data status";
-  if (isActive) {
-    return `Updating company data${status?.progress_message ? ` · ${status.progress_message}` : ""}`;
-  }
-  const state = normalizedTrackingState(status);
-  if (state === "no_data") {
-    return status?.progress_message || "No CVM statements found for the selected range";
-  }
-  if (state === "stalled") {
-    return "Update stalled · Worker heartbeat is missing or stale";
-  }
-  if (hasRefreshError) return "Update failed · Existing local data remains available";
-  const parts = [latestPeriodLabel ? `Local data current · Through ${latestPeriodLabel}` : "Local data status unavailable"];
-  const last = formatDateTime(lastRefreshAt);
-  if (last !== "n/a") parts.push(`Refreshed ${last}`);
-  if (coverageYears != null) parts.push(`${formatNullable(coverageYears)} years`);
-  return parts.join(" · ");
-}
-
 function StatusDetails({
   status,
   loading,
@@ -579,6 +845,85 @@ function StatusDetails({
   );
 }
 
+function SpreadsheetIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 16 16"
+      width="20"
+      height="20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M3.5 1.75h6l3 3v9.5H3.5z" />
+      <path d="M9.5 1.75v3h3" />
+      <path d="M5.5 7.25h5M5.5 9.5h5M7.25 7.25v4.5" />
+    </svg>
+  );
+}
+
+function DownloadIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 16 16"
+      width="18"
+      height="18"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M8 2.5v7" />
+      <path d="m5.25 6.75 2.75 2.75 2.75-2.75" />
+      <path d="M3 12.75h10" />
+    </svg>
+  );
+}
+
+function RefreshIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 16 16"
+      width="18"
+      height="18"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M13 7a5 5 0 0 0-8.7-2.9L3 5.5" />
+      <path d="M3 2.75V5.5h2.75" />
+      <path d="M3 9a5 5 0 0 0 8.7 2.9L13 10.5" />
+      <path d="M13 13.25V10.5h-2.75" />
+    </svg>
+  );
+}
+
+function OpenInWindowIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 16 16"
+      width="18"
+      height="18"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 4v8H4" />
+    </svg>
+  );
+}
+
 function ActiveProgress({
   status,
   progress,
@@ -602,16 +947,6 @@ function ActiveProgress({
       </div>
     </div>
   );
-}
-
-function StatusDot({ tone }: { tone: "ok" | "warn" | "error" }) {
-  const color =
-    tone === "ok"
-      ? "var(--color-state-ok)"
-      : tone === "error"
-        ? "var(--color-state-err)"
-        : "var(--color-state-warn)";
-  return <span aria-hidden="true" style={{ background: color, borderRadius: 999, height: 7, width: 7, flexShrink: 0 }} />;
 }
 
 function PresetButton({ children, onSelect }: { children: ReactNode; onSelect: () => void }) {
@@ -699,32 +1034,188 @@ function DispatchNotice({ result }: { result: RefreshDispatchResponse }) {
   );
 }
 
-function RefreshOutcomeNotice({ status }: { status: CompanyRefreshStatus | null }) {
-  const state = normalizedTrackingState(status);
-  if (state === "success") {
-    return <Notice tone="success" role="status">{status?.progress_message || "Update completed."}</Notice>;
-  }
-  if (state === "no_data") {
-    return (
-      <Notice tone="warning" role="status">
-        {status?.latest_attempt_reason_message || status?.progress_message || "No CVM statements found for the selected range."}
-      </Notice>
-    );
-  }
-  if (state === "stalled") {
-    return <Notice tone="warning" role="alert">Update stalled. Check refresh worker diagnostics in Settings.</Notice>;
-  }
-  if (state === "error") {
-    return <Notice tone="error" role="alert">{status?.last_error || "Update failed."}</Notice>;
-  }
-  return null;
+export function shouldShowRefreshOutcome(
+  dispatchJobId: string | null,
+  statusJobId: string | null,
+  refreshState: string,
+): boolean {
+  return Boolean(dispatchJobId) && dispatchJobId === statusJobId && refreshState === "success";
 }
 
-function exportStatusMessage(status: string, errorMessage: string | null | undefined) {
-  if (status === "unavailable") return "Excel export is available in the desktop app.";
-  if (status === "running") return "Generating workbook.";
-  if (status === "error") return errorMessage ? `Could not export workbook: ${errorMessage}` : "Could not export workbook.";
-  return undefined;
+function formatRefreshSuccessMessage(status: CompanyRefreshStatus | null): string {
+  const message = String(status?.progress_message || "").trim();
+  if (!message) return "Update completed.";
+  if (/^refresh conclu[ií]do/i.test(message)) {
+    const range = message.match(/(\d{4})\s*(?:-|–|a)\s*(\d{4})/i);
+    return range ? `Refresh completed. Local data is ready for ${range[1]}–${range[2]}.` : "Refresh completed. Local data is ready.";
+  }
+  return message;
+}
+
+function formatMarketHistoryRefreshMessage(result: CompanyMarketHistoryAllRefreshResult): string {
+  if (result.attempted_count === 0) {
+    return "Market history was not updated: no ticker is available.";
+  }
+  if (result.failure_count === 0) {
+    return `Market history updated for ${result.success_count} ticker${result.success_count === 1 ? "" : "s"}.`;
+  }
+  return `Market history updated for ${result.success_count} of ${result.attempted_count} tickers; ${result.failure_count} failed.`;
+}
+
+function TransientNotice({
+  noticeKey,
+  tone,
+  children,
+}: {
+  noticeKey: string;
+  tone: "success" | "warning";
+  children: ReactNode;
+}) {
+  const [visible, setVisible] = useState(true);
+  const [entered, setEntered] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  useEffect(() => {
+    setVisible(true);
+    setEntered(false);
+    setLeaving(false);
+    const enterFrame = window.requestAnimationFrame(() => setEntered(true));
+    const leaveTimer = window.setTimeout(() => setLeaving(true), 5_500);
+    const removeTimer = window.setTimeout(() => setVisible(false), 5_700);
+    return () => {
+      window.cancelAnimationFrame(enterFrame);
+      window.clearTimeout(leaveTimer);
+      window.clearTimeout(removeTimer);
+    };
+  }, [noticeKey]);
+  if (!visible) return null;
+  return (
+    <div
+      style={{
+        maxHeight: leaving ? 0 : 48,
+        opacity: entered && !leaving ? 1 : 0,
+        overflow: "hidden",
+        transform: entered && !leaving ? "translateY(0)" : "translateY(-4px)",
+        transition: "max-height 180ms ease, opacity 180ms ease, transform 180ms ease",
+      }}
+    >
+      <Notice tone={tone} role="status">{children}</Notice>
+    </div>
+  );
+}
+
+function HistoryRangePopover({
+  id,
+  open,
+  startYear,
+  endYear,
+  minYear,
+  maxYear,
+  hasError,
+  error,
+  disabled,
+  loading,
+  sources,
+  onSourcesChange,
+  onStartYearChange,
+  onEndYearChange,
+  onDownload,
+}: {
+  id: string;
+  open: boolean;
+  startYear: number;
+  endYear: number;
+  minYear: number;
+  maxYear: number;
+  hasError: boolean;
+  error: string | null;
+  disabled: boolean;
+  loading: boolean;
+  sources: OnDemandUpdateSources;
+  onSourcesChange: (sources: OnDemandUpdateSources) => void;
+  onStartYearChange: (value: number) => void;
+  onEndYearChange: (value: number) => void;
+  onDownload: () => void;
+}) {
+  const [mounted, setMounted] = useState(open);
+  const [entered, setEntered] = useState(open);
+
+  useEffect(() => {
+    if (open) {
+      setMounted(true);
+      const frame = window.requestAnimationFrame(() => setEntered(true));
+      return () => window.cancelAnimationFrame(frame);
+    }
+    setEntered(false);
+    const timer = window.setTimeout(() => setMounted(false), 180);
+    return () => window.clearTimeout(timer);
+  }, [open]);
+
+  if (!mounted) return null;
+  return (
+    <div
+      id={id}
+      role="dialog"
+      aria-label="Custom history range"
+      aria-hidden={!open}
+      style={{
+        ...historyPopoverStyle,
+        opacity: entered ? 1 : 0,
+        pointerEvents: entered ? "auto" : "none",
+        transform: entered ? "translateY(0)" : "translateY(-4px)",
+      }}
+    >
+      <span style={popoverLabelStyle}>On-demand settings</span>
+      <div className="mt-2 flex flex-col gap-1.5">
+        <Checkbox
+          label="CVM financial data"
+          checked={sources.cvm}
+          disabled={disabled}
+          onChange={(event) => onSourcesChange({ ...sources, cvm: event.currentTarget.checked })}
+        />
+        <Checkbox
+          label="Market data"
+          checked={sources.market}
+          disabled={disabled}
+          onChange={(event) => onSourcesChange({ ...sources, market: event.currentTarget.checked })}
+        />
+      </div>
+      <p style={historySourceHintStyle}>
+        Download history retrieves CVM financial data only. Market data refreshes its complete available history.
+      </p>
+      <span style={{ ...popoverLabelStyle, display: "block", marginTop: 10 }}>Custom CVM history range</span>
+      <div className="mt-2 flex gap-2">
+        <YearInput
+          id={`${id}-start-year`}
+          label="Start year"
+          value={startYear}
+          min={minYear}
+          max={maxYear}
+          hasError={hasError}
+          onChange={onStartYearChange}
+        />
+        <YearInput
+          id={`${id}-end-year`}
+          label="End year"
+          value={endYear}
+          min={minYear}
+          max={maxYear}
+          hasError={hasError}
+          onChange={onEndYearChange}
+        />
+      </div>
+      {error ? <p role="alert" style={errorTextStyle}>{error}</p> : null}
+      <Button
+        variant="primary"
+        size="xs"
+        disabled={disabled}
+        loading={loading}
+        onClick={onDownload}
+        style={{ marginTop: 10, width: "100%" }}
+      >
+        {loading ? "Downloading" : "Download selected range"}
+      </Button>
+    </div>
+  );
 }
 
 function barStyle(needsAttention: boolean, flat: boolean): CSSProperties {
@@ -749,6 +1240,64 @@ const disclosureStyle: CSSProperties = {
   border: "1px solid var(--color-border-subtle)",
   borderRadius: "var(--radius-sm)",
   padding: 8,
+};
+
+export const historyPopoverStyle: CSSProperties = {
+  background: "var(--color-surface-1)",
+  border: "1px solid var(--color-border-default)",
+  borderRadius: "var(--radius-md)",
+  boxShadow: "0 10px 24px rgb(0 0 0 / 0.28)",
+  padding: 10,
+  position: "absolute",
+  right: 0,
+  top: "calc(100% + 8px)",
+  transition: "opacity 180ms ease, transform 180ms ease",
+  width: 284,
+  zIndex: 10,
+};
+
+const historySourceHintStyle: CSSProperties = {
+  color: "var(--color-text-secondary)",
+  fontSize: "var(--text-2xs)",
+  lineHeight: 1.45,
+  margin: "8px 0 0",
+};
+
+const feedbackPopoverStyle: CSSProperties = {
+  background: "var(--color-surface-1)",
+  border: "1px solid var(--color-border-default)",
+  borderRadius: "var(--radius-md)",
+  boxShadow: "0 10px 24px rgb(0 0 0 / 0.28)",
+  padding: 8,
+  position: "absolute",
+  right: 0,
+  top: "calc(100% + 8px)",
+  width: "min(360px, 100%)",
+  zIndex: 10,
+};
+
+const popoverLabelStyle: CSSProperties = {
+  color: "var(--color-text-tertiary)",
+  fontSize: "var(--text-2xs)",
+  fontWeight: 600,
+  letterSpacing: "0.06em",
+  textTransform: "uppercase",
+};
+
+const mappingWindowButtonStyle: CSSProperties = {
+  alignItems: "center",
+  background: "transparent",
+  border: "none",
+  bottom: 2,
+  color: "var(--color-text-secondary)",
+  cursor: "pointer",
+  display: "inline-flex",
+  height: 22,
+  justifyContent: "center",
+  padding: 0,
+  position: "absolute",
+  right: 2,
+  width: 22,
 };
 
 const presetButtonStyle: CSSProperties = {
