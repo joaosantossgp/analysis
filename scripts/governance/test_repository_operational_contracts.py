@@ -232,12 +232,12 @@ def test_release_workflow_has_exact_phase_graph_and_final_only_publish_authority
         "final-publish",
     }
     assert workflow["inputs"]["phase"]["options"] == ["candidate", "attest", "publish"]
-    assert jobs["resolve-candidate"]["if"] == "inputs.phase == 'candidate'"
-    assert jobs["build-windows"]["if"] == "inputs.phase == 'candidate'"
+    assert jobs["resolve-candidate"]["if"] == "${{ false && inputs.phase == 'candidate' }}"
+    assert jobs["build-windows"]["if"] == "${{ false && inputs.phase == 'candidate' }}"
     assert jobs["build-windows"]["needs"] == "resolve-candidate"
-    assert jobs["attest-evidence"]["if"] == "inputs.phase == 'attest'"
-    assert jobs["publish-preflight"]["if"] == "inputs.phase == 'publish'"
-    assert jobs["final-publish"]["if"] == "inputs.phase == 'publish'"
+    assert jobs["attest-evidence"]["if"] == "${{ false && inputs.phase == 'attest' }}"
+    assert jobs["publish-preflight"]["if"] == "${{ false && inputs.phase == 'publish' }}"
+    assert jobs["final-publish"]["if"] == "${{ false && inputs.phase == 'publish' }}"
     assert jobs["final-publish"]["needs"] == "publish-preflight"
     assert workflow["permissions"] == {"contents": "read", "actions": "read"}
     assert jobs["final-publish"]["permissions"] == {
