@@ -27,14 +27,10 @@ on:
           - "false"
           - "true"
 
-  schedule:
-    # Gap-fill trimestral: 1° de jan, abr, jul, out às 03:00 UTC
-    - cron: "0 3 1 */3 *"
-
 jobs:
   full-load:
     name: Full historical load (manual dispatch only)
-    if: github.event_name == 'workflow_dispatch'
+    if: "${{ false && github.event_name == 'workflow_dispatch' }}"
     runs-on: ubuntu-latest
     timeout-minutes: 360
 
@@ -104,7 +100,7 @@ jobs:
 
   gap-fill:
     name: Quarterly gap-fill (scheduled)
-    if: github.event_name == 'schedule'
+    if: "${{ false && github.event_name == 'schedule' }}"
     runs-on: ubuntu-latest
     timeout-minutes: 360
 
