@@ -1,12 +1,11 @@
 name: Atualizacao Mensal CVM
 
 on:
-  schedule:
-    - cron: "0 9 1 * *"   # Dia 1 de cada mes, 09h UTC (06h BRT)
   workflow_dispatch:
 
 jobs:
   refresh:
+    if: "${{ false }}"
     runs-on: ubuntu-latest
     timeout-minutes: 330
 
