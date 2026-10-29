@@ -1,252 +1,201 @@
-# CONTEXT.md - CVM Reports Capture
+# CONTEXT.md - Financial Pipeline Domain Rules
 
-> Referencia tecnica para regras de negocio e pipeline financeiro em `src/` e
-> `apps/api`. Para arquitetura runtime, fontes, Excel, desenvolvimento e release,
-> veja `docs/architecture.md`, `docs/data-sources.md`,
-> `docs/excel-exports.md`, `docs/development.md` e `docs/build-release.md`.
-> Para regras operacionais de agentes, veja `AGENTS.md` na raiz.
-
----
-
-## 1. O que e o projeto
-
-Extrai demonstracoes financeiras historicas de companhias listadas na CVM, organiza em SQLite local (PostgreSQL opcional) e expoe os dados via app desktop pywebview (Vite UI estatica + bridge Python) e API FastAPI read-only para hospedagem/dev/local. O foco e produzir output confiavel, legivel e verificavel sem misturar periodos, versoes ou linhas conflitantes.
-
-**Objetivo final:** pipeline unico que recebe empresa + ano inicial/final, persiste demonstracoes e metadados em banco e disponibiliza consulta/exportacao via app desktop, API HTTP e Excel auditavel.
-
-**Fonte de dados:** CVM publica - `https://dados.cvm.gov.br` (DFP anual + ITR trimestral).
+> Technical reference for business rules and the financial pipeline in `src/`
+> and `apps/api`. For runtime architecture, sources, Excel, development, and
+> release, see `docs/architecture.md`, `docs/data-sources.md`,
+> `docs/excel-exports.md`, `docs/development.md`, and `docs/build-release.md`.
+> For folder layout, see `docs/reference/repository-map.md`. For agent operating
+> rules, see `AGENTS.md`.
 
 ---
 
-## 2. Escopo tecnico atual
+## 1. What the pipeline does
 
-**Prioridade 1 (concluida):** integridade contabil e periodizacao correta - fechar Ativo/Passivo Total, evitar carimbar anual em trimestre, tratar janela de anos.
+Extracts historical financial statements of CVM-listed companies, stores them
+in local SQLite (optional PostgreSQL), and exposes the data through the
+pywebview desktop app (static Vite UI + Python bridge) and a read-only FastAPI
+adapter for hosted/dev/local HTTP access. The goal is reliable, readable, and
+verifiable output that never mixes periods, versions, or conflicting lines.
 
-**Prioridade 2 (concluida):** chave estavel `LINE_ID_BASE`, base wide, `DS_CONTA_norm`, filtro `ORDEM_EXERC='ULTIMO'`, QA por conflitos, exportacao limpa do Excel.
+**End goal:** a single pipeline that takes a company plus start/end years,
+persists statements and metadata, and serves queries and exports through the
+desktop app, the HTTP API, and auditable Excel.
 
-**Prioridade 3 (concluida):** padronizacao por dicionario de contas (`STANDARD_NAME`), aba `PADRONIZACAO` no Excel.
-
-**Prioridades 4-8 (concluidas):** expansao em massa (449 empresas), vetorizacao + WAL + paralelismo, API FastAPI, migracao do app desktop para pywebview com Vite estatico empacotado, testes automatizados. A antiga UI Next.js foi removida da arvore ativa.
+**Data source:** public CVM data - `https://dados.cvm.gov.br` (DFP annual + ITR
+quarterly).
 
 ---
 
-## 3. Regras de negocio essenciais
+## 2. Completed technical scope
 
-- O pipeline financeiro preserva demonstracoes **BPA**, **BPP**, **DRE** e
-  **DFC**. O Excel analitico atual expoe uma aba `Model` e mantem as
-  demonstracoes completas em abas `raw_*` ocultas; veja `docs/excel-exports.md`.
-- Linhas identificadas por `LINE_ID_BASE` estavel - sempre usa `CD_CONTA` quando disponivel; chave sintetica deterministica quando nao.
-- `DS_CONTA_norm` obrigatorio em todas as abas: lower, remocao de acentos, trim, colapso de espacos, remocao de NBSP.
-- Output nao deve usar sufixos artificiais como `#1`, `#2`.
+- **Priority 1:** accounting integrity and correct periodization - balance
+  Total Assets/Total Liabilities, never stamp annual values onto quarters,
+  handle the year window.
+- **Priority 2:** stable `LINE_ID_BASE` key, wide base, `DS_CONTA_norm`,
+  `ORDEM_EXERC='ULTIMO'` filter, conflict QA, clean Excel export.
+- **Priority 3:** account standardization through a dictionary
+  (`STANDARD_NAME`) and a `PADRONIZACAO` Excel sheet.
+- **Priorities 4-8:** mass expansion (449 companies), vectorization + WAL +
+  parallelism, FastAPI adapter, desktop migration to pywebview with packaged
+  static Vite, automated tests. The old Next.js UI was removed from the active
+  tree.
 
-### Regras DRE e DFC
+---
 
-- DRE e DFC mantem colunas trimestrais e anuais (`1Q`, `2Q`, `3Q`, `4Q`, `YYYY`).
-- DFC nao fica cumulativa: conversao YTD -> standalone feita internamente.
+## 3. Essential business rules
+
+- The financial pipeline preserves the **BPA**, **BPP**, **DRE**, and **DFC**
+  statements. The current analytical Excel exposes a `Model` sheet and keeps
+  the complete statements in hidden `raw_*` sheets; see
+  `docs/excel-exports.md`.
+- Lines are identified by a stable `LINE_ID_BASE`: always `CD_CONTA` when
+  available, otherwise a deterministic synthetic key.
+- `DS_CONTA_norm` is required on every sheet: lowercase, accents removed,
+  trimmed, whitespace collapsed, NBSP removed.
+- Output must not use artificial suffixes such as `#1`, `#2`.
+
+### DRE and DFC rules
+
+- DRE and DFC keep quarterly and annual columns (`1Q`, `2Q`, `3Q`, `4Q`,
+  `YYYY`).
+- DFC is not cumulative: YTD -> standalone conversion happens internally.
   - `Q1 = YTD_1Q`
   - `Q2 = YTD_2Q - YTD_1Q`
   - `Q3 = YTD_3Q - YTD_2Q`
-  - `Q4 = ANUAL - YTD_3Q`
-  - `YYYY = ANUAL`
-- Trimestre faltante: deixar `NaN` e registrar no QA; nao inventar valores.
-- `4Q` depende da presenca do anual `YYYY`; trimestre isolado nao gera `4Q`
-  confiavel.
+  - `Q4 = ANNUAL - YTD_3Q`
+  - `YYYY = ANNUAL`
+- Missing quarter: leave `NaN` and record it in QA; never invent values.
+- `4Q` depends on the annual `YYYY` being present; an isolated quarter does not
+  produce a reliable `4Q`.
 
-### QA e criterios de aceite
+### QA and acceptance criteria
 
-Validacoes obrigatorias para a camada financeira e/ou para exportacoes Excel:
-- `LINE_ID_BASE` unico por aba
-- `DS_CONTA_norm` sem nulos
-- ausencia de `"#"` nos IDs finais
-- fechamento BPA e BPP (Ativo Total = Passivo Total)
-- DFC: `Q1 + Q2 + Q3 + Q4 = YYYY` quando todos os periodos existirem
+Required validations for the financial layer and/or Excel exports:
 
-Logs, abas e metadata de QA devem preservar rastreabilidade. O workbook
-analitico atual usa `README`, `metadata`, `mapping_audit`, `raw_*` e blocos de
-checks; nao documente abas legadas como obrigatorias sem validar a
-implementacao.
+- `LINE_ID_BASE` unique per sheet
+- `DS_CONTA_norm` has no nulls
+- no `"#"` in final IDs
+- BPA and BPP balance (Total Assets = Total Liabilities)
+- DFC: `Q1 + Q2 + Q3 + Q4 = YYYY` when all periods exist
+
+QA logs, sheets, and metadata must preserve traceability. The current
+analytical workbook uses `README`, `metadata`, `mapping_audit`, `raw_*`, and
+check blocks; do not document legacy sheets as required without validating the
+implementation.
 
 ---
 
-## 4. Pipeline e data flow
+## 4. Pipeline and data flow
 
-### Ciclo completo (download -> banco -> consulta)
+### Full cycle (download -> database -> query)
 
 **1. Trigger**
+
 - CLI: `python main.py --companies ... --start_year ... --end_year ...`
-- Desktop app (`desktop/app.py`): invoca o scraper via bridge para empresas/range selecionados na UI
-- Scripts em lote: `scripts/data/batch_completo.py`, `scripts/data/atualizar_todos.py`
+- Desktop app (`desktop/app.py`): calls the scraper through the bridge for the
+  companies/range selected in the UI
+- Batch scripts: `scripts/data/batch_completo.py`,
+  `scripts/data/atualizar_todos.py`
 
-**2. Download e extracao**
-- `src/financials/scraper.py` baixa ZIPs da CVM para `data/input/raw`
-- CSVs (BPA/BPP/DRE/DFC/DMPL) sao extraidos para `data/input/processed`
+**2. Download and extraction**
 
-**3. Transform e normalizacao**
-- filtra por `CD_CVM`, normaliza unidades financeiras
-- deriva labels de periodo, monta tabelas por demonstracao
-- gera `LINE_ID_BASE`, aplica padronizacao e logs de QA
+- `src/financials/scraper.py` downloads CVM ZIPs to `data/input/raw`
+- CSVs (BPA/BPP/DRE/DFC/DMPL) are extracted to `data/input/processed`
 
-**4. Persistencia**
-- `src/financials/database.py` escreve linhas long-form em `financial_reports` e eventos de QA em `qa_logs`
-- metadados de empresa sao atualizados em `companies`
-- status de refresh persistido em `company_refresh_status`
-- exportacao Excel disponivel em `output/reports/`
+**3. Transform and normalization**
 
-**5. Consulta**
-- `src/financials/read_service.py` e a fonte de verdade da camada de leitura
-- `apps/api` (FastAPI) e o adaptador HTTP fino sobre `read_service`
-- App desktop usa o Vite SPA em `apps/desktop-web` e o bridge Python direto via `desktop/bridge.py`, evitando o salto HTTP em runtime local
+- filters by `CD_CVM`, normalizes financial units
+- derives period labels, builds per-statement tables
+- generates `LINE_ID_BASE`, applies standardization and QA logs
 
-### Modelo de cobertura
+**4. Persistence**
 
-- **Universo:** empresas ativas da CVM master
-- **Celula coberta:** empresa-ano com pacote completo (`BPA + BPP + DRE + DFC`)
-- **Ano fechado:** so conta como coberto quando o pacote completo existir no
-  periodo anual `YYYY`; `1Q/2Q/3Q` sem anual nao contam como cobertura anual
-- **Sinal hibrido:** `financial_reports` + arquivos raw/processados + cache local
+- `src/financials/database.py` writes long-form rows to `financial_reports` and
+  QA events to `qa_logs`
+- company metadata is updated in `companies`
+- refresh status is persisted in `company_refresh_status`
+- Excel export is available in `output/reports/`
 
-### Freshness por periodo financeiro
+**5. Query**
 
-- O indicador "updated through" da empresa usa o periodo completo mais recente
-  por `CD_CVM`, nao uma data global nem apenas o ultimo ano anual.
-- Um periodo so e considerado completo quando existe pacote core
-  `BPA + BPP + DRE + DFC` para o mesmo `PERIOD_LABEL`, com `QA_CONFLICT = false`.
-- Periodos anuais sao exibidos como `FY2025`; periodos trimestrais permanecem
-  no formato normalizado `1Q26`, `2Q26`, etc.
-- Anos trimestrais mais novos que o ultimo DFP completo entram no escopo do
-  Excel apenas quando ha pelo menos um trimestre completo nesse ano.
-- Valores trimestrais persistidos em `financial_reports` ja passaram pela
-  normalizacao do scraper; DFC/DRE YTD sao convertidos para standalone antes
-  de leitura, UI, Model Mapping e Excel consumirem os dados.
+- `src/financials/read_service.py` is the source of truth for the read layer
+- `apps/api` (FastAPI) is a thin HTTP adapter over `read_service`
+- The desktop app uses the Vite SPA in `apps/desktop-web` and calls the Python
+  bridge directly through `desktop/bridge.py`, avoiding an HTTP hop at local
+  runtime
 
----
+### Coverage model
 
-## 5. Arquitetura de pastas
+- **Universe:** active companies in the CVM master list
+- **Covered cell:** company-year with the complete package
+  (`BPA + BPP + DRE + DFC`)
+- **Closed year:** counts as covered only when the complete package exists for
+  the annual `YYYY` period; `1Q/2Q/3Q` without an annual period do not count as
+  annual coverage
+- **Hybrid signal:** `financial_reports` + raw/processed files + local cache
 
-```text
-analisys/
-|-- src/                        # Pipeline de extracao e processamento
-|   |-- platform/               # Settings, DB engine, data layout, contracts, errors
-|   |-- companies/              # Catalogo, universo, tickers, market cap, GICS/setores
-|   |-- financials/             # Scraper, database, read/query services, KPIs, Excel
-|   |-- refresh/                # Refresh service, jobs, worker, GitHub dispatch
-|   `-- energy_kpi/             # KPIs energeticos e dados SIN/parcelas de usinas
-|-- desktop/                    # App desktop oficial (pywebview + Vite estatico)
-|   |-- app.py                  # Entry point pywebview
-|   |-- bridge.py               # Entry point CVMBridge; implementacao em bridge_api/
-|   |-- services.py             # Logica de negocio compartilhada
-|   |-- build_desktop.ps1       # Script de build do .exe via PyInstaller
-|   `-- updater.py              # Auto-updater do desktop
-|-- apps/
-|   |-- api/                    # FastAPI adapter (HTTP dev/hosted surface)
-|   |-- desktop-web/            # Vite SPA empacotada no desktop
-|   `-- landing/                # Pagina publica de download
-|-- scripts/                    # Tooling em subpastas: data/ setup/ diagnostics/ qa/ release/ governance/
-|-- archive/                    # Scripts e governanca antigos
-|-- tests/                      # Suite pytest
-|-- data/
-|   |-- import/                 # Mapeamentos aprovados, incluindo canonical_accounts.csv e GICS
-|   |-- schema/migrations/      # SQL de migracoes
-|   |-- db/cvm_financials.db    # SQLite local de desenvolvimento
-|   |-- cache/                  # Caches auxiliares
-|   |-- reports/                # Relatorios gerados, nao versionados
-|   `-- metadata/               # Metadados de empresas e tickers
-|-- docs/
-|   |-- CONTEXT.md              # Este arquivo
-|   |-- decisions/              # ADRs
-|   |-- governance/             # Autonomous-mode contract
-|   |-- reference/              # Docs de referencia ativos
-|   |-- COMO_RODAR.md           # Tutorial passo a passo
-|   |-- DESIGN.md               # Design system / tokens
-|   |-- PRODUCT.md              # Product brief
-|   `-- vendor/                 # Manuais CVM (PDF/XLS) para leitura humana
-|-- main.py                     # Entrypoint CLI
-|-- AGENTS.md                   # Regras operacionais para agentes
-`-- README.md                   # Overview do projeto
-```
+### Freshness by financial period
+
+- A company's "updated through" indicator uses the most recent complete period
+  per `CD_CVM`, not a global date or only the latest annual year.
+- A period is complete only when the core package `BPA + BPP + DRE + DFC`
+  exists for the same `PERIOD_LABEL` with `QA_CONFLICT = false`.
+- Annual periods display as `FY2025`; quarterly periods keep the normalized
+  format `1Q26`, `2Q26`, etc.
+- Quarterly years newer than the latest complete DFP enter the Excel scope only
+  when that year has at least one complete quarter.
+- Quarterly values persisted in `financial_reports` have already gone through
+  scraper normalization; DFC/DRE YTD values are converted to standalone before
+  reads, UI, Model Mapping, and Excel consume them.
 
 ---
 
-## 6. Stack e convencoes de codigo
+## 5. Stack and code conventions
 
 **Stack:**
-- Python: 3.11+, pandas, polars, sqlalchemy, requests, yfinance, pywebview, PyInstaller
+
+- Python: 3.11+, pandas, polars, sqlalchemy, requests, yfinance, pywebview,
+  PyInstaller
 - Desktop UI: Vite, React, TypeScript, Tailwind v4
-- API hospedada/dev: FastAPI (read-only)
-- DB: SQLite local + PostgreSQL opcional via `DATABASE_URL`
+- Hosted/dev API: FastAPI (read-only)
+- DB: local SQLite + optional PostgreSQL through `DATABASE_URL`
 
-**Convencoes:**
-- `snake_case` para variaveis e nomes de arquivos
-- OO no motor principal (`CVMScraper`)
-- bloco `USER CONFIGURATION` no topo de cada script executavel
-- `LINE_ID_BASE` como identificador canonico
+**Conventions:**
 
----
+- `snake_case` for variables and file names
+- object-oriented core engine (`CVMScraper`)
+- `USER CONFIGURATION` block at the top of each executable script
+- `LINE_ID_BASE` as the canonical identifier
 
-## 7. Estado atual
-
-- Banco local SQLite com suporte opcional a PostgreSQL via `DATABASE_URL`
-- App desktop oficial: `desktop/app.py` (pywebview + Vite estatico em `dist/CVMAnalytics/CVMAnalytics.exe`)
-- API FastAPI read-only em `apps/api` para dev/local HTTP (self-host opcional); nao e empacotada no desktop. Nao assuma hospedagem Vercel/Railway: o produto canonico e o `CVMAnalytics.exe`.
-- UI ativa em `apps/desktop-web`; a antiga UI Next.js em `apps/web` foi removida
-- Automacao e batches via `scripts/data/batch_completo.py` e `scripts/data/atualizar_todos.py`
-
-**Proximas prioridades:**
-- ampliacao de cobertura/contas para outros setores
-- melhorias na auditabilidade dos KPIs financeiros
-- documentacao operacional e exportacoes auxiliares
+Setup and run commands live in `docs/development.md`.
 
 ---
 
-## 8. Bootstrap rapido (Windows)
+## 6. Troubleshooting
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\setup\bootstrap_windows.ps1
-```
-
-Flags: `-ForceRecreateVenv`, `-SkipSmoke`.
-
-Fluxo pos-bootstrap recomendado:
-```powershell
-.\.venv\Scripts\Activate.ps1
-python scripts/setup/setup_db.py
-python scripts/setup/setup_companies_table.py
-python -m desktop.app --dev
-```
-
-Fluxo alternativo via CLI:
-```powershell
-.\.venv\Scripts\Activate.ps1
-python main.py --companies PETROBRAS --start_year 2021 --end_year 2025 --type consolidated
-uvicorn apps.api.app.main:app --reload
-```
+| Symptom | Diagnosis |
+|---------|-----------|
+| No data in the app | Check that `financial_reports` has rows and that the selected company/years were processed |
+| Company missing | Check that the `CD_CVM` was processed successfully |
+| SQL error in the updater | Inspect `output/logs/refresh_runs.jsonl` and confirm SQLite is not locked |
+| List repeats the same companies | Check that `last_success_at` is being updated in `company_refresh_status` |
+| ETA does not appear | Expected while there are few throughput samples |
+| Coverage numbers are stale | Force a ranking refresh and check the local cache |
+| Market widgets are empty | Check yfinance availability and the ticker mapping |
+| Cockpit returns empty | Check `apps/api/app/routes/` and the actual coverage for the selected company/years |
 
 ---
 
-## 9. Troubleshooting
+## 7. Non-obvious technical decisions
 
-| Sintoma | Diagnostico |
-|---------|-------------|
-| Sem dados no app | Verificar se `financial_reports` tem linhas e se a empresa/anos selecionados foram processados |
-| Empresa ausente | Verificar se o `CD_CVM` foi processado com sucesso |
-| SQL error no updater | Inspecionar logs em `output/logs/refresh_runs.jsonl` e confirmar que o SQLite nao esta bloqueado |
-| Lista repete as mesmas empresas | Verificar se `last_success_at` esta sendo atualizado em `company_refresh_status` |
-| ETA nao aparece | Comportamento esperado quando ainda ha poucas amostras de throughput |
-| Numeros de cobertura desatualizados | Forcar refresh do ranking e checar o cache local |
-| Widgets de mercado vazios | Verificar disponibilidade do yfinance e mapeamento de ticker |
-| Cockpit retorna vazio | Checar `apps/api/app/routes/` e a cobertura real da empresa/anos selecionados |
+Implementation decisions that are not obvious from reading the code and have
+caused bugs before:
 
----
-
-## 10. Decisoes Tecnicas Nao-Obvias
-
-Decisões de implementação que não são óbvias da leitura do código e que já causaram bugs no passado:
-
-| Decisao | Razao |
+| Decision | Reason |
 |---------|-------|
-| `int(year)` antes de param SQLite | numpy int64 falha silenciosamente |
-| yfinance `dividendYield` ja em % | nao multiplicar por 100 |
-| SQLAlchemy IN clause: `bindparam("x", expanding=True)` | listas como params SQL |
-| `_upsert_company_metadata`: INSERT OR IGNORE + UPDATE | preserva CNPJ/ticker preenchidos por `setup_companies_table` |
-| `fillna("")` antes de `pivot_table` | evita perda silenciosa de linhas com `STANDARD_NAME` nulo |
-| `apps/api` consome `src/financials/read_service.py` | evita reimplementar SQL e KPI logic no adaptador HTTP |
+| `int(year)` before passing a SQLite param | numpy int64 fails silently |
+| yfinance `dividendYield` is already a percentage | do not multiply by 100 |
+| SQLAlchemy IN clause: `bindparam("x", expanding=True)` | lists as SQL params |
+| `_upsert_company_metadata`: INSERT OR IGNORE + UPDATE | preserves CNPJ/ticker filled by `setup_companies_table` |
+| `fillna("")` before `pivot_table` | avoids silent loss of rows with null `STANDARD_NAME` |
+| `apps/api` consumes `src/financials/read_service.py` | avoids reimplementing SQL and KPI logic in the HTTP adapter |

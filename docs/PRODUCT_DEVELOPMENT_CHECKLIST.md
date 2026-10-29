@@ -104,7 +104,7 @@ Acceptance bar:
 Goal: make sector context precede company conclusions.
 
 Energy/Utilities readiness reference:
-`docs/energy-utilities-source-driver-readiness-audit.md`.
+`docs/archive/planning-2026/audits/energy-utilities-source-driver-readiness-audit.md` (archived).
 
 Checklist:
 
@@ -152,7 +152,7 @@ Checklist:
 
 - Preserve current company overview, statements, refresh, model mapping, and
   export behavior.
-- Use `docs/company-workspace-overview-ia-plan.md` as the first implementation
+- Use `docs/archive/planning-2026/audits/company-workspace-overview-ia-plan.md` (archived) as the first implementation
   guide for the Overview IA pass.
 - Separate overview, financials, drivers, sources, events, risks, model/Excel,
   and future valuation/thesis areas.
@@ -172,7 +172,7 @@ Acceptance bar:
 
 Goal: connect data to the few variables that drive the investment thesis.
 
-Planning reference: `docs/critical-factors-monitor-audit-plan.md`.
+Planning reference: `docs/archive/planning-2026/audits/critical-factors-monitor-audit-plan.md` (archived).
 
 Checklist:
 

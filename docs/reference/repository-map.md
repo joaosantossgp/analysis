@@ -1,27 +1,50 @@
 # Repository Map
 
-CVMAnalytics repository orientation, last verified from local files on
-2026-06-19.
+The single map of the CVMAnalytics repository: active app paths, routes,
+folders, commands, and what is historical. Last verified from local files on
+2026-10-29. For the canonical documentation index, see the "Canonical
+Documentation" table in [`README.md`](../../README.md). For the current project
+state, see [`docs/STATUS.md`](../STATUS.md).
 
-This map classifies active code, generated artifacts, historical material, and
-canonical documentation. For the short app map, see
-[`../active-project-map.md`](../active-project-map.md).
+If another document conflicts with this file, inspect the active code paths
+below before changing anything.
+
+## Active App
+
+| Area | Active path |
+|---|---|
+| Packaged product | `dist/CVMAnalytics/CVMAnalytics.exe`, built by `desktop/build_desktop.ps1` |
+| Frontend | `apps/desktop-web` (Vite + React + TypeScript); the only UI bundled into the executable |
+| Desktop shell | `desktop/app.py` |
+| Bridge | `desktop/bridge.py` and `desktop/bridge_api/` |
+| Bridge services | `desktop/services.py` |
+| Python core/data | `src/` |
+| HTTP API adapter | `apps/api` (FastAPI tests/dev-hosted access, not the desktop UI) |
+| Landing page | `apps/landing` (GitHub Pages download surface, not the product runtime) |
+
+Runtime integration: `apps/desktop-web/src/lib/bridge/adapter.ts` ->
+`window.pywebview.api` -> `desktop/bridge.py` / `desktop/bridge_api/` ->
+`desktop/services.py` / `src/`. See [`docs/architecture.md`](../architecture.md).
+
+## Active Routes
+
+See "Active Routes" in [`docs/architecture.md`](../architecture.md). The
+route source is `apps/desktop-web/src/App.tsx`.
 
 ## Top-Level Folders
 
 | Folder | Classification | Notes |
 |---|---|---|
-| `src/` | Active Python core | Data settings, CVM ingestion, SQLite/database schema, read services, companies, financials, Excel, refresh jobs, energy/news modules |
+| `src/` | Active Python core | Settings, CVM ingestion, SQLite schema, read services, companies, financials, Excel, refresh jobs, energy/news modules |
 | `desktop/` | Active desktop runtime | pywebview entrypoint, bridge/mixins, services, updater, PyInstaller spec, build script |
-| `apps/desktop-web/` | Active packaged UI | Vite + React + TypeScript; only UI bundled into `CVMAnalytics.exe` |
-| `apps/api/` | Active HTTP adapter | FastAPI adapter and API tests/dev-hosted HTTP access; not the packaged desktop UI |
-| `apps/landing/` | Static public surface | GitHub Pages/download surface; not product runtime |
-| `tests/` | Active tests | Python core/desktop tests; run `pytest tests -q` |
-| `scripts/` | Active tooling | Setup, data maintenance, diagnostics, QA, release helpers, governance scripts |
-| `docs/` | Documentation | Canonical docs, reference docs, ADRs, release notes, archived migration history |
+| `apps/desktop-web/` | Active packaged UI | Vite + React + TypeScript |
+| `apps/api/` | Active HTTP adapter | FastAPI adapter and API tests; not the packaged desktop UI |
+| `apps/landing/` | Static public surface | GitHub Pages download surface |
+| `tests/` | Active tests | Python core/desktop tests |
+| `scripts/` | Active tooling | See Scripts below |
+| `docs/` | Documentation | Canonical docs, reference docs, ADRs, release notes, archive |
 | `data/` | Data assets/dev data | Import CSVs and schema files are active; local DB/raw/cache outputs are runtime/dev artifacts |
-| `archive/` | Historical archive | Old governance snapshots/experiments; not active guidance |
-| `build/`, `dist/`, `output/`, `tmp/`, `scratch/` | Generated/local artifacts | Do not treat as source-of-truth docs or code |
+| `build/`, `dist/`, `output/`, `tmp/`, `scratch/` | Generated/local artifacts | Not source of truth |
 | `.github/` | CI/CD and guardrails | Workflows, PR template, guardrail policy |
 | `.claude/`, `skills/` | AI tooling | Agent/session tooling, not product runtime |
 
@@ -29,87 +52,77 @@ canonical documentation. For the short app map, see
 
 | File | Purpose |
 |---|---|
-| `README.md` | Minimal project overview and canonical doc index |
+| `README.md` | Project overview and canonical documentation index |
 | `AGENTS.md` | AI agent operating contract |
 | `requirements.txt` | Root Python dependencies |
 | `main.py` | Headless CLI refresh entrypoint |
 | `pytest.ini`, `conftest.py` | pytest discovery/config |
-| `railway.toml` | Deployment config for `apps/api`, not desktop UI |
-| `CVMAnalytics-windows*.zip` | Local generated release artifacts, not source |
+| `railway.toml` | Deployment config for `apps/api`, not the desktop UI |
 
-There is no root `package.json` or workspace package manager config. The active
-Node package is `apps/desktop-web/package.json`.
+There is no root `package.json`. The active Node package is
+`apps/desktop-web/package.json`.
 
 ## Scripts
 
-| Area | Active files |
+| Folder | Purpose |
 |---|---|
-| `scripts/data/` | `atualizar_todos.py`, `batch_completo.py`, `restaurar_historico.py`, `seed_catalog.py`, `sync_identity.py`, `expand_tickers.py`, `import_company_gics.py`, `backfill_company_gics.py`, `build_canonical_dict.py`, `canonicalize_data_layout.py`, `atualizar_dados.ps1`, `test_seed_catalog.py` |
-| `scripts/setup/` | `setup_db.py`, `setup_companies_table.py`, `bootstrap_windows.ps1`, `bootstrap_worktree.ps1` |
-| `scripts/diagnostics/` | `runtime_doctor.py`, `smoke_validate.py`, `db_portability_smoke.py`, `update_base_smoke.py`, `test_update_base_smoke.py`, `phase1_pywebview_smoke.py`, `benchmark_read_paths.py`, `benchmark_real_read_paths.py`, `calibrate_mappings.py` |
-| `scripts/qa/` | `quick_verify.py`, `verify_consolidation.py`, `verify_line_id_base.py`, `final_verification.py`, `workbook_paths.py` |
-| `scripts/release/` | `dev-desktop.ps1`, `dev-desktop-release-data.ps1`, `test_motw_explorer.ps1`, `test_motw_launch.ps1`, `test_motw_strip.py`, `pr_complete.ps1` |
-| `scripts/governance/` | `worktree_create.ps1`, `worktree_remove.ps1`, `worktree_status.ps1`, `fix-git-config.ps1` |
+| `scripts/data/` | Refresh, backfill, catalog seed, identity/GICS import, canonical dictionaries, energy stores and marts, storage budget and managed-ingestion checks |
+| `scripts/setup/` | Database/table setup and Windows/worktree bootstrap |
+| `scripts/diagnostics/` | Runtime doctor, smoke validation, read-path benchmarks, bridge method inventory, packaged candidate validation |
+| `scripts/qa/` | Consolidation, line-id, and workbook verification |
+| `scripts/release/` | Desktop dev launchers, MOTW tests, PR helper |
+| `scripts/governance/` | Repository contract tests and worktree helpers |
 
-`pytest.ini` includes `tests` and `scripts`, so `test_*.py` files under scripts
-are pytest-discovered.
+`pytest.ini` includes `tests` and `scripts`, so `test_*.py` files under
+`scripts/` are pytest-discovered.
 
 ## GitHub Workflows
 
-Workflow files under `.github/workflows/` are active unless explicitly removed:
-
 | Workflow | Purpose |
 |---|---|
-| `ci.yml` | Python compile/tests, coverage, and Vite typecheck/build |
-| `release-desktop.yml` | Windows desktop build and GitHub Release publication |
+| `ci.yml` | Governance contracts, Python compile/tests, coverage, Vite typecheck/build |
+| `release-desktop.yml` | Windows desktop build and GitHub Release publication (candidate/attest/publish phases) |
 | `deploy-landing.yml` | GitHub Pages deploy for `apps/landing` |
-| `refresh.yml` | Scheduled CVM refresh workflow |
+| `refresh.yml` | Scheduled monthly CVM refresh |
+| `backfill_historico.yml` | Manual historical backfill and scheduled quarterly gap-fill |
 | `ingest.yml` | Manual CVM ingestion |
-| `on_demand_ingest.yml` | Manual per-company ingest |
-| `backfill_historico.yml` | Manual historical backfill |
+| `on_demand_ingest.yml` | Manual per-company ingestion |
 | `seed_catalog.yml` | Manual catalog seed |
 | `pr-issue-guardrails.yml` | PR issue-link governance |
 
-## Canonical Documentation
+## Active Commands
 
-| Topic | Path |
-|---|---|
-| Project overview | `README.md` |
-| Agent rules | `AGENTS.md` |
-| Active project map | `docs/active-project-map.md` |
-| Product direction | `docs/PRODUCT_DIRECTION.md` |
-| Product development checklist | `docs/PRODUCT_DEVELOPMENT_CHECKLIST.md` |
-| Product principles | `docs/PRODUCT.md` |
-| Design system and UI principles | `docs/DESIGN.md` |
-| Runtime architecture | `docs/architecture.md` |
-| Data sources and auditability | `docs/data-sources.md` |
-| Excel export standards | `docs/excel-exports.md` |
-| Development commands | `docs/development.md` |
-| Build/release/updater | `docs/build-release.md` |
-| Troubleshooting | `docs/troubleshooting.md` |
-| Product workflows | `docs/product-workflows.md` |
-| Data/modeling context | `docs/CONTEXT.md` |
-| Settings/update flow | `docs/settings-module.md`, `docs/database-updates.md` |
-| On-demand company refresh | `docs/company-on-demand-updates.md` |
-| UI implementation rules | `docs/skills/CVMANALYTICS_VITE_UI_SKILL.md` |
-| GICS import | `docs/reference/gics-import.md` |
-| Indicators | `docs/reference/indicators-module.md` |
-| Energy references | `docs/reference/energy-utilities-sin-kpis.md`, `docs/reference/energy-utilities-distribution.md`, `docs/reference/fuel-distribution-source-intake.md` |
+See [`docs/development.md`](../development.md) for the full command map.
 
-`docs/COMO_RODAR.md` remains a Portuguese operational guide. The canonical
-English command map is `docs/development.md`.
+```powershell
+# real desktop dev
+python -m desktop.app --dev
 
-## Historical / Non-Canonical Docs
+# Vite checks
+npm --prefix apps/desktop-web run typecheck
+npm --prefix apps/desktop-web run build
+
+# Python checks
+python -m py_compile desktop/app.py desktop/bridge.py
+pytest tests -q
+pytest apps/api/tests -q
+
+# desktop package build
+.\desktop\build_desktop.ps1
+```
+
+## Historical / Non-Canonical
 
 | Area | Status |
 |---|---|
-| `docs/archive/migration/` | Completed Next/Node to Vite migration history; not current operating guidance |
-| `docs/decisions/` | ADRs; point-in-time decisions, not daily instructions |
+| `docs/archive/migration/` | Completed Next/Node to Vite migration history |
+| `docs/archive/planning-2026/` | Point-in-time audits, plans, specs, and planning prompts |
+| `docs/decisions/` | ADRs; point-in-time decisions, not daily instructions. Check each status. |
 | `docs/releases/` | Partial local release notes; GitHub Releases are the published source |
 | `docs/reference/v2-api-contract.md` | HTTP API adapter contract for `apps/api`; not the desktop bridge |
-| `docs/reference/coverage_*`, `docs/plans/` | Product/workflow planning context; not proof of implemented features |
-| `docs/perf/` and `docs/diagnostics/` | Dated benchmark/audit evidence; useful context, not universal current state |
-| `docs/vendor/` | Vendor/source reference material, not operating guidance |
+| `docs/perf/`, `docs/diagnostics/` | Dated benchmark/audit evidence; context, not current state |
+| `docs/vendor/` | Vendor/source reference material |
+| `apps/web` | Old Next.js app, removed from the active tree. Do not recreate it. |
 
 ## Do Not Touch Without A Plan
 
@@ -122,9 +135,4 @@ English command map is `docs/development.md`.
 | `src/platform/settings.py` | User data path resolution |
 | `data/import/canonical_accounts.csv`, `data/import/gics_mapping.csv` | Bundled/imported data contracts |
 | `src/financials/excel_exporter.py` | Financial workbook auditability |
-| `apps/api/`, `railway.toml` | HTTP API/deploy surface; not desktop UI but still active |
-
-## Legacy Warning
-
-The old `apps/web` Next.js app has been removed. Do not infer current runtime
-architecture from archive docs, old ADRs, release notes, or deleted path names.
+| `apps/api/`, `railway.toml` | HTTP API/deploy surface; still active |

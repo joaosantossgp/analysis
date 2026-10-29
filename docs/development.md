@@ -38,6 +38,11 @@ python -m desktop.app --repair-dev-environment --dev
 python -m desktop.app --rebuild-dev-environment --dev
 ```
 
+Normal interactive sessions do not use worktrees, lanes, or
+`scripts/release/pr_complete.ps1`. Work on a branch and use `git push` plus
+manual or auto-merge. Worktrees belong to autonomous mode only
+(`docs/governance/autonomous-mode.md`).
+
 ## Isolated Worktree Bootstrap
 
 For autonomous task worktrees, create the task workspace from `main`, then run
@@ -85,6 +90,36 @@ python -m desktop.app --dev
 
 Use this for destructive experiments, resets, or fixture work.
 
+### Desktop Flags
+
+| Flag | Effect |
+|---|---|
+| `--dev` | Starts or reuses the Vite dev server at `http://127.0.0.1:5173` |
+| `--debug` | Opens DevTools in the active mode |
+| (none) | Serves `apps/desktop-web/dist` or `_internal/desktop-web` |
+| `--repair-dev-environment` | Reinstalls declared dependencies in `.venv` (use with `--dev`) |
+| `--rebuild-dev-environment` | Recreates `.venv` (use with `--dev`) |
+
+Bridge sanity check with `--debug`, from the DevTools console:
+
+```javascript
+await window.pywebview.api.ping()
+// => {pong: true, ts: 1234567890.0}
+
+await window.pywebview.api.get_companies({page: 1, page_size: 5})
+// => {items: [...], pagination: {...}}
+```
+
+### Packaged Mode
+
+```powershell
+.\desktop\build_desktop.ps1
+.\dist\CVMAnalytics\CVMAnalytics.exe
+```
+
+The packaged app serves the static Vite build; the Python bridge answers reads
+directly, so FastAPI is not needed.
+
 ### Browser Preview
 
 ```powershell
@@ -101,6 +136,52 @@ npm --prefix apps/desktop-web run dev:mock
 
 This uses fixture data from `apps/desktop-web/src/lib/bridge/mock.ts`. Do not use
 mock mode to validate real database behavior.
+
+### HTTP API Adapter
+
+```powershell
+uvicorn apps.api.app.main:app --reload
+```
+
+Swagger is at `http://127.0.0.1:8000/docs` and OpenAPI at
+`http://127.0.0.1:8000/openapi.json`. Main endpoints: `/health`, `/companies`,
+`/companies/filters`, `/companies/{cd_cvm}`, `/companies/{cd_cvm}/years`,
+`/companies/{cd_cvm}/statements`, `/companies/{cd_cvm}/kpis`,
+`/refresh-status`, `/base-health`. See `docs/reference/v2-api-contract.md`.
+
+## Database Setup
+
+On a new machine or after a migration:
+
+```powershell
+python scripts/setup/setup_db.py
+python scripts/setup/setup_companies_table.py
+```
+
+Optional ticker expansion preview:
+
+```powershell
+python scripts/data/expand_tickers.py --dry-run
+```
+
+## Refreshing Data Outside The App
+
+The normal path is Settings -> Updates in the desktop app. For headless work:
+
+```powershell
+# one-off CLI refresh
+python main.py --companies PETROBRAS --start_year 2021 --end_year 2025 --type consolidated --skip_complete
+
+# batch refresh
+python scripts/data/batch_completo.py --dry-run
+python scripts/data/atualizar_todos.py --anos 2024 2025
+
+# safe Update Base smoke (default mode=missing, limit=1; live only with --confirm-live)
+python scripts/diagnostics/update_base_smoke.py --dry-run --mode missing --limit 1
+```
+
+Logs are written to `output/logs/`. See `docs/database-updates.md` and
+`docs/governance/on-demand-release-evidence.md`.
 
 ## Common Checks
 
@@ -127,8 +208,33 @@ pytest apps/api/tests -q
 Runtime diagnostics:
 
 ```powershell
+# minimal
 python scripts/diagnostics/runtime_doctor.py --require-canonical
+
+# full
+python scripts/diagnostics/runtime_doctor.py --require-db --table financial_reports --table companies --require-canonical
+python scripts/data/canonicalize_data_layout.py
+python scripts/diagnostics/db_portability_smoke.py --write-check
+
+# PostgreSQL, without exporting a variable
+python scripts/diagnostics/runtime_doctor.py --database-url postgresql://user:pass@host:5432/db --require-db --table financial_reports --table companies
+python scripts/diagnostics/db_portability_smoke.py --database-url postgresql://user:pass@host:5432/db --write-check
 ```
+
+Workbook QA (manual; run only after generating an XLSX through `main.py` or
+the desktop export; not part of setup or CI):
+
+```powershell
+python scripts/qa/quick_verify.py --xlsx output/reports/PETROBRAS_financials.xlsx
+python scripts/qa/verify_consolidation.py --xlsx output/reports/PETROBRAS_financials.xlsx
+python scripts/qa/verify_line_id_base.py --xlsx output/reports/PETROBRAS_financials.xlsx
+
+# historical regression for an old four-bug campaign; not part of the normal flow
+python scripts/qa/final_verification.py --xlsx output/reports/PETROBRAS_financials.xlsx
+```
+
+All workbook QA scripts share `scripts/qa/workbook_paths.py` for XLSX path
+resolution.
 
 Desktop package build:
 
@@ -156,6 +262,21 @@ Important environment variables:
 
 See [dev-runtime-and-data-paths.md](dev-runtime-and-data-paths.md) for detailed
 lock/write-mode behavior.
+
+## Common Setup Problems
+
+| Symptom | Fix |
+|---|---|
+| `ModuleNotFoundError` when opening the desktop app | Run `python -m desktop.app --repair-dev-environment --dev`; do not install modules individually. |
+| `python` is not recognized | Install Python 3.11+ and enable adding it to `PATH`. |
+| `runtime_doctor.py` fails with `venv-broken` | Run `python -m desktop.app --rebuild-dev-environment --dev`. |
+| Desktop app opens with no companies | Run `setup_db.py` and `setup_companies_table.py`, then refresh data. |
+| API returns `503` | Check the database, required tables, and `runtime_doctor.py`. |
+| PowerShell permission error | Run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`. |
+| Vite UI did not open in the desktop app | Run `npm --prefix apps/desktop-web run build` or use `python -m desktop.app --dev`. |
+
+For runtime, data, updater, and export problems, see
+[troubleshooting.md](troubleshooting.md).
 
 ## Before Editing
 

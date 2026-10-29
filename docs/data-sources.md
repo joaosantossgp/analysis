@@ -181,6 +181,28 @@ Key local artifacts:
 Offline access means the app can read already-downloaded local data. It does
 not mean refresh/update/news/market-data operations work without network access.
 
+Storage rules:
+
+- Opening normal analytical views must not trigger hidden external calls.
+- Refresh, import, update, and rebuild operations must be explicit, scoped,
+  observable, and logged.
+- Preserve downloaded files, source snapshots, import metadata, and prior valid
+  local state when refreshes fail.
+- Prefer bounded UI read models, indexes proven by query plans, caches, and
+  rebuildable marts over repeated scans of high-cardinality raw tables.
+- Do not add high-cardinality sector detail directly to the main app databases
+  when a managed analytical store and compact marts are required.
+- New heavy ingestion must define raw snapshot retention, lineage, managed
+  storage, bounded read paths, manifests/registration where required,
+  telemetry, failure recovery, and release validation.
+- Benchmark destructive storage/index/schema changes on a copied database
+  first. Keep rollback commands and do not replace a live database without an
+  explicit backup-and-swap plan with the app stopped.
+- Do not delete raw files or `source_snapshots` merely because a mart or cache
+  exists.
+- Avoid repeated external calls when local snapshots or caches should serve the
+  request.
+
 ## Auditability Requirements
 
 Every significant financial datum should be traceable to:
@@ -196,3 +218,39 @@ Every significant financial datum should be traceable to:
 
 Open gaps should be documented as "Needs validation" rather than presented as
 implemented guarantees.
+
+## Interpretation Distinctions
+
+Preserve these distinctions whenever they affect interpretation:
+
+- official CVM/B3 vs official external dataset vs external/unofficial vs user
+  import;
+- consolidated vs individual statements;
+- DFP annual vs ITR quarterly;
+- quarterly isolated vs accumulated;
+- reported vs transformed vs calculated;
+- actual vs estimated or forecast;
+- original filing vs restatement;
+- recurring vs non-recurring;
+- BRL vs thousand BRL vs million BRL and other currencies/scales;
+- point-in-time vs period flow;
+- source timestamp vs generated timestamp vs as-of date;
+- missing value vs zero;
+- unavailable vs unsupported vs failed.
+
+Rules:
+
+- Never silently fall back from official data to external data.
+- Never present mocks, placeholders, static definitions, or planned data as
+  real observations.
+- Yahoo Finance/yfinance, Google News, and other aggregators are not equivalent
+  to CVM or B3 official data.
+- Calculated values must remain traceable through
+  `number -> formula/transformation -> source -> company/entity -> period -> unit -> timestamp`.
+- EBITDA is not cash. Do not substitute it for operating cash flow or free cash
+  flow.
+- Financial analysis must preserve the relevant lens: Equity, Credit, IB, DCF,
+  multiples, SOTP, project finance, utilities/concessions, or operational
+  analysis.
+- Missing, partial, stale, invalid, or failed data must remain visible. Do not
+  convert missing values to zero to simplify UI logic.
