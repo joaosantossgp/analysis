@@ -404,10 +404,13 @@ def test_sqlite_concurrent_conflict_reversal_returns_typed_retry_for_loser(tmp_p
     with engine.connect() as conn:
         unresolved_id = conn.execute(text("SELECT conflict_id FROM entity_registry_conflicts WHERE system_to IS NULL")).scalar_one()
     resolved_id = resolution.transition_conflict(unresolved_id, actor_id="reviewer", reason="decided")
+    # Build repositories before the race: construction validates the schema and
+    # would otherwise contend with the winner's write lock.
+    racers = iter([EntityResolutionRepository(engine), EntityResolutionRepository(engine)])
 
     def reverse_conflict():
         try:
-            return EntityResolutionRepository(engine).transition_conflict(
+            return next(racers).transition_conflict(
                 resolved_id, actor_id="reviewer", reason="reopen", reverses_conflict_id=resolved_id,
             )
         except EntityResolutionConcurrencyError:
