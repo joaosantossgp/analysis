@@ -46,7 +46,7 @@ route source is `apps/desktop-web/src/App.tsx`.
 | `data/` | Data assets/dev data | Import CSVs and schema files are active; local DB/raw/cache outputs are runtime/dev artifacts |
 | `build/`, `dist/`, `output/`, `tmp/`, `scratch/` | Generated/local artifacts | Not source of truth |
 | `.github/` | CI/CD and guardrails | Workflows, PR template, guardrail policy |
-| `.claude/`, `skills/` | AI tooling | Agent/session tooling, not product runtime |
+| `.claude/` | AI tooling | Agent/session tooling, not product runtime |
 
 ## Root Files
 
