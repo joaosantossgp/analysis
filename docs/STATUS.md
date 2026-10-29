@@ -17,9 +17,13 @@ Last updated: 2026-10-29
 ## Production and external writes
 
 Enabled. The temporary suspension from #456 (2026-08-25) was reverted on
-2026-10-29. Landing deploy, scheduled refresh, quarterly gap-fill, ingestion,
-catalog seed, and desktop release workflows run as defined in
-`.github/workflows/`.
+2026-10-29. Landing deploy, ingestion, catalog seed, and desktop release
+workflows run as defined in `.github/workflows/`.
+
+The scheduled monthly refresh (`refresh.yml`) and quarterly gap-fill
+(`backfill_historico.yml`) were disabled on 2026-10-29: their external
+PostgreSQL (`DATABASE_URL`) is over its 512 MB plan limit and every scheduled
+run since 2026-05 failed. Both remain available through manual dispatch.
 
 ## Active work
 
@@ -34,6 +38,7 @@ catalog seed, and desktop release workflows run as defined in
 | Date | Decision |
 |---|---|
 | 2026-10-29 | Production freeze (#456) reverted. |
+| 2026-10-29 | Scheduled monthly refresh and quarterly gap-fill disabled (external PostgreSQL full). |
 | 2026-10-29 | Canonical Entity Registry epic (#413) and v0.31.0 plan withdrawn; related decision docs kept for reference only. |
 | 2026-10-29 | All documentation must be English (see `AGENTS.md` Language). |
 | 2026-10-29 | Docs consolidated: one repository map, one development guide, point-in-time audits/plans archived under `docs/archive/planning-2026/`, domain contracts moved out of `AGENTS.md` into `docs/data-sources.md`. |
