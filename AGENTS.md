@@ -5,6 +5,7 @@ Canonical operating rules for AI agents in this project. English-only.
 ## 1. How to read this file
 
 - This is the **default** contract. Read it once per session.
+- For current version, release state, active work, and recent decisions, read `docs/STATUS.md` first.
 - For runtime architecture, data sources, Excel exports, development, build/release, troubleshooting, and product workflows, start with the canonical docs linked from `README.md`.
 - For macro product direction and feature fit, read `docs/PRODUCT_DIRECTION.md`.
 - For product principles, minimalism, and UI hierarchy standards, read `docs/PRODUCT.md` and `docs/DESIGN.md`.
@@ -15,7 +16,7 @@ Canonical operating rules for AI agents in this project. English-only.
 - Before changing the Indicators module, read `docs/reference/indicators-module.md`.
 - Before changing Energy/Utilities system-driver scope, read `docs/decisions/energy-utilities-driver-pilot-contract.md` and verify current source/readiness evidence in the active repo.
 - Active reference docs live in `docs/` and `docs/reference/`. ADRs live in `docs/decisions/`. Migration history lives in `docs/archive/migration/` (all phases complete as of v0.17.0).
-- `archive/` at the repository root is historical governance and experiment material. Do not treat it as a current contract.
+- Docs whose status says withdrawn, historical, or superseded are reference only. Do not treat them as a current contract.
 
 ## Active Application Source of Truth
 
@@ -28,8 +29,9 @@ Canonical operating rules for AI agents in this project. English-only.
   Inspect `apps/desktop-web`, `desktop/`, `src/`, and `apps/api` before changing UI/runtime/backend behavior.
 - If a file appears legacy, orphaned, or unused, report the evidence instead of modifying it.
 
-## UI Language Policy
+## Language Policy
 
+- **Docs language: English-only.** All documentation, including human-facing docs, ADRs, and agent instructions, must be English. Existing Portuguese docs are cleanup debt; translate them when touching them.
 - **Target UI language: English-only.** New user-facing strings in `apps/desktop-web` must be English.
 - The current app still contains **mixed Portuguese/English** labels and routes. Do not claim the UI is already fully English.
 - Treat existing Portuguese UI strings as cleanup debt, not the desired convention. Migrate them to English when touching that surface; do not add new Portuguese user-facing strings.
@@ -72,7 +74,7 @@ Workspace boundaries:
 5. **Validate what can be validated.** Run targeted tests first, then the required broader checks. If validation is not possible, state that plainly.
 6. **Surface assumptions and risks at the end.** State what could go wrong, what was not verified, and what should be watched.
 7. **Do not speculate-engineer.** No memoization without a measured win, no abstraction for hypothetical callers, no dependency or rewrite without evidence.
-8. **Match the language of surrounding code and docs.** This does not override the English-only policy for new user-facing Vite UI strings.
+8. **Match the style of surrounding code and docs.** Language is always English (see Language Policy).
 9. **Be honest about audit and finding quality.** Do not repeat subagent findings that were not verified against active files.
 10. **Data, financial, and modeling work:** prioritize auditability and correctness over speed. Honor `docs/CONTEXT.md`, `docs/data-sources.md`, and the relevant source contract.
 11. **UI/design work:** keep output professional, dense, minimal, analyst-grade, responsive, and consistent with the existing design system. Preserve source visibility and avoid decorative dashboard patterns.
@@ -148,35 +150,7 @@ Rules:
 
 ## Token and Context Efficiency Protocol
 
-Use context-efficient tools before reading large files.
-
-### Serena MCP
-
-When Serena is available, use it first for code navigation, symbol search, reference lookup, and refactoring analysis.
-
-Prefer Serena for:
-
-- finding symbols, components, functions, classes, and references;
-- understanding cross-file dependencies;
-- inspecting file outlines before reading full files;
-- planning refactors across multiple files;
-- checking where a function/component is used before editing it.
-
-Avoid reading full files unless:
-
-- the exact implementation is required;
-- Serena's symbolic overview is insufficient;
-- debugging requires full local context.
-
-At the beginning of a new session, activate the current project with Serena and read Serena's initial instructions if they are not already loaded.
-
-### Repomix
-
-Use Repomix outputs only for broad repository understanding, onboarding, architecture review, or high-level planning.
-Do not rely on compressed Repomix output for precise implementation changes. Inspect real source files or use Serena for exact edits.
-
-### Cost Discipline
-
+- Use symbol/reference search or targeted reads before reading large files in full.
 - Before large changes, inspect the relevant subsystem first.
 - Avoid broad grep/read loops across the whole repository.
 - When the task changes substantially, start a fresh session or compact/clear the context.

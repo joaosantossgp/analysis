@@ -1,5 +1,10 @@
 # Entity Registry Baseline
 
+> **Withdrawn (2026-10-29).** The Canonical Entity Registry epic (#413) and its
+> v0.31.0 release plan were closed as not planned during a backlog reset. This
+> record is kept for reference only. It is not an active contract and does not
+> authorize or require any work. See `docs/STATUS.md`.
+
 Source-bound dossier for issue #414. Verified at commit
 `e41855e6fac3f69aa2443752364537870c67cf53` on 2026-07-29 (local worktree
 and `origin/main` both resolved to that SHA). This is a current-state record,

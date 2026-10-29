@@ -18,4 +18,9 @@ This directory holds the durable architectural decisions made on this project.
 | [0003](0003-v2-selection-criteria.md) | V2 framework selection criteria (historical) |
 | [0004](0004-first-remote-runtime-railway-vercel.md) | First remote runtime: Railway + Vercel (historical; desktop is active runtime) |
 | [0005](0005-offline-governance-ledger.md) | Offline governance ledger pattern (used once for LT-0001; superseded by the simplified AGENTS.md flow) |
-| [0006](0006-auth-desktop.md) | Authentication for the desktop app |
+| [0006](0006-auth-desktop.md) | Authentication for the desktop app (historical; never implemented) |
+| [0007](0007-local-analytical-storage.md) | Local analytical storage for large facts |
+| [0008](0008-database-alignment-before-app-development.md) | Database alignment before app development |
+| [Energy/Utilities driver pilot](energy-utilities-driver-pilot-contract.md) | Energy/Utilities system-driver pilot contract |
+| [Canonical entity registry](canonical-entity-registry-contract.md) | Canonical entity registry contract (withdrawn 2026-10-29) |
+| [Entity registry migration](entity-registry-migration-and-release.md) | Entity registry migration and v0.31.0 release plan (withdrawn 2026-10-29) |

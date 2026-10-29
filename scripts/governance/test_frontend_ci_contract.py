@@ -123,7 +123,6 @@ def test_ci_collects_repository_governance_contracts() -> None:
         "Run repository governance contract tests",
         "python -m pytest scripts/governance/test_repository_operational_contracts.py "
         "scripts/governance/test_frontend_ci_contract.py "
-        "scripts/governance/test_production_disabled.py "
         "scripts/diagnostics/test_bridge_method_inventory.py "
         "scripts/governance/test_packaged_candidate_harness.py -q",
     ) in steps

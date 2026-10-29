@@ -243,6 +243,12 @@ def test_historical_resolution_conflict_uses_detection_time_and_transition_matri
     assert (final["reversed_actor"], final["reversed_origin"]) == ("supervisor", "reviewer")
 
 
+def _racers(engine):
+    """Build both racing repositories up front: construction validates the
+    schema and would otherwise contend with the winner's SQLite write lock."""
+    return iter([EntityResolutionRepository(engine), EntityResolutionRepository(engine)])
+
+
 def test_sqlite_concurrent_policy_activation_returns_one_successor(tmp_path):
     engine = create_engine(f"sqlite:///{tmp_path / 'policy.db'}", connect_args={"timeout": 0.01})
     ensure_entity_registry_schema(engine)
@@ -252,10 +258,11 @@ def test_sqlite_concurrent_policy_activation_returns_one_successor(tmp_path):
         eligible_evidence_statuses=("available",), origin_precedence=("user",),
         allows_user_override=True, effective_from="2024-01-01T00:00:00+00:00",
     )
+    racers = _racers(engine)
 
     def activate():
         try:
-            return EntityResolutionRepository(engine).activate_policy_version(
+            return next(racers).activate_policy_version(
                 prior_policy_id=first.policy_id, prior_version=1, effective_from="2025-01-01T00:00:00+00:00"
             ).version
         except EntityResolutionValidationError:
@@ -279,10 +286,11 @@ def test_sqlite_concurrent_override_reversal_creates_one_current_successor(tmp_p
         policy_id=policy.policy_id, policy_version=policy.version, assertion_id=assertion.assertion_id,
         actor_id="analyst", reason="choice", effective_from="2024-01-01T00:00:00+00:00",
     )
+    racers = _racers(engine)
 
     def reverse():
         try:
-            return EntityResolutionRepository(engine).record_override(
+            return next(racers).record_override(
                 entity_id=entity.entity_id, domain="company.display", attribute="legal_name",
                 policy_id=policy.policy_id, policy_version=policy.version, assertion_id=assertion.assertion_id,
                 actor_id="analyst", reason="reversal", effective_from="2024-01-01T00:00:00+00:00",
@@ -311,6 +319,7 @@ def test_sqlite_concurrent_conflict_detection_returns_conflicted_without_databas
     first_insert = Barrier(2)
     insert_count = 0
     insert_lock = Lock()
+    racers = _racers(engine)
 
     def synchronize_first_inserts(_conn, _cursor, statement, _parameters, _context, _executemany):
         nonlocal insert_count
@@ -324,7 +333,7 @@ def test_sqlite_concurrent_conflict_detection_returns_conflicted_without_databas
 
     def resolve():
         try:
-            return EntityResolutionRepository(engine).resolve(
+            return next(racers).resolve(
                 entity.entity_id, domain="company.display", attribute="legal_name",
                 effective_as_of="2024-06-01T00:00:00+00:00",
             ).status
@@ -375,10 +384,11 @@ def test_sqlite_concurrent_conflict_resolution_returns_typed_retry_for_loser(tmp
     resolution.resolve(entity.entity_id, domain="company.display", attribute="legal_name", effective_as_of="2024-06-01T00:00:00+00:00")
     with engine.connect() as conn:
         conflict_id = conn.execute(text("SELECT conflict_id FROM entity_registry_conflicts WHERE system_to IS NULL")).scalar_one()
+    racers = _racers(engine)
 
     def resolve_conflict():
         try:
-            return EntityResolutionRepository(engine).transition_conflict(conflict_id, actor_id="reviewer", reason="decided")
+            return next(racers).transition_conflict(conflict_id, actor_id="reviewer", reason="decided")
         except EntityResolutionConcurrencyError:
             return "retry"
 
@@ -404,10 +414,11 @@ def test_sqlite_concurrent_conflict_reversal_returns_typed_retry_for_loser(tmp_p
     with engine.connect() as conn:
         unresolved_id = conn.execute(text("SELECT conflict_id FROM entity_registry_conflicts WHERE system_to IS NULL")).scalar_one()
     resolved_id = resolution.transition_conflict(unresolved_id, actor_id="reviewer", reason="decided")
+    racers = _racers(engine)
 
     def reverse_conflict():
         try:
-            return EntityResolutionRepository(engine).transition_conflict(
+            return next(racers).transition_conflict(
                 resolved_id, actor_id="reviewer", reason="reopen", reverses_conflict_id=resolved_id,
             )
         except EntityResolutionConcurrencyError:
