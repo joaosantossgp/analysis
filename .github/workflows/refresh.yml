@@ -1,8 +1,9 @@
 name: Atualizacao Mensal CVM
 
+# Schedule removed on 2026-10-29: the external PostgreSQL (DATABASE_URL) hit its
+# 512 MB plan limit and every scheduled run since 2026-05 failed. The desktop
+# app refreshes its own local data. Manual dispatch is kept.
 on:
-  schedule:
-    - cron: "0 9 1 * *"   # Dia 1 de cada mes, 09h UTC (06h BRT)
   workflow_dispatch:
 
 jobs:

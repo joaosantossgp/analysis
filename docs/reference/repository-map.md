@@ -83,8 +83,8 @@ There is no root `package.json`. The active Node package is
 | `ci.yml` | Governance contracts, Python compile/tests, coverage, Vite typecheck/build |
 | `release-desktop.yml` | Windows desktop build and GitHub Release publication (candidate/attest/publish phases) |
 | `deploy-landing.yml` | GitHub Pages deploy for `apps/landing` |
-| `refresh.yml` | Scheduled monthly CVM refresh |
-| `backfill_historico.yml` | Manual historical backfill and scheduled quarterly gap-fill |
+| `refresh.yml` | Manual CVM refresh into the external PostgreSQL (schedule disabled) |
+| `backfill_historico.yml` | Manual historical backfill (quarterly gap-fill schedule disabled) |
 | `ingest.yml` | Manual CVM ingestion |
 | `on_demand_ingest.yml` | Manual per-company ingestion |
 | `seed_catalog.yml` | Manual catalog seed |
