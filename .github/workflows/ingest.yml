@@ -37,7 +37,6 @@ on:
 
 jobs:
   ingest:
-    if: "${{ false }}"
     name: Ingest CVM financial data
     runs-on: ubuntu-latest
     timeout-minutes: 360

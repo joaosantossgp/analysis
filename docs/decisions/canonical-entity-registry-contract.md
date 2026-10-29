@@ -1,5 +1,10 @@
 # Canonical Entity Registry Contract
 
+> **Withdrawn (2026-10-29).** The Canonical Entity Registry epic (#413) and its
+> v0.31.0 release plan were closed as not planned during a backlog reset. This
+> record is kept for reference only. It is not an active contract and does not
+> authorize or require any work. See `docs/STATUS.md`.
+
 Status: approved by João on 2026-07-29 (Issue #415, approval comment
 `5120697192`). This approval authorizes this decision record and preparation
 of #416 only; it does not authorize Wave 1 DDL, migration, release, or

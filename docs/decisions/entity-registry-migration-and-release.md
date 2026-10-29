@@ -1,5 +1,10 @@
 # Entity Registry Migration, Compatibility, Recovery, and v0.31.0 Release Plan
 
+> **Withdrawn (2026-10-29).** The Canonical Entity Registry epic (#413) and its
+> v0.31.0 release plan were closed as not planned during a backlog reset. This
+> record is kept for reference only. It is not an active contract and does not
+> authorize or require any work. See `docs/STATUS.md`.
+
 Status: proposed — requires João's explicit approval in issue #416 before any migration code, DDL, version change, workflow edit, tag, package, or publication. This record implements no migration or release behavior.
 
 Issue: #416. Depends on the approved #414 baseline and #415 entity-registry contract. It is the required decision gate before #417, #418, #419, #420, and #422. The #403 release-publication direction was separately approved, but its workflow implementation is not present at this source commit.

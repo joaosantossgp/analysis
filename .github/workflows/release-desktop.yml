@@ -92,7 +92,7 @@ permissions:
 
 jobs:
   resolve-candidate:
-    if: "${{ false && inputs.phase == 'candidate' }}"
+    if: inputs.phase == 'candidate'
     name: Resolve exact candidate and CI gate
     runs-on: ubuntu-latest
     env:
@@ -171,7 +171,7 @@ jobs:
           "ci_run_url=$($latest.html_url)" >> $env:GITHUB_OUTPUT
 
   build-windows:
-    if: "${{ false && inputs.phase == 'candidate' }}"
+    if: inputs.phase == 'candidate'
     name: Build immutable Windows candidate
     needs: resolve-candidate
     runs-on: windows-latest
@@ -324,7 +324,7 @@ jobs:
           path: candidate-evidence.json
 
   attest-evidence:
-    if: "${{ false && inputs.phase == 'attest' }}"
+    if: inputs.phase == 'attest'
     name: Attest release evidence from trusted main
     runs-on: ubuntu-latest
     env:
@@ -477,7 +477,7 @@ jobs:
           path: release-evidence-attestation-conditional-strict-backup.json
 
   publish-preflight:
-    if: "${{ false && inputs.phase == 'publish' }}"
+    if: inputs.phase == 'publish'
     name: Reverify candidate, CI, and evidence handoff
     runs-on: ubuntu-latest
     env:
@@ -693,7 +693,7 @@ jobs:
           path: verified-release-evidence.json
 
   final-publish:
-    if: "${{ false && inputs.phase == 'publish' }}"
+    if: inputs.phase == 'publish'
     name: Publish verified candidate
     needs: publish-preflight
     runs-on: ubuntu-latest

@@ -135,6 +135,7 @@ See [docs/data-sources.md](docs/data-sources.md).
 
 | Topic | Canonical doc |
 |---|---|
+| Current project status | [docs/STATUS.md](docs/STATUS.md) |
 | Product direction | [docs/PRODUCT_DIRECTION.md](docs/PRODUCT_DIRECTION.md) |
 | Product development checklist | [docs/PRODUCT_DEVELOPMENT_CHECKLIST.md](docs/PRODUCT_DEVELOPMENT_CHECKLIST.md) |
 | Product principles | [docs/PRODUCT.md](docs/PRODUCT.md) |
