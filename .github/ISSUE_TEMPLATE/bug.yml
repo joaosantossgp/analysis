@@ -1,0 +1,32 @@
+name: Bug
+description: Something is broken.
+labels:
+  - bug
+  - needs-triage
+body:
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should happen
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: Steps, company/period, mode (dev or packaged), and app version.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Error text, logs (output/logs/ or the Documents data root), screenshots.
+    validations:
+      required: false

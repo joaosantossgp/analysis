@@ -38,19 +38,16 @@ python -m desktop.app --repair-dev-environment --dev
 python -m desktop.app --rebuild-dev-environment --dev
 ```
 
-Normal interactive sessions do not use worktrees, lanes, or
-`scripts/release/pr_complete.ps1`. Work on a branch and use `git push` plus
-manual or auto-merge. Worktrees belong to autonomous mode only
-(`docs/governance/autonomous-mode.md`).
+The issue -> branch -> PR workflow, including parallel work, is in `AGENTS.md`
+("Workflow").
 
 ## Isolated Worktree Bootstrap
 
-For autonomous task worktrees, create the task workspace from `main`, then run
-the bootstrap from that worktree:
+Parallel issues run in separate git worktrees (one per session; the Claude Code
+app creates them, or use `git worktree add`). From a fresh worktree, prepare the
+frontend dependencies:
 
 ```powershell
-.\scripts\governance\worktree_create.ps1 -Issue <issue-number> -Slug <task-slug> -Lane ops-quality
-Set-Location .\.claude\worktrees\ops-quality\<issue-number>-<task-slug>
 .\scripts\setup\bootstrap_worktree.ps1
 ```
 

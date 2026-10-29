@@ -1,5 +1,7 @@
 # Autonomous Mode
 
+> **Retired (2026-10-29).** Replaced by the issue-driven workflow in `AGENTS.md` ("Workflow"). Kept for history only.
+
 **Opt-in only.** This contract applies to long-running, semi-autonomous agent work where the human is not actively reviewing each edit — e.g., scheduled batch refactors, multi-PR cleanup runs, or any flow where an agent will produce a PR end-to-end without intermediate prompts. Routine interactive work uses `AGENTS.md` only.
 
 The full default principles in `AGENTS.md` still apply. This file adds operational discipline for cases when there's no live human in the loop.

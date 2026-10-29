@@ -39,6 +39,7 @@ run since 2026-05 failed. Both remain available through manual dispatch.
 |---|---|
 | 2026-10-29 | Production freeze (#456) reverted. |
 | 2026-10-29 | Stale repo skills removed (`skills/`, `.github/skills/`). |
+| 2026-10-29 | Issue-driven workflow adopted: goals with sub-issues, `Closes`/`Refs` PR rule, Matt Pocock triage labels, Superpowers + Ponytail + Matt Pocock skills (see `AGENTS.md` Workflow). Lanes/autonomous mode archived. |
 | 2026-10-29 | Scheduled monthly refresh and quarterly gap-fill disabled (external PostgreSQL full). |
 | 2026-10-29 | Canonical Entity Registry epic (#413) and v0.31.0 plan withdrawn; related decision docs kept for reference only. |
 | 2026-10-29 | All documentation must be English (see `AGENTS.md` Language). |

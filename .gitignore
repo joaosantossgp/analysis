@@ -100,3 +100,6 @@ release_validation_*/
 # Mangled absolute-path folders from bad shell commands (Windows)
 /C:Users*
 
+
+# Superpowers working plans/specs; the spec of record lives in GitHub issues
+docs/superpowers/

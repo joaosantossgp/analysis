@@ -1,33 +1,20 @@
 ## Summary
 
-<!-- 1–3 bullets describing the scope and intent of this PR. -->
+<!-- 1-3 bullets: what changed and why. -->
+
+Closes #
+
+<!-- Use `Closes #n` for each task or bug this PR finishes (several are fine).
+Use `Refs #n` for a goal or a related issue. -->
 
 ## Test plan
 
-<!-- Checklist of validations run. Include relevant commands. -->
-
-- [ ] `npx tsc --noEmit` (when web edits)
-- [ ] `pytest tests/` (when src/ edits)
-- [ ] `pytest apps/api/tests/` (when API edits)
-- [ ] Manual verification in desktop mode (when UI/runtime edits)
+- [ ] `npm --prefix apps/desktop-web run typecheck` (UI TS/TSX edits)
+- [ ] `npm --prefix apps/desktop-web run test` / `build` (UI behavior)
+- [ ] `pytest tests/` (desktop/core edits)
+- [ ] `pytest apps/api/tests/` (API edits)
+- [ ] Verified in the real desktop runtime (UI/runtime edits)
 
 ## Notes
 
-<!-- Optional: assumptions, risks, follow-ups. -->
-
----
-
-<details>
-<summary>Autonomous-mode PRs only</summary>
-
-If this PR is part of an autonomous-agent workflow, also include:
-
-- `Closes #<issue-number>`
-- Lane: `lane:frontend | lane:backend | lane:ops-quality | lane:master`
-- Risk: `risk:safe | risk:shared | risk:contract-sensitive`
-- Worktree: `.claude/worktrees/<lane>/<issue-number>-<slug>/`
-- Write-set:
-
-See `docs/governance/autonomous-mode.md` for the full contract.
-
-</details>
+<!-- Assumptions, risks, anything not validated. -->
