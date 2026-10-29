@@ -6,71 +6,71 @@ product
 
 ## Users
 
-Analistas de mercado financeiro em Equity, Credit, IB e areas relacionadas, alem de investidores analiticos que precisam comparar companhias brasileiras, ler indicadores historicos, validar demonstracoes e decidir onde aprofundar uma analise. O contexto de uso e concentrado: desktop, dados densos, verificacao de periodos, empresas, setores, ativos operacionais e sinais financeiros.
+Financial market analysts in Equity, Credit, IB, and related areas, plus analytical investors who need to compare Brazilian companies, read historical indicators, validate financial statements, and decide where to go deeper. Usage is focused: desktop, dense data, and verification of periods, companies, sectors, operational assets, and financial signals.
 
 ## Product Purpose
 
-CVM Analytics transforma demonstracoes financeiras publicas da CVM em uma experiencia local, consultavel e auditavel. O produto existe para reduzir atrito entre dado bruto regulatorio e leitura financeira confiavel: encontrar empresas, inspecionar indicadores, conferir demonstracoes, atualizar a base local e manter rastreabilidade suficiente para sustentar decisoes analiticas.
+CVM Analytics turns public CVM financial statements into a local, queryable, and auditable experience. The product exists to reduce friction between raw regulatory data and a trustworthy financial reading: find companies, inspect indicators, check statements, update the local database, and keep enough traceability to support analytical decisions.
 
 ## Core Product Principle: Minimalism
 
-Minimalismo e um principio central do CVMAnalytics.
+Minimalism is a core principle of CVMAnalytics.
 
-Neste produto, minimalismo nao significa reduzir funcionalidades ou esconder informacao importante. Significa mostrar a informacao certa com hierarquia forte, baixo atrito, padroes consistentes e sem ruido visual ou textual desnecessario.
+In this product, minimalism does not mean fewer features or hiding important information. It means showing the right information with strong hierarchy, low friction, consistent patterns, and no unnecessary visual or textual noise.
 
-Decisao de design: menos e mais util quando reduz escolhas visiveis, labels repetidos, containers decorativos e texto generico. Menos nao e util quando remove fonte, periodo, unidade, metodo, caveat, estado ou proxima acao necessaria para o analista confiar no resultado.
+Design decision: less is more useful when it reduces visible choices, repeated labels, decorative containers, and generic text. Less is not useful when it removes the source, period, unit, method, caveat, state, or next action the analyst needs to trust the result.
 
-A interface deve ajudar o analista a ir rapidamente de:
+The interface should help the analyst move quickly from:
 
-- selecao da companhia, setor, carteira ou ativo;
-- dado de origem;
-- indicador;
-- tendencia historica;
-- interpretacao financeira;
-- exportacao ou proxima acao.
+- selecting a company, sector, portfolio, or asset;
+- source data;
+- indicator;
+- historical trend;
+- financial interpretation;
+- export or next action.
 
-Regras praticas:
+Practical rules:
 
-- Ser direto sem remover contexto material.
-- Preferir layouts densos, legiveis e profissionais a dashboards decorativos.
-- Mostrar resumo primeiro e detalhe sob demanda.
-- Evitar labels repetidos, textos auxiliares vagos, cards redundantes e padroes genericos de dashboard.
-- Tratar paineis redundantes como erro de produto: um resumo so deve existir se adicionar decisao, acao ou drill-down de fonte/metodo que a tela ainda nao oferece.
-- Padronizar tabelas, indicadores, filtros e graficos entre paginas.
-- Preservar auditabilidade: fonte, periodo, unidade, moeda, consolidacao e metodo de calculo devem permanecer acessiveis.
-- Nunca esconder falhas, dados ausentes, fontes parciais ou problemas de qualidade para deixar a tela "limpa".
-- Estados vazios, carregando e erro devem ser explicitos, uteis e proximos do componente afetado.
-- A interface deve apoiar julgamento profissional rapido, nao navegacao casual.
+- Be direct without removing material context.
+- Prefer dense, readable, professional layouts over decorative dashboards.
+- Show summary first and detail on demand.
+- Avoid repeated labels, vague helper text, redundant cards, and generic dashboard patterns.
+- Treat redundant panels as a product bug: a summary should exist only if it adds a decision, action, or source/method drill-down the screen does not already offer.
+- Standardize tables, indicators, filters, and charts across pages.
+- Preserve auditability: source, period, unit, currency, consolidation, and calculation method must remain accessible.
+- Never hide failures, missing data, partial sources, or quality problems to make the screen look "clean".
+- Empty, loading, and error states must be explicit, useful, and close to the affected component.
+- The interface should support fast professional judgment, not casual browsing.
 
 ## Brand Personality
 
-Tecnico e auditavel, preciso, sobrio e premium. A interface deve transmitir confianca operacional, dominio financeiro e cuidado com detalhe, sem parecer decorativa ou promocional.
+Technical and auditable, precise, sober, and premium. The interface should convey operational confidence, financial domain expertise, and attention to detail, without looking decorative or promotional.
 
 ## Anti-references
 
-Nao deve parecer um dashboard SaaS generico, uma landing page de fintech, um painel cripto neon, uma planilha corporativa crua ou uma ferramenta que sacrifica rastreabilidade por graficos vistosos.
+It must not look like a generic SaaS dashboard, a fintech landing page, a neon crypto panel, a raw corporate spreadsheet, or a tool that sacrifices traceability for flashy charts.
 
 ## Design Principles
 
-- Clareza antes de impacto: destacar hierarquia, periodo, fonte e estado dos dados antes de efeitos visuais.
-- Minimalismo operacional: remover ruido visual e textual, mantendo informacao material, auditabilidade e caminhos claros para aprofundar.
-- Densidade com controle: permitir leitura comparativa rica sem sobrecarregar o usuario com adornos ou duplicidade de controles.
-- Auditoria visivel: estados, filtros, cobertura, erros e origem dos dados devem ser compreensiveis quando importam para a decisao.
-- Sobriedade premium: usar o tema escuro, acentos e espacamento para criar foco e confianca, nao espetaculo.
-- Fluxos locais confiaveis: otimizar para uso desktop com SQLite local e comportamento previsivel mesmo sem depender de servicos remotos.
+- Clarity before impact: emphasize hierarchy, period, source, and data state before visual effects.
+- Operational minimalism: remove visual and textual noise while keeping material information, auditability, and clear paths to go deeper.
+- Density with control: allow rich comparative reading without overloading the user with ornaments or duplicated controls.
+- Visible auditing: states, filters, coverage, errors, and data origin must be understandable when they matter for the decision.
+- Premium sobriety: use the dark theme, accents, and spacing to create focus and confidence, not spectacle.
+- Reliable local flows: optimize for desktop use with local SQLite and predictable behavior without depending on remote services.
 
 ## Page Review Workflow
 
-Quando uma pagina for revisada, o trabalho deve ser incremental e baseado na implementacao real. O agente deve:
+When a page is reviewed, the work must be incremental and based on the real implementation. The agent must:
 
-1. Inspecionar a rota, componentes ativos, facades de dados e estados existentes.
-2. Comparar a pagina com o principio de minimalismo operacional.
-3. Separar o essencial, o contexto secundario e o detalhe opcional.
-4. Propor mudancas pequenas e direcionadas antes de qualquer redesenho amplo.
-5. Preservar fluxos funcionais, dados existentes, fontes, exportacoes e estados de erro.
-6. Validar carregamento, vazio, erro, dados parciais, responsividade e performance percebida.
-7. Reportar riscos, suposicoes e incertezas que afetem decisao de produto ou qualidade dos dados.
+1. Inspect the route, active components, data facades, and existing states.
+2. Compare the page against the operational minimalism principle.
+3. Separate the essential, secondary context, and optional detail.
+4. Propose small, targeted changes before any broad redesign.
+5. Preserve working flows, existing data, sources, exports, and error states.
+6. Validate loading, empty, error, partial data, responsiveness, and perceived performance.
+7. Report risks, assumptions, and uncertainties that affect product decisions or data quality.
 
 ## Accessibility & Inclusion
 
-Mirar WCAG AA para texto normal, controles, foco visivel e limites de componentes. Graficos e indicadores nao devem depender apenas de cor: legendas, labels, tooltips e estados textuais precisam sustentar a compreensao. Respeitar preferencia por movimento reduzido e manter navegacao por teclado em filtros, seletores, abas e tabelas.
+Target WCAG AA for body text, controls, visible focus, and component boundaries. Charts and indicators must not rely on color alone: legends, labels, tooltips, and text states must carry the meaning. Respect reduced-motion preferences and keep keyboard navigation working in filters, selectors, tabs, and tables.

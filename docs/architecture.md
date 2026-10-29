@@ -87,13 +87,8 @@ instead of silently falling back to remote services.
 
 ## Legacy And Historical Areas
 
-- `apps/web` was the old Next.js app and is not present in the active tree.
-- `docs/archive/migration/` records the completed Next/Node to Vite migration.
-  It is historical context, not current implementation guidance.
-- ADRs in `docs/decisions/` are historical decision records. Use them to
-  understand why a decision was made, not as day-to-day operating instructions.
-- `apps/api` remains active as an HTTP API adapter and test surface, but it is
-  not the packaged desktop UI runtime.
+See "Historical / Non-Canonical" in
+[`docs/reference/repository-map.md`](reference/repository-map.md).
 
 ## Open Questions
 

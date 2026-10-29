@@ -35,16 +35,13 @@ catalog seed, and desktop release workflows run as defined in
 |---|---|
 | 2026-10-29 | Production freeze (#456) reverted. |
 | 2026-10-29 | Canonical Entity Registry epic (#413) and v0.31.0 plan withdrawn; related decision docs kept for reference only. |
-| 2026-10-29 | All documentation must be English (see `AGENTS.md` Language Policy). |
+| 2026-10-29 | All documentation must be English (see `AGENTS.md` Language). |
+| 2026-10-29 | Docs consolidated: one repository map, one development guide, point-in-time audits/plans archived under `docs/archive/planning-2026/`, domain contracts moved out of `AGENTS.md` into `docs/data-sources.md`. |
 
 ## Known documentation debt
 
-- Overlapping repository maps: `docs/active-project-map.md`,
-  `docs/reference/repository-map.md`, `docs/architecture.md`.
-- Overlapping run guides: `docs/COMO_RODAR.md` (Portuguese),
-  `docs/development.md`, `docs/dev-runtime-and-data-paths.md`.
-- Point-in-time audits and plans in the `docs/` root and planning prompts in
-  `docs/reference/` should move to a dated archive.
-- `AGENTS.md` repeats domain contracts that live in other docs.
-- Portuguese docs pending translation, including `docs/PRODUCT.md` and
-  `docs/COMO_RODAR.md`.
+- Portuguese docs pending translation: `docs/reference/v2-api-contract.md`,
+  `docs/governance/on-demand-release-evidence.md`, and ADRs 0001-0006 in
+  `docs/decisions/`.
+- `skills/doc-architect/SKILL.md` describes an older Streamlit dashboard
+  layout (`dashboard/app.py`, `MEMORIADASIA.md`) and looks stale.

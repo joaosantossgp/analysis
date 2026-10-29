@@ -1,6 +1,6 @@
 # 0003 - Criterios de escolha da V2
 
-- **Status:** historical; superseded for active frontend/runtime by `docs/active-project-map.md`
+- **Status:** historical; superseded for active frontend/runtime by `docs/reference/repository-map.md`
 - **Data:** 2026-04-09
 - **Autor:** human+ai
 

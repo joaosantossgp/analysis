@@ -147,8 +147,7 @@ See [docs/data-sources.md](docs/data-sources.md).
 | Build, release, updater | [docs/build-release.md](docs/build-release.md) |
 | Troubleshooting | [docs/troubleshooting.md](docs/troubleshooting.md) |
 | Product workflows | [docs/product-workflows.md](docs/product-workflows.md) |
-| Active repo map | [docs/active-project-map.md](docs/active-project-map.md) |
-| Full repository map | [docs/reference/repository-map.md](docs/reference/repository-map.md) |
+| Repository map | [docs/reference/repository-map.md](docs/reference/repository-map.md) |
 | Agent rules | [AGENTS.md](AGENTS.md) |
 
 Historical migration docs live under `docs/archive/migration/`. ADRs under

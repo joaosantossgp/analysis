@@ -1,6 +1,6 @@
 # 0002 — Stack recomendada para a V2 com GitHub Student Developer Pack
 
-- **Status:** historical; superseded for active frontend/runtime by `docs/active-project-map.md`
+- **Status:** historical; superseded for active frontend/runtime by `docs/reference/repository-map.md`
 - **Data:** 2026-04-07
 - **Autor:** human+ai
 

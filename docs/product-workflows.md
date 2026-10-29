@@ -37,8 +37,9 @@ Verified from current routes, bridge methods, and source modules:
 
 ## Planned Or Aspirational Context
 
-Planning prompts and workflow notes under `docs/reference/coverage_*` and
-`docs/plans/` are product context. They are not proof of implementation.
+Archived audits, plans, specs, and planning prompts under
+`docs/archive/planning-2026/` are historical product context. They are not
+proof of implementation.
 
 When documenting planned workflows:
 

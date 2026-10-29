@@ -1,7 +1,7 @@
 # ADR-0006 — Autenticação local para o app desktop CVM Analytics
 
 **Data:** 2026-05-03
-**Status:** Historico — **Não implementado (deferido) em v0.17.0**; revalidar contra `docs/active-project-map.md`
+**Status:** Historico — **Não implementado (deferido) em v0.17.0**; revalidar contra `docs/reference/repository-map.md`
 **Autor:** Claude (ops-quality, issue #240)
 **Contexto completo:** ~~`docs/AUTH_DESKTOP_READINESS.md`~~ (removido em `8506bd9`)
 
