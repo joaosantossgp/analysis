@@ -45,7 +45,7 @@ route source is `apps/desktop-web/src/App.tsx`.
 | `docs/` | Documentation | Canonical docs, reference docs, ADRs, release notes, archive |
 | `data/` | Data assets/dev data | Import CSVs and schema files are active; local DB/raw/cache outputs are runtime/dev artifacts |
 | `build/`, `dist/`, `output/`, `tmp/`, `scratch/` | Generated/local artifacts | Not source of truth |
-| `.github/` | CI/CD and guardrails | Workflows, PR template, guardrail policy |
+| `.github/` | CI/CD | Workflows, issue and PR templates |
 | `.claude/` | AI tooling | Agent/session tooling, not product runtime |
 
 ## Root Files
@@ -71,7 +71,7 @@ There is no root `package.json`. The active Node package is
 | `scripts/diagnostics/` | Runtime doctor, smoke validation, read-path benchmarks, bridge method inventory, packaged candidate validation |
 | `scripts/qa/` | Consolidation, line-id, and workbook verification |
 | `scripts/release/` | Desktop dev launchers, MOTW tests, PR helper |
-| `scripts/governance/` | Repository contract tests and worktree helpers |
+| `scripts/governance/` | Repository contract tests and legacy worktree helpers |
 
 `pytest.ini` includes `tests` and `scripts`, so `test_*.py` files under
 `scripts/` are pytest-discovered.
@@ -88,7 +88,7 @@ There is no root `package.json`. The active Node package is
 | `ingest.yml` | Manual CVM ingestion |
 | `on_demand_ingest.yml` | Manual per-company ingestion |
 | `seed_catalog.yml` | Manual catalog seed |
-| `pr-issue-guardrails.yml` | PR issue-link governance |
+| `pr-issue-guardrails.yml` | Requires an issue reference in every PR; goals use `Refs`, not `Closes` |
 
 ## Active Commands
 
@@ -117,6 +117,7 @@ pytest apps/api/tests -q
 |---|---|
 | `docs/archive/migration/` | Completed Next/Node to Vite migration history |
 | `docs/archive/planning-2026/` | Point-in-time audits, plans, specs, and planning prompts |
+| `docs/archive/governance/` | Retired lane-based autonomous mode |
 | `docs/decisions/` | ADRs; point-in-time decisions, not daily instructions. Check each status. |
 | `docs/releases/` | Partial local release notes; GitHub Releases are the published source |
 | `docs/reference/v2-api-contract.md` | HTTP API adapter contract for `apps/api`; not the desktop bridge |

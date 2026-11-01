@@ -9,22 +9,21 @@
     "business_rules": "docs/CONTEXT.md",
     "active_reference_docs": "docs/reference/",
     "ADRs": "docs/decisions/",
-    "autonomous_mode_contract": "docs/governance/autonomous-mode.md"
+    "project_status": "docs/STATUS.md",
+    "issue_tracker": "docs/agents/issue-tracker.md"
   },
   "exclude_from_context": [
     ".workflow/.scratchpad/",
-    "archive/",
     "docs/vendor/",
     "build/",
     "dist/",
     ".pytest_cache/",
     "node_modules/",
-    ".next/",
     "data/db/",
-    ".claude/worktrees/"
+    ".claude/worktrees/",
+    "docs/archive/"
   ],
   "context_optimization": {
-    "default_mode": "Fast Mode per AGENTS.md — load AGENTS.md once, on demand for CONTEXT.md / reference docs.",
-    "autonomous_only": "Lane allowlists and risk classifications apply only to autonomous-mode PRs (see docs/governance/autonomous-mode.md)."
+    "default_mode": "Fast Mode per AGENTS.md \u2014 load AGENTS.md once, on demand for CONTEXT.md / reference docs."
   }
 }

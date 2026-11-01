@@ -1,0 +1,32 @@
+name: Goal
+description: A larger outcome delivered by several sub-issues.
+labels:
+  - goal
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A goal is closed by hand when its sub-issues are done. PRs reference it
+        with `Refs #n`, never `Closes #n`. Break it down with `/to-spec` and
+        `/to-tickets`, which add sub-issues and blocking links.
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome
+      description: The result this goal delivers and which step of the analyst workflow it supports.
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Definition of done
+      placeholder: |
+        - [ ] ...
+    validations:
+      required: true
+  - type: textarea
+    id: out_of_scope
+    attributes:
+      label: Out of scope
+    validations:
+      required: false
