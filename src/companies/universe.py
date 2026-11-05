@@ -487,7 +487,14 @@ class CompanyUniverseService:
     def get_company_universe_by_preset(
         self,
         preset: CompanyUniversePreset,
+        *,
+        refresh_catalog: bool = False,
     ) -> CompanyUniverseSelection:
+        if refresh_catalog:
+            if preset not in SUPPORTED_PRESETS:
+                raise ValueError(f"Unsupported company universe preset: {preset}")
+            self.read_service.company_catalog.refresh()
+            self.read_service.invalidate_read_caches()
         return self.provider.get_company_universe_by_preset(preset)
 
     def mark_setup_started(

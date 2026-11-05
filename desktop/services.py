@@ -6,7 +6,6 @@ Extracted from cvm_pyqt_app.py — no PyQt6 dependencies.
 
 from __future__ import annotations
 
-import io
 import json
 import os
 import sqlite3
@@ -19,7 +18,6 @@ from typing import Any
 from uuid import uuid4
 
 import pandas as pd
-import requests
 
 from src.companies.identity import CompanyIdentityResolver
 from src.platform.contracts import RefreshPolicy, RefreshProgressUpdate, RefreshRequest
@@ -387,67 +385,31 @@ class IntelligentSelectorService:
         return {"count": int(count), "latest_mtime": float(latest_mtime)}
 
     def _load_active_universe(self) -> list[dict[str, Any]]:
-        now = datetime.now()
-        cached = self._read_cached_json(self.active_universe_cache_path)
-        if isinstance(cached, dict):
-            generated_at = self._parse_fetched_at(str(cached.get("generated_at") or ""))
-            rows = cached.get("rows")
-            if (
-                generated_at is not None
-                and isinstance(rows, list)
-                and generated_at >= now - timedelta(hours=self.ACTIVE_UNIVERSE_CACHE_TTL_HOURS)
-            ):
-                return rows
+        from src.companies.catalog import CompanyCatalogService, CompanyCatalogUnavailableError
 
-        url = "https://dados.cvm.gov.br/dados/CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv"
-        rows: list[dict[str, Any]] = []
+        catalog = CompanyCatalogService(
+            timeout=self.settings.company_list_timeout,
+            snapshot_path=self.settings.paths.metadata_dir / "cvm_company_catalog.json",
+        )
         try:
-            resp = requests.get(url, timeout=30)
-            resp.raise_for_status()
-            df = pd.read_csv(
-                io.BytesIO(resp.content),
-                sep=";",
-                encoding="latin1",
-                usecols=["CD_CVM", "DENOM_SOCIAL", "DENOM_COMERC", "SIT"],
-            )
-            df["CD_CVM"] = pd.to_numeric(df["CD_CVM"], errors="coerce")
-            df = df.dropna(subset=["CD_CVM"]).copy()
-            active_df = df[df["SIT"].astype(str).str.contains("ATIV", case=False, na=False)].copy()
-            if active_df.empty:
-                active_df = df.copy()
-
-            dedupe: dict[int, str] = {}
-            for _, item in active_df.iterrows():
-                cd = int(item["CD_CVM"])
-                display = str(item.get("DENOM_COMERC") or "").strip()
-                if not display:
-                    display = str(item.get("DENOM_SOCIAL") or "").strip()
-                if not display:
-                    display = f"CVM {cd}"
-                dedupe[cd] = display
-            rows = [
-                {"cd_cvm": int(cd), "company_name": str(name)}
-                for cd, name in sorted(dedupe.items(), key=lambda x: x[1].upper())
+            return [
+                {"cd_cvm": entry.cd_cvm, "company_name": entry.nome_comercial or entry.company_name}
+                for entry in catalog.list_entries() if entry.is_active
             ]
-            self._write_cached_json(
-                self.active_universe_cache_path,
-                {
-                    "generated_at": now.replace(microsecond=0).isoformat(),
-                    "rows": rows,
-                },
-            )
-            return rows
-        except Exception:
-            fallback_rows = self._load_db_company_rows()
+        except CompanyCatalogUnavailableError:
+            # Retain older local evidence offline; do not renew its timestamp on reads.
+            cached = self._read_cached_json(self.active_universe_cache_path)
+            if isinstance(cached, dict) and isinstance(cached.get("rows"), list):
+                return cached["rows"]
             dedupe = {}
-            for row in fallback_rows:
+            for row in self._load_db_company_rows():
                 try:
                     dedupe[int(row["cd_cvm"])] = str(row["company_name"])
-                except Exception:
+                except (KeyError, TypeError, ValueError):
                     continue
             return [
-                {"cd_cvm": int(cd), "company_name": str(name)}
-                for cd, name in sorted(dedupe.items(), key=lambda x: x[1].upper())
+                {"cd_cvm": cd, "company_name": name}
+                for cd, name in sorted(dedupe.items(), key=lambda item: item[1].upper())
             ]
 
     def _load_statement_presence(self, start_year: int, end_year: int) -> dict[tuple[int, int], set[str]]:

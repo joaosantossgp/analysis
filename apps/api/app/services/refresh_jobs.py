@@ -65,48 +65,48 @@ class ApiRefreshJobManager:
                 "is_retry_allowed": False,
             }
 
-        active_job = self._find_active_job()
-        if active_job is not None:
-            return {
-                "status": "already_running",
-                "job_id": active_job["job_id"],
-                "accepted_at": active_job.get("accepted_at"),
-                "queued": int(active_job.get("queued") or 0),
-                "message": "Ja existe um refresh em andamento.",
-                "status_reason_code": "already_running",
-                "is_retry_allowed": False,
-            }
-
-        job_id = uuid4().hex
-        now = self._now_iso()
-        job = {
-            "job_id": job_id,
-            "state": "queued",
-            "status": "queued",
-            "mode": mode,
-            "accepted_at": now,
-            "created_at": now,
-            "updated_at": now,
-            "started_at": None,
-            "finished_at": None,
-            "queued": len(companies),
-            "processed": 0,
-            "failures": 0,
-            "current_cvm": None,
-            "stage": None,
-            "progress_current": None,
-            "progress_total": None,
-            "log_lines": ["Refresh em lote enfileirado."],
-            "params": request_params,
-            "request": {
-                "companies": [str(company) for company in companies],
-                "start_year": int(start_year),
-                "end_year": int(end_year),
-            },
-            "error": None,
-            "result": None,
-        }
         with self._lock:
+            active_job = self._find_active_job()
+            if active_job is not None:
+                return {
+                    "status": "already_running",
+                    "job_id": active_job["job_id"],
+                    "accepted_at": active_job.get("accepted_at"),
+                    "queued": int(active_job.get("queued") or 0),
+                    "message": "Ja existe um refresh em andamento.",
+                    "status_reason_code": "already_running",
+                    "is_retry_allowed": False,
+                }
+
+            job_id = uuid4().hex
+            now = self._now_iso()
+            job = {
+                "job_id": job_id,
+                "state": "queued",
+                "status": "queued",
+                "mode": mode,
+                "accepted_at": now,
+                "created_at": now,
+                "updated_at": now,
+                "started_at": None,
+                "finished_at": None,
+                "queued": len(companies),
+                "processed": 0,
+                "failures": 0,
+                "current_cvm": None,
+                "stage": None,
+                "progress_current": None,
+                "progress_total": None,
+                "log_lines": ["Refresh em lote enfileirado."],
+                "params": request_params,
+                "request": {
+                    "companies": [str(company) for company in companies],
+                    "start_year": int(start_year),
+                    "end_year": int(end_year),
+                },
+                "error": None,
+                "result": None,
+            }
             self._jobs[job_id] = job
 
         if self.autostart:
@@ -193,15 +193,18 @@ class ApiRefreshJobManager:
             }
 
     def _start_job(self, job_id: str) -> None:
-        cancel_event = threading.Event()
-        thread = threading.Thread(
-            target=self._run_job,
-            args=(job_id, cancel_event),
-            name=f"api-refresh-{job_id[:8]}",
-            daemon=True,
-        )
-        self._cancel_events[job_id] = cancel_event
-        self._threads[job_id] = thread
+        with self._lock:
+            if self._jobs[job_id]["state"] != "queued" or job_id in self._threads:
+                return
+            cancel_event = threading.Event()
+            thread = threading.Thread(
+                target=self._run_job,
+                args=(job_id, cancel_event),
+                name=f"api-refresh-{job_id[:8]}",
+                daemon=True,
+            )
+            self._cancel_events[job_id] = cancel_event
+            self._threads[job_id] = thread
         thread.start()
 
     def _run_job(self, job_id: str, cancel_event: threading.Event) -> None:
@@ -282,8 +285,9 @@ class ApiRefreshJobManager:
         self._cleanup_job_runtime(job_id)
 
     def _cleanup_job_runtime(self, job_id: str) -> None:
-        self._threads.pop(job_id, None)
-        self._cancel_events.pop(job_id, None)
+        with self._lock:
+            self._threads.pop(job_id, None)
+            self._cancel_events.pop(job_id, None)
 
     def _resolve_batch_selection(self, params: dict[str, Any], *, mode: str):
         from src.financials.read_service import resolve_refresh_batch_selection  # noqa: PLC0415

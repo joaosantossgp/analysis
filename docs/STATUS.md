@@ -27,6 +27,10 @@ run since 2026-05 failed. Both remain available through manual dispatch.
 
 ## Active work
 
+- Runtime reliability fixes (#471): local-only catalog reads, explicit snapshot
+  refresh, atomic API batch admission, a single-worker API container and API
+  regression tests in CI. Packaged and hosted validation remain separate gates.
+
 - Initial multi-window and local-storage desk research is published under #465;
   see `docs/research/2026-11-04-multi-window-workbench.md` and
   `docs/research/local-multi-window-storage.md`. Goal #464 remains open.

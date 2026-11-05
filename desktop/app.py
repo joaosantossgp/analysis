@@ -1044,15 +1044,15 @@ _refresh_lock = threading.Lock()
 _refresh_in_progress = False
 
 
-def _background_remote_metadata_refresh() -> None:
-    """Background, non-blocking refresh of company catalog metadata (CNPJ) from CVM CAD URL."""
+def _background_local_metadata_enrichment() -> None:
+    """Enrich missing CNPJs from local catalog evidence without network access."""
     global _refresh_in_progress
     import json
     
     # 1. Instance protection: verify this process owns the cross-process runtime lock
     from desktop import lockfile
     if lockfile.get_status().get("status") != "locked_by_self":
-        print("[desktop] Background remote catalog refresh: process does not own the runtime lock. Skipping.")
+        print("[desktop] Local catalog enrichment: process does not own the runtime lock. Skipping.")
         return
         
     with _refresh_lock:
@@ -1106,19 +1106,17 @@ def _background_remote_metadata_refresh() -> None:
         # 3. Check TTL
         if now_ts - last_refresh < ttl_seconds:
             last_date = datetime.fromtimestamp(last_refresh, tz=timezone.utc).isoformat()
-            print(f"[desktop] Background remote catalog refresh: TTL not expired. Last refreshed at {last_date}. Skipping.")
+            print(f"[desktop] Local catalog enrichment: TTL not expired. Last refreshed at {last_date}. Skipping.")
             return
             
-        print(f"[desktop] Background remote catalog refresh: starting fetch for {len(missing_companies)} companies...")
+        print(f"[desktop] Local catalog enrichment: reading local evidence for {len(missing_companies)} companies...")
         
         from src.companies.catalog import CompanyCatalogService
         from src.companies.cnpj import validate_cnpj
         
         # Explicit 10s timeout
-        catalog = CompanyCatalogService(timeout=10)
-        # Force catalog load once. If the network or remote catalog service is down,
-        # it throws CompanyCatalogUnavailableError, propagating to the outer handler
-        # and preventing save of success timestamp.
+        catalog = CompanyCatalogService(timeout=10, snapshot_path=_user_data_root() / "metadata" / "cvm_company_catalog.json")
+        # Read local evidence only; missing evidence leaves the success timestamp unchanged.
         catalog.list_entries()
         
         updates = []
@@ -1146,14 +1144,14 @@ def _background_remote_metadata_refresh() -> None:
                 (json.dumps(now_ts), datetime.now(timezone.utc).isoformat())
             )
             conn.commit()
-            print(f"[desktop] Background remote catalog refresh completed. Saved {len(updates)} CNPJs. Last success timestamp persisted.")
+            print(f"[desktop] Local catalog enrichment completed. Saved {len(updates)} CNPJs. Last success timestamp persisted.")
         except sqlite3.OperationalError as e:
             print(f"[desktop] Warning: Failed to persist remote refresh updates: {e}")
         finally:
             conn.close()
             
     except Exception as exc:
-        print(f"[desktop] Warning: background remote metadata refresh skipped: {exc}")
+        print(f"[desktop] Warning: local metadata enrichment skipped: {exc}")
     finally:
         with _refresh_lock:
             _refresh_in_progress = False
@@ -1299,8 +1297,8 @@ def main() -> None:
     ).start()
 
     threading.Thread(
-        target=_background_remote_metadata_refresh,
-        name="desktop-remote-metadata-refresh",
+        target=_background_local_metadata_enrichment,
+        name="desktop-local-metadata-enrichment",
         daemon=True,
     ).start()
 

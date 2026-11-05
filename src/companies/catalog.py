@@ -1,15 +1,23 @@
 from __future__ import annotations
 
 import io
+import json
+import logging
+import tempfile
 import os
 import threading
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
 
 import pandas as pd
 import requests
 
 from src.companies.ticker_map import TICKER_MAP
+from src.platform.settings import get_settings
+
+logger = logging.getLogger(__name__)
 
 CVM_MASTER_URL = os.environ.get(
     "CVM_CATALOG_URL",
@@ -20,7 +28,7 @@ DEFAULT_CATALOG_TTL_SECONDS = 900
 
 
 class CompanyCatalogUnavailableError(RuntimeError):
-    """Raised when the remote CVM company catalog cannot be consulted."""
+    """Raised when local catalog evidence or an explicit refresh is unavailable."""
 
 
 def _normalize_display_ticker(value: str | None) -> str | None:
@@ -55,7 +63,11 @@ class CompanyCatalogService:
         *,
         timeout: int,
         ttl_seconds: int = DEFAULT_CATALOG_TTL_SECONDS,
+        snapshot_path: Path | None = None,
     ) -> None:
+        self.snapshot_path = Path(snapshot_path) if snapshot_path is not None else (
+            get_settings().paths.metadata_dir / "cvm_company_catalog.json"
+        )
         self.timeout = int(timeout)
         self.ttl_seconds = int(ttl_seconds)
         self._cache_lock = threading.Lock()
@@ -125,41 +137,70 @@ class CompanyCatalogService:
         return tuple(entry for _, entry in matches[: int(limit)])
 
     def _load_snapshot(self) -> CompanyCatalogSnapshot:
-        now = time.monotonic()
+        # TTL only controls local re-reading; it never authorizes a network request.
         with self._cache_lock:
-            if (
-                self._cached_snapshot is not None
-                and (now - self._cached_at) < self.ttl_seconds
-            ):
+            if self._cached_snapshot is not None and time.monotonic() - self._cached_at < self.ttl_seconds:
                 return self._cached_snapshot
-
-        try:
-            response = requests.get(CVM_MASTER_URL, timeout=self.timeout)
-            response.raise_for_status()
-            raw_df = pd.read_csv(
-                io.BytesIO(response.content),
-                sep=";",
-                encoding="latin1",
-                usecols=[
-                    "CD_CVM",
-                    "DENOM_SOCIAL",
-                    "DENOM_COMERC",
-                    "CNPJ_CIA",
-                    "SETOR_ATIV",
-                    "SIT",
-                ],
-                dtype={"CD_CVM": str, "CNPJ_CIA": str},
-            )
-        except Exception as exc:
-            raise CompanyCatalogUnavailableError(
-                "Nao foi possivel consultar o catalogo CVM agora."
-            ) from exc
-
-        snapshot = self._build_snapshot(raw_df)
-        with self._cache_lock:
+            try:
+                payload = json.loads(self.snapshot_path.read_text(encoding="utf-8"))
+                if payload["schema_version"] != 1 or not payload["source_url"] or not payload["downloaded_at"]:
+                    raise ValueError("Missing catalog provenance")
+                snapshot = self._parse_csv(payload["csv"].encode("latin1"))
+            except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+                raise CompanyCatalogUnavailableError(
+                    "The local catalog is missing or invalid. Run setup or Update Data in Settings to download it."
+                ) from exc
             self._cached_snapshot = snapshot
             self._cached_at = time.monotonic()
             return snapshot
+
+    def refresh(self) -> CompanyCatalogSnapshot:
+        """Explicit network operation; publish evidence only after validation succeeds."""
+        logger.info("company_catalog_refresh_started source=%s", CVM_MASTER_URL)
+        temporary_path = None
+        try:
+            response = requests.get(CVM_MASTER_URL, timeout=self.timeout)
+            response.raise_for_status()
+            snapshot = self._parse_csv(response.content)
+            payload = {
+                "schema_version": 1,
+                "source_url": CVM_MASTER_URL,
+                "downloaded_at": datetime.now(timezone.utc).isoformat(),
+                "csv": response.content.decode("latin1"),
+            }
+            self.snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=self.snapshot_path.parent,
+                                             prefix=".catalog-", suffix=".tmp", delete=False) as handle:
+                temporary_path = Path(handle.name)
+                json.dump(payload, handle, ensure_ascii=True)
+                handle.flush()
+                os.fsync(handle.fileno())
+            with self._cache_lock:
+                os.replace(temporary_path, self.snapshot_path)
+                self._cached_snapshot = snapshot
+                self._cached_at = time.monotonic()
+            logger.info("company_catalog_refresh_completed entries=%d", len(snapshot.entries))
+            return snapshot
+        except Exception as exc:
+            logger.warning("company_catalog_refresh_failed: %s", exc)
+            raise CompanyCatalogUnavailableError(
+                "Catalog refresh failed. The previous local snapshot has been preserved."
+            ) from exc
+        finally:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
+
+    @classmethod
+    def _parse_csv(cls, content: bytes) -> CompanyCatalogSnapshot:
+        raw_df = pd.read_csv(
+            io.BytesIO(content), sep=";", encoding="latin1",
+            usecols=["CD_CVM", "DENOM_SOCIAL", "DENOM_COMERC", "CNPJ_CIA", "SETOR_ATIV", "SIT"],
+            dtype={"CD_CVM": str, "CNPJ_CIA": str},
+        )
+        snapshot = cls._build_snapshot(raw_df)
+        if not snapshot.entries:
+            raise ValueError("The CVM catalog contains no valid companies")
+        return snapshot
 
     @staticmethod
     def _build_snapshot(raw_df: pd.DataFrame) -> CompanyCatalogSnapshot:

@@ -12,6 +12,64 @@ from src.platform.contracts import RefreshResult
 from src.platform.settings import AppSettings
 
 
+def test_concurrent_batch_requests_share_one_active_job(api_settings, monkeypatch):
+    manager = ApiRefreshJobManager(
+        settings=api_settings, read_service=FakeReadService(), autostart=False,
+    )
+    first_checked = threading.Event()
+    second_finished = threading.Event()
+    original = manager._find_active_job
+    results = []
+    errors = []
+
+    def overlapping_check():
+        active = original()
+        if threading.current_thread().name == "first-admission":
+            first_checked.set()
+            # Old code lets the second submission finish in this gap.
+            # Atomic admission keeps it waiting until the first job is inserted.
+            second_finished.wait(timeout=1)
+        return active
+
+    monkeypatch.setattr(manager, "_find_active_job", overlapping_check)
+    def submit(second=False):
+        try:
+            results.append(manager.request_refresh({"mode": "full"}))
+        except Exception as exc:
+            errors.append(exc)
+        finally:
+            if second:
+                second_finished.set()
+
+    first = threading.Thread(target=submit, name="first-admission")
+    first.start()
+    assert first_checked.wait(timeout=3)
+    second = threading.Thread(target=submit, args=(True,))
+    second.start()
+    first.join(timeout=5)
+    second.join(timeout=5)
+    assert not first.is_alive() and not second.is_alive()
+    assert not errors
+    assert sorted(result["status"] for result in results) == ["already_running", "queued"]
+    assert len({result["job_id"] for result in results}) == 1
+    assert len(manager.list_jobs()) == 1
+
+
+def test_cancel_before_thread_registration_cannot_restart_job(api_settings, monkeypatch):
+    manager = ApiRefreshJobManager(
+        settings=api_settings, read_service=FakeReadService(), autostart=False,
+    )
+    job_id = manager.request_refresh({"mode": "full"})["job_id"]
+    assert manager.cancel_job(job_id)["state"] == "cancelled"
+    started = []
+    monkeypatch.setattr(threading.Thread, "start", lambda thread: started.append(thread))
+    manager._start_job(job_id)
+    assert started == []
+    assert manager.get_job(job_id)["state"] == "cancelled"
+    assert job_id not in manager._threads
+    assert job_id not in manager._cancel_events
+
+
 def _running_job(job_id: str = "job-batch-1") -> dict[str, object]:
     return {
         "job_id": job_id,
