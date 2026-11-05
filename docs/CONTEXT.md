@@ -13,8 +13,8 @@
 
 Extracts historical financial statements of CVM-listed companies, stores them
 in local SQLite (optional PostgreSQL), and exposes the data through the
-pywebview desktop app (static Vite UI + Python bridge) and a read-only FastAPI
-adapter for hosted/dev/local HTTP access. The goal is reliable, readable, and
+pywebview desktop app (static Vite UI + Python bridge) and a FastAPI adapter for hosted/dev/local HTTP access. The adapter exposes
+queries, exports and explicit refresh commands; it is not read-only. The goal is reliable, readable, and
 verifiable output that never mixes periods, versions, or conflicting lines.
 
 **End goal:** a single pipeline that takes a company plus start/end years,
@@ -157,7 +157,7 @@ implementation.
 - Python: 3.11+, pandas, polars, sqlalchemy, requests, yfinance, pywebview,
   PyInstaller
 - Desktop UI: Vite, React, TypeScript, Tailwind v4
-- Hosted/dev API: FastAPI (read-only)
+- Hosted/dev API: FastAPI (queries, exports and explicit refresh commands)
 - DB: local SQLite + optional PostgreSQL through `DATABASE_URL`
 
 **Conventions:**

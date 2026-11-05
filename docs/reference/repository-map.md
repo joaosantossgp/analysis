@@ -95,24 +95,10 @@ There is no root `package.json`. The active Node package is
 
 ## Active Commands
 
-See [`docs/development.md`](../development.md) for the full command map.
-
-```powershell
-# real desktop dev
-python -m desktop.app --dev
-
-# Vite checks
-npm --prefix apps/desktop-web run typecheck
-npm --prefix apps/desktop-web run build
-
-# Python checks
-python -m py_compile desktop/app.py desktop/bridge.py
-pytest tests -q
-pytest apps/api/tests -q
-
-# desktop package build
-.\desktop\build_desktop.ps1
-```
+[Development](../development.md) is the canonical command map for setup,
+project-interpreter tests, desktop/browser/mock modes, API and diagnostics.
+[Build and release](../build-release.md) owns packaging and release validation.
+Do not copy commands from historical plans.
 
 ## Historical / Non-Canonical
 
