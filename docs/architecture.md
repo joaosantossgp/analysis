@@ -27,7 +27,7 @@ Verified from:
 | Bridge services | `desktop/services.py` | Bridge-facing business logic, refresh job orchestration, read-service access |
 | Frontend | `apps/desktop-web/src` | React UI, routes, data facades, bridge adapter |
 | Core data layer | `src/` | CVM ingestion, SQLite schema, read service, KPIs, Excel, source modules |
-| HTTP API adapter | `apps/api` | FastAPI adapter and API tests; not used by packaged desktop UI |
+| HTTP API adapter | `apps/api` | Queries, exports and explicit refresh commands; single-worker deployment, not used by packaged desktop UI |
 | Landing page | `apps/landing` | Static public download/marketing page; not product runtime |
 
 ## Bridge Pattern

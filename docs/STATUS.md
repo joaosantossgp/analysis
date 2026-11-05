@@ -27,10 +27,6 @@ run since 2026-05 failed. Both remain available through manual dispatch.
 
 ## Active work
 
-- Runtime reliability fixes (#471): local-only catalog reads, explicit snapshot
-  refresh, atomic API batch admission, a single-worker API container and API
-  regression tests in CI. Packaged and hosted validation remain separate gates.
-
 - Initial multi-window and local-storage desk research is published under #465;
   see `docs/research/2026-11-04-multi-window-workbench.md` and
   `docs/research/local-multi-window-storage.md`. Goal #464 remains open.
@@ -50,6 +46,8 @@ run since 2026-05 failed. Both remain available through manual dispatch.
 
 | Date | Decision |
 |---|---|
+| 2026-11-05 | Runtime reliability fixes merged in #472 (closes #471): local catalog reads, atomic API job admission/cancellation, single-worker container and API tests in CI. Packaged/hosted validation remains separate. |
+| 2026-11-05 | Contributor contracts aligned (#473): current UI tokens, explicit mock mode, project-interpreter commands and skill-independent agent workflow. |
 | 2026-11-05 | Vendored skills use occasional manual updates; scheduled refresh and automated PR publication removed (#469). |
 | 2026-10-29 | Production freeze (#456) reverted. |
 | 2026-10-29 | Stale repo skills removed (`skills/`, `.github/skills/`). |

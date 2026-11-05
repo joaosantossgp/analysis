@@ -14,10 +14,10 @@ open cleanly.
 
 ## Download
 
-[Download the latest Windows build](https://github.com/joaosantossgp/analisys/releases/latest/download/CVMAnalytics-windows.zip)
+[Download the latest Windows build](https://github.com/joaosantossgp/analysis/releases/latest/download/CVMAnalytics-windows.zip)
 
-- Checksum: [CVMAnalytics-windows.zip.sha256](https://github.com/joaosantossgp/analisys/releases/latest/download/CVMAnalytics-windows.zip.sha256)
-- Distribution channel: [GitHub Releases](https://github.com/joaosantossgp/analisys/releases)
+- Checksum: [CVMAnalytics-windows.zip.sha256](https://github.com/joaosantossgp/analysis/releases/latest/download/CVMAnalytics-windows.zip.sha256)
+- Distribution channel: [GitHub Releases](https://github.com/joaosantossgp/analysis/releases)
 - Public site: `apps/landing/` on GitHub Pages. It is a download/marketing
   surface only, not the product runtime.
 
@@ -99,11 +99,11 @@ npm --prefix apps/desktop-web run typecheck
 npm --prefix apps/desktop-web run build
 ```
 
-Run Python checks:
+Run Python checks after the [test environment setup](docs/development.md#tests-scripts-and-api-setup-without-opening-the-ui):
 
 ```powershell
-python -m py_compile desktop/app.py desktop/bridge.py
-pytest tests -q
+.\.venv\Scripts\python.exe -m py_compile desktop/app.py desktop/bridge.py
+.\.venv\Scripts\python.exe -m pytest tests -q
 ```
 
 Build the packaged desktop app:

@@ -41,10 +41,30 @@ python -m desktop.app --rebuild-dev-environment --dev
 The issue -> branch -> PR workflow, including parallel work, is in `AGENTS.md`
 ("Workflow").
 
+## Tests, scripts and API setup without opening the UI
+
+The desktop launcher prepares its own environment but does not activate it in
+other terminals. Use the project interpreter explicitly for every command below.
+From a fresh clone or worktree:
+
+```powershell
+# Create once; skip this command when .venv already exists.
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+
+# Required for Python tests too: core tests import the HTTP adapter.
+.\.venv\Scripts\python.exe -m pip install -r apps/api/requirements-dev.txt
+```
+
+On non-Windows hosts, use `.venv/bin/python` in place of
+`.\.venv\Scripts\python.exe`. Commands run from the repository root. For isolated
+fixture tests, remove any inherited production `DATABASE_URL`, `SQLITE_PATH` or
+`CVM_*` path overrides from the test process; do not point tests at user data.
+Do not clear these settings globally or change the user's configured database.
+
 ## Isolated Worktree Bootstrap
 
-Parallel issues run in separate git worktrees (one per session; the Claude Code
-app creates them, or use `git worktree add`). From a fresh worktree, prepare the
+Parallel issues run in separate git worktrees (one per session; use the host app's managed worktree tools when available, otherwise `git worktree add`). From a fresh worktree, prepare the
 frontend dependencies:
 
 ```powershell
@@ -143,7 +163,7 @@ registry; persisted financial data is unaffected. Concurrent submissions within
 the process reuse the active job. CI runs both `tests/` and `apps/api/tests/`.
 
 ```powershell
-uvicorn apps.api.app.main:app --reload
+.\.venv\Scripts\python.exe -m uvicorn apps.api.app.main:app --reload
 ```
 
 Swagger is at `http://127.0.0.1:8000/docs` and OpenAPI at
@@ -157,14 +177,14 @@ Swagger is at `http://127.0.0.1:8000/docs` and OpenAPI at
 On a new machine or after a migration:
 
 ```powershell
-python scripts/setup/setup_db.py
-python scripts/setup/setup_companies_table.py
+.\.venv\Scripts\python.exe scripts/setup/setup_db.py
+.\.venv\Scripts\python.exe scripts/setup/setup_companies_table.py
 ```
 
 Optional ticker expansion preview:
 
 ```powershell
-python scripts/data/expand_tickers.py --dry-run
+.\.venv\Scripts\python.exe scripts/data/expand_tickers.py --dry-run
 ```
 
 ## Refreshing Data Outside The App
@@ -173,14 +193,14 @@ The normal path is Settings -> Updates in the desktop app. For headless work:
 
 ```powershell
 # one-off CLI refresh
-python main.py --companies PETROBRAS --start_year 2021 --end_year 2025 --type consolidated --skip_complete
+.\.venv\Scripts\python.exe main.py --companies PETROBRAS --start_year 2021 --end_year 2025 --type consolidated --skip_complete
 
 # batch refresh
-python scripts/data/batch_completo.py --dry-run
-python scripts/data/atualizar_todos.py --anos 2024 2025
+.\.venv\Scripts\python.exe scripts/data/batch_completo.py --dry-run
+.\.venv\Scripts\python.exe scripts/data/atualizar_todos.py --anos 2024 2025
 
 # safe Update Base smoke (default mode=missing, limit=1; live only with --confirm-live)
-python scripts/diagnostics/update_base_smoke.py --dry-run --mode missing --limit 1
+.\.venv\Scripts\python.exe scripts/diagnostics/update_base_smoke.py --dry-run --mode missing --limit 1
 ```
 
 Logs are written to `output/logs/`. See `docs/database-updates.md` and
@@ -198,42 +218,42 @@ npm --prefix apps/desktop-web run build
 Python:
 
 ```powershell
-python -m py_compile desktop/app.py desktop/bridge.py
-pytest tests -q
+.\.venv\Scripts\python.exe -m py_compile desktop/app.py desktop/bridge.py
+.\.venv\Scripts\python.exe -m pytest tests -q
 ```
 
 API adapter when touched:
 
 ```powershell
-pytest apps/api/tests -q
+.\.venv\Scripts\python.exe -m pytest apps/api/tests -q
 ```
 
 Runtime diagnostics:
 
 ```powershell
 # minimal
-python scripts/diagnostics/runtime_doctor.py --require-canonical
+.\.venv\Scripts\python.exe scripts/diagnostics/runtime_doctor.py --require-canonical
 
 # full
-python scripts/diagnostics/runtime_doctor.py --require-db --table financial_reports --table companies --require-canonical
-python scripts/data/canonicalize_data_layout.py
-python scripts/diagnostics/db_portability_smoke.py --write-check
+.\.venv\Scripts\python.exe scripts/diagnostics/runtime_doctor.py --require-db --table financial_reports --table companies --require-canonical
+.\.venv\Scripts\python.exe scripts/data/canonicalize_data_layout.py
+.\.venv\Scripts\python.exe scripts/diagnostics/db_portability_smoke.py --write-check
 
 # PostgreSQL, without exporting a variable
-python scripts/diagnostics/runtime_doctor.py --database-url postgresql://user:pass@host:5432/db --require-db --table financial_reports --table companies
-python scripts/diagnostics/db_portability_smoke.py --database-url postgresql://user:pass@host:5432/db --write-check
+.\.venv\Scripts\python.exe scripts/diagnostics/runtime_doctor.py --database-url postgresql://user:pass@host:5432/db --require-db --table financial_reports --table companies
+.\.venv\Scripts\python.exe scripts/diagnostics/db_portability_smoke.py --database-url postgresql://user:pass@host:5432/db --write-check
 ```
 
 Workbook QA (manual; run only after generating an XLSX through `main.py` or
 the desktop export; not part of setup or CI):
 
 ```powershell
-python scripts/qa/quick_verify.py --xlsx output/reports/PETROBRAS_financials.xlsx
-python scripts/qa/verify_consolidation.py --xlsx output/reports/PETROBRAS_financials.xlsx
-python scripts/qa/verify_line_id_base.py --xlsx output/reports/PETROBRAS_financials.xlsx
+.\.venv\Scripts\python.exe scripts/qa/quick_verify.py --xlsx output/reports/PETROBRAS_financials.xlsx
+.\.venv\Scripts\python.exe scripts/qa/verify_consolidation.py --xlsx output/reports/PETROBRAS_financials.xlsx
+.\.venv\Scripts\python.exe scripts/qa/verify_line_id_base.py --xlsx output/reports/PETROBRAS_financials.xlsx
 
 # historical regression for an old four-bug campaign; not part of the normal flow
-python scripts/qa/final_verification.py --xlsx output/reports/PETROBRAS_financials.xlsx
+.\.venv\Scripts\python.exe scripts/qa/final_verification.py --xlsx output/reports/PETROBRAS_financials.xlsx
 ```
 
 All workbook QA scripts share `scripts/qa/workbook_paths.py` for XLSX path

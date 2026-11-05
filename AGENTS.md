@@ -112,7 +112,9 @@ Goal issue -> /to-spec -> /to-tickets (sub-issues + blocking links)
 
 ### Skills by task type
 
-Superpowers skills and Ponytail trigger on their own. Matt Pocock's planning
+Use available Superpowers skills and the vendored Ponytail skills when they
+apply. External skills are not bundled; see `docs/agents/skills.md` for
+availability checks and the equivalent workflow on a fresh machine. Matt Pocock's planning
 skills (`grill-me`, `grill-with-docs`, `to-spec`, `to-tickets`, `triage`,
 `wayfinder`, `implement`) only run when invoked, so use them at these points:
 
@@ -199,8 +201,9 @@ Single-context, with domain rules in `docs/CONTEXT.md` and ADRs in `docs/decisio
 - Frontend behavior: targeted test, then `npm --prefix apps/desktop-web run
   test`, `typecheck`, and `build` when warranted.
 - Indicators module: the targeted `CountryKpisPage` test.
-- Python: `pytest tests/`; add `pytest apps/api/tests/` when editing the API or
-  shared API contracts.
+- Python: run `tests/`; add `apps/api/tests/` when editing the API or
+  shared API contracts. Use the project interpreter as shown in
+  `docs/development.md`, not an unrelated global pytest installation.
 - UI-observable changes: run the real dev runtime when feasible and check
   loading, empty, error, partial, responsive, and laptop-width states.
 - Data changes: validate against fixtures or real sandbox snapshots.
@@ -219,8 +222,8 @@ Single-context, with domain rules in `docs/CONTEXT.md` and ADRs in `docs/decisio
   Prefer additive changes. Validate end to end.
 - **Refactor:** no behavior change. Map imports, scripts, tests, docs, and
   packaging references before moving files. No aesthetic-only moves.
-- **UI/UX:** follow the Vite UI skill and `docs/DESIGN.md` (Tailwind tokens,
-  `@base-ui/react`, `getSectorColor`, OKLCH palette). Dense, minimal,
+- **UI/UX:** follow the Vite UI skill and `docs/DESIGN.md` (Tailwind utilities,
+  implemented CSS tokens, existing components and `getSectorColor`). Dense, minimal,
   analyst-grade. Detail panels must not make the main table unusable at laptop
   width and need an explicit close path. Offer 2-3 visual options when the brief
   is unconstrained.

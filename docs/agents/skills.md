@@ -21,16 +21,41 @@ The upstream MIT license notices from these snapshots are retained in
 `.agents/skills/licenses/`. Review upstream licensing when accepting updates;
 these notices are maintained separately from the skill file manifests.
 
-Only those eleven skills are vendored. Superpowers, `grill-me`, `grilling` and
-`domain-modeling` remain environment-level prerequisites; a fresh machine must
-install them separately. The Vite UI contract remains in
-`docs/skills/CVMANALYTICS_VITE_UI_SKILL.md`.
+## Fresh-machine agent setup
+
+Only those eleven skills are bundled and pinned. The Vite UI contract is a local
+required document at `docs/skills/CVMANALYTICS_VITE_UI_SKILL.md`, not an external
+plugin dependency. Verify the vendored set with the offline command below.
+
+Superpowers, `grill-me`, `grilling` and `domain-modeling` are external skills.
+Their availability and versions depend on the host; cloning this repository does
+not install them. Check the host skill catalog before planning a task. When using
+an external skill, record its name and installed version or source in the working
+plan so another machine can reproduce the chosen process. Do not install or update
+global plugins silently, and do not invoke a skill that is absent.
+
+The repository workflow remains executable without external plugins:
+
+| Need | Required equivalent when the external skill is unavailable |
+|---|---|
+| Design clarification | Inspect the owning workflow and ask only scope/correctness questions; record the decision in the issue. |
+| Implementation plan | Record files, contracts, acceptance and checks in the issue; local working notes may live in `docs/superpowers/`. |
+| Bug diagnosis | Reproduce, trace the failing layer and identify the cause before editing. |
+| TDD | For non-trivial behavior, add a regression, observe failure, implement and run the relevant suite. |
+| Isolated work | Use the host worktree tool or Git; follow AGENTS.md branch/issue rules. |
+| Verification and delivery | Run AGENTS.md checks, use vendored `ponytail-review`, then PR -> CI -> merge. |
+
+An explicitly requested missing skill is not silently substituted: report its
+absence and follow the host's installation/permission rules. Humans use the same
+acceptance criteria and commands; they do not need an agent plugin to contribute.
 
 ## Repository rules take precedence
 
-Read `AGENTS.md` before invoking a skill. In particular:
+Read `AGENTS.md` before invoking a skill. Its workflow, validation and reporting
+rules override duplicate skill templates. In particular:
 
-- Use Superpowers for TDD and bug diagnosis.
+- Prefer available Superpowers skills for TDD and bug diagnosis; otherwise use
+  the equivalent process above.
 - Use `ponytail-review` as the single pre-PR review gate, including when
   upstream `implement` requests `code-review`.
 - Repository validation, source lineage and visible failure states override
