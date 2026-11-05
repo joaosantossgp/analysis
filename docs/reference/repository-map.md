@@ -91,7 +91,7 @@ There is no root `package.json`. The active Node package is
 | `on_demand_ingest.yml` | Manual per-company ingestion |
 | `seed_catalog.yml` | Manual catalog seed |
 | `pr-issue-guardrails.yml` | Requires an issue reference in every PR; goals use `Refs`, not `Closes` |
-| `update-agent-skills.yml` | Weekly/manual skill update PRs and offline integrity validation; publication requires `SKILL_UPDATE_TOKEN` |
+| `update-agent-skills.yml` | Offline skill integrity and regression checks on PRs or manual dispatch; updates are manual |
 
 ## Active Commands
 

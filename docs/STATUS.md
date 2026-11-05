@@ -32,9 +32,9 @@ run since 2026-05 failed. Both remain available through manual dispatch.
   `docs/research/local-multi-window-storage.md`. Goal #464 remains open.
   Planning and validation #466 still require product choices, workload
   benchmarks and packaged recovery/offline evidence before implementation.
-- Eleven upstream agent skills are versioned with weekly update PR tooling
-  (#463). Hosted publication still needs the `SKILL_UPDATE_TOKEN` secret and
-  a hosted smoke test; see `docs/agents/skills.md`.
+- Eleven upstream agent skills are versioned (#463). Updates are manual and
+  explicitly requested (#469); CI only verifies integrity and regression tests.
+  No publication token is required; see `docs/agents/skills.md`.
 
 - Backlog was reset on 2026-10-29: 30 stale issues were closed as not planned.
 - Open: #452 (apply Companies directory sorting in the backend before
@@ -46,6 +46,7 @@ run since 2026-05 failed. Both remain available through manual dispatch.
 
 | Date | Decision |
 |---|---|
+| 2026-11-05 | Vendored skills use occasional manual updates; scheduled refresh and automated PR publication removed (#469). |
 | 2026-10-29 | Production freeze (#456) reverted. |
 | 2026-10-29 | Stale repo skills removed (`skills/`, `.github/skills/`). |
 | 2026-10-29 | Issue-driven workflow adopted: goals with sub-issues, `Closes`/`Refs` PR rule, Matt Pocock triage labels, Superpowers + Ponytail + Matt Pocock skills (see `AGENTS.md` Workflow). Lanes/autonomous mode archived. |
