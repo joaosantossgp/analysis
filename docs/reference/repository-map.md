@@ -43,6 +43,7 @@ route source is `apps/desktop-web/src/App.tsx`.
 | `tests/` | Active tests | Python core/desktop tests |
 | `scripts/` | Active tooling | See Scripts below |
 | `docs/` | Documentation | Canonical docs, reference docs, ADRs, release notes, archive |
+| `docs/research/` | Research proposals | Decision inputs and provenance; not accepted architecture or implementation plans |
 | `data/` | Data assets/dev data | Import CSVs and schema files are active; local DB/raw/cache outputs are runtime/dev artifacts |
 | `build/`, `dist/`, `output/`, `tmp/`, `scratch/` | Generated/local artifacts | Not source of truth |
 | `.github/` | CI/CD | Workflows, issue and PR templates |

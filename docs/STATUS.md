@@ -27,6 +27,11 @@ run since 2026-05 failed. Both remain available through manual dispatch.
 
 ## Active work
 
+- Initial multi-window and local-storage desk research is published under #465;
+  see `docs/research/2026-11-04-multi-window-workbench.md` and
+  `docs/research/local-multi-window-storage.md`. Goal #464 remains open.
+  Planning and validation #466 still require product choices, workload
+  benchmarks and packaged recovery/offline evidence before implementation.
 - Eleven upstream agent skills are versioned with weekly update PR tooling
   (#463). Hosted publication still needs the `SKILL_UPDATE_TOKEN` secret and
   a hosted smoke test; see `docs/agents/skills.md`.
@@ -34,8 +39,8 @@ run since 2026-05 failed. Both remain available through manual dispatch.
 - Backlog was reset on 2026-10-29: 30 stale issues were closed as not planned.
 - Open: #452 (apply Companies directory sorting in the backend before
   pagination).
-- Next: choose product direction from `docs/PRODUCT_DIRECTION.md` and the
-  current app state, then open new issues.
+- Next for #464: resolve #466, record the architecture decision and create
+  scoped implementation sub-issues. No shell or storage migration is approved.
 
 ## Recent decisions
 

@@ -92,6 +92,13 @@ See "Historical / Non-Canonical" in
 
 ## Open Questions
 
+- The [multi-window workbench research](research/2026-11-04-multi-window-workbench.md)
+  evaluates native windows and Home docking. Goal #464 and planning #466 remain
+  open; publishing the initial studies in #465 does not approve implementation.
+- The [multi-window local-storage research](research/local-multi-window-storage.md)
+  evaluates shared data ownership, SQLite/Parquet, DuckDB and DuckLake for future
+  scale. It is a recommendation requiring benchmarks, not an accepted migration
+  or a replacement for ADR 0007.
 - Packaged runtime behavior must still be validated from the built executable
   before each release; source inspection alone does not prove WebView2,
   PyInstaller, updater, or filesystem behavior on a clean machine.
