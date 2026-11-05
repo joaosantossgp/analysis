@@ -150,6 +150,7 @@ See [docs/data-sources.md](docs/data-sources.md).
 | Repository map | [docs/reference/repository-map.md](docs/reference/repository-map.md) |
 | Agent rules | [AGENTS.md](AGENTS.md) |
 | Vendored agent skills and automatic maintenance | [docs/agents/skills.md](docs/agents/skills.md) |
+| Multi-window research (proposal) | [Workbench](docs/research/2026-11-04-multi-window-workbench.md), [local storage](docs/research/local-multi-window-storage.md) |
 
 Historical migration docs live under `docs/archive/migration/`. ADRs under
 `docs/decisions/` preserve point-in-time decisions. Release notes under
