@@ -55,7 +55,8 @@ Thumbs.db
 .claude/plans/
 .claude/settings.local.json
 .claude/worktrees/
-.agents/
+.agents/*
+!.agents/skills/
 
 # Reference sites (large HTML snapshots)
 docs/vendor/sites_ex/

@@ -4,7 +4,7 @@ Short, current snapshot of where the project stands. Update this file whenever
 the version, release state, active work, or a major decision changes. Keep it
 under one screen; link to canonical docs instead of repeating them.
 
-Last updated: 2026-10-29
+Last updated: 2026-11-05
 
 ## Version and releases
 
@@ -26,6 +26,10 @@ PostgreSQL (`DATABASE_URL`) is over its 512 MB plan limit and every scheduled
 run since 2026-05 failed. Both remain available through manual dispatch.
 
 ## Active work
+
+- Eleven upstream agent skills are versioned with weekly update PR tooling
+  (#463). Hosted publication still needs the `SKILL_UPDATE_TOKEN` secret and
+  a hosted smoke test; see `docs/agents/skills.md`.
 
 - Backlog was reset on 2026-10-29: 30 stale issues were closed as not planned.
 - Open: #452 (apply Companies directory sorting in the backend before
