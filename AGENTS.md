@@ -142,6 +142,11 @@ use the Superpowers skill.
 
 ## Agent skills
 
+Eleven Ponytail and Matt Pocock skills are versioned in `.agents/skills/`.
+See `docs/agents/skills.md` for the inventory, upstream pins, verification,
+environment-level prerequisites, and automatic update PR maintenance.
+This file's workflow and validation rules take precedence over upstream skills.
+
 ### Issue tracker
 
 GitHub Issues in `joaosantossgp/analysis`, via `gh`. See `docs/agents/issue-tracker.md`.

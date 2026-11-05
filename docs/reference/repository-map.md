@@ -47,6 +47,7 @@ route source is `apps/desktop-web/src/App.tsx`.
 | `build/`, `dist/`, `output/`, `tmp/`, `scratch/` | Generated/local artifacts | Not source of truth |
 | `.github/` | CI/CD | Workflows, issue and PR templates |
 | `.claude/` | AI tooling | Agent/session tooling, not product runtime |
+| `.agents/skills/` | Vendored agent skills | Upstream skills and pinned integrity manifest; see `docs/agents/skills.md` |
 
 ## Root Files
 
@@ -89,6 +90,7 @@ There is no root `package.json`. The active Node package is
 | `on_demand_ingest.yml` | Manual per-company ingestion |
 | `seed_catalog.yml` | Manual catalog seed |
 | `pr-issue-guardrails.yml` | Requires an issue reference in every PR; goals use `Refs`, not `Closes` |
+| `update-agent-skills.yml` | Weekly/manual skill update PRs and offline integrity validation; publication requires `SKILL_UPDATE_TOKEN` |
 
 ## Active Commands
 
