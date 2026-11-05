@@ -26,6 +26,14 @@ Runtime integration: `apps/desktop-web/src/lib/bridge/adapter.ts` ->
 `window.pywebview.api` -> `desktop/bridge.py` / `desktop/bridge_api/` ->
 `desktop/services.py` / `src/`. See [`docs/architecture.md`](../architecture.md).
 
+## Maintenance entry points
+
+- Financial queries/exports: `src/financials/read_service.py` is the compatibility
+  facade; explicit writes are in `refresh_commands.py` and `mapping_commands.py`
+  in the same directory. See [service boundaries](../architecture.md#service-and-coverage-boundaries).
+- Coverage UI: `apps/desktop-web/src/routes/CoveragePage.tsx` composes the focused
+  workflow modules under `apps/desktop-web/src/components/coverage/`.
+
 ## Active Routes
 
 See "Active Routes" in [`docs/architecture.md`](../architecture.md). The

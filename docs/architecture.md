@@ -46,6 +46,22 @@ React route/component
 
 The typed frontend mirror is `apps/desktop-web/src/lib/bridge/types.ts`.
 
+## Service and Coverage boundaries
+
+`src/financials/read_service.py` keeps the public `CVMReadService` facade for
+existing desktop/API consumers. Query, health/coverage and export implementations
+remain in `read_service_query.py`, `read_service_coverage.py` and
+`read_service_export.py`. Explicit refresh/catalog-bootstrap writes live in
+`refresh_commands.py`; mapping preset/default/override writes live in
+`mapping_commands.py`. The facade is not a read-only capability boundary:
+repositories and query-cache initialization may still write local metadata.
+
+`apps/desktop-web/src/routes/CoveragePage.tsx` owns workspace selection,
+navigation and composition. Components under `src/components/coverage/` own
+universe lifecycle, summary/recommendation, prioritization, work queue and
+capacity. Existing query keys and API facades remain shared; component extraction
+does not introduce new stores or change persistence.
+
 ## Active Routes
 
 The current route table is in `apps/desktop-web/src/App.tsx`. Active top-level

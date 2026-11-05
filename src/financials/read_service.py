@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from src.financials import read_service_refresh_selection as _refresh_selection
+from src.financials.refresh_commands import RefreshCommandsMixin
+from src.financials.mapping_commands import MappingCommandsMixin
 from src.financials.read_service_coverage import ReadServiceCoverageMixin
 from src.financials.read_service_export import ReadServiceExportMixin
 from src.financials.read_service_query import ReadServiceQueryMixin
@@ -32,7 +34,10 @@ class CVMReadService(
     ReadServiceQueryMixin,
     ReadServiceExportMixin,
     ReadServiceCoverageMixin,
+    RefreshCommandsMixin,
+    MappingCommandsMixin,
 ):
+    """Compatibility facade for queries, exports and explicit write commands."""
     REQUIRED_PACKAGE_STATEMENTS = ("BPA", "BPP", "DRE", "DFC")
     BASE_HEALTH_OK_THRESHOLD = 90.0
     BASE_HEALTH_CRITICAL_THRESHOLD = 70.0

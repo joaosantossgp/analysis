@@ -112,6 +112,8 @@ a = Analysis(
         "src.energy_kpi.distribution.read",
         "src.financials.database",
         "src.financials.read_service",
+        "src.financials.refresh_commands",
+        "src.financials.mapping_commands",
         "src.financials.read_service_coverage",
         "src.financials.read_service_export",
         "src.financials.read_service_query",

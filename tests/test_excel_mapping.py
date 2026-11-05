@@ -264,3 +264,30 @@ def test_mapping_preview_rows_and_raw_lines_include_scaled_values():
     gross_revenue = next(line for line in raw_lines if line["line_id_base"] == "3.01.01")
     assert gross_revenue["sample_values_by_period"]["2024"] == 1000.0
     assert gross_revenue["mapped_targets"][0]["target_id"] == "DRE:3.01"
+
+
+def test_public_service_preserves_mapping_commands(tmp_path):
+    from src.financials.resolver import ModelResolver
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'facade-mapping.db'}")
+    service = object.__new__(CVMReadService)
+    service.engine = engine
+    service.excel_mapping_repository = ExcelMappingRepository(engine)
+    try:
+        result = service.save_excel_mapping_preset({"mapping": _custom_revenue_mapping().to_dict()})
+        preset_id = result["preset"]["preset_id"]
+        assert result["ok"] is True
+        service.set_company_excel_mapping_default(1234, preset_id)
+        assert service.excel_mapping_repository.get_company_default_preset_id(1234) == preset_id
+        assert service.excel_mapping_repository.load_preset(preset_id) is not None
+
+        assert service.save_excel_mapping_override(
+            1234, "DRE:3.01", "2024", "3.01.01", source_desc="Gross Revenue", sign=-1,
+        ) == {"ok": True}
+        override = ModelResolver(engine).get_overrides(1234)["DRE:3.01"]["2024"]
+        assert override["source_code"] == "3.01.01"
+        assert override["sign"] == -1
+        assert service.delete_excel_mapping_override(1234, "DRE:3.01", "2024") == {"ok": True}
+        assert ModelResolver(engine).get_overrides(1234) == {}
+    finally:
+        engine.dispose()
