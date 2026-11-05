@@ -136,6 +136,12 @@ mock mode to validate real database behavior.
 
 ### HTTP API Adapter
 
+The container runs one Uvicorn worker because batch refresh jobs and cancellation
+signals are process-local. Do not deploy multiple API workers or replicas until
+job ownership and status are shared. Restarting the process loses its batch-job
+registry; persisted financial data is unaffected. Concurrent submissions within
+the process reuse the active job. CI runs both `tests/` and `apps/api/tests/`.
+
 ```powershell
 uvicorn apps.api.app.main:app --reload
 ```

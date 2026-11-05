@@ -18,6 +18,21 @@ B3 official data.
 
 ## CVM Financial Statements
 
+### Company catalog reads and refresh
+
+Company lookups, search, universe previews and coverage reads use local evidence.
+They never refresh the CVM company catalog implicitly. The official catalog
+snapshot is stored at `metadata/cvm_company_catalog.json` under the configured
+data root, preserving the source URL, UTC download timestamp and source CSV.
+Cache expiry only re-reads that local file; it does not authorize network access.
+
+Explicit onboarding and Settings -> Update Data refresh the catalog before
+selecting companies. An explicit single-company refresh can download a missing
+catalog to bootstrap that company. A failed download or invalid response reports
+an error and preserves the previous snapshot. Missing local catalog evidence is
+reported where needed; existing database rows remain readable. Startup CNPJ
+enrichment uses only the downloaded snapshot.
+
 Primary financial statement source:
 
 ```text

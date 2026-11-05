@@ -1620,7 +1620,7 @@ def test_base_health_rejects_invalid_year_window(client: TestClient):
 
 def test_unreachable_database_returns_503(tmp_path: Path, monkeypatch):
     # Point DATABASE_URL at a postgres host that will never accept connections.
-    monkeypatch.setenv("DATABASE_URL", "postgresql://user:pass@127.0.0.1:1/nonexistent")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg2://user:pass@127.0.0.1:1/nonexistent")
     settings = build_settings(project_root=tmp_path)
 
     app = create_app(settings=settings)

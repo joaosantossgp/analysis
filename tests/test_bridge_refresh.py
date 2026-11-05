@@ -344,7 +344,8 @@ def test_bridge_onboarding_starts_refresh_with_resolved_company_ids():
         def __init__(self):
             self.started = None
 
-        def get_company_universe_by_preset(self, preset):
+        def get_company_universe_by_preset(self, preset, *, refresh_catalog=False):
+            assert refresh_catalog is True
             assert preset == "top_200"
             return selection
 
@@ -391,7 +392,8 @@ def test_start_data_update_returns_blocked_without_dispatching_when_universe_una
     monkeypatch,
 ):
     class FakeOnboarding:
-        def get_company_universe_by_preset(self, preset):
+        def get_company_universe_by_preset(self, preset, *, refresh_catalog=False):
+            assert refresh_catalog is True
             raise CompanyUniverseUnavailableError("missing market-cap source")
 
     class FakeManager:
@@ -449,7 +451,8 @@ def test_start_data_update_blocked_writes_packaged_runtime_log(tmp_path, monkeyp
     monkeypatch.setenv("CVM_DATA_DIR", str(tmp_path))
 
     class FakeOnboarding:
-        def get_company_universe_by_preset(self, preset):
+        def get_company_universe_by_preset(self, preset, *, refresh_catalog=False):
+            assert refresh_catalog is True
             raise CompanyUniverseUnavailableError("missing market-cap source")
 
     bridge = CVMBridge()

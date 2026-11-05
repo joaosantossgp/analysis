@@ -25,8 +25,7 @@ COPY apps/api/ apps/api/
 
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
-# PORT substituido pela Railway; WEB_CONCURRENCY=2 para planos single-vCPU
+# shortcut: batch jobs are process-local; use one worker until job ownership is shared.
 ENV PORT=8000
-ENV WEB_CONCURRENCY=4
 
-CMD ["sh", "-c", "uvicorn apps.api.app.main:app --host 0.0.0.0 --port ${PORT} --workers ${WEB_CONCURRENCY} --loop uvloop --access-log"]
+CMD ["sh", "-c", "uvicorn apps.api.app.main:app --host 0.0.0.0 --port ${PORT} --workers 1 --loop uvloop --access-log"]

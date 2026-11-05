@@ -77,11 +77,7 @@ def _load_csv_ticker_map() -> dict[int, dict[str, Any]]:
 
 
 class CompanyIdentityResolver:
-    """Single entry point para resolver cd_cvm -> CompanyIdentity.
-    
-    Busca de forma transparente na tabela local 'companies', no CompanyCatalogService
-    (CVM live) e no arquivo local estático 'ticker_map.csv'.
-    """
+    """Resolve identity from the local database, downloaded CVM catalog and ticker CSV."""
 
     def __init__(self, engine=None, skip_db: bool = False) -> None:
         self._engine = engine

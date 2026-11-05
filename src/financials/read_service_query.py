@@ -193,7 +193,8 @@ class ReadServiceQueryMixin:
     def company_catalog(self) -> CompanyCatalogService:
         if self._company_catalog is None:
             self._company_catalog = CompanyCatalogService(
-                timeout=self.settings.company_list_timeout
+                timeout=self.settings.company_list_timeout,
+                snapshot_path=self.settings.paths.metadata_dir / "cvm_company_catalog.json",
             )
         return self._company_catalog
 
@@ -607,7 +608,12 @@ class ReadServiceQueryMixin:
         if self.query_layer.get_company_info(cd_cvm):
             return False
 
-        catalog_entry = self.company_catalog.lookup_company(cd_cvm)
+        try:
+            catalog_entry = self.company_catalog.lookup_company(cd_cvm)
+        except CompanyCatalogUnavailableError:
+            # This method is called only by the explicit single-company refresh command.
+            self.company_catalog.refresh()
+            catalog_entry = self.company_catalog.lookup_company(cd_cvm)
         if catalog_entry is None:
             return False
 

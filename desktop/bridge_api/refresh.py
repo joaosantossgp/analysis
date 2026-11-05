@@ -350,7 +350,7 @@ class RefreshBridgeMixin:
         p = params or {}
         preset = str(p.get("preset") or "").strip().lower()
         try:
-            selection = self._onboarding().get_company_universe_by_preset(preset)
+            selection = self._onboarding().get_company_universe_by_preset(preset, refresh_catalog=True)
         except Exception as exc:
             return self._sanitize_for_json({
                 "status": "error",
@@ -530,7 +530,7 @@ class RefreshBridgeMixin:
                 raise ValueError(f"Invalid update mode: {mode}")
 
             selection = self._onboarding().get_company_universe_by_preset(
-                str(settings["universe_preset"])
+                str(settings["universe_preset"]), refresh_catalog=True
             )
             refresh_params: dict[str, Any] = {
                 "mode": mode,

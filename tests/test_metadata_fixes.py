@@ -399,8 +399,8 @@ class TestRefreshGatingAndLocking:
         # Lock status says locked by other
         mock_get_status.return_value = {"status": "locked_by_other", "pid": 1234}
         
-        from desktop.app import _background_remote_metadata_refresh
-        _background_remote_metadata_refresh()
+        from desktop.app import _background_local_metadata_enrichment
+        _background_local_metadata_enrichment()
         
         # SQLite connect should not be called since we exit immediately on lock check
         mock_connect.assert_not_called()
@@ -422,11 +422,11 @@ class TestRefreshGatingAndLocking:
                 )
             )
             
-        from desktop.app import _background_remote_metadata_refresh
+        from desktop.app import _background_local_metadata_enrichment
         
         # Patch time.sleep to run quickly
         with patch("time.sleep"):
-            _background_remote_metadata_refresh()
+            _background_local_metadata_enrichment()
             
         # Catalog fetch list_entries should NOT be called since no companies are missing CNPJs
         mock_list_entries.assert_not_called()
@@ -453,9 +453,9 @@ class TestRefreshGatingAndLocking:
                 {"val": json.dumps(recent_ts), "upd": "2026-06-09T20:00:00"}
             )
             
-        from desktop.app import _background_remote_metadata_refresh
+        from desktop.app import _background_local_metadata_enrichment
         with patch("time.sleep"):
-            _background_remote_metadata_refresh()
+            _background_local_metadata_enrichment()
             
         # Catalog fetch should NOT be called since TTL is still valid (7 days not expired)
         mock_list_entries.assert_not_called()
@@ -485,9 +485,9 @@ class TestRefreshGatingAndLocking:
         with engine.begin() as conn:
             conn.execute(text("INSERT INTO companies (cd_cvm, company_name, cnpj, ticker_b3, updated_at) VALUES (9512, 'PETROBRAS', NULL, NULL, '')"))
             
-        from desktop.app import _background_remote_metadata_refresh
+        from desktop.app import _background_local_metadata_enrichment
         with patch("time.sleep"):
-            _background_remote_metadata_refresh()
+            _background_local_metadata_enrichment()
             
         # Verify database has normalized CNPJ and updated app_settings
         with engine.connect() as conn:
@@ -513,9 +513,9 @@ class TestRefreshGatingAndLocking:
         with engine.begin() as conn:
             conn.execute(text("INSERT INTO companies (cd_cvm, company_name, cnpj, ticker_b3, updated_at) VALUES (9512, 'PETROBRAS', NULL, NULL, '')"))
             
-        from desktop.app import _background_remote_metadata_refresh
+        from desktop.app import _background_local_metadata_enrichment
         with patch("time.sleep"):
-            _background_remote_metadata_refresh()
+            _background_local_metadata_enrichment()
             
         # Verify app_settings does NOT contain the successful refresh key because it failed
         with engine.connect() as conn:
@@ -534,8 +534,8 @@ class TestRefreshGatingAndLocking:
             mock_user_data_root.return_value = tmp_path
             
             with patch("sqlite3.connect") as mock_connect:
-                from desktop.app import _background_remote_metadata_refresh
-                _background_remote_metadata_refresh()
+                from desktop.app import _background_local_metadata_enrichment
+                _background_local_metadata_enrichment()
                 # Should return immediately and not check lock or connect to DB
                 mock_connect.assert_not_called()
         finally:

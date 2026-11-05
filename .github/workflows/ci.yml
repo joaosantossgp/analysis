@@ -33,7 +33,7 @@ jobs:
         run: python -m py_compile desktop/app.py desktop/bridge.py
 
       - name: Run desktop/core test suite
-        run: pytest tests -q
+        run: pytest tests apps/api/tests -q
 
   coverage-python:
     name: Python core coverage
@@ -60,7 +60,7 @@ jobs:
 
       - name: Run Python coverage
         run: >
-          pytest tests -q
+          pytest tests apps/api/tests -q
           --cov=src
           --cov=desktop
           --cov-branch
