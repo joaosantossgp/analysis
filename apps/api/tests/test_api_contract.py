@@ -548,7 +548,7 @@ def test_request_refresh_returns_202_and_enqueues_internal_job(client: TestClien
     assert isinstance(payload["accepted_at"], str)
     assert "enfileirada" in payload["message"].lower()
     assert payload["status_reason_code"] == "refresh_queued"
-    assert "aguardando processamento interno" in payload["status_reason_message"].lower()
+    assert "awaiting internal processing" in payload["status_reason_message"].lower()
     assert payload["is_retry_allowed"] is False
 
     engine = client.app.state.read_service.engine
@@ -705,9 +705,9 @@ def test_request_refresh_returns_already_current_without_creating_job(
     payload = response.json()
     assert payload["status"] == "already_current"
     assert payload["job_id"] is None
-    assert "ja atualizada" in payload["message"].lower()
+    assert "already up to date" in payload["message"].lower()
     assert payload["status_reason_code"] == "already_current"
-    assert "ja estava atualizada" in payload["status_reason_message"].lower()
+    assert "already up to date" in payload["status_reason_message"].lower()
     assert payload["is_retry_allowed"] is False
 
     with engine.connect() as conn:
@@ -727,7 +727,7 @@ def test_request_refresh_returns_already_current_without_creating_job(
     assert int(queued_jobs) == 0
     assert projection_row["last_status"] == "success"
     assert projection_row["job_id"] is None
-    assert "ja atualizada" in str(projection_row["progress_message"]).lower()
+    assert "already up to date" in str(projection_row["progress_message"]).lower()
 
 
 @pytest.mark.parametrize("state", ["queued", "running"])
