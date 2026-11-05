@@ -71,27 +71,14 @@ Review changes before delivery, run verification again, and follow the normal
 issue/PR/CI/merge workflow. To roll back a published update, revert its PR and
 run the offline verifier. No application tests are replaced by this verifier.
 
-## Automatic maintenance
+## Manual maintenance policy
 
-`.github/workflows/update-agent-skills.yml` checks every Monday at 12:17 UTC
-(09:17 America/Sao_Paulo) and supports manual dispatch. It runs on the default
-branch after integration. If an update PR is already open, it waits for review
-instead of overwriting it. Otherwise, changed packages produce a new task issue
-and a `chore/<issue>-agent-skill-updates` branch and PR. There is no auto-merge.
-Skill-related PRs also run offline integrity checks and updater regression tests.
+Update vendored skills only when explicitly requested. Run the local update
+command above, review the upstream instruction and license changes, verify the
+result, and deliver through the normal issue/PR/CI/merge workflow. The harness
+loading these repository files does not itself refresh their pinned contents.
 
-Before enabling PR publication, a repository administrator must create the
-Actions secret `SKILL_UPDATE_TOKEN`: a fine-grained token restricted to this
-repository with Contents, Issues and Pull requests read/write permissions.
-Keep the token in GitHub Secrets, never in files. Organization policies must
-also permit the token's access and GitHub Actions execution.
-
-The dedicated token lets the resulting push/PR trigger normal CI. GitHub's
-default `GITHUB_TOKEN` generally does not trigger subsequent workflows for its
-own events. See [GitHub token documentation](https://docs.github.com/en/actions/concepts/security/github_token).
-Without the secret, checks and downloads still run; when changes exist, the
-workflow fails with setup instructions before creating an issue, branch or PR.
-
-Activation requires merging the files into `main` and configuring that secret.
-**Needs validation:** the first hosted scheduled/manual run, token permissions,
-PR creation and downstream CI. Local tests do not establish hosted activation.
+`.github/workflows/update-agent-skills.yml` only runs offline integrity checks
+and updater regression tests on skill-related pull requests or manual dispatch.
+It does not fetch upstream updates or create issues, branches or PRs. There is
+no scheduled update job and no dedicated publication token to configure.
