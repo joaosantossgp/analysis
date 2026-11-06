@@ -46,7 +46,7 @@ run since 2026-05 failed. Both remain available through manual dispatch.
 
 | Date | Decision |
 |---|---|
-| 2026-11-06 | Windows storage inventory persistence (#477) retries transient replacement denials within a bounded budget, preserving the previous snapshot and reporting persistent failures. Focused Windows CI covers real file contention; this is not packaged-release validation. |
+| 2026-11-06 | Windows storage persistence (#477) passed targeted packaged validation (#479): repeated scans, real reader contention, failure preservation and cached restart. UI completion/error gaps remain in #480; full release acceptance is not claimed. See [evidence](governance/2026-11-06-packaged-storage-validation.md). |
 | 2026-11-05 | Runtime reliability fixes merged in #472 (closes #471): local catalog reads, atomic API job admission/cancellation, single-worker container and API tests in CI. Packaged/hosted validation remains separate. |
 | 2026-11-05 | Maintenance boundaries clarified (#475): explicit refresh/mapping command modules and Coverage workspace components; public service/route contracts preserved. |
 | 2026-11-05 | Contributor contracts aligned (#473): current UI tokens, explicit mock mode, project-interpreter commands and skill-independent agent workflow. |
