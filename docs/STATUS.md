@@ -4,7 +4,7 @@ Short, current snapshot of where the project stands. Update this file whenever
 the version, release state, active work, or a major decision changes. Keep it
 under one screen; link to canonical docs instead of repeating them.
 
-Last updated: 2026-11-05
+Last updated: 2026-11-06
 
 ## Version and releases
 
@@ -46,6 +46,7 @@ run since 2026-05 failed. Both remain available through manual dispatch.
 
 | Date | Decision |
 |---|---|
+| 2026-11-06 | Windows storage inventory persistence (#477) retries transient replacement denials within a bounded budget, preserving the previous snapshot and reporting persistent failures. Focused Windows CI covers real file contention; this is not packaged-release validation. |
 | 2026-11-05 | Runtime reliability fixes merged in #472 (closes #471): local catalog reads, atomic API job admission/cancellation, single-worker container and API tests in CI. Packaged/hosted validation remains separate. |
 | 2026-11-05 | Maintenance boundaries clarified (#475): explicit refresh/mapping command modules and Coverage workspace components; public service/route contracts preserved. |
 | 2026-11-05 | Contributor contracts aligned (#473): current UI tokens, explicit mock mode, project-interpreter commands and skill-independent agent workflow. |

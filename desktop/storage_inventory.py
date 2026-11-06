@@ -519,7 +519,16 @@ class StorageInventoryManager:
         payload["history"] = self._updated_history(payload)
         tmp = path.with_suffix(path.suffix + ".tmp")
         tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(path)
+        # Windows readers/file filters can briefly deny atomic replacement.
+        for attempt in range(6):
+            try:
+                tmp.replace(path)
+                return
+            except PermissionError as exc:
+                if getattr(exc, "winerror", None) not in (5, 32, 33) or attempt == 5:
+                    raise
+                logger.debug("retrying storage snapshot replacement: winerror=%s attempt=%s", exc.winerror, attempt + 1)
+                time.sleep(0.02 * 2**attempt)
 
     def _updated_history(self, inventory: dict[str, Any]) -> list[dict[str, Any]]:
         previous = self._read_snapshot()
