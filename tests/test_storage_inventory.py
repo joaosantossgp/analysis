@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import json
+import os
 import sqlite3
 import time
 from pathlib import Path
 from types import SimpleNamespace
+
+import pytest
 
 from desktop.storage_inventory import StorageInventoryManager
 
@@ -225,3 +229,102 @@ def test_storage_inventory_rejects_concurrent_scan(tmp_path, monkeypatch):
     assert first["started"] is True
     assert second["started"] is False
     assert second["scan_status"]["status"] == "running"
+
+
+@pytest.fixture
+def persisted_inventory(tmp_path):
+    manager = StorageInventoryManager(_settings(tmp_path))
+    previous = {
+        "contract_version": 1,
+        "scanned_at": "2026-01-01T00:00:00Z",
+        "logical_bytes_total": 12,
+        "history": [],
+    }
+    manager.snapshot_path.parent.mkdir(parents=True)
+    manager.snapshot_path.write_text(json.dumps(previous), encoding="utf-8")
+    return manager, previous
+
+
+@pytest.mark.parametrize("winerror", [5, 32, 33])
+def test_snapshot_recovers_from_transient_windows_denial(persisted_inventory, monkeypatch, winerror):
+    manager, previous = persisted_inventory
+    replace = Path.replace
+    attempts = 0
+
+    def temporarily_denied(source, destination):
+        nonlocal attempts
+        attempts += 1
+        if attempts <= 2:
+            assert json.loads(destination.read_text(encoding="utf-8")) == previous
+            error = PermissionError("Temporary Windows file access conflict")
+            error.winerror = winerror
+            raise error
+        return replace(source, destination)
+
+    monkeypatch.setattr(Path, "replace", temporarily_denied)
+    manager._write_snapshot({**previous, "logical_bytes_total": 24})
+
+    saved = json.loads(manager.snapshot_path.read_text(encoding="utf-8"))
+    assert saved["logical_bytes_total"] == 24
+    assert saved["history"][0]["logical_bytes_total"] == 24
+    assert not manager.snapshot_path.with_suffix(".json.tmp").exists()
+
+
+def test_persistent_snapshot_denial_fails_scan_and_keeps_previous(persisted_inventory, monkeypatch):
+    manager, previous = persisted_inventory
+    old_bytes = manager.snapshot_path.read_bytes()
+    attempts = 0
+    delays = []
+
+    def always_denied(source, destination):
+        nonlocal attempts
+        attempts += 1
+        assert attempts <= 10, "Snapshot replacement must have a finite retry budget"
+        error = PermissionError("Persistent Windows access denial")
+        error.winerror = 5
+        raise error
+
+    monkeypatch.setattr(Path, "replace", always_denied)
+    monkeypatch.setattr(time, "sleep", delays.append)
+    manager._run_scan_thread("denied-scan", persist=True)
+
+    assert manager.status()["status"] == "failed"
+    assert "Persistent Windows access denial" in manager.status()["error"]
+    assert 1 < attempts <= 10
+    assert 0 < sum(delays) <= 1
+    assert manager.snapshot_path.read_bytes() == old_bytes
+    assert manager.latest()["logical_bytes_total"] == previous["logical_bytes_total"]
+
+
+@pytest.mark.parametrize("error", [PermissionError("Non-Windows denial"), OSError("Disk failure")])
+def test_snapshot_does_not_retry_unrelated_errors(persisted_inventory, monkeypatch, error):
+    manager, previous = persisted_inventory
+
+    def fail_replace(source, destination):
+        raise error
+
+    def unexpected_delay(seconds):
+        pytest.fail("Unrelated errors must propagate without retry")
+
+    monkeypatch.setattr(Path, "replace", fail_replace)
+    monkeypatch.setattr(time, "sleep", unexpected_delay)
+    with pytest.raises(type(error), match=str(error)):
+        manager._write_snapshot({**previous, "logical_bytes_total": 24})
+    assert json.loads(manager.snapshot_path.read_text(encoding="utf-8")) == previous
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Requires Windows delete-sharing semantics")
+def test_snapshot_recovers_after_windows_reader_releases_file(persisted_inventory, monkeypatch):
+    manager, previous = persisted_inventory
+    sleep = time.sleep
+    with manager.snapshot_path.open("rb") as reader:
+        def release_reader_on_retry(seconds):
+            if not reader.closed:
+                assert json.loads(reader.read()) == previous
+                reader.close()
+            sleep(seconds)
+
+        monkeypatch.setattr(time, "sleep", release_reader_on_retry)
+        manager._write_snapshot({**previous, "logical_bytes_total": 36})
+
+    assert json.loads(manager.snapshot_path.read_text(encoding="utf-8"))["logical_bytes_total"] == 36
