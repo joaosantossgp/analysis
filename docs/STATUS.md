@@ -27,6 +27,11 @@ run since 2026-05 failed. Both remain available through manual dispatch.
 
 ## Active work
 
+- #489 fixes repeated/backward-clock current reads in the sandbox entity registry
+  while preserving explicit historical boundaries. Deterministic Windows tests
+  cover the five previously intermittent failures; no user-data repair or
+  runtime registry activation is included.
+
 - #483 delivered conservative financial period QA, source/lineage persistence
   and visible read/export evidence. Existing user data requires an explicit
   scoped refresh; no bulk repair or release is implied. See

@@ -10,6 +10,8 @@ from contextlib import contextmanager
 from sqlalchemy import Engine, text
 from sqlalchemy.exc import IntegrityError, OperationalError
 
+from src.companies.entity_registry_time import current_system_time
+
 from src.companies.entity_registry_schema import (
     ASSERTION_STATES,
     ORIGINS,
@@ -282,7 +284,7 @@ class EntityResolutionRepository:
         policy_version: int | None = None,
     ) -> ResolutionResult:
         effective = self._as_of("effective_as_of", effective_as_of)
-        system = self._as_of("system_as_of", system_as_of or _utc_now())
+        system = self._as_of("system_as_of", system_as_of if system_as_of is not None else current_system_time(self._engine, _utc_now()))
         scope = self._scope(consumer_scope)
         with self._engine.connect() as conn:
             if policy_id is not None or policy_version is not None:
@@ -383,7 +385,7 @@ class EntityResolutionRepository:
         overlap_from = max(item.effective_from for item in candidates)
         ends = [item.effective_to for item in candidates if item.effective_to is not None]
         overlap_to = min(ends) if ends else None
-        detected_at = _utc_now()
+        detected_at = _after(current_system_time(self._engine, _utc_now()), _utc_now())
         try:
             with self._engine.begin() as conn:
                 existing = conn.execute(text("""

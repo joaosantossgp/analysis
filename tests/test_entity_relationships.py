@@ -15,6 +15,14 @@ from src.companies.entity_relationships import (
 )
 
 
+@pytest.fixture(autouse=True, params=[False, True], ids=["wall-clock", "repeated-clock"])
+def registry_clock(request, monkeypatch):
+    if request.param:
+        from src.companies import entity_relationships, entity_resolution
+        for module in (entity_relationships, entity_resolution):
+            monkeypatch.setattr(module, "_utc_now", lambda: "2026-11-12T00:00:00.123456+00:00")
+
+
 @pytest.fixture
 def repositories():
     engine = create_engine("sqlite:///:memory:")
@@ -223,12 +231,16 @@ def test_holder_is_distinct_from_operational_role_and_rejected_status_is_not_exc
     assert operator_relation.dimension == "operational_role"
 
 
-def test_sequential_inverse_control_and_current_assertion_corrections_keep_bitemporal_history(repositories):
+def test_sequential_inverse_control_and_current_assertion_corrections_keep_bitemporal_history(repositories, monkeypatch):
     registry, relationships = repositories
     first = registry.create_entity("organization", origin="source_ingestion")
     second = registry.create_entity("organization", origin="source_ingestion")
     first_assertion = _assertion(registry, relationships, first.entity_id)
     second_assertion = _assertion(registry, relationships, second.entity_id)
+    from datetime import datetime, timedelta
+    from src.companies import entity_relationships
+    edge_tick = (datetime.fromisoformat(second_assertion.system_from) + timedelta(seconds=1)).isoformat()
+    monkeypatch.setattr(entity_relationships, "_utc_now", lambda: edge_tick)
     first_relationship = relationships.record_relationship(
         subject_entity_id=first.entity_id, object_entity_id=second.entity_id, dimension="control",
         payload={"basis": "old"}, assertion_id=first_assertion.assertion_id,
@@ -515,3 +527,33 @@ def test_concession_holder_remains_a_typed_operational_role(repositories):
         effective_from="2024-01-01T00:00:00+00:00",
     )
     assert record.operational_role == "concession_holder"
+
+def test_edges_on_corrected_assertion_replay_at_their_creation_time(repositories, monkeypatch):
+    from src.companies import entity_relationships
+    monkeypatch.setattr(entity_relationships, "_utc_now", lambda: "2026-11-12T00:00:00.123456+00:00")
+    registry, relationships = repositories
+    first = registry.create_entity("organization", origin="source_ingestion")
+    second = registry.create_entity("organization", origin="source_ingestion")
+    prior = _assertion(registry, relationships, first.entity_id)
+    corrected = relationships.record_assertion(
+        subject_entity_id=first.entity_id, domain="energy.distribution", attribute="control",
+        value={"status": "corrected"}, origin="user", actor_id="analyst", reason="correction", evidence_id=None,
+        effective_from="2024-01-01T00:00:00+00:00", supersedes_assertion_id=prior.assertion_id,
+    )
+    edge = relationships.record_relationship(
+        subject_entity_id=first.entity_id, object_entity_id=second.entity_id,
+        dimension="control", payload={"basis": "corrected"}, assertion_id=corrected.assertion_id,
+        effective_from="2024-01-01T00:00:00+00:00",
+    )
+    lineage = relationships.record_lineage(
+        predecessor_entity_id=first.entity_id, successor_entity_id=second.entity_id,
+        predicate="merged_into", assertion_id=corrected.assertion_id,
+        effective_from="2024-01-01T00:00:00+00:00",
+    )
+    reopened = EntityRelationshipRepository(relationships._engine)
+    assert [row.relationship_id for row in reopened.find_relationships(
+        first.entity_id, effective_as_of="2024-06-01T00:00:00+00:00", system_as_of=edge.system_from
+    )] == [edge.relationship_id]
+    assert [row.lineage_id for row in reopened.find_lineage(
+        first.entity_id, effective_as_of="2024-06-01T00:00:00+00:00", system_as_of=lineage.system_from
+    )] == [lineage.lineage_id]

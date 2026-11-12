@@ -17,6 +17,14 @@ from src.companies.entity_resolution import (
 )
 
 
+@pytest.fixture(autouse=True, params=[False, True], ids=["wall-clock", "repeated-clock"])
+def registry_clock(request, monkeypatch):
+    if request.param:
+        from src.companies import entity_relationships, entity_resolution
+        for module in (entity_relationships, entity_resolution):
+            monkeypatch.setattr(module, "_utc_now", lambda: "2026-11-12T00:00:00.123456+00:00")
+
+
 @pytest.fixture
 def repositories():
     engine = create_engine("sqlite:///:memory:")
@@ -489,3 +497,26 @@ def test_sqlite_actual_override_read_uses_override_lookup_index(repositories):
     with resolution._engine.connect() as conn:
         details = [row[-1] for row in conn.exec_driver_sql(f"EXPLAIN QUERY PLAN {statement}", parameters)]
     assert any("idx_er_override_lookup" in detail for detail in details)
+
+def test_current_snapshot_survives_repository_recreation_and_backward_clock(repositories, monkeypatch):
+    from src.companies import entity_relationships, entity_resolution
+    registry, relationships, resolution = repositories
+    entity = registry.create_entity("organization", origin="source_ingestion")
+    assertion = _assertion(registry, relationships, entity.entity_id, value="Source")
+    first = _policy(resolution)
+    second = resolution.activate_policy_version(
+        prior_policy_id=first.policy_id, prior_version=first.version,
+        effective_from="2025-01-01T00:00:00+00:00",
+    )
+    for module in (entity_relationships, entity_resolution):
+        monkeypatch.setattr(module, "_utc_now", lambda: "2020-01-01T00:00:00+00:00")
+    reopened = EntityResolutionRepository(resolution._engine)
+    args = dict(domain="company.display", attribute="legal_name", effective_as_of="2025-06-01T00:00:00+00:00")
+    current = reopened.resolve(entity.entity_id, **args)
+    assert current.policy_version == second.version
+    assert current.assertion_ids == (assertion.assertion_id,)
+    assert current.system_as_of >= second.system_from
+    assert reopened.resolve(entity.entity_id, system_as_of=current.system_as_of, **args) == current
+    historical = reopened.resolve(entity.entity_id, system_as_of=first.system_from, **args)
+    assert historical.policy_version == first.version
+    assert historical.system_as_of == first.system_from
