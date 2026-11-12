@@ -11,26 +11,25 @@ Active reference for the desktop `Indicators` module at
 - The module is organized around the analyst path:
   `sector -> company/portfolio -> asset -> indicator -> source/export`.
 
-Top-level sections:
-
-| Section | Purpose |
-| --- | --- |
-| `Indicator Library` | Central list of indicators that can be opened directly without selecting a company, distributor, plant, asset, parcel, ticker or economic group. |
-| `Sectors` | Sector analysis. Energy is the first deep sector. |
-| `Companies & Assets` | CVM registry, economic groups, sectoral asset links, and mapping hub. |
-| `Data Health & Sources` | Centralized source coverage and refresh audit where available. |
-| `Exports & Verification` | Inventory of real export paths, source evidence and pre-export checks. |
+Top-level sections are `Indicator Library` and `Energy`. Energy retains all
+five specialist subviews. Companies & Assets now belongs to Companies at
+`/empresas/assets`; distribution source health and its full snapshot/refresh
+audit belongs to Settings at `/settings/indicator-sources`.
 
 Compatibility:
 
-- Missing `section` defaults to `Indicator Library`.
-- Legacy `section=overview` resolves to `Indicator Library`.
-- Legacy `section=discover` resolves to `Companies & Assets`.
-- Legacy `section=favorites` resolves to `Indicator Library`.
-- Missing `sub` inside `Sectors` defaults to `Distribution`.
-- Legacy `sub=overview` resolves to `Distribution`.
-- `section=exports` opens the export/verification inventory.
-- Existing Energy deep links with `section=energy&sub=...` remain valid.
+- Missing `section`, `overview`, `favorites`, and the old `exports` section open
+  Indicator Library, where compact inline export/source-check help is available.
+- `section=entities` and legacy `section=discover` redirect to `/empresas/assets`.
+- `section=health` redirects to `/settings/indicator-sources`.
+- Redirects preserve all query parameters other than the old `section` selector.
+- Missing `sub` or legacy `sub=overview` inside Energy defaults to Distribution.
+- Existing `section=energy&sub=...` links remain valid.
+
+The Utilities sector's Macro / Country matrix remains available. It preserves
+cross-country comparison, year selection and source disagreement evidence;
+equivalence with IndicatorExplorer has not been established. A contextual link
+opens Energy's Matrix & Trends catalog.
 
 ## Energy Sector
 
@@ -59,9 +58,9 @@ belong in their specialist workflows, not in the default library.
 Current library rows include:
 
 - Catalog-backed country energy/electricity records from the backend
-  `kpi_catalog`, opened through `Sectors -> Matrix & Trends`.
+  `kpi_catalog`, opened through `Energy -> Matrix & Trends`.
 - Catalog-backed SIN power-system records from the backend `kpi_catalog`,
-  opened through `Sectors -> Power System`.
+  opened through `Energy -> Power System`.
 - Static fallback definitions for those same country and SIN namespaces when
   the local catalog is unavailable, clearly marked as definition-only until
   cached series are available.
@@ -71,7 +70,7 @@ portfolio metrics, Fuel product/state/region metrics, individual subsystem
 observations, or any other row that requires a selector before data can render.
 Those records belong in their dedicated detail pages. For example, Distribution
 metrics such as billed energy, DEC, FEC, losses, injected energy and
-delinquency remain inside `Sectors -> Distribution`.
+delinquency remain inside `Energy -> Distribution`.
 
 UI pattern:
 
@@ -175,7 +174,7 @@ UI should state that the metadata is unavailable instead of inventing it.
 
 `components/indicators/SectorCompanyPanel.tsx`
 
-This view connects CVM company identity with sectoral assets where data is
+At `/empresas/assets`, this view connects CVM company identity with sectoral assets where data is
 available. It currently exposes:
 
 - Portfolio Overview as the default company/asset workflow.
@@ -201,7 +200,7 @@ Current limitations:
 
 ## Data Health & Sources
 
-Centralized health currently covers ANEEL distribution through
+At `/settings/indicator-sources`, centralized health currently covers ANEEL distribution through
 `get_distribution_health`.
 
 Other source health is still shown inside specialist views:
@@ -215,9 +214,10 @@ health is centralized until the bridge and data model support it.
 
 ## Exports & Verification
 
-`CountryKpisPage.tsx` exposes an `Exports & Verification` section as a
-module inventory and checklist. It does not generate a new centralized
-export manifest in this phase.
+`CountryKpisPage.tsx` provides compact inline export/source-check help, linking
+to real specialist export actions and source health. There is no dedicated
+export inventory page or centralized export manifest. The unused inventory
+configuration was removed; real export components and bridge methods remain.
 
 Direct export paths currently visible from Indicators:
 

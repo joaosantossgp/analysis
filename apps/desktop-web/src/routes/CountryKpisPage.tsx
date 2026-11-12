@@ -1,17 +1,5 @@
-/**
- * Indicators module at /indicators.
- *
- * Analyst module with:
- *   - Sectors                → Energy as the first deep sector
- *   - Companies & Assets     → CVM registry, sectoral assets, mapping hub
- *   - Indicator Library      → catalog/search surface for KPIs
- *   - Data Health & Sources  → local source coverage and refresh audit
- *   - Exports & Verification → real export paths and pre-export checks
- *
- * URL shape: ?section=<section>&sub=<sub>
- */
 import { lazy, Suspense, useEffect, useState, useTransition } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, Navigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
 import { StateBanner } from "@/components/feedback/StateBanner";
@@ -47,7 +35,7 @@ const FuelDistributionExplorer = lazy(() =>
 );
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-type TopSection = "energy" | "entities" | "library" | "health" | "exports";
+type TopSection = "energy" | "entities" | "library" | "health";
 type EnergySub = "distribution" | "generation" | "fuel" | "sin" | "matrix";
 
 type TopNavItem = {
@@ -57,23 +45,6 @@ type TopNavItem = {
   marker: string;
 };
 
-type ExportWorkflowStatus = "available" | "source-review" | "in-workflow";
-
-type ExportVerificationWorkflow = {
-  id: string;
-  title: string;
-  domain: string;
-  status: ExportWorkflowStatus;
-  exportScope: string;
-  whereToRun: string;
-  verificationSignals: string[];
-  currentLimit: string;
-  actionLabel: string;
-  targetSection: TopSection;
-  targetSub?: EnergySub;
-};
-
-// ── Nav config ────────────────────────────────────────────────────────────────
 export const TOP_NAV: TopNavItem[] = [
   {
     id: "library",
@@ -83,28 +54,11 @@ export const TOP_NAV: TopNavItem[] = [
   },
   {
     id: "energy",
-    label: "Sectors",
+    label: "Energy",
     description: "Energy is the first deep sector",
     marker: "02",
   },
-  {
-    id: "entities",
-    label: "Companies & Assets",
-    description: "CVM registry and sector links",
-    marker: "03",
-  },
-  {
-    id: "health",
-    label: "Data Health & Sources",
-    description: "Coverage, snapshots, refresh logs",
-    marker: "04",
-  },
-  {
-    id: "exports",
-    label: "Exports & Verification",
-    description: "Download paths and audit checks",
-    marker: "05",
-  },
+
 ];
 
 export const ENERGY_SUB_NAV: Array<{ id: EnergySub; label: string }> = [
@@ -138,119 +92,8 @@ const HEALTH_SCOPE_ITEMS = [
   },
 ];
 
-export const EXPORT_VERIFICATION_WORKFLOWS: ExportVerificationWorkflow[] = [
-  {
-    id: "distribution-excel",
-    title: "Distribution Excel report",
-    domain: "ANEEL Distribution",
-    status: "available",
-    exportScope: "Selected distributor or economic group.",
-    whereToRun: "Energy -> Distribution detail panel.",
-    verificationSignals: [
-      "Distribution health counts",
-      "Ingest snapshots",
-      "Refresh logs, rejected rows and unresolved identities",
-    ],
-    currentLimit: "The export still runs inside the Distribution view after an entity is selected.",
-    actionLabel: "Open Distribution",
-    targetSection: "energy",
-    targetSub: "distribution",
-  },
-  {
-    id: "country-kpi-excel",
-    title: "Country energy KPI Excel",
-    domain: "Country Matrix & Trends",
-    status: "available",
-    exportScope: "Country-level energy KPI catalog and cached series.",
-    whereToRun: "Indicator Library or Energy -> Matrix & Trends detail panel.",
-    verificationSignals: [
-      "Source label and primary source",
-      "Coverage range",
-      "Last refresh, data quality and audit notes",
-    ],
-    currentLimit: "SIN indicators do not use this Excel export path.",
-    actionLabel: "Open Indicator Library",
-    targetSection: "library",
-  },
-  {
-    id: "generation-source-review",
-    title: "Generation asset source review",
-    domain: "CCEE Generation",
-    status: "source-review",
-    exportScope: "Plant-parcel catalog and selected asset detail are reviewable in-app.",
-    whereToRun: "Energy -> Generation.",
-    verificationSignals: [
-      "Source status",
-      "Manual import metadata",
-      "Plant detail and owner mapping",
-    ],
-    currentLimit: "No centralized generation export is exposed in Indicators yet.",
-    actionLabel: "Open Generation",
-    targetSection: "energy",
-    targetSub: "generation",
-  },
-  {
-    id: "sin-source-review",
-    title: "SIN subsystem source review",
-    domain: "ONS / CCEE Power System",
-    status: "source-review",
-    exportScope: "Subsystem dashboard, cached observations and source status.",
-    whereToRun: "Energy -> Power System.",
-    verificationSignals: [
-      "Source status cards",
-      "Local records count",
-      "Snapshot timestamp and refresh error text",
-    ],
-    currentLimit: "No Excel export is currently shown for SIN indicators.",
-    actionLabel: "Open Power System",
-    targetSection: "energy",
-    targetSub: "sin",
-  },
-  {
-    id: "fuel-detail-review",
-    title: "Fuel mart detail review",
-    domain: "ANP Fuel",
-    status: "source-review",
-    exportScope: "Product/year summaries, state/month trends and bounded detail rows.",
-    whereToRun: "Energy -> Fuel.",
-    verificationSignals: [
-      "Source dataset id",
-      "Product, state, year and unit filters",
-      "Source row counts",
-    ],
-    currentLimit: "No centralized fuel export is exposed in Indicators yet.",
-    actionLabel: "Open Fuel",
-    targetSection: "energy",
-    targetSub: "fuel",
-  },
-  {
-    id: "mapping-review-notes",
-    title: "Mapping review notes",
-    domain: "Companies & Assets",
-    status: "in-workflow",
-    exportScope: "Latest asset-to-company manual mapping note is visible in Mapping Review.",
-    whereToRun: "Companies & Assets -> Mapping Review.",
-    verificationSignals: [
-      "Manual override status",
-      "Custom owner or CVM company target",
-      "Review note stored on the mapping row",
-    ],
-    currentLimit: "There is no separate mapping history export table yet.",
-    actionLabel: "Open Companies & Assets",
-    targetSection: "entities",
-  },
-];
-
-// ── Main Page ─────────────────────────────────────────────────────────────────
-export function CountryKpisPage() {
+function useIndicatorBridgeReady() {
   const [bridgeReady, setBridgeReady] = useState(false);
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [, startTransition] = useTransition();
-
-  const section = parseSection(searchParams.get("section"));
-  const energySub = parseEnergySub(searchParams.get("sub"));
-  const energyOpen = section === "energy";
-
   useEffect(() => {
     let cancelled = false;
     whenBridgeReady().then(() => {
@@ -260,6 +103,40 @@ export function CountryKpisPage() {
       cancelled = true;
     };
   }, []);
+  return bridgeReady;
+}
+
+export function CompaniesAssetsPage() {
+  const bridgeReady = useIndicatorBridgeReady();
+  return <Suspense fallback={<StateBanner variant="loading" title="Loading companies and assets..." />}>
+    <SectorCompanyPanel bridgeReady={bridgeReady} />
+  </Suspense>;
+}
+
+export function IndicatorSourcesPage() {
+  const bridgeReady = useIndicatorBridgeReady();
+  return <DistributionHealthPanel bridgeReady={bridgeReady} />;
+}
+
+export function indicatorSectionRedirect(searchParams: URLSearchParams): string | null {
+  const section = parseSection(searchParams.get("section"));
+  const destination = section === "entities" ? "/empresas/assets" : section === "health" ? "/settings/indicator-sources" : null;
+  if (!destination) return null;
+  const params = new URLSearchParams(searchParams);
+  params.delete("section");
+  return destination + (params.size ? `?${params}` : "");
+}
+
+export function CountryKpisPage() {
+  const bridgeReady = useIndicatorBridgeReady();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [, startTransition] = useTransition();
+
+  const section = parseSection(searchParams.get("section"));
+  const energySub = parseEnergySub(searchParams.get("sub"));
+  const energyOpen = section === "energy";
+
+
 
   const setSection = (next: TopSection) => {
     startTransition(() => {
@@ -283,6 +160,9 @@ export function CountryKpisPage() {
       setSearchParams(params);
     });
   };
+
+  const redirect = indicatorSectionRedirect(searchParams);
+  if (redirect) return <Navigate replace to={redirect} />;
 
   return (
     <div className="flex min-h-0 gap-0 rounded-lg border border-zinc-800 bg-zinc-900/60 shadow-lg overflow-hidden">
@@ -369,11 +249,8 @@ export function CountryKpisPage() {
 
       {/* ── Main content ────────────────────────────────────────────────── */}
       <div className="flex-1 min-w-0 p-5 overflow-auto">
+        <ExportHelp />
         <Suspense fallback={<StateBanner variant="loading" title="Loading view…" />}>
-          {section === "entities" && (
-            <SectorCompanyPanel bridgeReady={bridgeReady} />
-          )}
-
           {section === "energy" && energySub === "distribution" && (
             <DistributorExplorer bridgeReady={bridgeReady} />
           )}
@@ -401,16 +278,6 @@ export function CountryKpisPage() {
             />
           )}
 
-          {section === "health" && (
-            <DistributionHealthPanel bridgeReady={bridgeReady} />
-          )}
-
-          {section === "exports" && (
-            <ExportVerificationPanel
-              onOpenSection={setSection}
-              onOpenEnergySub={setEnergySub}
-            />
-          )}
         </Suspense>
       </div>
     </div>
@@ -434,191 +301,20 @@ function SINPanelWrapper({ bridgeReady }: { bridgeReady: boolean }) {
 }
 
 // ── Exports & Verification ──────────────────────────────────────────────────
-function ExportVerificationPanel({
-  onOpenSection,
-  onOpenEnergySub,
-}: {
-  onOpenSection: (section: TopSection) => void;
-  onOpenEnergySub: (sub: EnergySub) => void;
-}) {
-  const openWorkflow = (workflow: ExportVerificationWorkflow) => {
-    if (workflow.targetSub) {
-      onOpenEnergySub(workflow.targetSub);
-      return;
-    }
-    onOpenSection(workflow.targetSection);
-  };
-
-  const availableExports = EXPORT_VERIFICATION_WORKFLOWS.filter(
-    (workflow) => workflow.status === "available",
-  ).length;
-
-  return (
-    <div className="space-y-5">
-      <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-zinc-100 mb-1">
-            Exports & Verification
-          </h2>
-          <p className="max-w-3xl text-sm text-zinc-400">
-            Review what can be downloaded today, where each export is generated,
-            and which source signals should be checked before using the data in a model.
-          </p>
-        </div>
-        <div className="rounded-md border border-zinc-800 bg-zinc-950/60 px-3 py-2 text-[11px] text-zinc-500">
-          <div className="font-mono text-zinc-400">
-            {availableExports} direct export paths
-          </div>
-          <div>No unified export manifest is generated in this phase.</div>
-        </div>
-      </div>
-
-      <section className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_340px]">
-        <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-4">
-          <h3 className="text-sm font-semibold text-zinc-200">
-            Pre-export verification checklist
-          </h3>
-          <div className="mt-3 grid gap-2 md:grid-cols-2">
-            {[
-              "Confirm source and primary dataset.",
-              "Check latest refresh or snapshot timestamp.",
-              "Review missing, rejected or unresolved rows where available.",
-              "Confirm units, frequency, geography and selected filters.",
-              "Verify company-to-asset mappings before portfolio exports.",
-              "Record limitations when the export is still handled inside a specialist view.",
-            ].map((item, index) => (
-              <div
-                key={item}
-                className="flex gap-2 rounded border border-zinc-800 bg-zinc-950/70 px-3 py-2"
-              >
-                <span className="mt-0.5 font-mono text-[10px] text-zinc-600">
-                  {(index + 1).toString().padStart(2, "0")}
-                </span>
-                <span className="text-xs leading-snug text-zinc-400">{item}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4">
-          <h3 className="text-sm font-semibold text-amber-300">
-            Current boundary
-          </h3>
-          <p className="mt-2 text-xs leading-relaxed text-zinc-400">
-            Phase 4 does not create new datasets or a synthetic export manifest.
-            It organizes existing export actions and points to the source evidence
-            already available in the app.
-          </p>
-          <button
-            type="button"
-            onClick={() => onOpenSection("health")}
-            className="mt-3 rounded border border-amber-500/30 px-2 py-1 text-[11px] font-semibold text-amber-300 hover:border-amber-400"
-          >
-            Open source health
-          </button>
-        </div>
-      </section>
-
-      <section>
-        <div className="mb-2 flex items-center justify-between gap-3">
-          <h3 className="text-sm font-semibold text-zinc-300">
-            Export and review paths
-          </h3>
-          <span className="text-[11px] text-zinc-600">
-            Direct downloads stay inside the source panels that already own them.
-          </span>
-        </div>
-        <div className="grid gap-3 xl:grid-cols-2">
-          {EXPORT_VERIFICATION_WORKFLOWS.map((workflow) => (
-            <div
-              key={workflow.id}
-              className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-4"
-            >
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0">
-                  <div className="text-sm font-semibold text-zinc-200">
-                    {workflow.title}
-                  </div>
-                  <div className="mt-0.5 font-mono text-[10.5px] text-zinc-600">
-                    {workflow.domain}
-                  </div>
-                </div>
-                <ExportWorkflowStatusBadge status={workflow.status} />
-              </div>
-
-              <div className="mt-3 grid gap-2 lg:grid-cols-2">
-                <ExportMeta label="Export scope" value={workflow.exportScope} />
-                <ExportMeta label="Where to run" value={workflow.whereToRun} />
-              </div>
-
-              <div className="mt-3">
-                <div className="text-[10px] uppercase tracking-wider text-zinc-600">
-                  Verification signals
-                </div>
-                <div className="mt-1 flex flex-wrap gap-1">
-                  {workflow.verificationSignals.map((signal) => (
-                    <span
-                      key={signal}
-                      className="rounded border border-zinc-800 bg-zinc-900/50 px-1.5 py-0.5 text-[10px] text-zinc-400"
-                    >
-                      {signal}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              <div className="mt-3 rounded border border-zinc-800 bg-zinc-950/70 px-3 py-2 text-[11px] leading-snug text-zinc-500">
-                {workflow.currentLimit}
-              </div>
-
-              <button
-                type="button"
-                onClick={() => openWorkflow(workflow)}
-                className="mt-3 rounded border border-zinc-700 px-2 py-1 text-[11px] font-semibold text-zinc-300 hover:border-amber-500/60 hover:text-amber-300"
-              >
-                {workflow.actionLabel}
-              </button>
-            </div>
-          ))}
-        </div>
-      </section>
-    </div>
-  );
+function ExportHelp() {
+  return <details className="mb-3 text-xs text-zinc-400">
+    <summary className="cursor-pointer">Exports & source checks</summary>
+    <p className="mt-2">
+      Export Excel from a selected <Link className="text-id-link" to="/indicators?section=energy&sub=distribution">distributor or group</Link>,
+      or a supported country KPI in <Link className="text-id-link" to="/indicators?section=energy&sub=matrix">Matrix & Trends</Link>.
+      Check source, refresh date, units, filters and missing data before exporting.
+      Review <Link className="text-id-link" to="/settings/indicator-sources">distribution source health</Link> and
+      <Link className="text-id-link" to="/empresas/assets"> asset mappings</Link> where relevant.
+      Generation, Power System and Fuel retain source checks in their own views; they do not offer a centralized Excel export.
+    </p>
+  </details>;
 }
 
-function ExportMeta({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded border border-zinc-800 bg-zinc-950/70 px-3 py-2">
-      <div className="text-[10px] uppercase tracking-wider text-zinc-600">
-        {label}
-      </div>
-      <div className="mt-1 text-xs leading-snug text-zinc-300">{value}</div>
-    </div>
-  );
-}
-
-function ExportWorkflowStatusBadge({ status }: { status: ExportWorkflowStatus }) {
-  const label =
-    status === "available"
-      ? "Export available"
-      : status === "source-review"
-        ? "Review only"
-        : "In workflow";
-  const classes =
-    status === "available"
-      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-      : status === "source-review"
-        ? "border-amber-500/30 bg-amber-500/10 text-amber-400"
-        : "border-sky-500/30 bg-sky-500/10 text-sky-400";
-
-  return (
-    <span className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-semibold ${classes}`}>
-      {label}
-    </span>
-  );
-}
-
-// ── Distribution Health Panel ─────────────────────────────────────────────────
 function DistributionHealthPanel({ bridgeReady }: { bridgeReady: boolean }) {
   const healthQuery = useQuery({
     queryKey: ["distribution-health"],
@@ -944,8 +640,7 @@ export function parseSection(raw: string | null): TopSection {
     raw === "energy" ||
     raw === "entities" ||
     raw === "library" ||
-    raw === "health" ||
-    raw === "exports"
+    raw === "health"
   )
     return raw;
   if (raw === "overview") return "library";

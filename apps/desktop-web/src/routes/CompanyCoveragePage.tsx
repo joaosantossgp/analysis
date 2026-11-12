@@ -128,7 +128,7 @@ export function CompanyCoveragePage() {
     return (
       <div className="px-4 py-6 font-mono text-xs text-[var(--color-text-secondary)] space-y-2">
         <p>No Stock Coverage Universes are set up yet.</p>
-        <p>Please navigate to the <Link to="/coverage" className="text-[var(--color-id-ticker)] hover:underline">Coverage Module</Link> first to configure a universe.</p>
+        <p>Please navigate to the <Link to="/empresas/coverage" className="text-[var(--color-id-ticker)] hover:underline">Companies Coverage</Link> first to configure a universe.</p>
       </div>
     );
   }

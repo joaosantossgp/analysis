@@ -330,7 +330,7 @@ export function PriorityQueueCard({
               {!isCompact && (
                 <div className="pt-2 text-center border-t border-zinc-900/60 font-mono text-2xs shrink-0">
                   <Link
-                    to="/coverage/prioritization"
+                    to="/empresas/coverage/prioritization"
                     className="text-cyan-400 hover:text-cyan-300 hover:underline"
                   >
                     Go to full prioritization dashboard →

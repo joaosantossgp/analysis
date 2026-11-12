@@ -75,19 +75,19 @@ export function CoveragePage({ section }: Props) {
   });
 
   useEffect(() => {
-    if (!currentUniverseId && section !== "universes") {
-      navigate("/coverage", { replace: true });
+    if (universesQuery.isSuccess && !currentUniverseId && section !== "universes") {
+      navigate("/empresas/coverage", { replace: true });
     }
-  }, [currentUniverseId, section, navigate]);
+  }, [universesQuery.isSuccess, currentUniverseId, section, navigate]);
 
   useEffect(() => {
     // If activeUniverseId was set but is not found in filtered list (e.g. deleted/archived), clear it
-    if (activeUniverseId && !activeUniverse) {
+    if (universesQuery.isSuccess && activeUniverseId && !activeUniverse) {
       setActiveUniverseId("");
       localStorage.removeItem("active_coverage_universe_id");
       window.dispatchEvent(new Event("storage"));
     }
-  }, [activeUniverse, activeUniverseId]);
+  }, [universesQuery.isSuccess, activeUniverse, activeUniverseId]);
 
   const handleSelectUniverse = (id: string) => {
     setActiveUniverseId(id);

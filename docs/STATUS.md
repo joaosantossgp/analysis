@@ -80,12 +80,13 @@ run since 2026-05 failed. Both remain available through manual dispatch.
   before pagination, with missing-last values and deterministic CVM ties.
   Existing callers without an explicit order retain their defaults. See
   [validation](governance/2026-11-12-company-directory-sorting.md).
-- #487 has a reviewed UI candidate for primary navigation and the optional Home
-  preset. Browser checks cover keyboard navigation, laptop widths and saved v4
-  layouts. Integrated desktop/Excel/offline acceptance remains pending; see
-  [candidate evidence](governance/2026-11-12-company-focus-ui.md).
-  External #483-485 and follow-up optimizations have merged; their evidence
-  remains artifact-specific. #486 stays open until final acceptance.
+- #487 / PR #499 now implement the approved #500 simplification: Home retained,
+  News UI retired without deleting saved data, Coverage and asset mapping inside
+  Companies, and source health inside Settings. Sectors/Indicators retain unique
+  analytical tools. Frontend and browser evidence is recorded in the
+  [candidate record](governance/2026-11-12-company-focus-ui.md).
+  Exact integrated desktop/Excel/offline acceptance remains pending; #487 and
+  #486 stay open. External #483-485 evidence remains artifact-specific.
 - Next for #464: resolve #466, record the architecture decision and create
   scoped implementation sub-issues. No shell or storage migration is approved.
 

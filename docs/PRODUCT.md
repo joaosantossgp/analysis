@@ -44,15 +44,27 @@ Practical rules:
 
 ## Primary navigation and Home
 
-Home, Companies, Sectors and Indicators are primary workspaces. Settings remains
-visible as a utility; Coverage and News remain accessible through More, direct
-routes and the command palette. This is a hierarchy change, not removal of those
-workflows or their data.
+Home, Companies, Sectors and Indicators are primary workspaces; Settings remains
+visible as a utility. Companies owns Directory, Coverage and Assets & Mapping.
+Coverage retains universes, prioritization, work queue and capacity planning;
+old `/coverage/*` links redirect without losing query parameters.
+
+News is retired from navigation, commands, routes and Settings controls. Old
+routes and saved News widgets explain retirement without querying news. Stored
+news, backend services and widget configuration remain intact; removing a saved
+widget requires an explicit user action.
 
 An empty Home offers Open Companies. The explicitly chosen recommended layout
-contains Watchlist and Market Price; Database Monitor, Priority Queue and News
-remain optional widgets. Existing v4 layouts and configurations are preserved.
+contains Watchlist and Market Price; Database Monitor and Priority Queue remain
+optional. Existing v4 custom and empty layouts/configurations are preserved.
 The compact status/job summary and source/error/offline states remain visible.
+
+Sectors keeps GICS analytical comparison and the distinct Macro / Country matrix.
+CVM is an alternate classification control; sector names replace the redundant
+Actions column. Indicators exposes Library and Energy, retaining all five energy
+views. Entity mapping lives in Companies and the full source-health panel in
+Settings; legacy section links redirect. Export help points to actual contextual
+exports and audit checks instead of maintaining a separate inventory page.
 
 ## Brand Personality
 

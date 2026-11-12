@@ -75,7 +75,7 @@ const HANDOFFS: Record<SupportedCoverageWorkQueueType, HandoffDefinition> = {
     actionLabel: "Assign owner",
     completionSignal:
       "An owner analyst is recorded for the company, or the save action returns an explicit rationale/failure state.",
-    destination: () => "/coverage/prioritization",
+    destination: () => "/empresas/coverage/prioritization",
   },
   incomplete_checklist: {
     analystQuestion: "Which required coverage deliverable is still incomplete?",
@@ -127,6 +127,10 @@ export function resolveCoverageWorkQueueHandoff(
 ): CoverageWorkQueueHandoff {
   const taskType = normalizeTaskType(task.task_type);
   const definition = getHandoffDefinition(taskType);
+  if (["news_gap", "news_mapping_unavailable", "news_db_unavailable"].includes(taskType)) {
+    return unsupportedHandoff("News has been retired from the interface. Existing queue evidence and downloaded data are preserved.", definition ?? undefined);
+  }
+
 
   if (!definition) {
     return unsupportedHandoff(

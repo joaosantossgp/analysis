@@ -605,7 +605,7 @@ export function HomePage() {
             </span>
           </Link>
           <div className="h-3 w-px bg-zinc-900" />
-          <Link to="/coverage/prioritization" className="flex items-center gap-1 hover:text-zinc-200 transition-colors">
+          <Link to="/empresas/coverage/prioritization" className="flex items-center gap-1 hover:text-zinc-200 transition-colors">
             <span className="text-zinc-500">GAPS:</span>
             <span className="text-zinc-200 font-bold">{health ? health.missing_cells : "—"}</span>
           </Link>
@@ -721,8 +721,8 @@ export function HomePage() {
                 Tracks local CVM database updates, status checks, and data health percentages.
               </div>
               <div className="bg-zinc-950/45 p-2 rounded border border-zinc-850/40">
-                <span className="font-semibold text-zinc-300 block mb-0.5">News</span>
-                Shows locally stored news. Source updates remain explicit.
+                <span className="font-semibold text-zinc-300 block mb-0.5">Market Price</span>
+                Shows cached price history for a selected company.
               </div>
               <div className="bg-zinc-950/45 p-2 rounded border border-zinc-850/40">
                 <span className="font-semibold text-zinc-300 block mb-0.5">Priority Queue</span>

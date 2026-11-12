@@ -12,26 +12,19 @@ const render = (node: React.ReactNode, path = "/") => renderToStaticMarkup(
     createElement(MemoryRouter, { initialEntries: [path] }, node)));
 
 describe("company-focused shell", () => {
-  it("keeps primary modules and Settings visible, with Coverage/News under More", () => {
+  it("keeps Home and analytical modules but retires standalone News/Coverage", () => {
     const html = render(createElement(ModuleNav));
-    const secondary = html.match(/<details[\s\S]*?<\/details>/)?.[0];
-    expect(secondary).toContain("More");
-    expect(secondary).toContain('href="/coverage"');
-    expect(secondary).toContain('href="/news"');
-    const primary = html.replace(secondary!, "");
-    for (const route of ["/", "/empresas", "/setores", "/indicators", "/settings"]) {
-      expect(primary).toContain(`href="${route}"`);
-    }
+    for (const route of ["/", "/empresas", "/setores", "/indicators", "/settings"]) expect(html).toContain(`href="${route}"`);
+    expect(html).not.toContain('href="/news"');
+    expect(html).not.toContain('href="/coverage"');
+    expect(html).not.toContain("<details");
   });
-  it("keeps the secondary workspace identifiable on deep links", () => {
-    expect(render(createElement(ModuleNav), "/coverage/work-queue")).toMatch(/<summary[^>]*>[\s\S]*?Coverage[\s\S]*?<\/summary>/);
-  });
-  it("adds Coverage to the palette without removing existing routes", async () => {
+  it("opens Coverage inside Companies and removes News palette commands", async () => {
     const navigate = vi.fn();
     const commands = buildNavigationCommands(navigate);
     await commands.find(command => command.id === "nav:coverage")?.run();
-    expect(navigate).toHaveBeenCalledWith("/coverage");
-    expect(commands.some(command => command.id === "nav:news")).toBe(true);
+    expect(navigate).toHaveBeenCalledWith("/empresas/coverage");
+    expect(commands.some(command => command.id.startsWith("nav:news"))).toBe(false);
   });
   it("recommends only the two analysis widgets", () => {
     expect(RECOMMENDED_LAYOUT.map(item => item.id)).toEqual(["watchlist", "market-price"]);

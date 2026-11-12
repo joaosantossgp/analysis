@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { HashRouter, Navigate, Route, Routes, useNavigate } from "react-router-dom";
+import { HashRouter, Navigate, Route, Routes, useNavigate, useLocation } from "react-router-dom";
 
 import { useCommandPalette } from "./components/command/useCommandPalette";
 import { StateBanner } from "./components/feedback/StateBanner";
@@ -56,9 +56,9 @@ const CoveragePage = lazy(() =>
 const CompanyCoveragePage = lazy(() =>
   import("./routes/CompanyCoveragePage").then((m) => ({ default: m.CompanyCoveragePage })),
 );
-const NewsPage = lazy(() =>
-  import("./routes/NewsPage").then((m) => ({ default: m.NewsPage })),
-);
+const RetiredNewsPage = lazy(() => import("./routes/RetiredNewsPage").then(m => ({default: m.RetiredNewsPage})));
+const CompaniesAssetsPage = lazy(() => import("./routes/CountryKpisPage").then(m => ({default: m.CompaniesAssetsPage})));
+const IndicatorSourcesPage = lazy(() => import("./routes/CountryKpisPage").then(m => ({default: m.IndicatorSourcesPage})));
 const CommandBar = lazy(() =>
   import("./components/command/CommandBar").then((m) => ({ default: m.CommandBar })),
 );
@@ -107,6 +107,8 @@ function AppShellWithPalette() {
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/empresas" element={<CompaniesPage />} />
+            <Route path="/empresas/assets" element={<CompaniesAssetsPage />} />
+            <Route path="/settings/indicator-sources" element={<IndicatorSourcesPage />} />
             <Route path="/settings" element={<SettingsModule section="overview" />} />
             <Route path="/settings/health" element={<SettingsModule section="health" />} />
             <Route path="/settings/storage" element={<SettingsModule section="storage" />} />
@@ -144,12 +146,12 @@ function AppShellWithPalette() {
               path="/empresas/:cdCvm/coverage"
               element={<CompanyCoveragePage />}
             />
-            <Route path="/coverage" element={<CoveragePage section="universes" />} />
-            <Route path="/coverage/prioritization" element={<CoveragePage section="prioritization" />} />
-            <Route path="/coverage/work-queue" element={<CoveragePage section="work-queue" />} />
-            <Route path="/coverage/capacity" element={<CoveragePage section="capacity" />} />
-            <Route path="/news" element={<NewsPage />} />
-            <Route path="/news/latest" element={<NewsPage />} />
+            <Route path="/empresas/coverage" element={<CoveragePage section="universes" />} />
+            <Route path="/empresas/coverage/prioritization" element={<CoveragePage section="prioritization" />} />
+            <Route path="/empresas/coverage/work-queue" element={<CoveragePage section="work-queue" />} />
+            <Route path="/empresas/coverage/capacity" element={<CoveragePage section="capacity" />} />
+            <Route path="/coverage/*" element={<CoverageRedirect />} />
+            <Route path="/news/*" element={<RetiredNewsPage />} />
             <Route path="/indicators" element={<CountryKpisPage />} />
             {/* Backwards-compat: old bookmarks/deep links to the macro module. */}
             <Route path="/country-kpis" element={<Navigate to="/indicators" replace />} />
@@ -182,4 +184,9 @@ function DevDesignSystemShortcut() {
   });
 
   return null;
+}
+
+function CoverageRedirect() {
+  const location = useLocation();
+  return <Navigate replace to={{ pathname: `/empresas${location.pathname}`, search: location.search, hash: location.hash }} />;
 }

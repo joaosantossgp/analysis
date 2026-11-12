@@ -1,40 +1,48 @@
 # Company-focused UI candidate
 
-Date: 2026-11-12. Issue #487, parent #486. Base commit:
-`4de7fe4581d0622d45323e58a476d4e14c45ba3b` (includes #452 and external deliveries).
+Date: 2026-11-12. Issue #487, parent #486, owner decisions #500.
+Base: `4de7fe4581d0622d45323e58a476d4e14c45ba3b`.
 
-## Changes
+## Approved revision
 
-- Home, Companies, Sectors and Indicators are primary. Settings is always visible.
-- Coverage and News live under a native More disclosure, with their active module
-  named on deep links. Pointer selection, Enter/Tab, Escape/focus return, focus
-  leaving the disclosure and outside pointer dismissal are supported.
-- Coverage gains a command-palette entry; existing commands and routes remain.
-- Empty Home offers Open Companies. The existing explicit recommended action
-  adds only Watchlist and Market Price. No automatic preset or storage migration.
-- Database Monitor, News and Priority Queue stay registered/configurable. The
-  compact status/job summary, data-source distinctions and failure states remain.
+- Home remains customizable; empty and saved v4 layouts/configurations survive.
+  Optional recommended layout contains Watchlist and Market Price.
+- News leaves navigation, palette, routes, widget picker and Settings controls.
+  Old routes explain retirement. Saved `top-news` widgets remain registered as
+  non-loading retirement placeholders with an explicit remove action. Queue
+  evidence remains visible but retired News handoffs are disabled.
+- Companies owns Coverage at `/empresas/coverage/*`, plus Assets & Mapping at
+  `/empresas/assets`. Old Coverage bookmarks retain query/hash parameters.
+  Company-specific Coverage and all universe/queue/capacity/export services remain.
+- Coverage waits for bridge readiness and a successful catalog before clearing
+  an invalid selection. Loading, errors and unavailable bridge preserve selection.
+- Sectors keeps GICS/CVM distinctions, year-based analysis and Macro / Country
+  (not equivalent to the indicator explorer). CVM moves to an alternate selector;
+  names replace redundant Actions links; technical/tutorial copy is removed.
+- Indicators keeps Library plus all five Energy views. The actual entity panel
+  moves to Companies and the full health/audit panel to Settings. Legacy section
+  links redirect; compact export help links actual actions. Favorites remain.
 
 ## Validation
 
-- Five focused RED assertions exposed missing behavior; six focused tests pass.
-- Frontend suite: 135 passed. Typecheck and production build passed. Existing
-  empty vendor chunk warning remains. No dependency/lockfile changes.
-- Headless Edge against the actual Vite browser preview: Enter/Tab opens and
-  reaches Coverage; Escape closes and restores summary focus; selecting Coverage
-  closes the disclosure and identifies the active route; Open Companies works.
-- Explicit preset and reload preserve the two selected widgets. Saved v4 News
-  and Priority Queue layouts/configs survive reload. Explicitly empty layouts
-  remain empty. Native disclosure and Home screenshots inspected at 1280x800
-  and 1024x768; primary navigation and Settings fit both widths.
-- Browser preview is explicitly labeled browser fallback; no fake bridge or
-  source observations were injected. Local-only raw evidence is retained in
-  `tmp/487-validation/` in the issue worktree.
+- Regression tests first failed for navigation, retirement and selected-universe
+  loss. Focused tests now cover saved layouts, retired widgets without queries,
+  queue handoffs, sector links, indicator compatibility and catalog loading/error/
+  successful resolution, plus shared catalog bridge readiness. All 147 frontend
+  tests, typecheck and production build pass. Existing empty vendor chunk warning remains.
+- Headless Edge against real Vite browser fallback checks old Coverage/News links,
+  query preservation, saved News widget configuration, selected-universe survival,
+  new asset/health destinations, Energy navigation, CVM selector, empty Home and
+  optional preset. Navigation fits 1280x800 and 1024x768.
+- Independent Ponytail review found no blocking code findings. Backend data,
+  schemas, downloads, financial logic and settings storage were not changed.
+- Local raw browser evidence: `tmp/487-validation/revised-browser.json` and PNGs.
+  Browser fallback does not validate populated database results or real exports.
 
 ## Pending acceptance
 
-Real desktop and packaged company/history/Excel/offline acceptance has not run.
-The preceding isolated desktop launch attempt was rejected by automatic
-permission review with only `blocked by policy`. Browser checks do not replace
-that gate. Keep this PR and issues #487/#486 open until exact-candidate acceptance
-is recorded. No release, ingestion, repair, schema or user-data change is implied.
+Real desktop and exact packaged company/history/Excel/offline acceptance has not
+run. The preceding isolated desktop launch was rejected by automatic permission
+review with only `blocked by policy`. This revision does not bypass that denial.
+Keep PR #499 and #487/#486 open until exact-candidate acceptance is recorded.
+No release, ingestion, repair or user-data migration is implied.
