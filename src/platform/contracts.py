@@ -522,6 +522,8 @@ class StatementMatrix:
     years: tuple[int, ...]
     table: TabularData
     exclude_conflicts: bool = True
+    qa_events: tuple[dict[str, Any], ...] = ()
+    quality_evidence: str = "legacy_unknown"
 
     def to_dataframe(self) -> pd.DataFrame:
         return self.table.to_dataframe()

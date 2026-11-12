@@ -391,6 +391,13 @@ export type StatementMatrix = {
   years: number[];
   table: TabularData;
   exclude_conflicts: boolean;
+  quality_evidence?: "available" | "partial" | "legacy_unknown";
+  qa_events?: Array<{
+    type?: string; cd_conta?: string; period?: string; year?: number;
+    description?: string; unit?: string; missing_inputs?: string[];
+    diff?: number; action?: string;
+    source_inputs?: Array<{ SOURCE_FILE?: string; VERSAO?: string; DT_INI_EXERC?: string; DT_FIM_EXERC?: string; RAW_VL_CONTA?: string }>;
+  }>;
   error?: string;
 };
 
@@ -1579,6 +1586,7 @@ export interface BridgeApi {
     params: Record<string, unknown>,
   ): Promise<CompanyFinancialReadiness>;
   get_company_years(params: Record<string, unknown>): Promise<CompanyYearsResult>;
+  get_company_statement_years(params: Record<string, unknown>): Promise<CompanyYearsResult>;
   get_company_kpis(params: Record<string, unknown>): Promise<KPIBundle>;
   get_company_historical_indicators(
     params: Record<string, unknown>,

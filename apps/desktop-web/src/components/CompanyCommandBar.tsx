@@ -752,6 +752,7 @@ export function companyDataInvalidationKeys(cdCvm: number): QueryKey[] {
   return [
     ["company-info", cdCvm],
     ["company-years", cdCvm],
+    ["company-statement-years", cdCvm],
     ["company-kpis"],
     ["company-statement"],
     ["companies"],

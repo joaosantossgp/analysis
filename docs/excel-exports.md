@@ -36,7 +36,37 @@ Hidden/audit sheets:
 - `metadata`;
 - `mapping_audit`.
 
+When imported financial evidence exists, `source_observations` and
+`value_lineage` are additional hidden audit sheets. `financial_qa` is visible
+when events exist, including missing inputs and excluded ambiguous accounts.
+The source sheet preserves both accumulated and standalone durations, original
+value text, filing version, currency/scale and source identity. The lineage
+sheet distinguishes reported, calculated and unavailable cells. Ingestion
+workbooks from `CVMScraper.generate_excel` also include these audit sheets.
+
 Single-statement scoped exports contain the relevant raw sheet plus metadata.
+They also include available source/lineage and QA evidence. Metadata marks
+legacy source evidence as unavailable rather than implying a clean QA result.
+
+Export year discovery includes local source and QA evidence even when no
+complete financial period exists. Named scopes retain their selected annual
+window and include newer partial evidence; with no complete periods, they use
+the last N evidence years. Full history includes all evidence years. The scope
+label identifies added partial years; coverage/readiness is unchanged.
+
+When a complete-period scope exists, the full company's analytical raw sheets,
+KPIs and `Model` retain that scope. Additional partial years appear in the
+QA/source/lineage audit, without expanding the model's required input years.
+Metadata lists analytical years and evidence years separately. Legacy partial
+periods without source evidence remain unknown; discovery does not fabricate
+source records. Single-statement exports can include the partial raw periods.
+
+When no complete-period scope exists, or its required analytical inputs are
+unresolved, an export with partial evidence contains a visible `README` headed
+**Financial evidence only**, available raw statements and audit sheets. It omits
+`Model` and explains the unresolved input. Invalid mapping definitions still
+block export. Adding later partial evidence never removes an already usable
+historical `Model`.
 
 ## Required Standards
 
@@ -70,6 +100,13 @@ Financial statement exports must distinguish:
 - unavailable source lines from actual zero values;
 - CVM-reported values from CVMAnalytics-calculated KPIs/checks;
 - official CVM statement values from external market or news data.
+
+DRE `3.99` per-share values remain BRL/share for REAL filings and display decimal
+precision on raw sheets. They are not scaled as BRL thousands or derived by
+subtracting accumulated EPS. Unavailable analytical values remain blank; the
+QA and source audit sheets explain the exclusion. These raw analytical sheets
+contain selected/derived periods; `source_observations` contains the published
+observations before period selection.
 
 The current model period scope supports selected export scopes such as recent
 history and full history through the bridge/API layer. The workbook README and

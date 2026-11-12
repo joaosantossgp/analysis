@@ -58,15 +58,32 @@ quarterly).
 
 - DRE and DFC keep quarterly and annual columns (`1Q`, `2Q`, `3Q`, `4Q`,
   `YYYY`).
-- DFC is not cumulative: YTD -> standalone conversion happens internally.
+- Preserve published observations before selecting a period: company, account
+  code and description, filing version, report type, start/end dates, source
+  file, original value text, currency and scale. YTD and reported standalone
+  observations with the same end date are separate inputs.
+- Prefer an unambiguous reported standalone duration. Otherwise, additive
+  monetary flows use compatible cumulative observations:
   - `Q1 = YTD_1Q`
   - `Q2 = YTD_2Q - YTD_1Q`
   - `Q3 = YTD_3Q - YTD_2Q`
   - `Q4 = ANNUAL - YTD_3Q`
   - `YYYY = ANNUAL`
-- Missing quarter: leave `NaN` and record it in QA; never invent values.
-- `4Q` depends on the annual `YYYY` being present; an isolated quarter does not
-  produce a reliable `4Q`.
+- A missing predecessor cell or column leaves the derived quarter unavailable,
+  with account/period/input QA. Do not replace it with zero or subtract Q2 to
+  approximate Q4. Derived Q4 requires annual and Q3 YTD; an explicit reported
+  October-December observation can be selected directly.
+- DRE `3.99` and descendants are per-share amounts in BRL/share for REAL
+  filings, regardless of the file-level monetary scale. Select only published
+  applicable durations; never subtract or reconcile their annual/quarterly
+  values as additive flows.
+- Reused codes with different normalized descriptions, report perimeters or
+  units in the imported history are ambiguous. Keep the source observations,
+  exclude their analytical series, and record QA. Different codes are never
+  matched by similar descriptions. Distinct versions for the same duration
+  are retained and cannot be selected arbitrarily.
+- Annual reconciliation runs only for complete additive inputs. An import
+  succeeding or a package being present is not financial QA acceptance.
 
 ### QA and acceptance criteria
 
@@ -111,7 +128,13 @@ implementation.
 **4. Persistence**
 
 - `src/financials/database.py` writes long-form rows to `financial_reports` and
-  QA events to `qa_logs`
+  QA events to `qa_logs`. Source observations are retained by content identity
+  in `financial_source_observations`; `financial_value_lineage` links each
+  analytical cell to its unit, status, formula and source observation IDs.
+- Statement rows, lineage and QA are replaced transactionally only for the
+  imported statement-years. Other years and immutable source observations
+  survive retries and partial-history imports. QA retains complete input,
+  account, year, period, unit, missing-input and reconciliation context.
 - company metadata is updated in `companies`
 - refresh status is persisted in `company_refresh_status`
 - Excel export is available in `output/reports/`
@@ -147,6 +170,27 @@ implementation.
 - Quarterly values persisted in `financial_reports` have already gone through
   scraper normalization; DFC/DRE YTD values are converted to standalone before
   reads, UI, Model Mapping, and Excel consume them.
+- Unavailable cells are stored as null with `QA_CONFLICT=true`, so they cannot
+  satisfy complete-period coverage or enter default analytical queries. A
+  reported numeric zero remains readable. Missing D&A propagates to EBITDA
+  ratios; partial D&A component sums are unavailable.
+- Statement matrix responses expose `qa_events` and `quality_evidence`
+  (`available`, `partial`, `legacy_unknown`). Available evidence does not mean
+  QA passed. Existing databases remain readable without a hidden reimport or
+  read-time schema repair; an explicit company/year refresh captures the new
+  source evidence. Legacy QA with an unknown year remains visible.
+- Statement-year discovery uses local financial rows, source observations and
+  dated QA, including ITR-only or entirely excluded periods. It is separate
+  from annual KPI years and complete-period readiness. Desktop
+  `get_company_statement_years` and HTTP `/companies/{cd_cvm}/statement-years`
+  share the same read service; the statement screen uses this evidence list.
+- Export scope can include partial evidence years within the selected window
+  (or every evidence year for full history), explicitly labeled as partial.
+  Analytical statements, KPIs and `Model` keep the existing complete-period
+  scope; QA/source/lineage audit includes the additional evidence years. If no
+  complete scope exists, or its required model inputs are unresolved, a partial
+  export is an evidence-only workbook with a visible explanation and no `Model`.
+  Invalid mappings still block export. Neither path changes coverage/readiness.
 
 ---
 

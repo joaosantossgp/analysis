@@ -4,7 +4,7 @@ Short, current snapshot of where the project stands. Update this file whenever
 the version, release state, active work, or a major decision changes. Keep it
 under one screen; link to canonical docs instead of repeating them.
 
-Last updated: 2026-11-06
+Last updated: 2026-11-11
 
 ## Version and releases
 
@@ -27,6 +27,10 @@ run since 2026-05 failed. Both remain available through manual dispatch.
 
 ## Active work
 
+- #483 implements conservative financial period QA, source/lineage persistence
+  and visible read/export evidence. Existing user data requires an explicit
+  scoped refresh; no bulk repair or release is implied. See
+  [financial contracts](CONTEXT.md#dre-and-dfc-rules). #484 follows this fix.
 - Initial multi-window and local-storage desk research is published under #465;
   see `docs/research/2026-11-04-multi-window-workbench.md` and
   `docs/research/local-multi-window-storage.md`. Goal #464 remains open.

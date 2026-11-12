@@ -431,6 +431,9 @@ class ReadServiceQueryMixin:
     def get_available_years(self, cd_cvm: int) -> list[int]:
         return self.query_layer.get_available_years(cd_cvm)
 
+    def get_statement_years(self, cd_cvm: int, stmt_type: str | None = None) -> list[int]:
+        return self.query_layer.get_statement_evidence_years(cd_cvm, stmt_type)
+
     def get_available_statements(self, cd_cvm: int) -> list[str]:
         return self.query_layer.get_available_statements(cd_cvm)
 
@@ -1754,12 +1757,19 @@ class ReadServiceQueryMixin:
             stmt_type=stmt_type,
             exclude_conflicts=exclude_conflicts,
         )
+        provenance = self.query_layer.get_statement_provenance(cd_cvm, years, stmt_type)
+        evidence_years = {cell['year'] for cell in provenance['value_lineage']}
+        quality_evidence = 'legacy_unknown'
+        if evidence_years:
+            quality_evidence = 'available' if set(years).issubset(evidence_years) else 'partial'
         return StatementMatrix(
             cd_cvm=int(cd_cvm),
             statement_type=str(stmt_type),
             years=tuple(int(year) for year in years),
             table=TabularData.from_dataframe(df),
             exclude_conflicts=bool(exclude_conflicts),
+            qa_events=tuple(self.query_layer.get_financial_qa(cd_cvm, years, stmt_type)),
+            quality_evidence=quality_evidence,
         )
 
     def get_statement_dataframe(

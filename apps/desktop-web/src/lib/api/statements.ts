@@ -1,5 +1,6 @@
 import { callBridge, getBridgeMode } from "../bridge/adapter";
 import type { StatementMatrix } from "../bridge/types";
+import type { CompanyYearsResultUI } from "./companyDetail";
 
 const BROWSER_REASON =
   "Running in browser mode — pywebview bridge is unavailable. Launch with python -m desktop.app --vite or the packaged exe.";
@@ -16,6 +17,15 @@ export type StatementType = (typeof STATEMENT_OPTIONS)[number]["value"];
 export type CompanyStatementResult =
   | { mode: "desktop"; matrix: StatementMatrix }
   | { mode: "browser"; matrix: null; reason: string };
+
+export async function fetchCompanyStatementYears(cdCvm: number, statementType: StatementType): Promise<CompanyYearsResultUI> {
+  if (getBridgeMode() === "browser") {
+    return { mode: "browser", years: [], reason: BROWSER_REASON };
+  }
+  const result = await callBridge("get_company_statement_years", { cd_cvm: cdCvm, stmt: statementType });
+  if (result.error) throw new Error(result.error);
+  return { mode: "desktop", years: result.years ?? [] };
+}
 
 export function normalizeStatementType(value: string | null | undefined): StatementType {
   const upper = String(value ?? "").toUpperCase();

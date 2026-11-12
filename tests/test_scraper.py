@@ -368,7 +368,9 @@ class TestComputeStandaloneQuarters:
         df = self._df(**{'1Q24': 100.0, '3Q24': 420.0, '2024': 600.0})
         result = scraper._compute_standalone_quarters(df, 2024, 'DFC')
         df_out, errors = result[0], result[1]
-        assert errors == []
+        assert pd.isna(df_out['3Q24'].iloc[0])
+        assert errors[0]['type'] == 'MISSING_PREDECESSOR'
+        assert errors[0]['missing_inputs'] == ['2Q24']
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -686,6 +688,8 @@ class TestProcessAllReports:
             'DT_REFER': [pd.Timestamp(period)],
             'VL_CONTA': [vl_conta],
             'COMPANY_TYPE': ['comercial'],
+            'MOEDA': ['REAL'],
+            'ESCALA_MOEDA': ['MIL'],
         })
 
     def _make_bpa_conflict(self):
@@ -699,6 +703,8 @@ class TestProcessAllReports:
             'DT_REFER': [pd.Timestamp('2024-12-31'), pd.Timestamp('2024-12-31')],
             'VL_CONTA': [100.0, 999.0],
             'COMPANY_TYPE': ['comercial', 'comercial'],
+            'MOEDA': ['REAL', 'REAL'],
+            'ESCALA_MOEDA': ['MIL', 'MIL'],
         })
 
     def test_returns_errors_from_coalesce(self, scraper):
@@ -708,7 +714,7 @@ class TestProcessAllReports:
 
         assert 'BPA' in reports
         assert len(qa_errors) > 0
-        assert any(e['type'] == 'REAL_CONFLICT' for e in qa_errors)
+        assert any(e['type'] == 'ACCOUNT_IDENTITY_AMBIGUOUS' for e in qa_errors)
 
     def test_errors_reset_between_calls(self, scraper):
         # First call with a conflict

@@ -35,7 +35,7 @@ MAX_EXCEL_LOCK_RETRIES = 10
 COMPANY_LIST_TIMEOUT = 30
 DOWNLOAD_TIMEOUT = 60
 
-# DFC validation tolerance (BRL Milhoes)
+# Additive statement reconciliation tolerance in normalized monetary units.
 DFC_VALIDATION_TOLERANCE = 0.01
 
 COMPANY_DB_MAX_RETRIES = 3
@@ -59,6 +59,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import lru_cache
 import io
+import json
 import argparse
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -71,6 +72,7 @@ from src.financials.utils import (
 )
 from src.financials.standardizer import AccountStandardizer
 from src.financials.database import CVMDatabase
+from src.financials.periodization import build_statement, is_per_share
 from src.platform.settings import AppSettings, get_settings
 
 if TYPE_CHECKING:
@@ -86,6 +88,7 @@ if parent_dir not in sys.path:
 _CSV_USECOLS = frozenset([
     "CD_CVM", "CD_CONTA", "DS_CONTA", "VL_CONTA", "DT_REFER",
     "DT_INI_EXERC", "DT_FIM_EXERC", "ORDEM_EXERC", "ESCALA_MOEDA",
+    "VERSAO", "MOEDA", "GRUPO_DFP", "CNPJ_CIA", "ST_CONTA_FIXA",
 ])
 
 
@@ -344,11 +347,15 @@ class CVMScraper:
 
     def normalize_units(self, df):
         """Converts values to Thousands (R$ mil) based on ESCALA_MOEDA."""
+        if 'VL_CONTA' in df.columns:
+            if 'RAW_VL_CONTA' not in df.columns:
+                df['RAW_VL_CONTA'] = df['VL_CONTA'].astype(str)
+            df['VL_CONTA'] = _pd().to_numeric(df['VL_CONTA'], errors='coerce').astype(float)
         if 'ESCALA_MOEDA' not in df.columns or 'VL_CONTA' not in df.columns:
             return df
-        mask_unidade = df['ESCALA_MOEDA'].str.upper() == 'UNIDADE'
-        mask_milhao = df['ESCALA_MOEDA'].str.upper().isin(['MILHÃO', 'MILHAO', 'MILLION'])
-        # Objetivo: R$ mil. UNIDADE / 1000 = MIL. MILHAO * 1000 = MIL.
+        per_share = df.get('CD_CONTA', _pd().Series('', index=df.index)).map(lambda code: is_per_share('DRE', code))
+        mask_unidade = (df['ESCALA_MOEDA'].str.upper() == 'UNIDADE') & ~per_share
+        mask_milhao = df['ESCALA_MOEDA'].str.upper().isin(['MILHÃO', 'MILHAO', 'MILLION']) & ~per_share
         df.loc[mask_unidade, 'VL_CONTA'] = df.loc[mask_unidade, 'VL_CONTA'] / 1000
         df.loc[mask_milhao, 'VL_CONTA'] = df.loc[mask_milhao, 'VL_CONTA'] * 1000
         return df
@@ -362,7 +369,8 @@ class CVMScraper:
                     filepath,
                     separator=";",
                     encoding="latin1",
-                    schema_overrides={"CD_CVM": pl.Int64},
+                    schema_overrides={"CD_CVM": pl.Int64, "CD_CONTA": pl.String,
+                                      "VL_CONTA": pl.String, "VERSAO": pl.String},
                     infer_schema_length=1000,
                 )
                 wanted = [c for c in df.columns if c in _CSV_USECOLS]
@@ -373,7 +381,7 @@ class CVMScraper:
                     filepath,
                     sep=";",
                     encoding="latin1",
-                    dtype={"CD_CVM": "Int64"},
+                    dtype={"CD_CVM": "Int64", "CD_CONTA": str, "VL_CONTA": str, "VERSAO": str},
                     usecols=lambda column: column in _CSV_USECOLS,
                 )
                 if pl is not None:
@@ -424,6 +432,8 @@ class CVMScraper:
                             df_company = self.normalize_units(df_company)
                             df_company['PERIOD_TYPE'] = doc_type.upper()
                             df_company['STMT_TYPE_INTERNAL'] = stmt_type
+                            df_company['REPORT_TYPE'] = self.report_type
+                            df_company['SOURCE_FILE'] = filename
                             # Preserve COMPANY_TYPE for dashboard
                             setor = str(self.setores_map.get(str(cvm_code), '')).lower()
                             df_company['COMPANY_TYPE'] = 'financeira' if any(k in setor for k in ['banc', 'financ']) else 'comercial'
@@ -437,57 +447,17 @@ class CVMScraper:
         return _pd().concat(all_data, ignore_index=True) if all_data else None
 
     def calculate_quarters(self, df, report_type):
-        if df.empty: return _pd().DataFrame()
-        df = df.copy()
-        for col in ['DT_REFER', 'DT_INI_EXERC', 'DT_FIM_EXERC']:
-            if col in df.columns: df[col] = _pd().to_datetime(df[col], errors='coerce')
-
-        labels = _pd().Series(None, index=df.index, dtype=object)
-        if report_type in ['BPA', 'BPP']:
-            dt = df['DT_REFER'] if 'DT_REFER' in df.columns else _pd().Series(_pd().NaT, index=df.index)
-            year_int = dt.dt.year.fillna(0).astype(int)
-            yy = (year_int % 100).astype(str).str.zfill(2)
-            m = dt.dt.month
-            labels = labels.mask(m == 3, '1Q' + yy)
-            labels = labels.mask(m == 6, '2Q' + yy)
-            labels = labels.mask(m == 9, '3Q' + yy)
-            labels = labels.mask(m == 12, year_int.astype(str))
-        else:
-            ini = df['DT_INI_EXERC'] if 'DT_INI_EXERC' in df.columns else _pd().Series(_pd().NaT, index=df.index)
-            fim = df['DT_FIM_EXERC'] if 'DT_FIM_EXERC' in df.columns else _pd().Series(_pd().NaT, index=df.index)
-            fim_year_int = fim.dt.year.fillna(0).astype(int)
-            yy = (fim_year_int % 100).astype(str).str.zfill(2)
-            ini_m, ini_d, fim_m = ini.dt.month, ini.dt.day, fim.dt.month
-            cond_jan1 = (ini_m == 1) & (ini_d == 1)
-            labels = labels.mask(cond_jan1 & (fim_m == 3), '1Q' + yy)
-            labels = labels.mask(cond_jan1 & (fim_m == 6), '2Q' + yy)
-            labels = labels.mask(cond_jan1 & (fim_m == 9), '3Q' + yy)
-            labels = labels.mask(cond_jan1 & (fim_m == 12), fim_year_int.astype(str))
-            labels = labels.mask((ini_m == 4) & (fim_m == 6), '2Q' + yy)
-            labels = labels.mask((ini_m == 7) & (fim_m == 9), '3Q' + yy)
-            labels = labels.mask((ini_m == 10) & (fim_m == 12), '4Q' + yy)
-        df['PERIOD_LABEL'] = labels
-        df = df[df['PERIOD_LABEL'].notna()]
-        if df.empty: return _pd().DataFrame()
-
-        index_cols = ['LINE_ID_BASE', 'CD_CONTA', 'DS_CONTA']
-        df_wide = df.pivot_table(index=index_cols, columns='PERIOD_LABEL', values='VL_CONTA', aggfunc='first').reset_index()
-        
-        for col in ['DS_CONTA_norm', 'COMPANY_TYPE']:
-            if col in df.columns:
-                df_wide[col] = df_wide['LINE_ID_BASE'].map(df.groupby('LINE_ID_BASE')[col].first())
-
-        df_wide['QA_CONFLICT'] = False
-        df_wide, _, errors = self.coalesce_duplicate_line_ids(df_wide, report_type)
-        if not hasattr(self, '_coalesce_errors'): self._coalesce_errors = []
+        if df.empty:
+            return _pd().DataFrame()
+        result, errors = build_statement(df, report_type, DFC_VALIDATION_TOLERANCE)
+        if not hasattr(self, '_coalesce_errors'):
+            self._coalesce_errors = []
         self._coalesce_errors.extend(errors)
-
-        if report_type in ['DFC', 'DRE']:
-            df_wide, conv_errors = self.convert_dfc_ytd_to_standalone(df_wide, report_type)
-            self._coalesce_errors.extend(conv_errors)
-
-        period_cols = sorted([c for c in df_wide.columns if c not in index_cols+['DS_CONTA_norm', 'QA_CONFLICT']], key=self._period_sort_key)
-        return df_wide[index_cols + ['DS_CONTA_norm', 'QA_CONFLICT'] + period_cols]
+        metadata = ['LINE_ID_BASE', 'CD_CONTA', 'DS_CONTA', 'DS_CONTA_norm', 'QA_CONFLICT']
+        if result.empty:
+            return result
+        periods = sorted([c for c in result.columns if c not in metadata], key=self._period_sort_key)
+        return result[metadata + periods]
 
     def _create_period_label(self, row, report_type):
         if report_type in ['BPA', 'BPP']:
@@ -557,19 +527,30 @@ class CVMScraper:
         if not any([h1, h2, h3, ha]): return df, []
         
         s1 = df[c1].copy() if h1 else _pd().Series(float('nan'), index=df.index)
-        s2 = (df[c2] - df[c1].fillna(0)) if h2 and h1 else (df[c2] if h2 else s1*0)
-        s3 = (df[c3] - df[c2].fillna(0)) if h3 and h2 else (df[c3] if h3 else s1*0)
-        s4 = (df[ca] - df[c3].fillna(0)) if ha and h3 else (df[ca] - df[c2].fillna(0) if ha and h2 else s1*0)
-        
+        missing = _pd().Series(float('nan'), index=df.index)
+        s2 = df[c2] - df[c1] if h2 and h1 else missing.copy()
+        s3 = df[c3] - df[c2] if h3 and h2 else missing.copy()
+        s4 = df[ca] - df[c3] if ha and h3 else missing.copy()
+        for target, predecessor, current_present, previous_present in [
+            (c2, c1, h2, h1), (c3, c2, h3, h2), (c4, c3, ha, h3)
+        ]:
+            current = ca if target == c4 else target
+            if current_present:
+                absent = df[current].notna() & (df[predecessor].isna() if previous_present else True)
+                for idx in df.index[absent]:
+                    errors.append({'type': 'MISSING_PREDECESSOR', 'statement': stmt, 'year': year,
+                                   'period': target, 'line_id_base': df.loc[idx, 'LINE_ID_BASE'],
+                                   'cd_conta': df.loc[idx, 'CD_CONTA'], 'missing_inputs': [predecessor],
+                                   'action': 'Review the missing cumulative predecessor in the original filing.'})
         if h1: df[c1] = s1
         if h2: df[c2] = s2
         if h3: df[c3] = s3
-        if ha and s4.notna().any(): df[c4] = s4
+        if ha: df[c4] = s4
         return df, errors, s1, s2, s3, s4, (df[ca] if ha else s1*0)
 
     def _validate_quarterly_sum(self, df, year, s1, s2, s3, s4, ann, stmt):
         ers = []
-        diff = ((s1.fillna(0) + s2.fillna(0) + s3.fillna(0) + s4.fillna(0)) - ann).abs()
+        diff = ((s1 + s2 + s3 + s4) - ann).abs()
         for idx in df.index:
             if not _pd().isna(ann.loc[idx]) and diff.loc[idx] > DFC_VALIDATION_TOLERANCE:
                 ers.append({'type': 'DFC_VALIDATION_FAILED', 'statement': stmt, 'year': year, 'diff': float(diff.loc[idx])})
@@ -581,6 +562,7 @@ class CVMScraper:
             res = self._compute_standalone_quarters(df, y, stmt)
             if len(res) > 2:
                 df, errs, s1, s2, s3, s4, ann = res
+                qa.extend(errs)
                 qa.extend(self._validate_quarterly_sum(df, y, s1, s2, s3, s4, ann, stmt))
         return df, qa
 
@@ -616,6 +598,9 @@ class CVMScraper:
                 final[s] = self.standardizer.enrich(df, s, tipo, (self.report_type=="consolidated"))
         else: final = reports
         
+        for statement, report in final.items():
+            report.attrs.update(reports[statement].attrs)
+
         from src.companies.identity import CompanyIdentityResolver
         identity = CompanyIdentityResolver().resolve(int(cvm))
         ticker_b3 = None
@@ -641,7 +626,25 @@ class CVMScraper:
                     for s, df in final.items():
                         df.to_excel(writer, sheet_name=s, startrow=2, index=False)
                         ws = writer.sheets[s]
-                        ws['A1'] = f"Type: {self.report_type}"; ws['A2'] = "Values in BRL Thousands"
+                        ws['A1'] = f"Type: {self.report_type}"
+                        ws['A2'] = "Values in BRL thousands; DRE 3.99 per-share accounts in BRL/share. Review financial_qa."
+                        if s == 'DRE' and 'CD_CONTA' in df.columns:
+                            for row_index, code in enumerate(df['CD_CONTA'], start=4):
+                                if is_per_share(s, code):
+                                    for cell in ws[row_index]:
+                                        if isinstance(cell.value, (int, float)):
+                                            cell.number_format = '#,##0.00####;(#,##0.00####);-'
+                    if qas:
+                        audit = []
+                        for event in qas:
+                            item = {key: value for key, value in event.items() if key != 'source_inputs'}
+                            item['source_ids'] = json.dumps([source.get('observation_id') for source in event.get('source_inputs', [])])
+                            audit.append(item)
+                        _pd().DataFrame(audit).to_excel(writer, sheet_name='financial_qa', index=False)
+                    for key in ('source_observations', 'value_lineage'):
+                        evidence = [record for df in final.values() for record in df.attrs.get(key, [])]
+                        if evidence:
+                            _pd().DataFrame(evidence).to_excel(writer, sheet_name=key, index=False)
                 break
             except PermissionError:
                 if attempt >= self.max_excel_lock_retries:

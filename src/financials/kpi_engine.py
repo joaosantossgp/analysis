@@ -99,7 +99,7 @@ def compute_all_kpis(
     # ── Derivar EBITDA ────────────────────────────────────────────────────────
     ebit = col("EBIT")
     if da_series is not None and not da_series.empty:
-        da = da_series.reindex(acc.index).fillna(0)
+        da = da_series.reindex(acc.index)
         ebitda = ebit + da
     else:
         ebitda = pd.Series(np.nan, index=acc.index)

@@ -2,7 +2,8 @@ import os
 import re
 import time
 import logging
-from datetime import datetime
+import json
+from datetime import datetime, timezone
 import pandas as pd
 from sqlalchemy import create_engine, inspect, text, Engine
 from sqlalchemy.exc import OperationalError
@@ -72,6 +73,37 @@ def init_db_tables(engine: Engine) -> None:
                 "ACTION" TEXT
             )
         """))
+        inspector = inspect(conn, raiseerr=False)
+        if inspector is not None:
+            columns = {column['name'] for column in inspector.get_columns('qa_logs')}
+            for name, datatype in {'REPORT_YEAR': 'INTEGER', 'DETAILS_JSON': 'TEXT'}.items():
+                if name not in columns:
+                    conn.execute(text(f'ALTER TABLE qa_logs ADD COLUMN "{name}" {datatype}'))
+        conn.execute(text('''
+            CREATE TABLE IF NOT EXISTS financial_source_observations (
+                observation_id TEXT PRIMARY KEY,
+                cd_cvm INTEGER NOT NULL,
+                statement_type TEXT NOT NULL,
+                report_year INTEGER,
+                payload_json TEXT NOT NULL,
+                imported_at TEXT NOT NULL
+            )
+        '''))
+        conn.execute(text('''
+            CREATE INDEX IF NOT EXISTS idx_financial_sources_company_year
+            ON financial_source_observations(cd_cvm, report_year, statement_type)
+        '''))
+        conn.execute(text('''
+            CREATE TABLE IF NOT EXISTS financial_value_lineage (
+                cd_cvm INTEGER NOT NULL,
+                statement_type TEXT NOT NULL,
+                report_year INTEGER NOT NULL,
+                period_label TEXT NOT NULL,
+                line_id_base TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                PRIMARY KEY(cd_cvm, statement_type, period_label, line_id_base)
+            )
+        '''))
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS companies (
                 cd_cvm          INTEGER PRIMARY KEY,
@@ -411,6 +443,15 @@ class CVMDatabase:
         safe_chunksize = SQLITE_SAFE_MAX_VARIABLES // column_count
         return max(1, min(DEFAULT_TO_SQL_CHUNKSIZE, safe_chunksize))
 
+    @staticmethod
+    def _qa_year(period):
+        label = str(period or '')
+        if re.fullmatch(r'\d{4}', label):
+            return int(label)
+        if re.fullmatch(r'[1-4]Q\d{2}', label):
+            return 2000 + int(label[2:])
+        return None
+
     def insert_company_data(self, company_name: str, cvm_code: int, company_type: str,
                             processed_reports: dict, qa_logs: list,
                             setor_cvm: str | None = None,
@@ -418,8 +459,8 @@ class CVMDatabase:
                             cnpj: str | None = None):
         """
         Melts wide dataframes into long format and inserts them into the database.
-        Deletes existing data for this company to allow idempotency.
-        Também atualiza a tabela companies com metadados (setor, ticker).
+        Replace only imported statement-years, preserving source observations.
+        Financial rows, lineage and QA are committed in one transaction.
         """
         with self._engine.begin() as conn:
             # 0. Persistir metadados na tabela companies
@@ -439,48 +480,53 @@ class CVMDatabase:
                     exc,
                 )
 
-            # 1. Clean existing records for this company (Idempotency — scoped to years being inserted)
-            years_to_delete: set[int] = set()
-            _meta = {'LINE_ID_BASE', 'CD_CONTA', 'DS_CONTA', 'DS_CONTA_norm', 'QA_CONFLICT', 'STANDARD_NAME'}
-            for df_wide in processed_reports.values():
-                if df_wide is None or df_wide.empty:
+            # Scope replacements to explicitly imported statement-years.
+            scopes = set()
+            for statement, frame in processed_reports.items():
+                if frame is None:
                     continue
-                for col in df_wide.columns:
-                    col_str = str(col)
-                    if col_str in _meta:
-                        continue
-                    if col_str.isdigit() and len(col_str) == 4:
-                        years_to_delete.add(int(col_str))
-                    else:
-                        m = re.search(r'\dQ(\d{2})', col_str)
-                        if m:
-                            years_to_delete.add(2000 + int(m.group(1)))
-
-            if years_to_delete:
-                placeholders = ', '.join(str(y) for y in sorted(years_to_delete))
-                conn.execute(
-                    text(
-                        f'DELETE FROM financial_reports '
-                        f'WHERE "CD_CVM" = :cvm '
-                        f'AND ("REPORT_YEAR" IN ({placeholders}) OR "REPORT_YEAR" IS NULL)'
-                    ),
-                    {"cvm": int(cvm_code)},
-                )
-            else:
-                conn.execute(
-                    text('DELETE FROM financial_reports WHERE "CD_CVM" = :cvm'),
-                    {"cvm": int(cvm_code)},
-                )
-            conn.execute(
-                text('DELETE FROM qa_logs WHERE "CD_CVM" = :cvm'),
-                {"cvm": int(cvm_code)},
-            )
+                for col in frame.columns:
+                    label = str(col)
+                    if re.fullmatch(r"\d{4}", label):
+                        scopes.add((statement, int(label)))
+                    elif re.fullmatch(r"[1-4]Q\d{2}", label):
+                        scopes.add((statement, 2000 + int(label[2:])))
+            for statement, year in scopes:
+                params = {"cvm": int(cvm_code), "stmt": statement, "year": year}
+                for table in ("financial_reports", "qa_logs"):
+                    conn.execute(text(f'DELETE FROM {table} WHERE "CD_CVM" = :cvm '
+                                      'AND "STATEMENT_TYPE" = :stmt AND "REPORT_YEAR" = :year'), params)
+                conn.execute(text('DELETE FROM financial_value_lineage WHERE cd_cvm = :cvm '
+                                  'AND statement_type = :stmt AND report_year = :year'), params)
+            imported_at = datetime.now(timezone.utc).isoformat()
+            for statement, frame in processed_reports.items():
+                if frame is None:
+                    continue
+                for observation in frame.attrs.get('source_observations', []):
+                    end = observation.get('DT_FIM_EXERC') or observation.get('DT_REFER') or ''
+                    year = int(str(end)[:4]) if str(end)[:4].isdigit() else None
+                    conn.execute(text('''
+                        INSERT INTO financial_source_observations
+                        (observation_id, cd_cvm, statement_type, report_year, payload_json, imported_at)
+                        VALUES (:id, :cvm, :stmt, :year, :payload, :imported)
+                        ON CONFLICT (observation_id) DO NOTHING
+                    '''), dict(id=observation['observation_id'], cvm=int(cvm_code), stmt=statement,
+                              year=year, payload=json.dumps(observation, ensure_ascii=False, default=str, allow_nan=False), imported=imported_at))
+                for cell in frame.attrs.get('value_lineage', []):
+                    conn.execute(text('''
+                        INSERT INTO financial_value_lineage
+                        (cd_cvm, statement_type, report_year, period_label, line_id_base, payload_json)
+                        VALUES (:cvm, :stmt, :year, :period, :line, :payload)
+                    '''), dict(cvm=int(cvm_code), stmt=statement, year=cell['year'], period=cell['period'],
+                              line=cell['line_id_base'], payload=json.dumps(cell, ensure_ascii=False)))
 
             # 2. Insert QA Logs
             if qa_logs:
                 df_qa = pd.DataFrame(qa_logs)
                 df_qa['COMPANY_NAME'] = company_name
                 df_qa['CD_CVM'] = int(cvm_code)
+                df_qa['REPORT_YEAR'] = [event.get('year') or self._qa_year(event.get('period')) for event in qa_logs]
+                df_qa['DETAILS_JSON'] = [json.dumps(event, ensure_ascii=False, default=str, allow_nan=False) for event in qa_logs]
 
                 col_map = {
                     'type': 'ERROR_TYPE',
@@ -497,7 +543,7 @@ class CVMDatabase:
                     df_qa = df_qa.rename(columns=db_cols)
                     db_schema_cols = [
                         'COMPANY_NAME', 'CD_CVM', 'ERROR_TYPE', 'STATEMENT_TYPE',
-                        'PERIOD', 'LINE_ID_BASE', 'CD_CONTA', 'DESCRIPTION', 'ACTION',
+                        'PERIOD', 'LINE_ID_BASE', 'CD_CONTA', 'DESCRIPTION', 'ACTION', 'REPORT_YEAR', 'DETAILS_JSON',
                     ]
                     df_to_insert = df_qa[[c for c in db_schema_cols if c in df_qa.columns]]
                     self._to_sql_with_retry('qa_logs', df_to_insert, conn)
@@ -534,7 +580,8 @@ class CVMDatabase:
                     var_name='PERIOD_LABEL',
                     value_name='VL_CONTA',
                 )
-                df_long = df_long.dropna(subset=['VL_CONTA'])
+                if not df_wide.attrs.get('value_lineage'):
+                    df_long = df_long.dropna(subset=['VL_CONTA'])
 
                 if df_long.empty:
                     continue
@@ -562,6 +609,11 @@ class CVMDatabase:
                     df_long['STANDARD_NAME'] = None
                 if 'QA_CONFLICT' not in df_long.columns:
                     df_long['QA_CONFLICT'] = False
+
+                cells = {(cell['line_id_base'], cell['period']): cell for cell in df_wide.attrs.get('value_lineage', [])}
+                if cells:
+                    df_long['QA_CONFLICT'] = [cells.get((row.LINE_ID_BASE, row.PERIOD_LABEL), {}).get('status', 'unavailable') not in {'reported', 'calculated'} for row in df_long.itertuples()]
+                    df_long['DS_CONTA'] = [cells.get((row.LINE_ID_BASE, row.PERIOD_LABEL), {}).get('description', row.DS_CONTA) for row in df_long.itertuples()]
 
                 final_cols = [
                     'COMPANY_NAME', 'CD_CVM', 'COMPANY_TYPE', 'STATEMENT_TYPE',

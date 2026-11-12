@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { QueryClient } from "@tanstack/react-query";
 
 import {
   COMPANY_COMMAND_LABELS,
@@ -19,6 +20,17 @@ function getInvalidationKeys(): InvalidationKeys {
 }
 
 describe("Company Command Bar query invalidation", () => {
+  it("refreshes statement evidence discovery after a company import", async () => {
+    const client = new QueryClient();
+    const key = ["company-statement-years", 9512, "DFC"];
+    client.setQueryData(key, { mode: "desktop", years: [] });
+    for (const queryKey of getInvalidationKeys()(9512)) {
+      await client.invalidateQueries({ queryKey });
+    }
+    expect(client.getQueryState(key)?.isInvalidated).toBe(true);
+    client.clear();
+  });
+
   it("invalidates financial readiness after the existing company refresh completes", () => {
     expect(getInvalidationKeys()(9512)).toContainEqual([
       "company-financial-readiness",

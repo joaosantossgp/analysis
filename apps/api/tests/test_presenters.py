@@ -31,6 +31,18 @@ from src.platform.contracts import (
 )
 
 
+def test_statement_presenter_preserves_financial_qa_context():
+    event = {"type": "MISSING_PREDECESSOR", "statement": "DFC", "cd_conta": "6.01",
+             "year": 2024, "period": "3Q24", "unit": "BRL thousands",
+             "missing_inputs": ["2Q24"], "action": "Review the original filing."}
+    dto = StatementMatrix(cd_cvm=4170, statement_type="DFC", years=(2024,),
+                          table=TabularData(columns=(), rows=()), qa_events=(event,),
+                          quality_evidence="partial")
+    payload = present_statement(dto).model_dump()
+    assert payload['qa_events'] == [event]
+    assert payload['quality_evidence'] == 'partial'
+
+
 def test_presenters_serialize_dtos_without_raw_pandas_objects():
     company_search = _present_company_search(
         [
