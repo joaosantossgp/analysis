@@ -53,6 +53,12 @@ run since 2026-05 failed. Both remain available through manual dispatch.
   [packaged evidence](research/2026-11-12-packaged-local-data-validation.md).
   The owner's 8 GB RAM / 30 GB free disk reference is an efficiency guide, not
   a mandatory hardware or VM gate. No release or crash-durability claim follows.
+- #495 extends the existing bounded source context to ordinary standalone
+  refresh jobs. Three controlled pairs reduced three-year resident memory from
+  2.672 to 1.425 GiB, preserving all financial/QA hashes and 24 workbooks.
+  Three-year throughput and disk footprint were unchanged; exact packaged
+  validation passed. See the
+  [validation evidence](research/2026-11-12-standalone-source-memory-validation.md).
 - Initial multi-window and local-storage desk research is published under #465;
   see `docs/research/2026-11-04-multi-window-workbench.md` and
   `docs/research/local-multi-window-storage.md`. Goal #464 remains open.

@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import replace
 import threading
+from types import SimpleNamespace
 import zipfile
 
 import polars as pl
@@ -81,6 +82,122 @@ def _worker(tmp_path, monkeypatch):
     monkeypatch.setattr(CVMScraper, "_fetch_remote_zip_metadata", lambda *_: {})
     monkeypatch.setattr(CVMScraper, "generate_excel", persist)
     return RefreshJobWorker(settings=settings, repository=repository), counts, scrapers
+
+
+def _observe_persistence(monkeypatch):
+    snapshots = []
+    persist = CVMScraper.generate_excel
+
+    def write(scraper, name, cvm, reports, qas=None):
+        cache = scraper.source_cache
+        frames = [entry[1] for entry in cache._frames.values()] if cache else scraper._csv_cache.values()
+        snapshots.append({
+            "cache": cache,
+            "companies": [set(frame["CD_CVM"].to_list()) for frame in frames],
+            "local_cache": bool(scraper._csv_cache),
+        })
+        return persist(scraper, name, cvm, reports, qas)
+
+    monkeypatch.setattr(CVMScraper, "generate_excel", write)
+    return snapshots
+
+
+def test_standalone_jobs_retain_only_current_company_until_persistence_and_release_immediately(tmp_path, monkeypatch):
+    worker, counts, _ = _worker(tmp_path, monkeypatch)
+    snapshots = _observe_persistence(monkeypatch)
+    for code in (9512, 4170):
+        job = _queue(worker.repository, code)
+        assert worker.run_once()
+        assert _job(worker.repository, job.id)["state"] == "success"
+        snapshot = snapshots[-1]
+        assert snapshot["companies"] == [{code}, {code}]
+        assert not snapshot["local_cache"]
+        assert snapshot["cache"] is not None
+        assert not snapshot["cache"].active
+        assert snapshot["cache"].retained_bytes == 0
+        assert worker._source_cache is None
+        assert not worker._source_job_ids
+        assert not worker.run_once()
+
+    assert snapshots[0]["cache"] is not snapshots[1]["cache"]
+    assert counts == {"parse": 4, "extract": 4}
+    with worker.engine.connect() as conn:
+        actual = conn.execute(text('SELECT "CD_CVM", "VL_CONTA" FROM financial_reports '
+                                   'WHERE "PERIOD_LABEL" = \'2024\' ORDER BY "CD_CVM"')).all()
+    assert actual == [(4170, 200.0), (9512, 100.0)]
+
+
+@pytest.mark.parametrize("boundary", ["source_scope", "years", "attempted"])
+def test_excluded_next_job_remains_unclaimed_while_current_job_uses_a_singleton_context(tmp_path, monkeypatch, boundary):
+    worker, _, _ = _worker(tmp_path, monkeypatch)
+    snapshots = _observe_persistence(monkeypatch)
+    first = _queue(worker.repository, 9512)
+    second = _queue(worker.repository, 4170,
+                    scope="other" if boundary == "source_scope" else "on_demand",
+                    start_year=2023 if boundary == "years" else 2024)
+    if boundary == "attempted":
+        with worker.engine.begin() as conn:
+            conn.execute(text("UPDATE refresh_jobs SET attempt_count = 1 WHERE id = :id"), {"id": second.id})
+    elif boundary == "years":
+        _write_sources(worker.settings, year=2023)
+
+    assert worker.run_once()
+    assert _job(worker.repository, first.id)["state"] == "success"
+    queued = _job(worker.repository, second.id)
+    assert (queued["state"], queued["attempt_count"], queued["started_at"]) == (
+        "queued", int(boundary == "attempted"), None,
+    )
+    assert snapshots[0]["companies"] == [{9512}, {9512}]
+    assert not snapshots[0]["local_cache"]
+    first_cache = snapshots[0]["cache"]
+    assert first_cache is not None and not first_cache.active
+    assert first_cache.retained_bytes == 0
+    assert worker._source_cache is None
+    if boundary != "attempted":
+        assert worker.run_once()
+        assert _job(worker.repository, second.id)["state"] == "success"
+        assert snapshots[1]["cache"] is not first_cache
+        assert all(codes == {4170} for codes in snapshots[1]["companies"])
+        assert not snapshots[1]["local_cache"]
+        assert worker._source_cache is None
+
+
+@pytest.mark.parametrize("boundary", ["retry", "request_force", "environment_force"])
+def test_current_retry_and_forced_jobs_keep_the_existing_source_fallback(tmp_path, monkeypatch, boundary):
+    worker, _, _ = _worker(tmp_path, monkeypatch)
+    snapshots = _observe_persistence(monkeypatch)
+    job = _queue(worker.repository, 9512)
+    downloads = []
+    if boundary == "retry":
+        with worker.engine.begin() as conn:
+            conn.execute(text("UPDATE refresh_jobs SET attempt_count = 1 WHERE id = :id"), {"id": job.id})
+    elif boundary == "request_force":
+        build = worker._build_request
+        monkeypatch.setattr(worker, "_build_request", lambda item: replace(
+            build(item), policy=replace(build(item).policy, force_refresh=True)
+        ))
+    else:
+        monkeypatch.setenv("CVM_FORCE_REFRESH", "1")
+
+        def download(_scraper, url, **_kwargs):
+            downloads.append(url)
+            payload = (worker.settings.paths.input_dir / "raw" / url.rsplit("/", 1)[-1]).read_bytes()
+            return SimpleNamespace(status_code=200, iter_content=lambda **_: [payload])
+
+        monkeypatch.setattr(CVMScraper, "_http_get", download)
+
+    assert worker.run_once()
+    assert _job(worker.repository, job.id)["state"] == "success"
+    assert snapshots[0]["cache"] is None
+    assert snapshots[0]["companies"] == [{9512, 4170, 9999}, {9512, 4170, 9999}]
+    assert snapshots[0]["local_cache"]
+    assert worker._source_cache is None
+    if boundary == "environment_force":
+        assert len(downloads) == 2
+    with worker.engine.connect() as conn:
+        actual = conn.execute(text('SELECT "CD_CVM", "VL_CONTA" FROM financial_reports '
+                                   'WHERE "PERIOD_LABEL" = \'2024\'')).all()
+    assert actual == [(9512, 100.0)]
 
 
 def test_two_queued_companies_reuse_sources_without_claiming_or_mixing_them(tmp_path, monkeypatch):

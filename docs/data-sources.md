@@ -52,8 +52,12 @@ Verified implementation:
 - `src/financials/read_service.py` is the read-side source of truth for desktop
   and API consumers.
 
-Explicit persistent refresh jobs can reuse successful annual preparation within
-the [bounded worker cohort](architecture.md#service-and-coverage-boundaries).
+Eligible explicit persistent refresh jobs retain only their admitted companies'
+annual source rows in the [bounded worker cohort](architecture.md#service-and-coverage-boundaries),
+including when only one job is queued. A compatible already-queued second job can
+reuse successful annual preparation; unrelated later jobs get a fresh context.
+Standalone completion releases the context immediately. Retry and forced-refresh
+exclusions remain unchanged.
 Existing ZIP freshness checks still run. Reuse requires the same resolved raw
 and processed paths, report type and source URL, plus matching ZIP/extracted-file
 signatures (file identity, size, modification and change times). Changed or
