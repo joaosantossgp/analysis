@@ -4,7 +4,7 @@ Short, current snapshot of where the project stands. Update this file whenever
 the version, release state, active work, or a major decision changes. Keep it
 under one screen; link to canonical docs instead of repeating them.
 
-Last updated: 2026-11-11
+Last updated: 2026-11-12
 
 ## Version and releases
 
@@ -39,15 +39,20 @@ run since 2026-05 failed. Both remain available through manual dispatch.
   queue time by 13.7% (one year) and 16.7% (three years); three-year resident
   memory fell from 2.68 to 1.29 GiB, with unchanged disk footprint. See
   [validation evidence](research/2026-11-11-bounded-refresh-validation.md).
-  Packaged validation remains separate under #485.
+  Bounded packaged evidence is recorded under #485 below.
 - #492 removes redundant audit-metadata copies from financial persistence and
   ingestion workbooks. Three pairs per scope reduced queue time by 48.1% (one
   year) and 57.1% (three years), preserving financial/QA hashes and 24 workbook
   contents. No RAM or disk improvement is claimed. See
   [validation evidence](research/2026-11-11-audit-copy-overhead-validation.md).
-  #485 continues packaged responsiveness, offline and recovery validation on the
-  available Windows host. The owner's 8 GB RAM / 30 GB free disk reference is
-  an efficiency guide, not a mandatory hardware or VM gate.
+- #485 validated the exact post-#492 package on the available Windows host:
+  primary run 03 passed scoped UI import, storage error/retry, graceful
+  backup/restore and offline reads. Supplemental run 04 supplied four populated
+  chart reads during another import, but remains failed at final monitor cleanup;
+  its higher memory peak and sampling gaps are disclosed. See
+  [packaged evidence](research/2026-11-12-packaged-local-data-validation.md).
+  The owner's 8 GB RAM / 30 GB free disk reference is an efficiency guide, not
+  a mandatory hardware or VM gate. No release or crash-durability claim follows.
 - Initial multi-window and local-storage desk research is published under #465;
   see `docs/research/2026-11-04-multi-window-workbench.md` and
   `docs/research/local-multi-window-storage.md`. Goal #464 remains open.
