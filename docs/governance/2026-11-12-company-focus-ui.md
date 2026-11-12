@@ -46,3 +46,48 @@ run. The preceding isolated desktop launch was rejected by automatic permission
 review with only `blocked by policy`. This revision does not bypass that denial.
 Keep PR #499 and #487/#486 open until exact-candidate acceptance is recorded.
 No release, ingestion, repair or user-data migration is implied.
+## Desktop preview and Excel follow-up — 2026-11-12
+
+Candidate `f30fc15c0a77c2786607f6f6248dd7bc7b07df9e` passed all five GitHub CI
+checks. The owner requested a visible dev preview before further acceptance.
+
+- Real `python -m desktop.app --dev` opened from this worktree with WebView2,
+  `runtime_mode=vite-dev`, `frozen=false`, bridge ready and a healthy refresh
+  worker. The visible preview uses `tmp/487-desktop/populated-data`, verified
+  through `get_app_status`; release-data mode is false.
+- SQLite online backup copied the two-company financial/energy databases from
+  the retained #485 run-03 fixture into a new isolated root. These are existing
+  2022–2024 observations, not a fresh import or a claim of current coverage.
+  Source database hashes were unchanged after validation.
+- Home and Companies were inspected in the native window. The populated
+  directory displayed Petrobras and Vale with partial coverage; Directory,
+  Coverage and Assets & Mapping were visible. The preview remains open for the
+  owner. This does not claim full populated UI coverage of every moved panel.
+- Real bridge reads returned company details, DRE and historical-indicator
+  payloads for CVM 9512 and 4170. Both full-history Excel exports succeeded in
+  the isolated output directory. No source refresh was requested by these reads.
+- Each workbook has 12 sheets, including Model, source_observations,
+  value_lineage and financial_qa. Petrobras has 1,367 formulas; Vale 1,319.
+  Structural checks found zero merged cells and zero stored Excel error cells.
+  Excel 16.0 opened both read-only, recalculated them without formula error
+  cells, then closed without saving. Export hashes remained unchanged.
+- A new package was built from this source commit using the already validated
+  Vite bundle: version `0.30.0-rc.1`, 2,649 files, no bundled `.db` files.
+  EXE SHA-256: `94174b26b6eede3b69c5c914edf7e4ba05b494f80f6f6ecdccb0b7f9a96b4184`.
+  Build-generated version-file formatting was restored to the committed bytes.
+- **Still unvalidated:** launching this package and offline/restart acceptance.
+  Automatic review rejected the command preparing and launching the isolated
+  offline package with proxy settings: `blocked by policy`, no detailed reason.
+  The command did not execute, and no alternate launch was attempted.
+  Dev/Excel evidence above must not be promoted to packaged/offline acceptance.
+
+The initial empty dev launch had a missing scratch database directory and a
+worker startup error; it was closed gracefully. The populated preview used for
+acceptance has a healthy worker. Its startup updater check returned a GitHub 404;
+no updater success or absence-of-network claim is made.
+
+Local evidence: `tmp/487-desktop/copied-data.json`, `dev-bridge.json`,
+`excel-structure.json`, `excel-native.json`, `bundle-manifest.json` and build logs.
+No prototype was created: the existing implementation answered the preview
+question directly. A disposable prototype remains an option for comparing new
+layout alternatives, not a substitute for runtime validation.
