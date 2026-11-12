@@ -116,7 +116,7 @@ class ReadServiceQueryMixin:
         self._merged_company_catalog_cache: tuple[CompanySearchResult, ...] | None = None
         self._merged_company_catalog_light_cache: tuple[CompanySearchResult, ...] | None = None
         self._company_page_cache: dict[tuple[str, str | None, int, int], CompanyDirectoryPage] = {}
-        self._market_cap_page_cache: dict[tuple[str, str | None, int, int], CompanyDirectoryPage] = {}
+        self._market_cap_page_cache: dict[tuple, CompanyDirectoryPage] = {}
         self._local_company_catalog_is_sufficient_cache: bool | None = None
         self._company_filters_cache: CompanyFiltersDTO | None = None
         self._market_cap_index_cache: tuple[dict[int, Any], dict[str, Any], list[Any]] | None = None
@@ -668,12 +668,15 @@ class ReadServiceQueryMixin:
         sector_slug: str | None,
         page: int,
         page_size: int,
+        sort_by: str | None = None,
+        sort_direction: str = "desc",
+        gics_sector: str | None = None,
     ) -> CompanyDirectoryPage | None:
-        """Return a Companies page sorted by market-cap descending.
+        """Sort enriched local directory metadata before pagination.
 
         Uses the local snapshot — no network calls.  Falls back (returns None)
-        when the snapshot is unavailable or unreadable so the caller can
-        transparently use the existing sort path.
+        when no explicit order is requested and the snapshot is unavailable.
+        Explicit orders also use this lightweight merge without a snapshot.
         """
         normalized_search = str(search or "").strip().lower()
         normalized_sector_slug = str(sector_slug or "").strip().lower() or None
@@ -682,17 +685,20 @@ class ReadServiceQueryMixin:
             normalized_sector_slug,
             int(page),
             int(page_size),
+            sort_by,
+            sort_direction,
+            gics_sector,
         )
         cached = self._market_cap_page_cache.get(cache_key)
         if cached is not None:
             return cached
 
         idx = self._load_market_cap_index()
-        if idx is None:
+        if idx is None and sort_by is None:
             return None
 
-        by_cd_cvm, by_ticker, all_entries = idx
-        use_local_universe = (
+        by_cd_cvm, by_ticker, all_entries = idx or ({}, {}, [])
+        use_local_universe = idx is None or gics_sector is not None or (
             not normalized_search
             and normalized_sector_slug is None
             and self._has_sufficient_local_company_catalog()
@@ -714,7 +720,10 @@ class ReadServiceQueryMixin:
         # Filter DB companies
         filtered: list[CompanySearchResult] = []
         for item in all_items:
-            if normalized_sector_slug and item.sector_slug != normalized_sector_slug:
+            if gics_sector:
+                if item.gics_sector != gics_sector:
+                    continue
+            elif normalized_sector_slug and item.sector_slug != normalized_sector_slug:
                 continue
             if normalized_search:
                 tokens = [
@@ -759,20 +768,40 @@ class ReadServiceQueryMixin:
                 )
             enriched.append(item)
 
-        # Sort:
-        #  1. Mapped companies → market_cap_brl DESC
-        #  2. Unmapped but has financial data → matches old "data-first" UX
-        #  3. Unmapped / no data → company_name ASC
-        # Tier 2 preserves the pre-existing sort for companies not in the snapshot
-        # (they have tickers/sectors; pure catalog stubs usually don't).
-        enriched.sort(
-            key=lambda c: (
+        if sort_by is not None:
+            if sort_by == "years":
+                years_map = self.query_layer.get_company_years_map(
+                    [item.cd_cvm for item in enriched]
+                )
+                enriched = [replace(item, anos_disponiveis=years_map.get(item.cd_cvm, ()))
+                            for item in enriched]
+            attributes = {
+                "company": "company_name", "ticker": "ticker_b3",
+                "sector": "gics_sector", "industryGroup": "gics_industry_group",
+                "marketCap": "market_cap_brl", "data": "has_financial_data",
+                "years": "anos_disponiveis", "cvm": "cd_cvm",
+            }
+
+            def sort_value(item):
+                value = getattr(item, attributes[sort_by])
+                if sort_by == "years":
+                    return len(value)
+                return value.strip().casefold() if isinstance(value, str) else value
+
+            # Stable sorts retain ascending CVM ties even for descending values.
+            enriched.sort(key=lambda item: item.cd_cvm)
+            present = [item for item in enriched if sort_value(item) not in (None, "")]
+            missing = [item for item in enriched if sort_value(item) in (None, "")]
+            present.sort(key=sort_value, reverse=sort_direction == "desc")
+            enriched = present + missing
+        else:
+            # Preserve the default ordering for existing callers.
+            enriched.sort(key=lambda c: (
                 0 if c.market_cap_brl is not None else 1,
                 -(c.market_cap_brl or 0.0),
                 0 if c.has_financial_data else 1,
                 c.company_name.lower(),
-            )
-        )
+            ))
 
         # Snapshot-level metadata (from first entry — all share same date/source)
         meta = None
@@ -830,7 +859,15 @@ class ReadServiceQueryMixin:
         sector_slug: str | None = None,
         page: int = 1,
         page_size: int = 20,
+        sort_by: str | None = None,
+        sort_direction: str = "desc",
     ) -> CompanyDirectoryPage:
+        if sort_by is not None and sort_by not in (
+            "company", "ticker", "sector", "industryGroup", "marketCap", "data", "years", "cvm"
+        ):
+            raise ValueError("Invalid company sort column")
+        if sort_direction not in ("asc", "desc"):
+            raise ValueError("Invalid company sort direction")
         self._ensure_read_cache_fresh()
         resolved_sector_name = self._resolve_sector_slug(sector_slug)
         if sector_slug and resolved_sector_name is None:
@@ -840,7 +877,7 @@ class ReadServiceQueryMixin:
                 page=page,
                 page_size=page_size,
             )
-        if resolved_sector_name in GICS_11_SECTORS:
+        if sort_by is None and resolved_sector_name in GICS_11_SECTORS:
             return self._list_companies_by_gics_sector(
                 search=search,
                 sector_slug=sector_slug,
@@ -852,6 +889,9 @@ class ReadServiceQueryMixin:
         # Try market-cap-sorted path when local snapshot is available.
         # Falls back transparently when snapshot is missing, malformed, or empty.
         mkt_page = self._list_companies_with_market_cap_sort(
+            sort_by=sort_by,
+            sort_direction=sort_direction,
+            gics_sector=resolved_sector_name if resolved_sector_name in GICS_11_SECTORS else None,
             search=search,
             sector_slug=sector_slug,
             page=page,

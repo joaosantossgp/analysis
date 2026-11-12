@@ -158,11 +158,6 @@ export function CompaniesTable() {
     () => sectors.find((s) => s.sector_slug === urlSector) ?? null,
     [sectors, urlSector],
   );
-  const sortedItems = useMemo(
-    () => sortCompanyDirectoryItems(items, urlSort),
-    [items, urlSort],
-  );
-
   const setUrl = (mut: (next: URLSearchParams) => void) => {
     const next = new URLSearchParams(searchParams);
     mut(next);
@@ -248,7 +243,7 @@ export function CompaniesTable() {
 
       <Body
         query={query}
-        items={sortedItems}
+        items={items}
         isDesktop={isDesktop}
         hasFilters={hasActiveFilters}
         onResetAll={onResetAll}
@@ -284,37 +279,6 @@ function getCompanyDirectorySort(searchParams: URLSearchParams): CompanyDirector
     sortBy: matchedColumn?.id ?? "marketCap",
     sortDirection: sortDirection === "asc" ? "asc" : "desc",
   };
-}
-
-function sortCompanyDirectoryItems<T extends {
-  company_name: string;
-  ticker_b3: string | null;
-  gics_sector?: string | null;
-  gics_industry_group?: string | null;
-  market_cap_brl?: number | null;
-  has_financial_data: boolean;
-  anos_disponiveis: number[];
-  cd_cvm: number;
-}>(items: T[], sort: CompanyDirectorySort): T[] {
-  const valueFor = (item: T): string | number => {
-    switch (sort.sortBy) {
-      case "ticker": return item.ticker_b3 ?? "";
-      case "sector": return item.gics_sector ?? "";
-      case "industryGroup": return item.gics_industry_group ?? "";
-      case "marketCap": return item.market_cap_brl ?? Number.NEGATIVE_INFINITY;
-      case "data": return item.has_financial_data ? 1 : 0;
-      case "years": return item.anos_disponiveis.length;
-      case "cvm": return item.cd_cvm;
-      default: return item.company_name;
-    }
-  };
-  const factor = sort.sortDirection === "asc" ? 1 : -1;
-  return [...items].sort((a, b) => {
-    const left = valueFor(a);
-    const right = valueFor(b);
-    if (typeof left === "number" && typeof right === "number") return (left - right) * factor;
-    return String(left).localeCompare(String(right), "en-US", { sensitivity: "base" }) * factor;
-  });
 }
 
 function Status({

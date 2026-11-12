@@ -27,7 +27,7 @@ run since 2026-05 failed. Both remain available through manual dispatch.
 
 ## Active work
 
-- #489 fixes repeated/backward-clock current reads in the sandbox entity registry
+- #489 delivered repeated/backward-clock current reads in the sandbox entity registry
   while preserving explicit historical boundaries. Deterministic Windows tests
   cover the five previously intermittent failures; no user-data repair or
   runtime registry activation is included.
@@ -74,8 +74,15 @@ run since 2026-05 failed. Both remain available through manual dispatch.
   No publication token is required; see `docs/agents/skills.md`.
 
 - Backlog was reset on 2026-10-29: 30 stale issues were closed as not planned.
-- Open: #452 (apply Companies directory sorting in the backend before
-  pagination).
+- #486 tracks the company-to-Excel cycle. #480 delivered storage scan UI
+  completion/error handling in PR #488; see [validation](governance/2026-11-11-storage-scan-ui-validation.md).
+- #452 applies explicit Companies ordering to the full enriched local directory
+  before pagination, with missing-last values and deterministic CVM ties.
+  Existing callers without an explicit order retain their defaults. See
+  [validation](governance/2026-11-12-company-directory-sorting.md).
+- Next: #487 focuses primary navigation and the optional Home preset on company
+  analysis, then validates the exact integrated candidate. External #483-485
+  and follow-up optimizations have merged; their evidence is artifact-specific.
 - Next for #464: resolve #466, record the architecture decision and create
   scoped implementation sub-issues. No shell or storage migration is approved.
 
@@ -83,7 +90,7 @@ run since 2026-05 failed. Both remain available through manual dispatch.
 
 | Date | Decision |
 |---|---|
-| 2026-11-06 | Windows storage persistence (#477) passed targeted packaged validation (#479): repeated scans, real reader contention, failure preservation and cached restart. UI completion/error gaps remain in #480; full release acceptance is not claimed. See [evidence](governance/2026-11-06-packaged-storage-validation.md). |
+| 2026-11-06 | Windows storage persistence (#477) passed targeted packaged validation (#479): repeated scans, real reader contention, failure preservation and cached restart. UI completion/error gaps were subsequently resolved by #480 (PR #488); full release acceptance is not claimed. See [evidence](governance/2026-11-06-packaged-storage-validation.md). |
 | 2026-11-05 | Runtime reliability fixes merged in #472 (closes #471): local catalog reads, atomic API job admission/cancellation, single-worker container and API tests in CI. Packaged/hosted validation remains separate. |
 | 2026-11-05 | Maintenance boundaries clarified (#475): explicit refresh/mapping command modules and Coverage workspace components; public service/route contracts preserved. |
 | 2026-11-05 | Contributor contracts aligned (#473): current UI tokens, explicit mock mode, project-interpreter commands and skill-independent agent workflow. |

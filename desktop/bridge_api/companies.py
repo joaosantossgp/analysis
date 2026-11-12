@@ -26,6 +26,8 @@ class CompanyBridgeMixin:
         t0 = time.perf_counter()
         try:
             result = self._svc().list_companies(
+                sort_by=p.get("sort_by"),
+                sort_direction=p.get("sort_direction", "desc"),
                 search=str(p.get("search", "")),
                 sector_slug=p.get("sector_slug") or p.get("sector") or None,
                 page=self._bounded_int(p.get("page", 1), default=1, maximum=10_000),
