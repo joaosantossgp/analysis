@@ -2086,6 +2086,11 @@ export function createMockBridge(): Partial<BridgeApi> {
       return { years: c?.anos_disponiveis ?? [] } satisfies CompanyYearsResult;
     },
 
+    get_company_statement_years: async (params) => {
+      const cdCvm = Number(params?.cd_cvm ?? 0);
+      return { years: FIXTURE_COMPANIES.find((company) => company.cd_cvm === cdCvm)?.anos_disponiveis ?? [] };
+    },
+
     get_company_kpis: async (params) => {
       const p = params as Record<string, unknown>;
       const cdCvm = Number(p?.cd_cvm ?? 0);

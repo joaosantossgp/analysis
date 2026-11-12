@@ -102,10 +102,12 @@ from src.financials.read_service_refresh_selection import (
 class ExcelExportReadPack:
     company_info: dict[str, Any]
     years: list[int]
+    analytical_years: list[int]
     period_window: tuple[int, int]
     scope_label: str
     itr_only_years: list[int]
     statements: dict[str, pd.DataFrame]
+    partial_years: tuple[int, ...] = ()
 
 
 class ReadServiceExportMixin:
@@ -575,10 +577,24 @@ class ReadServiceExportMixin:
             raise ValueError(f"Empresa {cd_cvm} nao encontrada.")
 
         scope = self.resolve_excel_export_scope(cd_cvm, period_scope)
+        # Export evidence even when no complete package can support analytical readiness.
+        analytical_years = list(scope["all_export_years"])
+        evidence_years = self.get_statement_years(cd_cvm, statement_type)
+        complete_years = set(scope["all_export_years"])
+        if period_scope != "full_history" and evidence_years:
+            count = {"last_3_years": 3, "last_5_years": 5, "last_10_years": 10}[period_scope]
+            if complete_years:
+                evidence_years = [year for year in evidence_years if year >= min(complete_years)]
+            else:
+                evidence_years = evidence_years[-count:]
+        partial_years = sorted(set(evidence_years) - complete_years)
+        if partial_years:
+            scope["all_export_years"] = sorted(complete_years | set(evidence_years))
+            scope["scope_label"] += " (partial evidence: " + ", ".join(map(str, partial_years)) + ")"
         years: list[int] = scope["all_export_years"]
         if not years:
             raise ValueError(
-                f"Empresa {cd_cvm} nao possui periodos disponiveis para exportacao."
+                f"Company {cd_cvm} has no local financial periods or source evidence to export."
             )
 
         stmt_types = (
@@ -590,7 +606,7 @@ class ReadServiceExportMixin:
             stmt_type: df
             for stmt_type, df in self._load_statement_frames_for_years(
                 cd_cvm,
-                years,
+                years if statement_type or not analytical_years else analytical_years,
                 stmt_types,
             ).items()
             if df is not None and not df.empty
@@ -598,10 +614,12 @@ class ReadServiceExportMixin:
         return ExcelExportReadPack(
             company_info=company_info,
             years=years,
+            analytical_years=analytical_years,
             period_window=scope["period_window"],
             scope_label=scope["scope_label"],
             itr_only_years=scope["itr_only_years"],
             statements=statements,
+            partial_years=tuple(partial_years),
         )
 
     @staticmethod
@@ -892,9 +910,13 @@ class ReadServiceExportMixin:
                 for stmt_type in ("DMPL",)
                 if stmt_type in exportable_statements
             ]
-            kpis_df = self.get_kpi_bundle(cd_cvm, years).quarterly_dataframe()
+            kpis_df = (
+                self.get_kpi_bundle(cd_cvm, read_pack.analytical_years).quarterly_dataframe()
+                if read_pack.analytical_years else pd.DataFrame()
+            )
 
         model_mapping = None
+        evidence_only_reason = None
         mapping_issues: list[MappingValidationIssue] = []
         if not statement_type:
             model_mapping = self.resolve_excel_model_mapping(cd_cvm, mapping_preset_id)
@@ -907,8 +929,23 @@ class ReadServiceExportMixin:
             blocking = [issue for issue in mapping_issues if issue.severity == "error"]
             if blocking:
                 first = blocking[0]
-                raise ValueError(f"Invalid Excel mapping: {first.message}")
+                if read_pack.partial_years and all(issue.code == 'unresolved_required_mapping' for issue in blocking):
+                    evidence_only_reason = f"Required analytical inputs are unavailable. {first.message}"
+                else:
+                    raise ValueError(f"Invalid Excel mapping: {first.message}")
+            elif not read_pack.analytical_years:
+                evidence_only_reason = "No complete financial period is available in the selected source evidence."
 
+        financial_evidence = {
+            'qa_events': [], 'source_observations': [], 'value_lineage': [],
+            'analytical_years': read_pack.analytical_years if not evidence_only_reason else [],
+            'evidence_years': years,
+        }
+        for stmt in ((statement_type,) if statement_type else EXPORT_STATEMENT_TYPES):
+            financial_evidence['qa_events'].extend(self.query_layer.get_financial_qa(cd_cvm, years, stmt))
+            provenance = self.query_layer.get_statement_provenance(cd_cvm, years, stmt)
+            for key in ('source_observations', 'value_lineage'):
+                financial_evidence[key].extend(provenance[key])
         exporter = ExcelExporter(
             company_info=company_info,
             statements=exportable_statements,
@@ -921,6 +958,8 @@ class ReadServiceExportMixin:
             model_mapping=model_mapping,
             mapping_validation_issues=mapping_issues,
             engine=self.engine,
+            financial_evidence=financial_evidence,
+            evidence_only_reason=evidence_only_reason,
         )
         return (
             build_excel_filename(company_info, statement_type=statement_type),

@@ -995,6 +995,52 @@ def test_company_excel_export_returns_binary_workbook(client: TestClient):
     for sheet_name in ("raw_DRE", "raw_BPA", "raw_BPP", "raw_DFC", "raw_KPIs", "metadata"):
         assert sheet_name in workbook.sheetnames
         assert workbook[sheet_name].sheet_state == "hidden"
+    assert '1Q25' not in [cell.value for cell in workbook['raw_DRE'][1]]
+    scope = next(row[1].value for row in workbook['metadata'].iter_rows() if row[0].value == 'Export scope')
+    assert 'partial evidence: 2025' in scope
+
+
+def test_company_excel_export_preserves_model_and_later_partial_source_audit(client: TestClient):
+    import pandas as pd
+    from sqlalchemy import text
+    from src.financials.database import CVMDatabase
+    from src.financials.scraper import CVMScraper
+
+    service = client.app.state.read_service
+    writer = CVMDatabase.__new__(CVMDatabase)
+    writer._engine = service.engine
+    writer._init_db()
+    # The read-contract fixture intentionally omits this importer column.
+    with service.engine.begin() as conn:
+        conn.execute(text('ALTER TABLE financial_reports ADD COLUMN "COMPANY_TYPE" TEXT'))
+    scraper = CVMScraper.__new__(CVMScraper)
+    scraper.report_type = 'consolidated'
+    scraper._coalesce_errors = []
+    source = pd.DataFrame([dict(
+        CD_CVM=9512, CD_CONTA='6.01', LINE_ID_BASE='6.01',
+        DS_CONTA='Operating cash flow', DS_CONTA_norm='operating cash flow',
+        DT_REFER='2025-06-30', DT_INI_EXERC='2025-01-01', DT_FIM_EXERC='2025-06-30',
+        VL_CONTA=250, RAW_VL_CONTA='250.000000', MOEDA='REAL', ESCALA_MOEDA='MIL',
+        VERSAO='1', PERIOD_TYPE='ITR', REPORT_TYPE='consolidated', SOURCE_FILE='fixture.csv',
+    )])
+    dfc = scraper.calculate_quarters(source, 'DFC')
+    writer.insert_company_data('PETROBRAS', 9512, 'comercial', {'DFC': dfc},
+                               scraper._coalesce_errors, ticker_b3='PETR4', cnpj='33.000.167/0001-01')
+
+    response = client.get('/companies/9512/export/excel')
+    assert response.status_code == 200
+    workbook = openpyxl.load_workbook(io.BytesIO(response.content))
+    assert workbook.sheetnames[:2] == ['Model', 'README']
+    assert {'2023', '2024'}.issubset({str(cell.value) for cell in workbook['raw_DRE'][1]})
+    assert '1Q25' not in [cell.value for cell in workbook['raw_DRE'][1]]
+    assert 'MISSING_PREDECESSOR' in str(list(workbook['financial_qa'].values))
+    assert '2025-06-30' in str(list(workbook['source_observations'].values))
+    assert '250.000000' in str(list(workbook['source_observations'].values))
+    assert '2Q25' in str(list(workbook['value_lineage'].values))
+    assert [period['period_label'] for period in service.query_layer.get_company_complete_periods(9512)] == ['2023', '2024']
+    metadata = {row[0].value: row[1].value for row in workbook['metadata'].iter_rows()}
+    assert metadata['Analytical years'] == '2023, 2024'
+    assert metadata['Evidence years'] == '2023, 2024, 2025'
 
 
 def test_company_excel_export_uses_all_available_years(client: TestClient):
@@ -1042,6 +1088,24 @@ def test_company_statement_returns_matrix(client: TestClient):
     assert payload["years"] == [2023, 2024]
     assert "2023" in payload["table"]["columns"]
     assert "2024" in payload["table"]["columns"]
+
+
+def test_statement_years_include_dated_qa_without_expanding_annual_years(client: TestClient):
+    from sqlalchemy import text
+    from src.financials.database import init_db_tables
+    engine = client.app.state.read_service.engine
+    init_db_tables(engine)
+    with engine.begin() as conn:
+        conn.execute(text('INSERT INTO qa_logs ("CD_CVM", "STATEMENT_TYPE", "REPORT_YEAR", "PERIOD", "ERROR_TYPE") '
+                          'VALUES (9512, :stmt, 2026, :period, :kind)'),
+                     {'stmt': 'DFC', 'period': '2Q26', 'kind': 'MISSING_PREDECESSOR'})
+    annual = client.get('/companies/9512/years').json()
+    evidence = client.get('/companies/9512/statement-years', params={'stmt': 'DFC'})
+    assert evidence.status_code == 200
+    assert 2026 not in annual
+    assert 2026 in evidence.json()
+    other_statement = client.get('/companies/9512/statement-years', params={'stmt': 'DRE'})
+    assert 2026 not in other_statement.json()
 
 
 def test_company_statement_sorts_requested_years_for_stable_contract(client: TestClient):

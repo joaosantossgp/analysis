@@ -264,6 +264,24 @@ def get_company_years(
 
 
 @router.get(
+    "/companies/{cd_cvm}/statement-years",
+    response_model=list[int],
+    summary="List local statement and QA evidence years, including partial periods.",
+)
+def get_company_statement_years(
+    cd_cvm: int,
+    response: Response,
+    request: Request,
+    stmt: str = Depends(statement_dependency),
+    service: CVMReadService = Depends(get_read_service),
+) -> list[int]:
+    ensure_api_ready(get_settings(request))
+    coerce_company(cd_cvm, service)
+    apply_cache_headers(response, COMPANY_YEARS_CACHE_CONTROL)
+    return service.get_statement_years(cd_cvm, stmt)
+
+
+@router.get(
     "/companies/{cd_cvm}/statements",
     response_model=StatementMatrixPayload,
     summary="Retorna a demonstracao financeira em formato tabular.",

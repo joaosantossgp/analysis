@@ -13,12 +13,10 @@ import { CompanyCommandBar } from "@/components/CompanyCommandBar";
 import { EntityHeader } from "@/components/EntityHeader";
 import { StateBanner } from "@/components/feedback/StateBanner";
 import { Panel } from "@/components/surface/Panel";
-import {
-  fetchCompanyYears,
-  type CompanyYearsResultUI,
-} from "@/lib/api/companyDetail";
+import type { CompanyYearsResultUI } from "@/lib/api/companyDetail";
 import {
   fetchCompanyStatement,
+  fetchCompanyStatementYears,
   normalizeStatementType,
   STATEMENT_OPTIONS,
   type CompanyStatementResult,
@@ -147,7 +145,7 @@ function StatementSelector({
   );
 }
 
-function StatementPanel({
+export function StatementPanel({
   cdCvm,
   statementType,
   bridgeReady,
@@ -157,8 +155,8 @@ function StatementPanel({
   bridgeReady: boolean;
 }) {
   const yearsQuery = useQuery<CompanyYearsResultUI>({
-    queryKey: ["company-years", cdCvm],
-    queryFn: () => fetchCompanyYears(cdCvm),
+    queryKey: ["company-statement-years", cdCvm, statementType],
+    queryFn: () => fetchCompanyStatementYears(cdCvm, statementType),
     enabled: bridgeReady,
   });
 
@@ -196,8 +194,8 @@ function StatementPanel({
     return (
       <StateBanner
         variant="empty"
-        title="No annual statements"
-        message="This company has no annual statements in the local database."
+        title="No local statement evidence"
+        message="This statement has no financial rows, source observations or dated QA in the local database. Refresh the company explicitly to obtain source data."
       />
     );
   }
@@ -235,7 +233,7 @@ function StatementPanel({
   );
 }
 
-function StatementGrid({
+export function StatementGrid({
   matrix,
   statementType,
   selectedYears,
@@ -268,11 +266,14 @@ function StatementGrid({
 
   if (sourceRows.length === 0 || periodColumns.length === 0) {
     return (
+      <>
+      <StatementQuality matrix={matrix} />
       <StateBanner
         variant="empty"
         title={`${statementType} — no rows for ${selectedYears.join(", ")}`}
         message="Try another statement type or refresh this company in Database Updates."
       />
+      </>
     );
   }
 
@@ -289,6 +290,7 @@ function StatementGrid({
       }
       footer="Rows are filtered locally. Missing values render as —; no client-side financial recalculation is applied."
     >
+      <StatementQuality matrix={matrix} />
       <StatementSourceAudit
         matrix={matrix}
         statementTitle={STATEMENT_COPY[statementType]}
@@ -307,6 +309,42 @@ function StatementGrid({
         emptyMessage="No rows match this filter."
       />
     </Panel>
+  );
+}
+
+function StatementQuality({ matrix }: { matrix: StatementMatrix }) {
+  const events = matrix.qa_events ?? [];
+  return (
+    <div className="mb-3 text-sm text-state-warn">
+      {matrix.quality_evidence === "partial" ? (
+        <p>Source/period QA evidence is partial. Some selected years need an explicit refresh to capture source context.</p>
+      ) : matrix.quality_evidence !== "available" && (
+        <p>Legacy source/period QA evidence unavailable. Refresh explicitly to capture source context.</p>
+      )}
+      {events.length > 0 && (
+        <details>
+          <summary className="cursor-pointer focus-visible:outline focus-visible:outline-1">
+            {events.length} financial QA event{events.length === 1 ? "" : "s"}. Unavailable values are excluded; review evidence.
+          </summary>
+          <ol className="mt-2 max-h-64 list-inside list-decimal space-y-2 overflow-auto text-text-secondary">
+            {events.map((event, index) => (
+              <li key={index}>
+                <span className="font-mono">{event.cd_conta ?? "Unknown account"} · {event.period ?? event.year ?? "Unknown period"} · {event.unit ?? "Unknown unit"}</span>
+                <p>{event.description} · {event.type?.replaceAll("_", " ")}</p>
+                {event.missing_inputs?.length ? <p>Missing inputs: {event.missing_inputs.join(", ")}</p> : null}
+                {event.diff !== undefined ? <p>Reconciliation difference: {event.diff} {event.unit}</p> : null}
+                <p>{event.action}</p>
+                {event.source_inputs?.map((source, i) => (
+                  <p key={i} className="break-words text-xs text-text-tertiary">
+                    {source.SOURCE_FILE} · version {source.VERSAO ?? "unknown"} · {source.DT_INI_EXERC}–{source.DT_FIM_EXERC} · reported {source.RAW_VL_CONTA}
+                  </p>
+                ))}
+              </li>
+            ))}
+          </ol>
+        </details>
+      )}
+    </div>
   );
 }
 
@@ -348,7 +386,7 @@ function StatementSourceAudit({
       />
       <SourceAuditItem
         label="Scale / policy"
-        value="R$ thousands"
+        value={matrix.statement_type === "DRE" ? "BRL thousands; per-share rows in BRL/share" : "R$ thousands"}
         detail={`${matrix.exclude_conflicts ? "Conflicts excluded" : "Conflicts included"} · consolidation not exposed`}
       />
     </section>
@@ -439,10 +477,12 @@ function buildStatementGrid(
     const level = accountCode ? Math.max(accountCode.split(".").length - 1, 0) : 0;
     const isTotal = STATEMENT_TOTAL_CODES[statementType]?.has(accountCode) ?? false;
     const cells: FinancialGridRow["cells"] = {};
+    const perShare = statementType === "DRE" && (accountCode === "3.99" || accountCode.startsWith("3.99."));
     for (const column of periodColumns) {
       cells[column] = {
         value: row[column],
-        valueType: "currency-thousands",
+        valueType: perShare ? "number" : "currency-thousands",
+        title: perShare ? "BRL/share · reported duration" : undefined,
         tone: numericTone(row[column]),
       };
     }

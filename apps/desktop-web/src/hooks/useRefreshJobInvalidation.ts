@@ -10,6 +10,7 @@ const REFRESH_JOB_QUERY_KEYS: Array<readonly unknown[]> = [
   ["sub-sector-detail"],
   ["company-info"],
   ["company-years"],
+  ["company-statement-years"],
   ["company-kpis"],
   ["company-statement"],
   ["company-refresh-status"],

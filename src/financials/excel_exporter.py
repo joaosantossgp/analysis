@@ -29,6 +29,7 @@ Usage::
 from __future__ import annotations
 
 import io
+import json
 import math
 import re
 from datetime import date, datetime
@@ -719,9 +720,13 @@ class ExcelExporter:
         model_mapping: Optional[ModelMappingDefinition | dict] = None,
         mapping_validation_issues: Optional[list[MappingValidationIssue | dict]] = None,
         engine: Optional[Any] = None,
+        financial_evidence: Optional[dict] = None,
+        evidence_only_reason: Optional[str] = None,
     ):
         self.info = company_info or {}
         self.engine = engine
+        self.financial_evidence = financial_evidence or {}
+        self.evidence_only_reason = evidence_only_reason
         self.stmts = statements or {}
         self.kpis = kpis_df if kpis_df is not None else pd.DataFrame()
         self.extra = extra_sheets or []
@@ -794,7 +799,18 @@ class ExcelExporter:
         )
         self._build_formats()
 
-        if stmt_t:
+        if self.evidence_only_reason:
+            for stype in self.stmts:
+                self._write_raw_statement(stype)
+            self._write_metadata_sheet(scope=stmt_t)
+            ws = self._wb.add_worksheet(README_SHEET)
+            ws.set_column('A:A', 110)
+            ws.write_string(0, 0, 'Financial evidence only — analytical model unavailable', self._fmt['raw_header'])
+            ws.write_string(2, 0, self.evidence_only_reason, self._fmt['source_note'])
+            ws.write_string(4, 0, 'Review financial_qa and the source_observations/value_lineage audit sheets. Missing values remain unavailable.', self._fmt['source_note'])
+            ws.write_string(6, 0, self.period_scope_label or '', self._fmt['source_note'])
+            self._reorder_visible_sheets()
+        elif stmt_t:
             # Scoped single-statement export — minimal workbook.
             self._write_raw_statement(stmt_t)
             self._write_metadata_sheet(scope=stmt_t)
@@ -815,6 +831,7 @@ class ExcelExporter:
             self._write_mapping_audit_sheet()
             self._reorder_visible_sheets()
 
+        self._write_financial_evidence()
         self._wb.close()
         payload = buf.getvalue()
 
@@ -824,6 +841,36 @@ class ExcelExporter:
             self._validate_no_errors(payload)
 
         return payload
+
+    def _write_financial_evidence(self) -> None:
+        """Keep source durations and unavailable-cell reasons outside model formulas."""
+        for key, sheet_name in [('qa_events', 'financial_qa'), ('source_observations', 'source_observations'), ('value_lineage', 'value_lineage')]:
+            records = self.financial_evidence.get(key, [])
+            if not records:
+                continue
+            rows = []
+            for record in records:
+                row = dict(record)
+                if 'source_inputs' in row:
+                    row['source_ids'] = [source.get('observation_id') for source in row.pop('source_inputs')]
+                rows.append(row)
+            columns = list(dict.fromkeys(column for row in rows for column in row))
+            ws = self._wb.add_worksheet(sheet_name)
+            ws.freeze_panes(1, 0)
+            ws.autofilter(0, 0, len(rows), len(columns) - 1)
+            for col, name in enumerate(columns):
+                ws.write_string(0, col, name, self._fmt['raw_header'])
+                ws.set_column(col, col, 24)
+                for idx, row in enumerate(rows, start=1):
+                    value = row.get(name)
+                    if value is None:
+                        continue
+                    if isinstance(value, (list, dict)):
+                        value = json.dumps(value, ensure_ascii=False)
+                    # Source values stay text-exact, and untrusted labels cannot become formulas.
+                    ws.write_string(idx, col, str(value), self._fmt['raw_text'])
+            if key != 'qa_events':
+                ws.hide()
 
     # ── formats ───────────────────────────────────────────────────────────
     def _build_formats(self):
@@ -975,6 +1022,7 @@ class ExcelExporter:
                                     align="right"),
             "raw_num_sub":    fmt(**base_small, bold=True, num_format=num_fmt,
                                     align="right"),
+            "raw_per_share": fmt(**base_small, num_format='#,##0.00####;(#,##0.00####);-', align="right"),
         }
 
     # ── raw statement sheets ──────────────────────────────────────────────
@@ -1053,9 +1101,10 @@ class ExcelExporter:
                                    self._fmt["raw_num_sub"] if is_sub
                                    else self._fmt["raw_num"])
                 else:
-                    ws.write_number(r_idx, c_idx, float(val),
-                                    self._fmt["raw_num_sub"] if is_sub
-                                    else self._fmt["raw_num"])
+                    number_format = self._fmt["raw_num_sub"] if is_sub else self._fmt["raw_num"]
+                    if stmt_type == 'DRE' and (cd == '3.99' or cd.startswith('3.99.')):
+                        number_format = self._fmt['raw_per_share']
+                    ws.write_number(r_idx, c_idx, float(val), number_format)
 
         ws.freeze_panes(1, min(2, len(id_cols)))
         ws.hide_gridlines(2)
@@ -1144,7 +1193,10 @@ class ExcelExporter:
             ("Source",             "CVM — dados.cvm.gov.br", "DFP/ITR filings"),
             ("App",                f"CVMAnalytics {_APP_VERSION}", ""),
             ("CVM scale",          "R$ mil (thousands)",
-                                   "Most companies report in thousands of BRL"),
+                                   "DRE 3.99 per-share accounts remain BRL/share; see source_observations"),
+            ("Financial QA", str(len(self.financial_evidence.get('qa_events', []))),
+             "See financial_qa; absence of events is not financial acceptance" if self.financial_evidence.get('value_lineage') else
+             "Legacy source/period evidence unavailable; explicit refresh required"),
             ("Model scale",        "R$ mm (millions)",
                                    "Model sheet divides CVM source by 1,000"),
             ("Sign convention",    "Costs / expenses appear negative in CVM source", ""),
@@ -1153,6 +1205,10 @@ class ExcelExporter:
             ("Window — annual",    str(self.period_window[0]), ""),
             ("Window — quarters/year", str(self.period_window[1]), ""),
             ("Export scope",       self.period_scope_label or "—", "Selected at export time"),
+            ("Analytical years", ", ".join(map(str, self.financial_evidence.get('analytical_years', []))) or "—",
+             "Complete-period scope used for the full workbook's analytical inputs"),
+            ("Evidence years", ", ".join(map(str, self.financial_evidence.get('evidence_years', []))) or "—",
+             "Local evidence discovery; audit sheets contain available source and QA records, with no completeness guarantee"),
             ("Mapping preset",      self.model_mapping.name, self.model_mapping.preset_id),
             ("Mapping version",     self.model_mapping.default_mapping_version, self.model_mapping.origin),
             ("ITR-only years",
@@ -2616,6 +2672,8 @@ class ExcelExporter:
             ("Source",              "CVM filings processed by CVMAnalytics local database"),
             ("Units",               "Model: R$ mm. CVM source: R$ mil. Conversion: ÷1,000."),
             ("Full history",        "Available in hidden raw_* sheets."),
+            ("Financial QA", f"{len(self.financial_evidence.get('qa_events', []))} recorded event(s); see financial_qa and source_observations."
+             if self.financial_evidence.get('value_lineage') else "Legacy source/period QA evidence unavailable; explicit refresh required."),
         ]
         # Surface unmapped spine codes per statement so the analyst can
         # see exactly which lines were not present in the raw filing.

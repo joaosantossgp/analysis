@@ -1249,6 +1249,29 @@ class CVMQueryLayer:
         payload.update(self.get_latest_financial_period(cd_cvm))
         return payload
 
+    def get_statement_evidence_years(self, cd_cvm: int, stmt_type: str | None = None) -> list[int]:
+        """Discover local statement/QA evidence, independently of complete-period coverage."""
+        inspector = inspect(self.engine)
+        queries = []
+        for table, company, year, statement in [
+            ('financial_reports', 'CD_CVM', 'REPORT_YEAR', 'STATEMENT_TYPE'),
+            ('financial_source_observations', 'cd_cvm', 'report_year', 'statement_type'),
+            ('qa_logs', 'CD_CVM', 'REPORT_YEAR', 'STATEMENT_TYPE'),
+        ]:
+            if not inspector.has_table(table):
+                continue
+            if year not in {column['name'] for column in inspector.get_columns(table)}:
+                continue
+            scope = f'AND "{statement}" = :stmt' if stmt_type else ''
+            queries.append(f'SELECT DISTINCT "{year}" AS evidence_year FROM {table} '
+                           f'WHERE "{company}" = :cvm AND "{year}" IS NOT NULL {scope}')
+        if not queries:
+            return []
+        with self.engine.connect() as conn:
+            rows = conn.execute(text(' UNION '.join(queries) + ' ORDER BY evidence_year'),
+                                {'cvm': int(cd_cvm), 'stmt': stmt_type})
+            return [int(row[0]) for row in rows]
+
     def get_available_years(self, cd_cvm: int) -> list[int]:
         """Retorna os anos com dados anuais completos (DFP) para a empresa.
 
@@ -1579,11 +1602,49 @@ class CVMQueryLayer:
         period_cols_sorted = sorted(period_cols, key=_period_sort_key)
         result = pivot[id_cols + period_cols_sorted]
 
-        if period_cols_sorted:
-            numeric_data = result[period_cols_sorted].fillna(0)
-            all_zero_mask = (numeric_data == 0).all(axis=1)
-            result = result[~all_zero_mask].reset_index(drop=True)
+        return result
 
+    def get_financial_qa(self, cd_cvm: int, years: list[int], stmt_type: str) -> list[dict]:
+        """Read scoped QA, including legacy events whose period was never recorded."""
+        inspector = inspect(self.engine)
+        if not years or not inspector.has_table("qa_logs"):
+            return []
+        columns = {column['name'] for column in inspector.get_columns('qa_logs')}
+        placeholders = ', '.join(f':y{i}' for i in range(len(years)))
+        params = {f'y{i}': int(year) for i, year in enumerate(years)}
+        params.update(cvm=int(cd_cvm), stmt=stmt_type)
+        scope = f'AND ("REPORT_YEAR" IN ({placeholders}) OR "REPORT_YEAR" IS NULL)' if 'REPORT_YEAR' in columns else ''
+        with self.engine.connect() as conn:
+            rows = conn.execute(text(f'SELECT * FROM qa_logs WHERE "CD_CVM" = :cvm AND "STATEMENT_TYPE" = :stmt {scope} ORDER BY id'), params).mappings()
+            events = []
+            for row in rows:
+                if row.get('DETAILS_JSON'):
+                    events.append(json.loads(row['DETAILS_JSON']))
+                else:
+                    events.append(dict(type=row.get('ERROR_TYPE'), statement=row.get('STATEMENT_TYPE'),
+                                       period=row.get('PERIOD'), cd_conta=row.get('CD_CONTA'),
+                                       description=row.get('DESCRIPTION'), action=row.get('ACTION') or
+                                       'Legacy QA lacks source context; explicitly refresh the affected year to capture evidence.',
+                                       evidence_status='legacy_unknown'))
+        return events
+
+    def get_statement_provenance(self, cd_cvm: int, years: list[int], stmt_type: str) -> dict:
+        """Read imported source and cell evidence without repairing legacy databases."""
+        result = {'source_observations': [], 'value_lineage': []}
+        if not years:
+            return result
+        inspector = inspect(self.engine)
+        params = {f'y{i}': int(year) for i, year in enumerate(years)}
+        params.update(cvm=int(cd_cvm), stmt=stmt_type)
+        placeholders = ', '.join(f':y{i}' for i in range(len(years)))
+        for key, table in [('source_observations', 'financial_source_observations'), ('value_lineage', 'financial_value_lineage')]:
+            if inspector.has_table(table):
+                columns = 'payload_json, imported_at' if key == 'source_observations' else 'payload_json'
+                with self.engine.connect() as conn:
+                    rows = conn.execute(text(f'SELECT {columns} FROM {table} WHERE cd_cvm = :cvm '
+                                             f'AND statement_type = :stmt AND report_year IN ({placeholders})'), params)
+                    result[key] = [dict(json.loads(row[0]), imported_at=row[1]) if key == 'source_observations'
+                                   else json.loads(row[0]) for row in rows]
         return result
 
     @slow_query_warn(threshold_ms=200)
@@ -1744,14 +1805,15 @@ class CVMQueryLayer:
 
         sql = text(
             f"""
-            SELECT "REPORT_YEAR", "PERIOD_LABEL", SUM(ABS("VL_CONTA")) AS da_value
+            SELECT "REPORT_YEAR", "PERIOD_LABEL",
+                   CASE WHEN MAX(CASE WHEN "QA_CONFLICT" = true OR "VL_CONTA" IS NULL THEN 1 ELSE 0 END) = 0
+                        THEN SUM(ABS("VL_CONTA")) END AS da_value
             FROM financial_reports
             WHERE "CD_CVM" = :cd_cvm
               AND "STATEMENT_TYPE" = 'DFC'
               AND "REPORT_YEAR" IN ({placeholders})
               AND "CD_CONTA" LIKE '6.01.01%'
               AND LOWER("DS_CONTA") LIKE '%depreci%'
-              AND "QA_CONFLICT" = false
             GROUP BY "REPORT_YEAR", "PERIOD_LABEL"
             """
         )
@@ -1769,14 +1831,15 @@ class CVMQueryLayer:
 
         sql = text(
             f"""
-            SELECT "REPORT_YEAR", "PERIOD_LABEL", SUM(ABS("VL_CONTA")) AS da_value
+            SELECT "REPORT_YEAR", "PERIOD_LABEL",
+                   CASE WHEN MAX(CASE WHEN "QA_CONFLICT" = true OR "VL_CONTA" IS NULL THEN 1 ELSE 0 END) = 0
+                        THEN SUM(ABS("VL_CONTA")) END AS da_value
             FROM financial_reports
             WHERE "CD_CVM" = :cd_cvm
               AND "STATEMENT_TYPE" = 'DFC'
               AND "REPORT_YEAR" IN ({placeholders})
               AND "CD_CONTA" LIKE '6.01.01%'
               AND LOWER("DS_CONTA") LIKE '%depreci%'
-              AND "QA_CONFLICT" = false
             GROUP BY "REPORT_YEAR", "PERIOD_LABEL"
             """
         )

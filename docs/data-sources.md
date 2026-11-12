@@ -63,6 +63,48 @@ Financial statement docs must preserve these distinctions:
 - missing values vs zero values;
 - reported values vs calculated KPIs/checks.
 
+### Financial period evidence and conservative QA
+
+`src/financials/periodization.py` selects source durations before creating the
+analytical matrix. It retains reported YTD and standalone values separately.
+Only compatible additive monetary inputs may be subtracted, using the exact
+adjacent cumulative predecessor. Missing inputs, ambiguous versions, reused
+account identities and unsupported units produce unavailable cells with QA.
+No description-based economic mapping or missing-to-zero substitution is used.
+Unit validation also applies to BPA/BPP stocks: absent currency or unknown
+scale keeps the raw observation but makes the analytical value unavailable.
+DRE `3.99` per-share accounts use reported durations and BRL/share for REAL
+filings; annual EPS is neither subtracted nor reconciled by quarterly summation.
+
+The additive persistence contract is:
+
+- `financial_source_observations`: company-scoped observations, original value
+  text, filing version, source file, account identity, duration, currency/scale,
+  normalized unit and import timestamp. These are retained across refreshes;
+  the entire annual CVM corpus is not duplicated in the company database.
+- `financial_value_lineage`: analytical cell status, unit, formula and source
+  observation IDs, replaced only for explicitly imported statement-years.
+- `qa_logs.REPORT_YEAR` and `DETAILS_JSON`: full account/period/source inputs,
+  missing inputs, expected/actual/difference where applicable, units and action.
+  Existing scalar QA columns remain compatible with older readers.
+
+All three are written with the financial rows in one transaction. Failed writes
+roll back; repeated imports preserve source identity and other years' QA.
+Source import timestamps describe local ingestion, not a claimed download time.
+Previously imported databases have unknown or partial evidence until an explicit
+refresh. Normal reads do not repair data or download filings. A successful
+refresh and complete statement-package coverage do not certify financial QA.
+
+The statement screen exposes QA even when all analytical cells are excluded.
+Its year discovery includes partial ITR and dated QA evidence independently
+of annual KPI years and complete-period coverage. An explicit refresh also
+invalidates this evidence-year query.
+Analytical and ingestion workbooks retain `financial_qa`, `source_observations`
+and `value_lineage` audit sheets when evidence is present. See
+[`excel-exports.md`](excel-exports.md). The 78-row Vale 2024 regression fixture
+in `tests/fixtures/vale_2024_financial_qa.json` records exact offline source rows,
+CSV line numbers and source-file hashes; it is not an exhaustive issuer audit.
+
 ## Market Data
 
 Market cap and price history can use Yahoo Finance/yfinance-backed code paths

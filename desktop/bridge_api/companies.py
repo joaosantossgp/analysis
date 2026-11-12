@@ -160,6 +160,15 @@ class CompanyBridgeMixin:
         except Exception as exc:
             return {"error": str(exc), "years": []}
 
+    def get_company_statement_years(self, params=None) -> dict:
+        p = params or {}
+        try:
+            cd_cvm = int(p.get('cd_cvm', 0))
+            statement = str(p.get('stmt') or '').upper() or None
+            return self._sanitize_for_json({'years': self._svc().get_statement_years(cd_cvm, statement)})
+        except Exception as exc:
+            return {'error': str(exc), 'years': []}
+
     def get_company_kpis(self, params=None) -> dict:
         p = params or {}
         try:

@@ -219,6 +219,8 @@ class StatementMatrixPayload(BaseModel):
     years: list[int]
     table: TabularDataPayload
     exclude_conflicts: bool
+    qa_events: list[dict[str, Any]] = Field(default_factory=list)
+    quality_evidence: str = "legacy_unknown"
 
 
 class KPIBundlePayload(BaseModel):
