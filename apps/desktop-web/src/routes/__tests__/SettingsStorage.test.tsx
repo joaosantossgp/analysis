@@ -97,10 +97,10 @@ function setInventory(status: StorageScanStatus) {
   client.setQueryData<StorageInventoryResult>(key, { mode: "desktop", inventory: inventory(status) });
 }
 
-function render() {
+function render(healthSummary = summary) {
   return renderToStaticMarkup(
     <QueryClientProvider client={client}>
-      <SettingsStorage loading={false} summary={summary} />
+      <SettingsStorage loading={false} summary={healthSummary} />
     </QueryClientProvider>,
   );
 }
@@ -178,5 +178,17 @@ describe("Settings storage scan feedback", () => {
   it("waits for the initial inventory before allowing a scan", () => {
     client.removeQueries({ queryKey: key });
     expect(refreshButton()).toContain('disabled=""');
+  });
+
+  it("keeps browser unavailability distinct from a failed worker scan", async () => {
+    const facade = await vi.importActual<typeof import("@/lib/api/storageInventory")>("@/lib/api/storageInventory");
+    const result = await facade.fetchStorageInventory();
+    if (result.mode !== "browser") throw new Error("Expected the bridge-free browser result");
+    client.setQueryData(key, result);
+    const markup = render({ ...summary, runtime: { ...summary.runtime, bridge_status: "unknown" } });
+
+    expect(markup).toContain(result.reason);
+    expect(refreshButton(markup)).toContain('disabled=""');
+    expect(markup).not.toContain("Storage scan failed");
   });
 });

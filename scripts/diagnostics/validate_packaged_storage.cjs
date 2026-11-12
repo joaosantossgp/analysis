@@ -126,6 +126,7 @@ async function main() {
         return state;
       };
       const screenshot = async name => {
+        await summary.scrollIntoViewIfNeeded();
         await page.screenshot({ path: path.join(evidenceDir, `storage-ui-${name}.png`) });
       };
 

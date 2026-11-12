@@ -568,7 +568,7 @@ export function SettingsStorage({
             </p>
           </>
         )}
-        {inventory?.scan_status.status === "failed" ? (
+        {inventoryQuery.data?.mode !== "browser" && inventory?.scan_status.status === "failed" ? (
           <StateBanner
             variant="error"
             title="Storage scan failed"
