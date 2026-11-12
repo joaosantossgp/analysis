@@ -12,8 +12,8 @@ const { chromium } = requireWeb("playwright");
 const [cdpUrl, evidenceArg, expectedSha, python, mode = "exercise"] = process.argv.slice(2);
 assert(process.platform === "win32", "This validation requires Windows");
 assert(cdpUrl && evidenceArg && /^[a-f0-9]{40}$/.test(expectedSha || "") && python,
-  "Usage: node validate_packaged_storage.cjs <loopback-CDP-URL> <evidence-dir> <full-build-SHA> <python.exe> [exercise|restart]");
-assert(["exercise", "restart"].includes(mode), "Unknown mode");
+  "Usage: node validate_packaged_storage.cjs <loopback-CDP-URL> <evidence-dir> <full-build-SHA> <python.exe> [exercise|restart|ui]");
+assert(["exercise", "restart", "ui"].includes(mode), "Unknown mode");
 assert.equal(new URL(cdpUrl).hostname, "127.0.0.1");
 const evidenceDir = path.resolve(evidenceArg);
 const dataRoot = path.join(evidenceDir, "fixture");
@@ -99,7 +99,95 @@ async function main() {
     }, "Inventory scan did not finish");
     const success = state => assert(["succeeded", "partial"].includes(state.status), JSON.stringify(state));
 
-    if (mode === "restart") {
+    if (mode === "ui") {
+      await page.evaluate(() => { window.location.hash = "#/settings/storage"; });
+      const refresh = page.getByRole("button", { name: "Refresh inventory", exact: true });
+      const failure = page.getByRole("alert").filter({ hasText: "Storage scan failed" });
+      const summary = page.locator("article").filter({ has: page.getByRole("heading", { name: "Storage Summary", exact: true }) });
+      const metric = label => summary.getByText(label, { exact: true }).locator("..").innerText();
+      const ready = async () => until(async () =>
+        await refresh.isVisible() && await refresh.isEnabled(),
+      "UI did not restore the enabled Refresh inventory button");
+      const uiStart = async () => {
+        await ready();
+        const previous = await call("get_storage_inventory_scan_status");
+        await refresh.click();
+        const state = await until(async () => {
+          const current = await call("get_storage_inventory_scan_status");
+          return current.scan_id && current.scan_id !== previous.scan_id ? current : null;
+        }, "UI click did not start a new storage scan");
+        return state.scan_id;
+      };
+      const uiFinish = async scanId => {
+        const state = await finish(scanId);
+        await ready();
+        assert.equal(await page.getByRole("button", { name: "Scanning...", exact: true }).count(), 0);
+        results.scans.push(state);
+        return state;
+      };
+      const screenshot = async name => {
+        await page.screenshot({ path: path.join(evidenceDir, `storage-ui-${name}.png`) });
+      };
+
+      await ready();
+      const normal = await uiFinish(await uiStart());
+      success(normal);
+      assert.equal(readSnapshot().scan_status.scan_id, normal.scan_id);
+      assert.equal(await failure.count(), 0);
+      await screenshot("normal");
+      results.normal = { scan_status: normal, button_enabled: true };
+
+      const previousSnapshot = readSnapshot();
+      const previousHash = hash(snapshot);
+      const previousMetrics = { local_data: await metric("Local data"), files: await metric("Files") };
+      held = await holdSnapshot();
+      const failed = await uiFinish(await uiStart());
+      assert.equal(failed.status, "failed", JSON.stringify(failed));
+      assert.match(failed.error, /WinError (5|32|33)/);
+      await failure.waitFor({ state: "visible" });
+      const failureText = await failure.innerText();
+      assert(failureText.includes(failed.error), "UI omitted the real worker error");
+      assert.match(failureText, /cached|previous|last successful/i, "UI did not identify the preserved snapshot");
+      assert.equal(hash(snapshot), previousHash);
+      const cached = await call("get_storage_inventory");
+      assert.equal(cached.scanned_at, previousSnapshot.scanned_at);
+      assert.equal(await metric("Local data"), previousMetrics.local_data);
+      assert.equal(await metric("Files"), previousMetrics.files);
+      await screenshot("failed");
+      results.persistent = {
+        scan_status: failed, button_enabled: true, failure_text: failureText,
+        prior_snapshot_sha256: previousHash, cached_metrics: previousMetrics,
+      };
+      await held.release(); held = null;
+
+      const recovered = await uiFinish(await uiStart());
+      success(recovered);
+      await failure.waitFor({ state: "hidden" });
+      assert.equal(readSnapshot().scan_status.scan_id, recovered.scan_id);
+      await screenshot("recovered");
+      results.recovery = { scan_status: recovered, button_enabled: true, old_failure_cleared: true };
+
+      const beforeTransient = hash(snapshot);
+      held = await holdSnapshot();
+      const transientId = await uiStart();
+      await until(() => fs.existsSync(temporary), "UI-triggered writer did not reach serialization");
+      const blocked = await call("get_storage_inventory_scan_status");
+      assert.equal(blocked.status, "running", "Transient scan failed before the reader could release");
+      assert.equal(hash(snapshot), beforeTransient);
+      await held.release(); held = null;
+      const transient = await uiFinish(transientId);
+      success(transient);
+      assert.equal(await failure.count(), 0);
+      assert.equal(readSnapshot().scan_status.scan_id, transientId);
+      assert(!fs.existsSync(temporary), "Unexpected pending temporary snapshot");
+      await screenshot("transient");
+      results.transient = {
+        blocked, recovered: transient, button_enabled: true,
+        previous_snapshot_preserved_while_locked: true, persistent_failure_visible: false,
+      };
+      results.final_snapshot_sha256 = hash(snapshot);
+      results.final_scanned_at = readSnapshot().scanned_at;
+    } else if (mode === "restart") {
       const previous = JSON.parse(fs.readFileSync(path.join(evidenceDir, "storage-exercise.json"), "utf8"));
       assert.equal(previous.status, "pass");
       const latest = await call("get_storage_inventory");
