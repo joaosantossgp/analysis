@@ -1,5 +1,6 @@
 """Conservative periodization against exact CVM rows and isolated persistence."""
 import csv
+from copy import deepcopy
 import io
 import json
 from pathlib import Path
@@ -338,6 +339,155 @@ def test_ingestion_workbook_preserves_audit_and_per_share_units(scraper, vale_so
     assert 'financial_qa' in workbook.sheetnames
     assert 'source_observations' in workbook.sheetnames
     assert 'BRL/share' in workbook['DRE']['A2'].value
+
+
+class _TrackedAuditRecords(list):
+    """Count recursive audit copies without changing the evidence being written."""
+
+    def __init__(self, records, copies):
+        super().__init__(records)
+        self.copies = copies
+
+    def __deepcopy__(self, memo):
+        self.copies.append(len(self))
+        result = _TrackedAuditRecords(deepcopy(list(self), memo), self.copies)
+        memo[id(self)] = result
+        return result
+
+
+def _track_report_audit(reports):
+    before = deepcopy(reports)
+    copies = []
+    for report in reports.values():
+        for key in ('source_observations', 'value_lineage'):
+            report.attrs[key] = _TrackedAuditRecords(report.attrs[key], copies)
+    return before, copies
+
+
+def _assert_reports_unchanged(reports, before):
+    for statement, report in reports.items():
+        pd.testing.assert_frame_equal(report, before[statement])
+        assert report.attrs == before[statement].attrs
+
+
+def _assert_persisted_audit(db, reports, qa):
+    with db._engine.connect() as conn:
+        for table, key in [('financial_source_observations', 'source_observations'),
+                           ('financial_value_lineage', 'value_lineage')]:
+            actual = [json.loads(row[0]) for row in conn.execute(text(f'SELECT payload_json FROM {table}'))]
+            expected = [record for report in reports.values() for record in report.attrs[key]]
+            assert sorted(json.dumps(row, sort_keys=True) for row in actual) == sorted(
+                json.dumps(row, sort_keys=True) for row in expected)
+        actual_qa = [json.loads(row[0]) for row in conn.execute(text('SELECT "DETAILS_JSON" FROM qa_logs'))]
+        assert actual_qa == qa
+        eps = conn.execute(text('SELECT "PERIOD_LABEL", "VL_CONTA", "QA_CONFLICT" '
+                                'FROM financial_reports WHERE "CD_CONTA" = \'3.99.01.02\''))
+        values = {period: (value, bool(conflict)) for period, value, conflict in eps}
+        assert values['3Q24'] == (3.14, False)
+        assert values['4Q24'] == (None, True)
+
+
+@pytest.mark.parametrize('fail_write', [False, True])
+def test_persistence_does_not_copy_or_mutate_report_audit(scraper, vale_sources, tmp_path, monkeypatch, fail_write):
+    reports, qa = scraper.process_all_reports(vale_sources)
+    before, copies = _track_report_audit(reports)
+    qa_before = deepcopy(qa)
+    db = CVMDatabase(str(tmp_path / 'financials.db'))
+    write = db._to_sql_with_retry
+
+    def fail_financial(table, frame, conn):
+        if table == 'financial_reports':
+            raise RuntimeError('injected financial write failure')
+        return write(table, frame, conn)
+
+    try:
+        if fail_write:
+            monkeypatch.setattr(db, '_to_sql_with_retry', fail_financial)
+            with pytest.raises(RuntimeError, match='injected financial write failure'):
+                db.insert_company_data('VALE', 4170, 'comercial', reports, qa)
+            with db._engine.connect() as conn:
+                for table in ('financial_reports', 'financial_source_observations', 'financial_value_lineage', 'qa_logs'):
+                    assert conn.execute(text(f'SELECT count(*) FROM {table}')).scalar() == 0
+        else:
+            assert db.insert_company_data('VALE', 4170, 'comercial', reports, qa) > 0
+            _assert_persisted_audit(db, reports, qa)
+        operation_copies = list(copies)
+        _assert_reports_unchanged(reports, before)
+        assert qa == qa_before
+        assert operation_copies == []
+    finally:
+        db._engine.dispose()
+
+
+@pytest.mark.parametrize('standardize', [False, True])
+@pytest.mark.parametrize('failure', [None, 'database', 'workbook'])
+def test_ingestion_keeps_audit_without_tabular_deepcopies(scraper, vale_sources, tmp_path, monkeypatch, standardize, failure):
+    from openpyxl import load_workbook
+    from src.financials.standardizer import AccountStandardizer
+
+    reports, qa = scraper.process_all_reports(vale_sources)
+    before, copies = _track_report_audit(reports)
+    qa_before = deepcopy(qa)
+    scraper.db = CVMDatabase(str(tmp_path / 'financials.db'))
+    scraper.output_dir = str(tmp_path)
+    scraper.setores_map = {}
+    scraper.cnpjs_map = {}
+    scraper.max_excel_lock_retries = 1
+    scraper.standardizer = AccountStandardizer(str(Path(__file__).parents[1] / 'data/import/canonical_accounts.csv')) if standardize else None
+    # Identity resolution otherwise uses the default runtime database/catalog.
+    monkeypatch.setattr('src.companies.identity.CompanyIdentityResolver.resolve', lambda *_: None)
+    write = scraper.db._to_sql_with_retry
+    to_excel = pd.DataFrame.to_excel
+
+    def fail_financial(table, frame, conn):
+        if table == 'financial_reports':
+            raise RuntimeError('injected database failure')
+        return write(table, frame, conn)
+
+    def fail_workbook(frame, *args, **kwargs):
+        if kwargs.get('sheet_name') == 'source_observations':
+            raise RuntimeError('injected workbook failure')
+        return to_excel(frame, *args, **kwargs)
+
+    try:
+        if failure == 'database':
+            monkeypatch.setattr(scraper.db, '_to_sql_with_retry', fail_financial)
+        elif failure == 'workbook':
+            monkeypatch.setattr(pd.DataFrame, 'to_excel', fail_workbook)
+        if failure:
+            with pytest.raises(RuntimeError, match=f'injected {failure} failure'):
+                scraper.generate_excel('VALE', 4170, reports, qa)
+        else:
+            assert scraper.generate_excel('VALE', 4170, reports, qa) > 0
+        operation_copies = list(copies)
+        _assert_reports_unchanged(reports, before)
+        assert qa == qa_before
+        if failure != 'database':
+            _assert_persisted_audit(scraper.db, reports, qa)
+        if not failure:
+            workbook = load_workbook(tmp_path / 'VALE_financials.xlsx', data_only=False)
+            try:
+                for key in ('source_observations', 'value_lineage'):
+                    rows = list(workbook[key].values)
+                    expected = [record for report in reports.values() for record in report.attrs[key]]
+                    assert set(rows[0]) == {column for record in expected for column in record}
+                    assert len(rows) == len(expected) + 1
+                    for actual, record in zip(rows[1:], expected):
+                        assert actual == tuple(str(record.get(column)) if isinstance(record.get(column), (list, dict))
+                                               else record.get(column) for column in rows[0])
+                assert workbook['financial_qa'].max_row == len(qa) + 1
+                dre = workbook['DRE']
+                headers = [cell.value for cell in dre[3]]
+                eps = next(row for row in dre.iter_rows(min_row=4) if row[headers.index('CD_CONTA')].value == '3.99.01.02')
+                assert eps[headers.index('3Q24')].value == 3.14
+                assert '.00' in eps[headers.index('3Q24')].number_format
+                assert eps[headers.index('4Q24')].value is None
+                assert ('STANDARD_NAME' in headers) == standardize
+            finally:
+                workbook.close()
+        assert operation_copies == []
+    finally:
+        scraper.db._engine.dispose()
 
 
 def partial_statement_service(scraper, tmp_path):

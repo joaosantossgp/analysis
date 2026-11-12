@@ -114,6 +114,12 @@ data stayed unchanged. Runtime tests used another disposable root.
 
 ## Limits and next step
 
+**Supersession note, 2026-11-11:** the owner subsequently clarified that 8 GB RAM
+and 30 GB free disk are efficiency references only. Revised #485 uses the actual
+available Windows host; no mandatory hardware or VM gate applies. See the
+[follow-up validation](2026-11-11-audit-copy-overhead-validation.md). The original
+measurement evidence and then-planned limits below are retained unchanged.
+
 [#485](https://github.com/joaosantossgp/analysis/issues/485) remains open for the
 packaged application on Windows 11 with 8 GB RAM and 30 GB free disk: whole
 desktop/WebView memory, navigation and historical-chart latency during imports,

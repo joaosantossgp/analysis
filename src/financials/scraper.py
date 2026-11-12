@@ -635,7 +635,8 @@ class CVMScraper:
         final = {}
         if self.standardizer:
             for s, df in reports.items():
-                final[s] = self.standardizer.enrich(df, s, tipo, (self.report_type=="consolidated"))
+                # Enrich only the table; restore the original audit evidence below.
+                final[s] = self.standardizer.enrich(_pd().DataFrame(df, copy=True), s, tipo, (self.report_type=="consolidated"))
         else: final = reports
         
         for statement, report in final.items():
@@ -663,7 +664,9 @@ class CVMScraper:
         for attempt in range(1, self.max_excel_lock_retries + 1):
             try:
                 with _pd().ExcelWriter(path, engine='openpyxl') as writer:
-                    for s, df in final.items():
+                    for s, report in final.items():
+                        # Keep audit attrs on the report for the explicit evidence sheets.
+                        df = _pd().DataFrame(report, copy=True)
                         df.to_excel(writer, sheet_name=s, startrow=2, index=False)
                         ws = writer.sheets[s]
                         ws['A1'] = f"Type: {self.report_type}"

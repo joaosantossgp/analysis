@@ -1,0 +1,4294 @@
+{
+  "issue": 492,
+  "date": "2026-11-11",
+  "generated_at_utc": "2026-11-12T02:40:08.277324+00:00",
+  "status": "Source-code validation; no packaged or release acceptance",
+  "source": {
+    "baseline_git_sha": "2173488a35ea81917c7f77e997f20750e3da8560",
+    "candidate_base_git_sha": "2173488a35ea81917c7f77e997f20750e3da8560",
+    "candidate_description": "Frozen working-tree changes on baseline; measured file hashes identify the candidate before commit.",
+    "frozen_file_sha256": {
+      "src/financials/database.py": "077cf943e8c3b48f3980265368144bfd960d11ac0abb861fef0f8d3c8dc6699a",
+      "src/financials/scraper.py": "940e241fd35c4ff66c73bb8018e507a2cc02563d4a5615b8dc263de5ba27d4b1",
+      "tests/test_financial_source_qa.py": "816765ba04c533a1334988c4dc43efda9c917e06f808792dac70762981307839"
+    },
+    "dependency_manifest_sha256": {
+      "requirements.txt": "7631b57d38aacc1bba9a2ac4a72f3a086c20cafd6a2eec214b87c1e69a7f3f04",
+      "apps/api/requirements-dev.txt": "5b30e1f96b0ce9f6e3c208499899a128d396734c36e3a39a8a0ce30dde9d51d8"
+    },
+    "versions": {
+      "python": "3.11.15 (main, Aug  7 2026, 02:24:19) [MSC v.1944 64 bit (AMD64)]",
+      "pandas": "3.1.1",
+      "polars": "2.1.0",
+      "sqlalchemy": "2.1.8",
+      "sqlite": "3.53.1"
+    }
+  },
+  "method": {
+    "companies": [
+      {
+        "cd_cvm": 9512,
+        "name": "PETROBRAS"
+      },
+      {
+        "cd_cvm": 4170,
+        "name": "VALE"
+      }
+    ],
+    "source_scope": "on_demand",
+    "pairs_per_scope": 3,
+    "scope_count": 2,
+    "runs_total": 12,
+    "workbooks_total": 24,
+    "execution_order": [
+      "candidate_final_1y_1",
+      "baseline_final_1y_1",
+      "baseline_final_1y_2",
+      "candidate_final_1y_2",
+      "candidate_final_1y_3",
+      "baseline_final_1y_3",
+      "candidate_final_3y_1",
+      "baseline_final_3y_1",
+      "baseline_final_3y_2",
+      "candidate_final_3y_2",
+      "candidate_final_3y_3",
+      "baseline_final_3y_3"
+    ],
+    "fresh_process_and_disposable_data_root_per_run": true,
+    "filesystem_cache_flushed": false,
+    "network": "Official CVM catalog GET and freshness HEAD requests; annual ZIP bodies came from identical local copies.",
+    "concurrent_work": "Tests, builds, profiles and app runtime were stopped during final throughput measurements.",
+    "worker_process_tree_memory_interval_seconds": 0.05,
+    "logical_data_temp_disk_interval_seconds": 0.25,
+    "guard_limits": {
+      "rss_bytes": 5368709120,
+      "logical_data_temp_bytes": 6442450944,
+      "elapsed_seconds": 1200
+    },
+    "host": {
+      "host_ram": 34031251456,
+      "host_cpu_logical": 28,
+      "os": "Windows-10-10.0.26200-SP0"
+    },
+    "hardware_scope": "Owner clarification 2026-11-11: 8 GB RAM / 30 GB free disk are efficiency references only. Issue 485 validates the actual available Windows host; no mandatory hardware or VM gate.",
+    "raw_comparison_note_clarification": "The unchanged raw comparison note about target8GiB acceptance is historical harness wording, superseded by hardware_scope.",
+    "table_normalization": "All columns except id, created_at, imported_at, updated_at and timestamp; rows sorted by string representation, serialized as JSON and SHA-256 hashed.",
+    "workbook_normalization": "Sheet order/names/state/dimensions, all cell values/formulas/types and number formats; excludes XLSX container timestamps.",
+    "limits": [
+      "Sampled peaks are not exact instantaneous maxima or physical allocation.",
+      "Queue time excludes process startup; process time includes startup, output checks and monitoring.",
+      "Nested wall-clock stage unions must not be summed.",
+      "No RAM or disk improvement claimed.",
+      "Two issuers and two historical windows; not a universal performance guarantee."
+    ]
+  },
+  "comparison": {
+    "runs": [
+      {
+        "run": "baseline_final_1y_1",
+        "mode": "baseline",
+        "scope": "2024-2024",
+        "process_seconds": 12.918856800009962,
+        "queue_seconds": 11.042415099975187,
+        "peak_rss": 915181568,
+        "peak_private": 2419552256,
+        "peak_disk": 548959289,
+        "peak_observed_retained_cache": 8990647,
+        "idle_cache_bytes": 0,
+        "heartbeat_lock_warnings": 0,
+        "company_write_retries": 0,
+        "csv_parses": 14,
+        "extractions": 14,
+        "stages_seconds": {
+          "catalog": 0.43328250001650304,
+          "zip_extract": 0.747913500003051,
+          "download_extract_task": 2.4178807999705896,
+          "csv_read": 1.2010966000379995,
+          "read_filter_convert": 1.306322300049942,
+          "financial_transform": 0.47599510004511103,
+          "database_transaction": 4.3198986000497825,
+          "persist_and_excel": 6.23889139998937
+        },
+        "company_seconds": {
+          "9512": 7.416197299957275,
+          "4170": 3.600552699994296
+        },
+        "progress_events": {
+          "9512": 9,
+          "4170": 9
+        },
+        "tables": {
+          "financial_reports": {
+            "rows": 2482,
+            "sha256": "c7711cf22b8b7f77084f6c7a54365f762b0a06ac0358ce034559e9cecce3847a"
+          },
+          "financial_source_observations": {
+            "rows": 2390,
+            "sha256": "f7989bca2163f820f3efc8d2be3dc7df3106cda78c9977c82de108a94536b3e6"
+          },
+          "financial_value_lineage": {
+            "rows": 2482,
+            "sha256": "70597c3711ea022bd793ff686029a703ebc4945e8f398cfb6959385673187fcd"
+          },
+          "qa_logs": {
+            "rows": 309,
+            "sha256": "33539d1b79f80a7b857da053962d94a03dc005710ca83d6550b0ce4a2d51e71a"
+          }
+        },
+        "sources": {
+          "dfp_cia_aberta_2024.zip": "b6a485b540728dcd4e7ed030bad8e749471044594ec17866fff4f0e94c54120a",
+          "itr_cia_aberta_2024.zip": "bdfa4c83bcc2bfac8f78dbca85494eea209c018ce429ac2ec15eb8d900762d7a"
+        },
+        "originals_unchanged": true
+      },
+      {
+        "run": "baseline_final_1y_2",
+        "mode": "baseline",
+        "scope": "2024-2024",
+        "process_seconds": 11.033301700023003,
+        "queue_seconds": 9.181112799968105,
+        "peak_rss": 1014489088,
+        "peak_private": 2423361536,
+        "peak_disk": 549491704,
+        "peak_observed_retained_cache": 8990647,
+        "idle_cache_bytes": 0,
+        "heartbeat_lock_warnings": 0,
+        "company_write_retries": 0,
+        "csv_parses": 14,
+        "extractions": 14,
+        "stages_seconds": {
+          "catalog": 0.422850200033281,
+          "zip_extract": 0.5339403999387287,
+          "download_extract_task": 0.6385123999207281,
+          "csv_read": 1.1985735002090223,
+          "read_filter_convert": 1.3034191000042483,
+          "financial_transform": 0.4614315000362694,
+          "database_transaction": 4.33194399997592,
+          "persist_and_excel": 6.215338899986818
+        },
+        "company_seconds": {
+          "9512": 5.581701600051019,
+          "4170": 3.5894761999952607
+        },
+        "progress_events": {
+          "9512": 9,
+          "4170": 9
+        },
+        "tables": {
+          "financial_reports": {
+            "rows": 2482,
+            "sha256": "c7711cf22b8b7f77084f6c7a54365f762b0a06ac0358ce034559e9cecce3847a"
+          },
+          "financial_source_observations": {
+            "rows": 2390,
+            "sha256": "f7989bca2163f820f3efc8d2be3dc7df3106cda78c9977c82de108a94536b3e6"
+          },
+          "financial_value_lineage": {
+            "rows": 2482,
+            "sha256": "70597c3711ea022bd793ff686029a703ebc4945e8f398cfb6959385673187fcd"
+          },
+          "qa_logs": {
+            "rows": 309,
+            "sha256": "33539d1b79f80a7b857da053962d94a03dc005710ca83d6550b0ce4a2d51e71a"
+          }
+        },
+        "sources": {
+          "dfp_cia_aberta_2024.zip": "b6a485b540728dcd4e7ed030bad8e749471044594ec17866fff4f0e94c54120a",
+          "itr_cia_aberta_2024.zip": "bdfa4c83bcc2bfac8f78dbca85494eea209c018ce429ac2ec15eb8d900762d7a"
+        },
+        "originals_unchanged": true
+      },
+      {
+        "run": "baseline_final_1y_3",
+        "mode": "baseline",
+        "scope": "2024-2024",
+        "process_seconds": 11.08119280001847,
+        "queue_seconds": 9.249364699993748,
+        "peak_rss": 893759488,
+        "peak_private": 2401067008,
+        "peak_disk": 548894723,
+        "peak_observed_retained_cache": 8990647,
+        "idle_cache_bytes": 0,
+        "heartbeat_lock_warnings": 0,
+        "company_write_retries": 0,
+        "csv_parses": 14,
+        "extractions": 14,
+        "stages_seconds": {
+          "catalog": 0.4207067000097595,
+          "zip_extract": 0.5286875999881886,
+          "download_extract_task": 0.662151399999857,
+          "csv_read": 1.2259177998639643,
+          "read_filter_convert": 1.3282821000320837,
+          "financial_transform": 0.4744346999214031,
+          "database_transaction": 4.322867499955464,
+          "persist_and_excel": 6.224758699943777
+        },
+        "company_seconds": {
+          "9512": 5.654480700031854,
+          "4170": 3.584834299981594
+        },
+        "progress_events": {
+          "9512": 9,
+          "4170": 9
+        },
+        "tables": {
+          "financial_reports": {
+            "rows": 2482,
+            "sha256": "c7711cf22b8b7f77084f6c7a54365f762b0a06ac0358ce034559e9cecce3847a"
+          },
+          "financial_source_observations": {
+            "rows": 2390,
+            "sha256": "f7989bca2163f820f3efc8d2be3dc7df3106cda78c9977c82de108a94536b3e6"
+          },
+          "financial_value_lineage": {
+            "rows": 2482,
+            "sha256": "70597c3711ea022bd793ff686029a703ebc4945e8f398cfb6959385673187fcd"
+          },
+          "qa_logs": {
+            "rows": 309,
+            "sha256": "33539d1b79f80a7b857da053962d94a03dc005710ca83d6550b0ce4a2d51e71a"
+          }
+        },
+        "sources": {
+          "dfp_cia_aberta_2024.zip": "b6a485b540728dcd4e7ed030bad8e749471044594ec17866fff4f0e94c54120a",
+          "itr_cia_aberta_2024.zip": "bdfa4c83bcc2bfac8f78dbca85494eea209c018ce429ac2ec15eb8d900762d7a"
+        },
+        "originals_unchanged": true
+      },
+      {
+        "run": "baseline_final_3y_1",
+        "mode": "baseline",
+        "scope": "2022-2024",
+        "process_seconds": 34.342215699958615,
+        "queue_seconds": 32.33489229995757,
+        "peak_rss": 1252151296,
+        "peak_private": 2677297152,
+        "peak_disk": 1637253611,
+        "peak_observed_retained_cache": 26801189,
+        "idle_cache_bytes": 0,
+        "heartbeat_lock_warnings": 1,
+        "company_write_retries": 0,
+        "csv_parses": 42,
+        "extractions": 42,
+        "stages_seconds": {
+          "catalog": 0.4353510000510141,
+          "zip_extract": 3.543848600005731,
+          "download_extract_task": 3.6638670000247657,
+          "csv_read": 3.9184089999762364,
+          "read_filter_convert": 4.248452600033488,
+          "financial_transform": 1.38679580000462,
+          "database_transaction": 15.22435759997461,
+          "persist_and_excel": 22.140903699968476
+        },
+        "company_seconds": {
+          "9512": 20.16508539998904,
+          "4170": 12.157570700044744
+        },
+        "progress_events": {
+          "9512": 13,
+          "4170": 13
+        },
+        "tables": {
+          "financial_reports": {
+            "rows": 7446,
+            "sha256": "a4cb819f5ca0e229aac2828722c8fd272e4721c00998d151579e2f4b028cda9d"
+          },
+          "financial_source_observations": {
+            "rows": 7135,
+            "sha256": "c0cfeecd2d0220b914b6396a4042950b292fc592636cb2be63f6606052393739"
+          },
+          "financial_value_lineage": {
+            "rows": 7409,
+            "sha256": "ce9a37ed1fb8404db9bb446454a4e7da13efe1cd96e63f6993e4fed14053a3c7"
+          },
+          "qa_logs": {
+            "rows": 1225,
+            "sha256": "d5e4e1ff97816d2dc7f3d8b5dcb41aebb71d750c8ffac41412d5c2010db2603a"
+          }
+        },
+        "sources": {
+          "dfp_cia_aberta_2022.zip": "151d605dc4c2bbe324ecbcfda29730017a6891314382ee3ebd9554df765c2f2a",
+          "dfp_cia_aberta_2023.zip": "344e37b704a588b3863c5dd4ad6ee54b3dc9a2ee18cf88e0e4e35f5a641cdc2d",
+          "dfp_cia_aberta_2024.zip": "b6a485b540728dcd4e7ed030bad8e749471044594ec17866fff4f0e94c54120a",
+          "itr_cia_aberta_2022.zip": "4579fe2476bc09612142196b5e0c20cb7ae30c3e18ea56a13bb558495f115eff",
+          "itr_cia_aberta_2023.zip": "9e6ce6cc2a978ffaae68c5869c98b60443791b6981f628d537778e160905504b",
+          "itr_cia_aberta_2024.zip": "bdfa4c83bcc2bfac8f78dbca85494eea209c018ce429ac2ec15eb8d900762d7a"
+        },
+        "originals_unchanged": true
+      },
+      {
+        "run": "baseline_final_3y_2",
+        "mode": "baseline",
+        "scope": "2022-2024",
+        "process_seconds": 31.299974499968812,
+        "queue_seconds": 29.0338352000108,
+        "peak_rss": 1326440448,
+        "peak_private": 2678177792,
+        "peak_disk": 1634894316,
+        "peak_observed_retained_cache": 26801189,
+        "idle_cache_bytes": 0,
+        "heartbeat_lock_warnings": 0,
+        "company_write_retries": 0,
+        "csv_parses": 42,
+        "extractions": 42,
+        "stages_seconds": {
+          "catalog": 0.42839650000678375,
+          "zip_extract": 0.9801567999529652,
+          "download_extract_task": 1.1162140000378713,
+          "csv_read": 3.5214139003073797,
+          "read_filter_convert": 3.851048599986825,
+          "financial_transform": 1.3823004000005312,
+          "database_transaction": 15.113366900070105,
+          "persist_and_excel": 22.078267299977597
+        },
+        "company_seconds": {
+          "9512": 16.886217499966733,
+          "4170": 12.135871600010432
+        },
+        "progress_events": {
+          "9512": 13,
+          "4170": 13
+        },
+        "tables": {
+          "financial_reports": {
+            "rows": 7446,
+            "sha256": "a4cb819f5ca0e229aac2828722c8fd272e4721c00998d151579e2f4b028cda9d"
+          },
+          "financial_source_observations": {
+            "rows": 7135,
+            "sha256": "c0cfeecd2d0220b914b6396a4042950b292fc592636cb2be63f6606052393739"
+          },
+          "financial_value_lineage": {
+            "rows": 7409,
+            "sha256": "ce9a37ed1fb8404db9bb446454a4e7da13efe1cd96e63f6993e4fed14053a3c7"
+          },
+          "qa_logs": {
+            "rows": 1225,
+            "sha256": "d5e4e1ff97816d2dc7f3d8b5dcb41aebb71d750c8ffac41412d5c2010db2603a"
+          }
+        },
+        "sources": {
+          "dfp_cia_aberta_2022.zip": "151d605dc4c2bbe324ecbcfda29730017a6891314382ee3ebd9554df765c2f2a",
+          "dfp_cia_aberta_2023.zip": "344e37b704a588b3863c5dd4ad6ee54b3dc9a2ee18cf88e0e4e35f5a641cdc2d",
+          "dfp_cia_aberta_2024.zip": "b6a485b540728dcd4e7ed030bad8e749471044594ec17866fff4f0e94c54120a",
+          "itr_cia_aberta_2022.zip": "4579fe2476bc09612142196b5e0c20cb7ae30c3e18ea56a13bb558495f115eff",
+          "itr_cia_aberta_2023.zip": "9e6ce6cc2a978ffaae68c5869c98b60443791b6981f628d537778e160905504b",
+          "itr_cia_aberta_2024.zip": "bdfa4c83bcc2bfac8f78dbca85494eea209c018ce429ac2ec15eb8d900762d7a"
+        },
+        "originals_unchanged": true
+      },
+      {
+        "run": "baseline_final_3y_3",
+        "mode": "baseline",
+        "scope": "2022-2024",
+        "process_seconds": 31.715504299965687,
+        "queue_seconds": 29.406646299990825,
+        "peak_rss": 1443266560,
+        "peak_private": 2764173312,
+        "peak_disk": 1634996713,
+        "peak_observed_retained_cache": 26801189,
+        "idle_cache_bytes": 0,
+        "heartbeat_lock_warnings": 0,
+        "company_write_retries": 0,
+        "csv_parses": 42,
+        "extractions": 42,
+        "stages_seconds": {
+          "catalog": 0.4288893999764696,
+          "zip_extract": 0.9953542000148445,
+          "download_extract_task": 1.1287862999597564,
+          "csv_read": 3.6011503000045195,
+          "read_filter_convert": 3.933641700015869,
+          "financial_transform": 1.4300548000028357,
+          "database_transaction": 14.991730000008829,
+          "persist_and_excel": 21.74529019999318
+        },
+        "company_seconds": {
+          "9512": 16.86133929999778,
+          "4170": 12.533123300003354
+        },
+        "progress_events": {
+          "9512": 13,
+          "4170": 13
+        },
+        "tables": {
+          "financial_reports": {
+            "rows": 7446,
+            "sha256": "a4cb819f5ca0e229aac2828722c8fd272e4721c00998d151579e2f4b028cda9d"
+          },
+          "financial_source_observations": {
+            "rows": 7135,
+            "sha256": "c0cfeecd2d0220b914b6396a4042950b292fc592636cb2be63f6606052393739"
+          },
+          "financial_value_lineage": {
+            "rows": 7409,
+            "sha256": "ce9a37ed1fb8404db9bb446454a4e7da13efe1cd96e63f6993e4fed14053a3c7"
+          },
+          "qa_logs": {
+            "rows": 1225,
+            "sha256": "d5e4e1ff97816d2dc7f3d8b5dcb41aebb71d750c8ffac41412d5c2010db2603a"
+          }
+        },
+        "sources": {
+          "dfp_cia_aberta_2022.zip": "151d605dc4c2bbe324ecbcfda29730017a6891314382ee3ebd9554df765c2f2a",
+          "dfp_cia_aberta_2023.zip": "344e37b704a588b3863c5dd4ad6ee54b3dc9a2ee18cf88e0e4e35f5a641cdc2d",
+          "dfp_cia_aberta_2024.zip": "b6a485b540728dcd4e7ed030bad8e749471044594ec17866fff4f0e94c54120a",
+          "itr_cia_aberta_2022.zip": "4579fe2476bc09612142196b5e0c20cb7ae30c3e18ea56a13bb558495f115eff",
+          "itr_cia_aberta_2023.zip": "9e6ce6cc2a978ffaae68c5869c98b60443791b6981f628d537778e160905504b",
+          "itr_cia_aberta_2024.zip": "bdfa4c83bcc2bfac8f78dbca85494eea209c018ce429ac2ec15eb8d900762d7a"
+        },
+        "originals_unchanged": true
+      },
+      {
+        "run": "candidate_final_1y_1",
+        "mode": "candidate",
+        "scope": "2024-2024",
+        "process_seconds": 6.3595577999949455,
+        "queue_seconds": 4.5559184000012465,
+        "peak_rss": 980811776,
+        "peak_private": 2447835136,
+        "peak_disk": 549077974,
+        "peak_observed_retained_cache": 8990647,
+        "idle_cache_bytes": 0,
+        "heartbeat_lock_warnings": 0,
+        "company_write_retries": 0,
+        "csv_parses": 14,
+        "extractions": 14,
+        "stages_seconds": {
+          "catalog": 0.4163206999655813,
+          "zip_extract": 0.5104521000175737,
+          "download_extract_task": 0.6345934999990277,
+          "csv_read": 1.1723654998932034,
+          "read_filter_convert": 1.2834288000594825,
+          "financial_transform": 0.4705614999984391,
+          "database_transaction": 0.535612800042145,
+          "persist_and_excel": 1.610579600033816
+        },
+        "company_seconds": {
+          "9512": 3.2298485999926925,
+          "4170": 1.316434299980756
+        },
+        "progress_events": {
+          "9512": 9,
+          "4170": 9
+        },
+        "tables": {
+          "financial_reports": {
+            "rows": 2482,
+            "sha256": "c7711cf22b8b7f77084f6c7a54365f762b0a06ac0358ce034559e9cecce3847a"
+          },
+          "financial_source_observations": {
+            "rows": 2390,
+            "sha256": "f7989bca2163f820f3efc8d2be3dc7df3106cda78c9977c82de108a94536b3e6"
+          },
+          "financial_value_lineage": {
+            "rows": 2482,
+            "sha256": "70597c3711ea022bd793ff686029a703ebc4945e8f398cfb6959385673187fcd"
+          },
+          "qa_logs": {
+            "rows": 309,
+            "sha256": "33539d1b79f80a7b857da053962d94a03dc005710ca83d6550b0ce4a2d51e71a"
+          }
+        },
+        "sources": {
+          "dfp_cia_aberta_2024.zip": "b6a485b540728dcd4e7ed030bad8e749471044594ec17866fff4f0e94c54120a",
+          "itr_cia_aberta_2024.zip": "bdfa4c83bcc2bfac8f78dbca85494eea209c018ce429ac2ec15eb8d900762d7a"
+        },
+        "originals_unchanged": true
+      },
+      {
+        "run": "candidate_final_1y_2",
+        "mode": "candidate",
+        "scope": "2024-2024",
+        "process_seconds": 7.286428799969144,
+        "queue_seconds": 5.380058599985205,
+        "peak_rss": 966557696,
+        "peak_private": 2382028800,
+        "peak_disk": 549557208,
+        "peak_observed_retained_cache": 8990647,
+        "idle_cache_bytes": 0,
+        "heartbeat_lock_warnings": 0,
+        "company_write_retries": 0,
+        "csv_parses": 14,
+        "extractions": 14,
+        "stages_seconds": {
+          "catalog": 0.41914379998343065,
+          "zip_extract": 0.5360836000763811,
+          "download_extract_task": 0.6470803000265732,
+          "csv_read": 1.8705236000241712,
+          "read_filter_convert": 1.9717532999929972,
+          "financial_transform": 0.4460382999968715,
+          "database_transaction": 0.545293600007426,
+          "persist_and_excel": 1.6190048000426032
+        },
+        "company_seconds": {
+          "9512": 3.955579500005115,
+          "4170": 1.388576199999079
+        },
+        "progress_events": {
+          "9512": 9,
+          "4170": 9
+        },
+        "tables": {
+          "financial_reports": {
+            "rows": 2482,
+            "sha256": "c7711cf22b8b7f77084f6c7a54365f762b0a06ac0358ce034559e9cecce3847a"
+          },
+          "financial_source_observations": {
+            "rows": 2390,
+            "sha256": "f7989bca2163f820f3efc8d2be3dc7df3106cda78c9977c82de108a94536b3e6"
+          },
+          "financial_value_lineage": {
+            "rows": 2482,
+            "sha256": "70597c3711ea022bd793ff686029a703ebc4945e8f398cfb6959385673187fcd"
+          },
+          "qa_logs": {
+            "rows": 309,
+            "sha256": "33539d1b79f80a7b857da053962d94a03dc005710ca83d6550b0ce4a2d51e71a"
+          }
+        },
+        "sources": {
+          "dfp_cia_aberta_2024.zip": "b6a485b540728dcd4e7ed030bad8e749471044594ec17866fff4f0e94c54120a",
+          "itr_cia_aberta_2024.zip": "bdfa4c83bcc2bfac8f78dbca85494eea209c018ce429ac2ec15eb8d900762d7a"
+        },
+        "originals_unchanged": true
+      },
+      {
+        "run": "candidate_final_1y_3",
+        "mode": "candidate",
+        "scope": "2024-2024",
+        "process_seconds": 6.801846199959982,
+        "queue_seconds": 4.803914699994493,
+        "peak_rss": 922202112,
+        "peak_private": 2402316288,
+        "peak_disk": 549323672,
+        "peak_observed_retained_cache": 8990647,
+        "idle_cache_bytes": 0,
+        "heartbeat_lock_warnings": 0,
+        "company_write_retries": 0,
+        "csv_parses": 14,
+        "extractions": 14,
+        "stages_seconds": {
+          "catalog": 0.43827439995948225,
+          "zip_extract": 0.5188180000986904,
+          "download_extract_task": 0.6654966999776661,
+          "csv_read": 1.1614620998152532,
+          "read_filter_convert": 1.2761487000389025,
+          "financial_transform": 0.4751270000706427,
+          "database_transaction": 0.5402113000163808,
+          "persist_and_excel": 1.7240257000084966
+        },
+        "company_seconds": {
+          "9512": 3.3851823000004515,
+          "4170": 1.4079986999859102
+        },
+        "progress_events": {
+          "9512": 9,
+          "4170": 9
+        },
+        "tables": {
+          "financial_reports": {
+            "rows": 2482,
+            "sha256": "c7711cf22b8b7f77084f6c7a54365f762b0a06ac0358ce034559e9cecce3847a"
+          },
+          "financial_source_observations": {
+            "rows": 2390,
+            "sha256": "f7989bca2163f820f3efc8d2be3dc7df3106cda78c9977c82de108a94536b3e6"
+          },
+          "financial_value_lineage": {
+            "rows": 2482,
+            "sha256": "70597c3711ea022bd793ff686029a703ebc4945e8f398cfb6959385673187fcd"
+          },
+          "qa_logs": {
+            "rows": 309,
+            "sha256": "33539d1b79f80a7b857da053962d94a03dc005710ca83d6550b0ce4a2d51e71a"
+          }
+        },
+        "sources": {
+          "dfp_cia_aberta_2024.zip": "b6a485b540728dcd4e7ed030bad8e749471044594ec17866fff4f0e94c54120a",
+          "itr_cia_aberta_2024.zip": "bdfa4c83bcc2bfac8f78dbca85494eea209c018ce429ac2ec15eb8d900762d7a"
+        },
+        "originals_unchanged": true
+      },
+      {
+        "run": "candidate_final_3y_1",
+        "mode": "candidate",
+        "scope": "2022-2024",
+        "process_seconds": 13.775330399977975,
+        "queue_seconds": 11.516800899989903,
+        "peak_rss": 1422331904,
+        "peak_private": 2721828864,
+        "peak_disk": 1634517381,
+        "peak_observed_retained_cache": 26801189,
+        "idle_cache_bytes": 0,
+        "heartbeat_lock_warnings": 0,
+        "company_write_retries": 0,
+        "csv_parses": 42,
+        "extractions": 42,
+        "stages_seconds": {
+          "catalog": 0.43402839999180287,
+          "zip_extract": 1.04894810001133,
+          "download_extract_task": 1.1771703999838792,
+          "csv_read": 3.6374044999829493,
+          "read_filter_convert": 3.9800423000124283,
+          "financial_transform": 1.3942955000093207,
+          "database_transaction": 1.5861331999767572,
+          "persist_and_excel": 4.311104899970815
+        },
+        "company_seconds": {
+          "9512": 8.184175300004426,
+          "4170": 3.3203348999959417
+        },
+        "progress_events": {
+          "9512": 13,
+          "4170": 13
+        },
+        "tables": {
+          "financial_reports": {
+            "rows": 7446,
+            "sha256": "a4cb819f5ca0e229aac2828722c8fd272e4721c00998d151579e2f4b028cda9d"
+          },
+          "financial_source_observations": {
+            "rows": 7135,
+            "sha256": "c0cfeecd2d0220b914b6396a4042950b292fc592636cb2be63f6606052393739"
+          },
+          "financial_value_lineage": {
+            "rows": 7409,
+            "sha256": "ce9a37ed1fb8404db9bb446454a4e7da13efe1cd96e63f6993e4fed14053a3c7"
+          },
+          "qa_logs": {
+            "rows": 1225,
+            "sha256": "d5e4e1ff97816d2dc7f3d8b5dcb41aebb71d750c8ffac41412d5c2010db2603a"
+          }
+        },
+        "sources": {
+          "dfp_cia_aberta_2022.zip": "151d605dc4c2bbe324ecbcfda29730017a6891314382ee3ebd9554df765c2f2a",
+          "dfp_cia_aberta_2023.zip": "344e37b704a588b3863c5dd4ad6ee54b3dc9a2ee18cf88e0e4e35f5a641cdc2d",
+          "dfp_cia_aberta_2024.zip": "b6a485b540728dcd4e7ed030bad8e749471044594ec17866fff4f0e94c54120a",
+          "itr_cia_aberta_2022.zip": "4579fe2476bc09612142196b5e0c20cb7ae30c3e18ea56a13bb558495f115eff",
+          "itr_cia_aberta_2023.zip": "9e6ce6cc2a978ffaae68c5869c98b60443791b6981f628d537778e160905504b",
+          "itr_cia_aberta_2024.zip": "bdfa4c83bcc2bfac8f78dbca85494eea209c018ce429ac2ec15eb8d900762d7a"
+        },
+        "originals_unchanged": true
+      },
+      {
+        "run": "candidate_final_3y_2",
+        "mode": "candidate",
+        "scope": "2022-2024",
+        "process_seconds": 15.54026259999955,
+        "queue_seconds": 13.2284780999762,
+        "peak_rss": 1287315456,
+        "peak_private": 2754531328,
+        "peak_disk": 1635320200,
+        "peak_observed_retained_cache": 26801189,
+        "idle_cache_bytes": 0,
+        "heartbeat_lock_warnings": 0,
+        "company_write_retries": 0,
+        "csv_parses": 42,
+        "extractions": 42,
+        "stages_seconds": {
+          "catalog": 0.42208089999621734,
+          "zip_extract": 1.8031843999633566,
+          "download_extract_task": 2.4807823000010103,
+          "csv_read": 3.892659100180026,
+          "read_filter_convert": 4.3537323999917135,
+          "financial_transform": 1.427979099971708,
+          "database_transaction": 1.619475000014063,
+          "persist_and_excel": 4.320233799924608
+        },
+        "company_seconds": {
+          "9512": 9.889681499975268,
+          "4170": 3.3262454999494366
+        },
+        "progress_events": {
+          "9512": 13,
+          "4170": 13
+        },
+        "tables": {
+          "financial_reports": {
+            "rows": 7446,
+            "sha256": "a4cb819f5ca0e229aac2828722c8fd272e4721c00998d151579e2f4b028cda9d"
+          },
+          "financial_source_observations": {
+            "rows": 7135,
+            "sha256": "c0cfeecd2d0220b914b6396a4042950b292fc592636cb2be63f6606052393739"
+          },
+          "financial_value_lineage": {
+            "rows": 7409,
+            "sha256": "ce9a37ed1fb8404db9bb446454a4e7da13efe1cd96e63f6993e4fed14053a3c7"
+          },
+          "qa_logs": {
+            "rows": 1225,
+            "sha256": "d5e4e1ff97816d2dc7f3d8b5dcb41aebb71d750c8ffac41412d5c2010db2603a"
+          }
+        },
+        "sources": {
+          "dfp_cia_aberta_2022.zip": "151d605dc4c2bbe324ecbcfda29730017a6891314382ee3ebd9554df765c2f2a",
+          "dfp_cia_aberta_2023.zip": "344e37b704a588b3863c5dd4ad6ee54b3dc9a2ee18cf88e0e4e35f5a641cdc2d",
+          "dfp_cia_aberta_2024.zip": "b6a485b540728dcd4e7ed030bad8e749471044594ec17866fff4f0e94c54120a",
+          "itr_cia_aberta_2022.zip": "4579fe2476bc09612142196b5e0c20cb7ae30c3e18ea56a13bb558495f115eff",
+          "itr_cia_aberta_2023.zip": "9e6ce6cc2a978ffaae68c5869c98b60443791b6981f628d537778e160905504b",
+          "itr_cia_aberta_2024.zip": "bdfa4c83bcc2bfac8f78dbca85494eea209c018ce429ac2ec15eb8d900762d7a"
+        },
+        "originals_unchanged": true
+      },
+      {
+        "run": "candidate_final_3y_3",
+        "mode": "candidate",
+        "scope": "2022-2024",
+        "process_seconds": 14.905632000009064,
+        "queue_seconds": 12.606001599982847,
+        "peak_rss": 1380884480,
+        "peak_private": 2691702784,
+        "peak_disk": 1637474694,
+        "peak_observed_retained_cache": 26801189,
+        "idle_cache_bytes": 0,
+        "heartbeat_lock_warnings": 0,
+        "company_write_retries": 0,
+        "csv_parses": 42,
+        "extractions": 42,
+        "stages_seconds": {
+          "catalog": 0.4360724000725895,
+          "zip_extract": 2.030156499997247,
+          "download_extract_task": 2.2227665999671444,
+          "csv_read": 3.506743800069671,
+          "read_filter_convert": 3.852127799997106,
+          "financial_transform": 1.448803199979011,
+          "database_transaction": 1.6049902000231668,
+          "persist_and_excel": 4.219496699981391
+        },
+        "company_seconds": {
+          "9512": 9.244029399997089,
+          "4170": 3.3344799000187777
+        },
+        "progress_events": {
+          "9512": 13,
+          "4170": 13
+        },
+        "tables": {
+          "financial_reports": {
+            "rows": 7446,
+            "sha256": "a4cb819f5ca0e229aac2828722c8fd272e4721c00998d151579e2f4b028cda9d"
+          },
+          "financial_source_observations": {
+            "rows": 7135,
+            "sha256": "c0cfeecd2d0220b914b6396a4042950b292fc592636cb2be63f6606052393739"
+          },
+          "financial_value_lineage": {
+            "rows": 7409,
+            "sha256": "ce9a37ed1fb8404db9bb446454a4e7da13efe1cd96e63f6993e4fed14053a3c7"
+          },
+          "qa_logs": {
+            "rows": 1225,
+            "sha256": "d5e4e1ff97816d2dc7f3d8b5dcb41aebb71d750c8ffac41412d5c2010db2603a"
+          }
+        },
+        "sources": {
+          "dfp_cia_aberta_2022.zip": "151d605dc4c2bbe324ecbcfda29730017a6891314382ee3ebd9554df765c2f2a",
+          "dfp_cia_aberta_2023.zip": "344e37b704a588b3863c5dd4ad6ee54b3dc9a2ee18cf88e0e4e35f5a641cdc2d",
+          "dfp_cia_aberta_2024.zip": "b6a485b540728dcd4e7ed030bad8e749471044594ec17866fff4f0e94c54120a",
+          "itr_cia_aberta_2022.zip": "4579fe2476bc09612142196b5e0c20cb7ae30c3e18ea56a13bb558495f115eff",
+          "itr_cia_aberta_2023.zip": "9e6ce6cc2a978ffaae68c5869c98b60443791b6981f628d537778e160905504b",
+          "itr_cia_aberta_2024.zip": "bdfa4c83bcc2bfac8f78dbca85494eea209c018ce429ac2ec15eb8d900762d7a"
+        },
+        "originals_unchanged": true
+      }
+    ],
+    "scopes": {
+      "2022-2024": {
+        "modes": {
+          "baseline": {
+            "n": 3,
+            "median": {
+              "queue_seconds": 29.406646299990825,
+              "process_seconds": 31.715504299965687,
+              "peak_rss": 1326440448,
+              "peak_private": 2678177792,
+              "peak_disk": 1634996713,
+              "csv_parses": 42,
+              "extractions": 42,
+              "peak_observed_retained_cache": 26801189
+            },
+            "range": {
+              "queue_seconds": [
+                29.0338352000108,
+                32.33489229995757
+              ],
+              "process_seconds": [
+                31.299974499968812,
+                34.342215699958615
+              ],
+              "peak_rss": [
+                1252151296,
+                1443266560
+              ],
+              "peak_private": [
+                2677297152,
+                2764173312
+              ],
+              "peak_disk": [
+                1634894316,
+                1637253611
+              ],
+              "csv_parses": [
+                42,
+                42
+              ],
+              "extractions": [
+                42,
+                42
+              ],
+              "peak_observed_retained_cache": [
+                26801189,
+                26801189
+              ]
+            },
+            "median_stages_seconds": {
+              "catalog": 0.4288893999764696,
+              "zip_extract": 0.9953542000148445,
+              "download_extract_task": 1.1287862999597564,
+              "csv_read": 3.6011503000045195,
+              "read_filter_convert": 3.933641700015869,
+              "financial_transform": 1.38679580000462,
+              "database_transaction": 15.113366900070105,
+              "persist_and_excel": 22.078267299977597
+            }
+          },
+          "candidate": {
+            "n": 3,
+            "median": {
+              "queue_seconds": 12.606001599982847,
+              "process_seconds": 14.905632000009064,
+              "peak_rss": 1380884480,
+              "peak_private": 2721828864,
+              "peak_disk": 1635320200,
+              "csv_parses": 42,
+              "extractions": 42,
+              "peak_observed_retained_cache": 26801189
+            },
+            "range": {
+              "queue_seconds": [
+                11.516800899989903,
+                13.2284780999762
+              ],
+              "process_seconds": [
+                13.775330399977975,
+                15.54026259999955
+              ],
+              "peak_rss": [
+                1287315456,
+                1422331904
+              ],
+              "peak_private": [
+                2691702784,
+                2754531328
+              ],
+              "peak_disk": [
+                1634517381,
+                1637474694
+              ],
+              "csv_parses": [
+                42,
+                42
+              ],
+              "extractions": [
+                42,
+                42
+              ],
+              "peak_observed_retained_cache": [
+                26801189,
+                26801189
+              ]
+            },
+            "median_stages_seconds": {
+              "catalog": 0.43402839999180287,
+              "zip_extract": 1.8031843999633566,
+              "download_extract_task": 2.2227665999671444,
+              "csv_read": 3.6374044999829493,
+              "read_filter_convert": 3.9800423000124283,
+              "financial_transform": 1.427979099971708,
+              "database_transaction": 1.6049902000231668,
+              "persist_and_excel": 4.311104899970815
+            }
+          }
+        },
+        "equivalent": true,
+        "sources": {
+          "dfp_cia_aberta_2022.zip": "151d605dc4c2bbe324ecbcfda29730017a6891314382ee3ebd9554df765c2f2a",
+          "dfp_cia_aberta_2023.zip": "344e37b704a588b3863c5dd4ad6ee54b3dc9a2ee18cf88e0e4e35f5a641cdc2d",
+          "dfp_cia_aberta_2024.zip": "b6a485b540728dcd4e7ed030bad8e749471044594ec17866fff4f0e94c54120a",
+          "itr_cia_aberta_2022.zip": "4579fe2476bc09612142196b5e0c20cb7ae30c3e18ea56a13bb558495f115eff",
+          "itr_cia_aberta_2023.zip": "9e6ce6cc2a978ffaae68c5869c98b60443791b6981f628d537778e160905504b",
+          "itr_cia_aberta_2024.zip": "bdfa4c83bcc2bfac8f78dbca85494eea209c018ce429ac2ec15eb8d900762d7a"
+        },
+        "tables": {
+          "financial_reports": {
+            "rows": 7446,
+            "sha256": "a4cb819f5ca0e229aac2828722c8fd272e4721c00998d151579e2f4b028cda9d"
+          },
+          "financial_source_observations": {
+            "rows": 7135,
+            "sha256": "c0cfeecd2d0220b914b6396a4042950b292fc592636cb2be63f6606052393739"
+          },
+          "financial_value_lineage": {
+            "rows": 7409,
+            "sha256": "ce9a37ed1fb8404db9bb446454a4e7da13efe1cd96e63f6993e4fed14053a3c7"
+          },
+          "qa_logs": {
+            "rows": 1225,
+            "sha256": "d5e4e1ff97816d2dc7f3d8b5dcb41aebb71d750c8ffac41412d5c2010db2603a"
+          }
+        },
+        "queue_reduction_percent": 57.13213444544753
+      },
+      "2024-2024": {
+        "modes": {
+          "baseline": {
+            "n": 3,
+            "median": {
+              "queue_seconds": 9.249364699993748,
+              "process_seconds": 11.08119280001847,
+              "peak_rss": 915181568,
+              "peak_private": 2419552256,
+              "peak_disk": 548959289,
+              "csv_parses": 14,
+              "extractions": 14,
+              "peak_observed_retained_cache": 8990647
+            },
+            "range": {
+              "queue_seconds": [
+                9.181112799968105,
+                11.042415099975187
+              ],
+              "process_seconds": [
+                11.033301700023003,
+                12.918856800009962
+              ],
+              "peak_rss": [
+                893759488,
+                1014489088
+              ],
+              "peak_private": [
+                2401067008,
+                2423361536
+              ],
+              "peak_disk": [
+                548894723,
+                549491704
+              ],
+              "csv_parses": [
+                14,
+                14
+              ],
+              "extractions": [
+                14,
+                14
+              ],
+              "peak_observed_retained_cache": [
+                8990647,
+                8990647
+              ]
+            },
+            "median_stages_seconds": {
+              "catalog": 0.422850200033281,
+              "zip_extract": 0.5339403999387287,
+              "download_extract_task": 0.662151399999857,
+              "csv_read": 1.2010966000379995,
+              "read_filter_convert": 1.306322300049942,
+              "financial_transform": 0.4744346999214031,
+              "database_transaction": 4.322867499955464,
+              "persist_and_excel": 6.224758699943777
+            }
+          },
+          "candidate": {
+            "n": 3,
+            "median": {
+              "queue_seconds": 4.803914699994493,
+              "process_seconds": 6.801846199959982,
+              "peak_rss": 966557696,
+              "peak_private": 2402316288,
+              "peak_disk": 549323672,
+              "csv_parses": 14,
+              "extractions": 14,
+              "peak_observed_retained_cache": 8990647
+            },
+            "range": {
+              "queue_seconds": [
+                4.5559184000012465,
+                5.380058599985205
+              ],
+              "process_seconds": [
+                6.3595577999949455,
+                7.286428799969144
+              ],
+              "peak_rss": [
+                922202112,
+                980811776
+              ],
+              "peak_private": [
+                2382028800,
+                2447835136
+              ],
+              "peak_disk": [
+                549077974,
+                549557208
+              ],
+              "csv_parses": [
+                14,
+                14
+              ],
+              "extractions": [
+                14,
+                14
+              ],
+              "peak_observed_retained_cache": [
+                8990647,
+                8990647
+              ]
+            },
+            "median_stages_seconds": {
+              "catalog": 0.41914379998343065,
+              "zip_extract": 0.5188180000986904,
+              "download_extract_task": 0.6470803000265732,
+              "csv_read": 1.1723654998932034,
+              "read_filter_convert": 1.2834288000594825,
+              "financial_transform": 0.4705614999984391,
+              "database_transaction": 0.5402113000163808,
+              "persist_and_excel": 1.6190048000426032
+            }
+          }
+        },
+        "equivalent": true,
+        "sources": {
+          "dfp_cia_aberta_2024.zip": "b6a485b540728dcd4e7ed030bad8e749471044594ec17866fff4f0e94c54120a",
+          "itr_cia_aberta_2024.zip": "bdfa4c83bcc2bfac8f78dbca85494eea209c018ce429ac2ec15eb8d900762d7a"
+        },
+        "tables": {
+          "financial_reports": {
+            "rows": 2482,
+            "sha256": "c7711cf22b8b7f77084f6c7a54365f762b0a06ac0358ce034559e9cecce3847a"
+          },
+          "financial_source_observations": {
+            "rows": 2390,
+            "sha256": "f7989bca2163f820f3efc8d2be3dc7df3106cda78c9977c82de108a94536b3e6"
+          },
+          "financial_value_lineage": {
+            "rows": 2482,
+            "sha256": "70597c3711ea022bd793ff686029a703ebc4945e8f398cfb6959385673187fcd"
+          },
+          "qa_logs": {
+            "rows": 309,
+            "sha256": "33539d1b79f80a7b857da053962d94a03dc005710ca83d6550b0ce4a2d51e71a"
+          }
+        },
+        "queue_reduction_percent": 48.06221988416415
+      }
+    },
+    "notes": [
+      "Stage spans are wall-clock unions; nested stages must not be summed.",
+      "Cache sample is observed at company completion; total process peaks are independently sampled.",
+      "Byte units use powers of1024.",
+      "Host32GiB; not target8GiB acceptance."
+    ]
+  },
+  "workbook_comparison": {
+    "equal": true,
+    "compared": "Sheet order/names/state/dimensions, all cell values/formulas/types and number formats; excludes XLSX container timestamps.",
+    "runs": {
+      "baseline_final_1y_1": {
+        "PETROBRAS_financials.xlsx": [
+          {
+            "name": "BPA",
+            "state": "visible",
+            "rows": 68,
+            "columns": 10,
+            "sha256": "9db4026f94c98b3c29225567c74c9dd668f46fb8d7f46e1d1e0a419141034361"
+          },
+          {
+            "name": "BPP",
+            "state": "visible",
+            "rows": 113,
+            "columns": 10,
+            "sha256": "b2d428da351d96f120560fe3ed0e7a533757dcd278e7ab6d888bd4af9684fba0"
+          },
+          {
+            "name": "DRE",
+            "state": "visible",
+            "rows": 46,
+            "columns": 11,
+            "sha256": "260515e4637f6f70c064cd857dd17621277043336405afa17bd1f0f816382570"
+          },
+          {
+            "name": "DFC",
+            "state": "visible",
+            "rows": 68,
+            "columns": 11,
+            "sha256": "6b6ce396504b59806b4e90bc68b95716ae580dafa1cd81eb4c90d1c4062b6946"
+          },
+          {
+            "name": "financial_qa",
+            "state": "visible",
+            "rows": 43,
+            "columns": 12,
+            "sha256": "9f4d0a5b32c671b30968165444e10d2f4c2dbc3c0352f9caffbe0962f373899e"
+          },
+          {
+            "name": "source_observations",
+            "state": "visible",
+            "rows": 1219,
+            "columns": 25,
+            "sha256": "c17674cff9bee7d47f9c42adf6b0b41255ee2ea508eece0f9f78609cfd3a5eae"
+          },
+          {
+            "name": "value_lineage",
+            "state": "visible",
+            "rows": 1241,
+            "columns": 9,
+            "sha256": "427640eea9252765348e5528399be1a3a463478f6798d208b06a157d01a661e1"
+          }
+        ],
+        "VALE_financials.xlsx": [
+          {
+            "name": "BPA",
+            "state": "visible",
+            "rows": 67,
+            "columns": 10,
+            "sha256": "b242a0f59fb5e9af075e6028d0dffdf5117fac32ad70177eec24091f0e605340"
+          },
+          {
+            "name": "BPP",
+            "state": "visible",
+            "rows": 127,
+            "columns": 10,
+            "sha256": "c4a69687b21ef4284a4b0e38025d345bdf1eafcdf6cfa883b2d04a3f8daa16b3"
+          },
+          {
+            "name": "DRE",
+            "state": "visible",
+            "rows": 41,
+            "columns": 11,
+            "sha256": "e7a9ea558278259637bb37c815e21627b2bb60ce38052a119fedcbd2e3455ee1"
+          },
+          {
+            "name": "DFC",
+            "state": "visible",
+            "rows": 63,
+            "columns": 11,
+            "sha256": "d6083b05ae1c4b6b5f9b3613fab7eb36a1ea41dcc4e5eb1a7036345ddf89e5d5"
+          },
+          {
+            "name": "financial_qa",
+            "state": "visible",
+            "rows": 268,
+            "columns": 15,
+            "sha256": "250da6375154bf80c8134a62b225f3983e6c933d93a3cb373af5753fce9424fb"
+          },
+          {
+            "name": "source_observations",
+            "state": "visible",
+            "rows": 1173,
+            "columns": 25,
+            "sha256": "6d632d6bde5e9d58b856d50ddb2874f1182c95a319eba846feb43b045deb4b95"
+          },
+          {
+            "name": "value_lineage",
+            "state": "visible",
+            "rows": 1243,
+            "columns": 9,
+            "sha256": "673d06a5d871eb95766217cbb77f04af4709aeeb15d5829911489c8b131e07bd"
+          }
+        ]
+      },
+      "baseline_final_1y_2": {
+        "PETROBRAS_financials.xlsx": [
+          {
+            "name": "BPA",
+            "state": "visible",
+            "rows": 68,
+            "columns": 10,
+            "sha256": "9db4026f94c98b3c29225567c74c9dd668f46fb8d7f46e1d1e0a419141034361"
+          },
+          {
+            "name": "BPP",
+            "state": "visible",
+            "rows": 113,
+            "columns": 10,
+            "sha256": "b2d428da351d96f120560fe3ed0e7a533757dcd278e7ab6d888bd4af9684fba0"
+          },
+          {
+            "name": "DRE",
+            "state": "visible",
+            "rows": 46,
+            "columns": 11,
+            "sha256": "260515e4637f6f70c064cd857dd17621277043336405afa17bd1f0f816382570"
+          },
+          {
+            "name": "DFC",
+            "state": "visible",
+            "rows": 68,
+            "columns": 11,
+            "sha256": "6b6ce396504b59806b4e90bc68b95716ae580dafa1cd81eb4c90d1c4062b6946"
+          },
+          {
+            "name": "financial_qa",
+            "state": "visible",
+            "rows": 43,
+            "columns": 12,
+            "sha256": "9f4d0a5b32c671b30968165444e10d2f4c2dbc3c0352f9caffbe0962f373899e"
+          },
+          {
+            "name": "source_observations",
+            "state": "visible",
+            "rows": 1219,
+            "columns": 25,
+            "sha256": "c17674cff9bee7d47f9c42adf6b0b41255ee2ea508eece0f9f78609cfd3a5eae"
+          },
+          {
+            "name": "value_lineage",
+            "state": "visible",
+            "rows": 1241,
+            "columns": 9,
+            "sha256": "427640eea9252765348e5528399be1a3a463478f6798d208b06a157d01a661e1"
+          }
+        ],
+        "VALE_financials.xlsx": [
+          {
+            "name": "BPA",
+            "state": "visible",
+            "rows": 67,
+            "columns": 10,
+            "sha256": "b242a0f59fb5e9af075e6028d0dffdf5117fac32ad70177eec24091f0e605340"
+          },
+          {
+            "name": "BPP",
+            "state": "visible",
+            "rows": 127,
+            "columns": 10,
+            "sha256": "c4a69687b21ef4284a4b0e38025d345bdf1eafcdf6cfa883b2d04a3f8daa16b3"
+          },
+          {
+            "name": "DRE",
+            "state": "visible",
+            "rows": 41,
+            "columns": 11,
+            "sha256": "e7a9ea558278259637bb37c815e21627b2bb60ce38052a119fedcbd2e3455ee1"
+          },
+          {
+            "name": "DFC",
+            "state": "visible",
+            "rows": 63,
+            "columns": 11,
+            "sha256": "d6083b05ae1c4b6b5f9b3613fab7eb36a1ea41dcc4e5eb1a7036345ddf89e5d5"
+          },
+          {
+            "name": "financial_qa",
+            "state": "visible",
+            "rows": 268,
+            "columns": 15,
+            "sha256": "250da6375154bf80c8134a62b225f3983e6c933d93a3cb373af5753fce9424fb"
+          },
+          {
+            "name": "source_observations",
+            "state": "visible",
+            "rows": 1173,
+            "columns": 25,
+            "sha256": "6d632d6bde5e9d58b856d50ddb2874f1182c95a319eba846feb43b045deb4b95"
+          },
+          {
+            "name": "value_lineage",
+            "state": "visible",
+            "rows": 1243,
+            "columns": 9,
+            "sha256": "673d06a5d871eb95766217cbb77f04af4709aeeb15d5829911489c8b131e07bd"
+          }
+        ]
+      },
+      "baseline_final_1y_3": {
+        "PETROBRAS_financials.xlsx": [
+          {
+            "name": "BPA",
+            "state": "visible",
+            "rows": 68,
+            "columns": 10,
+            "sha256": "9db4026f94c98b3c29225567c74c9dd668f46fb8d7f46e1d1e0a419141034361"
+          },
+          {
+            "name": "BPP",
+            "state": "visible",
+            "rows": 113,
+            "columns": 10,
+            "sha256": "b2d428da351d96f120560fe3ed0e7a533757dcd278e7ab6d888bd4af9684fba0"
+          },
+          {
+            "name": "DRE",
+            "state": "visible",
+            "rows": 46,
+            "columns": 11,
+            "sha256": "260515e4637f6f70c064cd857dd17621277043336405afa17bd1f0f816382570"
+          },
+          {
+            "name": "DFC",
+            "state": "visible",
+            "rows": 68,
+            "columns": 11,
+            "sha256": "6b6ce396504b59806b4e90bc68b95716ae580dafa1cd81eb4c90d1c4062b6946"
+          },
+          {
+            "name": "financial_qa",
+            "state": "visible",
+            "rows": 43,
+            "columns": 12,
+            "sha256": "9f4d0a5b32c671b30968165444e10d2f4c2dbc3c0352f9caffbe0962f373899e"
+          },
+          {
+            "name": "source_observations",
+            "state": "visible",
+            "rows": 1219,
+            "columns": 25,
+            "sha256": "c17674cff9bee7d47f9c42adf6b0b41255ee2ea508eece0f9f78609cfd3a5eae"
+          },
+          {
+            "name": "value_lineage",
+            "state": "visible",
+            "rows": 1241,
+            "columns": 9,
+            "sha256": "427640eea9252765348e5528399be1a3a463478f6798d208b06a157d01a661e1"
+          }
+        ],
+        "VALE_financials.xlsx": [
+          {
+            "name": "BPA",
+            "state": "visible",
+            "rows": 67,
+            "columns": 10,
+            "sha256": "b242a0f59fb5e9af075e6028d0dffdf5117fac32ad70177eec24091f0e605340"
+          },
+          {
+            "name": "BPP",
+            "state": "visible",
+            "rows": 127,
+            "columns": 10,
+            "sha256": "c4a69687b21ef4284a4b0e38025d345bdf1eafcdf6cfa883b2d04a3f8daa16b3"
+          },
+          {
+            "name": "DRE",
+            "state": "visible",
+            "rows": 41,
+            "columns": 11,
+            "sha256": "e7a9ea558278259637bb37c815e21627b2bb60ce38052a119fedcbd2e3455ee1"
+          },
+          {
+            "name": "DFC",
+            "state": "visible",
+            "rows": 63,
+            "columns": 11,
+            "sha256": "d6083b05ae1c4b6b5f9b3613fab7eb36a1ea41dcc4e5eb1a7036345ddf89e5d5"
+          },
+          {
+            "name": "financial_qa",
+            "state": "visible",
+            "rows": 268,
+            "columns": 15,
+            "sha256": "250da6375154bf80c8134a62b225f3983e6c933d93a3cb373af5753fce9424fb"
+          },
+          {
+            "name": "source_observations",
+            "state": "visible",
+            "rows": 1173,
+            "columns": 25,
+            "sha256": "6d632d6bde5e9d58b856d50ddb2874f1182c95a319eba846feb43b045deb4b95"
+          },
+          {
+            "name": "value_lineage",
+            "state": "visible",
+            "rows": 1243,
+            "columns": 9,
+            "sha256": "673d06a5d871eb95766217cbb77f04af4709aeeb15d5829911489c8b131e07bd"
+          }
+        ]
+      },
+      "baseline_final_3y_1": {
+        "PETROBRAS_financials.xlsx": [
+          {
+            "name": "BPA",
+            "state": "visible",
+            "rows": 68,
+            "columns": 18,
+            "sha256": "0bbe4728179dc0dead554dbced9172cc3d35e6513487f427298f1745cc515730"
+          },
+          {
+            "name": "BPP",
+            "state": "visible",
+            "rows": 113,
+            "columns": 18,
+            "sha256": "ce3f495e7e595f6dc57d51d262faddc2dbc3e96739d8f5e38fa053b566d81e79"
+          },
+          {
+            "name": "DRE",
+            "state": "visible",
+            "rows": 46,
+            "columns": 21,
+            "sha256": "18dc478633e9c2bf02236646c51109b28c858ed205827069f9c138818dae9725"
+          },
+          {
+            "name": "DFC",
+            "state": "visible",
+            "rows": 68,
+            "columns": 21,
+            "sha256": "bb6f8d5caaec2d0f3e8b253d8d2d5a323409a2e5e99bda651d7bb80732d14f30"
+          },
+          {
+            "name": "financial_qa",
+            "state": "visible",
+            "rows": 452,
+            "columns": 12,
+            "sha256": "5f475aefec3ef174720201ec4b6bae6bbc1b656c2f41bf1bdd26e2b085369044"
+          },
+          {
+            "name": "source_observations",
+            "state": "visible",
+            "rows": 3639,
+            "columns": 25,
+            "sha256": "7dc6c993219af5ca10f5815975d06b47ed35f32a516860587d3c0258d2d371f9"
+          },
+          {
+            "name": "value_lineage",
+            "state": "visible",
+            "rows": 3712,
+            "columns": 9,
+            "sha256": "230abbcea3d16ee4a2a9c65f2e9830dfcc8f6b6902c6a9aeeab7bc99db836f5e"
+          }
+        ],
+        "VALE_financials.xlsx": [
+          {
+            "name": "BPA",
+            "state": "visible",
+            "rows": 67,
+            "columns": 18,
+            "sha256": "fca3f71631e84608f37dcc044b5829e3cd4c3937d369b7f594814482274a017a"
+          },
+          {
+            "name": "BPP",
+            "state": "visible",
+            "rows": 127,
+            "columns": 18,
+            "sha256": "335d3af637040c117633d90ae06c87b233707ab7e2a099ff143b499ba5e72811"
+          },
+          {
+            "name": "DRE",
+            "state": "visible",
+            "rows": 41,
+            "columns": 21,
+            "sha256": "f4c9fa5ff35de826769ed14364b15f4777324fd0427cd875f63b53046420eff2"
+          },
+          {
+            "name": "DFC",
+            "state": "visible",
+            "rows": 63,
+            "columns": 21,
+            "sha256": "9ee2ef79accd92cd82fa49d5733ea9b4efb8c1dfa3cabd3cbc7b49c5b5b37da7"
+          },
+          {
+            "name": "financial_qa",
+            "state": "visible",
+            "rows": 775,
+            "columns": 15,
+            "sha256": "24d016787300bf1dc2b80b5b6a8a0792390ce76d020a8bbf0c4891c3d8214fe2"
+          },
+          {
+            "name": "source_observations",
+            "state": "visible",
+            "rows": 3498,
+            "columns": 25,
+            "sha256": "54c50cb430d25c62913886921d00aaea2087b6025b185e0ad1cf721f4d12535d"
+          },
+          {
+            "name": "value_lineage",
+            "state": "visible",
+            "rows": 3699,
+            "columns": 9,
+            "sha256": "806313a2532549901bcca0dc0455d38d8859e04f899a9c265aeae93754392d29"
+          }
+        ]
+      },
+      "baseline_final_3y_2": {
+        "PETROBRAS_financials.xlsx": [
+          {
+            "name": "BPA",
+            "state": "visible",
+            "rows": 68,
+            "columns": 18,
+            "sha256": "0bbe4728179dc0dead554dbced9172cc3d35e6513487f427298f1745cc515730"
+          },
+          {
+            "name": "BPP",
+            "state": "visible",
+            "rows": 113,
+            "columns": 18,
+            "sha256": "ce3f495e7e595f6dc57d51d262faddc2dbc3e96739d8f5e38fa053b566d81e79"
+          },
+          {
+            "name": "DRE",
+            "state": "visible",
+            "rows": 46,
+            "columns": 21,
+            "sha256": "18dc478633e9c2bf02236646c51109b28c858ed205827069f9c138818dae9725"
+          },
+          {
+            "name": "DFC",
+            "state": "visible",
+            "rows": 68,
+            "columns": 21,
+            "sha256": "bb6f8d5caaec2d0f3e8b253d8d2d5a323409a2e5e99bda651d7bb80732d14f30"
+          },
+          {
+            "name": "financial_qa",
+            "state": "visible",
+            "rows": 452,
+            "columns": 12,
+            "sha256": "5f475aefec3ef174720201ec4b6bae6bbc1b656c2f41bf1bdd26e2b085369044"
+          },
+          {
+            "name": "source_observations",
+            "state": "visible",
+            "rows": 3639,
+            "columns": 25,
+            "sha256": "7dc6c993219af5ca10f5815975d06b47ed35f32a516860587d3c0258d2d371f9"
+          },
+          {
+            "name": "value_lineage",
+            "state": "visible",
+            "rows": 3712,
+            "columns": 9,
+            "sha256": "230abbcea3d16ee4a2a9c65f2e9830dfcc8f6b6902c6a9aeeab7bc99db836f5e"
+          }
+        ],
+        "VALE_financials.xlsx": [
+          {
+            "name": "BPA",
+            "state": "visible",
+            "rows": 67,
+            "columns": 18,
+            "sha256": "fca3f71631e84608f37dcc044b5829e3cd4c3937d369b7f594814482274a017a"
+          },
+          {
+            "name": "BPP",
+            "state": "visible",
+            "rows": 127,
+            "columns": 18,
+            "sha256": "335d3af637040c117633d90ae06c87b233707ab7e2a099ff143b499ba5e72811"
+          },
+          {
+            "name": "DRE",
+            "state": "visible",
+            "rows": 41,
+            "columns": 21,
+            "sha256": "f4c9fa5ff35de826769ed14364b15f4777324fd0427cd875f63b53046420eff2"
+          },
+          {
+            "name": "DFC",
+            "state": "visible",
+            "rows": 63,
+            "columns": 21,
+            "sha256": "9ee2ef79accd92cd82fa49d5733ea9b4efb8c1dfa3cabd3cbc7b49c5b5b37da7"
+          },
+          {
+            "name": "financial_qa",
+            "state": "visible",
+            "rows": 775,
+            "columns": 15,
+            "sha256": "24d016787300bf1dc2b80b5b6a8a0792390ce76d020a8bbf0c4891c3d8214fe2"
+          },
+          {
+            "name": "source_observations",
+            "state": "visible",
+            "rows": 3498,
+            "columns": 25,
+            "sha256": "54c50cb430d25c62913886921d00aaea2087b6025b185e0ad1cf721f4d12535d"
+          },
+          {
+            "name": "value_lineage",
+            "state": "visible",
+            "rows": 3699,
+            "columns": 9,
+            "sha256": "806313a2532549901bcca0dc0455d38d8859e04f899a9c265aeae93754392d29"
+          }
+        ]
+      },
+      "baseline_final_3y_3": {
+        "PETROBRAS_financials.xlsx": [
+          {
+            "name": "BPA",
+            "state": "visible",
+            "rows": 68,
+            "columns": 18,
+            "sha256": "0bbe4728179dc0dead554dbced9172cc3d35e6513487f427298f1745cc515730"
+          },
+          {
+            "name": "BPP",
+            "state": "visible",
+            "rows": 113,
+            "columns": 18,
+            "sha256": "ce3f495e7e595f6dc57d51d262faddc2dbc3e96739d8f5e38fa053b566d81e79"
+          },
+          {
+            "name": "DRE",
+            "state": "visible",
+            "rows": 46,
+            "columns": 21,
+            "sha256": "18dc478633e9c2bf02236646c51109b28c858ed205827069f9c138818dae9725"
+          },
+          {
+            "name": "DFC",
+            "state": "visible",
+            "rows": 68,
+            "columns": 21,
+            "sha256": "bb6f8d5caaec2d0f3e8b253d8d2d5a323409a2e5e99bda651d7bb80732d14f30"
+          },
+          {
+            "name": "financial_qa",
+            "state": "visible",
+            "rows": 452,
+            "columns": 12,
+            "sha256": "5f475aefec3ef174720201ec4b6bae6bbc1b656c2f41bf1bdd26e2b085369044"
+          },
+          {
+            "name": "source_observations",
+            "state": "visible",
+            "rows": 3639,
+            "columns": 25,
+            "sha256": "7dc6c993219af5ca10f5815975d06b47ed35f32a516860587d3c0258d2d371f9"
+          },
+          {
+            "name": "value_lineage",
+            "state": "visible",
+            "rows": 3712,
+            "columns": 9,
+            "sha256": "230abbcea3d16ee4a2a9c65f2e9830dfcc8f6b6902c6a9aeeab7bc99db836f5e"
+          }
+        ],
+        "VALE_financials.xlsx": [
+          {
+            "name": "BPA",
+            "state": "visible",
+            "rows": 67,
+            "columns": 18,
+            "sha256": "fca3f71631e84608f37dcc044b5829e3cd4c3937d369b7f594814482274a017a"
+          },
+          {
+            "name": "BPP",
+            "state": "visible",
+            "rows": 127,
+            "columns": 18,
+            "sha256": "335d3af637040c117633d90ae06c87b233707ab7e2a099ff143b499ba5e72811"
+          },
+          {
+            "name": "DRE",
+            "state": "visible",
+            "rows": 41,
+            "columns": 21,
+            "sha256": "f4c9fa5ff35de826769ed14364b15f4777324fd0427cd875f63b53046420eff2"
+          },
+          {
+            "name": "DFC",
+            "state": "visible",
+            "rows": 63,
+            "columns": 21,
+            "sha256": "9ee2ef79accd92cd82fa49d5733ea9b4efb8c1dfa3cabd3cbc7b49c5b5b37da7"
+          },
+          {
+            "name": "financial_qa",
+            "state": "visible",
+            "rows": 775,
+            "columns": 15,
+            "sha256": "24d016787300bf1dc2b80b5b6a8a0792390ce76d020a8bbf0c4891c3d8214fe2"
+          },
+          {
+            "name": "source_observations",
+            "state": "visible",
+            "rows": 3498,
+            "columns": 25,
+            "sha256": "54c50cb430d25c62913886921d00aaea2087b6025b185e0ad1cf721f4d12535d"
+          },
+          {
+            "name": "value_lineage",
+            "state": "visible",
+            "rows": 3699,
+            "columns": 9,
+            "sha256": "806313a2532549901bcca0dc0455d38d8859e04f899a9c265aeae93754392d29"
+          }
+        ]
+      },
+      "candidate_final_1y_1": {
+        "PETROBRAS_financials.xlsx": [
+          {
+            "name": "BPA",
+            "state": "visible",
+            "rows": 68,
+            "columns": 10,
+            "sha256": "9db4026f94c98b3c29225567c74c9dd668f46fb8d7f46e1d1e0a419141034361"
+          },
+          {
+            "name": "BPP",
+            "state": "visible",
+            "rows": 113,
+            "columns": 10,
+            "sha256": "b2d428da351d96f120560fe3ed0e7a533757dcd278e7ab6d888bd4af9684fba0"
+          },
+          {
+            "name": "DRE",
+            "state": "visible",
+            "rows": 46,
+            "columns": 11,
+            "sha256": "260515e4637f6f70c064cd857dd17621277043336405afa17bd1f0f816382570"
+          },
+          {
+            "name": "DFC",
+            "state": "visible",
+            "rows": 68,
+            "columns": 11,
+            "sha256": "6b6ce396504b59806b4e90bc68b95716ae580dafa1cd81eb4c90d1c4062b6946"
+          },
+          {
+            "name": "financial_qa",
+            "state": "visible",
+            "rows": 43,
+            "columns": 12,
+            "sha256": "9f4d0a5b32c671b30968165444e10d2f4c2dbc3c0352f9caffbe0962f373899e"
+          },
+          {
+            "name": "source_observations",
+            "state": "visible",
+            "rows": 1219,
+            "columns": 25,
+            "sha256": "c17674cff9bee7d47f9c42adf6b0b41255ee2ea508eece0f9f78609cfd3a5eae"
+          },
+          {
+            "name": "value_lineage",
+            "state": "visible",
+            "rows": 1241,
+            "columns": 9,
+            "sha256": "427640eea9252765348e5528399be1a3a463478f6798d208b06a157d01a661e1"
+          }
+        ],
+        "VALE_financials.xlsx": [
+          {
+            "name": "BPA",
+            "state": "visible",
+            "rows": 67,
+            "columns": 10,
+            "sha256": "b242a0f59fb5e9af075e6028d0dffdf5117fac32ad70177eec24091f0e605340"
+          },
+          {
+            "name": "BPP",
+            "state": "visible",
+            "rows": 127,
+            "columns": 10,
+            "sha256": "c4a69687b21ef4284a4b0e38025d345bdf1eafcdf6cfa883b2d04a3f8daa16b3"
+          },
+          {
+            "name": "DRE",
+            "state": "visible",
+            "rows": 41,
+            "columns": 11,
+            "sha256": "e7a9ea558278259637bb37c815e21627b2bb60ce38052a119fedcbd2e3455ee1"
+          },
+          {
+            "name": "DFC",
+            "state": "visible",
+            "rows": 63,
+            "columns": 11,
+            "sha256": "d6083b05ae1c4b6b5f9b3613fab7eb36a1ea41dcc4e5eb1a7036345ddf89e5d5"
+          },
+          {
+            "name": "financial_qa",
+            "state": "visible",
+            "rows": 268,
+            "columns": 15,
+            "sha256": "250da6375154bf80c8134a62b225f3983e6c933d93a3cb373af5753fce9424fb"
+          },
+          {
+            "name": "source_observations",
+            "state": "visible",
+            "rows": 1173,
+            "columns": 25,
+            "sha256": "6d632d6bde5e9d58b856d50ddb2874f1182c95a319eba846feb43b045deb4b95"
+          },
+          {
+            "name": "value_lineage",
+            "state": "visible",
+            "rows": 1243,
+            "columns": 9,
+            "sha256": "673d06a5d871eb95766217cbb77f04af4709aeeb15d5829911489c8b131e07bd"
+          }
+        ]
+      },
+      "candidate_final_1y_2": {
+        "PETROBRAS_financials.xlsx": [
+          {
+            "name": "BPA",
+            "state": "visible",
+            "rows": 68,
+            "columns": 10,
+            "sha256": "9db4026f94c98b3c29225567c74c9dd668f46fb8d7f46e1d1e0a419141034361"
+          },
+          {
+            "name": "BPP",
+            "state": "visible",
+            "rows": 113,
+            "columns": 10,
+            "sha256": "b2d428da351d96f120560fe3ed0e7a533757dcd278e7ab6d888bd4af9684fba0"
+          },
+          {
+            "name": "DRE",
+            "state": "visible",
+            "rows": 46,
+            "columns": 11,
+            "sha256": "260515e4637f6f70c064cd857dd17621277043336405afa17bd1f0f816382570"
+          },
+          {
+            "name": "DFC",
+            "state": "visible",
+            "rows": 68,
+            "columns": 11,
+            "sha256": "6b6ce396504b59806b4e90bc68b95716ae580dafa1cd81eb4c90d1c4062b6946"
+          },
+          {
+            "name": "financial_qa",
+            "state": "visible",
+            "rows": 43,
+            "columns": 12,
+            "sha256": "9f4d0a5b32c671b30968165444e10d2f4c2dbc3c0352f9caffbe0962f373899e"
+          },
+          {
+            "name": "source_observations",
+            "state": "visible",
+            "rows": 1219,
+            "columns": 25,
+            "sha256": "c17674cff9bee7d47f9c42adf6b0b41255ee2ea508eece0f9f78609cfd3a5eae"
+          },
+          {
+            "name": "value_lineage",
+            "state": "visible",
+            "rows": 1241,
+            "columns": 9,
+            "sha256": "427640eea9252765348e5528399be1a3a463478f6798d208b06a157d01a661e1"
+          }
+        ],
+        "VALE_financials.xlsx": [
+          {
+            "name": "BPA",
+            "state": "visible",
+            "rows": 67,
+            "columns": 10,
+            "sha256": "b242a0f59fb5e9af075e6028d0dffdf5117fac32ad70177eec24091f0e605340"
+          },
+          {
+            "name": "BPP",
+            "state": "visible",
+            "rows": 127,
+            "columns": 10,
+            "sha256": "c4a69687b21ef4284a4b0e38025d345bdf1eafcdf6cfa883b2d04a3f8daa16b3"
+          },
+          {
+            "name": "DRE",
+            "state": "visible",
+            "rows": 41,
+            "columns": 11,
+            "sha256": "e7a9ea558278259637bb37c815e21627b2bb60ce38052a119fedcbd2e3455ee1"
+          },
+          {
+            "name": "DFC",
+            "state": "visible",
+            "rows": 63,
+            "columns": 11,
+            "sha256": "d6083b05ae1c4b6b5f9b3613fab7eb36a1ea41dcc4e5eb1a7036345ddf89e5d5"
+          },
+          {
+            "name": "financial_qa",
+            "state": "visible",
+            "rows": 268,
+            "columns": 15,
+            "sha256": "250da6375154bf80c8134a62b225f3983e6c933d93a3cb373af5753fce9424fb"
+          },
+          {
+            "name": "source_observations",
+            "state": "visible",
+            "rows": 1173,
+            "columns": 25,
+            "sha256": "6d632d6bde5e9d58b856d50ddb2874f1182c95a319eba846feb43b045deb4b95"
+          },
+          {
+            "name": "value_lineage",
+            "state": "visible",
+            "rows": 1243,
+            "columns": 9,
+            "sha256": "673d06a5d871eb95766217cbb77f04af4709aeeb15d5829911489c8b131e07bd"
+          }
+        ]
+      },
+      "candidate_final_1y_3": {
+        "PETROBRAS_financials.xlsx": [
+          {
+            "name": "BPA",
+            "state": "visible",
+            "rows": 68,
+            "columns": 10,
+            "sha256": "9db4026f94c98b3c29225567c74c9dd668f46fb8d7f46e1d1e0a419141034361"
+          },
+          {
+            "name": "BPP",
+            "state": "visible",
+            "rows": 113,
+            "columns": 10,
+            "sha256": "b2d428da351d96f120560fe3ed0e7a533757dcd278e7ab6d888bd4af9684fba0"
+          },
+          {
+            "name": "DRE",
+            "state": "visible",
+            "rows": 46,
+            "columns": 11,
+            "sha256": "260515e4637f6f70c064cd857dd17621277043336405afa17bd1f0f816382570"
+          },
+          {
+            "name": "DFC",
+            "state": "visible",
+            "rows": 68,
+            "columns": 11,
+            "sha256": "6b6ce396504b59806b4e90bc68b95716ae580dafa1cd81eb4c90d1c4062b6946"
+          },
+          {
+            "name": "financial_qa",
+            "state": "visible",
+            "rows": 43,
+            "columns": 12,
+            "sha256": "9f4d0a5b32c671b30968165444e10d2f4c2dbc3c0352f9caffbe0962f373899e"
+          },
+          {
+            "name": "source_observations",
+            "state": "visible",
+            "rows": 1219,
+            "columns": 25,
+            "sha256": "c17674cff9bee7d47f9c42adf6b0b41255ee2ea508eece0f9f78609cfd3a5eae"
+          },
+          {
+            "name": "value_lineage",
+            "state": "visible",
+            "rows": 1241,
+            "columns": 9,
+            "sha256": "427640eea9252765348e5528399be1a3a463478f6798d208b06a157d01a661e1"
+          }
+        ],
+        "VALE_financials.xlsx": [
+          {
+            "name": "BPA",
+            "state": "visible",
+            "rows": 67,
+            "columns": 10,
+            "sha256": "b242a0f59fb5e9af075e6028d0dffdf5117fac32ad70177eec24091f0e605340"
+          },
+          {
+            "name": "BPP",
+            "state": "visible",
+            "rows": 127,
+            "columns": 10,
+            "sha256": "c4a69687b21ef4284a4b0e38025d345bdf1eafcdf6cfa883b2d04a3f8daa16b3"
+          },
+          {
+            "name": "DRE",
+            "state": "visible",
+            "rows": 41,
+            "columns": 11,
+            "sha256": "e7a9ea558278259637bb37c815e21627b2bb60ce38052a119fedcbd2e3455ee1"
+          },
+          {
+            "name": "DFC",
+            "state": "visible",
+            "rows": 63,
+            "columns": 11,
+            "sha256": "d6083b05ae1c4b6b5f9b3613fab7eb36a1ea41dcc4e5eb1a7036345ddf89e5d5"
+          },
+          {
+            "name": "financial_qa",
+            "state": "visible",
+            "rows": 268,
+            "columns": 15,
+            "sha256": "250da6375154bf80c8134a62b225f3983e6c933d93a3cb373af5753fce9424fb"
+          },
+          {
+            "name": "source_observations",
+            "state": "visible",
+            "rows": 1173,
+            "columns": 25,
+            "sha256": "6d632d6bde5e9d58b856d50ddb2874f1182c95a319eba846feb43b045deb4b95"
+          },
+          {
+            "name": "value_lineage",
+            "state": "visible",
+            "rows": 1243,
+            "columns": 9,
+            "sha256": "673d06a5d871eb95766217cbb77f04af4709aeeb15d5829911489c8b131e07bd"
+          }
+        ]
+      },
+      "candidate_final_3y_1": {
+        "PETROBRAS_financials.xlsx": [
+          {
+            "name": "BPA",
+            "state": "visible",
+            "rows": 68,
+            "columns": 18,
+            "sha256": "0bbe4728179dc0dead554dbced9172cc3d35e6513487f427298f1745cc515730"
+          },
+          {
+            "name": "BPP",
+            "state": "visible",
+            "rows": 113,
+            "columns": 18,
+            "sha256": "ce3f495e7e595f6dc57d51d262faddc2dbc3e96739d8f5e38fa053b566d81e79"
+          },
+          {
+            "name": "DRE",
+            "state": "visible",
+            "rows": 46,
+            "columns": 21,
+            "sha256": "18dc478633e9c2bf02236646c51109b28c858ed205827069f9c138818dae9725"
+          },
+          {
+            "name": "DFC",
+            "state": "visible",
+            "rows": 68,
+            "columns": 21,
+            "sha256": "bb6f8d5caaec2d0f3e8b253d8d2d5a323409a2e5e99bda651d7bb80732d14f30"
+          },
+          {
+            "name": "financial_qa",
+            "state": "visible",
+            "rows": 452,
+            "columns": 12,
+            "sha256": "5f475aefec3ef174720201ec4b6bae6bbc1b656c2f41bf1bdd26e2b085369044"
+          },
+          {
+            "name": "source_observations",
+            "state": "visible",
+            "rows": 3639,
+            "columns": 25,
+            "sha256": "7dc6c993219af5ca10f5815975d06b47ed35f32a516860587d3c0258d2d371f9"
+          },
+          {
+            "name": "value_lineage",
+            "state": "visible",
+            "rows": 3712,
+            "columns": 9,
+            "sha256": "230abbcea3d16ee4a2a9c65f2e9830dfcc8f6b6902c6a9aeeab7bc99db836f5e"
+          }
+        ],
+        "VALE_financials.xlsx": [
+          {
+            "name": "BPA",
+            "state": "visible",
+            "rows": 67,
+            "columns": 18,
+            "sha256": "fca3f71631e84608f37dcc044b5829e3cd4c3937d369b7f594814482274a017a"
+          },
+          {
+            "name": "BPP",
+            "state": "visible",
+            "rows": 127,
+            "columns": 18,
+            "sha256": "335d3af637040c117633d90ae06c87b233707ab7e2a099ff143b499ba5e72811"
+          },
+          {
+            "name": "DRE",
+            "state": "visible",
+            "rows": 41,
+            "columns": 21,
+            "sha256": "f4c9fa5ff35de826769ed14364b15f4777324fd0427cd875f63b53046420eff2"
+          },
+          {
+            "name": "DFC",
+            "state": "visible",
+            "rows": 63,
+            "columns": 21,
+            "sha256": "9ee2ef79accd92cd82fa49d5733ea9b4efb8c1dfa3cabd3cbc7b49c5b5b37da7"
+          },
+          {
+            "name": "financial_qa",
+            "state": "visible",
+            "rows": 775,
+            "columns": 15,
+            "sha256": "24d016787300bf1dc2b80b5b6a8a0792390ce76d020a8bbf0c4891c3d8214fe2"
+          },
+          {
+            "name": "source_observations",
+            "state": "visible",
+            "rows": 3498,
+            "columns": 25,
+            "sha256": "54c50cb430d25c62913886921d00aaea2087b6025b185e0ad1cf721f4d12535d"
+          },
+          {
+            "name": "value_lineage",
+            "state": "visible",
+            "rows": 3699,
+            "columns": 9,
+            "sha256": "806313a2532549901bcca0dc0455d38d8859e04f899a9c265aeae93754392d29"
+          }
+        ]
+      },
+      "candidate_final_3y_2": {
+        "PETROBRAS_financials.xlsx": [
+          {
+            "name": "BPA",
+            "state": "visible",
+            "rows": 68,
+            "columns": 18,
+            "sha256": "0bbe4728179dc0dead554dbced9172cc3d35e6513487f427298f1745cc515730"
+          },
+          {
+            "name": "BPP",
+            "state": "visible",
+            "rows": 113,
+            "columns": 18,
+            "sha256": "ce3f495e7e595f6dc57d51d262faddc2dbc3e96739d8f5e38fa053b566d81e79"
+          },
+          {
+            "name": "DRE",
+            "state": "visible",
+            "rows": 46,
+            "columns": 21,
+            "sha256": "18dc478633e9c2bf02236646c51109b28c858ed205827069f9c138818dae9725"
+          },
+          {
+            "name": "DFC",
+            "state": "visible",
+            "rows": 68,
+            "columns": 21,
+            "sha256": "bb6f8d5caaec2d0f3e8b253d8d2d5a323409a2e5e99bda651d7bb80732d14f30"
+          },
+          {
+            "name": "financial_qa",
+            "state": "visible",
+            "rows": 452,
+            "columns": 12,
+            "sha256": "5f475aefec3ef174720201ec4b6bae6bbc1b656c2f41bf1bdd26e2b085369044"
+          },
+          {
+            "name": "source_observations",
+            "state": "visible",
+            "rows": 3639,
+            "columns": 25,
+            "sha256": "7dc6c993219af5ca10f5815975d06b47ed35f32a516860587d3c0258d2d371f9"
+          },
+          {
+            "name": "value_lineage",
+            "state": "visible",
+            "rows": 3712,
+            "columns": 9,
+            "sha256": "230abbcea3d16ee4a2a9c65f2e9830dfcc8f6b6902c6a9aeeab7bc99db836f5e"
+          }
+        ],
+        "VALE_financials.xlsx": [
+          {
+            "name": "BPA",
+            "state": "visible",
+            "rows": 67,
+            "columns": 18,
+            "sha256": "fca3f71631e84608f37dcc044b5829e3cd4c3937d369b7f594814482274a017a"
+          },
+          {
+            "name": "BPP",
+            "state": "visible",
+            "rows": 127,
+            "columns": 18,
+            "sha256": "335d3af637040c117633d90ae06c87b233707ab7e2a099ff143b499ba5e72811"
+          },
+          {
+            "name": "DRE",
+            "state": "visible",
+            "rows": 41,
+            "columns": 21,
+            "sha256": "f4c9fa5ff35de826769ed14364b15f4777324fd0427cd875f63b53046420eff2"
+          },
+          {
+            "name": "DFC",
+            "state": "visible",
+            "rows": 63,
+            "columns": 21,
+            "sha256": "9ee2ef79accd92cd82fa49d5733ea9b4efb8c1dfa3cabd3cbc7b49c5b5b37da7"
+          },
+          {
+            "name": "financial_qa",
+            "state": "visible",
+            "rows": 775,
+            "columns": 15,
+            "sha256": "24d016787300bf1dc2b80b5b6a8a0792390ce76d020a8bbf0c4891c3d8214fe2"
+          },
+          {
+            "name": "source_observations",
+            "state": "visible",
+            "rows": 3498,
+            "columns": 25,
+            "sha256": "54c50cb430d25c62913886921d00aaea2087b6025b185e0ad1cf721f4d12535d"
+          },
+          {
+            "name": "value_lineage",
+            "state": "visible",
+            "rows": 3699,
+            "columns": 9,
+            "sha256": "806313a2532549901bcca0dc0455d38d8859e04f899a9c265aeae93754392d29"
+          }
+        ]
+      },
+      "candidate_final_3y_3": {
+        "PETROBRAS_financials.xlsx": [
+          {
+            "name": "BPA",
+            "state": "visible",
+            "rows": 68,
+            "columns": 18,
+            "sha256": "0bbe4728179dc0dead554dbced9172cc3d35e6513487f427298f1745cc515730"
+          },
+          {
+            "name": "BPP",
+            "state": "visible",
+            "rows": 113,
+            "columns": 18,
+            "sha256": "ce3f495e7e595f6dc57d51d262faddc2dbc3e96739d8f5e38fa053b566d81e79"
+          },
+          {
+            "name": "DRE",
+            "state": "visible",
+            "rows": 46,
+            "columns": 21,
+            "sha256": "18dc478633e9c2bf02236646c51109b28c858ed205827069f9c138818dae9725"
+          },
+          {
+            "name": "DFC",
+            "state": "visible",
+            "rows": 68,
+            "columns": 21,
+            "sha256": "bb6f8d5caaec2d0f3e8b253d8d2d5a323409a2e5e99bda651d7bb80732d14f30"
+          },
+          {
+            "name": "financial_qa",
+            "state": "visible",
+            "rows": 452,
+            "columns": 12,
+            "sha256": "5f475aefec3ef174720201ec4b6bae6bbc1b656c2f41bf1bdd26e2b085369044"
+          },
+          {
+            "name": "source_observations",
+            "state": "visible",
+            "rows": 3639,
+            "columns": 25,
+            "sha256": "7dc6c993219af5ca10f5815975d06b47ed35f32a516860587d3c0258d2d371f9"
+          },
+          {
+            "name": "value_lineage",
+            "state": "visible",
+            "rows": 3712,
+            "columns": 9,
+            "sha256": "230abbcea3d16ee4a2a9c65f2e9830dfcc8f6b6902c6a9aeeab7bc99db836f5e"
+          }
+        ],
+        "VALE_financials.xlsx": [
+          {
+            "name": "BPA",
+            "state": "visible",
+            "rows": 67,
+            "columns": 18,
+            "sha256": "fca3f71631e84608f37dcc044b5829e3cd4c3937d369b7f594814482274a017a"
+          },
+          {
+            "name": "BPP",
+            "state": "visible",
+            "rows": 127,
+            "columns": 18,
+            "sha256": "335d3af637040c117633d90ae06c87b233707ab7e2a099ff143b499ba5e72811"
+          },
+          {
+            "name": "DRE",
+            "state": "visible",
+            "rows": 41,
+            "columns": 21,
+            "sha256": "f4c9fa5ff35de826769ed14364b15f4777324fd0427cd875f63b53046420eff2"
+          },
+          {
+            "name": "DFC",
+            "state": "visible",
+            "rows": 63,
+            "columns": 21,
+            "sha256": "9ee2ef79accd92cd82fa49d5733ea9b4efb8c1dfa3cabd3cbc7b49c5b5b37da7"
+          },
+          {
+            "name": "financial_qa",
+            "state": "visible",
+            "rows": 775,
+            "columns": 15,
+            "sha256": "24d016787300bf1dc2b80b5b6a8a0792390ce76d020a8bbf0c4891c3d8214fe2"
+          },
+          {
+            "name": "source_observations",
+            "state": "visible",
+            "rows": 3498,
+            "columns": 25,
+            "sha256": "54c50cb430d25c62913886921d00aaea2087b6025b185e0ad1cf721f4d12535d"
+          },
+          {
+            "name": "value_lineage",
+            "state": "visible",
+            "rows": 3699,
+            "columns": 9,
+            "sha256": "806313a2532549901bcca0dc0455d38d8859e04f899a9c265aeae93754392d29"
+          }
+        ]
+      }
+    }
+  },
+  "run_provenance": {
+    "baseline_final_1y_1": {
+      "summary": {
+        "exit_code": 0,
+        "guard_stop": null,
+        "seconds": 12.918856800009962,
+        "start_year": 2024,
+        "end_year": 2024,
+        "code_root": "C:\\Users\\JoãoPereira\\.codex\\worktrees\\485-packaged-local-data\\analisys",
+        "peak_rss": 915181568,
+        "peak_private": 2419552256,
+        "peak_disk_data_temp": 548959289,
+        "sample_interval_s": 0.05,
+        "disk_interval_s": 0.25,
+        "host_ram": 34031251456,
+        "host_cpu_logical": 28,
+        "os": "Windows-10-10.0.26200-SP0",
+        "source_files_unchanged": true
+      },
+      "jobs": [
+        {
+          "cd_cvm": 4170,
+          "state": "success",
+          "attempt_count": 1,
+          "stage": null,
+          "progress_current": 1,
+          "progress_total": 1
+        },
+        {
+          "cd_cvm": 9512,
+          "state": "success",
+          "attempt_count": 1,
+          "stage": null,
+          "progress_current": 1,
+          "progress_total": 1
+        }
+      ],
+      "idle_source_cache": {
+        "active": false,
+        "retained_bytes": 0,
+        "company_codes": []
+      },
+      "http_requests": [
+        {
+          "method": "GET",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_2024.zip",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_2024.zip",
+          "status": 200,
+          "count": 2
+        }
+      ],
+      "protected_fingerprints_equal": true,
+      "artifacts": {
+        "result.json": {
+          "sha256": "e9b40ce021a7e2a4d44368f2f33475313a4ba8009431b951cf1f09ebe82c6b92",
+          "bytes": 1099
+        },
+        "summary.json": {
+          "sha256": "3fad557d8453308432415d51e9c77030d3edb876312bfacf361e31919f13e46f",
+          "bytes": 2828
+        },
+        "events.jsonl": {
+          "sha256": "a3af3eed18e26e217ff17f4deb2bd1d2d02a79d2b49798728a3d05196887fe41",
+          "bytes": 24399
+        },
+        "samples.json": {
+          "sha256": "4f2cac165ab4eb7e6a8c78de911f159a46915c15eda978dd695004c14b97356f",
+          "bytes": 22376
+        },
+        "stdout.log": {
+          "sha256": "acbb50ea7ca1c7375bb1d43d5d669b1da568c1bc5fab42acf53cd87b4f3b3634",
+          "bytes": 674
+        },
+        "protected-before.json": {
+          "sha256": "598b82c9e2ed9a2142c899a7ebf7492c555e21317436359784f4a23c8ddb2805",
+          "bytes": 5973
+        },
+        "protected-after.json": {
+          "sha256": "598b82c9e2ed9a2142c899a7ebf7492c555e21317436359784f4a23c8ddb2805",
+          "bytes": 5973
+        }
+      }
+    },
+    "baseline_final_1y_2": {
+      "summary": {
+        "exit_code": 0,
+        "guard_stop": null,
+        "seconds": 11.033301700023003,
+        "start_year": 2024,
+        "end_year": 2024,
+        "code_root": "C:\\Users\\JoãoPereira\\.codex\\worktrees\\485-packaged-local-data\\analisys",
+        "peak_rss": 1014489088,
+        "peak_private": 2423361536,
+        "peak_disk_data_temp": 549491704,
+        "sample_interval_s": 0.05,
+        "disk_interval_s": 0.25,
+        "host_ram": 34031251456,
+        "host_cpu_logical": 28,
+        "os": "Windows-10-10.0.26200-SP0",
+        "source_files_unchanged": true
+      },
+      "jobs": [
+        {
+          "cd_cvm": 4170,
+          "state": "success",
+          "attempt_count": 1,
+          "stage": null,
+          "progress_current": 1,
+          "progress_total": 1
+        },
+        {
+          "cd_cvm": 9512,
+          "state": "success",
+          "attempt_count": 1,
+          "stage": null,
+          "progress_current": 1,
+          "progress_total": 1
+        }
+      ],
+      "idle_source_cache": {
+        "active": false,
+        "retained_bytes": 0,
+        "company_codes": []
+      },
+      "http_requests": [
+        {
+          "method": "GET",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_2024.zip",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_2024.zip",
+          "status": 200,
+          "count": 2
+        }
+      ],
+      "protected_fingerprints_equal": true,
+      "artifacts": {
+        "result.json": {
+          "sha256": "5b9ef402d1122fd3c417b72dd815d95c174aca0e6d2555791192d961f6d26e92",
+          "bytes": 1098
+        },
+        "summary.json": {
+          "sha256": "e29ce9d920b0459f00f323eb478bc8091b85aecfbe06ed65625358a5f3a29af1",
+          "bytes": 2829
+        },
+        "events.jsonl": {
+          "sha256": "603d59d6a94295cdc76d4c62021c6a012722ece56eb2a80863fe4e31b3db5708",
+          "bytes": 24451
+        },
+        "samples.json": {
+          "sha256": "4412b8bdb4ba85332f329e64fcbe22f58d7d6e58e645bd92a75a906d6c7a48c9",
+          "bytes": 21244
+        },
+        "stdout.log": {
+          "sha256": "b298c65be196d971c3dac9aeb3decdeecdf8b711c5139b99217f474110e69fa2",
+          "bytes": 674
+        },
+        "protected-before.json": {
+          "sha256": "598b82c9e2ed9a2142c899a7ebf7492c555e21317436359784f4a23c8ddb2805",
+          "bytes": 5973
+        },
+        "protected-after.json": {
+          "sha256": "598b82c9e2ed9a2142c899a7ebf7492c555e21317436359784f4a23c8ddb2805",
+          "bytes": 5973
+        }
+      }
+    },
+    "baseline_final_1y_3": {
+      "summary": {
+        "exit_code": 0,
+        "guard_stop": null,
+        "seconds": 11.08119280001847,
+        "start_year": 2024,
+        "end_year": 2024,
+        "code_root": "C:\\Users\\JoãoPereira\\.codex\\worktrees\\485-packaged-local-data\\analisys",
+        "peak_rss": 893759488,
+        "peak_private": 2401067008,
+        "peak_disk_data_temp": 548894723,
+        "sample_interval_s": 0.05,
+        "disk_interval_s": 0.25,
+        "host_ram": 34031251456,
+        "host_cpu_logical": 28,
+        "os": "Windows-10-10.0.26200-SP0",
+        "source_files_unchanged": true
+      },
+      "jobs": [
+        {
+          "cd_cvm": 4170,
+          "state": "success",
+          "attempt_count": 1,
+          "stage": null,
+          "progress_current": 1,
+          "progress_total": 1
+        },
+        {
+          "cd_cvm": 9512,
+          "state": "success",
+          "attempt_count": 1,
+          "stage": null,
+          "progress_current": 1,
+          "progress_total": 1
+        }
+      ],
+      "idle_source_cache": {
+        "active": false,
+        "retained_bytes": 0,
+        "company_codes": []
+      },
+      "http_requests": [
+        {
+          "method": "GET",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_2024.zip",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_2024.zip",
+          "status": 200,
+          "count": 2
+        }
+      ],
+      "protected_fingerprints_equal": true,
+      "artifacts": {
+        "result.json": {
+          "sha256": "75de4a0f67a4704d8c7503f06d5cbdce0854fe067b06478309385c5204465ba6",
+          "bytes": 1098
+        },
+        "summary.json": {
+          "sha256": "aeffe7c46ae3fc5910d0d384771b25bce25a0cdca1c73771e3280f0c86f1d062",
+          "bytes": 2827
+        },
+        "events.jsonl": {
+          "sha256": "c9f7b074b165874f8aa3e2dfbe5d804dc664838ed79c513363a5964e2f0e7e36",
+          "bytes": 24441
+        },
+        "samples.json": {
+          "sha256": "ccf6d8ac1b78df1a84a02e02df13645f6be6fb7dc1a66b7adf18ecea6350718d",
+          "bytes": 21621
+        },
+        "stdout.log": {
+          "sha256": "f79a9086b7958044b477def6a6dab07c342023b7621ab46439f36aa386d505d9",
+          "bytes": 674
+        },
+        "protected-before.json": {
+          "sha256": "598b82c9e2ed9a2142c899a7ebf7492c555e21317436359784f4a23c8ddb2805",
+          "bytes": 5973
+        },
+        "protected-after.json": {
+          "sha256": "598b82c9e2ed9a2142c899a7ebf7492c555e21317436359784f4a23c8ddb2805",
+          "bytes": 5973
+        }
+      }
+    },
+    "baseline_final_3y_1": {
+      "summary": {
+        "exit_code": 0,
+        "guard_stop": null,
+        "seconds": 34.342215699958615,
+        "start_year": 2022,
+        "end_year": 2024,
+        "code_root": "C:\\Users\\JoãoPereira\\.codex\\worktrees\\485-packaged-local-data\\analisys",
+        "peak_rss": 1252151296,
+        "peak_private": 2677297152,
+        "peak_disk_data_temp": 1637253611,
+        "sample_interval_s": 0.05,
+        "disk_interval_s": 0.25,
+        "host_ram": 34031251456,
+        "host_cpu_logical": 28,
+        "os": "Windows-10-10.0.26200-SP0",
+        "source_files_unchanged": true
+      },
+      "jobs": [
+        {
+          "cd_cvm": 4170,
+          "state": "success",
+          "attempt_count": 1,
+          "stage": null,
+          "progress_current": 1,
+          "progress_total": 1
+        },
+        {
+          "cd_cvm": 9512,
+          "state": "success",
+          "attempt_count": 1,
+          "stage": null,
+          "progress_current": 1,
+          "progress_total": 1
+        }
+      ],
+      "idle_source_cache": {
+        "active": false,
+        "retained_bytes": 0,
+        "company_codes": []
+      },
+      "http_requests": [
+        {
+          "method": "GET",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_2022.zip",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_2023.zip",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_2024.zip",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_2022.zip",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_2023.zip",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_2024.zip",
+          "status": 200,
+          "count": 2
+        }
+      ],
+      "protected_fingerprints_equal": true,
+      "artifacts": {
+        "result.json": {
+          "sha256": "6d14ee07bc88fd3f6c4918375eb9c17a556674b1e43155a26f4ec012fa0ef36a",
+          "bytes": 1099
+        },
+        "summary.json": {
+          "sha256": "80383a2ddf15e8275fa032a11c3cd0e9e9ef6ee5e7177dad44d6684b96ebfdac",
+          "bytes": 6251
+        },
+        "events.jsonl": {
+          "sha256": "e895fced9a6ab236a1a5e3c34a89da6324a4be807c8c6da7a040aadb3ea306ac",
+          "bytes": 60785
+        },
+        "samples.json": {
+          "sha256": "f12cdf496ef01870cb0c8a987f5de05d906adba24ba04ab354487b08e72bd6e8",
+          "bytes": 60261
+        },
+        "stdout.log": {
+          "sha256": "7d6de811ea214325dcc16581871366d49beb67bb95236277f95b8c66d725eaf0",
+          "bytes": 4117
+        },
+        "protected-before.json": {
+          "sha256": "598b82c9e2ed9a2142c899a7ebf7492c555e21317436359784f4a23c8ddb2805",
+          "bytes": 5973
+        },
+        "protected-after.json": {
+          "sha256": "598b82c9e2ed9a2142c899a7ebf7492c555e21317436359784f4a23c8ddb2805",
+          "bytes": 5973
+        }
+      }
+    },
+    "baseline_final_3y_2": {
+      "summary": {
+        "exit_code": 0,
+        "guard_stop": null,
+        "seconds": 31.299974499968812,
+        "start_year": 2022,
+        "end_year": 2024,
+        "code_root": "C:\\Users\\JoãoPereira\\.codex\\worktrees\\485-packaged-local-data\\analisys",
+        "peak_rss": 1326440448,
+        "peak_private": 2678177792,
+        "peak_disk_data_temp": 1634894316,
+        "sample_interval_s": 0.05,
+        "disk_interval_s": 0.25,
+        "host_ram": 34031251456,
+        "host_cpu_logical": 28,
+        "os": "Windows-10-10.0.26200-SP0",
+        "source_files_unchanged": true
+      },
+      "jobs": [
+        {
+          "cd_cvm": 4170,
+          "state": "success",
+          "attempt_count": 1,
+          "stage": null,
+          "progress_current": 1,
+          "progress_total": 1
+        },
+        {
+          "cd_cvm": 9512,
+          "state": "success",
+          "attempt_count": 1,
+          "stage": null,
+          "progress_current": 1,
+          "progress_total": 1
+        }
+      ],
+      "idle_source_cache": {
+        "active": false,
+        "retained_bytes": 0,
+        "company_codes": []
+      },
+      "http_requests": [
+        {
+          "method": "GET",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_2022.zip",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_2023.zip",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_2024.zip",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_2022.zip",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_2023.zip",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_2024.zip",
+          "status": 200,
+          "count": 2
+        }
+      ],
+      "protected_fingerprints_equal": true,
+      "artifacts": {
+        "result.json": {
+          "sha256": "0cd1849c6c90a7bf5d29c66a0b9be7ff169c3d6d1a8f9caac59fa1610af2ec4e",
+          "bytes": 1098
+        },
+        "summary.json": {
+          "sha256": "58e8d7a4b2149e492b087f4ac83e5ac33d9a02bbd8d45bc7523821d663cf7aa3",
+          "bytes": 6251
+        },
+        "events.jsonl": {
+          "sha256": "753c75a5d2403594c18ae32a9d3bd1eff49c461f82368b0a887340eecb6f519a",
+          "bytes": 60850
+        },
+        "samples.json": {
+          "sha256": "60fa502a23324c30965ac7983cb20c3ff5b0d39bef685a2b019872b9aaa6b990",
+          "bytes": 61853
+        },
+        "stdout.log": {
+          "sha256": "918da2524ed6874817862b41a215ce810956ea41470dd552809056392d7bdfa2",
+          "bytes": 930
+        },
+        "protected-before.json": {
+          "sha256": "598b82c9e2ed9a2142c899a7ebf7492c555e21317436359784f4a23c8ddb2805",
+          "bytes": 5973
+        },
+        "protected-after.json": {
+          "sha256": "598b82c9e2ed9a2142c899a7ebf7492c555e21317436359784f4a23c8ddb2805",
+          "bytes": 5973
+        }
+      }
+    },
+    "baseline_final_3y_3": {
+      "summary": {
+        "exit_code": 0,
+        "guard_stop": null,
+        "seconds": 31.715504299965687,
+        "start_year": 2022,
+        "end_year": 2024,
+        "code_root": "C:\\Users\\JoãoPereira\\.codex\\worktrees\\485-packaged-local-data\\analisys",
+        "peak_rss": 1443266560,
+        "peak_private": 2764173312,
+        "peak_disk_data_temp": 1634996713,
+        "sample_interval_s": 0.05,
+        "disk_interval_s": 0.25,
+        "host_ram": 34031251456,
+        "host_cpu_logical": 28,
+        "os": "Windows-10-10.0.26200-SP0",
+        "source_files_unchanged": true
+      },
+      "jobs": [
+        {
+          "cd_cvm": 4170,
+          "state": "success",
+          "attempt_count": 1,
+          "stage": null,
+          "progress_current": 1,
+          "progress_total": 1
+        },
+        {
+          "cd_cvm": 9512,
+          "state": "success",
+          "attempt_count": 1,
+          "stage": null,
+          "progress_current": 1,
+          "progress_total": 1
+        }
+      ],
+      "idle_source_cache": {
+        "active": false,
+        "retained_bytes": 0,
+        "company_codes": []
+      },
+      "http_requests": [
+        {
+          "method": "GET",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_2022.zip",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_2023.zip",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_2024.zip",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_2022.zip",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_2023.zip",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_2024.zip",
+          "status": 200,
+          "count": 2
+        }
+      ],
+      "protected_fingerprints_equal": true,
+      "artifacts": {
+        "result.json": {
+          "sha256": "f42127e18e85acf052ec558bbdbe18495f230fbfb3c63de77f75fe35ef9308d2",
+          "bytes": 1100
+        },
+        "summary.json": {
+          "sha256": "c9df1bfd936a5d84286c746f7d33266c5e72b6fe037e2ed56e60d5ed47f77b0c",
+          "bytes": 6251
+        },
+        "events.jsonl": {
+          "sha256": "dc1ec184270220ce2ac18c37b5dfea58ce2489974532893c1d028f0ac8475ae1",
+          "bytes": 60836
+        },
+        "samples.json": {
+          "sha256": "9c72a8b6fabc9b5f41d5bee20800ec0866ff58a6e33b60eac93e2732766cb4fd",
+          "bytes": 61737
+        },
+        "stdout.log": {
+          "sha256": "d5c196318428a7339fea021116a907f84107468b30f167fc823ecbac5d3e6061",
+          "bytes": 930
+        },
+        "protected-before.json": {
+          "sha256": "598b82c9e2ed9a2142c899a7ebf7492c555e21317436359784f4a23c8ddb2805",
+          "bytes": 5973
+        },
+        "protected-after.json": {
+          "sha256": "598b82c9e2ed9a2142c899a7ebf7492c555e21317436359784f4a23c8ddb2805",
+          "bytes": 5973
+        }
+      }
+    },
+    "candidate_final_1y_1": {
+      "summary": {
+        "exit_code": 0,
+        "guard_stop": null,
+        "seconds": 6.3595577999949455,
+        "start_year": 2024,
+        "end_year": 2024,
+        "code_root": "C:\\Users\\JoãoPereira\\.codex\\worktrees\\492-audit-copy-overhead\\analisys",
+        "peak_rss": 980811776,
+        "peak_private": 2447835136,
+        "peak_disk_data_temp": 549077974,
+        "sample_interval_s": 0.05,
+        "disk_interval_s": 0.25,
+        "host_ram": 34031251456,
+        "host_cpu_logical": 28,
+        "os": "Windows-10-10.0.26200-SP0",
+        "source_files_unchanged": true
+      },
+      "jobs": [
+        {
+          "cd_cvm": 4170,
+          "state": "success",
+          "attempt_count": 1,
+          "stage": null,
+          "progress_current": 1,
+          "progress_total": 1
+        },
+        {
+          "cd_cvm": 9512,
+          "state": "success",
+          "attempt_count": 1,
+          "stage": null,
+          "progress_current": 1,
+          "progress_total": 1
+        }
+      ],
+      "idle_source_cache": {
+        "active": false,
+        "retained_bytes": 0,
+        "company_codes": []
+      },
+      "http_requests": [
+        {
+          "method": "GET",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_2024.zip",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_2024.zip",
+          "status": 200,
+          "count": 2
+        }
+      ],
+      "protected_fingerprints_equal": true,
+      "artifacts": {
+        "result.json": {
+          "sha256": "22e5a52bb4eb03c8f45cc1b0e4172a96938f3f648dea125e0020bc74322d7e07",
+          "bytes": 1099
+        },
+        "summary.json": {
+          "sha256": "316c0fd4dc5897961a5dc38e751e59cd6e0831e89ba35ad47d32211332bbed02",
+          "bytes": 2828
+        },
+        "events.jsonl": {
+          "sha256": "30cded3d0c712fc2974e6c9bfc86a946a9ca2fa97baf5a444410a392eb9ee063",
+          "bytes": 24493
+        },
+        "samples.json": {
+          "sha256": "cb12c13685558698cacc6955d248c35e640436444b926c937d930f478705ed15",
+          "bytes": 11998
+        },
+        "stdout.log": {
+          "sha256": "2ee3c75926b73e673fd1d532ca0b7529b9e81aa6c16b32aaeeb9b341a2da09f1",
+          "bytes": 676
+        },
+        "protected-before.json": {
+          "sha256": "a9a303d11b9ca5f3611a7ef8a722a2132dff39c3cbd89142da1fc359d1b90923",
+          "bytes": 5973
+        },
+        "protected-after.json": {
+          "sha256": "a9a303d11b9ca5f3611a7ef8a722a2132dff39c3cbd89142da1fc359d1b90923",
+          "bytes": 5973
+        }
+      }
+    },
+    "candidate_final_1y_2": {
+      "summary": {
+        "exit_code": 0,
+        "guard_stop": null,
+        "seconds": 7.286428799969144,
+        "start_year": 2024,
+        "end_year": 2024,
+        "code_root": "C:\\Users\\JoãoPereira\\.codex\\worktrees\\492-audit-copy-overhead\\analisys",
+        "peak_rss": 966557696,
+        "peak_private": 2382028800,
+        "peak_disk_data_temp": 549557208,
+        "sample_interval_s": 0.05,
+        "disk_interval_s": 0.25,
+        "host_ram": 34031251456,
+        "host_cpu_logical": 28,
+        "os": "Windows-10-10.0.26200-SP0",
+        "source_files_unchanged": true
+      },
+      "jobs": [
+        {
+          "cd_cvm": 4170,
+          "state": "success",
+          "attempt_count": 1,
+          "stage": null,
+          "progress_current": 1,
+          "progress_total": 1
+        },
+        {
+          "cd_cvm": 9512,
+          "state": "success",
+          "attempt_count": 1,
+          "stage": null,
+          "progress_current": 1,
+          "progress_total": 1
+        }
+      ],
+      "idle_source_cache": {
+        "active": false,
+        "retained_bytes": 0,
+        "company_codes": []
+      },
+      "http_requests": [
+        {
+          "method": "GET",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_2024.zip",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_2024.zip",
+          "status": 200,
+          "count": 2
+        }
+      ],
+      "protected_fingerprints_equal": true,
+      "artifacts": {
+        "result.json": {
+          "sha256": "27c7e83d3de22b5bd6a1f50e3657b23f5aa8cef43b6a4e99c5d446c5b1be49a9",
+          "bytes": 1098
+        },
+        "summary.json": {
+          "sha256": "50c388b0c2a976d7773c78ec0abf299acc3b6393bb71fd2ef4a157e9de9492c9",
+          "bytes": 2827
+        },
+        "events.jsonl": {
+          "sha256": "c95f650af83bbce851c7723908169bed0f41feba2c96ae1f8d22bd60ede88d01",
+          "bytes": 24473
+        },
+        "samples.json": {
+          "sha256": "db751559ebb75a3d24df4b9045e6f0d46cd647892f535e16a888d8c823cfcdd9",
+          "bytes": 12359
+        },
+        "stdout.log": {
+          "sha256": "3ac93f2ee2c51d7e2129e0d99580d172f281550c6a5d6626f3346419f4d9af82",
+          "bytes": 676
+        },
+        "protected-before.json": {
+          "sha256": "a9a303d11b9ca5f3611a7ef8a722a2132dff39c3cbd89142da1fc359d1b90923",
+          "bytes": 5973
+        },
+        "protected-after.json": {
+          "sha256": "a9a303d11b9ca5f3611a7ef8a722a2132dff39c3cbd89142da1fc359d1b90923",
+          "bytes": 5973
+        }
+      }
+    },
+    "candidate_final_1y_3": {
+      "summary": {
+        "exit_code": 0,
+        "guard_stop": null,
+        "seconds": 6.801846199959982,
+        "start_year": 2024,
+        "end_year": 2024,
+        "code_root": "C:\\Users\\JoãoPereira\\.codex\\worktrees\\492-audit-copy-overhead\\analisys",
+        "peak_rss": 922202112,
+        "peak_private": 2402316288,
+        "peak_disk_data_temp": 549323672,
+        "sample_interval_s": 0.05,
+        "disk_interval_s": 0.25,
+        "host_ram": 34031251456,
+        "host_cpu_logical": 28,
+        "os": "Windows-10-10.0.26200-SP0",
+        "source_files_unchanged": true
+      },
+      "jobs": [
+        {
+          "cd_cvm": 4170,
+          "state": "success",
+          "attempt_count": 1,
+          "stage": null,
+          "progress_current": 1,
+          "progress_total": 1
+        },
+        {
+          "cd_cvm": 9512,
+          "state": "success",
+          "attempt_count": 1,
+          "stage": null,
+          "progress_current": 1,
+          "progress_total": 1
+        }
+      ],
+      "idle_source_cache": {
+        "active": false,
+        "retained_bytes": 0,
+        "company_codes": []
+      },
+      "http_requests": [
+        {
+          "method": "GET",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_2024.zip",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_2024.zip",
+          "status": 200,
+          "count": 2
+        }
+      ],
+      "protected_fingerprints_equal": true,
+      "artifacts": {
+        "result.json": {
+          "sha256": "f0428b3de45a2bc7628f67f8a3ebcce314a7ec9c6d214c808c5966a0332fdb87",
+          "bytes": 1098
+        },
+        "summary.json": {
+          "sha256": "3fabe38cba8b2d8d45a072222259565042b56526d1ebbfd508354335fe3269b2",
+          "bytes": 2827
+        },
+        "events.jsonl": {
+          "sha256": "2ac5ff803a84e87ea45fc0b8d488fef5a7464572e0737557aa3fb56b231feeed",
+          "bytes": 24485
+        },
+        "samples.json": {
+          "sha256": "8036e72f9d3f6d8b3d4913babe6ba3bdbeda381451811aedb979efbcb8b7ea4e",
+          "bytes": 12455
+        },
+        "stdout.log": {
+          "sha256": "f86cf42917bf0a17803f9ab7f09aa8de6d48b1a0318b4e72a5f2de0ade79137c",
+          "bytes": 676
+        },
+        "protected-before.json": {
+          "sha256": "a9a303d11b9ca5f3611a7ef8a722a2132dff39c3cbd89142da1fc359d1b90923",
+          "bytes": 5973
+        },
+        "protected-after.json": {
+          "sha256": "a9a303d11b9ca5f3611a7ef8a722a2132dff39c3cbd89142da1fc359d1b90923",
+          "bytes": 5973
+        }
+      }
+    },
+    "candidate_final_3y_1": {
+      "summary": {
+        "exit_code": 0,
+        "guard_stop": null,
+        "seconds": 13.775330399977975,
+        "start_year": 2022,
+        "end_year": 2024,
+        "code_root": "C:\\Users\\JoãoPereira\\.codex\\worktrees\\492-audit-copy-overhead\\analisys",
+        "peak_rss": 1422331904,
+        "peak_private": 2721828864,
+        "peak_disk_data_temp": 1634517381,
+        "sample_interval_s": 0.05,
+        "disk_interval_s": 0.25,
+        "host_ram": 34031251456,
+        "host_cpu_logical": 28,
+        "os": "Windows-10-10.0.26200-SP0",
+        "source_files_unchanged": true
+      },
+      "jobs": [
+        {
+          "cd_cvm": 4170,
+          "state": "success",
+          "attempt_count": 1,
+          "stage": null,
+          "progress_current": 1,
+          "progress_total": 1
+        },
+        {
+          "cd_cvm": 9512,
+          "state": "success",
+          "attempt_count": 1,
+          "stage": null,
+          "progress_current": 1,
+          "progress_total": 1
+        }
+      ],
+      "idle_source_cache": {
+        "active": false,
+        "retained_bytes": 0,
+        "company_codes": []
+      },
+      "http_requests": [
+        {
+          "method": "GET",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_2022.zip",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_2023.zip",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_2024.zip",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_2022.zip",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_2023.zip",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_2024.zip",
+          "status": 200,
+          "count": 2
+        }
+      ],
+      "protected_fingerprints_equal": true,
+      "artifacts": {
+        "result.json": {
+          "sha256": "90c974bdc68806e51ebcc8fd4387acd43cd4e68f94dfbf3b98a05b03f24eab28",
+          "bytes": 1100
+        },
+        "summary.json": {
+          "sha256": "1b4fcdf940e01cc8c62742683a4052b9f59d008e94fb07e845201c902a74ab99",
+          "bytes": 6251
+        },
+        "events.jsonl": {
+          "sha256": "91a92e40f05da03d09dee9493d114b979efa3a421974dffeb73205cc02a5594c",
+          "bytes": 60872
+        },
+        "samples.json": {
+          "sha256": "fdcb6de4eb5f7f433118749d0cbcc032941cda099a28fe4a33a505a696d37a26",
+          "bytes": 25360
+        },
+        "stdout.log": {
+          "sha256": "22b77bf7ea055ff4494f1cec31beb4988d8abfb5ce95fa2bf9177ed239bfe3e9",
+          "bytes": 932
+        },
+        "protected-before.json": {
+          "sha256": "a9a303d11b9ca5f3611a7ef8a722a2132dff39c3cbd89142da1fc359d1b90923",
+          "bytes": 5973
+        },
+        "protected-after.json": {
+          "sha256": "a9a303d11b9ca5f3611a7ef8a722a2132dff39c3cbd89142da1fc359d1b90923",
+          "bytes": 5973
+        }
+      }
+    },
+    "candidate_final_3y_2": {
+      "summary": {
+        "exit_code": 0,
+        "guard_stop": null,
+        "seconds": 15.54026259999955,
+        "start_year": 2022,
+        "end_year": 2024,
+        "code_root": "C:\\Users\\JoãoPereira\\.codex\\worktrees\\492-audit-copy-overhead\\analisys",
+        "peak_rss": 1287315456,
+        "peak_private": 2754531328,
+        "peak_disk_data_temp": 1635320200,
+        "sample_interval_s": 0.05,
+        "disk_interval_s": 0.25,
+        "host_ram": 34031251456,
+        "host_cpu_logical": 28,
+        "os": "Windows-10-10.0.26200-SP0",
+        "source_files_unchanged": true
+      },
+      "jobs": [
+        {
+          "cd_cvm": 4170,
+          "state": "success",
+          "attempt_count": 1,
+          "stage": null,
+          "progress_current": 1,
+          "progress_total": 1
+        },
+        {
+          "cd_cvm": 9512,
+          "state": "success",
+          "attempt_count": 1,
+          "stage": null,
+          "progress_current": 1,
+          "progress_total": 1
+        }
+      ],
+      "idle_source_cache": {
+        "active": false,
+        "retained_bytes": 0,
+        "company_codes": []
+      },
+      "http_requests": [
+        {
+          "method": "GET",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_2022.zip",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_2023.zip",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_2024.zip",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_2022.zip",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_2023.zip",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_2024.zip",
+          "status": 200,
+          "count": 2
+        }
+      ],
+      "protected_fingerprints_equal": true,
+      "artifacts": {
+        "result.json": {
+          "sha256": "f14fecdd3f5b72061b5dd63f977073b69cb1c64f49dd9c08c1f713e977a45764",
+          "bytes": 1098
+        },
+        "summary.json": {
+          "sha256": "a6dee52867475c89f2beb4c454d8c6ee07ec5de078823e18c3aaf369a9dedaf7",
+          "bytes": 6250
+        },
+        "events.jsonl": {
+          "sha256": "7e5b18e8fa914d5a61c88a30a453f3cb98777da35026501e56119223b9991f26",
+          "bytes": 60967
+        },
+        "samples.json": {
+          "sha256": "7c06fa907e1a23d6208fbdc2ce06bb1bd09395883b0328e4e95548b65d089893",
+          "bytes": 25679
+        },
+        "stdout.log": {
+          "sha256": "5de40371764a05877753b71572844967818aa58bc20f01a5a3d27ee641bd3ec9",
+          "bytes": 932
+        },
+        "protected-before.json": {
+          "sha256": "a9a303d11b9ca5f3611a7ef8a722a2132dff39c3cbd89142da1fc359d1b90923",
+          "bytes": 5973
+        },
+        "protected-after.json": {
+          "sha256": "a9a303d11b9ca5f3611a7ef8a722a2132dff39c3cbd89142da1fc359d1b90923",
+          "bytes": 5973
+        }
+      }
+    },
+    "candidate_final_3y_3": {
+      "summary": {
+        "exit_code": 0,
+        "guard_stop": null,
+        "seconds": 14.905632000009064,
+        "start_year": 2022,
+        "end_year": 2024,
+        "code_root": "C:\\Users\\JoãoPereira\\.codex\\worktrees\\492-audit-copy-overhead\\analisys",
+        "peak_rss": 1380884480,
+        "peak_private": 2691702784,
+        "peak_disk_data_temp": 1637474694,
+        "sample_interval_s": 0.05,
+        "disk_interval_s": 0.25,
+        "host_ram": 34031251456,
+        "host_cpu_logical": 28,
+        "os": "Windows-10-10.0.26200-SP0",
+        "source_files_unchanged": true
+      },
+      "jobs": [
+        {
+          "cd_cvm": 4170,
+          "state": "success",
+          "attempt_count": 1,
+          "stage": null,
+          "progress_current": 1,
+          "progress_total": 1
+        },
+        {
+          "cd_cvm": 9512,
+          "state": "success",
+          "attempt_count": 1,
+          "stage": null,
+          "progress_current": 1,
+          "progress_total": 1
+        }
+      ],
+      "idle_source_cache": {
+        "active": false,
+        "retained_bytes": 0,
+        "company_codes": []
+      },
+      "http_requests": [
+        {
+          "method": "GET",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_2022.zip",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_2023.zip",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_2024.zip",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_2022.zip",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_2023.zip",
+          "status": 200,
+          "count": 2
+        },
+        {
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_2024.zip",
+          "status": 200,
+          "count": 2
+        }
+      ],
+      "protected_fingerprints_equal": true,
+      "artifacts": {
+        "result.json": {
+          "sha256": "77d4e63f99dbfad9fbabe1f3ffb5490e75a294fa599b4d9dca73a1a72ae925c6",
+          "bytes": 1100
+        },
+        "summary.json": {
+          "sha256": "704e091b9ef399f43d92043250598a7793c24f9b033d234e78a277c5dd2ffcca",
+          "bytes": 6251
+        },
+        "events.jsonl": {
+          "sha256": "20fba6f2f9beab1cf69921607e2f96d1db6b1b5b4ca2723188e3905bc11e7b1a",
+          "bytes": 60991
+        },
+        "samples.json": {
+          "sha256": "a6e5af418f19b5598af36a5801ee7d683da2ce829ed48d425d6aeec6bca9443d",
+          "bytes": 25635
+        },
+        "stdout.log": {
+          "sha256": "905b03a1f12ff9c7b74e8dbb4c08bc015c7bdae51a1246b3cc1a4ea812e0d44d",
+          "bytes": 932
+        },
+        "protected-before.json": {
+          "sha256": "a9a303d11b9ca5f3611a7ef8a722a2132dff39c3cbd89142da1fc359d1b90923",
+          "bytes": 5973
+        },
+        "protected-after.json": {
+          "sha256": "a9a303d11b9ca5f3611a7ef8a722a2132dff39c3cbd89142da1fc359d1b90923",
+          "bytes": 5973
+        }
+      }
+    }
+  },
+  "profile_attribution": {
+    "warning": "Diagnostic call attribution only; profiler overhead prevents throughput claims, and candidate profiling overlapped the full test suite. Percentage gains use separate unprofiled runs.",
+    "runs": {
+      "baseline": {
+        "artifact_root": "C:\\Users\\JoãoPereira\\.codex\\worktrees\\485-packaged-local-data\\analisys\\scratch\\profile-persistence\\baseline_profile_3y",
+        "companies": {
+          "9512": {
+            "total_calls": 149059201,
+            "functions": {
+              "insert_company_data": {
+                "primitive_calls": 1,
+                "total_calls": 1,
+                "self_seconds": 0.051388100000000006,
+                "cumulative_seconds": 24.3839501
+              },
+              "__finalize__": {
+                "primitive_calls": 581,
+                "total_calls": 581,
+                "self_seconds": 0.014936300000000001,
+                "cumulative_seconds": 29.441736000000002
+              },
+              "deepcopy": {
+                "primitive_calls": 405,
+                "total_calls": 26485512,
+                "self_seconds": 14.146903700000001,
+                "cumulative_seconds": 29.407494800000002
+              },
+              "generate_excel": {
+                "primitive_calls": 1,
+                "total_calls": 1,
+                "self_seconds": 0.0016616,
+                "cumulative_seconds": 34.123919300000004
+              }
+            },
+            "pstats_sha256": "f1e99968549d88f950fc55101094cfb7a252d798674ce18e79ed8fbdbe0f4a93"
+          },
+          "4170": {
+            "total_calls": 145689599,
+            "functions": {
+              "insert_company_data": {
+                "primitive_calls": 1,
+                "total_calls": 1,
+                "self_seconds": 0.0532911,
+                "cumulative_seconds": 23.933033400000003
+              },
+              "__finalize__": {
+                "primitive_calls": 584,
+                "total_calls": 584,
+                "self_seconds": 0.015598,
+                "cumulative_seconds": 28.942628000000003
+              },
+              "deepcopy": {
+                "primitive_calls": 405,
+                "total_calls": 25795348,
+                "self_seconds": 13.8060991,
+                "cumulative_seconds": 28.905330300000003
+              },
+              "generate_excel": {
+                "primitive_calls": 1,
+                "total_calls": 1,
+                "self_seconds": 0.001974,
+                "cumulative_seconds": 33.3460382
+              }
+            },
+            "pstats_sha256": "8cd8d5dbc8a83be764ad5a007375d2c7e16b3fb4ff2e10d033f3088395f9e90e"
+          }
+        },
+        "sql": {
+          "calls": {
+            "PRAGMA": 211,
+            "CREATE": 504,
+            "ALTER": 5,
+            "SELECT": 95,
+            "INSERT": 14700,
+            "UPDATE": 49,
+            "SAVEPOINT": 2,
+            "RELEASE": 2,
+            "DELETE": 72
+          },
+          "cursor_seconds": {
+            "PRAGMA": 0.3501964001916349,
+            "CREATE": 0.5904885990312323,
+            "ALTER": 0.0005604999605566263,
+            "SELECT": 0.09927609993610531,
+            "INSERT": 0.35218130267458037,
+            "UPDATE": 0.06591150036547333,
+            "SAVEPOINT": 5.520001286640763e-05,
+            "RELEASE": 0.0001218999968841672,
+            "DELETE": 0.0027990000089630485
+          },
+          "profiling_run_not_benchmark": true
+        },
+        "sql_profile_sha256": "edcef5c6bc67b86399495a16cc9bc68d67d6c77851d79bd9337b7e18ef5d061e"
+      },
+      "candidate": {
+        "artifact_root": "C:\\Users\\JoãoPereira\\.codex\\worktrees\\492-audit-copy-overhead\\analisys\\scratch\\profile-persistence\\candidate_profile_3y",
+        "companies": {
+          "9512": {
+            "total_calls": 9806969,
+            "functions": {
+              "deepcopy": {
+                "primitive_calls": 4,
+                "total_calls": 12,
+                "self_seconds": 4.8200000000000006e-05,
+                "cumulative_seconds": 0.00010910000000000001
+              },
+              "generate_excel": {
+                "primitive_calls": 1,
+                "total_calls": 1,
+                "self_seconds": 0.0014838000000000002,
+                "cumulative_seconds": 4.926779300000001
+              },
+              "__finalize__": {
+                "primitive_calls": 581,
+                "total_calls": 581,
+                "self_seconds": 0.00101,
+                "cumulative_seconds": 0.00126
+              },
+              "insert_company_data": {
+                "primitive_calls": 1,
+                "total_calls": 1,
+                "self_seconds": 0.023130500000000002,
+                "cumulative_seconds": 1.9624032
+              }
+            },
+            "pstats_sha256": "d39f3960e35fd379cca55c92a616fa14280ab354cd8d50ba5a098560c989c899"
+          },
+          "4170": {
+            "total_calls": 9855271,
+            "functions": {
+              "deepcopy": {
+                "primitive_calls": 4,
+                "total_calls": 12,
+                "self_seconds": 3.99e-05,
+                "cumulative_seconds": 0.0001044
+              },
+              "generate_excel": {
+                "primitive_calls": 1,
+                "total_calls": 1,
+                "self_seconds": 0.0019317000000000002,
+                "cumulative_seconds": 4.549289900000001
+              },
+              "__finalize__": {
+                "primitive_calls": 584,
+                "total_calls": 584,
+                "self_seconds": 0.0009533,
+                "cumulative_seconds": 0.0012172
+              },
+              "insert_company_data": {
+                "primitive_calls": 1,
+                "total_calls": 1,
+                "self_seconds": 0.025247600000000002,
+                "cumulative_seconds": 1.9217718000000001
+              }
+            },
+            "pstats_sha256": "009a40c6593c81926052e2bead3e5d8aa576fac05f7d04d96397dedb896b06ab"
+          }
+        },
+        "sql": {
+          "calls": {
+            "PRAGMA": 187,
+            "CREATE": 456,
+            "ALTER": 5,
+            "SELECT": 91,
+            "INSERT": 14698,
+            "UPDATE": 47,
+            "SAVEPOINT": 2,
+            "RELEASE": 2,
+            "DELETE": 72
+          },
+          "cursor_seconds": {
+            "PRAGMA": 0.058074899890925735,
+            "CREATE": 0.1430775999906473,
+            "ALTER": 0.0005184000474400818,
+            "SELECT": 0.03729380032746121,
+            "INSERT": 0.37423429609043524,
+            "UPDATE": 0.03590179985621944,
+            "SAVEPOINT": 4.4599990360438824e-05,
+            "RELEASE": 0.000112100038677454,
+            "DELETE": 0.0034380002762190998
+          },
+          "profiling_run_not_benchmark": true
+        },
+        "sql_profile_sha256": "32af6fda299fd1c84e66a17a007bdfa08bc088a4ddcdac50928c8658f453a3d7"
+      }
+    }
+  },
+  "guardrails": {
+    "artifact": "scratch/bench492/candidate_final_3y_3/guardrails.json",
+    "results": {
+      "check_storage_budget.py": {
+        "exit_code": 0,
+        "report": {
+          "ok": true,
+          "status": "pass",
+          "summary": {
+            "total_bytes": 1617044136,
+            "backup_bytes": 0,
+            "active_bytes_excluding_backups": 1617044136,
+            "database_category_bytes": 27770880,
+            "max_main_db_bytes": 12884901888,
+            "max_database_category_bytes": 17179869184,
+            "max_active_local_bytes": 34359738368,
+            "fail_on_backups": false
+          },
+          "failures": [],
+          "warnings": []
+        }
+      },
+      "check_managed_ingestion_contracts.py": {
+        "exit_code": 1,
+        "report": {
+          "ok": false,
+          "status": "fail",
+          "summary": {
+            "contracts": 3,
+            "implemented_contracts": 3,
+            "planned_contracts": 0,
+            "failures": 3,
+            "warnings": 0,
+            "require_manifests": true,
+            "scan_sqlite_large_tables": true,
+            "sqlite_row_threshold": 250000,
+            "data_dir": "C:\\Users\\JoãoPereira\\.codex\\worktrees\\492-audit-copy-overhead\\analisys\\scratch\\bench492\\candidate_final_3y_3\\data"
+          },
+          "contracts": [
+            {
+              "dataset_id": "ccee_plant_generation_hourly",
+              "domain": "energy",
+              "status": "implemented",
+              "fact_grain": "plant-parcel hour",
+              "manifest_path": "C:\\Users\\JoãoPereira\\.codex\\worktrees\\492-audit-copy-overhead\\analisys\\scratch\\bench492\\candidate_final_3y_3\\data\\analytics\\energy\\ccee_plant_generation_hourly\\manifest.json",
+              "manifest_exists": false,
+              "manifest_required": true,
+              "storage_layers": [
+                "metadata_sqlite",
+                "raw_snapshot",
+                "hot_sqlite",
+                "cold_parquet",
+                "mart_sqlite"
+              ],
+              "sqlite_tables": [
+                {
+                  "database": "energy_kpis.db",
+                  "table_name": "ccee_plant_parcel_hourly",
+                  "classification": "managed_externalized",
+                  "notes": "Large hourly detail is externalized to the managed hot/cold store."
+                },
+                {
+                  "database": "energy_kpis.db",
+                  "table_name": "plant_parcel_daily_generation_mart",
+                  "classification": "sqlite_mart",
+                  "notes": "Rebuildable daily mart for app chart reads."
+                },
+                {
+                  "database": "energy_kpis.db",
+                  "table_name": "plant_parcel_hourly_preview_mart",
+                  "classification": "sqlite_mart",
+                  "notes": "Rebuildable compact preview mart for hourly detail."
+                },
+                {
+                  "database": "energy_kpis.db",
+                  "table_name": "plant_ceg_hourly_generation_mart",
+                  "classification": "sqlite_mart",
+                  "notes": "Rebuildable CEG-level hourly mart."
+                },
+                {
+                  "database": "energy_kpis.db",
+                  "table_name": "plant_parcel_source_submarket_monthly_mart",
+                  "classification": "sqlite_mart",
+                  "notes": "Rebuildable source/submarket monthly mart."
+                },
+                {
+                  "database": "energy_kpis.db",
+                  "table_name": "external_hourly_store_catalog",
+                  "classification": "small_relational",
+                  "notes": "Catalog fingerprint for the managed hourly store."
+                },
+                {
+                  "database": "energy_kpis.db",
+                  "table_name": "energy_mart_builds",
+                  "classification": "small_relational",
+                  "notes": "Mart rebuild audit metadata."
+                }
+              ],
+              "notes": "CCEE hourly plant-parcel facts use managed hot SQLite plus cold Parquet."
+            },
+            {
+              "dataset_id": "distribution_mmgd_projects",
+              "domain": "energy",
+              "status": "implemented",
+              "fact_grain": "project_reference_month",
+              "manifest_path": "C:\\Users\\JoãoPereira\\.codex\\worktrees\\492-audit-copy-overhead\\analisys\\scratch\\bench492\\candidate_final_3y_3\\data\\analytics\\energy\\distribution_mmgd_projects\\manifest.json",
+              "manifest_exists": false,
+              "manifest_required": true,
+              "storage_layers": [
+                "metadata_sqlite",
+                "raw_snapshot",
+                "cold_parquet",
+                "mart_sqlite"
+              ],
+              "sqlite_tables": [
+                {
+                  "database": "energy_kpis.db",
+                  "table_name": "distribution_mmgd_projects",
+                  "classification": "managed_externalized",
+                  "notes": "Legacy MMGD project dimension table is empty after externalization."
+                },
+                {
+                  "database": "energy_kpis.db",
+                  "table_name": "distribution_mmgd_project_snapshots",
+                  "classification": "managed_externalized",
+                  "notes": "MMGD project-month detail is externalized to managed Parquet."
+                },
+                {
+                  "database": "energy_kpis.db",
+                  "table_name": "distribution_mmgd_monthly_mart",
+                  "classification": "sqlite_mart",
+                  "notes": "Compact monthly MMGD summary for app reads."
+                },
+                {
+                  "database": "energy_kpis.db",
+                  "table_name": "managed_dataset_catalog",
+                  "classification": "small_relational",
+                  "notes": "Catalog metadata for managed analytical datasets."
+                }
+              ],
+              "notes": "ANEEL MMGD project detail uses managed Parquet with bounded distributor/month reads."
+            },
+            {
+              "dataset_id": "fuel_distribution_sector_intake",
+              "domain": "energy",
+              "status": "implemented",
+              "fact_grain": "fuel-sales source-geography-product-period detail",
+              "manifest_path": "C:\\Users\\JoãoPereira\\.codex\\worktrees\\492-audit-copy-overhead\\analisys\\scratch\\bench492\\candidate_final_3y_3\\data\\analytics\\energy\\fuel_distribution_sector_intake\\manifest.json",
+              "manifest_exists": false,
+              "manifest_required": true,
+              "storage_layers": [
+                "metadata_sqlite",
+                "raw_snapshot",
+                "cold_parquet",
+                "mart_sqlite"
+              ],
+              "sqlite_tables": [
+                {
+                  "database": "energy_kpis.db",
+                  "table_name": "fuel_distribution_product_year_mart",
+                  "classification": "sqlite_mart",
+                  "notes": "Compact ANP Fuel Distribution yearly product mart; detail is externalized to managed Parquet."
+                },
+                {
+                  "database": "energy_kpis.db",
+                  "table_name": "fuel_distribution_state_month_mart",
+                  "classification": "sqlite_mart",
+                  "notes": "Compact ANP Fuel Distribution state-month trend mart for bounded chart reads."
+                }
+              ],
+              "notes": "ANP Fuel Distribution sales detail uses raw snapshots plus managed Parquet with compact SQLite marts."
+            }
+          ],
+          "implemented_contracts": [
+            {
+              "dataset_id": "ccee_plant_generation_hourly",
+              "domain": "energy",
+              "status": "implemented",
+              "fact_grain": "plant-parcel hour",
+              "manifest_path": "C:\\Users\\JoãoPereira\\.codex\\worktrees\\492-audit-copy-overhead\\analisys\\scratch\\bench492\\candidate_final_3y_3\\data\\analytics\\energy\\ccee_plant_generation_hourly\\manifest.json",
+              "manifest_exists": false,
+              "manifest_required": true,
+              "storage_layers": [
+                "metadata_sqlite",
+                "raw_snapshot",
+                "hot_sqlite",
+                "cold_parquet",
+                "mart_sqlite"
+              ],
+              "sqlite_tables": [
+                {
+                  "database": "energy_kpis.db",
+                  "table_name": "ccee_plant_parcel_hourly",
+                  "classification": "managed_externalized",
+                  "notes": "Large hourly detail is externalized to the managed hot/cold store."
+                },
+                {
+                  "database": "energy_kpis.db",
+                  "table_name": "plant_parcel_daily_generation_mart",
+                  "classification": "sqlite_mart",
+                  "notes": "Rebuildable daily mart for app chart reads."
+                },
+                {
+                  "database": "energy_kpis.db",
+                  "table_name": "plant_parcel_hourly_preview_mart",
+                  "classification": "sqlite_mart",
+                  "notes": "Rebuildable compact preview mart for hourly detail."
+                },
+                {
+                  "database": "energy_kpis.db",
+                  "table_name": "plant_ceg_hourly_generation_mart",
+                  "classification": "sqlite_mart",
+                  "notes": "Rebuildable CEG-level hourly mart."
+                },
+                {
+                  "database": "energy_kpis.db",
+                  "table_name": "plant_parcel_source_submarket_monthly_mart",
+                  "classification": "sqlite_mart",
+                  "notes": "Rebuildable source/submarket monthly mart."
+                },
+                {
+                  "database": "energy_kpis.db",
+                  "table_name": "external_hourly_store_catalog",
+                  "classification": "small_relational",
+                  "notes": "Catalog fingerprint for the managed hourly store."
+                },
+                {
+                  "database": "energy_kpis.db",
+                  "table_name": "energy_mart_builds",
+                  "classification": "small_relational",
+                  "notes": "Mart rebuild audit metadata."
+                }
+              ],
+              "notes": "CCEE hourly plant-parcel facts use managed hot SQLite plus cold Parquet."
+            },
+            {
+              "dataset_id": "distribution_mmgd_projects",
+              "domain": "energy",
+              "status": "implemented",
+              "fact_grain": "project_reference_month",
+              "manifest_path": "C:\\Users\\JoãoPereira\\.codex\\worktrees\\492-audit-copy-overhead\\analisys\\scratch\\bench492\\candidate_final_3y_3\\data\\analytics\\energy\\distribution_mmgd_projects\\manifest.json",
+              "manifest_exists": false,
+              "manifest_required": true,
+              "storage_layers": [
+                "metadata_sqlite",
+                "raw_snapshot",
+                "cold_parquet",
+                "mart_sqlite"
+              ],
+              "sqlite_tables": [
+                {
+                  "database": "energy_kpis.db",
+                  "table_name": "distribution_mmgd_projects",
+                  "classification": "managed_externalized",
+                  "notes": "Legacy MMGD project dimension table is empty after externalization."
+                },
+                {
+                  "database": "energy_kpis.db",
+                  "table_name": "distribution_mmgd_project_snapshots",
+                  "classification": "managed_externalized",
+                  "notes": "MMGD project-month detail is externalized to managed Parquet."
+                },
+                {
+                  "database": "energy_kpis.db",
+                  "table_name": "distribution_mmgd_monthly_mart",
+                  "classification": "sqlite_mart",
+                  "notes": "Compact monthly MMGD summary for app reads."
+                },
+                {
+                  "database": "energy_kpis.db",
+                  "table_name": "managed_dataset_catalog",
+                  "classification": "small_relational",
+                  "notes": "Catalog metadata for managed analytical datasets."
+                }
+              ],
+              "notes": "ANEEL MMGD project detail uses managed Parquet with bounded distributor/month reads."
+            },
+            {
+              "dataset_id": "fuel_distribution_sector_intake",
+              "domain": "energy",
+              "status": "implemented",
+              "fact_grain": "fuel-sales source-geography-product-period detail",
+              "manifest_path": "C:\\Users\\JoãoPereira\\.codex\\worktrees\\492-audit-copy-overhead\\analisys\\scratch\\bench492\\candidate_final_3y_3\\data\\analytics\\energy\\fuel_distribution_sector_intake\\manifest.json",
+              "manifest_exists": false,
+              "manifest_required": true,
+              "storage_layers": [
+                "metadata_sqlite",
+                "raw_snapshot",
+                "cold_parquet",
+                "mart_sqlite"
+              ],
+              "sqlite_tables": [
+                {
+                  "database": "energy_kpis.db",
+                  "table_name": "fuel_distribution_product_year_mart",
+                  "classification": "sqlite_mart",
+                  "notes": "Compact ANP Fuel Distribution yearly product mart; detail is externalized to managed Parquet."
+                },
+                {
+                  "database": "energy_kpis.db",
+                  "table_name": "fuel_distribution_state_month_mart",
+                  "classification": "sqlite_mart",
+                  "notes": "Compact ANP Fuel Distribution state-month trend mart for bounded chart reads."
+                }
+              ],
+              "notes": "ANP Fuel Distribution sales detail uses raw snapshots plus managed Parquet with compact SQLite marts."
+            }
+          ],
+          "planned_contracts": [],
+          "sqlite_large_tables": [],
+          "unclassified_large_tables": [],
+          "failures": [
+            {
+              "dataset_id": "ccee_plant_generation_hourly",
+              "domain": "energy",
+              "check": "manifest_missing",
+              "message": "Managed manifest is not present under the configured data root.",
+              "manifest_path": "C:\\Users\\JoãoPereira\\.codex\\worktrees\\492-audit-copy-overhead\\analisys\\scratch\\bench492\\candidate_final_3y_3\\data\\analytics\\energy\\ccee_plant_generation_hourly\\manifest.json"
+            },
+            {
+              "dataset_id": "distribution_mmgd_projects",
+              "domain": "energy",
+              "check": "manifest_missing",
+              "message": "Managed manifest is not present under the configured data root.",
+              "manifest_path": "C:\\Users\\JoãoPereira\\.codex\\worktrees\\492-audit-copy-overhead\\analisys\\scratch\\bench492\\candidate_final_3y_3\\data\\analytics\\energy\\distribution_mmgd_projects\\manifest.json"
+            },
+            {
+              "dataset_id": "fuel_distribution_sector_intake",
+              "domain": "energy",
+              "check": "manifest_missing",
+              "message": "Managed manifest is not present under the configured data root.",
+              "manifest_path": "C:\\Users\\JoãoPereira\\.codex\\worktrees\\492-audit-copy-overhead\\analisys\\scratch\\bench492\\candidate_final_3y_3\\data\\analytics\\energy\\fuel_distribution_sector_intake\\manifest.json"
+            }
+          ],
+          "warnings": []
+        }
+      },
+      "integrity_check": [
+        [
+          "ok"
+        ]
+      ],
+      "foreign_key_check": [],
+      "new_sqlite_connection_pragmas": {
+        "journal_mode": "wal",
+        "synchronous": 2
+      },
+      "financial_writer_pragmas": {
+        "journal_mode": "wal",
+        "synchronous": 0
+      }
+    },
+    "interpretation": "Storage budget, integrity and foreign-key checks pass. Strict managed-ingestion exits 1 with three missing optional energy manifests in this financial-only fixture. Financial writer WAL/synchronous=OFF is unchanged; no crash-durability acceptance."
+  },
+  "tests": {
+    "focused": {
+      "passed": 149,
+      "seconds": 17.65,
+      "files": [
+        "tests/test_financial_source_qa.py",
+        "tests/test_scraper.py",
+        "tests/test_database_portability.py",
+        "tests/test_bounded_refresh_sources.py"
+      ]
+    },
+    "tdd": {
+      "red_failed_as_expected": 8,
+      "green_passed": 8,
+      "baseline_recursive_audit_copies": {
+        "direct_persistence": 256,
+        "ingestion_without_standardizer": 298,
+        "ingestion_with_standardizer": 334
+      },
+      "candidate_recursive_audit_copies": 0,
+      "final_regression_seconds": 2.53
+    },
+    "full": {
+      "scope": [
+        "tests/",
+        "apps/api/tests/"
+      ],
+      "passed": 1019,
+      "failed": 4,
+      "skipped": 1,
+      "warnings": 2,
+      "seconds": 74.37,
+      "tracked_issue": 489,
+      "failures": [
+        {
+          "test": "tests.test_entity_relationships::test_correction_closes_prior_system_belief_without_erasing_assertion",
+          "message": "AssertionError: assert ['aebe548d6d6...2e33066167c0'] == ['c793821ef64...e64c65652d1a']\n  \n  At index 0 diff: 'aebe548d6d61423595fa2e33066167c0' != 'c793821ef64545c49051e64c65652d1a'\n  Use -v to get more diff"
+        },
+        {
+          "test": "tests.test_entity_relationships::test_sequential_inverse_control_and_current_assertion_corrections_keep_bitemporal_history",
+          "message": "AssertionError: assert not [RelationshipRecord(relationship_id='86827270435d459fac089cc0ec7fe35a', subject_entity_id='decf04dfd9b84afe941342c324d...0:00+00:00', effective_to='2025-01-01T00:00:00+00:00', system_from='2026-11-12T02:30:41.583363+00:00', system_to=None)]\n[+3 more lines; full report in element text]"
+        },
+        {
+          "test": "tests.test_entity_resolution::test_policy_activation_preserves_prior_system_as_of_and_replaces_current_version",
+          "message": "AssertionError: assert ('5059dde7bdfb...3461c8de18b15' == '5059dde7bdfb...3461c8de18b15'\n  \n    5059dde7bdfb42d09193461c8de18b15 and 1 == 2)\n +  where 1 = ResolutionResult(status='resolved', reason=None, entity_id='721a77bfbbfb4896865700b26a12099f', domain='company.display...dde7bdfb42d09193461c8de18b15', policy_version=1, assertion_ids=('43486099d064404e887429201b14aaa3',), override_id=None).policy_version"
+        },
+        {
+          "test": "tests.test_entity_resolution::test_policy_successor_at_finite_boundary_is_contiguous",
+          "message": "AssertionError: assert None == 2\n +  where None = ResolutionResult(status='blocked', reason='policy_missing', entity_id='9fa5df0f4a024ffb9908c3d108a36e82', domain='comp...stem_as_of='2026-11-12T02:30:42.940746+00:00', policy_id=None, policy_version=None, assertion_ids=(), override_id=None).policy_version\n[+1 more line; full report in element text]"
+        }
+      ],
+      "fully_green": false
+    },
+    "constructor_characterization": {
+      "pandas": "3.1.1",
+      "constructor": "DataFrame(frame,copy=True)",
+      "index_columns_extension_dtypes_preserved": true,
+      "audit_copies": 0,
+      "input_unchanged": true,
+      "input_dtypes": {
+        "code": "string",
+        "2024": "Float64",
+        "count": "Int64",
+        "kind": "category"
+      }
+    },
+    "original_data_preservation": {
+      "test-run-id_m5amu": {
+        "unchanged": true,
+        "files": 14
+      },
+      "test-run-af62fcqh": {
+        "unchanged": true,
+        "files": 14
+      },
+      "test-run-ogs6yno3": {
+        "unchanged": true,
+        "files": 14
+      },
+      "test-run-ja392qe2": {
+        "unchanged": true,
+        "files": 14
+      },
+      "test-run-ucy23rij": {
+        "unchanged": true,
+        "files": 14
+      }
+    }
+  },
+  "raw_artifact_manifest": {
+    "scratch/bench492/comparison.json": {
+      "sha256": "f473932afe8765e911f64679e8ebfd72b053679976d015b8204f4da4fa2a2c02",
+      "bytes": 36685
+    },
+    "scratch/bench492/workbook-comparison.json": {
+      "sha256": "189958b2e2089f66df9bd4f0ec23b16297b91315e4de2cd6d6c32ab39bd1817b",
+      "bytes": 39110
+    },
+    "scratch/bench492/candidate_final_3y_3/guardrails.json": {
+      "sha256": "7fa70e7150abe0f15cd34c8b118e6814a6f88823300452640ea24ceebca31a48",
+      "bytes": 15054
+    },
+    "scratch/492-full-tests.log": {
+      "sha256": "9cbb2bdcad9f049aa6aa69d8982268ee3a2e68c023471eb9c9f2e7dc4323109a",
+      "bytes": 12864
+    },
+    "scratch/492-full-tests.xml": {
+      "sha256": "2ec824bc84486cf4afe9d1eaabe8de989f7fd94314413e90745620e7bff67107",
+      "bytes": 146310
+    },
+    "scratch/constructor-characterization.json": {
+      "sha256": "cc41fbecf0dfdf2ab708878c39c6f11f48f3f9d3ec7618f8188460813989d02f",
+      "bytes": 297
+    },
+    "scratch/bench492/controller.py": {
+      "sha256": "6a30e40feb34a5c84ec698458c3c25d8d9ba4ad5e5b4d2979c5da0b275aff1d7",
+      "bytes": 4755
+    },
+    "scratch/bench492/worker.py": {
+      "sha256": "54450ec5fb69928334fab333d0b68a264c1408f8a43888858bcff614d89ff24f",
+      "bytes": 7513
+    },
+    "scratch/summarize_refresh_benchmark.py": {
+      "sha256": "6697f4d7a0c82838cf0d026b0457ff6a17396133a6bea3b6bb985500d860c1d9",
+      "bytes": 4405
+    },
+    "scratch/compare_workbooks.py": {
+      "sha256": "4092ec6d393badde7e032472e971494616f0ec3d19514b580ed84fb3e92b1d11",
+      "bytes": 2311
+    },
+    "scratch/check_refresh_guardrails.py": {
+      "sha256": "6651731cd824e7700dc597857efccc004ac7278657bbd5540a662f2fcffdb80d",
+      "bytes": 2047
+    },
+    "scratch/run_isolated.py": {
+      "sha256": "d39f618f46cc3c6a530c9cd224a3aa92176467b62983dfad887fe1bc5ef62720",
+      "bytes": 3358
+    }
+  },
+  "remaining_validation": [
+    "Exact-source packaged application build and resource measurement.",
+    "Navigation and historical-chart responsiveness during imports.",
+    "Offline reads, restart/recovery and backup/restore."
+  ]
+}
