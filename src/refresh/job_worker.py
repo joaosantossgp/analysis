@@ -189,13 +189,14 @@ class RefreshJobWorker:
             self._clear_source_cache()
             return None
         if self._source_cache is None:
+            jobs = [job]
             next_job = self.repository.peek_next_job()
-            if next_job is None or next_job.attempt_count or (
+            if next_job is not None and not next_job.attempt_count and (
                 next_job.source_scope, next_job.start_year, next_job.end_year
-            ) != (job.source_scope, job.start_year, job.end_year):
-                return None
-            self._source_cache = AnnualSourceCache((job.cd_cvm, next_job.cd_cvm))
-            self._source_job_ids = {job.id, next_job.id}
+            ) == (job.source_scope, job.start_year, job.end_year):
+                jobs.append(next_job)
+            self._source_cache = AnnualSourceCache(tuple(item.cd_cvm for item in jobs))
+            self._source_job_ids = {item.id for item in jobs}
             self._source_scope = scope
             self._source_admitted_at = time.monotonic()
         return self._source_cache
