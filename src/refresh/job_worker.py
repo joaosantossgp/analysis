@@ -25,6 +25,7 @@ from src.refresh.jobs import (
     RefreshJobRepository,
 )
 from src.refresh.service import HeadlessRefreshService
+from src.financials.source_cache import AnnualSourceCache
 from src.platform.settings import AppSettings, get_settings
 
 
@@ -81,6 +82,8 @@ class _HeartbeatLoop:
 
 
 class RefreshJobWorker:
+    SOURCE_CACHE_SECONDS = 60.0
+
     def __init__(
         self,
         *,
@@ -100,6 +103,10 @@ class RefreshJobWorker:
         )
         self.config = config or RefreshWorkerConfig()
         self.worker_heartbeat_callback = worker_heartbeat_callback
+        self._source_cache: AnnualSourceCache | None = None
+        self._source_job_ids: set[str] = set()
+        self._source_scope = None
+        self._source_admitted_at = 0.0
 
     @property
     def engine(self):
@@ -117,17 +124,20 @@ class RefreshJobWorker:
             max_attempts=self.config.max_attempts,
         )
         self._emit_worker_heartbeat("running")
-        while stop_event is None or not stop_event.is_set():
-            claimed = self.run_once()
-            if claimed:
-                continue
-            self._emit_worker_heartbeat("idle")
-            wait_seconds = max(0.2, float(self.config.poll_interval_seconds))
-            if stop_event is not None:
-                stop_event.wait(wait_seconds)
-            else:
-                time.sleep(wait_seconds)
-        self._emit_worker_heartbeat("stopped")
+        try:
+            while stop_event is None or not stop_event.is_set():
+                claimed = self.run_once()
+                if claimed:
+                    continue
+                self._emit_worker_heartbeat("idle")
+                wait_seconds = max(0.2, float(self.config.poll_interval_seconds))
+                if stop_event is not None:
+                    stop_event.wait(wait_seconds)
+                else:
+                    time.sleep(wait_seconds)
+        finally:
+            self._clear_source_cache()
+            self._emit_worker_heartbeat("stopped")
 
     def run_once(self) -> bool:
         self._emit_worker_heartbeat("running")
@@ -136,6 +146,7 @@ class RefreshJobWorker:
             max_attempts=self.config.max_attempts,
         )
         if recovered:
+            self._clear_source_cache()
             log_event(
                 self.logger,
                 "refresh-worker-recovered-stale-jobs",
@@ -145,10 +156,49 @@ class RefreshJobWorker:
 
         job = self.repository.claim_next_job(worker_id=self.config.worker_id)
         if job is None:
+            self._clear_source_cache()
             return False
 
-        self._run_job(job)
+        try:
+            self._run_job(job)
+        except BaseException:
+            self._clear_source_cache()
+            raise
+        finally:
+            self._source_job_ids.discard(job.id)
+            if not self._source_job_ids:
+                self._clear_source_cache()
         return True
+
+    def _clear_source_cache(self) -> None:
+        if self._source_cache is not None:
+            self._source_cache.clear()
+        self._source_cache = None
+        self._source_job_ids.clear()
+
+    def _source_cache_for(self, job, request):
+        scope = (job.source_scope, job.start_year, job.end_year, request.report_type,
+                 request.data_dir, request.policy)
+        if self._source_cache is not None and (
+            job.id not in self._source_job_ids or self._source_scope != scope
+            or time.monotonic() - self._source_admitted_at > self.SOURCE_CACHE_SECONDS
+            or not self._source_cache.active
+        ):
+            self._clear_source_cache()
+        if job.attempt_count > 1 or request.policy.force_refresh or os.getenv("CVM_FORCE_REFRESH") == "1":
+            self._clear_source_cache()
+            return None
+        if self._source_cache is None:
+            next_job = self.repository.peek_next_job()
+            if next_job is None or next_job.attempt_count or (
+                next_job.source_scope, next_job.start_year, next_job.end_year
+            ) != (job.source_scope, job.start_year, job.end_year):
+                return None
+            self._source_cache = AnnualSourceCache((job.cd_cvm, next_job.cd_cvm))
+            self._source_job_ids = {job.id, next_job.id}
+            self._source_scope = scope
+            self._source_admitted_at = time.monotonic()
+        return self._source_cache
 
     def _emit_worker_heartbeat(self, state: str) -> None:
         if self.worker_heartbeat_callback is None:
@@ -173,6 +223,7 @@ class RefreshJobWorker:
             attempt_count=job.attempt_count,
         )
         try:
+            request = self._build_request(job)
             with _HeartbeatLoop(
                 repository=self.repository,
                 job_id=job.id,
@@ -180,14 +231,16 @@ class RefreshJobWorker:
                 logger=self.logger,
             ):
                 result = self.refresh_service.execute(
-                    self._build_request(job),
+                    request,
                     stage_callback=lambda update: self._handle_stage_progress(
                         job.id,
                         update,
                     ),
                     persist_refresh_status=False,
+                    source_cache=self._source_cache_for(job, request),
                 )
         except Exception as exc:
+            self._clear_source_cache()
             error_message = f"{exc.__class__.__name__}: {exc}"
             self.logger.exception(
                 "refresh-worker-job-failed job_id=%s cd_cvm=%s",
@@ -201,6 +254,9 @@ class RefreshJobWorker:
                 error_message=error_message,
             )
             return
+
+        if result.cancelled or result.error_count or any(item.attempts > 1 for item in result.companies):
+            self._clear_source_cache()
 
         if not result.companies:
             rows_inserted = self._count_rows_in_range(

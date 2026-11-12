@@ -27,10 +27,19 @@ run since 2026-05 failed. Both remain available through manual dispatch.
 
 ## Active work
 
-- #483 implements conservative financial period QA, source/lineage persistence
+- #483 delivered conservative financial period QA, source/lineage persistence
   and visible read/export evidence. Existing user data requires an explicit
   scoped refresh; no bulk repair or release is implied. See
-  [financial contracts](CONTEXT.md#dre-and-dfc-rules). #484 follows this fix.
+  [financial contracts](CONTEXT.md#dre-and-dfc-rules).
+- #484 delivers bounded annual source reuse for two compatible persistent refresh
+  jobs, with a 60-second admission window and 128 MiB retained-subset budget;
+  individual job and financial contracts are preserved. See
+  [refresh architecture](architecture.md#service-and-coverage-boundaries).
+  Controlled three-pair measurements preserved all financial/QA hashes and cut
+  queue time by 13.7% (one year) and 16.7% (three years); three-year resident
+  memory fell from 2.68 to 1.29 GiB, with unchanged disk footprint. See
+  [validation evidence](research/2026-11-11-bounded-refresh-validation.md).
+  Target-hardware and packaged acceptance remain separate under #485.
 - Initial multi-window and local-storage desk research is published under #465;
   see `docs/research/2026-11-04-multi-window-workbench.md` and
   `docs/research/local-multi-window-storage.md`. Goal #464 remains open.

@@ -62,6 +62,21 @@ universe lifecycle, summary/recommendation, prioritization, work queue and
 capacity. Existing query keys and API facades remain shared; component extraction
 does not introduce new stores or change persistence.
 
+The persistent `src/refresh/job_worker.py` worker may share annual source work
+between two already-queued jobs with the same source scope and year range. Its
+FIFO peek does not claim the second job. Each job retains its own claim,
+heartbeat, planning, progress, persistence, completion and retry lifecycle.
+`src/financials/source_cache.py` retains only independently copied rows for those
+companies, up to 128 MiB total; over-budget files are parsed without retention.
+The scraper does not also retain full market frames while this context exists.
+This limit covers retained source data, not total process memory.
+
+A later job must join within 60 seconds of cohort admission. Completion of the
+cohort, idle, stop, error, cancellation, retry, forced refresh or incompatible
+configuration releases the context. New jobs cannot extend an existing cohort.
+The legacy service cancellation callback remains supported; this optimization
+does not introduce a public cancellation API for persistent jobs.
+
 ## Active Routes
 
 The current route table is in `apps/desktop-web/src/App.tsx`. Active top-level

@@ -19,6 +19,7 @@ def scraper():
     # Pure transformation: constructor owns runtime directories and databases.
     result = CVMScraper.__new__(CVMScraper)
     result.report_type = "consolidated"
+    result.source_cache = None
     result._coalesce_errors = []
     return result
 

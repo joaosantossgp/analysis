@@ -567,6 +567,17 @@ class RefreshJobRepository:
             self._sync_queue_positions(conn)
         return {"accepted_at": now_iso, "message": str(message)}
 
+    def peek_next_job(self) -> RefreshJobRecord | None:
+        """Observe FIFO admission without claiming or changing queue projections."""
+        with self.engine.connect() as conn:
+            row = conn.execute(text("""
+                SELECT * FROM refresh_jobs
+                WHERE state = 'queued'
+                ORDER BY requested_at ASC, enqueue_sequence ASC, id ASC
+                LIMIT 1
+            """)).mappings().fetchone()
+        return RefreshJobRecord.from_row(dict(row)) if row else None
+
     def claim_next_job(
         self,
         *,
