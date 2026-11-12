@@ -73,6 +73,7 @@ from src.financials.utils import (
 from src.financials.standardizer import AccountStandardizer
 from src.financials.database import CVMDatabase
 from src.financials.periodization import build_statement, is_per_share
+from src.financials.source_cache import AnnualSourceCache
 from src.platform.settings import AppSettings, get_settings
 
 if TYPE_CHECKING:
@@ -114,6 +115,7 @@ class CVMScraper:
         report_type="consolidated",
         max_workers=5,
         settings: AppSettings | None = None,
+        source_cache: AnnualSourceCache | None = None,
     ):
         self.settings = settings or get_settings()
         self.output_dir = str(output_dir or self.settings.paths.reports_dir)
@@ -132,6 +134,11 @@ class CVMScraper:
         self._print_lock = threading.Lock()
         self._http_state = threading.local()
         self._csv_cache: dict[str, "_pl().DataFrame"] = {}
+        self.source_cache = source_cache
+        if source_cache is not None:
+            source_cache.configure(self.raw_dir, self.processed_dir, self.report_type, self.base_url)
+            if self.force_refresh:
+                source_cache.clear()
 
         if self.report_type == "consolidated":
             self.suffix = "con"
@@ -299,6 +306,11 @@ class CVMScraper:
         local_zip_path = os.path.join(self.raw_dir, filename)
 
         refresh_needed, refresh_reason = self._should_refresh_local_zip(local_zip_path, url)
+        cache = self.source_cache
+        if cache is not None and not refresh_needed and cache.prepared(local_zip_path):
+            return True
+        if cache is not None and refresh_needed:
+            cache.prepared(local_zip_path)
         if not refresh_needed:
             with self._print_lock:
                 print(f"  Using local zip: {filename} ({refresh_reason})")
@@ -312,6 +324,8 @@ class CVMScraper:
                 try:
                     response = self._http_get(url, stream=True, timeout=self.download_timeout)
                     if response.status_code != 200:
+                        if cache is not None:
+                            cache.clear()
                         return False
                     with open(tmp_zip_path, 'wb') as f:
                         for chunk in response.iter_content(chunk_size=8192):
@@ -330,17 +344,25 @@ class CVMScraper:
                     else:
                         with self._print_lock:
                             print(f"  Error downloading {doc_type}/{year} after 3 attempts: {e}")
+                        if cache is not None:
+                            cache.clear()
                         return False
             if not downloaded:
                 return False
 
         try:
+            zip_signature = AnnualSourceCache.signature(local_zip_path) if cache is not None else None
+            extracted = []
             with zipfile.ZipFile(local_zip_path, 'r') as zip_ref:
                 for file in zip_ref.namelist():
                     if any(f'_{self.suffix}_' in file and x in file for x in ['BPA', 'BPP', 'DRE', 'DFC', 'DVA', 'DMPL']):
-                        zip_ref.extract(file, self.processed_dir)
+                        extracted.append(zip_ref.extract(file, self.processed_dir))
+            if cache is not None:
+                cache.remember_prepared(local_zip_path, extracted, zip_signature)
             return True
         except Exception as e:
+            if cache is not None:
+                cache.clear()
             with self._print_lock:
                 print(f"  Error extracting {doc_type}/{year}: {e}")
             return False
@@ -361,6 +383,11 @@ class CVMScraper:
         return df
 
     def _read_csv_cached(self, filepath: str) -> "_pl().DataFrame":
+        cache = self.source_cache
+        if cache is not None:
+            cached = cache.get(filepath)
+            if cached is not None:
+                return cached
         if filepath not in self._csv_cache:
             pl = None
             try:
@@ -391,6 +418,14 @@ class CVMScraper:
                         df = df_pandas
                 else:
                     df = df_pandas
+            if cache is not None:
+                if hasattr(df, "is_empty"):
+                    subset = df.filter(_pl().col('CD_CVM').is_in(cache.company_codes))
+                    # to_pandas copies: a Polars slice can retain its full market buffers.
+                    subset = self._polars_to_pandas(subset)
+                else:
+                    subset = df[df['CD_CVM'].isin(cache.company_codes)].copy(deep=True)
+                return cache.retain(filepath, subset)
             self._csv_cache[filepath] = df
         return self._csv_cache[filepath]
 
@@ -398,7 +433,10 @@ class CVMScraper:
         try:
             return df.to_pandas()
         except Exception:
-            return _pd().DataFrame(df.to_dicts())
+            records = df.to_dicts()
+            if not records:
+                return _pd().DataFrame({name: df[name].to_numpy().copy() for name in df.columns})
+            return _pd().DataFrame(records)
 
     def process_data(self, cvm_code, years):
         all_data = []
@@ -439,6 +477,8 @@ class CVMScraper:
                             df_company['COMPANY_TYPE'] = 'financeira' if any(k in setor for k in ['banc', 'financ']) else 'comercial'
                             all_data.append(df_company)
                         except Exception as exc:
+                            if self.source_cache is not None:
+                                self.source_cache.clear()
                             with self._print_lock:
                                 print(
                                     f"  Error processing {filename} for CVM {cvm_code}: {exc}"
@@ -727,6 +767,8 @@ class CVMScraper:
                 try:
                     fut.result()
                 except Exception as exc:
+                    if self.source_cache is not None:
+                        self.source_cache.clear()
                     with self._print_lock:
                         print(f"  Unexpected error for {dt_done}/{year_done}: {exc}")
                 completed_downloads += 1
@@ -829,6 +871,8 @@ class CVMScraper:
                     )
                     break
                 except OperationalError as exc:
+                    if self.source_cache is not None:
+                        self.source_cache.clear()
                     sql_code = getattr(exc, "code", None)
                     sql_text = f"[{sql_code}] {exc}" if sql_code else str(exc)
                     payload["status"] = "error"

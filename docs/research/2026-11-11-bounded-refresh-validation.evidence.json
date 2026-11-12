@@ -1,0 +1,1122 @@
+{
+  "issue": 484,
+  "baseline_commit": "13cd067ea7f8d8c2b8b0fb35b496c36c5f2a5038",
+  "candidate_file_sha256": {
+    "src/financials/source_cache.py": "7134a177b45eb1362403af9e6a6db782d106440604a95ccbb7007ff4f48a8fe7",
+    "src/financials/scraper.py": "818ff69b4c2ba674d97e8ce69e90f8333ed7a878ce8741bfb029df9c492770e7",
+    "src/refresh/jobs.py": "0225aa61afdf19ef88e98948d5ac1a17bb15915f296e588cd119f50aa0314823",
+    "src/refresh/job_worker.py": "64e43a6958df904ab831a54ce64d4d8e5110b620da010c74716a88b4fcb4ef5e",
+    "src/refresh/service.py": "385e535570d9b418a009feb99b962d5260dcc4adedc314b0092eb3e9b4251ac6",
+    "tests/test_bounded_refresh_sources.py": "1eeee1ae260c6b0bd806cde162e7413994e65fc504c7ec61e8b988725d73001c",
+    "tests/test_financial_source_qa.py": "f8830c3c48749c6865201f3eade7e8bd22d2775c3eb2e766c205d528f5973ed4"
+  },
+  "method": {
+    "companies": [
+      9512,
+      4170
+    ],
+    "source_scope": "on_demand",
+    "pairs_per_scope": 3,
+    "order": [
+      "candidate, baseline",
+      "baseline, candidate",
+      "candidate, baseline"
+    ],
+    "rss_private_sample_seconds": 0.05,
+    "data_temp_disk_sample_seconds": 0.25,
+    "host_ram_bytes": 34031251456,
+    "host_logical_cpus": 28,
+    "network": "Official CVM company catalog GET and annual ZIP HEAD checks remain enabled; annual ZIP bodies already cached.",
+    "warmth": "Fresh Python process and isolated data directory each time; Windows filesystem cache not flushed.",
+    "stages": "Union of wall-clock spans for each stage. Nested stage measurements must not be added.",
+    "limits": "Two companies and at most three years on a 31.69 GiB host; not packaged or 8 GB acceptance."
+  },
+  "scopes": {
+    "2022-2024": {
+      "modes": {
+        "baseline": {
+          "n": 3,
+          "median": {
+            "queue_seconds": 35.93638460000511,
+            "process_seconds": 38.54801510000834,
+            "peak_rss": 2873856000,
+            "peak_private": 4646694912,
+            "peak_disk": 1635332681,
+            "csv_parses": 84,
+            "extractions": 84,
+            "peak_observed_retained_cache": 0
+          },
+          "range": {
+            "queue_seconds": [
+              34.905752399994526,
+              37.072148800012656
+            ],
+            "process_seconds": [
+              37.82788400002755,
+              39.92078829999082
+            ],
+            "peak_rss": [
+              2847064064,
+              2875674624
+            ],
+            "peak_private": [
+              4604280832,
+              4653326336
+            ],
+            "peak_disk": [
+              1634554443,
+              1636954435
+            ],
+            "csv_parses": [
+              84,
+              84
+            ],
+            "extractions": [
+              84,
+              84
+            ],
+            "peak_observed_retained_cache": [
+              0,
+              0
+            ]
+          },
+          "median_stages_seconds": {
+            "catalog": 0.42584520002128556,
+            "zip_extract": 4.280718499969225,
+            "download_extract_task": 4.392347200016957,
+            "csv_read": 6.474638200015761,
+            "read_filter_convert": 7.036321300023701,
+            "financial_transform": 1.4668360000359826,
+            "database_transaction": 15.07550390000688,
+            "persist_and_excel": 21.91888299997663
+          }
+        },
+        "candidate": {
+          "n": 3,
+          "median": {
+            "queue_seconds": 29.935992300044745,
+            "process_seconds": 32.82629040000029,
+            "peak_rss": 1381363712,
+            "peak_private": 2715611136,
+            "peak_disk": 1635725803,
+            "csv_parses": 42,
+            "extractions": 42,
+            "peak_observed_retained_cache": 26801189
+          },
+          "range": {
+            "queue_seconds": [
+              29.44607319997158,
+              31.5983970000525
+            ],
+            "process_seconds": [
+              32.383871499972884,
+              34.408942300011404
+            ],
+            "peak_rss": [
+              1345265664,
+              1435389952
+            ],
+            "peak_private": [
+              2651820032,
+              2717388800
+            ],
+            "peak_disk": [
+              1635201514,
+              1636381161
+            ],
+            "csv_parses": [
+              42,
+              42
+            ],
+            "extractions": [
+              42,
+              42
+            ],
+            "peak_observed_retained_cache": [
+              26801189,
+              26801189
+            ]
+          },
+          "median_stages_seconds": {
+            "catalog": 0.4280229000141844,
+            "zip_extract": 1.5725770000135526,
+            "download_extract_task": 1.7085744999931194,
+            "csv_read": 3.612085499917157,
+            "read_filter_convert": 3.9260810000123456,
+            "financial_transform": 1.4033007000107318,
+            "database_transaction": 15.086536000017077,
+            "persist_and_excel": 21.857421899971087
+          }
+        }
+      },
+      "equivalent": true,
+      "sources": {
+        "dfp_cia_aberta_2022.zip": "151d605dc4c2bbe324ecbcfda29730017a6891314382ee3ebd9554df765c2f2a",
+        "dfp_cia_aberta_2023.zip": "344e37b704a588b3863c5dd4ad6ee54b3dc9a2ee18cf88e0e4e35f5a641cdc2d",
+        "dfp_cia_aberta_2024.zip": "b6a485b540728dcd4e7ed030bad8e749471044594ec17866fff4f0e94c54120a",
+        "itr_cia_aberta_2022.zip": "4579fe2476bc09612142196b5e0c20cb7ae30c3e18ea56a13bb558495f115eff",
+        "itr_cia_aberta_2023.zip": "9e6ce6cc2a978ffaae68c5869c98b60443791b6981f628d537778e160905504b",
+        "itr_cia_aberta_2024.zip": "bdfa4c83bcc2bfac8f78dbca85494eea209c018ce429ac2ec15eb8d900762d7a"
+      },
+      "tables": {
+        "financial_reports": {
+          "rows": 7446,
+          "sha256": "a4cb819f5ca0e229aac2828722c8fd272e4721c00998d151579e2f4b028cda9d"
+        },
+        "financial_source_observations": {
+          "rows": 7135,
+          "sha256": "c0cfeecd2d0220b914b6396a4042950b292fc592636cb2be63f6606052393739"
+        },
+        "financial_value_lineage": {
+          "rows": 7409,
+          "sha256": "ce9a37ed1fb8404db9bb446454a4e7da13efe1cd96e63f6993e4fed14053a3c7"
+        },
+        "qa_logs": {
+          "rows": 1225,
+          "sha256": "d5e4e1ff97816d2dc7f3d8b5dcb41aebb71d750c8ffac41412d5c2010db2603a"
+        }
+      },
+      "queue_reduction_percent": 16.697262027743086
+    },
+    "2024-2024": {
+      "modes": {
+        "baseline": {
+          "n": 3,
+          "median": {
+            "queue_seconds": 10.785652800055686,
+            "process_seconds": 13.291470500000287,
+            "peak_rss": 1303060480,
+            "peak_private": 2841583616,
+            "peak_disk": 548894724,
+            "csv_parses": 28,
+            "extractions": 28,
+            "peak_observed_retained_cache": 0
+          },
+          "range": {
+            "queue_seconds": [
+              10.727949399966747,
+              11.3095257000532
+            ],
+            "process_seconds": [
+              13.073727800045162,
+              13.793015700008254
+            ],
+            "peak_rss": [
+              1297571840,
+              1359085568
+            ],
+            "peak_private": [
+              2791682048,
+              2847133696
+            ],
+            "peak_disk": [
+              548894719,
+              548996157
+            ],
+            "csv_parses": [
+              28,
+              28
+            ],
+            "extractions": [
+              28,
+              28
+            ],
+            "peak_observed_retained_cache": [
+              0,
+              0
+            ]
+          },
+          "median_stages_seconds": {
+            "catalog": 0.42683549999492243,
+            "zip_extract": 1.0669372999691404,
+            "download_extract_task": 1.1653328000102192,
+            "csv_read": 2.170610500033945,
+            "read_filter_convert": 2.3548302999697626,
+            "financial_transform": 0.4820765000185929,
+            "database_transaction": 4.333154299994931,
+            "persist_and_excel": 6.225802299974021
+          }
+        },
+        "candidate": {
+          "n": 3,
+          "median": {
+            "queue_seconds": 9.307666600041557,
+            "process_seconds": 11.79704929998843,
+            "peak_rss": 982388736,
+            "peak_private": 2410291200,
+            "peak_disk": 548894719,
+            "csv_parses": 14,
+            "extractions": 14,
+            "peak_observed_retained_cache": 8990647
+          },
+          "range": {
+            "queue_seconds": [
+              9.284852000011597,
+              9.521359699952882
+            ],
+            "process_seconds": [
+              11.78067359997658,
+              12.037507299974095
+            ],
+            "peak_rss": [
+              969519104,
+              1021923328
+            ],
+            "peak_private": [
+              2361991168,
+              2414649344
+            ],
+            "peak_disk": [
+              548894718,
+              549880886
+            ],
+            "csv_parses": [
+              14,
+              14
+            ],
+            "extractions": [
+              14,
+              14
+            ],
+            "peak_observed_retained_cache": [
+              8990647,
+              8990647
+            ]
+          },
+          "median_stages_seconds": {
+            "catalog": 0.4258049000054598,
+            "zip_extract": 0.5129876999999397,
+            "download_extract_task": 0.6246554999961518,
+            "csv_read": 1.2372104000533,
+            "read_filter_convert": 1.3399263000464998,
+            "financial_transform": 0.4542269000085071,
+            "database_transaction": 4.386838700040244,
+            "persist_and_excel": 6.2985183000564575
+          }
+        }
+      },
+      "equivalent": true,
+      "sources": {
+        "dfp_cia_aberta_2024.zip": "b6a485b540728dcd4e7ed030bad8e749471044594ec17866fff4f0e94c54120a",
+        "itr_cia_aberta_2024.zip": "bdfa4c83bcc2bfac8f78dbca85494eea209c018ce429ac2ec15eb8d900762d7a"
+      },
+      "tables": {
+        "financial_reports": {
+          "rows": 2482,
+          "sha256": "c7711cf22b8b7f77084f6c7a54365f762b0a06ac0358ce034559e9cecce3847a"
+        },
+        "financial_source_observations": {
+          "rows": 2390,
+          "sha256": "f7989bca2163f820f3efc8d2be3dc7df3106cda78c9977c82de108a94536b3e6"
+        },
+        "financial_value_lineage": {
+          "rows": 2482,
+          "sha256": "70597c3711ea022bd793ff686029a703ebc4945e8f398cfb6959385673187fcd"
+        },
+        "qa_logs": {
+          "rows": 309,
+          "sha256": "33539d1b79f80a7b857da053962d94a03dc005710ca83d6550b0ce4a2d51e71a"
+        }
+      },
+      "queue_reduction_percent": 13.703261428983682
+    }
+  },
+  "runs": [
+    {
+      "run": "baseline_final_1y_1",
+      "mode": "baseline",
+      "scope": "2024-2024",
+      "process_seconds": 13.291470500000287,
+      "queue_seconds": 10.785652800055686,
+      "peak_rss": 1303060480,
+      "peak_private": 2847133696,
+      "peak_disk": 548894724,
+      "peak_observed_retained_cache": 0,
+      "idle_cache_bytes": 0,
+      "heartbeat_lock_warnings": 0,
+      "company_write_retries": 0,
+      "csv_parses": 28,
+      "extractions": 28,
+      "stages_seconds": {
+        "catalog": 0.42683549999492243,
+        "zip_extract": 1.0580732999951579,
+        "download_extract_task": 1.1653328000102192,
+        "csv_read": 2.1005279000964947,
+        "read_filter_convert": 2.2727737000677735,
+        "financial_transform": 0.4820765000185929,
+        "database_transaction": 4.333154299994931,
+        "persist_and_excel": 6.225802299974021
+      },
+      "company_seconds": {
+        "9512": 5.598528000002261,
+        "4170": 5.177726600028109
+      },
+      "progress_events": {
+        "9512": 9,
+        "4170": 9
+      },
+      "originals_unchanged": true
+    },
+    {
+      "run": "baseline_final_1y_2",
+      "mode": "baseline",
+      "scope": "2024-2024",
+      "process_seconds": 13.793015700008254,
+      "queue_seconds": 11.3095257000532,
+      "peak_rss": 1297571840,
+      "peak_private": 2791682048,
+      "peak_disk": 548894719,
+      "peak_observed_retained_cache": 0,
+      "idle_cache_bytes": 0,
+      "heartbeat_lock_warnings": 0,
+      "company_write_retries": 0,
+      "csv_parses": 28,
+      "extractions": 28,
+      "stages_seconds": {
+        "catalog": 0.42479969997657463,
+        "zip_extract": 1.3381605999311432,
+        "download_extract_task": 1.4565153999719769,
+        "csv_read": 2.268070200108923,
+        "read_filter_convert": 2.469712799997069,
+        "financial_transform": 0.47167580004315823,
+        "database_transaction": 4.4123709999839775,
+        "persist_and_excel": 6.265697599970736
+      },
+      "company_seconds": {
+        "9512": 6.094530600006692,
+        "4170": 5.191868499969132
+      },
+      "progress_events": {
+        "9512": 9,
+        "4170": 9
+      },
+      "originals_unchanged": true
+    },
+    {
+      "run": "baseline_final_1y_3",
+      "mode": "baseline",
+      "scope": "2024-2024",
+      "process_seconds": 13.073727800045162,
+      "queue_seconds": 10.727949399966747,
+      "peak_rss": 1359085568,
+      "peak_private": 2841583616,
+      "peak_disk": 548996157,
+      "peak_observed_retained_cache": 0,
+      "idle_cache_bytes": 0,
+      "heartbeat_lock_warnings": 0,
+      "company_write_retries": 0,
+      "csv_parses": 28,
+      "extractions": 28,
+      "stages_seconds": {
+        "catalog": 0.4270664000068791,
+        "zip_extract": 1.0669372999691404,
+        "download_extract_task": 1.1580173000111245,
+        "csv_read": 2.170610500033945,
+        "read_filter_convert": 2.3548302999697626,
+        "financial_transform": 0.49269029998686165,
+        "database_transaction": 4.307053099968471,
+        "persist_and_excel": 6.153928500018083
+      },
+      "company_seconds": {
+        "9512": 5.571724399982486,
+        "4170": 5.147127799980808
+      },
+      "progress_events": {
+        "9512": 9,
+        "4170": 9
+      },
+      "originals_unchanged": true
+    },
+    {
+      "run": "baseline_final_3y_1",
+      "mode": "baseline",
+      "scope": "2022-2024",
+      "process_seconds": 38.54801510000834,
+      "queue_seconds": 35.93638460000511,
+      "peak_rss": 2873856000,
+      "peak_private": 4604280832,
+      "peak_disk": 1634554443,
+      "peak_observed_retained_cache": 0,
+      "idle_cache_bytes": 0,
+      "heartbeat_lock_warnings": 1,
+      "company_write_retries": 0,
+      "csv_parses": 84,
+      "extractions": 84,
+      "stages_seconds": {
+        "catalog": 0.425003900018055,
+        "zip_extract": 4.280718499969225,
+        "download_extract_task": 4.392347200016957,
+        "csv_read": 6.474638200015761,
+        "read_filter_convert": 7.036321300023701,
+        "financial_transform": 1.4208144000149332,
+        "database_transaction": 15.07550390000688,
+        "persist_and_excel": 22.227381800010335
+      },
+      "company_seconds": {
+        "9512": 19.66837090003537,
+        "4170": 16.258274600026198
+      },
+      "progress_events": {
+        "9512": 13,
+        "4170": 13
+      },
+      "originals_unchanged": true
+    },
+    {
+      "run": "baseline_final_3y_2",
+      "mode": "baseline",
+      "scope": "2022-2024",
+      "process_seconds": 39.92078829999082,
+      "queue_seconds": 37.072148800012656,
+      "peak_rss": 2875674624,
+      "peak_private": 4646694912,
+      "peak_disk": 1636954435,
+      "peak_observed_retained_cache": 0,
+      "idle_cache_bytes": 0,
+      "heartbeat_lock_warnings": 0,
+      "company_write_retries": 0,
+      "csv_parses": 84,
+      "extractions": 84,
+      "stages_seconds": {
+        "catalog": 0.42584520002128556,
+        "zip_extract": 5.447742499993183,
+        "download_extract_task": 5.554233300033957,
+        "csv_read": 6.359919100359548,
+        "read_filter_convert": 6.9645013000117615,
+        "financial_transform": 1.4668360000359826,
+        "database_transaction": 15.201661599916406,
+        "persist_and_excel": 21.91888299997663
+      },
+      "company_seconds": {
+        "9512": 19.061769900028594,
+        "4170": 18.00082980003208
+      },
+      "progress_events": {
+        "9512": 13,
+        "4170": 13
+      },
+      "originals_unchanged": true
+    },
+    {
+      "run": "baseline_final_3y_3",
+      "mode": "baseline",
+      "scope": "2022-2024",
+      "process_seconds": 37.82788400002755,
+      "queue_seconds": 34.905752399994526,
+      "peak_rss": 2847064064,
+      "peak_private": 4653326336,
+      "peak_disk": 1635332681,
+      "peak_observed_retained_cache": 0,
+      "idle_cache_bytes": 0,
+      "heartbeat_lock_warnings": 0,
+      "company_write_retries": 0,
+      "csv_parses": 84,
+      "extractions": 84,
+      "stages_seconds": {
+        "catalog": 0.4454058000119403,
+        "zip_extract": 3.5374566999962553,
+        "download_extract_task": 3.649804100045003,
+        "csv_read": 6.527360800013412,
+        "read_filter_convert": 7.0800382000161335,
+        "financial_transform": 1.5303427000180818,
+        "database_transaction": 14.968000899942126,
+        "persist_and_excel": 21.608267199946567
+      },
+      "company_seconds": {
+        "9512": 17.583616900024936,
+        "4170": 17.300447599962354
+      },
+      "progress_events": {
+        "9512": 13,
+        "4170": 13
+      },
+      "originals_unchanged": true
+    },
+    {
+      "run": "candidate_final_1y_1",
+      "mode": "candidate",
+      "scope": "2024-2024",
+      "process_seconds": 11.78067359997658,
+      "queue_seconds": 9.307666600041557,
+      "peak_rss": 982388736,
+      "peak_private": 2414649344,
+      "peak_disk": 548894718,
+      "peak_observed_retained_cache": 8990647,
+      "idle_cache_bytes": 0,
+      "heartbeat_lock_warnings": 0,
+      "company_write_retries": 0,
+      "csv_parses": 14,
+      "extractions": 14,
+      "stages_seconds": {
+        "catalog": 0.447890900017228,
+        "zip_extract": 0.5019106000545435,
+        "download_extract_task": 0.6246554999961518,
+        "csv_read": 1.2459868000005372,
+        "read_filter_convert": 1.3491207999759354,
+        "financial_transform": 0.4397597999777645,
+        "database_transaction": 4.33764349995181,
+        "persist_and_excel": 6.256334100035019
+      },
+      "company_seconds": {
+        "9512": 5.650659799983259,
+        "4170": 3.632521999999881
+      },
+      "progress_events": {
+        "9512": 9,
+        "4170": 9
+      },
+      "originals_unchanged": true
+    },
+    {
+      "run": "candidate_final_1y_2",
+      "mode": "candidate",
+      "scope": "2024-2024",
+      "process_seconds": 11.79704929998843,
+      "queue_seconds": 9.284852000011597,
+      "peak_rss": 969519104,
+      "peak_private": 2361991168,
+      "peak_disk": 549880886,
+      "peak_observed_retained_cache": 8990647,
+      "idle_cache_bytes": 0,
+      "heartbeat_lock_warnings": 0,
+      "company_write_retries": 0,
+      "csv_parses": 14,
+      "extractions": 14,
+      "stages_seconds": {
+        "catalog": 0.4258049000054598,
+        "zip_extract": 0.5146688999375328,
+        "download_extract_task": 0.6138326000072993,
+        "csv_read": 1.1498291000607423,
+        "read_filter_convert": 1.2600409000297077,
+        "financial_transform": 0.4542269000085071,
+        "database_transaction": 4.386838700040244,
+        "persist_and_excel": 6.2985183000564575
+      },
+      "company_seconds": {
+        "9512": 5.541982399998233,
+        "4170": 3.7172137000015937
+      },
+      "progress_events": {
+        "9512": 9,
+        "4170": 9
+      },
+      "originals_unchanged": true
+    },
+    {
+      "run": "candidate_final_1y_3",
+      "mode": "candidate",
+      "scope": "2024-2024",
+      "process_seconds": 12.037507299974095,
+      "queue_seconds": 9.521359699952882,
+      "peak_rss": 1021923328,
+      "peak_private": 2410291200,
+      "peak_disk": 548894719,
+      "peak_observed_retained_cache": 8990647,
+      "idle_cache_bytes": 0,
+      "heartbeat_lock_warnings": 0,
+      "company_write_retries": 0,
+      "csv_parses": 14,
+      "extractions": 14,
+      "stages_seconds": {
+        "catalog": 0.4196499000536278,
+        "zip_extract": 0.5129876999999397,
+        "download_extract_task": 0.6419126999680884,
+        "csv_read": 1.2372104000533,
+        "read_filter_convert": 1.3399263000464998,
+        "financial_transform": 0.4735542999696918,
+        "database_transaction": 4.531781400030013,
+        "persist_and_excel": 6.434073899930809
+      },
+      "company_seconds": {
+        "9512": 5.706364800047595,
+        "4170": 3.8044000000227243
+      },
+      "progress_events": {
+        "9512": 9,
+        "4170": 9
+      },
+      "originals_unchanged": true
+    },
+    {
+      "run": "candidate_final_3y_1",
+      "mode": "candidate",
+      "scope": "2022-2024",
+      "process_seconds": 32.383871499972884,
+      "queue_seconds": 29.44607319997158,
+      "peak_rss": 1435389952,
+      "peak_private": 2715611136,
+      "peak_disk": 1635201514,
+      "peak_observed_retained_cache": 26801189,
+      "idle_cache_bytes": 0,
+      "heartbeat_lock_warnings": 0,
+      "company_write_retries": 0,
+      "csv_parses": 42,
+      "extractions": 42,
+      "stages_seconds": {
+        "catalog": 0.4152209000312723,
+        "zip_extract": 1.5725770000135526,
+        "download_extract_task": 1.7085744999931194,
+        "csv_read": 3.612085499917157,
+        "read_filter_convert": 3.9260810000123456,
+        "financial_transform": 1.4033007000107318,
+        "database_transaction": 15.086536000017077,
+        "persist_and_excel": 21.80039529997157
+      },
+      "company_seconds": {
+        "9512": 17.448303599958308,
+        "4170": 11.984586000035051
+      },
+      "progress_events": {
+        "9512": 13,
+        "4170": 13
+      },
+      "originals_unchanged": true
+    },
+    {
+      "run": "candidate_final_3y_2",
+      "mode": "candidate",
+      "scope": "2022-2024",
+      "process_seconds": 34.408942300011404,
+      "queue_seconds": 31.5983970000525,
+      "peak_rss": 1381363712,
+      "peak_private": 2717388800,
+      "peak_disk": 1635725803,
+      "peak_observed_retained_cache": 26801189,
+      "idle_cache_bytes": 0,
+      "heartbeat_lock_warnings": 1,
+      "company_write_retries": 0,
+      "csv_parses": 42,
+      "extractions": 42,
+      "stages_seconds": {
+        "catalog": 0.4553711999906227,
+        "zip_extract": 2.0680189999984577,
+        "download_extract_task": 3.7767100000055507,
+        "csv_read": 3.280334700073581,
+        "read_filter_convert": 3.6267204000032507,
+        "financial_transform": 1.3930801000096835,
+        "database_transaction": 15.048326200048905,
+        "persist_and_excel": 21.857421899971087
+      },
+      "company_seconds": {
+        "9512": 19.333583600004204,
+        "4170": 12.251385100011248
+      },
+      "progress_events": {
+        "9512": 13,
+        "4170": 13
+      },
+      "originals_unchanged": true
+    },
+    {
+      "run": "candidate_final_3y_3",
+      "mode": "candidate",
+      "scope": "2022-2024",
+      "process_seconds": 32.82629040000029,
+      "queue_seconds": 29.935992300044745,
+      "peak_rss": 1345265664,
+      "peak_private": 2651820032,
+      "peak_disk": 1636381161,
+      "peak_observed_retained_cache": 26801189,
+      "idle_cache_bytes": 0,
+      "heartbeat_lock_warnings": 0,
+      "company_write_retries": 0,
+      "csv_parses": 42,
+      "extractions": 42,
+      "stages_seconds": {
+        "catalog": 0.4280229000141844,
+        "zip_extract": 0.9967457999591716,
+        "download_extract_task": 1.1264870000304654,
+        "csv_read": 4.208766300173011,
+        "read_filter_convert": 4.745253600005526,
+        "financial_transform": 1.444115700025577,
+        "database_transaction": 15.24044570006663,
+        "persist_and_excel": 21.994671699998435
+      },
+      "company_seconds": {
+        "9512": 17.87611960002687,
+        "4170": 12.047545599984005
+      },
+      "progress_events": {
+        "9512": 13,
+        "4170": 13
+      },
+      "originals_unchanged": true
+    }
+  ],
+  "validation": {
+    "python_api": {
+      "passed": 1012,
+      "failed": 3,
+      "skipped": 1,
+      "seconds": 67.94,
+      "failure_issue": 489
+    },
+    "bounded_regressions": 32,
+    "post_fix_focused_passed": 134,
+    "governance_tests_passed": 44,
+    "frontend_build": "pass",
+    "desktop": "Real built Vite + pywebview, isolated paths, initial empty queue, per-company progress, deliberate Vale failure, explicit retry success, no JS errors; 1366/900 widths.",
+    "original_data": "Audit hooks reject writes/SQLite access outside each sandbox; protected hashes and metadata unchanged.",
+    "independent_review": "Final Ponytail review: Ship. Real-source empty-subset finding reproduced and fixed before final measurements."
+  },
+  "guardrails": {
+    "check_storage_budget.py": {
+      "exit_code": 0,
+      "report": {
+        "ok": true,
+        "status": "pass",
+        "summary": {
+          "total_bytes": 1617044139,
+          "backup_bytes": 0,
+          "active_bytes_excluding_backups": 1617044139,
+          "database_category_bytes": 27770880,
+          "max_main_db_bytes": 12884901888,
+          "max_database_category_bytes": 17179869184,
+          "max_active_local_bytes": 34359738368,
+          "fail_on_backups": false
+        },
+        "failures": [],
+        "warnings": []
+      }
+    },
+    "check_managed_ingestion_contracts.py": {
+      "exit_code": 1,
+      "report": {
+        "ok": false,
+        "status": "fail",
+        "summary": {
+          "contracts": 3,
+          "implemented_contracts": 3,
+          "planned_contracts": 0,
+          "failures": 3,
+          "warnings": 0,
+          "require_manifests": true,
+          "scan_sqlite_large_tables": true,
+          "sqlite_row_threshold": 250000,
+          "data_dir": "isolated-run\\data"
+        },
+        "contracts": [
+          {
+            "dataset_id": "ccee_plant_generation_hourly",
+            "domain": "energy",
+            "status": "implemented",
+            "fact_grain": "plant-parcel hour",
+            "manifest_path": "isolated-run\\data\\analytics\\energy\\ccee_plant_generation_hourly\\manifest.json",
+            "manifest_exists": false,
+            "manifest_required": true,
+            "storage_layers": [
+              "metadata_sqlite",
+              "raw_snapshot",
+              "hot_sqlite",
+              "cold_parquet",
+              "mart_sqlite"
+            ],
+            "sqlite_tables": [
+              {
+                "database": "energy_kpis.db",
+                "table_name": "ccee_plant_parcel_hourly",
+                "classification": "managed_externalized",
+                "notes": "Large hourly detail is externalized to the managed hot/cold store."
+              },
+              {
+                "database": "energy_kpis.db",
+                "table_name": "plant_parcel_daily_generation_mart",
+                "classification": "sqlite_mart",
+                "notes": "Rebuildable daily mart for app chart reads."
+              },
+              {
+                "database": "energy_kpis.db",
+                "table_name": "plant_parcel_hourly_preview_mart",
+                "classification": "sqlite_mart",
+                "notes": "Rebuildable compact preview mart for hourly detail."
+              },
+              {
+                "database": "energy_kpis.db",
+                "table_name": "plant_ceg_hourly_generation_mart",
+                "classification": "sqlite_mart",
+                "notes": "Rebuildable CEG-level hourly mart."
+              },
+              {
+                "database": "energy_kpis.db",
+                "table_name": "plant_parcel_source_submarket_monthly_mart",
+                "classification": "sqlite_mart",
+                "notes": "Rebuildable source/submarket monthly mart."
+              },
+              {
+                "database": "energy_kpis.db",
+                "table_name": "external_hourly_store_catalog",
+                "classification": "small_relational",
+                "notes": "Catalog fingerprint for the managed hourly store."
+              },
+              {
+                "database": "energy_kpis.db",
+                "table_name": "energy_mart_builds",
+                "classification": "small_relational",
+                "notes": "Mart rebuild audit metadata."
+              }
+            ],
+            "notes": "CCEE hourly plant-parcel facts use managed hot SQLite plus cold Parquet."
+          },
+          {
+            "dataset_id": "distribution_mmgd_projects",
+            "domain": "energy",
+            "status": "implemented",
+            "fact_grain": "project_reference_month",
+            "manifest_path": "isolated-run\\data\\analytics\\energy\\distribution_mmgd_projects\\manifest.json",
+            "manifest_exists": false,
+            "manifest_required": true,
+            "storage_layers": [
+              "metadata_sqlite",
+              "raw_snapshot",
+              "cold_parquet",
+              "mart_sqlite"
+            ],
+            "sqlite_tables": [
+              {
+                "database": "energy_kpis.db",
+                "table_name": "distribution_mmgd_projects",
+                "classification": "managed_externalized",
+                "notes": "Legacy MMGD project dimension table is empty after externalization."
+              },
+              {
+                "database": "energy_kpis.db",
+                "table_name": "distribution_mmgd_project_snapshots",
+                "classification": "managed_externalized",
+                "notes": "MMGD project-month detail is externalized to managed Parquet."
+              },
+              {
+                "database": "energy_kpis.db",
+                "table_name": "distribution_mmgd_monthly_mart",
+                "classification": "sqlite_mart",
+                "notes": "Compact monthly MMGD summary for app reads."
+              },
+              {
+                "database": "energy_kpis.db",
+                "table_name": "managed_dataset_catalog",
+                "classification": "small_relational",
+                "notes": "Catalog metadata for managed analytical datasets."
+              }
+            ],
+            "notes": "ANEEL MMGD project detail uses managed Parquet with bounded distributor/month reads."
+          },
+          {
+            "dataset_id": "fuel_distribution_sector_intake",
+            "domain": "energy",
+            "status": "implemented",
+            "fact_grain": "fuel-sales source-geography-product-period detail",
+            "manifest_path": "isolated-run\\data\\analytics\\energy\\fuel_distribution_sector_intake\\manifest.json",
+            "manifest_exists": false,
+            "manifest_required": true,
+            "storage_layers": [
+              "metadata_sqlite",
+              "raw_snapshot",
+              "cold_parquet",
+              "mart_sqlite"
+            ],
+            "sqlite_tables": [
+              {
+                "database": "energy_kpis.db",
+                "table_name": "fuel_distribution_product_year_mart",
+                "classification": "sqlite_mart",
+                "notes": "Compact ANP Fuel Distribution yearly product mart; detail is externalized to managed Parquet."
+              },
+              {
+                "database": "energy_kpis.db",
+                "table_name": "fuel_distribution_state_month_mart",
+                "classification": "sqlite_mart",
+                "notes": "Compact ANP Fuel Distribution state-month trend mart for bounded chart reads."
+              }
+            ],
+            "notes": "ANP Fuel Distribution sales detail uses raw snapshots plus managed Parquet with compact SQLite marts."
+          }
+        ],
+        "implemented_contracts": [
+          {
+            "dataset_id": "ccee_plant_generation_hourly",
+            "domain": "energy",
+            "status": "implemented",
+            "fact_grain": "plant-parcel hour",
+            "manifest_path": "isolated-run\\data\\analytics\\energy\\ccee_plant_generation_hourly\\manifest.json",
+            "manifest_exists": false,
+            "manifest_required": true,
+            "storage_layers": [
+              "metadata_sqlite",
+              "raw_snapshot",
+              "hot_sqlite",
+              "cold_parquet",
+              "mart_sqlite"
+            ],
+            "sqlite_tables": [
+              {
+                "database": "energy_kpis.db",
+                "table_name": "ccee_plant_parcel_hourly",
+                "classification": "managed_externalized",
+                "notes": "Large hourly detail is externalized to the managed hot/cold store."
+              },
+              {
+                "database": "energy_kpis.db",
+                "table_name": "plant_parcel_daily_generation_mart",
+                "classification": "sqlite_mart",
+                "notes": "Rebuildable daily mart for app chart reads."
+              },
+              {
+                "database": "energy_kpis.db",
+                "table_name": "plant_parcel_hourly_preview_mart",
+                "classification": "sqlite_mart",
+                "notes": "Rebuildable compact preview mart for hourly detail."
+              },
+              {
+                "database": "energy_kpis.db",
+                "table_name": "plant_ceg_hourly_generation_mart",
+                "classification": "sqlite_mart",
+                "notes": "Rebuildable CEG-level hourly mart."
+              },
+              {
+                "database": "energy_kpis.db",
+                "table_name": "plant_parcel_source_submarket_monthly_mart",
+                "classification": "sqlite_mart",
+                "notes": "Rebuildable source/submarket monthly mart."
+              },
+              {
+                "database": "energy_kpis.db",
+                "table_name": "external_hourly_store_catalog",
+                "classification": "small_relational",
+                "notes": "Catalog fingerprint for the managed hourly store."
+              },
+              {
+                "database": "energy_kpis.db",
+                "table_name": "energy_mart_builds",
+                "classification": "small_relational",
+                "notes": "Mart rebuild audit metadata."
+              }
+            ],
+            "notes": "CCEE hourly plant-parcel facts use managed hot SQLite plus cold Parquet."
+          },
+          {
+            "dataset_id": "distribution_mmgd_projects",
+            "domain": "energy",
+            "status": "implemented",
+            "fact_grain": "project_reference_month",
+            "manifest_path": "isolated-run\\data\\analytics\\energy\\distribution_mmgd_projects\\manifest.json",
+            "manifest_exists": false,
+            "manifest_required": true,
+            "storage_layers": [
+              "metadata_sqlite",
+              "raw_snapshot",
+              "cold_parquet",
+              "mart_sqlite"
+            ],
+            "sqlite_tables": [
+              {
+                "database": "energy_kpis.db",
+                "table_name": "distribution_mmgd_projects",
+                "classification": "managed_externalized",
+                "notes": "Legacy MMGD project dimension table is empty after externalization."
+              },
+              {
+                "database": "energy_kpis.db",
+                "table_name": "distribution_mmgd_project_snapshots",
+                "classification": "managed_externalized",
+                "notes": "MMGD project-month detail is externalized to managed Parquet."
+              },
+              {
+                "database": "energy_kpis.db",
+                "table_name": "distribution_mmgd_monthly_mart",
+                "classification": "sqlite_mart",
+                "notes": "Compact monthly MMGD summary for app reads."
+              },
+              {
+                "database": "energy_kpis.db",
+                "table_name": "managed_dataset_catalog",
+                "classification": "small_relational",
+                "notes": "Catalog metadata for managed analytical datasets."
+              }
+            ],
+            "notes": "ANEEL MMGD project detail uses managed Parquet with bounded distributor/month reads."
+          },
+          {
+            "dataset_id": "fuel_distribution_sector_intake",
+            "domain": "energy",
+            "status": "implemented",
+            "fact_grain": "fuel-sales source-geography-product-period detail",
+            "manifest_path": "isolated-run\\data\\analytics\\energy\\fuel_distribution_sector_intake\\manifest.json",
+            "manifest_exists": false,
+            "manifest_required": true,
+            "storage_layers": [
+              "metadata_sqlite",
+              "raw_snapshot",
+              "cold_parquet",
+              "mart_sqlite"
+            ],
+            "sqlite_tables": [
+              {
+                "database": "energy_kpis.db",
+                "table_name": "fuel_distribution_product_year_mart",
+                "classification": "sqlite_mart",
+                "notes": "Compact ANP Fuel Distribution yearly product mart; detail is externalized to managed Parquet."
+              },
+              {
+                "database": "energy_kpis.db",
+                "table_name": "fuel_distribution_state_month_mart",
+                "classification": "sqlite_mart",
+                "notes": "Compact ANP Fuel Distribution state-month trend mart for bounded chart reads."
+              }
+            ],
+            "notes": "ANP Fuel Distribution sales detail uses raw snapshots plus managed Parquet with compact SQLite marts."
+          }
+        ],
+        "planned_contracts": [],
+        "sqlite_large_tables": [],
+        "unclassified_large_tables": [],
+        "failures": [
+          {
+            "dataset_id": "ccee_plant_generation_hourly",
+            "domain": "energy",
+            "check": "manifest_missing",
+            "message": "Managed manifest is not present under the configured data root.",
+            "manifest_path": "isolated-run\\data\\analytics\\energy\\ccee_plant_generation_hourly\\manifest.json"
+          },
+          {
+            "dataset_id": "distribution_mmgd_projects",
+            "domain": "energy",
+            "check": "manifest_missing",
+            "message": "Managed manifest is not present under the configured data root.",
+            "manifest_path": "isolated-run\\data\\analytics\\energy\\distribution_mmgd_projects\\manifest.json"
+          },
+          {
+            "dataset_id": "fuel_distribution_sector_intake",
+            "domain": "energy",
+            "check": "manifest_missing",
+            "message": "Managed manifest is not present under the configured data root.",
+            "manifest_path": "isolated-run\\data\\analytics\\energy\\fuel_distribution_sector_intake\\manifest.json"
+          }
+        ],
+        "warnings": []
+      }
+    },
+    "integrity_check": [
+      [
+        "ok"
+      ]
+    ],
+    "foreign_key_check": [],
+    "new_sqlite_connection_pragmas": {
+      "journal_mode": "wal",
+      "synchronous": 2
+    },
+    "financial_writer_pragmas": {
+      "journal_mode": "wal",
+      "synchronous": 0
+    }
+  },
+  "versions": {
+    "company": null,
+    "t": 1.9844613999594003,
+    "kind": "versions",
+    "python": "3.11.15 (main, Aug  7 2026, 02:24:19) [MSC v.1944 64 bit (AMD64)]",
+    "pandas": "3.1.1",
+    "polars": "2.1.0",
+    "sqlalchemy": "2.1.8",
+    "sqlite": "3.53.1"
+  }
+}

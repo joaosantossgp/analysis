@@ -52,6 +52,17 @@ Verified implementation:
 - `src/financials/read_service.py` is the read-side source of truth for desktop
   and API consumers.
 
+Explicit persistent refresh jobs can reuse successful annual preparation within
+the [bounded worker cohort](architecture.md#service-and-coverage-boundaries).
+Existing ZIP freshness checks still run. Reuse requires the same resolved raw
+and processed paths, report type and source URL, plus matching ZIP/extracted-file
+signatures (file identity, size, modification and change times). Changed or
+missing files invalidate the affected entries; failed preparation or parsing
+discards the context. Cached company subsets are copied before normalization,
+preserving raw value text, versions, periods, units and all existing file families.
+This is an in-memory optimization of explicit refresh only: no persistent cache,
+read-time network request or change to financial/QA rules is introduced.
+
 Financial statement docs must preserve these distinctions:
 
 - consolidated vs individual;

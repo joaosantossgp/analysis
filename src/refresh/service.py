@@ -17,6 +17,7 @@ from src.platform.db import build_engine
 from src.platform.observability import append_jsonl, log_event
 from src.refresh.jobs import ensure_refresh_runtime_tables_for_connection
 from src.financials.scraper import CVMScraper
+from src.financials.source_cache import AnnualSourceCache
 from src.platform.settings import AppSettings, get_settings
 from src.financials.utils import current_reporting_year_cap, now_iso_seconds
 
@@ -428,10 +429,17 @@ class HeadlessRefreshService:
         stage_callback: Callable[[RefreshProgressUpdate], None] | None = None,
         should_cancel: Callable[[], bool] | None = None,
         persist_refresh_status: bool = True,
+        source_cache: AnnualSourceCache | None = None,
     ) -> RefreshResult:
         # Market-cap snapshots are read-only during refresh flows. They remain
         # available to offline consumers but are never fetched or replaced here.
         market_cap_result = None
+        if source_cache is not None and (
+            request.policy.force_refresh
+            or not set(request.companies).issubset({str(code) for code in source_cache.company_codes})
+        ):
+            source_cache.clear()
+            source_cache = None
 
         planned_companies, company_year_overrides, planning_stats = (
             self.build_company_year_plan(request)
@@ -493,6 +501,8 @@ class HeadlessRefreshService:
             cancelled = bool(should_cancel())
             if cancelled:
                 cancelled_state["value"] = True
+                if source_cache is not None:
+                    source_cache.clear()
             return cancelled
 
         scraper = CVMScraper(
@@ -501,20 +511,30 @@ class HeadlessRefreshService:
             report_type=request.report_type,
             max_workers=request.max_workers,
             settings=self.settings,
+            source_cache=source_cache,
         )
-        payload = scraper.run(
-            companies=planned_companies,
-            start_year=request.start_year,
-            end_year=request.end_year,
-            company_year_overrides=company_year_overrides,
-            progress_callback=progress_callback,
-            stage_callback=stage_callback,
-            should_cancel=_should_cancel,
-        )
+        try:
+            payload = scraper.run(
+                companies=planned_companies,
+                start_year=request.start_year,
+                end_year=request.end_year,
+                company_year_overrides=company_year_overrides,
+                progress_callback=progress_callback,
+                stage_callback=stage_callback,
+                should_cancel=_should_cancel,
+            )
+        except BaseException:
+            if source_cache is not None:
+                source_cache.clear()
+            raise
         companies = tuple(
             CompanyRefreshResult.from_payload(raw_payload)
             for raw_payload in payload.values()
         )
+        if source_cache is not None and any(
+            item.status == "error" or item.attempts > 1 for item in companies
+        ):
+            source_cache.clear()
         if stage_callback is not None:
             stage_callback(
                 RefreshProgressUpdate(
