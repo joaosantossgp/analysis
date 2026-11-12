@@ -38,6 +38,15 @@ export function buildNavigationCommands(navigate: NavigateFunction): Command[] {
       run: goto("/setores"),
     },
     {
+      id: "nav:coverage",
+      group: "navigation",
+      glyph: "route",
+      label: "Coverage",
+      secondary: "/coverage",
+      keywords: ["coverage", "universe", "priorities", "queue"],
+      run: goto("/coverage"),
+    },
+    {
       id: "nav:news",
       group: "navigation",
       glyph: "route",

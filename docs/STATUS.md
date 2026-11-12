@@ -80,9 +80,12 @@ run since 2026-05 failed. Both remain available through manual dispatch.
   before pagination, with missing-last values and deterministic CVM ties.
   Existing callers without an explicit order retain their defaults. See
   [validation](governance/2026-11-12-company-directory-sorting.md).
-- Next: #487 focuses primary navigation and the optional Home preset on company
-  analysis, then validates the exact integrated candidate. External #483-485
-  and follow-up optimizations have merged; their evidence is artifact-specific.
+- #487 has a reviewed UI candidate for primary navigation and the optional Home
+  preset. Browser checks cover keyboard navigation, laptop widths and saved v4
+  layouts. Integrated desktop/Excel/offline acceptance remains pending; see
+  [candidate evidence](governance/2026-11-12-company-focus-ui.md).
+  External #483-485 and follow-up optimizations have merged; their evidence
+  remains artifact-specific. #486 stays open until final acceptance.
 - Next for #464: resolve #466, record the architecture decision and create
   scoped implementation sub-issues. No shell or storage migration is approved.
 

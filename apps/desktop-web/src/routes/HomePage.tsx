@@ -187,11 +187,8 @@ export function parseCardConfigs(saved: string | null): Record<string, any> {
 }
 
 export const RECOMMENDED_LAYOUT: LayoutItem[] = [
-  { id: "database-status", x: 0, y: 0, w: 3, h: 3, isMinimized: false, isCompact: false },
-  { id: "watchlist", x: 0, y: 3, w: 2, h: 2, isMinimized: false, isCompact: false },
-  { id: "market-price", x: 2, y: 3, w: 1, h: 2, isMinimized: false, isCompact: false },
-  { id: "priority-queue", x: 0, y: 5, w: 2, h: 2, isMinimized: false, isCompact: false },
-  { id: "top-news", x: 0, y: 7, w: 2, h: 2, isMinimized: false, isCompact: false },
+  { id: "watchlist", x: 0, y: 0, w: 2, h: 2, isMinimized: false, isCompact: false },
+  { id: "market-price", x: 2, y: 0, w: 1, h: 2, isMinimized: false, isCompact: false },
 ];
 
 
@@ -656,28 +653,29 @@ export function HomePage() {
           <div className="text-center space-y-2">
             <span className="text-orange-500 text-3xl block" aria-hidden="true">⛭</span>
             <h4 className="text-sm font-semibold uppercase tracking-wider text-zinc-100">
-              Analyst Workspace Initial Setup
+              Start with a company
             </h4>
             <p className="text-2xs text-zinc-400 max-w-md mx-auto leading-relaxed">
-              Configure your financial terminal workspace to track Brazilian company updates, coverage priorities, stock trend charts, and news feeds.
+              Open Companies to explore local financial statements and history, or customize this optional workspace.
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-4 border-t border-b border-zinc-850/60 py-6">
+          <div className="text-center">
+            <Link to="/empresas" className="inline-flex rounded bg-action-primary px-4 py-2 text-xs font-semibold text-surface-0 hover:bg-action-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-500">Open Companies</Link>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-b border-zinc-850/60 py-6">
             <div className="border-r border-zinc-850/60 pr-4 flex flex-col justify-between space-y-4">
               <div>
                 <h5 className="text-xs font-bold text-zinc-200 uppercase tracking-wide flex items-center gap-1.5">
-                  <span className="text-orange-500">◆</span> Recommended Terminal Layout
+                  <span className="text-orange-500">◆</span> Recommended Analysis Layout
                 </h5>
                 <p className="text-3xs text-zinc-500 mt-1 leading-normal">
-                  Deploy a pre-configured workspace mapping core database health monitors, liquidity/priority tracking metrics, and financial trend lines:
+                  Add two widgets for company analysis. Your saved layouts change only when you choose this action:
                 </p>
                 <ul className="text-3xs text-zinc-400 mt-2 list-disc list-inside space-y-1">
-                  <li><strong className="text-zinc-200">Database Health</strong>: Monitor CVM data sync progress and check diagnostics.</li>
                   <li><strong className="text-zinc-200">Watchlist & KPIs</strong>: Visual indicator charts of EBIT margins and historical prices.</li>
                   <li><strong className="text-zinc-200">Performance Sparkline</strong>: Standalone price trend tracking for selected tickers.</li>
-                  <li><strong className="text-zinc-200">Priority Queue</strong>: Local coverage gap rankings based on sector metrics.</li>
-                  <li><strong className="text-zinc-200">Top News Feed</strong>: Live RSS and official CVM/B3 corporate event logging.</li>
                 </ul>
               </div>
               <button
@@ -716,15 +714,15 @@ export function HomePage() {
           </div>
 
           <div className="space-y-2">
-            <p className="text-3xs font-semibold text-zinc-550 uppercase tracking-wider">Key Widget Integrations</p>
-            <div className="grid grid-cols-3 gap-3 text-3xs text-zinc-500">
+            <p className="text-3xs font-semibold text-zinc-550 uppercase tracking-wider">Optional Widgets</p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-3xs text-zinc-500">
               <div className="bg-zinc-950/45 p-2 rounded border border-zinc-850/40">
                 <span className="font-semibold text-zinc-300 block mb-0.5">Database Monitor</span>
                 Tracks local CVM database updates, status checks, and data health percentages.
               </div>
               <div className="bg-zinc-950/45 p-2 rounded border border-zinc-850/40">
-                <span className="font-semibold text-zinc-300 block mb-0.5">Watchlist & KPIs</span>
-                Monitors custom corporate watchlists and visualizes margin and stock trend sparklines.
+                <span className="font-semibold text-zinc-300 block mb-0.5">News</span>
+                Shows locally stored news. Source updates remain explicit.
               </div>
               <div className="bg-zinc-950/45 p-2 rounded border border-zinc-850/40">
                 <span className="font-semibold text-zinc-300 block mb-0.5">Priority Queue</span>

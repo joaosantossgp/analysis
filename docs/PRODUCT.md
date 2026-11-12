@@ -42,6 +42,18 @@ Practical rules:
 - Empty, loading, and error states must be explicit, useful, and close to the affected component.
 - The interface should support fast professional judgment, not casual browsing.
 
+## Primary navigation and Home
+
+Home, Companies, Sectors and Indicators are primary workspaces. Settings remains
+visible as a utility; Coverage and News remain accessible through More, direct
+routes and the command palette. This is a hierarchy change, not removal of those
+workflows or their data.
+
+An empty Home offers Open Companies. The explicitly chosen recommended layout
+contains Watchlist and Market Price; Database Monitor, Priority Queue and News
+remain optional widgets. Existing v4 layouts and configurations are preserved.
+The compact status/job summary and source/error/offline states remain visible.
+
 ## Brand Personality
 
 Technical and auditable, precise, sober, and premium. The interface should convey operational confidence, financial domain expertise, and attention to detail, without looking decorative or promotional.
