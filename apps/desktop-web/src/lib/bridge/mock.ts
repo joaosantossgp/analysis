@@ -1952,17 +1952,41 @@ export function createMockBridge(): Partial<BridgeApi> {
       const page = Number(p?.page ?? 1);
       const pageSize = Number(p?.page_size ?? 50);
 
-      let items = FIXTURE_COMPANIES;
+      let items = FIXTURE_COMPANIES.map(toDirectoryItem);
       if (search) items = items.filter((c) => c.company_name.toLowerCase().includes(search) || (c.ticker_b3 ?? "").toLowerCase().includes(search));
       if (sectorSlug) items = items.filter((c) => c.sector_slug === sectorSlug);
 
+      if (p?.sort_by) {
+        const valueFor = (item: CompanyDirectoryItem): string | number | null => {
+          switch (p.sort_by) {
+            case "company": return item.company_name.toLowerCase();
+            case "ticker": return item.ticker_b3?.trim().toLowerCase() || null;
+            case "sector": return item.gics_sector?.trim().toLowerCase() || null;
+            case "industryGroup": return item.gics_industry_group?.trim().toLowerCase() || null;
+            case "marketCap": return item.market_cap_brl ?? null;
+            case "data": return Number(item.has_financial_data);
+            case "years": return item.anos_disponiveis.length;
+            case "cvm": return item.cd_cvm;
+            default: throw new Error("Invalid company sort column");
+          }
+        };
+        const direction = p.sort_direction ?? "desc";
+        if (direction !== "asc" && direction !== "desc") throw new Error("Invalid company sort direction");
+        const factor = direction === "asc" ? 1 : -1;
+        items.sort((a, b) => {
+          const left = valueFor(a), right = valueFor(b);
+          if (left === null) return right === null ? a.cd_cvm - b.cd_cvm : 1;
+          if (right === null) return -1;
+          return (left < right ? -factor : left > right ? factor : a.cd_cvm - b.cd_cvm);
+        });
+      }
       const totalItems = items.length;
       const totalPages = Math.ceil(totalItems / pageSize) || 1;
       const start = (page - 1) * pageSize;
       const pageItems = items.slice(start, start + pageSize);
 
       const result: CompanyDirectoryPage = {
-        items: pageItems.map(toDirectoryItem),
+        items: pageItems,
         pagination: {
           page,
           page_size: pageSize,
