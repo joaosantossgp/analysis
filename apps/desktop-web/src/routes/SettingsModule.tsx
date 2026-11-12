@@ -7,7 +7,7 @@ import { StateBanner } from "@/components/feedback/StateBanner";
 import { Panel } from "@/components/surface/Panel";
 import { Button } from "@/components/ui/Button";
 import { fetchSettingsHealthSummary } from "@/lib/api/settingsHealth";
-import { fetchStorageInventory, startStorageInventoryScan } from "@/lib/api/storageInventory";
+import { fetchStorageInventory, startStorageInventoryScan, type StorageInventoryResult } from "@/lib/api/storageInventory";
 import { openStatusPath, type StatusPathKind } from "@/lib/api/appStatus";
 import type {
   LocalPathInfo,
@@ -468,7 +468,7 @@ function SettingsApp({
   );
 }
 
-function SettingsStorage({
+export function SettingsStorage({
   loading,
   summary,
 }: {
@@ -490,7 +490,13 @@ function SettingsStorage({
   });
   const refreshMutation = useMutation({
     mutationFn: startStorageInventoryScan,
-    onSuccess: () => {
+    onMutate: () => queryClient.cancelQueries({ queryKey: ["storage-inventory"] }),
+    onSuccess: (result) => {
+      // Keep one current status; the mutation's initial running response never advances.
+      queryClient.setQueryData<StorageInventoryResult>(["storage-inventory"], (current) => current ? {
+        ...current,
+        inventory: { ...current.inventory, scan_status: result.scan_status },
+      } : current);
       void queryClient.invalidateQueries({ queryKey: ["storage-inventory"] });
       void queryClient.invalidateQueries({ queryKey: ["settings-health-summary"] });
     },
@@ -503,7 +509,7 @@ function SettingsStorage({
   const desktopMode = summary.runtime.bridge_status === "ready";
   const inventory = inventoryQuery.data?.inventory ?? null;
   const browserReason = inventoryQuery.data?.mode === "browser" ? inventoryQuery.data.reason : null;
-  const scanRunning = inventory?.scan_status?.status === "running" || refreshMutation.data?.scan_status?.status === "running";
+  const scanRunning = refreshMutation.isPending || inventory?.scan_status?.status === "running";
   async function copyPath(item: LocalPathInfo) {
     try {
       await navigator.clipboard.writeText(item.path);
@@ -531,8 +537,8 @@ function SettingsStorage({
           <Button
             size="sm"
             variant="secondary"
-            disabled={!desktopMode || scanRunning}
-            loading={refreshMutation.isPending || scanRunning}
+            disabled={!desktopMode || !inventory || scanRunning}
+            loading={scanRunning}
             onClick={() => refreshMutation.mutate()}
           >
             {scanRunning ? "Scanning..." : "Refresh inventory"}
@@ -562,6 +568,14 @@ function SettingsStorage({
             </p>
           </>
         )}
+        {inventoryQuery.data?.mode !== "browser" && inventory?.scan_status.status === "failed" ? (
+          <StateBanner
+            variant="error"
+            title="Storage scan failed"
+            message={`${inventory.scan_status.error || "The storage scan could not finish."}${inventory.scanned_at ? " The previous inventory is still shown." : ""}`}
+            size="dense"
+          />
+        ) : null}
         {refreshMutation.error ? (
           <StateBanner
             variant="error"
