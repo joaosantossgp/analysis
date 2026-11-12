@@ -574,7 +574,8 @@ class CVMDatabase:
                 if not value_vars:
                     continue
 
-                df_long = df_wide.melt(
+                # Audit attrs are persisted above; do not copy them through tabular reshaping.
+                df_long = pd.DataFrame(df_wide, copy=True).melt(
                     id_vars=id_vars,
                     value_vars=value_vars,
                     var_name='PERIOD_LABEL',
