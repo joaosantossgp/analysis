@@ -5,7 +5,7 @@ the schema nor consults legacy tables or remote sources.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from contextlib import contextmanager
 import json
@@ -13,6 +13,8 @@ from uuid import uuid4
 
 from sqlalchemy import Engine, text
 from sqlalchemy.exc import OperationalError
+
+from src.companies.entity_registry_time import current_system_time
 
 from src.companies.entity_registry_schema import (
     ASSERTION_STATES,
@@ -180,7 +182,14 @@ class EntityRelationshipRepository:
                     subject_entity_id, domain, attribute,
                 ):
                     raise EntityRelationshipValidationError("correction must preserve assertion subject and attribute")
-                now = _after(prior["system_from"], now)
+                # Closing the assertion must not erase an attached edge's creation snapshot.
+                attached = conn.execute(text("""
+                    SELECT system_from FROM entity_registry_relationships WHERE assertion_id = :id
+                    UNION ALL
+                    SELECT system_from FROM entity_registry_lineage WHERE assertion_id = :id
+                """), {"id": prior["assertion_id"]}).scalars().all()
+                boundary = max([prior["system_from"], *attached], key=datetime.fromisoformat)
+                now = _after(boundary, now)
                 if prior["system_to"] is not None:
                     raise EntityRelationshipValidationError("assertion is already superseded")
                 conn.execute(
@@ -231,7 +240,7 @@ class EntityRelationshipRepository:
         system_as_of: str | None = None,
     ) -> list[AssertionRecord]:
         effective_as_of = self._as_of("effective_as_of", effective_as_of)
-        system_as_of = self._as_of("system_as_of", system_as_of or _utc_now())
+        system_as_of = self._as_of("system_as_of", system_as_of if system_as_of is not None else current_system_time(self._engine, _utc_now()))
         with self._engine.connect() as conn:
             rows = conn.execute(text("""
                 SELECT * FROM entity_registry_assertions
@@ -285,6 +294,9 @@ class EntityRelationshipRepository:
             assertion = self._assertion_row(conn, assertion_id)
             if assertion is None or assertion["subject_entity_id"] != subject_entity_id or assertion["assertion_state"] != "accepted" or assertion["system_to"] is not None:
                 raise EntityRelationshipValidationError("relationship assertion must belong to its subject entity")
+            record = replace(record, system_from=max(
+                record.system_from, assertion["system_from"], key=datetime.fromisoformat
+            ))
             if not self._covers_interval(assertion["effective_from"], assertion["effective_to"], effective_from, effective_to):
                 raise EntityRelationshipValidationError("assertion must cover edge interval")
             if dimension == "control" and relationship_status == "accepted":
@@ -312,7 +324,7 @@ class EntityRelationshipRepository:
         dimension: str | None = None,
     ) -> list[RelationshipRecord]:
         effective_as_of = self._as_of("effective_as_of", effective_as_of)
-        system_as_of = self._as_of("system_as_of", system_as_of or _utc_now())
+        system_as_of = self._as_of("system_as_of", system_as_of if system_as_of is not None else current_system_time(self._engine, _utc_now()))
         with self._engine.connect() as conn:
             rows = conn.execute(text("""
                 SELECT relationship.* FROM entity_registry_relationships relationship
@@ -363,6 +375,9 @@ class EntityRelationshipRepository:
             assertion = self._assertion_row(conn, assertion_id)
             if assertion is None or assertion["subject_entity_id"] != predecessor_entity_id or assertion["assertion_state"] != "accepted" or assertion["system_to"] is not None:
                 raise EntityRelationshipValidationError("lineage assertion must belong to predecessor entity")
+            record = replace(record, system_from=max(
+                record.system_from, assertion["system_from"], key=datetime.fromisoformat
+            ))
             if not self._covers_interval(assertion["effective_from"], assertion["effective_to"], effective_from, effective_to):
                 raise EntityRelationshipValidationError("assertion must cover edge interval")
             if predicate != "legal_continuation" and lineage_status == "accepted":
@@ -382,7 +397,7 @@ class EntityRelationshipRepository:
         self, entity_id: str, *, effective_as_of: str, system_as_of: str | None = None
     ) -> list[LineageRecord]:
         effective_as_of = self._as_of("effective_as_of", effective_as_of)
-        system_as_of = self._as_of("system_as_of", system_as_of or _utc_now())
+        system_as_of = self._as_of("system_as_of", system_as_of if system_as_of is not None else current_system_time(self._engine, _utc_now()))
         with self._engine.connect() as conn:
             rows = conn.execute(text("""
                 SELECT lineage.* FROM entity_registry_lineage lineage

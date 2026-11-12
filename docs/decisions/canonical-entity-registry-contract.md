@@ -209,6 +209,15 @@ name, assertion, relationship, policy, and lineage record MUST carry both.
 A point-in-time query MUST receive `effective_as_of` and MAY receive
 `system_as_of`. If omitted, `system_as_of` defaults to query execution time;
 `effective_as_of` has **no implicit latest default** and callers MUST choose it.
+For assertion/relationship/lineage and resolution reads, the default execution
+snapshot is bounded below by committed registry system timestamps. This keeps
+current reads from preceding a successor when the wall clock repeats or moves
+backward. Explicit `system_as_of` values remain exact historical boundaries.
+Conflict detection is ordered after committed registry evidence, independently
+of an arbitrary future query timestamp; no existing history is rewritten.
+New relationship/lineage records cannot precede their supporting assertion.
+An assertion correction must follow both its predecessor and all attached
+relationship/lineage creation boundaries, preserving those historical snapshots.
 The response MUST echo both requested times, the selected immutable policy
 ID/version, and
 the resolution status. A retroactive correction uses an earlier effective
