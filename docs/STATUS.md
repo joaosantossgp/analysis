@@ -4,7 +4,7 @@ Short, current snapshot of where the project stands. Update this file whenever
 the version, release state, active work, or a major decision changes. Keep it
 under one screen; link to canonical docs instead of repeating them.
 
-Last updated: 2026-11-12
+Last updated: 2026-11-13
 
 ## Version and releases
 
@@ -85,7 +85,8 @@ run since 2026-05 failed. Both remain available through manual dispatch.
   Companies, and source health inside Settings. Sectors/Indicators retain unique
   analytical tools. Frontend and browser evidence is recorded in the
   [candidate record](governance/2026-11-12-company-focus-ui.md).
-  Real dev preview and two-company Excel export/open/recalculation passed.
+  Real dev preview and two-company Excel export/open/recalculation passed;
+  the owner confirmed dev-mode offline consultation/export on 2026-11-13.
   Exact packaged/offline acceptance remains pending; #487 and #486 stay open. External #483-485 evidence remains artifact-specific.
 - Next for #464: resolve #466, record the architecture decision and create
   scoped implementation sub-issues. No shell or storage migration is approved.

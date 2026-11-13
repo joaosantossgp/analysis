@@ -39,10 +39,10 @@ Base: `4de7fe4581d0622d45323e58a476d4e14c45ba3b`.
 - Local raw browser evidence: `tmp/487-validation/revised-browser.json` and PNGs.
   Browser fallback does not validate populated database results or real exports.
 
-## Pending acceptance
+## Acceptance status before the follow-ups below
 
-Real desktop and exact packaged company/history/Excel/offline acceptance has not
-run. The preceding isolated desktop launch was rejected by automatic permission
+At the initial browser-only checkpoint, real desktop and exact packaged
+company/history/Excel/offline acceptance had not run. The preceding isolated desktop launch was rejected by automatic permission
 review with only `blocked by policy`. This revision does not bypass that denial.
 Keep PR #499 and #487/#486 open until exact-candidate acceptance is recorded.
 No release, ingestion, repair or user-data migration is implied.
@@ -91,3 +91,13 @@ Local evidence: `tmp/487-desktop/copied-data.json`, `dev-bridge.json`,
 No prototype was created: the existing implementation answered the preview
 question directly. A disposable prototype remains an option for comparing new
 layout alternatives, not a substitute for runtime validation.
+
+## Owner-confirmed dev offline validation — 2026-11-13
+
+The owner confirmed that the application surfaces were visible and that local
+consultation and Excel export worked without internet in the isolated dev-mode
+preview. This is operator-reported evidence, following the manual close/reopen
+procedure supplied in this chat; it is not an independently captured offline run.
+The existing desktop/Excel checks above and this confirmation complete the
+bounded dev-mode check. Exact packaged executable/offline acceptance remains
+pending; no merge, release or packaged acceptance is implied.
