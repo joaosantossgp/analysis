@@ -64,6 +64,10 @@ run since 2026-05 failed. Both remain available through manual dispatch.
   Three-year throughput and disk footprint were unchanged; exact packaged
   validation passed. See the
   [validation evidence](research/2026-11-12-standalone-source-memory-validation.md).
+- #482 publishes the reviewed historical import, Vale QA and concurrent-read
+  evidence, reconciled with delivered follow-ups. See the
+  [publication review](research/2026-11-13-local-data-evidence-review.md).
+  No application or user-data changes are included.
 - Initial multi-window and local-storage desk research is published under #465;
   see `docs/research/2026-11-04-multi-window-workbench.md` and
   `docs/research/local-multi-window-storage.md`. Goal #464 remains open.
@@ -74,7 +78,7 @@ run since 2026-05 failed. Both remain available through manual dispatch.
   No publication token is required; see `docs/agents/skills.md`.
 
 - Backlog was reset on 2026-10-29: 30 stale issues were closed as not planned.
-- #486 tracks the company-to-Excel cycle. #480 delivered storage scan UI
+- #486 is closed: the company-to-Excel cycle was accepted by the owner. #480 delivered storage scan UI
   completion/error handling in PR #488; see [validation](governance/2026-11-11-storage-scan-ui-validation.md).
 - #452 applies explicit Companies ordering to the full enriched local directory
   before pagination, with missing-last values and deterministic CVM ties.
@@ -89,7 +93,9 @@ run since 2026-05 failed. Both remain available through manual dispatch.
   the owner confirmed dev-mode offline consultation/export on 2026-11-13.
   The owner confirmed packaged consultation/export and normal Excel opening,
   waived the packaged disconnected-network test, and authorized PR #499 merge
-  after CI. The waived test is not recorded as passed; no release is implied.
+  after CI; PR #499 is merged. The owner also waived the remaining fresh-sandbox
+  update test when closing #486. Neither waived test is recorded as passed;
+  no release is implied.
   External #483-485 evidence remains artifact-specific.
 - Next for #464: resolve #466, record the architecture decision and create
   scoped implementation sub-issues. No shell or storage migration is approved.

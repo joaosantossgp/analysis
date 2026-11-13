@@ -1,0 +1,30 @@
+{
+  "review_date": "2026-11-13",
+  "historical_baseline": "5971c4743aab784f33bcd0cf33bb4fa930fe17f9",
+  "checks": {
+    "source_zip_sha256": 6,
+    "harness_sha256": 4,
+    "run_summaries_db_hashes_integrity_events_preservation_pairs": 7,
+    "read_distribution_groups": 9,
+    "during_import_calls": 450,
+    "recorded_offline_calls": 80,
+    "vale_source_csv_hashes": 10,
+    "vale_db_hash": true,
+    "vale_recorded_replay_alerts": 5,
+    "initial_summary_and_zip_hashes": true
+  },
+  "original_report_sha256": {
+    "local-data-cycle.md": "157a2e1d9b5f738c35f4efd62ac202fb021c0cd4eba9d0dbaeca5868d2a478b1",
+    "local-data-cycle.evidence.json": "963422023d402a1e679c7afaef3b8bf096a1093ba17c5f8be3fac7d3db3391d0",
+    "two-company-import-benchmark.md": "37e9487f7f8836d59a38429b4b515d888e64157558075c9a90fe9ae2618607bb",
+    "two-company-import-benchmark.evidence.json": "79c19cb93a55d40e7bf9b34c1d3bc49218c6c00ac149a668d6dcdd5a7f4ae7cb",
+    "vale-qa-diagnostic.md": "81a3127f5db6d02188cd5e5213c0181ef4590506484f6b533bf686e8b65826cd",
+    "import-code-diagnostic.md": "551c2297ae8a6713f7b3d65883e60d2910f99c06b848958b16adaab95fe4131e"
+  },
+  "limitations": [
+    "No imports, source replay, application tests or packaged runs were rerun.",
+    "Preservation compares historical before/after inventories, not current user data.",
+    "Offline metrics match retained validation output; no new offline run.",
+    "Raw artifacts remain local and are not included in this publication."
+  ]
+}

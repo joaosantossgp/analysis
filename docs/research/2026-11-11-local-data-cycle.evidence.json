@@ -1,0 +1,1612 @@
+{
+  "baseline": "5971c4743aab784f33bcd0cf33bb4fa930fe17f9",
+  "runs": [
+    {
+      "mode": "separate",
+      "start_year": 2024,
+      "exit_code": 0,
+      "guard_stop": null,
+      "seconds": 10.031305499956943,
+      "peak_rss": 1216008192,
+      "peak_private": 2598137856,
+      "peak_disk_data_temp": 536286576,
+      "sample_interval_s": 0.05,
+      "disk_interval_s": 0.25,
+      "host_ram": 34031251456,
+      "host_cpu_logical": 28,
+      "os": "Windows-10-10.0.26200-SP0",
+      "source_files_unchanged": true,
+      "files": [
+        {
+          "path": "db\\cvm_financials.db",
+          "bytes": 1081344
+        },
+        {
+          "path": "import\\canonical_accounts.csv",
+          "bytes": 86279
+        },
+        {
+          "path": "import\\gics_mapping.csv",
+          "bytes": 238852
+        },
+        {
+          "path": "import\\ticker_map.csv",
+          "bytes": 13785
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_BPA_con_2024.csv",
+          "bytes": 12279613
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_BPP_con_2024.csv",
+          "bytes": 21291665
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_DFC_MD_con_2024.csv",
+          "bytes": 155316
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_DFC_MI_con_2024.csv",
+          "bytes": 12016070
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_DMPL_con_2024.csv",
+          "bytes": 61738147
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_DRE_con_2024.csv",
+          "bytes": 6821623
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_DVA_con_2024.csv",
+          "bytes": 8543503
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_BPA_con_2024.csv",
+          "bytes": 37137042
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_BPP_con_2024.csv",
+          "bytes": 64510427
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_DFC_MD_con_2024.csv",
+          "bytes": 546495
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_DFC_MI_con_2024.csv",
+          "bytes": 33704668
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_DMPL_con_2024.csv",
+          "bytes": 169356750
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_DRE_con_2024.csv",
+          "bytes": 34199185
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_DVA_con_2024.csv",
+          "bytes": 25545406
+        },
+        {
+          "path": "input\\raw\\dfp_cia_aberta_2024.zip",
+          "bytes": 13397599
+        },
+        {
+          "path": "input\\raw\\itr_cia_aberta_2024.zip",
+          "bytes": 32725967
+        },
+        {
+          "path": "output\\reports\\PETROBRAS_financials.xlsx",
+          "bytes": 27322
+        },
+        {
+          "path": "output\\reports\\VALE_financials.xlsx",
+          "bytes": 26842
+        }
+      ],
+      "name": "separate_1",
+      "db": {
+        "financial_rows": 2435,
+        "financial_sha256": "5f2411dbc8ae36fc0f118fe35bf25c503a37a41c392e6bfd4b442014ca0b7304",
+        "qa_count": 5,
+        "qa_sha256": "78a50c8901b4f88acba208e9e3ef6ca094f1c85e7274063a4a29310c2adf991e",
+        "company_year_rows": [
+          [
+            4170,
+            2024,
+            1195
+          ],
+          [
+            9512,
+            2024,
+            1240
+          ]
+        ],
+        "integrity_check": "ok"
+      },
+      "operation_seconds": 6.959326900017913,
+      "stage_sums": {
+        "catalog": 0.5048738000332378,
+        "csv_read": 2.84708670002874,
+        "read_filter_convert": 3.07617679995019,
+        "financial_transform": 0.23308859998360276,
+        "database_transaction": 0.34563359996536747,
+        "persist_and_excel": 1.5774064000579529,
+        "zip_extract": 1.8764756999444216
+      },
+      "csv_reads": 28,
+      "csv_hits": 0,
+      "zip_extractions": 28,
+      "http_counts": {
+        "HEAD": 4,
+        "GET": 4
+      },
+      "data_bytes": 535443900
+    },
+    {
+      "mode": "separate",
+      "start_year": 2024,
+      "exit_code": 0,
+      "guard_stop": null,
+      "seconds": 10.698703399975784,
+      "peak_rss": 1154142208,
+      "peak_private": 2605858816,
+      "peak_disk_data_temp": 536249332,
+      "sample_interval_s": 0.05,
+      "disk_interval_s": 0.25,
+      "host_ram": 34031251456,
+      "host_cpu_logical": 28,
+      "os": "Windows-10-10.0.26200-SP0",
+      "source_files_unchanged": true,
+      "files": [
+        {
+          "path": "db\\cvm_financials.db",
+          "bytes": 1081344
+        },
+        {
+          "path": "import\\canonical_accounts.csv",
+          "bytes": 86279
+        },
+        {
+          "path": "import\\gics_mapping.csv",
+          "bytes": 238852
+        },
+        {
+          "path": "import\\ticker_map.csv",
+          "bytes": 13785
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_BPA_con_2024.csv",
+          "bytes": 12279613
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_BPP_con_2024.csv",
+          "bytes": 21291665
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_DFC_MD_con_2024.csv",
+          "bytes": 155316
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_DFC_MI_con_2024.csv",
+          "bytes": 12016070
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_DMPL_con_2024.csv",
+          "bytes": 61738147
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_DRE_con_2024.csv",
+          "bytes": 6821623
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_DVA_con_2024.csv",
+          "bytes": 8543503
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_BPA_con_2024.csv",
+          "bytes": 37137042
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_BPP_con_2024.csv",
+          "bytes": 64510427
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_DFC_MD_con_2024.csv",
+          "bytes": 546495
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_DFC_MI_con_2024.csv",
+          "bytes": 33704668
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_DMPL_con_2024.csv",
+          "bytes": 169356750
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_DRE_con_2024.csv",
+          "bytes": 34199185
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_DVA_con_2024.csv",
+          "bytes": 25545406
+        },
+        {
+          "path": "input\\raw\\dfp_cia_aberta_2024.zip",
+          "bytes": 13397599
+        },
+        {
+          "path": "input\\raw\\itr_cia_aberta_2024.zip",
+          "bytes": 32725967
+        },
+        {
+          "path": "output\\reports\\PETROBRAS_financials.xlsx",
+          "bytes": 27322
+        },
+        {
+          "path": "output\\reports\\VALE_financials.xlsx",
+          "bytes": 26842
+        }
+      ],
+      "name": "separate_2",
+      "db": {
+        "financial_rows": 2435,
+        "financial_sha256": "5f2411dbc8ae36fc0f118fe35bf25c503a37a41c392e6bfd4b442014ca0b7304",
+        "qa_count": 5,
+        "qa_sha256": "78a50c8901b4f88acba208e9e3ef6ca094f1c85e7274063a4a29310c2adf991e",
+        "company_year_rows": [
+          [
+            4170,
+            2024,
+            1195
+          ],
+          [
+            9512,
+            2024,
+            1240
+          ]
+        ],
+        "integrity_check": "ok"
+      },
+      "operation_seconds": 7.965597300033551,
+      "stage_sums": {
+        "catalog": 0.47691949998261407,
+        "csv_read": 3.044221799937077,
+        "read_filter_convert": 3.2844187000300735,
+        "financial_transform": 0.26798770000459626,
+        "database_transaction": 0.48257220000959933,
+        "persist_and_excel": 1.7603833000175655,
+        "zip_extract": 2.5576819999259897
+      },
+      "csv_reads": 28,
+      "csv_hits": 0,
+      "zip_extractions": 28,
+      "http_counts": {
+        "HEAD": 4,
+        "GET": 4
+      },
+      "data_bytes": 535443900
+    },
+    {
+      "mode": "separate",
+      "start_year": 2024,
+      "exit_code": 0,
+      "guard_stop": null,
+      "seconds": 11.634788600029424,
+      "peak_rss": 1177100288,
+      "peak_private": 2568921088,
+      "peak_disk_data_temp": 536265881,
+      "sample_interval_s": 0.05,
+      "disk_interval_s": 0.25,
+      "host_ram": 34031251456,
+      "host_cpu_logical": 28,
+      "os": "Windows-10-10.0.26200-SP0",
+      "source_files_unchanged": true,
+      "files": [
+        {
+          "path": "db\\cvm_financials.db",
+          "bytes": 1081344
+        },
+        {
+          "path": "import\\canonical_accounts.csv",
+          "bytes": 86279
+        },
+        {
+          "path": "import\\gics_mapping.csv",
+          "bytes": 238852
+        },
+        {
+          "path": "import\\ticker_map.csv",
+          "bytes": 13785
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_BPA_con_2024.csv",
+          "bytes": 12279613
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_BPP_con_2024.csv",
+          "bytes": 21291665
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_DFC_MD_con_2024.csv",
+          "bytes": 155316
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_DFC_MI_con_2024.csv",
+          "bytes": 12016070
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_DMPL_con_2024.csv",
+          "bytes": 61738147
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_DRE_con_2024.csv",
+          "bytes": 6821623
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_DVA_con_2024.csv",
+          "bytes": 8543503
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_BPA_con_2024.csv",
+          "bytes": 37137042
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_BPP_con_2024.csv",
+          "bytes": 64510427
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_DFC_MD_con_2024.csv",
+          "bytes": 546495
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_DFC_MI_con_2024.csv",
+          "bytes": 33704668
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_DMPL_con_2024.csv",
+          "bytes": 169356750
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_DRE_con_2024.csv",
+          "bytes": 34199185
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_DVA_con_2024.csv",
+          "bytes": 25545406
+        },
+        {
+          "path": "input\\raw\\dfp_cia_aberta_2024.zip",
+          "bytes": 13397599
+        },
+        {
+          "path": "input\\raw\\itr_cia_aberta_2024.zip",
+          "bytes": 32725967
+        },
+        {
+          "path": "output\\reports\\PETROBRAS_financials.xlsx",
+          "bytes": 27322
+        },
+        {
+          "path": "output\\reports\\VALE_financials.xlsx",
+          "bytes": 26842
+        }
+      ],
+      "name": "separate_3",
+      "db": {
+        "financial_rows": 2435,
+        "financial_sha256": "5f2411dbc8ae36fc0f118fe35bf25c503a37a41c392e6bfd4b442014ca0b7304",
+        "qa_count": 5,
+        "qa_sha256": "78a50c8901b4f88acba208e9e3ef6ca094f1c85e7274063a4a29310c2adf991e",
+        "company_year_rows": [
+          [
+            4170,
+            2024,
+            1195
+          ],
+          [
+            9512,
+            2024,
+            1240
+          ]
+        ],
+        "integrity_check": "ok"
+      },
+      "operation_seconds": 8.576951599970926,
+      "stage_sums": {
+        "catalog": 0.45584839989896864,
+        "csv_read": 3.151681699906476,
+        "read_filter_convert": 3.3960161000140943,
+        "financial_transform": 0.21751330001279712,
+        "database_transaction": 0.5085190000245348,
+        "persist_and_excel": 1.972961200051941,
+        "zip_extract": 2.953450399741996
+      },
+      "csv_reads": 28,
+      "csv_hits": 0,
+      "zip_extractions": 28,
+      "http_counts": {
+        "HEAD": 4,
+        "GET": 4
+      },
+      "data_bytes": 535443900
+    },
+    {
+      "mode": "batch",
+      "start_year": 2024,
+      "exit_code": 0,
+      "guard_stop": null,
+      "seconds": 6.661364100000355,
+      "peak_rss": 960098304,
+      "peak_private": 2436694016,
+      "peak_disk_data_temp": 536222490,
+      "sample_interval_s": 0.05,
+      "disk_interval_s": 0.25,
+      "host_ram": 34031251456,
+      "host_cpu_logical": 28,
+      "os": "Windows-10-10.0.26200-SP0",
+      "source_files_unchanged": true,
+      "files": [
+        {
+          "path": "db\\cvm_financials.db",
+          "bytes": 1081344
+        },
+        {
+          "path": "import\\canonical_accounts.csv",
+          "bytes": 86279
+        },
+        {
+          "path": "import\\gics_mapping.csv",
+          "bytes": 238852
+        },
+        {
+          "path": "import\\ticker_map.csv",
+          "bytes": 13785
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_BPA_con_2024.csv",
+          "bytes": 12279613
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_BPP_con_2024.csv",
+          "bytes": 21291665
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_DFC_MD_con_2024.csv",
+          "bytes": 155316
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_DFC_MI_con_2024.csv",
+          "bytes": 12016070
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_DMPL_con_2024.csv",
+          "bytes": 61738147
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_DRE_con_2024.csv",
+          "bytes": 6821623
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_DVA_con_2024.csv",
+          "bytes": 8543503
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_BPA_con_2024.csv",
+          "bytes": 37137042
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_BPP_con_2024.csv",
+          "bytes": 64510427
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_DFC_MD_con_2024.csv",
+          "bytes": 546495
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_DFC_MI_con_2024.csv",
+          "bytes": 33704668
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_DMPL_con_2024.csv",
+          "bytes": 169356750
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_DRE_con_2024.csv",
+          "bytes": 34199185
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_DVA_con_2024.csv",
+          "bytes": 25545406
+        },
+        {
+          "path": "input\\raw\\dfp_cia_aberta_2024.zip",
+          "bytes": 13397599
+        },
+        {
+          "path": "input\\raw\\itr_cia_aberta_2024.zip",
+          "bytes": 32725967
+        },
+        {
+          "path": "output\\reports\\PETROBRAS_financials.xlsx",
+          "bytes": 27322
+        },
+        {
+          "path": "output\\reports\\VALE_financials.xlsx",
+          "bytes": 26842
+        }
+      ],
+      "name": "batch_1",
+      "db": {
+        "financial_rows": 2435,
+        "financial_sha256": "5f2411dbc8ae36fc0f118fe35bf25c503a37a41c392e6bfd4b442014ca0b7304",
+        "qa_count": 5,
+        "qa_sha256": "78a50c8901b4f88acba208e9e3ef6ca094f1c85e7274063a4a29310c2adf991e",
+        "company_year_rows": [
+          [
+            4170,
+            2024,
+            1195
+          ],
+          [
+            9512,
+            2024,
+            1240
+          ]
+        ],
+        "integrity_check": "ok"
+      },
+      "operation_seconds": 4.181273899972439,
+      "stage_sums": {
+        "catalog": 0.21992549998685718,
+        "csv_read": 1.4864969999762252,
+        "read_filter_convert": 1.6820834000245668,
+        "financial_transform": 0.17609159991843626,
+        "database_transaction": 0.3718916000216268,
+        "persist_and_excel": 1.4307090999791399,
+        "zip_extract": 0.7639144998975098
+      },
+      "csv_reads": 28,
+      "csv_hits": 14,
+      "zip_extractions": 14,
+      "http_counts": {
+        "HEAD": 2,
+        "GET": 3
+      },
+      "data_bytes": 535443900
+    },
+    {
+      "mode": "batch",
+      "start_year": 2024,
+      "exit_code": 0,
+      "guard_stop": null,
+      "seconds": 6.900767500046641,
+      "peak_rss": 1029042176,
+      "peak_private": 2442964992,
+      "peak_disk_data_temp": 536249332,
+      "sample_interval_s": 0.05,
+      "disk_interval_s": 0.25,
+      "host_ram": 34031251456,
+      "host_cpu_logical": 28,
+      "os": "Windows-10-10.0.26200-SP0",
+      "source_files_unchanged": true,
+      "files": [
+        {
+          "path": "db\\cvm_financials.db",
+          "bytes": 1081344
+        },
+        {
+          "path": "import\\canonical_accounts.csv",
+          "bytes": 86279
+        },
+        {
+          "path": "import\\gics_mapping.csv",
+          "bytes": 238852
+        },
+        {
+          "path": "import\\ticker_map.csv",
+          "bytes": 13785
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_BPA_con_2024.csv",
+          "bytes": 12279613
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_BPP_con_2024.csv",
+          "bytes": 21291665
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_DFC_MD_con_2024.csv",
+          "bytes": 155316
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_DFC_MI_con_2024.csv",
+          "bytes": 12016070
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_DMPL_con_2024.csv",
+          "bytes": 61738147
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_DRE_con_2024.csv",
+          "bytes": 6821623
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_DVA_con_2024.csv",
+          "bytes": 8543503
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_BPA_con_2024.csv",
+          "bytes": 37137042
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_BPP_con_2024.csv",
+          "bytes": 64510427
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_DFC_MD_con_2024.csv",
+          "bytes": 546495
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_DFC_MI_con_2024.csv",
+          "bytes": 33704668
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_DMPL_con_2024.csv",
+          "bytes": 169356750
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_DRE_con_2024.csv",
+          "bytes": 34199185
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_DVA_con_2024.csv",
+          "bytes": 25545406
+        },
+        {
+          "path": "input\\raw\\dfp_cia_aberta_2024.zip",
+          "bytes": 13397599
+        },
+        {
+          "path": "input\\raw\\itr_cia_aberta_2024.zip",
+          "bytes": 32725967
+        },
+        {
+          "path": "output\\reports\\PETROBRAS_financials.xlsx",
+          "bytes": 27322
+        },
+        {
+          "path": "output\\reports\\VALE_financials.xlsx",
+          "bytes": 26842
+        }
+      ],
+      "name": "batch_2",
+      "db": {
+        "financial_rows": 2435,
+        "financial_sha256": "5f2411dbc8ae36fc0f118fe35bf25c503a37a41c392e6bfd4b442014ca0b7304",
+        "qa_count": 5,
+        "qa_sha256": "78a50c8901b4f88acba208e9e3ef6ca094f1c85e7274063a4a29310c2adf991e",
+        "company_year_rows": [
+          [
+            4170,
+            2024,
+            1195
+          ],
+          [
+            9512,
+            2024,
+            1240
+          ]
+        ],
+        "integrity_check": "ok"
+      },
+      "operation_seconds": 4.265551199961919,
+      "stage_sums": {
+        "catalog": 0.23001080000540242,
+        "csv_read": 1.3871471998863854,
+        "read_filter_convert": 1.5870204999810085,
+        "financial_transform": 0.17376039997907355,
+        "database_transaction": 0.39981109998188913,
+        "persist_and_excel": 1.4855895999935456,
+        "zip_extract": 0.8587798001244664
+      },
+      "csv_reads": 28,
+      "csv_hits": 14,
+      "zip_extractions": 14,
+      "http_counts": {
+        "HEAD": 2,
+        "GET": 3
+      },
+      "data_bytes": 535443900
+    },
+    {
+      "mode": "batch",
+      "start_year": 2024,
+      "exit_code": 0,
+      "guard_stop": null,
+      "seconds": 9.119344900012948,
+      "peak_rss": 1019785216,
+      "peak_private": 2426826752,
+      "peak_disk_data_temp": 536249332,
+      "sample_interval_s": 0.05,
+      "disk_interval_s": 0.25,
+      "host_ram": 34031251456,
+      "host_cpu_logical": 28,
+      "os": "Windows-10-10.0.26200-SP0",
+      "source_files_unchanged": true,
+      "files": [
+        {
+          "path": "db\\cvm_financials.db",
+          "bytes": 1081344
+        },
+        {
+          "path": "import\\canonical_accounts.csv",
+          "bytes": 86279
+        },
+        {
+          "path": "import\\gics_mapping.csv",
+          "bytes": 238852
+        },
+        {
+          "path": "import\\ticker_map.csv",
+          "bytes": 13785
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_BPA_con_2024.csv",
+          "bytes": 12279613
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_BPP_con_2024.csv",
+          "bytes": 21291665
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_DFC_MD_con_2024.csv",
+          "bytes": 155316
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_DFC_MI_con_2024.csv",
+          "bytes": 12016070
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_DMPL_con_2024.csv",
+          "bytes": 61738147
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_DRE_con_2024.csv",
+          "bytes": 6821623
+        },
+        {
+          "path": "input\\processed\\dfp_cia_aberta_DVA_con_2024.csv",
+          "bytes": 8543503
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_BPA_con_2024.csv",
+          "bytes": 37137042
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_BPP_con_2024.csv",
+          "bytes": 64510427
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_DFC_MD_con_2024.csv",
+          "bytes": 546495
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_DFC_MI_con_2024.csv",
+          "bytes": 33704668
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_DMPL_con_2024.csv",
+          "bytes": 169356750
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_DRE_con_2024.csv",
+          "bytes": 34199185
+        },
+        {
+          "path": "input\\processed\\itr_cia_aberta_DVA_con_2024.csv",
+          "bytes": 25545406
+        },
+        {
+          "path": "input\\raw\\dfp_cia_aberta_2024.zip",
+          "bytes": 13397599
+        },
+        {
+          "path": "input\\raw\\itr_cia_aberta_2024.zip",
+          "bytes": 32725967
+        },
+        {
+          "path": "output\\reports\\PETROBRAS_financials.xlsx",
+          "bytes": 27322
+        },
+        {
+          "path": "output\\reports\\VALE_financials.xlsx",
+          "bytes": 26842
+        }
+      ],
+      "name": "batch_3",
+      "db": {
+        "financial_rows": 2435,
+        "financial_sha256": "5f2411dbc8ae36fc0f118fe35bf25c503a37a41c392e6bfd4b442014ca0b7304",
+        "qa_count": 5,
+        "qa_sha256": "78a50c8901b4f88acba208e9e3ef6ca094f1c85e7274063a4a29310c2adf991e",
+        "company_year_rows": [
+          [
+            4170,
+            2024,
+            1195
+          ],
+          [
+            9512,
+            2024,
+            1240
+          ]
+        ],
+        "integrity_check": "ok"
+      },
+      "operation_seconds": 5.8544807999860495,
+      "stage_sums": {
+        "catalog": 0.3097323999973014,
+        "csv_read": 1.888628399989102,
+        "read_filter_convert": 2.1582269000355154,
+        "financial_transform": 0.2519259000546299,
+        "database_transaction": 0.5711336999665946,
+        "persist_and_excel": 2.03784760000417,
+        "zip_extract": 1.2941385001176968
+      },
+      "csv_reads": 28,
+      "csv_hits": 14,
+      "zip_extractions": 14,
+      "http_counts": {
+        "HEAD": 2,
+        "GET": 3
+      },
+      "data_bytes": 535443900
+    }
+  ],
+  "medians": {
+    "separate": {
+      "seconds": 10.698703399975784,
+      "operation_seconds": 7.965597300033551,
+      "peak_rss": 1177100288,
+      "peak_private": 2598137856,
+      "peak_disk_data_temp": 536265881
+    },
+    "batch": {
+      "seconds": 6.900767500046641,
+      "operation_seconds": 4.265551199961919,
+      "peak_rss": 1019785216,
+      "peak_private": 2436694016,
+      "peak_disk_data_temp": 536249332
+    }
+  },
+  "all_financial_and_qa_outputs_equivalent": true,
+  "scale": {
+    "mode": "scale",
+    "start_year": 2022,
+    "exit_code": 0,
+    "guard_stop": null,
+    "seconds": 28.509789200033993,
+    "peak_rss": 1864241152,
+    "peak_private": 3304054784,
+    "peak_disk_data_temp": 1591160802,
+    "sample_interval_s": 0.05,
+    "disk_interval_s": 0.25,
+    "host_ram": 34031251456,
+    "host_cpu_logical": 28,
+    "os": "Windows-10-10.0.26200-SP0",
+    "source_files_unchanged": true,
+    "files": [
+      {
+        "path": "db\\cvm_financials.db",
+        "bytes": 2510848
+      },
+      {
+        "path": "import\\canonical_accounts.csv",
+        "bytes": 86279
+      },
+      {
+        "path": "import\\gics_mapping.csv",
+        "bytes": 238852
+      },
+      {
+        "path": "import\\ticker_map.csv",
+        "bytes": 13785
+      },
+      {
+        "path": "input\\processed\\dfp_cia_aberta_BPA_con_2022.csv",
+        "bytes": 12475738
+      },
+      {
+        "path": "input\\processed\\dfp_cia_aberta_BPA_con_2023.csv",
+        "bytes": 12661346
+      },
+      {
+        "path": "input\\processed\\dfp_cia_aberta_BPA_con_2024.csv",
+        "bytes": 12279613
+      },
+      {
+        "path": "input\\processed\\dfp_cia_aberta_BPP_con_2022.csv",
+        "bytes": 21659408
+      },
+      {
+        "path": "input\\processed\\dfp_cia_aberta_BPP_con_2023.csv",
+        "bytes": 21959525
+      },
+      {
+        "path": "input\\processed\\dfp_cia_aberta_BPP_con_2024.csv",
+        "bytes": 21291665
+      },
+      {
+        "path": "input\\processed\\dfp_cia_aberta_DFC_MD_con_2022.csv",
+        "bytes": 233618
+      },
+      {
+        "path": "input\\processed\\dfp_cia_aberta_DFC_MD_con_2023.csv",
+        "bytes": 186629
+      },
+      {
+        "path": "input\\processed\\dfp_cia_aberta_DFC_MD_con_2024.csv",
+        "bytes": 155316
+      },
+      {
+        "path": "input\\processed\\dfp_cia_aberta_DFC_MI_con_2022.csv",
+        "bytes": 11730457
+      },
+      {
+        "path": "input\\processed\\dfp_cia_aberta_DFC_MI_con_2023.csv",
+        "bytes": 12203530
+      },
+      {
+        "path": "input\\processed\\dfp_cia_aberta_DFC_MI_con_2024.csv",
+        "bytes": 12016070
+      },
+      {
+        "path": "input\\processed\\dfp_cia_aberta_DMPL_con_2022.csv",
+        "bytes": 60554679
+      },
+      {
+        "path": "input\\processed\\dfp_cia_aberta_DMPL_con_2023.csv",
+        "bytes": 62217101
+      },
+      {
+        "path": "input\\processed\\dfp_cia_aberta_DMPL_con_2024.csv",
+        "bytes": 61738147
+      },
+      {
+        "path": "input\\processed\\dfp_cia_aberta_DRE_con_2022.csv",
+        "bytes": 7024861
+      },
+      {
+        "path": "input\\processed\\dfp_cia_aberta_DRE_con_2023.csv",
+        "bytes": 7068904
+      },
+      {
+        "path": "input\\processed\\dfp_cia_aberta_DRE_con_2024.csv",
+        "bytes": 6821623
+      },
+      {
+        "path": "input\\processed\\dfp_cia_aberta_DVA_con_2022.csv",
+        "bytes": 8789245
+      },
+      {
+        "path": "input\\processed\\dfp_cia_aberta_DVA_con_2023.csv",
+        "bytes": 8854766
+      },
+      {
+        "path": "input\\processed\\dfp_cia_aberta_DVA_con_2024.csv",
+        "bytes": 8543503
+      },
+      {
+        "path": "input\\processed\\itr_cia_aberta_BPA_con_2022.csv",
+        "bytes": 35880189
+      },
+      {
+        "path": "input\\processed\\itr_cia_aberta_BPA_con_2023.csv",
+        "bytes": 36488652
+      },
+      {
+        "path": "input\\processed\\itr_cia_aberta_BPA_con_2024.csv",
+        "bytes": 37137042
+      },
+      {
+        "path": "input\\processed\\itr_cia_aberta_BPP_con_2022.csv",
+        "bytes": 62339085
+      },
+      {
+        "path": "input\\processed\\itr_cia_aberta_BPP_con_2023.csv",
+        "bytes": 63295111
+      },
+      {
+        "path": "input\\processed\\itr_cia_aberta_BPP_con_2024.csv",
+        "bytes": 64510427
+      },
+      {
+        "path": "input\\processed\\itr_cia_aberta_DFC_MD_con_2022.csv",
+        "bytes": 506225
+      },
+      {
+        "path": "input\\processed\\itr_cia_aberta_DFC_MD_con_2023.csv",
+        "bytes": 491961
+      },
+      {
+        "path": "input\\processed\\itr_cia_aberta_DFC_MD_con_2024.csv",
+        "bytes": 546495
+      },
+      {
+        "path": "input\\processed\\itr_cia_aberta_DFC_MI_con_2022.csv",
+        "bytes": 31068638
+      },
+      {
+        "path": "input\\processed\\itr_cia_aberta_DFC_MI_con_2023.csv",
+        "bytes": 32577487
+      },
+      {
+        "path": "input\\processed\\itr_cia_aberta_DFC_MI_con_2024.csv",
+        "bytes": 33704668
+      },
+      {
+        "path": "input\\processed\\itr_cia_aberta_DMPL_con_2022.csv",
+        "bytes": 166160000
+      },
+      {
+        "path": "input\\processed\\itr_cia_aberta_DMPL_con_2023.csv",
+        "bytes": 167142162
+      },
+      {
+        "path": "input\\processed\\itr_cia_aberta_DMPL_con_2024.csv",
+        "bytes": 169356750
+      },
+      {
+        "path": "input\\processed\\itr_cia_aberta_DRE_con_2022.csv",
+        "bytes": 33582415
+      },
+      {
+        "path": "input\\processed\\itr_cia_aberta_DRE_con_2023.csv",
+        "bytes": 33937957
+      },
+      {
+        "path": "input\\processed\\itr_cia_aberta_DRE_con_2024.csv",
+        "bytes": 34199185
+      },
+      {
+        "path": "input\\processed\\itr_cia_aberta_DVA_con_2022.csv",
+        "bytes": 24887441
+      },
+      {
+        "path": "input\\processed\\itr_cia_aberta_DVA_con_2023.csv",
+        "bytes": 25176177
+      },
+      {
+        "path": "input\\processed\\itr_cia_aberta_DVA_con_2024.csv",
+        "bytes": 25545406
+      },
+      {
+        "path": "input\\raw\\dfp_cia_aberta_2022.zip",
+        "bytes": 13449824
+      },
+      {
+        "path": "input\\raw\\dfp_cia_aberta_2023.zip",
+        "bytes": 13563493
+      },
+      {
+        "path": "input\\raw\\dfp_cia_aberta_2024.zip",
+        "bytes": 13397599
+      },
+      {
+        "path": "input\\raw\\itr_cia_aberta_2022.zip",
+        "bytes": 32329025
+      },
+      {
+        "path": "input\\raw\\itr_cia_aberta_2023.zip",
+        "bytes": 32355974
+      },
+      {
+        "path": "input\\raw\\itr_cia_aberta_2024.zip",
+        "bytes": 32725967
+      },
+      {
+        "path": "output\\reports\\PETROBRAS_financials.xlsx",
+        "bytes": 38725
+      },
+      {
+        "path": "output\\reports\\VALE_financials.xlsx",
+        "bytes": 38078
+      }
+    ],
+    "name": "scale_2022_2024",
+    "db": {
+      "financial_rows": 7266,
+      "financial_sha256": "75785e05409a2b6ec5ea9fa2553b7ff86a53ab72b0ff5a741a20bd7002f4efd3",
+      "qa_count": 15,
+      "qa_sha256": "c648296c310acee7fd074617b215d431d0ac89d3f85a45c3ebb41c0106da22a3",
+      "company_year_rows": [
+        [
+          4170,
+          2022,
+          1181
+        ],
+        [
+          4170,
+          2023,
+          1187
+        ],
+        [
+          4170,
+          2024,
+          1195
+        ],
+        [
+          9512,
+          2022,
+          1228
+        ],
+        [
+          9512,
+          2023,
+          1235
+        ],
+        [
+          9512,
+          2024,
+          1240
+        ]
+      ],
+      "integrity_check": "ok"
+    },
+    "operation_seconds": 19.964557599974796,
+    "stage_sums": {
+      "catalog": 0.40789050003513694,
+      "csv_read": 6.207953300210647,
+      "read_filter_convert": 7.546176199975889,
+      "financial_transform": 0.3755527999601327,
+      "database_transaction": 1.4797033999930136,
+      "persist_and_excel": 1.844019699958153,
+      "zip_extract": 6.276881099620368
+    },
+    "csv_reads": 84,
+    "csv_hits": 42,
+    "zip_extractions": 42,
+    "http_counts": {
+      "HEAD": 2,
+      "GET": 5
+    },
+    "data_bytes": 1589747666
+  },
+  "read_metrics": {
+    "baseline/company": {
+      "n": 19,
+      "p50_ms": 4.9017000128515065,
+      "p95_ms": 86.58020000439137,
+      "max_ms": 86.58020000439137,
+      "errors": 0,
+      "empty": 0
+    },
+    "baseline/statement": {
+      "n": 18,
+      "p50_ms": 8.707350003533065,
+      "p95_ms": 54.919099959079176,
+      "max_ms": 54.919099959079176,
+      "errors": 0,
+      "empty": 0
+    },
+    "baseline/historical_kpis": {
+      "n": 18,
+      "p50_ms": 34.27644999464974,
+      "p95_ms": 73.97050003055483,
+      "max_ms": 73.97050003055483,
+      "errors": 0,
+      "empty": 0
+    },
+    "during_import/company": {
+      "n": 150,
+      "p50_ms": 6.163150013890117,
+      "p95_ms": 29.130300041288137,
+      "max_ms": 164.46100000757724,
+      "errors": 0,
+      "empty": 0
+    },
+    "during_import/statement": {
+      "n": 150,
+      "p50_ms": 10.571849998086691,
+      "p95_ms": 35.98929999861866,
+      "max_ms": 174.80879998765886,
+      "errors": 0,
+      "empty": 0
+    },
+    "during_import/historical_kpis": {
+      "n": 150,
+      "p50_ms": 38.38894996442832,
+      "p95_ms": 108.22370002279058,
+      "max_ms": 489.25290000624955,
+      "errors": 0,
+      "empty": 0
+    },
+    "after_import/company": {
+      "n": 21,
+      "p50_ms": 5.2912000101059675,
+      "p95_ms": 6.575900013558567,
+      "max_ms": 7.354299945291132,
+      "errors": 0,
+      "empty": 0
+    },
+    "after_import/statement": {
+      "n": 22,
+      "p50_ms": 8.024550013942644,
+      "p95_ms": 10.147100023459643,
+      "max_ms": 11.41869998537004,
+      "errors": 0,
+      "empty": 0
+    },
+    "after_import/historical_kpis": {
+      "n": 22,
+      "p50_ms": 28.262699954211712,
+      "p95_ms": 35.49879998899996,
+      "max_ms": 38.12149999430403,
+      "errors": 0,
+      "empty": 0
+    }
+  },
+  "read_errors": [],
+  "validation": {
+    "storage_budget": {
+      "ok": true,
+      "status": "pass",
+      "summary": {
+        "total_bytes": 1589780434,
+        "backup_bytes": 0,
+        "active_bytes_excluding_backups": 1589780434,
+        "database_category_bytes": 2510848,
+        "max_main_db_bytes": 12884901888,
+        "max_database_category_bytes": 17179869184,
+        "max_active_local_bytes": 30000000000,
+        "fail_on_backups": false
+      },
+      "failures": [],
+      "warnings": []
+    },
+    "managed_contracts": {
+      "ok": false,
+      "status": "fail",
+      "summary": {
+        "contracts": 3,
+        "implemented_contracts": 3,
+        "planned_contracts": 0,
+        "failures": 3,
+        "warnings": 0,
+        "require_manifests": true,
+        "scan_sqlite_large_tables": true,
+        "sqlite_row_threshold": 250000,
+        "data_dir": "tmp\\bench-20261111-two-companies\\scale_2022_2024\\data"
+      },
+      "contracts": [
+        {
+          "dataset_id": "ccee_plant_generation_hourly",
+          "domain": "energy",
+          "status": "implemented",
+          "fact_grain": "plant-parcel hour",
+          "manifest_path": "tmp\\bench-20261111-two-companies\\scale_2022_2024\\data\\analytics\\energy\\ccee_plant_generation_hourly\\manifest.json",
+          "manifest_exists": false,
+          "manifest_required": true,
+          "storage_layers": [
+            "metadata_sqlite",
+            "raw_snapshot",
+            "hot_sqlite",
+            "cold_parquet",
+            "mart_sqlite"
+          ],
+          "sqlite_tables": [
+            {
+              "database": "energy_kpis.db",
+              "table_name": "ccee_plant_parcel_hourly",
+              "classification": "managed_externalized",
+              "notes": "Large hourly detail is externalized to the managed hot/cold store."
+            },
+            {
+              "database": "energy_kpis.db",
+              "table_name": "plant_parcel_daily_generation_mart",
+              "classification": "sqlite_mart",
+              "notes": "Rebuildable daily mart for app chart reads."
+            },
+            {
+              "database": "energy_kpis.db",
+              "table_name": "plant_parcel_hourly_preview_mart",
+              "classification": "sqlite_mart",
+              "notes": "Rebuildable compact preview mart for hourly detail."
+            },
+            {
+              "database": "energy_kpis.db",
+              "table_name": "plant_ceg_hourly_generation_mart",
+              "classification": "sqlite_mart",
+              "notes": "Rebuildable CEG-level hourly mart."
+            },
+            {
+              "database": "energy_kpis.db",
+              "table_name": "plant_parcel_source_submarket_monthly_mart",
+              "classification": "sqlite_mart",
+              "notes": "Rebuildable source/submarket monthly mart."
+            },
+            {
+              "database": "energy_kpis.db",
+              "table_name": "external_hourly_store_catalog",
+              "classification": "small_relational",
+              "notes": "Catalog fingerprint for the managed hourly store."
+            },
+            {
+              "database": "energy_kpis.db",
+              "table_name": "energy_mart_builds",
+              "classification": "small_relational",
+              "notes": "Mart rebuild audit metadata."
+            }
+          ],
+          "notes": "CCEE hourly plant-parcel facts use managed hot SQLite plus cold Parquet."
+        },
+        {
+          "dataset_id": "distribution_mmgd_projects",
+          "domain": "energy",
+          "status": "implemented",
+          "fact_grain": "project_reference_month",
+          "manifest_path": "tmp\\bench-20261111-two-companies\\scale_2022_2024\\data\\analytics\\energy\\distribution_mmgd_projects\\manifest.json",
+          "manifest_exists": false,
+          "manifest_required": true,
+          "storage_layers": [
+            "metadata_sqlite",
+            "raw_snapshot",
+            "cold_parquet",
+            "mart_sqlite"
+          ],
+          "sqlite_tables": [
+            {
+              "database": "energy_kpis.db",
+              "table_name": "distribution_mmgd_projects",
+              "classification": "managed_externalized",
+              "notes": "Legacy MMGD project dimension table is empty after externalization."
+            },
+            {
+              "database": "energy_kpis.db",
+              "table_name": "distribution_mmgd_project_snapshots",
+              "classification": "managed_externalized",
+              "notes": "MMGD project-month detail is externalized to managed Parquet."
+            },
+            {
+              "database": "energy_kpis.db",
+              "table_name": "distribution_mmgd_monthly_mart",
+              "classification": "sqlite_mart",
+              "notes": "Compact monthly MMGD summary for app reads."
+            },
+            {
+              "database": "energy_kpis.db",
+              "table_name": "managed_dataset_catalog",
+              "classification": "small_relational",
+              "notes": "Catalog metadata for managed analytical datasets."
+            }
+          ],
+          "notes": "ANEEL MMGD project detail uses managed Parquet with bounded distributor/month reads."
+        },
+        {
+          "dataset_id": "fuel_distribution_sector_intake",
+          "domain": "energy",
+          "status": "implemented",
+          "fact_grain": "fuel-sales source-geography-product-period detail",
+          "manifest_path": "tmp\\bench-20261111-two-companies\\scale_2022_2024\\data\\analytics\\energy\\fuel_distribution_sector_intake\\manifest.json",
+          "manifest_exists": false,
+          "manifest_required": true,
+          "storage_layers": [
+            "metadata_sqlite",
+            "raw_snapshot",
+            "cold_parquet",
+            "mart_sqlite"
+          ],
+          "sqlite_tables": [
+            {
+              "database": "energy_kpis.db",
+              "table_name": "fuel_distribution_product_year_mart",
+              "classification": "sqlite_mart",
+              "notes": "Compact ANP Fuel Distribution yearly product mart; detail is externalized to managed Parquet."
+            },
+            {
+              "database": "energy_kpis.db",
+              "table_name": "fuel_distribution_state_month_mart",
+              "classification": "sqlite_mart",
+              "notes": "Compact ANP Fuel Distribution state-month trend mart for bounded chart reads."
+            }
+          ],
+          "notes": "ANP Fuel Distribution sales detail uses raw snapshots plus managed Parquet with compact SQLite marts."
+        }
+      ],
+      "implemented_contracts": [
+        {
+          "dataset_id": "ccee_plant_generation_hourly",
+          "domain": "energy",
+          "status": "implemented",
+          "fact_grain": "plant-parcel hour",
+          "manifest_path": "tmp\\bench-20261111-two-companies\\scale_2022_2024\\data\\analytics\\energy\\ccee_plant_generation_hourly\\manifest.json",
+          "manifest_exists": false,
+          "manifest_required": true,
+          "storage_layers": [
+            "metadata_sqlite",
+            "raw_snapshot",
+            "hot_sqlite",
+            "cold_parquet",
+            "mart_sqlite"
+          ],
+          "sqlite_tables": [
+            {
+              "database": "energy_kpis.db",
+              "table_name": "ccee_plant_parcel_hourly",
+              "classification": "managed_externalized",
+              "notes": "Large hourly detail is externalized to the managed hot/cold store."
+            },
+            {
+              "database": "energy_kpis.db",
+              "table_name": "plant_parcel_daily_generation_mart",
+              "classification": "sqlite_mart",
+              "notes": "Rebuildable daily mart for app chart reads."
+            },
+            {
+              "database": "energy_kpis.db",
+              "table_name": "plant_parcel_hourly_preview_mart",
+              "classification": "sqlite_mart",
+              "notes": "Rebuildable compact preview mart for hourly detail."
+            },
+            {
+              "database": "energy_kpis.db",
+              "table_name": "plant_ceg_hourly_generation_mart",
+              "classification": "sqlite_mart",
+              "notes": "Rebuildable CEG-level hourly mart."
+            },
+            {
+              "database": "energy_kpis.db",
+              "table_name": "plant_parcel_source_submarket_monthly_mart",
+              "classification": "sqlite_mart",
+              "notes": "Rebuildable source/submarket monthly mart."
+            },
+            {
+              "database": "energy_kpis.db",
+              "table_name": "external_hourly_store_catalog",
+              "classification": "small_relational",
+              "notes": "Catalog fingerprint for the managed hourly store."
+            },
+            {
+              "database": "energy_kpis.db",
+              "table_name": "energy_mart_builds",
+              "classification": "small_relational",
+              "notes": "Mart rebuild audit metadata."
+            }
+          ],
+          "notes": "CCEE hourly plant-parcel facts use managed hot SQLite plus cold Parquet."
+        },
+        {
+          "dataset_id": "distribution_mmgd_projects",
+          "domain": "energy",
+          "status": "implemented",
+          "fact_grain": "project_reference_month",
+          "manifest_path": "tmp\\bench-20261111-two-companies\\scale_2022_2024\\data\\analytics\\energy\\distribution_mmgd_projects\\manifest.json",
+          "manifest_exists": false,
+          "manifest_required": true,
+          "storage_layers": [
+            "metadata_sqlite",
+            "raw_snapshot",
+            "cold_parquet",
+            "mart_sqlite"
+          ],
+          "sqlite_tables": [
+            {
+              "database": "energy_kpis.db",
+              "table_name": "distribution_mmgd_projects",
+              "classification": "managed_externalized",
+              "notes": "Legacy MMGD project dimension table is empty after externalization."
+            },
+            {
+              "database": "energy_kpis.db",
+              "table_name": "distribution_mmgd_project_snapshots",
+              "classification": "managed_externalized",
+              "notes": "MMGD project-month detail is externalized to managed Parquet."
+            },
+            {
+              "database": "energy_kpis.db",
+              "table_name": "distribution_mmgd_monthly_mart",
+              "classification": "sqlite_mart",
+              "notes": "Compact monthly MMGD summary for app reads."
+            },
+            {
+              "database": "energy_kpis.db",
+              "table_name": "managed_dataset_catalog",
+              "classification": "small_relational",
+              "notes": "Catalog metadata for managed analytical datasets."
+            }
+          ],
+          "notes": "ANEEL MMGD project detail uses managed Parquet with bounded distributor/month reads."
+        },
+        {
+          "dataset_id": "fuel_distribution_sector_intake",
+          "domain": "energy",
+          "status": "implemented",
+          "fact_grain": "fuel-sales source-geography-product-period detail",
+          "manifest_path": "tmp\\bench-20261111-two-companies\\scale_2022_2024\\data\\analytics\\energy\\fuel_distribution_sector_intake\\manifest.json",
+          "manifest_exists": false,
+          "manifest_required": true,
+          "storage_layers": [
+            "metadata_sqlite",
+            "raw_snapshot",
+            "cold_parquet",
+            "mart_sqlite"
+          ],
+          "sqlite_tables": [
+            {
+              "database": "energy_kpis.db",
+              "table_name": "fuel_distribution_product_year_mart",
+              "classification": "sqlite_mart",
+              "notes": "Compact ANP Fuel Distribution yearly product mart; detail is externalized to managed Parquet."
+            },
+            {
+              "database": "energy_kpis.db",
+              "table_name": "fuel_distribution_state_month_mart",
+              "classification": "sqlite_mart",
+              "notes": "Compact ANP Fuel Distribution state-month trend mart for bounded chart reads."
+            }
+          ],
+          "notes": "ANP Fuel Distribution sales detail uses raw snapshots plus managed Parquet with compact SQLite marts."
+        }
+      ],
+      "planned_contracts": [],
+      "sqlite_large_tables": [],
+      "unclassified_large_tables": [],
+      "failures": [
+        {
+          "dataset_id": "ccee_plant_generation_hourly",
+          "domain": "energy",
+          "check": "manifest_missing",
+          "message": "Managed manifest is not present under the configured data root.",
+          "manifest_path": "data\\analytics\\energy\\ccee_plant_generation_hourly\\manifest.json"
+        },
+        {
+          "dataset_id": "distribution_mmgd_projects",
+          "domain": "energy",
+          "check": "manifest_missing",
+          "message": "Managed manifest is not present under the configured data root.",
+          "manifest_path": "data\\analytics\\energy\\distribution_mmgd_projects\\manifest.json"
+        },
+        {
+          "dataset_id": "fuel_distribution_sector_intake",
+          "domain": "energy",
+          "check": "manifest_missing",
+          "message": "Managed manifest is not present under the configured data root.",
+          "manifest_path": "data\\analytics\\energy\\fuel_distribution_sector_intake\\manifest.json"
+        }
+      ],
+      "warnings": []
+    },
+    "offline_three_year_reads": {
+      "statement": {
+        "n": 40,
+        "p50_ms": 5.288499989546835,
+        "p95_ms": 8.909999975003302,
+        "max_ms": 17.808300035540015
+      },
+      "historical_kpis": {
+        "n": 40,
+        "p50_ms": 29.52324997750111,
+        "p95_ms": 44.61550002451986,
+        "max_ms": 67.20560003304854
+      }
+    },
+    "protected_data_unchanged": true
+  },
+  "source_zip_sha256": {
+    "dfp_cia_aberta_2022.zip": "151d605dc4c2bbe324ecbcfda29730017a6891314382ee3ebd9554df765c2f2a",
+    "dfp_cia_aberta_2023.zip": "344e37b704a588b3863c5dd4ad6ee54b3dc9a2ee18cf88e0e4e35f5a641cdc2d",
+    "dfp_cia_aberta_2024.zip": "b6a485b540728dcd4e7ed030bad8e749471044594ec17866fff4f0e94c54120a",
+    "itr_cia_aberta_2022.zip": "4579fe2476bc09612142196b5e0c20cb7ae30c3e18ea56a13bb558495f115eff",
+    "itr_cia_aberta_2023.zip": "9e6ce6cc2a978ffaae68c5869c98b60443791b6981f628d537778e160905504b",
+    "itr_cia_aberta_2024.zip": "bdfa4c83bcc2bfac8f78dbca85494eea209c018ce429ac2ec15eb8d900762d7a"
+  },
+  "harness_sha256": {
+    "worker_cycle.py": "a21b91cb4a75dd3277411699108175cee0ce8966aaeec55575e3c329268ea094",
+    "controller_cycle.py": "8052a698fae71f485c1b7452fbcfc8d9f416cbcb1a61e7c989c67c355790579c",
+    "validate_cycle.py": "405112e3f44a08e33da705411cba8404002b09cffa89bf2f23b227cae384d780",
+    "summarize_cycle.py": "5b0b14592316f374ee55b598b9d87cbb309883a3ad63ebdadc81c93f06d04603"
+  }
+}
