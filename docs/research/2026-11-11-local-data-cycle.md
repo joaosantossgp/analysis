@@ -159,5 +159,6 @@ The [publication review](2026-11-13-local-data-evidence-review.md) links their
 artifact-specific evidence. These old measurements are not post-fix benchmarks.
 The owner later made 8 GB RAM / 30 GB free disk an efficiency guide rather than
 a mandatory hardware/VM gate. No new target-machine run is required to publish
-this research. #464 and #466 remain open; no migration or multi-window
-implementation is authorized by #482.
+this research. The owner subsequently closed #464 and #466 as not planned for
+now; see the [incremental delivery direction](../PRODUCT_DIRECTION.md#delivery-direction-2026-11-13).
+No migration or multi-window implementation is authorized by #482.
