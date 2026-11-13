@@ -1,0 +1,432 @@
+{
+  "baseline": "5971c4743aab784f33bcd0cf33bb4fa930fe17f9",
+  "date": "2026-11-11",
+  "scope": "Direct CVMScraper, separate instance per company, sequential, consolidated 2024 DFP/ITR; not desktop queue/UI",
+  "summary": {
+    "exit_code": 0,
+    "guard_stop": null,
+    "seconds": 13.765205500007141,
+    "peak_rss": 1183129600,
+    "peak_private": 2595467264,
+    "peak_disk_data_temp": 536249333,
+    "sample_interval_s": 0.05,
+    "disk_interval_s": 0.25,
+    "host_ram": 34031251456,
+    "host_cpu_logical": 28,
+    "os": "Windows-10-10.0.26200-SP0",
+    "source_files_unchanged": true,
+    "files": [
+      {
+        "path": "db\\cvm_financials.db",
+        "bytes": 1081344
+      },
+      {
+        "path": "import\\canonical_accounts.csv",
+        "bytes": 86279
+      },
+      {
+        "path": "import\\gics_mapping.csv",
+        "bytes": 238852
+      },
+      {
+        "path": "import\\ticker_map.csv",
+        "bytes": 13785
+      },
+      {
+        "path": "input\\processed\\dfp_cia_aberta_BPA_con_2024.csv",
+        "bytes": 12279613
+      },
+      {
+        "path": "input\\processed\\dfp_cia_aberta_BPP_con_2024.csv",
+        "bytes": 21291665
+      },
+      {
+        "path": "input\\processed\\dfp_cia_aberta_DFC_MD_con_2024.csv",
+        "bytes": 155316
+      },
+      {
+        "path": "input\\processed\\dfp_cia_aberta_DFC_MI_con_2024.csv",
+        "bytes": 12016070
+      },
+      {
+        "path": "input\\processed\\dfp_cia_aberta_DMPL_con_2024.csv",
+        "bytes": 61738147
+      },
+      {
+        "path": "input\\processed\\dfp_cia_aberta_DRE_con_2024.csv",
+        "bytes": 6821623
+      },
+      {
+        "path": "input\\processed\\dfp_cia_aberta_DVA_con_2024.csv",
+        "bytes": 8543503
+      },
+      {
+        "path": "input\\processed\\itr_cia_aberta_BPA_con_2024.csv",
+        "bytes": 37137042
+      },
+      {
+        "path": "input\\processed\\itr_cia_aberta_BPP_con_2024.csv",
+        "bytes": 64510427
+      },
+      {
+        "path": "input\\processed\\itr_cia_aberta_DFC_MD_con_2024.csv",
+        "bytes": 546495
+      },
+      {
+        "path": "input\\processed\\itr_cia_aberta_DFC_MI_con_2024.csv",
+        "bytes": 33704668
+      },
+      {
+        "path": "input\\processed\\itr_cia_aberta_DMPL_con_2024.csv",
+        "bytes": 169356750
+      },
+      {
+        "path": "input\\processed\\itr_cia_aberta_DRE_con_2024.csv",
+        "bytes": 34199185
+      },
+      {
+        "path": "input\\processed\\itr_cia_aberta_DVA_con_2024.csv",
+        "bytes": 25545406
+      },
+      {
+        "path": "input\\raw\\dfp_cia_aberta_2024.zip",
+        "bytes": 13397599
+      },
+      {
+        "path": "input\\raw\\itr_cia_aberta_2024.zip",
+        "bytes": 32725967
+      },
+      {
+        "path": "output\\reports\\PETROBRAS_financials.xlsx",
+        "bytes": 27323
+      },
+      {
+        "path": "output\\reports\\VALE_financials.xlsx",
+        "bytes": 26842
+      }
+    ]
+  },
+  "companies": [
+    {
+      "cvm_code": 9512,
+      "seconds": {
+        "catalog": 0.4172594000119716,
+        "csv_read": 1.7280100001371466,
+        "read_filter_convert": 1.8511626000399701,
+        "financial_transform": 0.09158980002393946,
+        "database_transaction": 0.1747544000390917,
+        "persist_and_excel": 0.9131503000389785,
+        "download_extract_wall": 4.535583700053394,
+        "filter_convert_excluding_csv": 0.12315259990282357,
+        "export_preparation_identity_excluding_db": 0.7383958999998868,
+        "initialization": 0.05216839996865019,
+        "total": 7.867639699950814
+      },
+      "csv_reads": 14,
+      "csv_cache_hits": 0,
+      "http": [
+        {
+          "company": 9512,
+          "t": 2.8122450999799185,
+          "kind": "http",
+          "method": "GET",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv",
+          "status": 200,
+          "start": 2.4227380999946035,
+          "content_length": "1494686",
+          "stream": false
+        },
+        {
+          "company": 9512,
+          "t": 2.895041299983859,
+          "kind": "http",
+          "method": "GET",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_2024.zip",
+          "status": 200,
+          "start": 2.8422563999774866,
+          "content_length": "32725967",
+          "stream": true
+        },
+        {
+          "company": 9512,
+          "t": 2.9195415999856777,
+          "kind": "http",
+          "method": "GET",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_2024.zip",
+          "status": 200,
+          "start": 2.842132300022058,
+          "content_length": "13397599",
+          "stream": true
+        },
+        {
+          "company": 9512,
+          "t": 9.524774099991191,
+          "kind": "http",
+          "method": "get",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv",
+          "status": 200,
+          "start": 9.338420899992343,
+          "content_length": "1494686",
+          "stream": false
+        }
+      ],
+      "download_tasks": [
+        {
+          "company": 9512,
+          "t": 5.746300099999644,
+          "kind": "span",
+          "stage": "download_extract_task",
+          "start": 2.841368999972474,
+          "end": 5.746298799989745,
+          "year": 2024,
+          "doc": "DFP"
+        },
+        {
+          "company": 9512,
+          "t": 7.376954199979082,
+          "kind": "span",
+          "stage": "download_extract_task",
+          "start": 2.8416454999824055,
+          "end": 7.376952700025868,
+          "year": 2024,
+          "doc": "ITR"
+        }
+      ]
+    },
+    {
+      "cvm_code": 4170,
+      "seconds": {
+        "catalog": 0.20896939997328445,
+        "csv_read": 1.3064205000409856,
+        "read_filter_convert": 1.4292213000007905,
+        "financial_transform": 0.11680260003777221,
+        "database_transaction": 0.15447249996941537,
+        "persist_and_excel": 0.570612599956803,
+        "download_extract_wall": 0.7760191999841481,
+        "filter_convert_excluding_csv": 0.12280079995980486,
+        "export_preparation_identity_excluding_db": 0.41614009998738766,
+        "initialization": 0.015128099999856204,
+        "total": 3.1208871999988332
+      },
+      "csv_reads": 14,
+      "csv_cache_hits": 0,
+      "http": [
+        {
+          "company": 4170,
+          "t": 10.480135600024369,
+          "kind": "http",
+          "method": "GET",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv",
+          "status": 200,
+          "start": 10.29414369998267,
+          "content_length": "1494686",
+          "stream": false
+        },
+        {
+          "company": 4170,
+          "t": 10.557750199979637,
+          "kind": "http",
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_2024.zip",
+          "status": 200,
+          "start": 10.504390500020236,
+          "content_length": "13397599",
+          "stream": false
+        },
+        {
+          "company": 4170,
+          "t": 10.558756300015375,
+          "kind": "http",
+          "method": "HEAD",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_2024.zip",
+          "status": 200,
+          "start": 10.504716700001154,
+          "content_length": "32725967",
+          "stream": false
+        },
+        {
+          "company": 4170,
+          "t": 13.028207499999553,
+          "kind": "http",
+          "method": "get",
+          "url": "https://dados.cvm.gov.br/dados/CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv",
+          "status": 200,
+          "start": 12.835716300003696,
+          "content_length": "1494686",
+          "stream": false
+        }
+      ],
+      "download_tasks": [
+        {
+          "company": 4170,
+          "t": 10.855876600020565,
+          "kind": "span",
+          "stage": "download_extract_task",
+          "start": 10.504001000022981,
+          "end": 10.855873299995437,
+          "year": 2024,
+          "doc": "DFP"
+        },
+        {
+          "company": 4170,
+          "t": 11.280022800026927,
+          "kind": "span",
+          "stage": "download_extract_task",
+          "start": 10.504305400012527,
+          "end": 11.28002020000713,
+          "year": 2024,
+          "doc": "ITR"
+        }
+      ]
+    }
+  ],
+  "checks": {
+    "integrity_check": [
+      [
+        "ok"
+      ]
+    ],
+    "rows_by_company_year_period": [
+      [
+        4170,
+        2024,
+        "1Q24",
+        276
+      ],
+      [
+        4170,
+        2024,
+        "2024",
+        279
+      ],
+      [
+        4170,
+        2024,
+        "2Q24",
+        269
+      ],
+      [
+        4170,
+        2024,
+        "3Q24",
+        280
+      ],
+      [
+        4170,
+        2024,
+        "4Q24",
+        91
+      ],
+      [
+        9512,
+        2024,
+        "1Q24",
+        283
+      ],
+      [
+        9512,
+        2024,
+        "2024",
+        283
+      ],
+      [
+        9512,
+        2024,
+        "2Q24",
+        283
+      ],
+      [
+        9512,
+        2024,
+        "3Q24",
+        283
+      ],
+      [
+        9512,
+        2024,
+        "4Q24",
+        108
+      ]
+    ],
+    "qa_logs": [
+      [
+        1,
+        "VALE",
+        4170,
+        "DFC_VALIDATION_FAILED",
+        "DRE",
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      [
+        2,
+        "VALE",
+        4170,
+        "DFC_VALIDATION_FAILED",
+        "DFC",
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      [
+        3,
+        "VALE",
+        4170,
+        "DFC_VALIDATION_FAILED",
+        "DFC",
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      [
+        4,
+        "VALE",
+        4170,
+        "DFC_VALIDATION_FAILED",
+        "DFC",
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      [
+        5,
+        "VALE",
+        4170,
+        "DFC_VALIDATION_FAILED",
+        "DFC",
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    ]
+  },
+  "versions": {
+    "company": null,
+    "t": 2.3702492999727838,
+    "kind": "versions",
+    "python": "3.11.15 (main, Aug  7 2026, 02:24:19) [MSC v.1944 64 bit (AMD64)]",
+    "pandas": "3.1.1",
+    "polars": "2.1.0",
+    "sqlalchemy": "2.1.8",
+    "sqlite": "3.53.1"
+  },
+  "source_zip_sha256": {
+    "dfp_cia_aberta_2024.zip": "b6a485b540728dcd4e7ed030bad8e749471044594ec17866fff4f0e94c54120a",
+    "itr_cia_aberta_2024.zip": "bdfa4c83bcc2bfac8f78dbca85494eea209c018ce429ac2ec15eb8d900762d7a"
+  },
+  "final_data_bytes": 535443901,
+  "isolated_venv_bytes": 273276488,
+  "protected_file_count": 14,
+  "final_preservation_check": true
+}
