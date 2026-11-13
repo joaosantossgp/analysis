@@ -1,13 +1,19 @@
 # Multi-window analyst workbench: architecture research
 
+> Owner decision, 2026-11-13: #464 and #466 are closed as not planned for now.
+> This research and its evidence are preserved as historical reference. Pending
+> multi-window plans below are superseded by the
+> [incremental delivery direction](../PRODUCT_DIRECTION.md#delivery-direction-2026-11-13).
+> This decision does not claim that the proposed work was implemented or validated.
+
 Research date: 2026-11-04. Status: conditional recommendation; not an approved architecture decision or implementation plan. Scope: local Windows CVMAnalytics, preserving React/Vite, Python financial services, SQLite, offline reads, and auditability. Sources below were consulted during this session; upstream `master`/`latest` documentation is not proof of the versions installed in the packaged application.
 
 ## Decision to make
 
-Publication tracking (2026-11-05): [initial desk research #465](https://github.com/joaosantossgp/analysis/issues/465)
+Historical publication tracking (2026-11-05; superseded by the decision above): [initial desk research #465](https://github.com/joaosantossgp/analysis/issues/465)
 is a documentation milestone under [goal #464](https://github.com/joaosantossgp/analysis/issues/464).
 [Planning and validation #466](https://github.com/joaosantossgp/analysis/issues/466)
-remain open for the unresolved choices and experiments below. Closing the
+remained open for the unresolved choices and experiments below. Closing the
 publication task does not mean research validation or implementation is complete.
 
 For the clarified requirement, the most economical first candidate is the existing pywebview/WebView2 shell with explicit native-window management, plus a React docking layout concentrated in Home. This is an engineering-effort judgment grounded in existing code, **not a measured RAM, CPU, or latency victory**. Electron is the strongest alternative to investigate when browser-style tear-out/redock behavior is mandatory and pywebview integration proves costly. Tauri introduces a Rust host and Python sidecar without changing the Windows web engine; Qt offers native docking but entails a larger UI/integration decision.

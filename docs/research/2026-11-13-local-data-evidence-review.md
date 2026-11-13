@@ -1,5 +1,11 @@
 # Local-data evidence publication review
 
+> Owner decision, 2026-11-13: #464 and #466 are closed as not planned for now.
+> This research and its evidence are preserved as historical reference. Pending
+> multi-window plans below are superseded by the
+> [incremental delivery direction](../PRODUCT_DIRECTION.md#delivery-direction-2026-11-13).
+> This decision does not claim that the proposed work was implemented or validated.
+
 Date: 2026-11-13. Delivery: #482; references #464 and #466.
 Application baseline reviewed for current status: `4d045d28b404b5e0746efa88aea657e063cc2105`.
 Historical experiment baseline: `5971c4743aab784f33bcd0cf33bb4fa930fe17f9`.
@@ -83,6 +89,6 @@ update checks. Waived checks are not passes and do not extend #485's evidence.
   follows from these historical measurements.
 
 These limits do not require new experiments to close #482's evidence delivery.
-Goals #464 and #466 remain open. The next priority is to scope the product and
-remaining acceptance decisions in #466 using the delivered evidence, before
-authorizing implementation.
+At publication, #464 and #466 remained open for product scoping. The subsequent
+owner decision above supersedes that next step: both are now not planned, while
+this evidence remains available for independently scoped app improvements.

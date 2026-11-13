@@ -10,6 +10,21 @@ The product is not "CVM data plus charts." It should support the professional
 research workflow an analyst follows from coverage selection to communicated
 recommendation.
 
+## Delivery Direction (2026-11-13)
+
+Evolve the existing application incrementally through small, independently useful
+issues tied to concrete analyst workflows. Improve company and sector analysis,
+local data reliability, performance and Excel handoff as demonstrated needs arise.
+Preserve saved data, settings, lineage and visible failure states in each change.
+
+Multi-window delivery and its dedicated planning cycle (#464 and #466) are
+**not planned for now**, by owner decision. Their research remains available as
+historical reference, not an active roadmap or prerequisite for ordinary app work.
+Do not introduce docking, synchronization infrastructure, a new shell or an engine
+migration in anticipation of that deferred goal. A future multi-window request
+must start from a specific user need and a separately scoped issue; it does not
+require committing to the former full workbench plan.
+
 ## Target User
 
 The primary user is a financial market analyst covering Brazilian companies:

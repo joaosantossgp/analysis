@@ -1,14 +1,20 @@
 # Local storage for a multi-window analytical workstation
 
+> Owner decision, 2026-11-13: #464 and #466 are closed as not planned for now.
+> This research and its evidence are preserved as historical reference. Pending
+> multi-window plans below are superseded by the
+> [incremental delivery direction](../PRODUCT_DIRECTION.md#delivery-direction-2026-11-13).
+> This decision does not claim that the proposed work was implemented or validated.
+
 Date: 2026-11-04. Status: research recommendation, not an accepted migration plan.
 Repository baseline: `4b2b73cb448c234f3eb234e8300b287a2df26d52`, with existing local skill-installation changes preserved.
 
 ## Recommendation
 
-Publication tracking (2026-11-05): [initial desk research #465](https://github.com/joaosantossgp/analysis/issues/465)
+Historical publication tracking (2026-11-05; superseded by the decision above): [initial desk research #465](https://github.com/joaosantossgp/analysis/issues/465)
 records this study under [goal #464](https://github.com/joaosantossgp/analysis/issues/464).
 [Planning and validation #466](https://github.com/joaosantossgp/analysis/issues/466)
-remain open for product decisions, experiments and implementation planning.
+remained open for product decisions, experiments and implementation planning.
 This publication milestone does not establish an approved engine or migration.
 
 Evolve the existing hybrid architecture: SQLite for durable user work, catalog metadata and bounded serving tables; immutable Parquet for large analytical history; a shared local data coordinator for every window. Evaluate DuckDB as the analytical SQL engine over those files against the existing Polars implementation. Do not replace working Polars paths without measured benefit.

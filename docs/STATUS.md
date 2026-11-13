@@ -68,11 +68,10 @@ run since 2026-05 failed. Both remain available through manual dispatch.
   evidence, reconciled with delivered follow-ups. See the
   [publication review](research/2026-11-13-local-data-evidence-review.md).
   No application or user-data changes are included.
-- Initial multi-window and local-storage desk research is published under #465;
-  see `docs/research/2026-11-04-multi-window-workbench.md` and
-  `docs/research/local-multi-window-storage.md`. Goal #464 remains open.
-  Planning and validation #466 still require product choices, workload
-  benchmarks and packaged recovery/offline evidence before implementation.
+- #464 and #466 are closed as not planned for now, by owner decision on
+  2026-11-13. Evolve the current app through small, independently useful issues;
+  see [delivery direction](PRODUCT_DIRECTION.md#delivery-direction-2026-11-13).
+  Research published under #465 and #482 is preserved as historical reference.
 - Eleven upstream agent skills are versioned (#463). Updates are manual and
   explicitly requested (#469); CI only verifies integrity and regression tests.
   No publication token is required; see `docs/agents/skills.md`.
@@ -97,13 +96,14 @@ run since 2026-05 failed. Both remain available through manual dispatch.
   update test when closing #486. Neither waived test is recorded as passed;
   no release is implied.
   External #483-485 evidence remains artifact-specific.
-- Next for #464: resolve #466, record the architecture decision and create
-  scoped implementation sub-issues. No shell or storage migration is approved.
+- Next work should address concrete analyst needs in the existing app. Multi-window
+  planning is deferred; no shell or storage migration is approved.
 
 ## Recent decisions
 
 | Date | Decision |
 |---|---|
+| 2026-11-13 | Owner deferred multi-window: #464 and #466 closed as not planned for now. Preserve research and evolve the existing application incrementally through scoped workflow improvements. |
 | 2026-11-06 | Windows storage persistence (#477) passed targeted packaged validation (#479): repeated scans, real reader contention, failure preservation and cached restart. UI completion/error gaps were subsequently resolved by #480 (PR #488); full release acceptance is not claimed. See [evidence](governance/2026-11-06-packaged-storage-validation.md). |
 | 2026-11-05 | Runtime reliability fixes merged in #472 (closes #471): local catalog reads, atomic API job admission/cancellation, single-worker container and API tests in CI. Packaged/hosted validation remains separate. |
 | 2026-11-05 | Maintenance boundaries clarified (#475): explicit refresh/mapping command modules and Coverage workspace components; public service/route contracts preserved. |
