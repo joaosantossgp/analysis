@@ -20,7 +20,6 @@ import type {
 import { whenBridgeReady } from "@/lib/bridge/adapter";
 
 import { DataCoveragePage } from "./DataCoveragePage";
-import { NewsSettingsPanel } from "./NewsPage";
 import { StatusPage } from "./StatusPage";
 import { UpdateBasePage } from "./UpdateBasePage";
 import { UserImportsPage } from "./UserImportsPage";
@@ -248,7 +247,7 @@ function SettingsOverview({
         <SettingsIntentCard
           title="Sources"
           status={worstStatus(summary.segments.filter((segment) => isSourceSegment(segment)))}
-          meta="Managed sources, imports, and News"
+          meta="Managed sources and imports"
           to="/settings/sources"
           action="Open sources"
         />
@@ -318,7 +317,7 @@ function SettingsDataHealth({
   );
 }
 
-type SourcesView = "sources" | "imports" | "news";
+type SourcesView = "sources" | "imports";
 
 function SettingsSources({
   loading,
@@ -345,7 +344,7 @@ function SettingsSources({
     <>
       <Panel
         title="Sources"
-        subtitle="Managed feeds, user files, and News configuration."
+        subtitle="Managed local sources and user files."
         actions={<StatusBadge status={worstStatus(sourceSegments)}>{statusLabel(worstStatus(sourceSegments))}</StatusBadge>}
       >
         <div className="grid gap-3 md:grid-cols-3">
@@ -358,27 +357,20 @@ function SettingsSources({
       <div className="flex flex-wrap gap-2 rounded-lg border border-zinc-800 bg-zinc-900/55 p-2">
         <TabButton active={view === "sources"} onClick={() => setView("sources")}>Data Sources</TabButton>
         <TabButton active={view === "imports"} onClick={() => setView("imports")}>Manual Imports</TabButton>
-        <TabButton active={view === "news"} onClick={() => setView("news")}>News</TabButton>
       </div>
 
       {view === "sources" ? (
         <Panel title="Data Sources" subtitle="Managed local sources and their current state.">
           <SegmentList segments={sourceSegments} />
         </Panel>
-      ) : view === "imports" ? (
+      ) : (
         <SettingsGroup
           title="Manual Imports"
           subtitle="CCEE source files, drag-and-drop import, status, and audit evidence."
         >
           <UserImportsPage />
         </SettingsGroup>
-      ) : (
-        <SettingsGroup
-          title="News"
-          subtitle="News feeds, collection scope, retention, source health, and collection runs."
-        >
-          <NewsSettingsPanel />
-        </SettingsGroup>
+
       )}
     </>
   );

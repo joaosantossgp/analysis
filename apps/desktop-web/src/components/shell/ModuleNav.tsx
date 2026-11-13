@@ -1,13 +1,8 @@
 import { NavLink, useLocation } from "react-router-dom";
 
-/**
- * Top-level module navigation. 4 pills representing the workspace areas of
- * the CVMAnalytics Terminal. The active module is computed from the current
- * route prefix so deep links (`/empresas/9512/indicadores`) still highlight
- * the parent "Empresas" pill.
- */
+/** Primary workspaces and system settings. */
 
-type ModuleId = "companies" | "empresas" | "sectors" | "macro" | "system" | "coverage" | "news";
+type ModuleId = "companies" | "empresas" | "sectors" | "macro" | "system";
 
 type ModuleDef = {
   id: ModuleId;
@@ -38,18 +33,6 @@ const MODULES: ModuleDef[] = [
     matches: (p) => p.startsWith("/setores"),
   },
   {
-    id: "coverage",
-    label: "Coverage",
-    to: "/coverage",
-    matches: (p) => p.startsWith("/coverage"),
-  },
-  {
-    id: "news",
-    label: "News",
-    to: "/news",
-    matches: (p) => p.startsWith("/news"),
-  },
-  {
     id: "macro",
     label: "Indicators",
     to: "/indicators",
@@ -70,34 +53,18 @@ const MODULES: ModuleDef[] = [
 export function ModuleNav() {
   const { pathname } = useLocation();
   const activeId = MODULES.find((m) => m.matches(pathname))?.id ?? null;
-
   return (
-    <nav
-      aria-label="Modules"
-      className="flex h-full items-stretch"
-      role="navigation"
-    >
-      {MODULES.map((m) => {
-        const isActive = m.id === activeId;
-        return (
-          <NavLink
-            key={m.id}
-            to={m.to}
-            className="relative flex items-center px-4 font-mono text-xs uppercase tracking-wider"
-            style={{
-              color: isActive
-                ? "var(--color-action-primary)"
-                : "var(--color-text-secondary)",
-              background: isActive ? "var(--color-surface-3)" : "transparent",
-              borderBottom: isActive
-                ? "2px solid var(--color-action-primary)"
-                : "2px solid transparent",
-            }}
-          >
-            {m.label}
-          </NavLink>
-        );
-      })}
+    <nav aria-label="Modules" className="flex h-full shrink-0 items-stretch">
+      {MODULES.map((m) => (
+        <NavLink key={m.id} to={m.to} end={m.to === "/"}
+          className="relative flex items-center px-2 lg:px-3 font-mono text-xs uppercase tracking-wider focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-500"
+          style={{
+            color: m.id === activeId ? "var(--color-action-primary)" : "var(--color-text-secondary)",
+            background: m.id === activeId ? "var(--color-surface-3)" : "transparent",
+            borderBottom: m.id === activeId ? "2px solid var(--color-action-primary)" : "2px solid transparent",
+          }}
+        >{m.label}</NavLink>
+      ))}
     </nav>
   );
 }

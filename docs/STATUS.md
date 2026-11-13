@@ -4,7 +4,7 @@ Short, current snapshot of where the project stands. Update this file whenever
 the version, release state, active work, or a major decision changes. Keep it
 under one screen; link to canonical docs instead of repeating them.
 
-Last updated: 2026-11-12
+Last updated: 2026-11-13
 
 ## Version and releases
 
@@ -80,9 +80,17 @@ run since 2026-05 failed. Both remain available through manual dispatch.
   before pagination, with missing-last values and deterministic CVM ties.
   Existing callers without an explicit order retain their defaults. See
   [validation](governance/2026-11-12-company-directory-sorting.md).
-- Next: #487 focuses primary navigation and the optional Home preset on company
-  analysis, then validates the exact integrated candidate. External #483-485
-  and follow-up optimizations have merged; their evidence is artifact-specific.
+- #487 / PR #499 now implement the approved #500 simplification: Home retained,
+  News UI retired without deleting saved data, Coverage and asset mapping inside
+  Companies, and source health inside Settings. Sectors/Indicators retain unique
+  analytical tools. Frontend and browser evidence is recorded in the
+  [candidate record](governance/2026-11-12-company-focus-ui.md).
+  Real dev preview and two-company Excel export/open/recalculation passed;
+  the owner confirmed dev-mode offline consultation/export on 2026-11-13.
+  The owner confirmed packaged consultation/export and normal Excel opening,
+  waived the packaged disconnected-network test, and authorized PR #499 merge
+  after CI. The waived test is not recorded as passed; no release is implied.
+  External #483-485 evidence remains artifact-specific.
 - Next for #464: resolve #466, record the architecture decision and create
   scoped implementation sub-issues. No shell or storage migration is approved.
 

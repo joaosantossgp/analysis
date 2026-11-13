@@ -54,7 +54,6 @@ export function SectorsPage() {
     <section className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-6 shadow-lg space-y-4">
       <PageHeader
         title="Sectors directory"
-        subtitle="GICS hub view — company counts and classification from the local CVM database."
         actions={
           <Status query={query} groups={items.length} totalCompanies={totalCompanies} />
         }
@@ -71,11 +70,15 @@ export function SectorsPage() {
           label="GICS Sub-industries"
           onClick={() => setGroupBy("sub_sector")}
         />
-        <GroupTab
-          active={groupBy === "cvm_sector"}
-          label="CVM Sectors"
-          onClick={() => setGroupBy("cvm_sector")}
-        />
+        <select
+          aria-label="Alternative classification"
+          value={groupBy === "cvm_sector" ? "cvm_sector" : ""}
+          onChange={(event) => setGroupBy(event.target.value === "cvm_sector" ? "cvm_sector" : "sector")}
+          className="ml-auto rounded border border-zinc-800 bg-zinc-900 px-2 py-1 text-xs text-zinc-400"
+        >
+          <option value="">Other classification</option>
+          <option value="cvm_sector">CVM Sectors</option>
+        </select>
       </div>
 
       <Body query={query} items={items} groupBy={groupBy} showLatestYear={includeSnapshots} />
@@ -163,8 +166,8 @@ function Body({
     return (
       <StateBanner
         variant="empty"
-        title="Sem classificações GICS"
-        message="Nenhuma empresa no banco local possui campos GICS. Abra o CVMAnalytics.exe v0.14.1+ para executar o backfill automático — o startup faz o import a partir do CSV embutido."
+        title="No sector classifications"
+        message="No companies have this classification in the local directory. Check company coverage and classification in Companies."
       />
     );
   }
@@ -203,7 +206,6 @@ function SectorsTable({
             ) : null}
             <th scope="col" className="px-3 py-2 text-right font-medium">Companies</th>
             {showLatestYear ? <th scope="col" className="px-3 py-2 text-right font-medium">Latest year</th> : null}
-            <th scope="col" className="px-3 py-2 font-medium">Actions</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-zinc-800/80 text-zinc-200">
@@ -249,7 +251,7 @@ function SectorRow({
       ? item.sector_slug
         ? `/setores/${item.sector_slug}`
         : null
-      : null;
+      : `/empresas?sector=${encodeURIComponent(item.sector_slug)}`;
   const subIndustryCount = item.sub_industries?.length ?? 0;
   return (
     <tr className="group hover:bg-zinc-900/50">
@@ -284,14 +286,6 @@ function SectorRow({
           {item.latest_year ?? "—"}
         </td>
       ) : null}
-      <td className="px-3 py-2 text-xs">
-        <Link
-          to={`/empresas?sector=${encodeURIComponent(item.sector_slug)}`}
-          className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-300 hover:border-cyan-700 hover:text-cyan-300"
-        >
-          View companies →
-        </Link>
-      </td>
     </tr>
   );
 }

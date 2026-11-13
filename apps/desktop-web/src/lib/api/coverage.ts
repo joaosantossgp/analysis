@@ -2,7 +2,7 @@
  * Coverage API facade.
  * Funnels React Query calls through the pywebview bridge.
  */
-import { callBridge, getBridgeMode } from "../bridge/adapter";
+import { callBridge, getBridgeMode, whenBridgeReady } from "../bridge/adapter";
 
 export interface CoverageUniverse {
   id: string;
@@ -17,8 +17,10 @@ export interface CoverageUniverse {
 }
 
 export async function fetchCoverageUniverses(): Promise<CoverageUniverse[]> {
-  const mode = getBridgeMode();
-  if (mode === "browser") return [];
+  const mode = await whenBridgeReady();
+  if (mode === "browser") {
+    throw new Error("Coverage requires the desktop bridge. Your saved universe selection is preserved.");
+  }
   const res = await callBridge("get_coverage_universes", {});
   if (res.error) throw new Error(res.error);
   return res as CoverageUniverse[];

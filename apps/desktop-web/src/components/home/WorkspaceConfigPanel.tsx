@@ -17,8 +17,8 @@ const CATEGORIES = [
     cardIds: ["watchlist", "priority-queue"],
   },
   {
-    name: "Market & News",
-    cardIds: ["market-price", "top-news"],
+    name: "Market",
+    cardIds: ["market-price"],
   },
 ];
 
@@ -26,7 +26,6 @@ const DEPENDENCY_NOTES: Record<string, string> = {
   "database-status": "Uses local connection to sync CVM data.",
   watchlist: "Uses local database sync metrics to display indicators.",
   "priority-queue": "Uses local database files to calculate prioritization scores.",
-  "top-news": "Uses local news database. Network required to fetch new filings/RSS feeds.",
   "market-price": "Uses local price cache. Network required for manual quotes fetch.",
 };
 

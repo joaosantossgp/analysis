@@ -2,7 +2,7 @@ import type React from "react";
 import { DatabaseStatusCard } from "./widgets/DatabaseStatusCard";
 import { WatchlistCard } from "./widgets/WatchlistCard";
 import { PriorityQueueCard } from "./widgets/PriorityQueueCard";
-import { TopNewsCard } from "./widgets/TopNewsCard";
+import { RetiredNewsCard } from "./widgets/RetiredNewsCard";
 import { MarketPriceCard } from "./widgets/MarketPriceCard";
 
 export type CardDef = {
@@ -45,10 +45,10 @@ export const WORKSPACE_REGISTRY: Record<string, CardDef> = {
   },
   "top-news": {
     id: "top-news",
-    title: "Top News Feed",
-    description: "Latest news alerts related to coverage sectors.",
+    title: "News (retired)",
+    description: "Saved News configuration is preserved; this widget no longer loads news.",
     defaultSize: "medium",
-    component: TopNewsCard as any,
+    component: RetiredNewsCard as any,
   },
   "market-price": {
     id: "market-price",

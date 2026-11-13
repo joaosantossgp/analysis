@@ -12,7 +12,7 @@ import type { IndicatorRecord } from "@/lib/indicators/registry";
 
 import {
   ENERGY_SUB_NAV,
-  EXPORT_VERIFICATION_WORKFLOWS,
+  indicatorSectionRedirect,
   TOP_NAV,
   parseEnergySub,
   parseSection,
@@ -30,10 +30,7 @@ describe("CountryKpisPage indicators navigation", () => {
   it("exposes analyst-oriented top-level sections without a generic Workspace tab", () => {
     expect(TOP_NAV.map((item) => item.label)).toEqual([
       "Indicator Library",
-      "Sectors",
-      "Companies & Assets",
-      "Data Health & Sources",
-      "Exports & Verification",
+      "Energy",
     ]);
   });
 
@@ -132,7 +129,7 @@ describe("CountryKpisPage indicators navigation", () => {
     expect(parseSection("energy")).toBe("energy");
     expect(parseSection("favorites")).toBe("library");
     expect(parseSection("health")).toBe("health");
-    expect(parseSection("exports")).toBe("exports");
+    expect(parseSection("exports")).toBe("library");
     expect(parseSection("unknown")).toBe("library");
 
     expect(parseEnergySub(null)).toBe("distribution");
@@ -141,27 +138,11 @@ describe("CountryKpisPage indicators navigation", () => {
     expect(parseEnergySub("unknown")).toBe("distribution");
   });
 
-  it("documents real export and verification workflows without fake centralized exports", () => {
-    expect(EXPORT_VERIFICATION_WORKFLOWS.map((workflow) => workflow.id)).toEqual([
-      "distribution-excel",
-      "country-kpi-excel",
-      "generation-source-review",
-      "sin-source-review",
-      "fuel-detail-review",
-      "mapping-review-notes",
-    ]);
-
-    expect(
-      EXPORT_VERIFICATION_WORKFLOWS.filter((workflow) => workflow.status === "available").map(
-        (workflow) => workflow.id,
-      ),
-    ).toEqual(["distribution-excel", "country-kpi-excel"]);
-
-    expect(
-      EXPORT_VERIFICATION_WORKFLOWS.filter((workflow) => workflow.status === "source-review").map(
-        (workflow) => workflow.id,
-      ),
-    ).toEqual(["generation-source-review", "sin-source-review", "fuel-detail-review"]);
+  it("moves legacy entity and health links without losing contextual params", () => {
+    expect(indicatorSectionRedirect(new URLSearchParams("section=entities&tab=mapping&q=power"))).toBe("/empresas/assets?tab=mapping&q=power");
+    expect(indicatorSectionRedirect(new URLSearchParams("section=discover&company=1"))).toBe("/empresas/assets?company=1");
+    expect(indicatorSectionRedirect(new URLSearchParams("section=health&source=aneel"))).toBe("/settings/indicator-sources?source=aneel");
+    expect(indicatorSectionRedirect(new URLSearchParams("section=energy&sub=matrix"))).toBeNull();
   });
 
   it("keeps the library detail panel resizable within usable bounds", () => {

@@ -96,7 +96,6 @@ export function SectorDetailPage() {
     <section className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-6 shadow-lg space-y-4">
       <PageHeader
         title={detail?.sector_name ?? "Sector"}
-        subtitle="GICS sector · CVMBridge.get_sector_detail"
         breadcrumbs={breadcrumbsList}
         actions={<Status query={query} notFound={notFound} />}
       />
@@ -135,7 +134,10 @@ export function SectorDetailPage() {
       )}
 
       {isEnergyUtilities && activeTab === "country" && (
-        <CountryKpiGrid />
+        <div className="space-y-3">
+          <Link className="text-xs text-id-link" to="/indicators?section=energy&sub=matrix">Explore Energy indicators</Link>
+          <CountryKpiGrid />
+        </div>
       )}
     </section>
   );

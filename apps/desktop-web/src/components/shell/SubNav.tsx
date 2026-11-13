@@ -14,26 +14,27 @@ import { NavLink, useLocation, useParams } from "react-router-dom";
 type Tab = { to: string; label: string; end?: boolean; activeOn?: string[] };
 
 export function subNavFor(pathname: string, params: Record<string, string | undefined>, activeUniverseId: string | null): Tab[] {
-  // Company detail subtabs (Overview / Indicadores / Demonstrativos).
-  const cdMatch = pathname.match(/^\/empresas\/([^/]+)/);
+  if (pathname === "/empresas" || pathname.startsWith("/empresas/coverage") || pathname.startsWith("/empresas/assets")) {
+    const tabs: Tab[] = [
+      { to: "/empresas", label: "Directory", end: true },
+      { to: "/empresas/coverage", label: "Coverage", end: true },
+      { to: "/empresas/assets", label: "Assets & Mapping" },
+    ];
+    if (pathname.startsWith("/empresas/coverage") && activeUniverseId) tabs.push(
+      { to: "/empresas/coverage/prioritization", label: "Prioritization" },
+      { to: "/empresas/coverage/work-queue", label: "Work Queue" },
+      { to: "/empresas/coverage/capacity", label: "Capacity" },
+    );
+    return tabs;
+  }
+  const cdMatch = pathname.match(/^\/empresas\/(\d+)(?:\/|$)/);
   if (cdMatch) {
     const cdCvm = params.cdCvm ?? cdMatch[1];
     return [
+      { to: "/empresas", label: "Directory", end: true },
       { to: `/empresas/${cdCvm}`, label: "Overview", end: true },
       { to: `/empresas/${cdCvm}/demonstrativos`, label: "Financial Statements" },
       { to: `/empresas/${cdCvm}/coverage`, label: "Coverage Status" },
-    ];
-  }
-
-  if (pathname.startsWith("/coverage")) {
-    if (!activeUniverseId) {
-      return [];
-    }
-    return [
-      { to: "/coverage", label: "Universes", end: true },
-      { to: "/coverage/prioritization", label: "Prioritization" },
-      { to: "/coverage/work-queue", label: "Work Queue" },
-      { to: "/coverage/capacity", label: "Capacity" },
     ];
   }
 
@@ -47,16 +48,10 @@ export function subNavFor(pathname: string, params: Record<string, string | unde
       { to: "/settings", label: "Overview", end: true },
       { to: "/settings/health", label: "Data", activeOn: ["/settings/coverage", "/settings/updates"] },
       { to: "/settings/sources", label: "Sources", activeOn: ["/settings/imports"] },
+      { to: "/settings/indicator-sources", label: "Indicator Sources" },
       { to: "/settings/storage", label: "Storage" },
       { to: "/settings/app", label: "App" },
       { to: "/settings/diagnostics", label: "Advanced" },
-    ];
-  }
-
-  if (pathname.startsWith("/news")) {
-    return [
-      { to: "/news", label: "Top News", end: true },
-      { to: "/news/latest", label: "Latest" },
     ];
   }
 
