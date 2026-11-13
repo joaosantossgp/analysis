@@ -75,7 +75,7 @@ checks. The owner requested a visible dev preview before further acceptance.
   Vite bundle: version `0.30.0-rc.1`, 2,649 files, no bundled `.db` files.
   EXE SHA-256: `94174b26b6eede3b69c5c914edf7e4ba05b494f80f6f6ecdccb0b7f9a96b4184`.
   Build-generated version-file formatting was restored to the committed bytes.
-- **Still unvalidated:** launching this package and offline/restart acceptance.
+- **Unvalidated at this checkpoint:** launching this package and offline/restart acceptance.
   Automatic review rejected the command preparing and launching the isolated
   offline package with proxy settings: `blocked by policy`, no detailed reason.
   The command did not execute, and no alternate launch was attempted.
@@ -101,3 +101,18 @@ procedure supplied in this chat; it is not an independently captured offline run
 The existing desktop/Excel checks above and this confirmation complete the
 bounded dev-mode check. Exact packaged executable/offline acceptance remains
 pending; no merge, release or packaged acceptance is implied.
+
+## Final owner acceptance and scope decision — 2026-11-13
+
+The owner manually tested the packaged executable using the supplied isolated
+fixture procedure and confirmed successful consultation, Excel export and normal
+opening of the exported files in Excel. This is owner-reported packaged evidence,
+not an automated reproduction. The source candidate and package identity remain
+those recorded above; subsequent commits change documentation only.
+
+The owner explicitly waived the disconnected-network/restart test for the
+packaged executable and authorized completion of PR #499 and merge into main
+after CI passes. This supersedes the earlier acceptance holds in this record.
+The packaged offline test is waived, not passed; local data storage alone is not
+proof of offline behavior. The owner-confirmed dev-mode offline result remains
+separate. No release publication or broad offline certification is implied.

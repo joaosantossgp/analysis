@@ -87,7 +87,10 @@ run since 2026-05 failed. Both remain available through manual dispatch.
   [candidate record](governance/2026-11-12-company-focus-ui.md).
   Real dev preview and two-company Excel export/open/recalculation passed;
   the owner confirmed dev-mode offline consultation/export on 2026-11-13.
-  Exact packaged/offline acceptance remains pending; #487 and #486 stay open. External #483-485 evidence remains artifact-specific.
+  The owner confirmed packaged consultation/export and normal Excel opening,
+  waived the packaged disconnected-network test, and authorized PR #499 merge
+  after CI. The waived test is not recorded as passed; no release is implied.
+  External #483-485 evidence remains artifact-specific.
 - Next for #464: resolve #466, record the architecture decision and create
   scoped implementation sub-issues. No shell or storage migration is approved.
 
