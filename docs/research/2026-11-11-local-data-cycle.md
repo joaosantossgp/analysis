@@ -14,7 +14,7 @@ to #466 under #464. Status: historical experiments complete; reviewed evidence p
 The owner authorized sequential research execution with progress updates between
 steps, escalation for material decisions, and preservation of the current data.
 This cycle compared batching, diagnosed the Vale QA alerts and expanded history
-to 2022–2024 with concurrent backend reads. It did not authorize application
+to 2022â€“2024 with concurrent backend reads. It did not authorize application
 changes, financial remapping, migration or multi-window implementation.
 
 All imports used separate directories under `tmp/bench-20261111-two-companies/`.
@@ -82,7 +82,7 @@ delivered; see the review above for its accepted contract and remaining limits.
 
 ## 3. Three-year import with concurrent reads
 
-One bounded run imported consolidated 2022–2024 for the same two companies.
+One bounded run imported consolidated 2022â€“2024 for the same two companies.
 It started from a copy of the original 2024 DB so existing data was available
 to read. 2024 ZIPs were cached; four official ZIPs for 2022/2023 were downloaded.
 The reader used a separate service/engine in another thread in the same worker
@@ -159,5 +159,6 @@ The [publication review](2026-11-13-local-data-evidence-review.md) links their
 artifact-specific evidence. These old measurements are not post-fix benchmarks.
 The owner later made 8 GB RAM / 30 GB free disk an efficiency guide rather than
 a mandatory hardware/VM gate. No new target-machine run is required to publish
-this research. #464 and #466 remain open; no migration or multi-window
-implementation is authorized by #482.
+this research. The owner subsequently closed #464 and #466 as not planned for
+now; see the [incremental delivery direction](../PRODUCT_DIRECTION.md#delivery-direction-2026-11-13).
+No migration or multi-window implementation is authorized by #482.
