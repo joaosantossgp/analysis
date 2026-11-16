@@ -86,32 +86,57 @@ Python packages. Run the normal Python setup separately when the task needs it.
 python -m desktop.app --dev
 ```
 
-This starts or reuses the Vite dev server at `127.0.0.1:5173`, opens pywebview,
-and uses the real Python bridge.
+This starts a new Vite dev server on `127.0.0.1`, using the first free port from
+`5173` through `5199`, then opens pywebview with the real Python bridge. The
+launcher removes inherited `VITE_MOCK_BRIDGE` from the Vite process environment;
+it does not reuse an existing preview server. See
+[`_start_vite_dev_server()`](../desktop/app.py#L999).
 
-By default, dev mode points at the same Documents data root as the packaged app:
+With no path overrides or release-data opt-in, desktop dev uses:
 
 ```text
-%USERPROFILE%\Documents\CVMAnalytics
+<repo>\data\dev-runtime
 ```
 
-Destructive bridge actions are blocked in dev+release-data mode unless
-`CVMANALYTICS_ALLOW_RELEASE_DATA_WRITES=1` is set.
+This data persists across launches and accepts updates. The packaged app defaults
+to `%USERPROFILE%\Documents\CVMAnalytics`. See [Data Paths](#data-paths) for
+overrides and output/log locations.
 
-### Isolated Data Dev
+### Custom Data Dev
 
 ```powershell
-$env:CVM_DATA_DIR = "$PWD\data"
+$env:CVM_DATA_DIR = "$PWD\data\dev-sandbox"
 python -m desktop.app --dev
 ```
 
-Use this for destructive experiments, resets, or fixture work.
+`CVM_DATA_DIR` takes precedence over the default dev root and release-data
+selection. Other path overrides remain effective; confirm the database path in
+Settings -> Diagnostics before resets or fixture work.
+
+### Dev With Installed-App Data
+
+Use a shell without `CVM_DATA_DIR` or conflicting database/path overrides:
+
+```powershell
+.\scripts\release\dev-desktop-release-data.ps1
+```
+
+The script sets `CVMANALYTICS_USE_RELEASE_DATA=1`. The launcher selects
+`CVMANALYTICS_DATA_DIR` when set, otherwise `%USERPROFILE%\Documents\CVMAnalytics`.
+Check Settings -> Diagnostics to confirm the effective paths.
+
+Guarded bridge writes, including updates and resets, are blocked in this mode
+unless `CVMANALYTICS_ALLOW_RELEASE_DATA_WRITES=1` is set and no concurrent lock
+conflict is detected. This guard does not make the database connection read-only;
+startup initialization can still write metadata. See
+[write policy](../desktop/bridge_api/status.py#L1067) and
+[startup initialization](../desktop/app.py#L1204).
 
 ### Desktop Flags
 
 | Flag | Effect |
 |---|---|
-| `--dev` | Starts or reuses the Vite dev server at `http://127.0.0.1:5173` |
+| `--dev` | Starts its own Vite server on the first free loopback port in `5173`–`5199` |
 | `--debug` | Opens DevTools in the active mode |
 | (none) | Serves `apps/desktop-web/dist` or `_internal/desktop-web` |
 | `--repair-dev-environment` | Reinstalls declared dependencies in `.venv` (use with `--dev`) |
@@ -203,7 +228,11 @@ The normal path is Settings -> Updates in the desktop app. For headless work:
 .\.venv\Scripts\python.exe scripts/diagnostics/update_base_smoke.py --dry-run --mode missing --limit 1
 ```
 
-Logs are written to `output/logs/`. See `docs/database-updates.md` and
+Log defaults depend on the entry point: `main.py` uses the core settings default
+`<repo>/src/output/logs`, while the batch scripts above explicitly resolve the
+repository root and use `<repo>/output/logs`. The smoke command's dry run prints
+its evidence. `CVM_OUTPUT_DIR` and `CVM_LOG_DIR` can override these paths. See
+[Data Paths](#data-paths), `docs/database-updates.md` and
 `docs/governance/on-demand-release-evidence.md`.
 
 ## Common Checks
@@ -267,21 +296,40 @@ Desktop package build:
 
 ## Data Paths
 
-Path resolution is centralized in `src/platform/settings.py` and desktop
-packaged overrides in `desktop/app.py`.
+The desktop launcher sets path defaults in
+[`desktop/app.py:141`](../desktop/app.py#L141), and core settings resolve them in
+[`src/platform/settings.py:147`](../src/platform/settings.py#L147).
+
+Without an explicit `CVM_DATA_DIR`, the source desktop launcher sets the dev or
+release-data root plus `{data}/output` and `{data}/logs`. The packaged launcher
+also supplies these output/log defaults. Existing per-path overrides are retained.
+
+With an explicit `CVM_DATA_DIR`, source desktop skips that default injection.
+The desktop's core settings currently default output to `<repo>/src/output` and
+logs to `<repo>/src/output/logs`, unless overridden: the default settings root is
+the `src` directory ([implementation](../src/platform/settings.py#L30)).
+This also applies to `scripts/release/dev-desktop.ps1`, which sets `CVM_DATA_DIR`
+explicitly and clears release-data mode. Selecting a data root alone does not
+redirect every output path.
+
+The launcher also supplies `SQLITE_PATH` independently of `CVM_DB_DIR`. To move
+the main SQLite file, set `SQLITE_PATH` explicitly; it takes precedence over the
+database-directory fallback.
 
 Important environment variables:
 
 | Variable | Purpose |
 |---|---|
 | `CVM_DATA_DIR` | Root data directory for dev/all core paths |
-| `CVMANALYTICS_DATA_DIR` | Packaged app override |
+| `CVMANALYTICS_DATA_DIR` | Release data-root override, also used by explicit release-data dev |
+| `CVMANALYTICS_USE_RELEASE_DATA` | Opt into release-data dev; defaults to unset, and `CVM_DATA_DIR` still takes precedence |
+| `CVMANALYTICS_ALLOW_RELEASE_DATA_WRITES` | Allow guarded bridge writes in release-data dev when there is no lock conflict |
 | `SQLITE_PATH` | Main SQLite file override |
 | `CVM_DB_DIR` | Database directory override |
 | `CVM_OUTPUT_DIR` | Output directory override |
 | `CVM_LOG_DIR` | Log directory override |
 | `CVM_CACHE_DIR` | Cache directory override |
-| `VITE_MOCK_BRIDGE` | Dev-only mock bridge flag |
+| `VITE_MOCK_BRIDGE` | Browser mock-preview flag; inherited value removed from desktop-launched Vite |
 
 See [dev-runtime-and-data-paths.md](dev-runtime-and-data-paths.md) for detailed
 lock/write-mode behavior.

@@ -80,6 +80,11 @@ Run the desktop app with the real Python bridge and Vite dev server:
 python -m desktop.app --dev
 ```
 
+Without path overrides or release-data opt-in, desktop dev uses writable data under
+`data/dev-runtime/` in this checkout. Existing dev data is reused across launches.
+To use the installed app's data explicitly, follow the
+[shared-data dev instructions](docs/development.md#dev-with-installed-app-data).
+
 To re-synchronize declared dependencies, run:
 
 ```powershell
@@ -159,10 +164,11 @@ release source.
 
 ## Known Limits
 
-- Browser-only Vite preview has no `window.pywebview.api` bridge unless mock
-  mode is used.
-- Dev mode uses the same Documents data root by default and blocks destructive
-  writes unless explicitly allowed.
+- Browser-only Vite preview has no Python bridge. `dev:mock` provides fixture
+  responses through the frontend adapter.
+- Desktop dev defaults to isolated project data. Explicit release-data mode
+  blocks guarded bridge writes unless allowed; inherited path overrides still
+  apply. See the [development guide](docs/development.md#data-paths).
 - The packaged app is Vite-only. `--legacy` is unsupported and continues into
   Vite after logging a warning.
 - Packaged-app smoke, clean install, update-over-previous-version, and manual
