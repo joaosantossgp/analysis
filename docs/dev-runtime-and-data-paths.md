@@ -20,7 +20,8 @@ Do not modify code under `apps/api/` for desktop work — that is a separate Fas
 
 ## Data directory — release app
 
-The packaged release app (`CVMAnalytics.exe`) stores all runtime data under:
+Without path overrides, the packaged release app (`CVMAnalytics.exe`) stores
+runtime data under:
 
 ```
 %USERPROFILE%\Documents\CVMAnalytics\
@@ -34,15 +35,15 @@ The packaged release app (`CVMAnalytics.exe`) stores all runtime data under:
 
 This path is resolved by `_user_data_root()` in `desktop/app.py` and injected as
 `CVM_DATA_DIR` (and related `CVM_*` vars) by `_configure_bundled_data_paths()`,
-which only runs when `sys.frozen=True` (packaged build).
+which configures both source and packaged launches with different defaults.
 
 Override with `CVMANALYTICS_DATA_DIR` env var to redirect the release app to a
 different location (useful for staging or operator installs).
 
 ## Data directory — dev mode (default: isolated writable data)
 
-When running `python -m desktop.app --dev`, the app uses an isolated project
-data root:
+Without path overrides or release-data opt-in, `python -m desktop.app --dev`
+uses an isolated project data root:
 
 ```
 <repo>\data\dev-runtime\
@@ -55,10 +56,12 @@ data root:
 └── raw\
 ```
 
-This root starts clean and accepts updates without modifying the release database.
+This root persists across launches and accepts updates separately from the release
+database. Existing path overrides can still redirect individual files.
 
-`CVM_DATA_DIR` takes precedence. Set it explicitly when you need a sandbox or
-isolated fixture data.
+`CVM_DATA_DIR` takes precedence over default and release-data root selection.
+It does not redirect every output path; see the
+[development guide's path rules](development.md#data-paths).
 
 ## Dev commands
 
@@ -92,10 +95,10 @@ cd apps/desktop-web
 npm run dev
 ```
 
-Opens `http://127.0.0.1:5173` in a browser. The pywebview bridge
-(`window.pywebview.api`) is **not available** in this mode — all bridge calls
-will fail silently or show browser fallback UI. Use this only for styling/layout
-work that does not require data.
+Serves the browser preview at `http://127.0.0.1:5173` by default, moving to a free
+port if needed. Open the URL printed by Vite. The Python bridge is unavailable;
+the adapter reports a `BridgeError` for real bridge calls. Use mock mode for
+fixture-backed layout work.
 
 ### Vite-only with mock bridge (browser preview + fixture data)
 
@@ -123,27 +126,30 @@ The Status strip shows **BRIDGE · MOCK** in violet and Settings -> Diagnostics 
 
 ## Environment variables
 
-| Variable | Default (dev) | Purpose |
+| Variable | Default (desktop dev) | Purpose |
 |----------|---------------|---------|
 | `CVM_DATA_DIR` | `<repo>\data\dev-runtime` | Root data directory in dev; packaged release uses `%USERPROFILE%\Documents\CVMAnalytics` |
-| `CVMANALYTICS_USE_RELEASE_DATA` | `1` in desktop dev shared-data mode | Marks dev as using the release Documents path |
+| `CVMANALYTICS_USE_RELEASE_DATA` | Unset | Set to `1` for explicit release-data dev; `CVM_DATA_DIR` still takes precedence |
 | `CVMANALYTICS_ALLOW_RELEASE_DATA_WRITES` | — | Set to `1` to allow destructive bridge calls in dev+release-data mode (normally blocked) |
-| `CVMANALYTICS_CONCURRENT_LOCK_DETECTED` | — | Set automatically at startup when another process holds the same data directory lock; forces read-only mode |
-| `CVMANALYTICS_DATA_DIR` | — | Override data root for the packaged release app |
-| `CVM_DB_DIR` | `{data}/db` | Override DB directory |
-| `SQLITE_PATH` | `{db_dir}/cvm_financials.db` | Override SQLite file path |
-| `CVM_OUTPUT_DIR` | `{data}/output` | Override output directory |
-| `CVM_LOG_DIR` | `{data}/output/logs` (dev) · `{data}/logs` (frozen release) | Override log directory |
+| `CVMANALYTICS_CONCURRENT_LOCK_DETECTED` | — | Set on a data-directory lock conflict; blocks guarded writes in release-data dev |
+| `CVMANALYTICS_DATA_DIR` | — | Override release data root, including explicit release-data dev |
+| `CVM_DB_DIR` | `{data}/db` | Override DB directory; does not override an explicit or launcher-supplied `SQLITE_PATH` |
+| `SQLITE_PATH` | `{launcher root}/db/cvm_financials.db` when injected; otherwise `{db_dir}/cvm_financials.db` | Override SQLite file path |
+| `CVM_OUTPUT_DIR` | `{data}/output` when injected by the launcher; otherwise `<repo>/src/output` | Override output directory |
+| `CVM_LOG_DIR` | `{data}/logs` when injected by the launcher; otherwise `{output}/logs` | Override log directory |
 | `CVM_CACHE_DIR` | `{data}/cache` | Override cache directory |
-| `VITE_MOCK_BRIDGE` | — | Set to `1` (dev only) to activate the in-process mock bridge; set automatically by `npm run dev:mock` via `.env.mock` |
+| `VITE_MOCK_BRIDGE` | — | Browser preview fixtures via `npm run dev:mock`; inherited value removed from desktop-launched Vite |
+
+Source desktop injects output/log defaults only when `CVM_DATA_DIR` is absent.
+The isolated launcher script sets this variable explicitly. See
+[Data Paths](development.md#data-paths) for override precedence and examples.
 
 ## F5 / reload behavior in dev mode
 
-In `--dev` mode, the app loads the Vite dev server (`http://127.0.0.1:5173`).
-If port `5173` is already occupied, desktop dev starts its own non-mock Vite
-server on the next free port and opens that URL in pywebview. It also strips
-`VITE_MOCK_BRIDGE` from the spawned Vite environment so desktop dev cannot
-silently use fixture data.
+In `--dev` mode, the app starts its own Vite server on the first free loopback
+port from `5173` through `5199` and opens that URL in pywebview. It removes
+inherited `VITE_MOCK_BRIDGE` from the spawned process environment. Keep mock
+configuration confined to `.env.mock` and the browser `dev:mock` command.
 
 - **F5 / browser reload** reloads the Vite frontend inside the pywebview window.
 - The Python backend and bridge stay alive — they run in the same process and are
@@ -170,21 +176,26 @@ and app version of the owning process. On graceful exit the file is deleted.
 alive, the lock is taken over automatically and the event is logged.
 
 **Concurrent conflict**: if a lock file exists and the recorded PID is alive
-(another CVMAnalytics process is running against the same directory), the app
-starts in **restricted mode**:
+(another CVMAnalytics process is running against the same directory), the
+launcher records the conflict:
 
 - `CVMANALYTICS_CONCURRENT_LOCK_DETECTED=1` is set in the process environment.
-- All destructive bridge methods (`start_data_update`, `reset_local_database`,
-  `start_onboarding_setup`, etc.) return `{"ok": false, "status": "blocked"}`.
-- The restriction persists for the lifetime of the process.
-- Settings -> Diagnostics shows `Write mode: read-only` and `Lock: locked by another
-  process`.
+- In explicit release-data dev, guarded bridge methods such as
+  `start_data_update` and `reset_local_database` return a blocked response,
+  even when release-data writes were requested.
+- This bridge restriction is not a database-wide read-only guarantee. The current
+  guard exempts packaged and isolated dev modes, and startup initialization still
+  runs. Stop the other process before using shared data for writes.
+- Settings -> Diagnostics reports the lock and write-mode status.
+
+Implementation: [launcher](../desktop/app.py#L1182) and
+[bridge write policy](../desktop/bridge_api/status.py#L1067).
 
 ## Write mode in dev+release-data
 
-When desktop dev points at the release `Documents\CVMAnalytics\` directory, the
-app sets `CVMANALYTICS_USE_RELEASE_DATA=1`. To prevent accidental mutations to
-real user data, all destructive bridge calls are blocked by default:
+Explicitly setting `CVMANALYTICS_USE_RELEASE_DATA=1` (or using the shared-data
+launcher) activates this mode; pointing `CVM_DATA_DIR` at Documents does not set
+the flag automatically. Guarded bridge writes are blocked by default:
 
 ```
 {"ok": false, "status": "blocked", "status_reason_code": "release_data_write_blocked"}
@@ -197,8 +208,9 @@ $env:CVMANALYTICS_ALLOW_RELEASE_DATA_WRITES = "1"
 .\scripts\release\dev-desktop-release-data.ps1
 ```
 
-The release app (packaged, `sys.frozen=True`) is never affected — it always has
-write access regardless of these env vars.
+The allow-writes flag does not bypass a concurrent lock conflict in release-data
+dev. Packaged mode is exempt from this particular bridge guard; filesystem and
+database errors can still prevent writes.
 
 ## Dev diagnostics and safety controls
 
@@ -209,7 +221,8 @@ under "Runtime diagnostics". When `CVMANALYTICS_USE_RELEASE_DATA=1` is active:
 - The **Mode** field shows `vite dev (release data)`.
 - An amber warning banner appears in the Runtime card.
 - The **Write mode** field shows `read-only` (amber) unless writes are explicitly
-  allowed via `CVMANALYTICS_ALLOW_RELEASE_DATA_WRITES=1`.
+  allowed via `CVMANALYTICS_ALLOW_RELEASE_DATA_WRITES=1` and no lock conflict is
+  detected.
 - The **Lock** field shows the lock state (`locked by this process`, `locked by
   another process`, or `stale lock recovered`).
 - The "Runtime diagnostics" card lists a warning that destructive actions affect
@@ -220,11 +233,13 @@ under "Runtime diagnostics". When `CVMANALYTICS_USE_RELEASE_DATA=1` is active:
 ### Run dev against shared Documents data
 
 ```powershell
-.\scripts\release\dev-desktop.ps1
+.\scripts\release\dev-desktop-release-data.ps1
 ```
 
-Same database as the installed app. Check Settings -> Diagnostics to confirm the path.
-Destructive bridge actions are blocked by default in dev shared-data mode.
+With no conflicting overrides, this selects the installed app's data. The script
+does not clear `CVM_DATA_DIR` or per-path overrides; use a shell without them and
+check Settings -> Diagnostics to confirm the paths. Guarded bridge writes are
+blocked by default. See [shared-data dev](development.md#dev-with-installed-app-data).
 
 ### Run dev against isolated data
 
@@ -395,10 +410,8 @@ Press F5 inside the pywebview window while running `--dev`.
 - `CVMANALYTICS_USE_RELEASE_DATA` does not copy or migrate data — it just points
   the dev app at the existing release directory. If the release app has never run,
   that directory may not exist yet.
-- **Concurrent access is read-only-blocked, not prevented.** If both the dev app
-  and the release app run simultaneously against the same directory, the later
-  starter enters restricted mode (all writes blocked). SQLite WAL mode reduces
-  read contention, but running both apps concurrently is still inadvisable for
-  writes — stop one process first.
+- **The lock is not a database-wide write barrier.** A detected conflict blocks
+  guarded writes in release-data dev. It does not provide the same protection
+  for packaged or isolated dev mode. Stop the other process before shared writes.
 - Mock fixture data does not reflect live database state. It is fixed at file
   creation time. Do not use `npm run dev:mock` to validate data-layer behavior.
