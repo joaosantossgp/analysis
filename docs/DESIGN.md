@@ -48,12 +48,34 @@ semantics where the existing UI uses it.
 
 ## Workspace patterns
 
+### Navigation and workspace ownership
+
+Home, Companies, Sectors and Indicators are the primary workspaces; Settings
+remains visible as a utility. Follow the existing
+[primary navigation](../apps/desktop-web/src/components/shell/ModuleNav.tsx#L16)
+and [contextual tabs](../apps/desktop-web/src/components/shell/SubNav.tsx#L16).
+
+Companies owns Directory, Coverage and Assets & Mapping. Keep those three tabs
+on the directory, Coverage and asset-mapping surfaces. Within Coverage, show
+Prioritization, Work Queue and Capacity when a universe is selected. Company
+detail uses its own issuer-level tabs described below. Keep analyst Coverage
+inside Companies distinct from company Coverage Status and Settings' local-data
+coverage. Indicators retains Library and Energy; indicator source health belongs
+in Settings.
+
+News is retired from active workspaces. Existing News URLs and saved Home widgets
+show retirement notices without querying news; preserve saved settings and data,
+and leave widget removal to the user. Do not offer new News navigation or widgets.
+See the [product ownership contract](PRODUCT.md#primary-navigation-and-home) and
+[current routes and compatibility behavior](architecture.md#active-routes).
+
 ### Analytical Workspace Patterns
 
 The Indicator Library detail redesign establishes a reusable pattern for dense
-analytical pages across the app. Treat it as the baseline for Companies,
-Sectors, Coverage, Indicators, News, and future Modeling surfaces when the user
-must select an entity or metric and inspect evidence without losing context.
+analytical pages across the app. Treat it as the baseline for Companies (including
+Coverage and Assets & Mapping), Sectors, Indicators and future Modeling surfaces
+when the user must select an entity or metric and inspect evidence without
+losing context.
 
 **Index plus detail.** A table, list, or grid is usually an index into analysis,
 not the final destination. It should support search, filtering, comparison, and
@@ -118,11 +140,15 @@ available, and what should the analyst inspect next? It should reuse the
 identity header, command bar, market preview, and company indicators instead of
 adding redundant readiness cards.
 
-**Sub-tabs are workflow modes.** Financial Statements is the official evidence
-surface. Excel Mapping is the export/model-mapping surface, not a forecast
-model. Coverage Status is coverage readiness and setup context, not only
-administration. Future Critical Factors, Peers, Valuation, and Thesis tabs
-should appear only when they have source-backed behavior.
+**Company tabs are workflow modes.** The issuer context offers Directory as the
+return path, plus Overview, Financial Statements and Coverage Status. Financial
+Statements is the official evidence surface; Coverage Status provides company
+readiness and setup context. Excel Mapping remains an export/model-mapping
+action with a dedicated window, rather than a company tab or forecast model
+([command](../apps/desktop-web/src/components/CompanyCommandBar.tsx#L131),
+[window route](../apps/desktop-web/src/App.tsx#L85)). Future Critical Factors,
+Peers, Valuation and Thesis tabs should appear only when they have source-backed
+behavior.
 
 **Company-specific indicators stay inside the Company workspace.** Do not move
 issuer metrics into the general Indicator Library. The Library owns macro,
