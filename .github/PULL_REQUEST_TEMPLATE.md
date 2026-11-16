@@ -7,6 +7,12 @@ Closes #
 <!-- Use `Closes #n` for each task or bug this PR finishes (several are fine).
 Use `Refs #n` for a goal or a related issue. -->
 
+## Documentation impact
+
+<!-- Link the updated canonical owner docs, or explain why no documentation
+update is needed. See the ownership matrix in
+docs/PRODUCT_DEVELOPMENT_CHECKLIST.md#12-documentation-gate. -->
+
 ## Test plan
 
 - [ ] `npm --prefix apps/desktop-web run typecheck` (UI TS/TSX edits)

@@ -86,13 +86,16 @@ Release Desktop is manual-only and runs three separate phases from `main`:
    `Release Desktop` attest run from trusted `main`, verifies its separately
    recorded workflow-source SHA and the candidate run's separately recorded
    workflow-source SHA and exact candidate binding, rechecks
-   tag/SHA/latest CI before and after approval, verifies the ZIP
+   tag/SHA/latest CI at preflight and again in the final job, verifies the ZIP
    checksum, uploads publication evidence, and only then publishes. It never
    rebuilds the bundle or creates/moves a tag.
 
-The final publish job is protected by the configured `release-publication`
-GitHub environment. Do not substitute the unprotected `Production` environment
-or weaken its remote reviewer, protected-branch, or bypass settings.
+The final publish job uses `release-publication`, but the intended remote reviewer
+gate was not established in the 2026-11-16 read-back. The canonical
+[remote protection status](build-release.md#remote-publication-protection) records
+the observed limits and the pending owner decision in #512. Do not treat the
+environment name or green CI as proof of approval, replace it with `Production`,
+or weaken the existing workflow checks.
 
 Any failed, cancelled, missing, expired, stale, tag-mismatched, or
 checksum/evidence-mismatched gate stops publication. Do not retry by rebuilding

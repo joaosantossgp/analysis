@@ -62,7 +62,7 @@ matching `v<version>` tag.
    mismatch in workflow name/path, dispatch event, successful conclusion,
    `main` ref, candidate SHA, workflow-source SHA, Actions metadata, or
    declared producer fields.
-   Before and after protected approval it re-resolves the tag and latest
+   At preflight and again in the final job it re-resolves the tag and latest
    exact-SHA CI. The final job downloads the saved candidate and verified
    evidence, verifies identity and checksum, then publishes those bytes without
    rebuilding or retagging.
@@ -73,9 +73,24 @@ a normal release and `X.Y.Z-rc.N` remains a prerelease. A stable release must
 therefore use the approved same-SHA candidate evidence or a separately approved
 new candidate; the workflow never promotes a different SHA by tag movement.
 
-Publication uses the protected `release-publication` environment. Its reviewer,
-protected-`main` branch policy, and administrator-bypass settings are remote
-configuration; do not replace or weaken them in workflow code.
+### Remote publication protection
+
+The final job names the `release-publication` environment. The intended reviewer
+and branch protections are remote configuration, separate from the workflow's
+SHA, artifact and checksum checks.
+
+Read-back on 2026-11-16 found `main.protected=false` and no required status checks.
+The environment had `can_admins_bypass=false`, but only a branch-policy rule and
+no required reviewers. Its protected-branches-only policy does not restrict
+deployment when no branches are protected. See the
+[dated audit](research/2026-11-16-documentation-architecture-governance-audit.md#1-high-documented-remote-release-protections-are-not-established).
+
+The required publication approval remains a policy requirement; GitHub does not
+currently enforce that reviewer gate. [Issue #512](https://github.com/joaosantossgp/analysis/issues/512)
+tracks the owner's decision on available protections and any explicitly approved
+alternative. Re-read the remote configuration before release work. CI success is
+not publication authorization, and this correction approves neither a replacement
+gate nor a release. Preserve the existing workflow checks and environment.
 
 ### Artifact-expiry recovery
 

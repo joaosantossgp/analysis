@@ -1,56 +1,58 @@
 # ADR 0005 - Offline governance ledger during GitHub outage
 
-- Status: accepted
-- Data: 2026-04-12
+- Status: superseded by the [issue-driven workflow in AGENTS.md](../../AGENTS.md#5-workflow)
+- Date: 2026-04-12
 
-## Contexto
+This is a historical record. GitHub Issues and PRs now own work tracking under
+the linked workflow; the temporary ledger below is not an active fallback.
 
-O contrato operacional do repositorio assume backlog e rastreabilidade via GitHub
-Issues, branches, worktrees e PRs. Durante a indisponibilidade temporaria desse
-fluxo, o projeto ainda precisa manter:
+## Context
 
-- organizacao de trabalho
-- rastreabilidade de mudancas
-- clareza de write-set e ownership
-- registro de decisoes duraveis
-- caminho limpo de migracao de volta ao GitHub
+The repository's operating contract relied on GitHub Issues, branches, worktrees
+and PRs for backlog management and traceability. During a temporary interruption
+of that workflow, the project still needed:
 
-Sem uma estrutura minima local, o repo raiz vira uma mistura de contexto de
-chat, mudancas de codigo e decisoes tacitas dificeis de reconstituir.
+- work organization
+- change traceability
+- clear write sets and ownership
+- durable decision records
+- a clear migration path back to GitHub
 
-## Decisao
+Without a minimal local structure, the repository root could become a mixture of
+chat context, code changes and implicit decisions that were hard to reconstruct.
 
-Enquanto Git/GitHub estiverem fora do fluxo operacional, o projeto passa a usar
-um ledger local em `docs/local-ops/` com as seguintes regras:
+## Historical decision
 
-- `INDEX.md` funciona como backlog local temporario e fonte de verdade offline
-- cada task local recebe ID estavel `LT-####`
-- cada task local declara owner, lane, workspace offline, write-set, risco e
-  mapeamento futuro para issue GitHub
-- evidencias operacionais vivem em `docs/local-ops/evidence/<task-id>/`
-- decisoes duraveis continuam em `docs/decisions/`
-- `.ai-activity.log` continua como trilha append-only de mudancas executadas
+While Git/GitHub were outside the operational workflow, the decision was to use
+a local ledger in `docs/local-ops/` with these rules:
 
-## Consequencias
+- `INDEX.md` served as the temporary local backlog and offline source of truth
+- each local task received a stable `LT-####` ID
+- each local task declared an owner, lane, offline workspace, write set, risk
+  and future mapping to a GitHub issue
+- operational evidence lived in `docs/local-ops/evidence/<task-id>/`
+- durable decisions remained in `docs/decisions/`
+- `.ai-activity.log` remained an append-only trail of executed changes
 
-### Positivas
+## Consequences
 
-- reduz retrabalho e perda de contexto durante o periodo offline
-- deixa claro o que e backlog local, o que e decisao duravel e o que e trilha de
-  execucao
-- facilita criar issues futuras sem reabrir investigacoes ja concluida
+### Benefits
 
-### Custos
+- reduced rework and context loss during the offline period
+- distinguished the local backlog, durable decisions and execution trail
+- made future issues easier to create without repeating completed investigations
 
-- exige disciplina manual de atualizacao do ledger e das evidencias
-- nao substitui branch/worktree/PR; apenas reduz o caos enquanto eles nao
-  estiverem disponiveis
+### Costs
 
-## Retorno ao fluxo formal
+- required manual discipline to keep the ledger and evidence current
+- did not replace branches, worktrees or PRs; it only reduced disorder while
+  they were unavailable
 
-Quando GitHub voltar:
+## Historical return plan
 
-1. cada `LT-####` relevante deve virar issue formal
-2. a issue deve apontar para a evidencia acumulada localmente
-3. o ledger local deve registrar numero da issue, branch e PR correspondentes
-4. a task local so deve ser arquivada depois que a migracao estiver clara
+The return to GitHub was planned as follows:
+
+1. Convert each relevant `LT-####` into a formal issue.
+2. Link the issue to the evidence accumulated locally.
+3. Record the corresponding issue number, branch and PR in the local ledger.
+4. Archive the local task only once the migration was clear.

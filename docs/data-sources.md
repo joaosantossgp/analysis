@@ -140,13 +140,24 @@ statements.
 
 ## News Data
 
-The News module collects metadata and, when allowed, readable content from
-registered sources. Google News company feeds are aggregator sources, not
-official company or regulatory sources.
+News is retired from the active interface. Existing `/news/*` URLs show a
+[retirement notice](../apps/desktop-web/src/App.tsx#L154); the former
+`NewsPage.tsx` is not mounted. Saved settings and downloaded data remain, as do
+[`src/news/`](../src/news/) and the [News bridge](../desktop/bridge.py#L26).
+See [retired News UI](architecture.md#retired-news-ui) for compatibility behavior.
 
-Verified UI language in `apps/desktop-web/src/routes/NewsPage.tsx` already
-states that Google News RSS is treated as aggregator/lower-priority and that
-the app does not bypass paywalls.
+The retained backend collects metadata and, when allowed, readable content from
+registered sources. Google News feeds remain aggregator sources, not official
+company or regulatory sources. Source reliability and content-storage policy
+remain explicit in the [source registry](../src/news/sources.py#L75) and
+[collection service](../src/news/service.py#L474). Paywalls must not be bypassed;
+the [article fetcher](../src/news/fetcher.py#L258) preserves paywalled/unavailable
+states instead of presenting protected content as available.
+
+Coverage still reads [local News workload](../src/companies/coverage.py#L706)
+without network calls. Its news-gap evidence remains visible, but the
+[News handoffs are unsupported](../apps/desktop-web/src/components/coverage/workQueueHandoffs.ts#L130).
+Retaining that data does not restore a News workspace.
 
 ## Energy And Utility Sources
 
