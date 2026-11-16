@@ -22,6 +22,7 @@ data/legacy_archives/
 data/metadata/b3_companies_cache.json
 
 # Desktop runtime state (written at runtime, not source)
+/data/dev-runtime/
 data/onboarding_state.json
 data/refresh_jobs.json
 data/runtime.lock
