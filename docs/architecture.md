@@ -56,8 +56,9 @@ remain in `read_service_query.py`, `read_service_coverage.py` and
 `mapping_commands.py`. The facade is not a read-only capability boundary:
 repositories and query-cache initialization may still write local metadata.
 
-`apps/desktop-web/src/routes/CoveragePage.tsx` owns workspace selection,
-navigation and composition. Components under `src/components/coverage/` own
+`apps/desktop-web/src/routes/CoveragePage.tsx` owns universe selection,
+navigation and composition inside Companies at `/empresas/coverage` and its
+subsections. Components under `apps/desktop-web/src/components/coverage/` own
 universe lifecycle, summary/recommendation, prioritization, work queue and
 capacity. Existing query keys and API facades remain shared; component extraction
 does not introduce new stores or change persistence.
@@ -84,30 +85,78 @@ does not introduce a public cancellation API for persistent jobs.
 
 ## Active Routes
 
-The current route table is in `apps/desktop-web/src/App.tsx`. Active top-level
-areas include:
+Verified on 2026-11-16 against [App.tsx:108](../apps/desktop-web/src/App.tsx#L108),
+[ModuleNav.tsx:16](../apps/desktop-web/src/components/shell/ModuleNav.tsx#L16) and
+[SubNav.tsx:16](../apps/desktop-web/src/components/shell/SubNav.tsx#L16).
+The HashRouter paths below appear after `#` in the desktop URL. Primary
+navigation contains Home, Companies, Sectors, Indicators and Settings.
 
-- `/` home summary;
-- `/empresas` company directory;
-- `/empresas/:cdCvm` company overview;
-- `/empresas/:cdCvm/demonstrativos` financial statements;
-- `/empresas/:cdCvm/model-mapping` Excel model mapping;
-- `/empresas/:cdCvm/coverage` coverage status;
-- `/setores` and sector/subsector detail routes;
-- `/coverage`, `/coverage/prioritization`, `/coverage/work-queue`;
-- `/news` and `/news/latest`;
-- `/indicators`;
-- `/settings` with health, storage, sources/imports, updates, coverage, and
-  diagnostics sections;
-- `/dev/data-ops` for development data operations.
+| Workspace / surface | Current routes | Purpose |
+|---|---|---|
+| Home | `/` | Analyst Home and optional saved widgets |
+| Companies directory | `/empresas` | Company selection |
+| Company analysis | `/empresas/:cdCvm`, `/empresas/:cdCvm/demonstrativos`, `/empresas/:cdCvm/coverage` | Overview, Financial Statements and company Coverage Status |
+| Company Excel mapping | `/empresas/:cdCvm/model-mapping` | Model mapping, also available in the dedicated Excel Mapping window |
+| Companies Coverage | `/empresas/coverage`, `/empresas/coverage/prioritization`, `/empresas/coverage/work-queue`, `/empresas/coverage/capacity` | Universes, prioritization, work queue and capacity |
+| Companies Assets & Mapping | `/empresas/assets` | Company/asset mapping tools |
+| Sectors | `/setores`, `/setores/:slug`, `/setores/:sectorSlug/:subSectorSlug` | Sector directory and detail |
+| Indicators | `/indicators` | Indicator Library and Energy sections |
+| Settings data | `/settings`, `/settings/health`, `/settings/updates`, `/settings/coverage` | Overview and local-data health, updates and coverage |
+| Settings sources | `/settings/sources`, `/settings/imports`, `/settings/indicator-sources` | Sources, imports and indicator source health |
+| Settings system | `/settings/storage`, `/settings/app`, `/settings/diagnostics` | Storage, app settings and diagnostics |
 
-Compatibility redirects:
+The Companies directory, Coverage and Assets & Mapping surfaces offer those
+three tabs. Company detail instead offers Directory, Overview, Financial
+Statements and Coverage Status. Coverage's Prioritization, Work Queue and
+Capacity tabs appear when a universe is selected; direct links to those sections
+return to Coverage overview if the universe query succeeds without an active
+universe ([selection guard](../apps/desktop-web/src/routes/CoveragePage.tsx#L77)).
+`/settings/coverage` remains a data-health surface; it is separate from the
+analyst Coverage workflow under Companies. Excel Mapping remains a registered
+route and dedicated window, rather than a company sub-navigation tab
+([window routing](../apps/desktop-web/src/App.tsx#L85)).
 
-- `/atualizar-base` -> `/settings/updates`;
-- `/data-coverage` -> `/settings/coverage`;
-- `/status` -> `/settings/diagnostics`;
-- `/country-kpis` -> `/indicators`;
-- `/empresas/:cdCvm/indicadores` -> `/empresas/:cdCvm`.
+Assets & Mapping and Indicator Sources are exported from
+[CountryKpisPage.tsx:109](../apps/desktop-web/src/routes/CountryKpisPage.tsx#L109),
+but their owning workspaces are Companies and Settings, respectively.
+
+Developer surfaces are outside primary navigation: `/dev/data-ops` requires a
+DEV build and `localStorage.cvm_dev_tools = "1"`
+([page gate](../apps/desktop-web/src/routes/DevDataOpsPage.tsx#L14));
+`/dev/design-system` is registered only in DEV builds
+([route registration](../apps/desktop-web/src/App.tsx#L159)).
+
+### Compatibility routes
+
+| Previous URL | Current behavior |
+|---|---|
+| `/coverage/*` | Redirects to the matching `/empresas/coverage/*` path, including the base `/coverage` route; preserves suffix, query and fragment |
+| `/indicators?section=entities` (also `section=discover`) | Redirects to `/empresas/assets` |
+| `/indicators?section=health` | Redirects to `/settings/indicator-sources` |
+| `/atualizar-base`, `/company-universe` | Redirect to `/settings/updates` |
+| `/data-coverage` | Redirects to `/settings/coverage` |
+| `/status` | Redirects to `/settings/diagnostics` |
+| `/country-kpis` | Redirects to `/indicators` |
+| `/empresas/:cdCvm/indicadores` | Redirects to that company's overview at `/empresas/:cdCvm` |
+
+The [Coverage redirect](../apps/desktop-web/src/App.tsx#L189) preserves the full
+location. [Indicator section redirects](../apps/desktop-web/src/routes/CountryKpisPage.tsx#L121)
+remove `section` and preserve other query parameters, but not the fragment.
+The remaining fixed-path redirects do not forward query parameters or fragments.
+
+### Retired News UI
+
+`/news/*`, including `/news` and `/news/latest`, renders
+[RetiredNewsPage](../apps/desktop-web/src/routes/RetiredNewsPage.tsx#L4): a retirement
+notice with links to Home and Companies, without loading news. It is not an active
+News workspace or a redirect to a news feed.
+
+Saved Home `top-news` widgets render
+[RetiredNewsCard](../apps/desktop-web/src/components/home/widgets/RetiredNewsCard.tsx#L5),
+which preserves the saved configuration, offers removal and does not query news.
+The widget is no longer offered for new layouts. News storage and backend code,
+including [NewsBridgeMixin](../desktop/bridge.py#L26) and `src/news/`, remain;
+retiring the UI did not delete downloaded data or saved settings.
 
 ## Local-First Model
 
