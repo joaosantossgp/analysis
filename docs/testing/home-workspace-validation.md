@@ -1,5 +1,12 @@
 # Analyst Workspace (Home) Validation Checklist
 
+> **Historical checklist (superseded 2026-11-16).** The earlier Home layout below
+> predates News retirement and the two-widget recommended layout. It is not a
+> current release gate. Use the [current Home contract](../PRODUCT.md#primary-navigation-and-home)
+> and [release validation requirements](../build-release.md), with the
+> [company-focused UI evidence](../governance/2026-11-12-company-focus-ui.md) for the
+> delivered transition. The original scenarios are retained as historical context.
+
 This checklist defines the manual validation scenarios required before release to verify layout integrity, persistence safety, and data export correctness.
 
 ---

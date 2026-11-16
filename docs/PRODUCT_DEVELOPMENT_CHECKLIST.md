@@ -299,15 +299,34 @@ Acceptance bar:
 
 ## 12. Documentation Gate
 
-Before marking a major step complete:
+For each change, update the applicable owner documents in the same PR or explain
+why no documentation update is needed in the PR's **Documentation impact**
+section. Keep each detailed fact in one owner document; other docs should link
+to it and carry only the summary needed by their readers.
 
-- Update `docs/PRODUCT_DIRECTION.md` only if the product direction changed.
-- Update `docs/product-workflows.md` only when implementation is verified.
-- Update source-specific docs when adding or changing data behavior.
-- Update `docs/excel-exports.md` when workbook behavior changes.
-- Keep future direction separate from implemented capability.
-- Cite route, bridge/API method, database table, source module, export path, or
-  test when claiming implementation.
+| Change | Owner and update boundary |
+|---|---|
+| Documentation entry points or repository layout | [README](../README.md#canonical-documentation) owns the canonical index; [repository map](reference/repository-map.md) owns folder/tooling orientation. Update links or summaries when their targets change. |
+| Runtime boundaries, routes or redirects | [Architecture](architecture.md) owns the detailed runtime and route inventory; keep route summaries elsewhere linked to it. |
+| Implemented analyst behavior | [Product workflows](product-workflows.md) owns the capability inventory. Update only with implementation evidence; separate planned behavior. |
+| Reusable product or UI patterns | [Product](PRODUCT.md) owns product/UI principles; [Design](DESIGN.md) owns visual and interaction patterns. Update when those contracts change, not for every screen edit. |
+| Product direction or workspace scope | [Product direction](PRODUCT_DIRECTION.md) changes only when direction or ownership changes. |
+| Development setup, modes or data paths | [Development](development.md) owns setup and the command map; [dev runtime and data paths](dev-runtime-and-data-paths.md) owns detailed path, mode and write-guard behavior. |
+| Financial rules or source behavior | [Context](CONTEXT.md) owns financial domain rules; [data sources](data-sources.md) owns source classes, provenance and storage rules, with source-specific contracts linked from there. |
+| Workbook behavior | [Excel exports](excel-exports.md) owns workbook structure, semantics and validation. |
+| Packaging, updater or publication | [Build and release](build-release.md) owns artifact/build/updater/publication contracts; [release process](release-process.md) summarizes the publication sequence. |
+| Project state, operating rules or durable decisions | [Status](STATUS.md) owns current state; [AGENTS.md](../AGENTS.md) owns operating rules; [decision records](decisions/README.md) preserve decision context and explicit lifecycle status. |
+
+During the existing change review:
+
+1. Compare the changed behavior or contract with its owner docs. Cite an active
+   route, bridge/API method, table, source module, export path or test for
+   implementation claims; mark unverified claims **Needs validation**.
+2. Update the owner first, then affected links and summaries. Mark superseded
+   records explicitly and point to their replacement; preserve historical
+   rationale without presenting it as current instructions.
+3. Check that the PR names the updated docs or explains why none changed, and
+   that implemented capability remains separate from future direction.
 
 Acceptance bar:
 

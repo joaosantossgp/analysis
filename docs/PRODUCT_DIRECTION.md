@@ -173,11 +173,12 @@ Role: help the analyst choose what deserves attention.
 
 Current verified direction:
 
-- The active app has Coverage routes for universes, prioritization, work queue,
-  and capacity.
-- Current docs describe implemented coverage universes, prioritization, work
-  queue, capacity, owner responsibility, manager decision history, and coverage
-  Excel export.
+- Companies owns Coverage at `/empresas/coverage`, with universes,
+  prioritization, work queue and capacity. This is separate from issuer-level
+  Coverage Status and Settings' local-data coverage.
+- The [implemented Coverage workflow](product-workflows.md#coverage-best-practices-v1)
+  records owner responsibility, manager decisions, export and retained local
+  News workload evidence. News task handoffs are unsupported after UI retirement.
 
 Target direction:
 
@@ -244,7 +245,10 @@ Role: reusable macro, sector, system, market, and benchmark drivers.
 
 Current verified direction:
 
-- The active route is `/indicators`.
+- The active route is `/indicators`, with Indicator Library and Energy sections.
+  Companies owns Assets & Mapping at `/empresas/assets`; indicator source health
+  belongs to Settings at `/settings/indicator-sources`. See the
+  [module ownership and compatibility contract](reference/indicators-module.md#product-shape).
 - `docs/reference/indicators-module.md` defines the default Indicator Library
   as indicators that can open directly without selecting a company, distributor,
   plant, asset, parcel, ticker, fuel product, state, or economic group.
@@ -290,10 +294,11 @@ Target direction:
   sub-tabs.
 - Treat sub-tabs as workflow modes for the same issuer, not separate dashboard
   pages. Overview should answer readiness, available evidence, and next action;
-  Financial Statements should preserve official account-level evidence; Excel
-  Mapping should stay focused on export/model mapping until forecasting exists;
-  Coverage should explain coverage readiness and remaining work, not only
-  administrative membership.
+  Financial Statements should preserve official account-level evidence;
+  Coverage Status should explain company readiness and remaining work.
+  Excel Mapping remains an action with a dedicated window, focused on
+  export/model mapping until forecasting exists; see the
+  [company workspace contract](DESIGN.md#company-workspace-pattern).
 - Prefer contextual drill-downs from company tables and panels before creating
   new routes. Company indicator rows, market series, statement accounts,
   mapping lines, coverage checklist items, and source statuses should open
@@ -424,8 +429,9 @@ Current verified direction:
 - Current docs define source classes for official reported, official external
   dataset, external/unofficial, user import, calculated, and estimated/planned.
 - Current docs verify CVM financial statement ingestion, Yahoo/yfinance-backed
-  market data paths, News data, energy sources, runtime data roots, and source
-  auditability requirements.
+  market data paths, retained News backend/data, energy sources, runtime data
+  roots, and source auditability requirements. News is retired from the active
+  interface; its [source policies](data-sources.md#news-data) still apply.
 
 Target direction:
 
@@ -482,33 +488,16 @@ Never silently fallback from official to external data.
 
 ## Current Known Capabilities
 
-These capabilities are verified from current docs, active routes, or bridge/API
-surfaces inspected for this product-direction pass:
+Use [Implemented Workflows](product-workflows.md#implemented-workflows) for
+current analyst capabilities and the [active route inventory](architecture.md#active-routes)
+for workspace ownership, redirects and retired surfaces. Source classes,
+retained backend/data contracts and offline behavior live in
+[Data Sources](data-sources.md); the [Indicators module reference](reference/indicators-module.md)
+owns its specialist capabilities. These references distinguish active UI from
+preserved backend code and future direction.
 
-- Packaged Windows desktop runtime using Vite, React, pywebview, Python, and
-  local SQLite.
-- Home route.
-- Company catalog and company overview.
-- Company financial statements for DRE/BPA/BPP/DFC matrices.
-- Company KPI/check surfaces and market-history related APIs.
-- Company workbook export through the desktop bridge.
-- Company-specific refresh controls.
-- Excel model mapping surface.
-- Coverage universes, prioritization, work queue, capacity, manager decision
-  history, and coverage export as documented in `docs/product-workflows.md`.
-- Sector and subsector routes.
-- Indicators route with an Indicator Library and deeper Energy/Sectors,
-  Companies & Assets, Data Health & Sources, and Exports & Verification areas.
-- Energy-related source areas documented for ANEEL distribution, CCEE
-  generation, SIN/ONS/CCEE/EPE/ANEEL indicators, and ANP fuel distribution.
-- News route backed by local News DB behavior.
-- Settings surfaces for health, storage, sources/imports, updates, coverage,
-  app, and diagnostics.
-- Local data root, source/caches/logs/output folders, and offline-read behavior.
-
-This section should stay conservative. If a future contributor wants to mark a
-workflow as implemented, they must cite the route, bridge/API method, database
-table, source module, export path, or test that proves it.
+Before marking a workflow implemented, cite the active route, bridge/API method,
+database table, source module, export path or test that proves the specific claim.
 
 ## Future Direction
 

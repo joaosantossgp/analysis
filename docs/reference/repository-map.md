@@ -1,8 +1,9 @@
 # Repository Map
 
 The single map of the CVMAnalytics repository: active app paths, routes,
-folders, commands, and what is historical. Folder/workflow inventory was last
-verified on 2026-10-29; route/navigation entries were verified on 2026-11-16.
+folders, commands, and what is historical. Route/navigation entries and the
+folder classifications below were checked on 2026-11-16; this is not validation
+that every tool or externally dependent workflow currently executes successfully.
 For the canonical documentation index, see the "Canonical
 Documentation" table in [`README.md`](../../README.md). For the current project
 state, see [`docs/STATUS.md`](../STATUS.md).
@@ -78,13 +79,21 @@ without querying news. The former `NewsPage.tsx` is not mounted by `App.tsx`;
 | `apps/landing/` | Static public surface | GitHub Pages download surface |
 | `tests/` | Active tests | Python core/desktop tests |
 | `scripts/` | Active tooling | See Scripts below |
+| `tools/` | Investigation tooling | Energy database profiling and phase-2.5 experiments; inspect scope and output paths before manual use |
 | `docs/` | Documentation | Canonical docs, reference docs, ADRs, release notes, archive |
-| `docs/research/` | Research proposals | Decision inputs and provenance; not accepted architecture or implementation plans |
+| `docs/research/` | Research and validation records | Proposals, diagnostics and evidence for delivered work; each record's date, baseline, status and scope determine its authority |
+| `docs/governance/` | Delivery/validation evidence | Dated owner decisions and scoped checks; active operating rules remain in `AGENTS.md` |
+| `docs/testing/` | Manual validation references | Check individual status; the earlier Home checklist is historical |
 | `data/` | Data assets/dev data | Import CSVs and schema files are active; local DB/raw/cache outputs are runtime/dev artifacts |
 | `build/`, `dist/`, `output/`, `tmp/`, `scratch/` | Generated/local artifacts | Not source of truth |
 | `.github/` | CI/CD | Workflows, issue and PR templates |
 | `.claude/` | AI tooling | Agent/session tooling, not product runtime |
 | `.agents/skills/` | Vendored agent skills | Upstream skills and pinned integrity manifest; see `docs/agents/skills.md` |
+| `.superpowers/` | Tracked investigation history | Point-in-time identity, interview-scope and shutdown notes; not active plans or runtime code |
+
+`docs/superpowers/` is a separate, ignored location for working plans/specs.
+GitHub issues remain the spec of record. Do not infer current implementation or
+approval from a folder name; use the document's status and owning code.
 
 ## Root Files
 
@@ -126,7 +135,7 @@ There is no root `package.json`. The active Node package is
 | `ingest.yml` | Manual CVM ingestion |
 | `on_demand_ingest.yml` | Manual per-company ingestion |
 | `seed_catalog.yml` | Manual catalog seed |
-| `pr-issue-guardrails.yml` | Requires an issue reference in every PR; goals use `Refs`, not `Closes` |
+| `pr-issue-guardrails.yml` | Requires reference syntax; validates closing references and rejects closing goals. `Refs` existence is not currently checked |
 | `update-agent-skills.yml` | Offline skill integrity and regression checks on PRs or manual dispatch; updates are manual |
 
 ## Active Commands
@@ -147,6 +156,8 @@ Do not copy commands from historical plans.
 | `docs/releases/` | Partial local release notes; GitHub Releases are the published source |
 | `docs/reference/v2-api-contract.md` | HTTP API adapter contract for `apps/api`; not the desktop bridge |
 | `docs/perf/`, `docs/diagnostics/` | Dated benchmark/audit evidence; context, not current state |
+| `docs/research/`, `docs/governance/` | Dated proposals or validation evidence; inspect status, baseline and limits rather than treating every record as a proposal or current contract |
+| `.superpowers/` | Earlier investigations; preserve as evidence and revalidate claims before acting |
 | `docs/vendor/` | Vendor/source reference material |
 | `apps/web` | Old Next.js app, removed from the active tree. Do not recreate it. |
 
