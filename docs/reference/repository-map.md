@@ -1,8 +1,9 @@
 # Repository Map
 
 The single map of the CVMAnalytics repository: active app paths, routes,
-folders, commands, and what is historical. Last verified from local files on
-2026-10-29. For the canonical documentation index, see the "Canonical
+folders, commands, and what is historical. Folder/workflow inventory was last
+verified on 2026-10-29; route/navigation entries were verified on 2026-11-16.
+For the canonical documentation index, see the "Canonical
 Documentation" table in [`README.md`](../../README.md). For the current project
 state, see [`docs/STATUS.md`](../STATUS.md).
 
@@ -31,19 +32,46 @@ Runtime integration: `apps/desktop-web/src/lib/bridge/adapter.ts` ->
 - Financial queries/exports: `src/financials/read_service.py` is the compatibility
   facade; explicit writes are in `refresh_commands.py` and `mapping_commands.py`
   in the same directory. See [service boundaries](../architecture.md#service-and-coverage-boundaries).
-- Coverage UI: `apps/desktop-web/src/routes/CoveragePage.tsx` composes the focused
-  workflow modules under `apps/desktop-web/src/components/coverage/`.
+- Companies Coverage: `apps/desktop-web/src/routes/CoveragePage.tsx` composes the
+  workflow modules under `apps/desktop-web/src/components/coverage/`, mounted at
+  `/empresas/coverage` and its prioritization, work-queue and capacity routes.
+- Assets & Mapping and Indicator Sources: exports in
+  `apps/desktop-web/src/routes/CountryKpisPage.tsx` serve Companies and Settings;
+  their file location does not make them Indicator Library screens.
 
 ## Active Routes
 
-See "Active Routes" in [`docs/architecture.md`](../architecture.md). The
-route source is `apps/desktop-web/src/App.tsx`.
+The [architecture route table](../architecture.md#active-routes) owns the full
+inventory, compatibility redirects and developer gates. Route definitions are in
+[App.tsx:108](../../apps/desktop-web/src/App.tsx#L108); primary navigation is in
+[ModuleNav.tsx:16](../../apps/desktop-web/src/components/shell/ModuleNav.tsx#L16),
+with contextual tabs in
+[SubNav.tsx:16](../../apps/desktop-web/src/components/shell/SubNav.tsx#L16).
+
+| Primary entry | Route | Ownership |
+|---|---|---|
+| Home | `/` | Analyst Home and optional widgets |
+| Companies | `/empresas` | Directory, company analysis, Coverage (`/empresas/coverage`) and Assets & Mapping (`/empresas/assets`) |
+| Sectors | `/setores` | Sector/subsector directory and analysis |
+| Indicators | `/indicators` | Indicator Library and Energy |
+| Settings | `/settings` | Data, sources, Indicator Sources (`/settings/indicator-sources`), storage and app diagnostics |
+
+Coverage is inside Companies; old `/coverage/*` URLs redirect there. Settings'
+`/settings/coverage` still reports local-data coverage and is a separate surface.
+Company Excel mapping retains its route and dedicated window.
+
+News is retired from primary navigation. Old `/news/*` URLs show
+[RetiredNewsPage](../../apps/desktop-web/src/routes/RetiredNewsPage.tsx#L4), and
+saved Home news widgets show
+[RetiredNewsCard](../../apps/desktop-web/src/components/home/widgets/RetiredNewsCard.tsx#L5)
+without querying news. The former `NewsPage.tsx` is not mounted by `App.tsx`;
+`src/news/`, the News bridge and downloaded data/settings remain preserved.
 
 ## Top-Level Folders
 
 | Folder | Classification | Notes |
 |---|---|---|
-| `src/` | Active Python core | Settings, CVM ingestion, SQLite schema, read services, companies, financials, Excel, refresh jobs, energy/news modules |
+| `src/` | Active Python core | Settings, CVM ingestion, SQLite schema, read services, companies, financials, Excel, refresh jobs, energy modules and retained News backend |
 | `desktop/` | Active desktop runtime | pywebview entrypoint, bridge/mixins, services, updater, PyInstaller spec, build script |
 | `apps/desktop-web/` | Active packaged UI | Vite + React + TypeScript |
 | `apps/api/` | Active HTTP adapter | FastAPI adapter and API tests; not the packaged desktop UI |
