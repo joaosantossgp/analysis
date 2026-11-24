@@ -570,6 +570,40 @@ class CompanyBridgeMixin:
         except Exception as exc:
             return self._sanitize_for_json({"ok": False, "error": str(exc)})
 
+    def get_gics_structure(self, params=None) -> dict:
+        """Current GICS sub-industries with their full path, for the classification editor."""
+        try:
+            from src.companies.classification import gics_structure_rows  # noqa: PLC0415
+            return self._sanitize_for_json({"ok": True, "items": gics_structure_rows()})
+        except Exception as exc:
+            return self._sanitize_for_json({"ok": False, "error": str(exc), "items": []})
+
+    def set_company_classification(self, params=None) -> dict:
+        """Save the analyst's local GICS sub-industry; it wins over curation and survives updates."""
+        if not self._is_write_allowed():
+            return self._sanitize_for_json(self._write_blocked_response("set_company_classification"))
+        p = params or {}
+        try:
+            from src.companies.classification import set_user_classification  # noqa: PLC0415
+            classification = set_user_classification(
+                self._svc().engine, int(p.get("cd_cvm", 0)), str(p.get("sub_industry_code") or "")
+            )
+            return self._sanitize_for_json({"ok": True, "classification": classification})
+        except Exception as exc:
+            return self._sanitize_for_json({"ok": False, "error": str(exc)})
+
+    def clear_company_classification(self, params=None) -> dict:
+        """Revert a company to its curated GICS classification (or pending)."""
+        if not self._is_write_allowed():
+            return self._sanitize_for_json(self._write_blocked_response("clear_company_classification"))
+        p = params or {}
+        try:
+            from src.companies.classification import clear_user_classification  # noqa: PLC0415
+            classification = clear_user_classification(self._svc().engine, int(p.get("cd_cvm", 0)))
+            return self._sanitize_for_json({"ok": True, "classification": classification})
+        except Exception as exc:
+            return self._sanitize_for_json({"ok": False, "error": str(exc)})
+
     def get_output_dir(self, params=None) -> dict:
         """Return the absolute path of the persistent output folder so the
         Vite UI can show users where exports will land."""

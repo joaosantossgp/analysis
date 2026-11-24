@@ -110,3 +110,37 @@ def test_sync_is_idempotent_and_new_companies_pick_up_curation(service):
         conn.exec_driver_sql("INSERT INTO companies (cd_cvm, company_name, updated_at) VALUES (10, 'Oil Co', '')")
         materialize_company(conn, 10)
     assert _company_row(svc, 10)["classification_origin"] == "curated"
+
+
+def test_local_edit_wins_everywhere_and_survives_dataset_reload(service, tmp_path):
+    svc, curated = service
+    bridge = CVMBridge()
+    bridge._service = svc
+    result = bridge.set_company_classification({"cd_cvm": 10, "sub_industry_code": "10102020"})
+    assert result["ok"] and result["classification"]["origin"] == "user"
+    assert result["classification"]["user_edit"]["curated_sub_industry_code"] == "10102010"
+    assert result["classification"]["user_edit"]["curated_changed_since_edit"] is False
+
+    # A new shipped dataset changes the curated value: the edit stays and the change is flagged.
+    newer = _write_curated(tmp_path / "newer.csv", [{"cd_cvm": "10", "sub_industry_code": "10102030"}])
+    sync_curated_classification(svc.engine, curated_path=newer)
+    info = svc.get_company_info(10)
+    assert (info.gics_sub_industry, info.classification["origin"]) == ("Oil & Gas Exploration & Production", "user")
+    assert info.classification["user_edit"]["curated_changed_since_edit"] is True
+    items = {i["cd_cvm"]: i for i in bridge.get_companies({"page_size": 10})["items"]}
+    assert items[10]["classification_origin"] == "user"
+
+    reverted = bridge.clear_company_classification({"cd_cvm": 10})
+    assert reverted["classification"]["origin"] == "curated"
+    assert reverted["classification"]["gics_sub_industry_code"] == "10102030"
+
+
+def test_local_edit_classifies_a_pending_company_and_rejects_unknown_codes(service):
+    svc, _ = service
+    bridge = CVMBridge()
+    bridge._service = svc
+    assert bridge.set_company_classification({"cd_cvm": 30, "sub_industry_code": "55101010"})["ok"]
+    assert _company_row(svc, 30)["gics_sector"] == "Utilities"
+    failed = bridge.set_company_classification({"cd_cvm": 30, "sub_industry_code": "12345678"})
+    assert failed["ok"] is False and "Unknown GICS" in failed["error"]
+    assert len(bridge.get_gics_structure()["items"]) == 163

@@ -1637,6 +1637,13 @@ export interface BridgeApi {
   ): Promise<SetCompanyExcelMappingDefaultResult>;
   save_excel_mapping_override(params: Record<string, unknown>): Promise<{ ok: boolean; error?: string }>;
   delete_excel_mapping_override(params: Record<string, unknown>): Promise<{ ok: boolean; error?: string }>;
+  get_gics_structure(params?: Record<string, unknown>): Promise<{ ok: boolean; error?: string; items: GicsSubIndustry[] }>;
+  set_company_classification(
+    params: Record<string, unknown>,
+  ): Promise<{ ok: boolean; error?: string; classification?: CompanyClassification }>;
+  clear_company_classification(
+    params: Record<string, unknown>,
+  ): Promise<{ ok: boolean; error?: string; classification?: CompanyClassification }>;
   get_sub_sector_detail(params: Record<string, unknown>): Promise<SectorDetailResponse>;
   check_update(params?: Record<string, unknown>): Promise<{ available: boolean; version?: string; zip_url?: string; error?: string }>;
   apply_update(params?: Record<string, unknown>): Promise<{ started: boolean; error?: string }>;
@@ -1726,7 +1733,7 @@ declare global {
 export {};
 
 /** Where a company's canonical GICS classification comes from. */
-export type ClassificationOrigin = "curated" | "unclassified" | "pending";
+export type ClassificationOrigin = "user" | "curated" | "unclassified" | "pending";
 
 /** Canonical GICS classification curated by CVMAnalytics (never an official MSCI/S&P assignment). */
 export interface CompanyClassification {
@@ -1742,4 +1749,25 @@ export interface CompanyClassification {
   evidence_url?: string | null;
   review_status?: string | null;
   gics_version?: string | null;
+  gics_sub_industry_code?: string | null;
+  /** Present when the analyst edited the classification locally. */
+  user_edit?: {
+    edited_at: string;
+    curated_sub_industry_code: string | null;
+    curated_sub_industry: string | null;
+    curated_changed_since_edit: boolean;
+  } | null;
+}
+
+/** One current GICS sub-industry with its full path. */
+export interface GicsSubIndustry {
+  sector_code: string;
+  sector: string;
+  industry_group_code: string;
+  industry_group: string;
+  industry_code: string;
+  industry: string;
+  sub_industry_code: string;
+  sub_industry: string;
+  gics_version: string;
 }
