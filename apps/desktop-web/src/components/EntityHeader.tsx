@@ -226,6 +226,11 @@ export function EntityHeader({
             {info.ticker_b3 ? (
               <IdentifierBadge label="B3">{info.ticker_b3}</IdentifierBadge>
             ) : null}
+            {info.is_active === false ? (
+              <IdentifierBadge label="CVM" title="CVM registration is cancelled; local data and classification are kept.">
+                Registration cancelled
+              </IdentifierBadge>
+            ) : null}
           </div>
           <div className="flex flex-wrap gap-2">
             {getCompanyHeaderClassificationBadges(info).map((badge) => (

@@ -144,3 +144,26 @@ def test_local_edit_classifies_a_pending_company_and_rejects_unknown_codes(servi
     failed = bridge.set_company_classification({"cd_cvm": 30, "sub_industry_code": "12345678"})
     assert failed["ok"] is False and "Unknown GICS" in failed["error"]
     assert len(bridge.get_gics_structure()["items"]) == 163
+
+
+def test_directory_filters_list_pending_and_not_classifiable_companies(service):
+    svc, _ = service
+    svc._company_filters_cache = None
+    options = {o.sector_slug: o for o in svc.get_company_filters().sectors}
+    assert (options["pending-classification"].company_count, options["not-classifiable"].company_count) == (1, 1)
+    assert options["energy"].company_count == 1
+    pending = svc.list_companies(sector_slug="pending-classification", page_size=10)
+    assert [i.cd_cvm for i in pending.items] == [30]
+    unclassifiable = svc.list_companies(sector_slug="not-classifiable", page_size=10)
+    assert [i.cd_cvm for i in unclassifiable.items] == [20]
+    assert svc.list_companies(sector_slug="pending-classification", search="nope", page_size=10).items == ()
+
+
+def test_cancelled_company_keeps_its_classification(service):
+    svc, curated = service
+    with sqlite3.connect(svc.settings.paths.db_path) as conn:
+        conn.execute("UPDATE companies SET is_active=0 WHERE cd_cvm=10")
+    sync_curated_classification(svc.engine, curated_path=curated)
+    info = svc.get_company_info(10)
+    assert info.is_active is False
+    assert (info.gics_sector, info.classification["origin"]) == ("Energy", "curated")

@@ -558,7 +558,8 @@ export function PrioritizationSection({ universeId, onOpenBulkModal, onOpenMetho
     queryKey: ["company-filters"],
     queryFn: fetchCompanyFilters,
   });
-  const sectors = filtersQuery.data?.mode === "desktop" ? filtersQuery.data.sectors : [];
+  // Prioritization filters by GICS sector name, so classification-state options do not apply here.
+  const sectors = filtersQuery.data?.mode === "desktop" ? filtersQuery.data.sectors.filter((s) => s.gics_sector) : [];
 
   // Derive unique owners from scores for filter dropdown
   const scoresData = scoresQuery.data || [];
