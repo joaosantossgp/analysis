@@ -1,0 +1,23 @@
+{
+  "companies": 655,
+  "model": "claude-opus-5-5",
+  "effort": "high",
+  "passes": 2,
+  "batches": {
+    "pass_a": "msgbatch_01W6FMbMA7NSsAYc9JkoGDsg",
+    "pass_b": "msgbatch_01FprbgzcnDBdxG799k93uA5",
+    "rerun_a": "msgbatch_01RLVojeGS59eJSPqVhHcnja",
+    "rerun_b": "msgbatch_0144aJo1hsichv1rhFj3hPUy"
+  },
+  "agreement_across_passes": "622/655",
+  "msci_brazil_top10_sector_benchmark": "8/8 (sector level only)",
+  "cost_usd": {
+    "pass_a": 29.2851,
+    "pass_b": 29.0994,
+    "rerun_a": 5.0066,
+    "rerun_b": 5.1163,
+    "pilot": 0.7749,
+    "total": 69.28
+  },
+  "note": "rerun_* reprocessed 37 companies that hit the 3-search limit, with up to 8 searches; their rows replace the full-pass rows."
+}
