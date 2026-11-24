@@ -173,5 +173,6 @@ Do not copy commands from historical plans.
 | `src/platform/settings.py` | User data path resolution |
 | `data/import/canonical_accounts.csv`, `data/import/gics_mapping.csv` | Bundled/imported data contracts |
 | `data/reference/gics_structure.csv` | Current GICS codes and names (no definitions) used by curation |
+| `data/curation/gics_curated.csv` | Curated GICS sub-industry per active CVM company (to be loaded by the app, #518); review evidence and cost reports live beside it |
 | `src/financials/excel_exporter.py` | Financial workbook auditability |
 | `apps/api/`, `railway.toml` | HTTP API/deploy surface; still active |
