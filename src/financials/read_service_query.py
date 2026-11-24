@@ -537,7 +537,7 @@ class ReadServiceQueryMixin:
         classification = self._company_classification(int(payload.get("cd_cvm") or default_cd_cvm))
         if classification is not None:
             # The curated layer is canonical; never fall back to legacy labels once it is loaded.
-            gics = None if classification["origin"] != "curated" else ResolvedGicsClassification(
+            gics = None if classification["origin"] not in ("curated", "user") else ResolvedGicsClassification(
                 gics_sector=classification["gics_sector"],
                 gics_sector_slug=classification["gics_sector_slug"],
                 gics_industry_group=classification["gics_industry_group"],

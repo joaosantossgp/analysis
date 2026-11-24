@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 
+import { ClassificationEditor } from "@/components/ClassificationEditor";
 import { IdentifierBadge } from "@/components/data/IdentifierBadge";
 import { fetchCompanyInfo, fetchCompanyConnections, type CompanyInfoResult, type CompanyConnectionsResult } from "@/lib/api/companyDetail";
 import { whenBridgeReady } from "@/lib/bridge/adapter";
@@ -63,7 +64,12 @@ export function getCompanyHeaderClassificationBadges(
     {
       label: "Sub-industry",
       value: cleanClassification(info.gics_sub_industry) || MISSING_CLASSIFICATION,
-      title: classification?.origin === "curated" ? curatedClassificationTitle(classification) : undefined,
+      title:
+        classification?.origin === "curated"
+          ? curatedClassificationTitle(classification)
+          : classification?.origin === "user"
+            ? userClassificationTitle(classification)
+            : undefined,
     },
   ];
 }
@@ -75,6 +81,17 @@ function curatedClassificationTitle(classification: CompanyClassification): stri
     classification.rationale,
     classification.evidence_url ? `Source: ${classification.evidence_url}` : null,
   ].filter(Boolean).join("\n");
+}
+
+function userClassificationTitle(classification: CompanyClassification): string {
+  const edit = classification.user_edit;
+  const curated = edit?.curated_sub_industry
+    ? `${edit.curated_sub_industry} (${edit.curated_sub_industry_code})`
+    : "none";
+  return [
+    `GICS ${classification.gics_sub_industry_code ?? ""} · edited by you, stored locally`,
+    `Curated classification: ${curated}`,
+  ].join("\n");
 }
 
 export function formatCompanyPeriodCoverage(
@@ -216,6 +233,7 @@ export function EntityHeader({
                 {badge.value}
               </IdentifierBadge>
             ))}
+            <ClassificationEditor cdCvm={cdCvm} classification={info.classification} />
             {connections && (
               <>
                 {connections.mapped_distributors > 0 && (

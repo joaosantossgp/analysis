@@ -1,6 +1,6 @@
 """Canonical company classification: GICS sub-industry curated by CVMAnalytics.
 
-One classification per company, resolved as: curated (shipped dataset) -> pending.
+One classification per company, resolved as: local user edit -> curated (shipped dataset) -> pending.
 The curated dataset is loaded on startup into ``company_classification_curated`` and
 materialized into the ``companies.gics_*`` columns that every read path already uses,
 so all screens show the same value. Classifications are curated by CVMAnalytics and are
@@ -27,6 +27,7 @@ DATA_ROOT = Path(__file__).resolve().parent.parent.parent / "data"
 STRUCTURE_PATH = DATA_ROOT / "reference" / "gics_structure.csv"
 CURATED_PATH = DATA_ROOT / "curation" / "gics_curated.csv"
 
+ORIGIN_USER = "user"
 ORIGIN_CURATED = "curated"
 ORIGIN_UNCLASSIFIED = "unclassified"
 ORIGIN_PENDING = "pending"
@@ -123,13 +124,37 @@ _EMPTY_COLUMNS = dict.fromkeys(
 )
 
 
-def _columns_for(row: dict[str, Any] | None, structure: dict[str, GicsPath]) -> dict[str, Any]:
+def _columns_for(
+    row: dict[str, Any] | None,
+    structure: dict[str, GicsPath],
+    user_code: str | None = None,
+) -> dict[str, Any]:
+    if user_code and user_code in structure:
+        return {**structure[user_code].company_columns(), "classification_origin": ORIGIN_USER}
     if row is None:
         return {**_EMPTY_COLUMNS, "classification_origin": ORIGIN_PENDING}
     code = row.get("sub_industry_code")
     if not code:
         return {**_EMPTY_COLUMNS, "classification_origin": ORIGIN_UNCLASSIFIED}
     return {**structure[code].company_columns(), "classification_origin": ORIGIN_CURATED}
+
+
+def _ensure_user_table(conn) -> None:
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS company_classification_user (
+            cd_cvm               INTEGER PRIMARY KEY,
+            sub_industry_code    TEXT NOT NULL,
+            curated_code_at_edit TEXT,
+            edited_at            TEXT NOT NULL
+        )
+    """))
+
+
+def _user_codes(conn) -> dict[int, dict[str, Any]]:
+    if not inspect(conn).has_table("company_classification_user"):
+        return {}
+    rows = conn.execute(text("SELECT * FROM company_classification_user")).mappings().all()
+    return {int(r["cd_cvm"]): dict(r) for r in rows}
 
 
 _UPDATE_COMPANY = text("""
@@ -159,6 +184,7 @@ def sync_curated_classification(
     by_cd = {row["cd_cvm"]: row for row in rows}
     with engine.begin() as conn:
         _ensure_curated_table(conn)
+        _ensure_user_table(conn)
         existing = {c["name"].lower() for c in inspect(conn).get_columns("companies")}
         for column in ("gics_sub_industry_code", "classification_origin"):
             if column not in existing:
@@ -171,9 +197,13 @@ def sync_curated_classification(
                      f"VALUES ({', '.join(':' + c for c in columns)})"),
                 [{**row, "dataset_sha256": digest, "loaded_at": loaded_at} for row in rows],
             )
+        users = _user_codes(conn)
         company_ids = [int(r[0]) for r in conn.execute(text("SELECT cd_cvm FROM companies")).fetchall()]
         if company_ids:
-            conn.execute(_UPDATE_COMPANY, [{"cd_cvm": cd, **_columns_for(by_cd.get(cd), structure)} for cd in company_ids])
+            conn.execute(_UPDATE_COMPANY, [
+                {"cd_cvm": cd, **_columns_for(by_cd.get(cd), structure, users.get(cd, {}).get("sub_industry_code"))}
+                for cd in company_ids
+            ])
     return {
         "curated_rows": len(rows),
         "companies": len(company_ids),
@@ -198,13 +228,23 @@ def _curated_row(conn, cd_cvm: int) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
+def _user_row(conn, cd_cvm: int) -> dict[str, Any] | None:
+    if not inspect(conn).has_table("company_classification_user"):
+        return None
+    row = conn.execute(
+        text("SELECT * FROM company_classification_user WHERE cd_cvm = :cd"), {"cd": int(cd_cvm)}
+    ).mappings().first()
+    return dict(row) if row else None
+
+
 def canonical_company_columns(conn, cd_cvm: int) -> dict[str, Any]:
     """Materialized classification columns for one company (used when a company row is written)."""
     row = _curated_row(conn, cd_cvm)
-    structure = load_gics_structure() if row and row.get("sub_industry_code") else {}
+    user = _user_row(conn, cd_cvm)
+    structure = load_gics_structure()
     if row and row.get("sub_industry_code") not in (None, "") and row["sub_industry_code"] not in structure:
         row = None  # shipped structure changed under an old curated table; treat as pending until next sync
-    return _columns_for(row, structure)
+    return _columns_for(row, structure, user["sub_industry_code"] if user else None)
 
 
 def curated_company_columns(engine: Engine) -> dict[int, dict[str, Any]] | None:
@@ -216,12 +256,16 @@ def curated_company_columns(engine: Engine) -> dict[int, dict[str, Any]] | None:
         if not has_curated_layer(conn):
             return None
         rows = conn.execute(text("SELECT cd_cvm, sub_industry_code FROM company_classification_curated")).fetchall()
+        users = _user_codes(conn)
     structure = load_gics_structure()
-    return {
+    result = {
         int(cd): _columns_for({"sub_industry_code": code}, structure)
         for cd, code in rows
         if not code or code in structure
     }
+    for cd, user in users.items():
+        result[cd] = _columns_for(None, structure, user["sub_industry_code"])
+    return result
 
 
 def materialize_company(conn, cd_cvm: int) -> None:
@@ -233,12 +277,23 @@ def materialize_company(conn, cd_cvm: int) -> None:
 def company_classification(conn, cd_cvm: int) -> dict[str, Any]:
     """Canonical classification with origin and curation evidence, for company reads."""
     row = _curated_row(conn, cd_cvm)
+    user = _user_row(conn, cd_cvm)
     columns = canonical_company_columns(conn, cd_cvm)
     result: dict[str, Any] = {**columns, "origin": columns["classification_origin"], "official": False}
     del result["classification_origin"]
+    structure = load_gics_structure()
+    curated_code = (row or {}).get("sub_industry_code") or None
+    if user:
+        curated_path = structure.get(curated_code or "")
+        result["user_edit"] = {
+            "edited_at": user["edited_at"],
+            "curated_sub_industry_code": curated_code,
+            "curated_sub_industry": curated_path.sub_industry if curated_path else None,
+            "curated_changed_since_edit": curated_code != (user.get("curated_code_at_edit") or None),
+        }
     if row is None:
         return result
-    path = load_gics_structure().get(row.get("sub_industry_code") or "")
+    path = structure.get(result.get("gics_sub_industry_code") or row.get("sub_industry_code") or "")
     result.update({
         "sector_code": path.sector_code if path else None,
         "industry_group_code": path.industry_group_code if path else None,
@@ -251,3 +306,38 @@ def company_classification(conn, cd_cvm: int) -> dict[str, Any]:
         "gics_version": row.get("gics_version"),
     })
     return result
+
+
+def set_user_classification(engine: Engine, cd_cvm: int, sub_industry_code: str) -> dict[str, Any]:
+    """Save the analyst's local classification; it wins over curation and survives app updates."""
+    code = str(sub_industry_code or "").strip()
+    if code not in load_gics_structure():
+        raise ValueError(f"Unknown GICS sub-industry code {code!r}")
+    with engine.begin() as conn:
+        _ensure_curated_table(conn)
+        _ensure_user_table(conn)
+        curated = _curated_row(conn, cd_cvm)
+        conn.execute(text("DELETE FROM company_classification_user WHERE cd_cvm = :cd"), {"cd": int(cd_cvm)})
+        conn.execute(
+            text("INSERT INTO company_classification_user (cd_cvm, sub_industry_code, curated_code_at_edit, edited_at) "
+                 "VALUES (:cd, :code, :curated, :at)"),
+            {"cd": int(cd_cvm), "code": code, "curated": (curated or {}).get("sub_industry_code") or None,
+             "at": datetime.now(timezone.utc).replace(microsecond=0).isoformat()},
+        )
+        materialize_company(conn, cd_cvm)
+        return company_classification(conn, cd_cvm)
+
+
+def clear_user_classification(engine: Engine, cd_cvm: int) -> dict[str, Any]:
+    """Revert to the curated classification (or pending)."""
+    with engine.begin() as conn:
+        _ensure_curated_table(conn)
+        _ensure_user_table(conn)
+        conn.execute(text("DELETE FROM company_classification_user WHERE cd_cvm = :cd"), {"cd": int(cd_cvm)})
+        materialize_company(conn, cd_cvm)
+        return company_classification(conn, cd_cvm)
+
+
+def gics_structure_rows() -> list[dict[str, str]]:
+    """All current GICS sub-industries with their full path, for pickers."""
+    return [vars(path) for path in load_gics_structure().values()]

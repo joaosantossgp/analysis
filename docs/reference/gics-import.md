@@ -35,7 +35,7 @@ never copied into GICS fields.
 - On every startup (packaged and dev), the app validates the shipped curated
   dataset, loads it into `company_classification_curated`, and materializes it
   into `companies.gics_*`, `gics_sub_industry_code` and `classification_origin`.
-- `classification_origin` is `curated`, `unclassified` (curated as not
+- `classification_origin` is `user` (local edit), `curated`, `unclassified` (curated as not
   classifiable, with a reason) or `pending` (not curated yet). Pending and
   unclassified companies have empty GICS fields; screens show "Pending" or
   "Not classifiable", never a fallback label.
@@ -44,7 +44,13 @@ never copied into GICS fields.
   goes to `recovery.log`.
 - Companies written later (refresh, catalog seed) pick up their curated
   classification immediately.
-- Local user edits that win over the curated value are tracked in #521.
+- The analyst can edit a company's sub-industry from the company header
+  ("Edit classification"). The edit is stored in `company_classification_user`,
+  wins over the curated value on every screen (`classification_origin=user`),
+  and is never overwritten by app updates. If a later curated value differs from
+  the one at edit time, the header shows a notice. "Revert to curated" deletes
+  the local edit. Bridge methods: `get_gics_structure`,
+  `set_company_classification`, `clear_company_classification`.
 
 ## Legacy importer
 
