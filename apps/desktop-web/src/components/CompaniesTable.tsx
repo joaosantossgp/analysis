@@ -11,6 +11,8 @@ import {
   fetchCoveragePriorityScores,
 } from "@/lib/api/coverage";
 import { whenBridgeReady } from "@/lib/bridge/adapter";
+import type { ClassificationOrigin } from "@/lib/bridge/types";
+import { CLASSIFICATION_STATUS_LABEL } from "@/lib/classification";
 import { StateBanner } from "@/components/feedback/StateBanner";
 
 const PAGE_SIZE = 25;
@@ -48,8 +50,9 @@ export function getCompanyDirectoryRoute(cdCvm: number): string {
 export function getCompanyDirectorySectorLabel(company: {
   gics_sector?: string | null;
   sector_name?: string | null;
+  classification_origin?: ClassificationOrigin | null;
 }): string {
-  return company.gics_sector?.trim() || "—";
+  return company.gics_sector?.trim() || CLASSIFICATION_STATUS_LABEL[company.classification_origin ?? ""] || "—";
 }
 
 export function getCompanyDirectoryIndustryGroupLabel(company: {

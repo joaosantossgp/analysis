@@ -14,7 +14,8 @@ from PyInstaller.utils.hooks import collect_submodules
 ROOT = Path(SPECPATH).parent  # repo root (spec está em desktop/, ROOT é um nível acima)
 VITE_DIST_DIR = ROOT / "apps" / "desktop-web" / "dist"
 UPDATE_HELPER = ROOT / "desktop" / "update_helper.ps1"
-GICS_MAPPING_CSV = ROOT / "data" / "import" / "gics_mapping.csv"
+GICS_STRUCTURE_CSV = ROOT / "data" / "reference" / "gics_structure.csv"
+GICS_CURATED_CSV = ROOT / "data" / "curation" / "gics_curated.csv"
 CANONICAL_ACCOUNTS_CSV = ROOT / "data" / "import" / "canonical_accounts.csv"
 TICKER_MAP_CSV = ROOT / "data" / "import" / "ticker_map.csv"
 
@@ -28,13 +29,13 @@ if VITE_DIST_DIR.exists():
 # Bundled PowerShell helper used by the auto-updater to swap files after exit.
 datas.append((str(UPDATE_HELPER), "."))
 
-# v0.14.1 hotfix: ship the canonical GICS mapping CSV so the startup
-# backfill in desktop/app.py::_ensure_gics_backfilled can populate
-# companies.gics_* on user DBs that were seeded before GICS columns were
-# filled. Without this asset, the Vite sectors / sector-filter screens
-# render only "Sem classificacao GICS".
-if GICS_MAPPING_CSV.exists():
-    datas.append((str(GICS_MAPPING_CSV), "data/import"))
+# Ship the GICS structure and the curated classification dataset loaded at
+# startup by desktop/app.py::_ensure_classification_synced (#518). Both are
+# required: without them every company stays "pending".
+for required_csv, target in ((GICS_STRUCTURE_CSV, "data/reference"), (GICS_CURATED_CSV, "data/curation")):
+    if not required_csv.exists():
+        raise FileNotFoundError(f"Required classification asset missing: {required_csv}")
+    datas.append((str(required_csv), target))
 
 # Ship the canonical CVM account dictionary used by scraper/Excel paths that
 # can run from the packaged desktop bridge.

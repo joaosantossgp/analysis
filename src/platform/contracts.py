@@ -230,6 +230,8 @@ class CompanySearchResult:
     gics_industry_group: str | None = None
     gics_industry: str | None = None
     gics_sub_industry: str | None = None
+    # Canonical classification origin: "curated" | "unclassified" | "pending"; None before the curated layer loads.
+    classification_origin: str | None = None
     # Derived coverage status: "no_history" | "partial" | "complete" | "failed"
     data_status: str = "no_history"
     # Market-cap enrichment — populated when a local snapshot is available.
@@ -281,6 +283,7 @@ class CompanyInfoDTO:
     gics_industry_group: str | None = None
     gics_industry: str | None = None
     gics_sub_industry: str | None = None
+    classification: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

@@ -192,6 +192,7 @@ class CVMQueryLayer:
             ("gics_industry_group", "persisted_gics_industry_group"),
             ("gics_industry", "persisted_gics_industry"),
             ("gics_sub_industry", "persisted_gics_sub_industry"),
+            ("classification_origin", "persisted_classification_origin"),
         )
         for col, alias in mapping:
             if col in cols:
@@ -209,6 +210,7 @@ class CVMQueryLayer:
             ("gics_industry_group", "persisted_gics_industry_group"),
             ("gics_industry", "persisted_gics_industry"),
             ("gics_sub_industry", "persisted_gics_sub_industry"),
+            ("classification_origin", "persisted_classification_origin"),
         )
         for col, alias in mapping:
             if col in cols:

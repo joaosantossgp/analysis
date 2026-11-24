@@ -18,6 +18,7 @@ from src.companies.catalog import (
     CompanyCatalogUnavailableError,
     CompanyCatalogService,
 )
+from src.companies.classification import curated_company_columns
 from src.companies.gics_manual_mapping import (
     GICS_11_SECTORS,
     gics_sector_sort_key,
@@ -1898,6 +1899,7 @@ class ReadServiceCoverageMixin:
                     gics_industry_group=gics.gics_industry_group if gics else None,
                     gics_industry=gics.gics_industry if gics else None,
                     gics_sub_industry=gics.gics_sub_industry if gics else None,
+                    classification_origin=self._clean_optional_text(row.get("persisted_classification_origin")),
                     data_status=data_status,
                 )
             )
@@ -1956,6 +1958,8 @@ class ReadServiceCoverageMixin:
                     int(item.cd_cvm): item for item in self._build_company_results(local_rows)
                 }
 
+        # Catalog-only companies have no companies row yet; read their curated classification directly.
+        curated_columns = curated_company_columns(self.engine)
         # Also include DB-only companies not present in the catalog
         catalog_codes = {int(entry.cd_cvm) for entry in catalog_entries}
         items: list[CompanySearchResult] = []
@@ -1969,6 +1973,7 @@ class ReadServiceCoverageMixin:
                 items.append(local_result)
                 continue
             legacy_sector = canonical_sector_name(None, entry.setor_cvm)
+            canonical = curated_columns.get(cd, {}) if curated_columns is not None else {}
             items.append(
                 CompanySearchResult(
                     cd_cvm=cd,
@@ -1982,11 +1987,14 @@ class ReadServiceCoverageMixin:
                     total_rows=0,
                     has_financial_data=False,
                     coverage_rank=None,
-                    gics_sector=None,
-                    gics_sector_slug=None,
-                    gics_industry_group=None,
-                    gics_industry=None,
-                    gics_sub_industry=None,
+                    gics_sector=canonical.get("gics_sector"),
+                    gics_sector_slug=canonical.get("gics_sector_slug"),
+                    gics_industry_group=canonical.get("gics_industry_group"),
+                    gics_industry=canonical.get("gics_industry"),
+                    gics_sub_industry=canonical.get("gics_sub_industry"),
+                    classification_origin=(
+                        canonical.get("classification_origin", "pending") if curated_columns is not None else None
+                    ),
                 )
             )
 

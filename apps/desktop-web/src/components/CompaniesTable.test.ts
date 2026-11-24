@@ -46,6 +46,13 @@ describe("Companies directory table contract", () => {
     ).toBe("Energy");
   });
 
+  it("makes pending and unclassifiable companies explicit in the sector column", () => {
+    expect(getCompanyDirectorySectorLabel({ gics_sector: null, classification_origin: "pending" })).toBe("Pending");
+    expect(getCompanyDirectorySectorLabel({ gics_sector: null, classification_origin: "unclassified" })).toBe(
+      "Not classifiable",
+    );
+  });
+
   it("does not fall back to CVM sector labels when GICS classification is missing", () => {
     expect(
       getCompanyDirectorySectorLabel({

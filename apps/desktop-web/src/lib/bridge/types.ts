@@ -234,6 +234,8 @@ export type CompanyDirectoryItem = {
   gics_industry_group?: string | null;
   gics_industry?: string | null;
   gics_sub_industry?: string | null;
+  /** Canonical classification origin; null before the curated layer loads. */
+  classification_origin?: ClassificationOrigin | null;
   /** Market-cap enrichment from local snapshot. Null when company is not in the snapshot. */
   market_cap_brl?: number | null;
   market_cap_rank?: number | null;
@@ -308,6 +310,8 @@ export type CompanyInfo = {
   gics_industry_group?: string | null;
   gics_industry?: string | null;
   gics_sub_industry?: string | null;
+  /** Canonical classification with curation evidence; null before the curated layer loads. */
+  classification?: CompanyClassification | null;
   has_local_financial_reports: boolean;
   has_readable_current_data: boolean;
   readable_years_count: number;
@@ -1720,3 +1724,22 @@ declare global {
 }
 
 export {};
+
+/** Where a company's canonical GICS classification comes from. */
+export type ClassificationOrigin = "curated" | "unclassified" | "pending";
+
+/** Canonical GICS classification curated by CVMAnalytics (never an official MSCI/S&P assignment). */
+export interface CompanyClassification {
+  origin: ClassificationOrigin;
+  official: false;
+  sub_industry_code?: string | null;
+  sector_code?: string | null;
+  industry_group_code?: string | null;
+  industry_code?: string | null;
+  unclassified_reason?: string | null;
+  confidence?: "high" | "medium" | "low" | null;
+  rationale?: string | null;
+  evidence_url?: string | null;
+  review_status?: string | null;
+  gics_version?: string | null;
+}

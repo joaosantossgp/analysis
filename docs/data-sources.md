@@ -11,6 +11,7 @@ CVMAnalytics must distinguish source reliability and data type explicitly.
 | External/unofficial | Useful market or context data, not equivalent to CVM/B3 | Yahoo Finance/yfinance market cap and price history, Google News RSS |
 | User import | Operator-provided files | Manual source/import workflows and market-cap snapshots |
 | Calculated | Derived by CVMAnalytics | KPIs, model formulas, checks, coverage scores, transformed quarterly values |
+| Curated | Assigned by CVMAnalytics with recorded basis, confidence and evidence; not an official classification | GICS sub-industry per company (`data/curation/gics_curated.csv`, see `reference/gics-import.md`) |
 | Estimated/planned | Not implemented or not fully validated | Product workflow ideas, coverage-plan prompts, future methodology templates |
 
 External and unofficial sources must never be described as equivalent to CVM or
