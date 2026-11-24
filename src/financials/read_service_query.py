@@ -524,10 +524,7 @@ class ReadServiceQueryMixin:
         *,
         default_cd_cvm: int,
     ) -> CompanyInfoDTO:
-        sector_name = canonical_sector_name(
-            payload.get("setor_analitico"),
-            payload.get("setor_cvm"),
-        )
+        sector_name = canonical_sector_name(payload.get("gics_sector"), None)
         company_name = str(payload.get("company_name") or "").strip() or f"CVM_{default_cd_cvm}"
         company_type = str(payload.get("company_type") or "comercial").strip() or "comercial"
         gics = resolve_gics_classification(
@@ -1415,7 +1412,7 @@ class ReadServiceQueryMixin:
         elif normalized_group_by == "cvm_sector":
             companies_by_cvm: dict[str, list[CompanySearchResult]] = defaultdict(list)
             for item in company_items:
-                cvm_name = item.sector_name or item.setor_cvm or "Nao classificado"
+                cvm_name = item.setor_cvm or "Nao classificado"
                 companies_by_cvm[cvm_name].append(item)
             for cvm_name, cvm_items in sorted(companies_by_cvm.items(), key=lambda x: x[0]):
                 items.append(

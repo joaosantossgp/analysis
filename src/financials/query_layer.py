@@ -219,6 +219,12 @@ class CVMQueryLayer:
             return ""
         return ",\n                " + ",\n                ".join(parts)
 
+    def _canonical_sector_sql(self) -> str:
+        """Canonical sector = materialized GICS sector; legacy schemas without it are unclassified."""
+        if "gics_sector" in self._company_column_names():
+            return _CANONICAL_SECTOR_SQL
+        return "'Nao classificado'"
+
     def _sector_bucket_expression_sql(self) -> str:
         """Prefer persisted GICS sector label when present for histograms/filters."""
         return gics_sector_bucket_sql(self._company_column_names(), table_alias="c")
@@ -314,7 +320,7 @@ class CVMQueryLayer:
                     COALESCE(c.ticker_b3, '') AS ticker_b3,
                     c.setor_analitico,
                     c.setor_cvm,
-                    {_CANONICAL_SECTOR_SQL} AS sector_name,
+                    {self._canonical_sector_sql()} AS sector_name,
                     CASE
                         WHEN EXISTS (
                             SELECT 1
@@ -395,7 +401,7 @@ class CVMQueryLayer:
                 COALESCE(c.ticker_b3, '') AS ticker_b3,
                 c.setor_analitico,
                 c.setor_cvm,
-                {_CANONICAL_SECTOR_SQL} AS sector_name,
+                {self._canonical_sector_sql()} AS sector_name,
                 COALESCE(dm.has_financial_data, 0) AS has_financial_data,
                 c.coverage_rank{gics_sql},
                 COALESCE(dm.financial_row_count, 0) AS total_rows
@@ -448,7 +454,7 @@ class CVMQueryLayer:
                 COALESCE(c.ticker_b3, '') AS ticker_b3,
                 c.setor_analitico,
                 c.setor_cvm,
-                {_CANONICAL_SECTOR_SQL} AS sector_name,
+                {self._canonical_sector_sql()} AS sector_name,
                 0 AS total_rows,
                 CASE
                     WHEN EXISTS (
@@ -488,7 +494,7 @@ class CVMQueryLayer:
                 COALESCE(c.ticker_b3, '') AS ticker_b3,
                 c.setor_analitico,
                 c.setor_cvm,
-                {_CANONICAL_SECTOR_SQL} AS sector_name,
+                {self._canonical_sector_sql()} AS sector_name,
                 0 AS total_rows,
                 COALESCE(dm.has_financial_data, 0) AS has_financial_data,
                 c.coverage_rank{gics_sql}
@@ -509,7 +515,7 @@ class CVMQueryLayer:
             SELECT DISTINCT fr."REPORT_YEAR"
             FROM financial_reports fr
             JOIN companies c ON c.cd_cvm = fr."CD_CVM"
-            WHERE {_CANONICAL_SECTOR_SQL} = :sector_name
+            WHERE {self._canonical_sector_sql()} = :sector_name
               AND fr."PERIOD_LABEL" = CAST(fr."REPORT_YEAR" AS TEXT)
             ORDER BY fr."REPORT_YEAR"
             """
@@ -522,7 +528,7 @@ class CVMQueryLayer:
         """Returns sector_name -> sorted list of years with annual data, for all sectors at once."""
         sql = text(
             f"""
-            SELECT DISTINCT {_CANONICAL_SECTOR_SQL} AS sector_name, fr."REPORT_YEAR"
+            SELECT DISTINCT {self._canonical_sector_sql()} AS sector_name, fr."REPORT_YEAR"
             FROM financial_reports fr
             JOIN companies c ON c.cd_cvm = fr."CD_CVM"
             WHERE fr."PERIOD_LABEL" = CAST(fr."REPORT_YEAR" AS TEXT)
@@ -554,7 +560,7 @@ class CVMQueryLayer:
                 f"""
                 SELECT c.cd_cvm, c.company_name,
                        COALESCE(c.ticker_b3, '') AS ticker_b3,
-                       {_CANONICAL_SECTOR_SQL} AS sector_name,
+                       {self._canonical_sector_sql()} AS sector_name,
                        c.gics_sector,
                        c.gics_sector_slug
                 FROM companies c
@@ -577,7 +583,7 @@ class CVMQueryLayer:
             f"""
             SELECT c.cd_cvm, c.company_name,
                    COALESCE(c.ticker_b3, '') AS ticker_b3,
-                   {_CANONICAL_SECTOR_SQL} AS sector_name,
+                   {self._canonical_sector_sql()} AS sector_name,
                    c.gics_sector,
                    c.gics_sector_slug
             FROM companies c
@@ -609,7 +615,7 @@ class CVMQueryLayer:
         """
         params = {"sector_name": str(sector_name)}
         count_sql = text(
-            f"SELECT COUNT(*) AS total_items FROM companies c WHERE {_CANONICAL_SECTOR_SQL} = :sector_name"
+            f"SELECT COUNT(*) AS total_items FROM companies c WHERE {self._canonical_sector_sql()} = :sector_name"
         )
         total_items = int(
             _pd().read_sql(count_sql, self.engine, params=params).iloc[0]["total_items"]
@@ -618,7 +624,7 @@ class CVMQueryLayer:
             f"""
             SELECT c.cd_cvm, c.company_name, COALESCE(c.ticker_b3, '') AS ticker_b3
             FROM companies c
-            WHERE {_CANONICAL_SECTOR_SQL} = :sector_name
+            WHERE {self._canonical_sector_sql()} = :sector_name
             ORDER BY c.company_name ASC
             """
         )
@@ -659,7 +665,7 @@ class CVMQueryLayer:
         params: dict[str, object] = {}
 
         if sector_name:
-            where_parts.append(f"{_CANONICAL_SECTOR_SQL} = :sector_name")
+            where_parts.append(f"{self._canonical_sector_sql()} = :sector_name")
             params["sector_name"] = str(sector_name)
 
         normalized_years = sorted({int(year) for year in years or []})
@@ -682,7 +688,7 @@ class CVMQueryLayer:
                 c.cd_cvm,
                 c.company_name,
                 c.ticker_b3,
-                {_CANONICAL_SECTOR_SQL} AS sector_name,
+                {self._canonical_sector_sql()} AS sector_name,
                 fr."REPORT_YEAR",
                 fr."CD_CONTA",
                 SUM(fr."VL_CONTA") AS account_value
@@ -693,7 +699,7 @@ class CVMQueryLayer:
                 c.cd_cvm,
                 c.company_name,
                 c.ticker_b3,
-                {_CANONICAL_SECTOR_SQL},
+                {self._canonical_sector_sql()},
                 fr."REPORT_YEAR",
                 fr."CD_CONTA"
             """
@@ -749,7 +755,7 @@ class CVMQueryLayer:
         params: dict[str, object] = {}
 
         if sector_name:
-            where_parts.append(f"{_CANONICAL_SECTOR_SQL} = :sector_name")
+            where_parts.append(f"{self._canonical_sector_sql()} = :sector_name")
             params["sector_name"] = str(sector_name)
 
         normalized_years = sorted({int(year) for year in years or []})
@@ -772,7 +778,7 @@ class CVMQueryLayer:
                 c.cd_cvm,
                 c.company_name,
                 c.ticker_b3,
-                {_CANONICAL_SECTOR_SQL} AS sector_name,
+                {self._canonical_sector_sql()} AS sector_name,
                 kam.report_year,
                 kam.cd_conta,
                 SUM(kam.value) AS account_value
@@ -783,7 +789,7 @@ class CVMQueryLayer:
                 c.cd_cvm,
                 c.company_name,
                 c.ticker_b3,
-                {_CANONICAL_SECTOR_SQL},
+                {self._canonical_sector_sql()},
                 kam.report_year,
                 kam.cd_conta
             """
@@ -916,7 +922,7 @@ class CVMQueryLayer:
                     COALESCE(c.ticker_b3, '') AS ticker_b3,
                     c.setor_analitico,
                     c.setor_cvm,
-                    {_CANONICAL_SECTOR_SQL} AS sector_name,
+                    {self._canonical_sector_sql()} AS sector_name,
                     CASE
                         WHEN EXISTS (
                             SELECT 1
@@ -962,7 +968,7 @@ class CVMQueryLayer:
                 COALESCE(c.ticker_b3, '') AS ticker_b3,
                 c.setor_analitico,
                 c.setor_cvm,
-                {_CANONICAL_SECTOR_SQL} AS sector_name,
+                {self._canonical_sector_sql()} AS sector_name,
                 0 AS total_rows,
                 CASE
                     WHEN EXISTS (
@@ -995,7 +1001,7 @@ class CVMQueryLayer:
                 COALESCE(c.ticker_b3, '') AS ticker_b3,
                 c.setor_analitico,
                 c.setor_cvm,
-                {_CANONICAL_SECTOR_SQL} AS sector_name,
+                {self._canonical_sector_sql()} AS sector_name,
                 COALESCE(COUNT(fr."CD_CVM"), 0) AS total_rows,
                 CASE WHEN COUNT(fr."CD_CVM") > 0 THEN 1 ELSE 0 END AS has_financial_data,
                 c.coverage_rank,
@@ -1038,7 +1044,7 @@ class CVMQueryLayer:
 
         if sector_name:
             params["sector_name"] = str(sector_name)
-            where_parts.append(f"{_CANONICAL_SECTOR_SQL} = :sector_name")
+            where_parts.append(f"{self._canonical_sector_sql()} = :sector_name")
 
         return " AND ".join(where_parts), params
 
@@ -1145,7 +1151,7 @@ class CVMQueryLayer:
                 c.cnpj,
                 c.setor_cvm,
                 c.setor_analitico,
-                {_CANONICAL_SECTOR_SQL} AS sector_name,
+                {self._canonical_sector_sql()} AS sector_name,
                 c.company_type,
                 c.ticker_b3,
                 {is_active_sql},
@@ -1218,7 +1224,7 @@ class CVMQueryLayer:
                 c.cnpj,
                 c.setor_cvm,
                 c.setor_analitico,
-                {_CANONICAL_SECTOR_SQL} AS sector_name,
+                {self._canonical_sector_sql()} AS sector_name,
                 c.company_type,
                 c.ticker_b3,
                 {is_active_sql},

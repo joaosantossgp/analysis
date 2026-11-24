@@ -359,7 +359,7 @@ function CoverageQuickEditDrawer({
               {formatB3OrCvm(company)} - {company.company_name}
             </h3>
             <span className="text-3xs text-zinc-500 block mt-0.5">
-              CVM: {company.cd_cvm} · Sector: {company.gics_sector || company.sector_name || "N/A"}
+              CVM: {company.cd_cvm} · Sector: {company.gics_sector || "Pending"}
             </span>
             <span className="text-3xs text-zinc-400 block mt-1">
               Universe: <span className="text-zinc-200">{activeUniverseName}</span>
@@ -614,7 +614,7 @@ export function PrioritizationSection({ universeId, onOpenBulkModal, onOpenMetho
     if (sector) {
       const secTarget = normalize(sector.replace(/-/g, " "));
       list = list.filter((s) => {
-        const sSector = normalize(s.gics_sector || s.setor_analitico || "");
+        const sSector = normalize(s.gics_sector || "");
         return sSector.includes(secTarget);
       });
     }

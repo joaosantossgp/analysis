@@ -289,7 +289,7 @@ export function BulkCompanyManagerModal({ isOpen, onClose, universeId, onSuccess
                             <td className="p-2 truncate max-w-xs">{c.company_name}</td>
                             <td className="p-2 font-mono">{c.cd_cvm}</td>
                             <td className="p-2 text-zinc-400 truncate max-w-[180px]">
-                              {c.gics_sector || c.setor_analitico || "—"}
+                              {c.gics_sector || "Pending"}
                             </td>
                           </tr>
                         );

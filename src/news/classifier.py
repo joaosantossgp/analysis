@@ -207,7 +207,7 @@ def _sector_matches_from_companies(
         row = rows_by_cvm.get(company_match.cd_cvm)
         if not row:
             continue
-        sector_name = _first_text(row.get("gics_sector"), row.get("setor_analitico"), row.get("setor_cvm"))
+        sector_name = _first_text(row.get("gics_sector"))
         if not sector_name:
             continue
         sector_slug = str(row.get("gics_sector_slug") or sector_slugify(sector_name)).strip()
