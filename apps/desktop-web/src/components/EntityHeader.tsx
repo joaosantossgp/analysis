@@ -94,6 +94,25 @@ function userClassificationTitle(classification: CompanyClassification): string 
   ].join("\n");
 }
 
+/** CVM and B3 sector labels, shown as source metadata next to the canonical GICS badges. */
+export function getCompanySourceSectorBadges(
+  info: Pick<CompanyInfo, "setor_cvm" | "b3_classification">,
+): Array<{ label: "CVM sector" | "B3 sector"; value: string; title: string }> {
+  const badges: Array<{ label: "CVM sector" | "B3 sector"; value: string; title: string }> = [];
+  const cvm = cleanClassification(info.setor_cvm);
+  if (cvm) badges.push({ label: "CVM sector", value: cvm, title: "CVM registry sector label (source metadata, not GICS)." });
+  const b3 = info.b3_classification;
+  if (b3) {
+    const path = [b3.b3_sector, b3.b3_subsector, b3.b3_segment].filter(Boolean).join(" / ");
+    badges.push({
+      label: "B3 sector",
+      value: b3.b3_segment || b3.b3_subsector || b3.b3_sector || "—",
+      title: `${path}\nSource: B3 listed companies, fetched ${b3.fetched_at.slice(0, 10)}${b3.stale ? " (stale: refresh in Settings → Sources)" : ""}`,
+    });
+  }
+  return badges;
+}
+
 export function formatCompanyPeriodCoverage(
   latestPeriod: string | null | undefined,
   yearsAvailable: number | null | undefined,
@@ -234,6 +253,11 @@ export function EntityHeader({
           </div>
           <div className="flex flex-wrap gap-2">
             {getCompanyHeaderClassificationBadges(info).map((badge) => (
+              <IdentifierBadge key={badge.label} label={badge.label} muted title={badge.title}>
+                {badge.value}
+              </IdentifierBadge>
+            ))}
+            {getCompanySourceSectorBadges(info).map((badge) => (
               <IdentifierBadge key={badge.label} label={badge.label} muted title={badge.title}>
                 {badge.value}
               </IdentifierBadge>

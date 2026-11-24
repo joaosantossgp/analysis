@@ -17,6 +17,19 @@ CVMAnalytics must distinguish source reliability and data type explicitly.
 External and unofficial sources must never be described as equivalent to CVM or
 B3 official data.
 
+## B3 Sector Classification
+
+Class: official external dataset (source metadata). `src/companies/b3_classification.py`
+stores B3's setor / subsetor / segmento for each local company, exactly as B3's
+listed-companies service publishes it (by CVM code), with the source URL and
+fetch timestamp, in `company_b3_classification`. It is collected only by an
+explicit refresh (Settings -> Sources -> "Refresh B3 sectors", bridge method
+`refresh_b3_classification`), one request per company. Every run is logged in
+`b3_classification_refresh_log` with counts and per-company errors; a failed
+company keeps its previous labels. Company reads are offline. Data older than
+90 days is marked stale. B3 labels are shown next to the CVM sector as labelled
+metadata and are never used as the canonical (GICS) classification.
+
 ## CVM Financial Statements
 
 ### Company catalog reads and refresh

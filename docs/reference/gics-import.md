@@ -17,7 +17,8 @@ Decision record: [ADR 0009](../decisions/0009-curated-gics-classification.md).
 Curation is a development-time process (`scripts/curation/`), not an app
 feature. No AI runs inside CVMAnalytics. CVM and B3 sector labels may be used
 as curation inputs and are shown as their own labelled metadata, but they are
-never copied into GICS fields.
+never copied into GICS fields. The B3 source and its refresh are described in
+[Data Sources](../data-sources.md#b3-sector-classification).
 
 ## Rules
 
