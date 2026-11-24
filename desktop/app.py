@@ -759,6 +759,7 @@ def _ensure_classification_synced() -> None:
     Runs in packaged and development modes. An invalid dataset is rejected before any
     write, so the previous classification stays in place; the outcome goes to recovery.log.
     """
+    log_root = Path(os.environ.get("CVM_DATA_DIR", _user_data_root()))
     try:
         from src.companies.classification import sync_curated_classification  # noqa: PLC0415
         from src.platform.db import build_engine  # noqa: PLC0415
@@ -769,9 +770,9 @@ def _ensure_classification_synced() -> None:
             result = sync_curated_classification(engine)
         finally:
             engine.dispose()
-        _log_recovery(_user_data_root(), f"classification sync: {result}")
+        _log_recovery(log_root, f"classification sync: {result}")
     except Exception as exc:
-        _log_recovery(_user_data_root(), f"classification sync failed: {exc!r}")
+        _log_recovery(log_root, f"classification sync failed: {exc!r}")
 
 
 def _log_recovery(user_root: Path, message: str) -> None:
