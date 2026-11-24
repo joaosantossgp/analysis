@@ -44,6 +44,12 @@ never copied into GICS fields.
   goes to `recovery.log`.
 - Companies written later (refresh, catalog seed) pick up their curated
   classification immediately.
+- The Companies sector filter adds "Pending classification" and
+  "Not classifiable" options (slugs `pending-classification`,
+  `not-classifiable`) whenever such companies exist.
+- Companies whose CVM registration is cancelled keep their classification and
+  data; the company header shows "Registration cancelled". Curation rounds only
+  cover active registrations.
 - The analyst can edit a company's sub-industry from the company header
   ("Edit classification"). The edit is stored in `company_classification_user`,
   wins over the curated value on every screen (`classification_origin=user`),

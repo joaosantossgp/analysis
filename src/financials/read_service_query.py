@@ -19,6 +19,12 @@ from src.companies.catalog import (
     CompanyCatalogService,
 )
 from src.companies.classification import company_classification, has_curated_layer
+
+# Directory filter slug -> (classification_origin, label) for companies without a GICS sector.
+CLASSIFICATION_STATE_FILTERS: dict[str, tuple[str, str]] = {
+    "pending-classification": ("pending", "Pending classification"),
+    "not-classifiable": ("unclassified", "Not classifiable"),
+}
 from src.companies.gics_manual_mapping import (
     GICS_11_SECTORS,
     ResolvedGicsClassification,
@@ -889,6 +895,12 @@ class ReadServiceQueryMixin:
         if sort_direction not in ("asc", "desc"):
             raise ValueError("Invalid company sort direction")
         self._ensure_read_cache_fresh()
+        origin_filter = CLASSIFICATION_STATE_FILTERS.get(str(sector_slug or "").strip().lower())
+        if origin_filter is not None:
+            return self._list_companies_matching(
+                lambda item: item.classification_origin == origin_filter[0],
+                search=search, sector_slug=sector_slug, page=page, page_size=page_size,
+            )
         resolved_sector_name = self._resolve_sector_slug(sector_slug)
         if sector_slug and resolved_sector_name is None:
             return self._empty_company_page(
@@ -1178,9 +1190,12 @@ class ReadServiceQueryMixin:
             return self._company_filters_cache
 
         sector_counts: dict[str, int] = defaultdict(int)
+        origin_counts: Counter[str] = Counter()
         for item in self._list_company_universe_results_light():
             if item.gics_sector and item.gics_sector in GICS_11_SECTORS:
                 sector_counts[item.gics_sector] += 1
+            if item.classification_origin:
+                origin_counts[item.classification_origin] += 1
 
         sectors_list: list[CompanySectorFilterOption] = []
         for sector_name, company_count in sorted(sector_counts.items(), key=lambda item: gics_sector_sort_key(item[0])):
@@ -1193,6 +1208,18 @@ class ReadServiceQueryMixin:
                     gics_sector_slug=sector_slugify(sector_name),
                 )
             )
+        # Companies without a GICS sector stay reachable through explicit state filters.
+        for slug, (origin, label) in CLASSIFICATION_STATE_FILTERS.items():
+            if origin_counts[origin]:
+                sectors_list.append(
+                    CompanySectorFilterOption(
+                        sector_name=label,
+                        sector_slug=slug,
+                        company_count=int(origin_counts[origin]),
+                        gics_sector=None,
+                        gics_sector_slug=None,
+                    )
+                )
         sectors = tuple(sectors_list)
         self._company_filters_cache = CompanyFiltersDTO(sectors=sectors)
         return self._company_filters_cache
@@ -1472,11 +1499,25 @@ class ReadServiceQueryMixin:
         page: int,
         page_size: int,
     ) -> CompanyDirectoryPage:
+        return self._list_companies_matching(
+            lambda item: item.gics_sector == gics_sector,
+            search=search, sector_slug=sector_slug, page=page, page_size=page_size,
+        )
+
+    def _list_companies_matching(
+        self,
+        predicate: Callable[[CompanySearchResult], bool],
+        *,
+        search: str,
+        sector_slug: str | None,
+        page: int,
+        page_size: int,
+    ) -> CompanyDirectoryPage:
         normalized_search = str(search or "").strip().lower()
         filtered = [
             item
             for item in self._list_company_universe_results()
-            if item.gics_sector == gics_sector
+            if predicate(item)
             and (
                 not normalized_search
                 or normalized_search in item.company_name.lower()
