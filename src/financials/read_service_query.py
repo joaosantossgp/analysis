@@ -18,8 +18,10 @@ from src.companies.catalog import (
     CompanyCatalogUnavailableError,
     CompanyCatalogService,
 )
+from src.companies.classification import company_classification, has_curated_layer
 from src.companies.gics_manual_mapping import (
     GICS_11_SECTORS,
+    ResolvedGicsClassification,
     gics_sector_sort_key,
     resolve_gics_classification,
     resolve_gics_sector_name,
@@ -510,8 +512,8 @@ class ReadServiceQueryMixin:
             enriched["cnpj"] = identity.cnpj
         return enriched
 
-    @staticmethod
     def _build_company_info_dto(
+        self,
         payload: dict[str, Any],
         *,
         default_cd_cvm: int,
@@ -532,6 +534,16 @@ class ReadServiceQueryMixin:
             gics_industry=payload.get("gics_industry"),
             gics_sub_industry=payload.get("gics_sub_industry"),
         )
+        classification = self._company_classification(int(payload.get("cd_cvm") or default_cd_cvm))
+        if classification is not None:
+            # The curated layer is canonical; never fall back to legacy labels once it is loaded.
+            gics = None if classification["origin"] != "curated" else ResolvedGicsClassification(
+                gics_sector=classification["gics_sector"],
+                gics_sector_slug=classification["gics_sector_slug"],
+                gics_industry_group=classification["gics_industry_group"],
+                gics_industry=classification["gics_industry"],
+                gics_sub_industry=classification["gics_sub_industry"],
+            )
         return CompanyInfoDTO(
             cd_cvm=int(payload.get("cd_cvm") or default_cd_cvm),
             company_name=company_name,
@@ -549,7 +561,15 @@ class ReadServiceQueryMixin:
             gics_industry_group=gics.gics_industry_group if gics else None,
             gics_industry=gics.gics_industry if gics else None,
             gics_sub_industry=gics.gics_sub_industry if gics else None,
+            classification=classification,
         )
+
+    def _company_classification(self, cd_cvm: int) -> dict[str, Any] | None:
+        """Canonical classification once the curated layer is loaded; None before that."""
+        with self.engine.connect() as conn:
+            if not has_curated_layer(conn):
+                return None
+            return company_classification(conn, cd_cvm)
 
     def _with_company_read_model_state(self, dto: CompanyInfoDTO) -> CompanyInfoDTO:
         state = self._load_company_read_model_state_map([dto.cd_cvm]).get(

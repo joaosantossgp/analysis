@@ -21,6 +21,7 @@ This directory holds the durable architectural decisions made on this project.
 | [0006](0006-auth-desktop.md) | Authentication for the desktop app (historical; never implemented) |
 | [0007](0007-local-analytical-storage.md) | Local analytical storage for large facts |
 | [0008](0008-database-alignment-before-app-development.md) | Database alignment before app development |
+| [0009](0009-curated-gics-classification.md) | Curated GICS classification |
 | [Energy/Utilities driver pilot](energy-utilities-driver-pilot-contract.md) | Energy/Utilities system-driver pilot contract |
 | [Canonical entity registry](canonical-entity-registry-contract.md) | Canonical entity registry contract (withdrawn 2026-10-29) |
 | [Entity registry migration](entity-registry-migration-and-release.md) | Entity registry migration and v0.31.0 release plan (withdrawn 2026-10-29) |

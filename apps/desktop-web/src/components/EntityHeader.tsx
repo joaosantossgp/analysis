@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { IdentifierBadge } from "@/components/data/IdentifierBadge";
 import { fetchCompanyInfo, fetchCompanyConnections, type CompanyInfoResult, type CompanyConnectionsResult } from "@/lib/api/companyDetail";
 import { whenBridgeReady } from "@/lib/bridge/adapter";
-import type { CompanyInfo } from "@/lib/bridge/types";
+import type { CompanyClassification, CompanyInfo } from "@/lib/bridge/types";
+import { CLASSIFICATION_STATUS_LABEL } from "@/lib/classification";
 import { formatCNPJ } from "@/lib/format/cnpj";
 import { StateBanner } from "./feedback/StateBanner";
 
@@ -22,6 +23,7 @@ type CompanyHeaderClassificationInput = Pick<
   | "gics_sub_industry"
   | "sector_name"
   | "setor_cvm"
+  | "classification"
 >;
 
 export type CompanyHeaderClassificationBadge = {
@@ -37,20 +39,42 @@ export function getCompanyHeaderClassificationBadges(
 ): CompanyHeaderClassificationBadge[] {
   const cvmSector = cleanClassification(info.sector_name) || cleanClassification(info.setor_cvm);
   const industryGroup = cleanClassification(info.gics_industry_group);
+  const classification = info.classification;
+  const status = CLASSIFICATION_STATUS_LABEL[classification?.origin ?? ""];
+  const sectorTitle = [
+    cvmSector ? `CVM sector: ${cvmSector}` : null,
+    classification?.origin === "unclassified" && classification.unclassified_reason
+      ? `Not classifiable: ${classification.unclassified_reason}`
+      : null,
+    classification?.origin === "pending" ? "No GICS classification yet; curation pending." : null,
+  ].filter(Boolean).join("\n");
 
   return [
     {
       label: "Sector",
-      value: cleanClassification(info.gics_sector) || MISSING_CLASSIFICATION,
-      title: cvmSector ? `CVM sector: ${cvmSector}` : undefined,
+      value: cleanClassification(info.gics_sector) || status || MISSING_CLASSIFICATION,
+      title: sectorTitle || undefined,
     },
     {
       label: "Industry Group",
       value: industryGroup || MISSING_CLASSIFICATION,
     },
     { label: "Industry", value: cleanClassification(info.gics_industry) || MISSING_CLASSIFICATION },
-    { label: "Sub-industry", value: cleanClassification(info.gics_sub_industry) || MISSING_CLASSIFICATION },
+    {
+      label: "Sub-industry",
+      value: cleanClassification(info.gics_sub_industry) || MISSING_CLASSIFICATION,
+      title: classification?.origin === "curated" ? curatedClassificationTitle(classification) : undefined,
+    },
   ];
+}
+
+function curatedClassificationTitle(classification: CompanyClassification): string {
+  return [
+    `GICS ${classification.sub_industry_code ?? ""} · curated by CVMAnalytics, not an official MSCI/S&P classification`,
+    classification.confidence ? `Confidence: ${classification.confidence}` : null,
+    classification.rationale,
+    classification.evidence_url ? `Source: ${classification.evidence_url}` : null,
+  ].filter(Boolean).join("\n");
 }
 
 export function formatCompanyPeriodCoverage(

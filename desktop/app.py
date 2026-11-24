@@ -753,129 +753,25 @@ def _ensure_db_initialized() -> None:
         _log_recovery(Path(os.environ.get("CVM_DATA_DIR", _user_data_root())), f"init_db_tables failed: {exc!r}")
 
 
-def _locate_gics_mapping_csv() -> Path | None:
-    """Return the path to the bundled / repo GICS mapping CSV, if present."""
-    if _bundled():
-        candidate = _bundle_dir() / "data" / "import" / "gics_mapping.csv"
-    else:
-        candidate = _repo_root() / "data" / "import" / "gics_mapping.csv"
-    return candidate if candidate.exists() else None
+def _ensure_classification_synced() -> None:
+    """Load the shipped curated GICS classification and materialize it into companies.
 
-
-def _ensure_gics_backfilled() -> None:
-    """Populate companies.gics_* from the shipped GICS mapping CSV.
-
-    Hotfix for v0.14.1: the v0.14.0 default-Vite release exposed that user DBs
-    seeded by the data pipeline carry CVM/B3 sector labels (``setor_cvm``) but
-    no GICS fields. The Vite sectors screen only renders the 11 official GICS
-    hubs, so without backfill it shows "Sem classificacao GICS" / 109 and the
-    company directory sector filter returns nothing.
-
-    Behavior (idempotent, additive, safe):
-      - Only runs on packaged builds. Dev installs use repo scripts.
-      - Reads ``_internal/data/import/gics_mapping.csv`` (bundled in v0.14.1+).
-      - Only updates rows whose ``gics_sector`` is NULL/empty. Never overwrites
-        a row that already carries a GICS classification.
-      - Only writes when the mapping row carries one of the 11 canonical GICS
-        sectors (case-insensitive). Unknown labels are skipped, never invented.
-      - Never deletes a row, never touches financial data, never edits
-        ``setor_cvm`` / ``setor_analitico``.
-      - Records the outcome in ``recovery.log``.
+    Runs in packaged and development modes. An invalid dataset is rejected before any
+    write, so the previous classification stays in place; the outcome goes to recovery.log.
     """
-    if not _bundled():
-        return
-
-    csv_path = _locate_gics_mapping_csv()
-    if csv_path is None:
-        _log_recovery(_user_data_root(), "gics backfill skipped: mapping csv not bundled")
-        return
-
-    db_path = _user_data_root() / "db" / "cvm_financials.db"
-    if not db_path.exists():
-        _log_recovery(_user_data_root(), "gics backfill skipped: runtime DB missing")
-        return
-
     try:
-        from src.companies.gics_manual_mapping import GICS_11_SECTORS  # noqa: PLC0415
-        from src.companies.sector_taxonomy import sector_slugify  # noqa: PLC0415
-    except Exception as exc:
-        _log_recovery(_user_data_root(), f"gics backfill aborted (import failed): {exc!r}")
-        return
+        from src.companies.classification import sync_curated_classification  # noqa: PLC0415
+        from src.platform.db import build_engine  # noqa: PLC0415
+        from src.platform.settings import build_settings  # noqa: PLC0415
 
-    canonical_by_cf = {name.casefold(): name for name in GICS_11_SECTORS}
-
-    conn = sqlite3.connect(str(db_path))
-    try:
-        cur = conn.cursor()
-        cur.execute("PRAGMA table_info(companies)")
-        cols = {row[1] for row in cur.fetchall()}
-        if "gics_sector" not in cols:
-            _log_recovery(_user_data_root(), "gics backfill skipped: companies.gics_sector column missing")
-            return
-
-        cur.execute(
-            "SELECT COUNT(*) FROM companies "
-            "WHERE gics_sector IS NULL OR TRIM(gics_sector) = ''"
-        )
-        unclassified_before = int(cur.fetchone()[0])
-        if unclassified_before == 0:
-            return
-
-        import csv as _csv  # noqa: PLC0415
-        mapping: dict[int, tuple[str, str | None]] = {}
+        engine = build_engine(build_settings())
         try:
-            with csv_path.open("r", encoding="utf-8", newline="") as fh:
-                reader = _csv.DictReader(fh)
-                for row in reader:
-                    raw_cd = (row.get("cd_cvm") or "").strip()
-                    raw_sector = (row.get("gics_sector") or "").strip()
-                    raw_sub = (row.get("gics_sub_industry") or "").strip()
-                    if not raw_cd or not raw_sector:
-                        continue
-                    try:
-                        cd_cvm = int(raw_cd)
-                    except ValueError:
-                        continue
-                    canonical = canonical_by_cf.get(raw_sector.casefold())
-                    if canonical is None:
-                        continue
-                    mapping[cd_cvm] = (canonical, raw_sub or None)
-        except Exception as exc:
-            _log_recovery(_user_data_root(), f"gics backfill aborted (csv read): {exc!r}")
-            return
-
-        if not mapping:
-            _log_recovery(_user_data_root(), "gics backfill skipped: mapping csv had no usable rows")
-            return
-
-        updated = 0
-        for cd_cvm, (sector_name, sub_industry) in mapping.items():
-            cur.execute(
-                "UPDATE companies SET "
-                "  gics_sector = ?, "
-                "  gics_sector_slug = ?, "
-                "  gics_sub_industry = COALESCE(NULLIF(?, ''), gics_sub_industry) "
-                "WHERE cd_cvm = ? "
-                "  AND (gics_sector IS NULL OR TRIM(gics_sector) = '')",
-                (sector_name, sector_slugify(sector_name), sub_industry or "", cd_cvm),
-            )
-            updated += cur.rowcount if cur.rowcount > 0 else 0
-        conn.commit()
-
-        cur.execute(
-            "SELECT COUNT(*) FROM companies "
-            "WHERE gics_sector IS NULL OR TRIM(gics_sector) = ''"
-        )
-        unclassified_after = int(cur.fetchone()[0])
-        _log_recovery(
-            _user_data_root(),
-            f"gics backfill: updated={updated} mapping_rows={len(mapping)} "
-            f"unclassified_before={unclassified_before} unclassified_after={unclassified_after}",
-        )
+            result = sync_curated_classification(engine)
+        finally:
+            engine.dispose()
+        _log_recovery(_user_data_root(), f"classification sync: {result}")
     except Exception as exc:
-        _log_recovery(_user_data_root(), f"gics backfill failed: {exc!r}")
-    finally:
-        conn.close()
+        _log_recovery(_user_data_root(), f"classification sync failed: {exc!r}")
 
 
 def _log_recovery(user_root: Path, message: str) -> None:
@@ -1202,7 +1098,7 @@ def main() -> None:
     _strip_motw_from_bundle()
     _migrate_legacy_db_once()
     _ensure_db_initialized()
-    _ensure_gics_backfilled()
+    _ensure_classification_synced()
     _preflight_pywebview_backend()
     if legacy_requested:
         _warn_legacy_removed()

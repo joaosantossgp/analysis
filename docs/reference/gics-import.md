@@ -1,120 +1,54 @@
-# GICS Import
+# GICS Classification
 
-This project must not infer GICS classifications from CVM, B3, ticker, company
-name, or custom sector labels. CVM/B3/native labels are useful metadata, but
-they are not GICS. Treating them as GICS creates false sectors and misleading
-counts.
+Every company has one canonical industry classification: a GICS sub-industry
+**curated by CVMAnalytics**. Sector, industry group and industry are derived
+from the sub-industry code, so the levels never contradict each other. The
+classification is never presented as an official MSCI/S&P assignment.
+Decision record: [ADR 0009](../decisions/0009-curated-gics-classification.md).
 
-GICS is populated only from an explicit mapping file approved by the project
-owner.
+## Sources and files
 
-## Expected File
+| File | Content |
+|---|---|
+| `data/reference/gics_structure.csv` | Current GICS hierarchy: codes and names for the 4 levels (11/25/74/163), structure effective March 2023, definitions as of February 2025, discontinued codes excluded. Long definitions are proprietary and are not committed. |
+| `data/curation/gics_curated.csv` | One row per curated company: `cd_cvm`, `sub_industry_code` (or `unclassified_reason`), `basis`, `confidence`, `rationale`, `evidence_url`, `review_status`, `reviewer`, `review_date`, `proposed_by`, `gics_version`. `company_name` and `cnpj` are diagnostics only. |
+| `data/curation/gics_full_review.csv`, `gics_*_report.json` | Curation evidence: both independent passes, review reasons, batch IDs and cost. |
 
-Place the approved file at:
+Curation is a development-time process (`scripts/curation/`), not an app
+feature. No AI runs inside CVMAnalytics. CVM and B3 sector labels may be used
+as curation inputs and are shown as their own labelled metadata, but they are
+never copied into GICS fields.
 
-```text
-data/import/gics_mapping.csv
-```
+## Rules
 
-Required CSV columns:
+- Classify by principal business activity (primarily revenue), following the
+  GICS methodology. Diversified holdings without a dominant business use
+  Multi-Sector Holdings (`40201030`).
+- When the activity cannot be determined (shell, pre-operational, bankrupt
+  estate), the row has no code and an `unclassified_reason`. Never guess.
+- Every assignment records its basis, confidence, rationale, evidence and GICS
+  version. `review_status=accepted_without_review` means the owner accepted the
+  batch without checking it row by row.
 
-```csv
-cd_cvm,gics_sector,gics_sub_industry,source,as_of_date
-```
+## Runtime behavior
 
-Optional diagnostic columns:
+- On every startup (packaged and dev), the app validates the shipped curated
+  dataset, loads it into `company_classification_curated`, and materializes it
+  into `companies.gics_*`, `gics_sub_industry_code` and `classification_origin`.
+- `classification_origin` is `curated`, `unclassified` (curated as not
+  classifiable, with a reason) or `pending` (not curated yet). Pending and
+  unclassified companies have empty GICS fields; screens show "Pending" or
+  "Not classifiable", never a fallback label.
+- An invalid dataset (unknown code, duplicate `cd_cvm`, missing reason) is
+  rejected before any write; the previous classification stays and the error
+  goes to `recovery.log`.
+- Companies written later (refresh, catalog seed) pick up their curated
+  classification immediately.
+- Local user edits that win over the curated value are tracked in #521.
 
-```csv
-ticker,company_name,cnpj,notes
-```
+## Legacy importer
 
-Rules:
-
-- `cd_cvm` is the only key used for database updates.
-- `gics_sector` must be one of the 11 official GICS sector labels used by the app.
-- `gics_sub_industry` must be present and non-empty.
-- `source` must identify the approved source.
-- `as_of_date` must use `YYYY-MM-DD`.
-- `ticker`, `company_name`, and `cnpj` are diagnostics only. They can help
-  report possible matches or mismatches, but they do not authorize updates.
-
-## Commands
-
-Dry-run is the default. It validates the CSV, matches by `cd_cvm`, writes a
-report, and does not update the database:
-
-```powershell
-python scripts/data/import_company_gics.py
-```
-
-Apply mode is explicit:
-
-```powershell
-python scripts/data/import_company_gics.py --apply
-```
-
-Sanity-check mode does not require the CSV. It checks the current schema,
-company table size, current GICS counts, and writes the same report file:
-
-```powershell
-python scripts/data/import_company_gics.py --check
-```
-
-The report is written to:
-
-```text
-data/reports/gics_backfill_report.json
-```
-
-## Report Fields
-
-The report includes:
-
-- mappings read
-- invalid rows
-- duplicate `cd_cvm` rows
-- matched companies
-- unmatched mappings
-- fallback-key diagnostics, without applying those matches
-- companies that would be updated in dry-run
-- companies updated in apply mode
-- companies skipped and skip reasons
-- companies still unclassified
-- distinct GICS sectors after import
-- distinct GICS sub-sectors after import
-- source values found
-- as-of dates found
-- current physical `gics_*` field counts in the DB
-
-In dry-run/apply import modes, `companies_still_unclassified` and the
-"after import" sector lists are based on the approved CSV coverage, not on old
-physical `gics_*` values already present in the database. This matters during
-recovery because old non-null GICS fields may be untrusted. The report also
-shows the current physical DB field counts separately for diagnostics.
-
-In `--check` mode, no approved CSV is loaded, so the summary describes the
-current physical DB fields only.
-
-## Universe Check
-
-GICS import updates only companies already present in `companies`. It does not
-add companies and does not touch `financial_reports`.
-
-Before applying a full mapping, confirm that `companies` represents the full CVM
-active company universe. The importer reports when the active-universe cache is
-larger than `companies`.
-
-If the universe is incomplete, seed or reconcile `companies` first, then rerun:
-
-```powershell
-python scripts/data/seed_catalog.py --dry-run
-python scripts/data/seed_catalog.py
-python scripts/data/import_company_gics.py --check
-```
-
-## Safety Warning
-
-Never use `setor_cvm`, `setor_analitico`, B3 sector labels, ticker names, or
-normalized company names as GICS. They can be displayed as their own metadata
-only when clearly labeled, but they must not be mixed into GICS sector or
-sub-sector views.
+`scripts/data/import_company_gics.py` and `data/import/gics_mapping.csv` are the
+superseded CVM-derived mapping. The app no longer reads them, and any value
+they write is replaced by the curated classification on the next startup.
+Removal is tracked in #525.

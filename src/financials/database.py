@@ -272,6 +272,8 @@ def _ensure_company_columns(conn) -> None:
         "gics_industry_group": "TEXT",
         "gics_industry": "TEXT",
         "gics_sub_industry": "TEXT",
+        "gics_sub_industry_code": "TEXT",
+        "classification_origin": "TEXT",
         "company_type": "TEXT NOT NULL DEFAULT 'comercial'",
         "ticker_b3": "TEXT",
         "coverage_rank": "INTEGER",
@@ -402,6 +404,9 @@ class CVMDatabase:
                 updated_at   = :updated_at
             WHERE cd_cvm = :cd
         """), params)
+        # The curated classification is canonical once loaded; it overrides any label written above.
+        from src.companies.classification import materialize_company
+        materialize_company(conn, int(cvm_code))
 
     def _to_sql_with_retry(self, table_name: str, df: pd.DataFrame, conn) -> None:
         """Retry writes for transient SQLite lock errors without masking final failures."""

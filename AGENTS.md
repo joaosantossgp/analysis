@@ -227,8 +227,10 @@ Single-context, with domain rules in `docs/CONTEXT.md` and ADRs in `docs/decisio
   analyst-grade. Detail panels must not make the main table unusable at laptop
   width and need an explicit close path. Offer 2-3 visual options when the brief
   is unconstrained.
-- **Data/modeling:** read `docs/CONTEXT.md` and `docs/data-sources.md`. Never
-  infer GICS from CVM/B3/ticker/name. Preserve lineage for calculated values.
+- **Data/modeling:** read `docs/CONTEXT.md` and `docs/data-sources.md`. GICS is
+  curated by CVMAnalytics with recorded basis, confidence and evidence, never
+  presented as official MSCI/S&P, and never copied from CVM/B3 labels
+  (`docs/reference/gics-import.md`). Preserve lineage for calculated values.
 - **Excel/export:** follow `docs/excel-exports.md` (no merged cells, traceable
   formulas, negatives in parentheses, files open without repair).
 - **Release/updater:** `desktop/__version__.py` is the runtime version source.
