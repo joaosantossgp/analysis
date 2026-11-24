@@ -192,7 +192,7 @@ def submit(args: argparse.Namespace) -> None:
                 "output_config": {"effort": args.effort},
                 "system": [{"type": "text", "text": system, "cache_control": {"type": "ephemeral", "ttl": "1h"}}],
                 "tools": [
-                    {"type": "web_search_20260209", "name": "web_search", "max_uses": MAX_SEARCHES},
+                    {"type": "web_search_20260209", "name": "web_search", "max_uses": args.max_searches},
                     SUBMIT_TOOL,
                 ],
                 "messages": [{"role": "user", "content": company_prompt(registry[cd])}],
@@ -342,6 +342,7 @@ def main() -> None:
     p_submit.add_argument("--gics-workbook", required=True)
     p_submit.add_argument("--out", required=True)
     p_submit.add_argument("--effort", default=EFFORT, choices=["low", "medium", "high", "xhigh", "max"])
+    p_submit.add_argument("--max-searches", type=int, default=MAX_SEARCHES)
     target = p_submit.add_mutually_exclusive_group(required=True)
     target.add_argument("--cd-cvm")
     target.add_argument("--all-active", action="store_true")
