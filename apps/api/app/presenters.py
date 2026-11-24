@@ -62,7 +62,6 @@ class CompanySearchResultPayload(BaseModel):
     cd_cvm: int
     company_name: str
     ticker_b3: str | None = None
-    setor_analitico: str | None = None
     setor_cvm: str | None = None
     sector_name: str
     sector_slug: str
@@ -83,7 +82,6 @@ class CompanyInfoPayload(BaseModel):
     nome_comercial: str | None = None
     cnpj: str | None = None
     setor_cvm: str | None = None
-    setor_analitico: str | None = None
     sector_name: str
     sector_slug: str
     company_type: str | None = None

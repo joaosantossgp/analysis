@@ -111,7 +111,6 @@ def init_db_tables(engine: Engine) -> None:
                 nome_comercial  TEXT,
                 cnpj            TEXT,
                 setor_cvm       TEXT,
-                setor_analitico TEXT,
                 gics_sector     TEXT,
                 gics_sector_slug TEXT,
                 gics_industry_group TEXT,
@@ -145,7 +144,6 @@ def init_db_tables(engine: Engine) -> None:
         'CREATE INDEX {c}IF NOT EXISTS idx_fr_cd_cvm_stmt_year ON financial_reports("CD_CVM", "STATEMENT_TYPE", "REPORT_YEAR")',
         'CREATE INDEX {c}IF NOT EXISTS idx_fr_cvm_year ON financial_reports("CD_CVM", "REPORT_YEAR", "PERIOD_LABEL")',
         'CREATE INDEX {c}IF NOT EXISTS idx_fr_cd_conta ON financial_reports("CD_CONTA")',
-        "CREATE INDEX {c}IF NOT EXISTS idx_companies_setor ON companies(setor_analitico)",
         "CREATE INDEX {c}IF NOT EXISTS idx_companies_ticker ON companies(ticker_b3)",
         # Benchmarked 2026-04-20 (issue #134): EXPLAIN QUERY PLAN confirmed full SCAN of
         # financial_reports for any query filtered only by PERIOD_LABEL (sector_years_map,
@@ -266,7 +264,6 @@ def _ensure_company_columns(conn) -> None:
         "nome_comercial": "TEXT",
         "cnpj": "TEXT",
         "setor_cvm": "TEXT",
-        "setor_analitico": "TEXT",
         "gics_sector": "TEXT",
         "gics_sector_slug": "TEXT",
         "gics_industry_group": "TEXT",
@@ -284,6 +281,13 @@ def _ensure_company_columns(conn) -> None:
     for col_name, col_type in columns_to_ensure.items():
         if col_name.lower() not in existing:
             conn.execute(text(f"ALTER TABLE companies ADD COLUMN {col_name} {col_type}"))
+
+    # #525: the legacy sector column was replaced by the canonical gics_* columns.
+    # SQLite refuses DROP COLUMN on an indexed column, so drop its index first.
+    if "setor_analitico" in existing:
+        conn.execute(text("DROP INDEX IF EXISTS idx_companies_setor"))
+        conn.execute(text("ALTER TABLE companies DROP COLUMN setor_analitico"))
+
 SQLITE_WRITE_BACKOFF_SECONDS = 0.6
 DEFAULT_TO_SQL_CHUNKSIZE = 2000
 SQLITE_SAFE_MAX_VARIABLES = 900
@@ -356,7 +360,6 @@ class CVMDatabase:
 
         gics = resolve_gics_classification(
             sector_name=setor_cvm,
-            setor_analitico=None,
             setor_cvm=setor_cvm,
         )
         params = {

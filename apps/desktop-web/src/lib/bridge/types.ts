@@ -219,7 +219,6 @@ export type CompanyDirectoryItem = {
   cd_cvm: number;
   company_name: string;
   ticker_b3: string | null;
-  setor_analitico: string | null;
   setor_cvm: string | null;
   sector_name: string;
   sector_slug: string;
@@ -302,7 +301,6 @@ export type CompanyInfo = {
   is_active: boolean;
   company_type: string | null;
   setor_cvm: string | null;
-  setor_analitico: string | null;
   sector_name?: string | null;
   sector_slug?: string | null;
   gics_sector?: string | null;

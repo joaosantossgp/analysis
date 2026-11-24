@@ -143,7 +143,7 @@ def main():
                     """), params)
                     inserted += 1
                 else:
-                    # Preserva colunas manuais (setor_analitico, company_type, coverage_rank)
+                    # Preserve manual columns (company_type, coverage_rank)
                     conn.execute(text("""
                         UPDATE companies
                         SET company_name = :name,

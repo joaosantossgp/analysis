@@ -1848,13 +1848,11 @@ class ReadServiceCoverageMixin:
             return results
 
         for row in df.to_dict(orient="records"):
-            setor_analitico = self._clean_optional_text(row.get("setor_analitico"))
             setor_cvm = self._clean_optional_text(row.get("setor_cvm"))
             raw_sector_name = self._clean_optional_text(row.get("sector_name"))
             sector_name = raw_sector_name or canonical_sector_name(row.get("persisted_gics_sector"), None)
             gics = resolve_gics_classification(
                 sector_name=sector_name,
-                setor_analitico=setor_analitico,
                 setor_cvm=setor_cvm,
                 gics_sector=row.get("persisted_gics_sector"),
                 gics_sector_slug=row.get("persisted_gics_sector_slug"),
@@ -1886,7 +1884,6 @@ class ReadServiceCoverageMixin:
                     cd_cvm=int(row["cd_cvm"]),
                     company_name=str(row["company_name"]),
                     ticker_b3=self._clean_optional_text(row.get("ticker_b3")),
-                    setor_analitico=setor_analitico,
                     setor_cvm=setor_cvm,
                     sector_name=sector_name,
                     sector_slug=sector_slugify(sector_name),
@@ -1979,7 +1976,6 @@ class ReadServiceCoverageMixin:
                     cd_cvm=cd,
                     company_name=entry.company_name,
                     ticker_b3=entry.ticker_b3,
-                    setor_analitico=None,
                     setor_cvm=entry.setor_cvm,
                     sector_name=legacy_sector,
                     sector_slug=sector_slugify(legacy_sector),

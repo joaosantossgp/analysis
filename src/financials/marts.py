@@ -7,7 +7,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 
 MART_BUILD_VERSION = "cvm_financial_marts_v1"
 SOURCE_TABLE_NAME = "financial_reports"
@@ -82,7 +82,6 @@ def ensure_financial_mart_tables_for_connection(conn) -> None:
             cd_cvm INTEGER PRIMARY KEY,
             company_name TEXT,
             ticker_b3 TEXT,
-            setor_analitico TEXT,
             gics_sector TEXT,
             company_type TEXT,
             has_financial_data INTEGER NOT NULL DEFAULT 0,
@@ -112,6 +111,14 @@ def ensure_financial_mart_tables_for_connection(conn) -> None:
             PRIMARY KEY (cd_cvm, report_year, period_label, statement_type, cd_conta)
         )
     """))
+    # #525: drop the legacy sector column from marts built by older versions.
+    inspector = inspect(conn, raiseerr=False)
+    directory_columns = {
+        str(column.get("name") or "").lower()
+        for column in (inspector.get_columns(DIRECTORY_MART_NAME) if inspector is not None else ())
+    }
+    if "setor_analitico" in directory_columns:
+        conn.execute(text(f"ALTER TABLE {DIRECTORY_MART_NAME} DROP COLUMN setor_analitico"))
     for ddl in (
         "CREATE INDEX IF NOT EXISTS idx_cfpm_company_year ON company_financial_period_mart(cd_cvm, report_year)",
         "CREATE INDEX IF NOT EXISTS idx_cfpm_complete ON company_financial_period_mart(cd_cvm, is_complete_standard_period, report_year)",
@@ -264,7 +271,7 @@ def _rebuild_directory_mart(conn, rebuilt_at: str) -> int:
     conn.execute(text(f"DELETE FROM {DIRECTORY_MART_NAME}"))
     conn.execute(text(f"""
         INSERT INTO {DIRECTORY_MART_NAME} (
-            cd_cvm, company_name, ticker_b3, setor_analitico, gics_sector,
+            cd_cvm, company_name, ticker_b3, gics_sector,
             company_type, has_financial_data, financial_row_count, first_year,
             latest_year, latest_period_label, latest_period_type,
             complete_period_count, rebuilt_at, build_version
@@ -300,7 +307,6 @@ def _rebuild_directory_mart(conn, rebuilt_at: str) -> int:
             c.cd_cvm,
             c.company_name,
             c.ticker_b3,
-            c.setor_analitico,
             c.gics_sector,
             c.company_type,
             CASE WHEN COALESCE(fr.financial_row_count, 0) > 0 THEN 1 ELSE 0 END AS has_financial_data,

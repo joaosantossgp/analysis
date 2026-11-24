@@ -910,7 +910,7 @@ class CoverageUniverseService:
         
         query = """
             SELECT uc.cd_cvm, uc.tier, uc.manual_score_override, uc.owner_analyst, uc.holding_pct,
-                   c.company_name, c.ticker_b3, c.setor_analitico, c.gics_sector, c.gics_sector_slug,
+                   c.company_name, c.ticker_b3, c.gics_sector, c.gics_sector_slug,
                    (SELECT COUNT(*) FROM coverage_checklists WHERE universe_id = uc.universe_id AND cd_cvm = uc.cd_cvm AND is_completed = 1) as completed_checklist_count,
                    (SELECT COUNT(*) FROM coverage_checklists WHERE universe_id = uc.universe_id AND cd_cvm = uc.cd_cvm) as total_checklist_count
             FROM universe_companies uc
@@ -952,8 +952,6 @@ class CoverageUniverseService:
                     comp_data["company_name"] = (identity.company_name if identity else None) or f"CVM {cd_cvm}"
                 if not comp_data.get("ticker_b3"):
                     comp_data["ticker_b3"] = _clean_b3_ticker(identity.ticker_b3 if identity else None)
-                if not comp_data.get("setor_analitico"):
-                    comp_data["setor_analitico"] = "Unknown"
                 
                 gics_val = comp_data.get("gics_sector")
                 gics_sector_slug = comp_data.get("gics_sector_slug")

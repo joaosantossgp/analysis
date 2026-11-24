@@ -453,7 +453,6 @@ class ReadServiceQueryMixin:
             "nome_comercial": entry.nome_comercial,
             "cnpj": entry.cnpj,
             "setor_cvm": entry.setor_cvm,
-            "setor_analitico": None,
             "company_type": "comercial",
             "ticker_b3": entry.ticker_b3,
         }
@@ -529,7 +528,6 @@ class ReadServiceQueryMixin:
         company_type = str(payload.get("company_type") or "comercial").strip() or "comercial"
         gics = resolve_gics_classification(
             sector_name=sector_name,
-            setor_analitico=payload.get("setor_analitico"),
             setor_cvm=payload.get("setor_cvm"),
             gics_sector=payload.get("gics_sector"),
             gics_sector_slug=payload.get("gics_sector_slug"),
@@ -553,7 +551,6 @@ class ReadServiceQueryMixin:
             nome_comercial=payload.get("nome_comercial"),
             cnpj=payload.get("cnpj"),
             setor_cvm=payload.get("setor_cvm"),
-            setor_analitico=payload.get("setor_analitico"),
             sector_name=sector_name,
             sector_slug=sector_slugify(sector_name),
             company_type=company_type,
@@ -1237,7 +1234,6 @@ class ReadServiceQueryMixin:
         """Histogram bucket label -> GICS 11 hub key (same resolution as filters / sector routing)."""
         return resolve_gics_sector_name(
             sector_name=bucket_label,
-            setor_analitico=bucket_label,
             setor_cvm=bucket_label,
         )
 

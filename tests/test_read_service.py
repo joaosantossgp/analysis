@@ -104,7 +104,6 @@ def _seed_sector_read_service(tmp_path):
                 nome_comercial TEXT,
                 cnpj TEXT,
                 setor_cvm TEXT,
-                setor_analitico TEXT,
                 gics_sector TEXT,
                 gics_sector_slug TEXT,
                 gics_industry_group TEXT,
@@ -139,10 +138,10 @@ def _seed_sector_read_service(tmp_path):
             """
             INSERT INTO companies (
                 cd_cvm, company_name, nome_comercial, cnpj,
-                setor_cvm, setor_analitico, gics_sector, gics_sector_slug,
+                setor_cvm, gics_sector, gics_sector_slug,
                 gics_industry_group, gics_industry, gics_sub_industry,
                 company_type, ticker_b3, coverage_rank, is_active, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
@@ -150,7 +149,6 @@ def _seed_sector_read_service(tmp_path):
                     "PETROBRAS",
                     "Petrobras",
                     "33",
-                    "Energia",
                     "Energia",
                     "Energy",
                     "energy",
@@ -169,7 +167,6 @@ def _seed_sector_read_service(tmp_path):
                     "Sabesp",
                     "43",
                     "Saneamento",
-                    None,
                     "Utilities",
                     "utilities",
                     "Utilities",

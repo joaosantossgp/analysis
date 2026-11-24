@@ -148,7 +148,6 @@ def seed_synthetic_benchmark_data(engine) -> None:
             "nome_comercial": f"Empresa {i}",
             "cnpj": f"{i:014d}",
             "setor_cvm": sector,
-            "setor_analitico": sector if i % 3 != 0 else None,
             "company_type": "comercial",
             "ticker_b3": f"EMP{i:04d}" if i % 5 != 0 else None,
             "coverage_rank": i + 1 if i < 100 else None,
@@ -225,8 +224,7 @@ def _explain(engine, sql_str: str, params: dict) -> str:
 
 _CANONICAL = """
 COALESCE(
-    NULLIF(TRIM(c.setor_analitico), ''),
-    NULLIF(TRIM(c.setor_cvm), ''),
+    NULLIF(TRIM(c.gics_sector), ''),
     'Nao classificado'
 )
 """
@@ -236,7 +234,7 @@ QUERIES: list[tuple[str, str, dict]] = [
         "companies_directory_page (search='', p=1 ps=20)",
         f"""
         SELECT c.cd_cvm, c.company_name, COALESCE(c.ticker_b3,'') AS ticker_b3,
-               c.setor_analitico, c.setor_cvm,
+               c.setor_cvm,
                {_CANONICAL} AS sector_name,
                COALESCE(COUNT(fr."CD_CVM"),0) AS total_rows,
                CASE WHEN COUNT(fr."CD_CVM") > 0 THEN 1 ELSE 0 END AS has_financial_data,
@@ -244,7 +242,7 @@ QUERIES: list[tuple[str, str, dict]] = [
         FROM companies c
         LEFT JOIN financial_reports fr ON fr."CD_CVM" = c.cd_cvm
         WHERE 1=1
-        GROUP BY c.cd_cvm, c.company_name, c.ticker_b3, c.setor_analitico, c.setor_cvm, c.coverage_rank
+        GROUP BY c.cd_cvm, c.company_name, c.ticker_b3, c.setor_cvm, c.coverage_rank
         ORDER BY c.company_name ASC
         LIMIT 20 OFFSET 0
         """,
@@ -254,7 +252,7 @@ QUERIES: list[tuple[str, str, dict]] = [
         "companies_directory_page (search='empresa 01%')",
         f"""
         SELECT c.cd_cvm, c.company_name, COALESCE(c.ticker_b3,'') AS ticker_b3,
-               c.setor_analitico, c.setor_cvm,
+               c.setor_cvm,
                {_CANONICAL} AS sector_name,
                COALESCE(COUNT(fr."CD_CVM"),0) AS total_rows,
                CASE WHEN COUNT(fr."CD_CVM") > 0 THEN 1 ELSE 0 END AS has_financial_data,
@@ -264,7 +262,7 @@ QUERIES: list[tuple[str, str, dict]] = [
         WHERE (LOWER(c.company_name) LIKE :search
                OR LOWER(COALESCE(c.ticker_b3,'')) LIKE :search
                OR CAST(c.cd_cvm AS TEXT) LIKE :search)
-        GROUP BY c.cd_cvm, c.company_name, c.ticker_b3, c.setor_analitico, c.setor_cvm, c.coverage_rank
+        GROUP BY c.cd_cvm, c.company_name, c.ticker_b3, c.setor_cvm, c.coverage_rank
         ORDER BY c.company_name ASC
         LIMIT 20 OFFSET 0
         """,

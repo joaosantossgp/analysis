@@ -6,7 +6,6 @@ Cruza:
   - financial_reports
   - cadastro da CVM
   - ticker_map
-  - Excel analitico opcional para setor_analitico
 """
 from __future__ import annotations
 
@@ -76,32 +75,7 @@ def load_existing_companies(conn) -> pd.DataFrame:
     return df
 
 
-def load_sector_excel(settings) -> dict[int, str]:
-    excel_path = settings.paths.reports_dir / "base_analitica_dashboard_preenchida.xlsx"
-    fallback = {
-        24783: "Farmaceutico e Higiene",
-        22217: "Seguradoras e Corretoras",
-        22187: "Petroleo e Gas",
-        25291: "Petroleo e Gas",
-        5410: "Maquinas, Equipamentos, Veiculos e Pecas",
-        2437: "Energia Eletrica",
-    }
-
-    if excel_path.exists():
-        try:
-            df = pd.read_excel(excel_path, usecols=["cd_cvm", "setor_analitico"])
-            sector_map = df.dropna(subset=["setor_analitico"]).set_index("cd_cvm")["setor_analitico"].to_dict()
-            sector_map.update(fallback)
-            log.info("  %s setores analiticos carregados do Excel", len(sector_map))
-            return sector_map
-        except Exception as exc:
-            log.warning("  Erro ao ler Excel de setor analitico: %s", exc)
-
-    log.info("  Excel nao encontrado; usando %s setores fallback", len(fallback))
-    return dict(fallback)
-
-
-def build_companies_df(existing_df: pd.DataFrame, cvm_df: pd.DataFrame, sector_map: dict[int, str]) -> pd.DataFrame:
+def build_companies_df(existing_df: pd.DataFrame, cvm_df: pd.DataFrame) -> pd.DataFrame:
     rows = []
     resolver = CompanyIdentityResolver()
     for _, row in existing_df.iterrows():
@@ -134,7 +108,6 @@ def build_companies_df(existing_df: pd.DataFrame, cvm_df: pd.DataFrame, sector_m
                 "nome_comercial": nome_comercial,
                 "cnpj": cnpj,
                 "setor_cvm": setor_cvm,
-                "setor_analitico": sector_map.get(cd_cvm),
                 "company_type": str(row.get("COMPANY_TYPE", "comercial") or "comercial"),
                 "ticker_b3": ticker_val,
                 "is_active": is_active,
@@ -147,7 +120,6 @@ def upsert_companies(conn, df: pd.DataFrame, dry_run: bool) -> None:
     if dry_run:
         log.info("  [DRY-RUN] Inseriria %s empresas", len(df))
         log.info("    com ticker_b3: %s", int(df["ticker_b3"].notna().sum()))
-        log.info("    com setor_analitico: %s", int(df["setor_analitico"].notna().sum()))
         log.info("    com CNPJ: %s", int(df["cnpj"].notna().sum()))
         return
 
@@ -161,16 +133,15 @@ def upsert_companies(conn, df: pd.DataFrame, dry_run: bool) -> None:
         """
         INSERT INTO companies
             (cd_cvm, company_name, nome_comercial, cnpj, setor_cvm,
-             setor_analitico, company_type, ticker_b3, is_active, updated_at)
+             company_type, ticker_b3, is_active, updated_at)
         VALUES
             (:cd_cvm, :company_name, :nome_comercial, :cnpj, :setor_cvm,
-             :setor_analitico, :company_type, :ticker_b3, :is_active, :updated_at)
+             :company_type, :ticker_b3, :is_active, :updated_at)
         ON CONFLICT(cd_cvm) DO UPDATE SET
             company_name = excluded.company_name,
             nome_comercial = excluded.nome_comercial,
             cnpj = excluded.cnpj,
             setor_cvm = excluded.setor_cvm,
-            setor_analitico = excluded.setor_analitico,
             company_type = excluded.company_type,
             ticker_b3 = excluded.ticker_b3,
             is_active = excluded.is_active,
@@ -186,7 +157,6 @@ def upsert_companies(conn, df: pd.DataFrame, dry_run: bool) -> None:
             "nome_comercial": row["nome_comercial"],
             "cnpj": row["cnpj"],
             "setor_cvm": row["setor_cvm"],
-            "setor_analitico": row["setor_analitico"],
             "company_type": row["company_type"],
             "ticker_b3": row["ticker_b3"],
             "is_active": int(row["is_active"]),
@@ -202,13 +172,12 @@ def upsert_companies(conn, df: pd.DataFrame, dry_run: bool) -> None:
             """
             SELECT
                 COUNT(*) AS total,
-                SUM(CASE WHEN ticker_b3 IS NOT NULL THEN 1 ELSE 0 END) AS com_ticker,
-                SUM(CASE WHEN setor_analitico IS NOT NULL THEN 1 ELSE 0 END) AS com_setor
+                SUM(CASE WHEN ticker_b3 IS NOT NULL THEN 1 ELSE 0 END) AS com_ticker
             FROM companies
             """
         )
     ).fetchone()
-    log.info("  OK %s empresas em companies | %s com ticker | %s com setor analitico", totals[0], totals[1], totals[2])
+    log.info("  OK %s companies | %s with ticker", totals[0], totals[1])
 
 
 def print_summary(conn) -> None:
@@ -220,7 +189,6 @@ def print_summary(conn) -> None:
             SELECT
                 COUNT(*) AS total,
                 SUM(CASE WHEN ticker_b3 IS NOT NULL THEN 1 ELSE 0 END) AS com_ticker,
-                SUM(CASE WHEN setor_analitico IS NOT NULL THEN 1 ELSE 0 END) AS com_setor,
                 SUM(CASE WHEN cnpj IS NOT NULL THEN 1 ELSE 0 END) AS com_cnpj,
                 SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) AS ativas
             FROM companies
@@ -228,14 +196,13 @@ def print_summary(conn) -> None:
         )
     ).fetchone()
     log.info("  Total: %s", row[0])
-    log.info("  Com ticker B3: %s", row[1])
-    log.info("  Com setor: %s", row[2])
-    log.info("  Com CNPJ: %s", row[3])
-    log.info("  Ativas: %s", row[4])
+    log.info("  With B3 ticker: %s", row[1])
+    log.info("  With CNPJ: %s", row[2])
+    log.info("  Active: %s", row[3])
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Popula tabela companies com CVM + tickers + setores")
+    parser = argparse.ArgumentParser(description="Populate the companies table from CVM metadata and tickers")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--no-cvm-download", action="store_true", help="Nao baixa o cadastro da CVM")
     args = parser.parse_args()
@@ -261,10 +228,9 @@ def main() -> None:
     else:
         cvm_df = fetch_cvm_master(settings.company_list_timeout)
 
-    sector_map = load_sector_excel(settings)
     with engine.begin() as conn:
         existing_df = load_existing_companies(conn)
-        companies_df = build_companies_df(existing_df, cvm_df, sector_map)
+        companies_df = build_companies_df(existing_df, cvm_df)
         log.info("=== Inserindo em companies ===")
         upsert_companies(conn, companies_df, args.dry_run)
         if not args.dry_run:
