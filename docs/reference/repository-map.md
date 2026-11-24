@@ -119,6 +119,7 @@ There is no root `package.json`. The active Node package is
 | `scripts/qa/` | Consolidation, line-id, and workbook verification |
 | `scripts/release/` | Desktop dev launchers, MOTW tests, PR helper |
 | `scripts/governance/` | Repository contract tests and legacy worktree helpers |
+| `scripts/curation/` | Development-only GICS curation tools (structure extraction, Claude batch proposals); not app runtime, SDK installed separately |
 
 `pytest.ini` includes `tests` and `scripts`, so `test_*.py` files under
 `scripts/` are pytest-discovered.
@@ -171,5 +172,6 @@ Do not copy commands from historical plans.
 | `.github/workflows/release-desktop.yml` | Published artifact creation |
 | `src/platform/settings.py` | User data path resolution |
 | `data/import/canonical_accounts.csv`, `data/import/gics_mapping.csv` | Bundled/imported data contracts |
+| `data/reference/gics_structure.csv` | Current GICS codes and names (no definitions) used by curation |
 | `src/financials/excel_exporter.py` | Financial workbook auditability |
 | `apps/api/`, `railway.toml` | HTTP API/deploy surface; still active |

@@ -1,0 +1,18 @@
+{
+  "batch_id": "msgbatch_01FwUrEKfwu3C55LfTQiPAve",
+  "collected": "2026-11-24",
+  "companies": 20,
+  "classified": 19,
+  "unclassified": 1,
+  "coherence_flags": 0,
+  "failures": [],
+  "usage": {
+    "input": 4818,
+    "cache_write": 64823,
+    "cache_read": 1624243,
+    "output": 13352,
+    "search": 21
+  },
+  "cost_usd": 0.7749,
+  "cost_per_company_usd": 0.0387
+}
