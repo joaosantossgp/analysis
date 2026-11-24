@@ -1618,6 +1618,9 @@ export interface BridgeApi {
   get_market_cap_list(params?: Record<string, unknown>): Promise<{ ok: boolean; error?: string; items: MarketCapEntry[] }>;
   import_market_cap_snapshot(params: { csv_content?: string; file_path?: string }): Promise<MarketCapImportResponse>;
   get_market_cap_status(params?: Record<string, unknown>): Promise<MarketCapStatus>;
+  fetch_market_cap_snapshot(
+    params?: Record<string, unknown>,
+  ): Promise<{ ok: boolean; error?: string; status?: MarketCapStatus }>;
   get_database_diagnostics(params?: Record<string, unknown>): Promise<DatabaseDiagnostics>;
   get_data_coverage(params?: Record<string, unknown>): Promise<DataCoverageResponse>;
   set_company_ignored(params: Record<string, unknown>): Promise<SetCompanyIgnoredResponse>;
