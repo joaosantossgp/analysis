@@ -4,12 +4,15 @@ import { Link } from "react-router-dom";
 
 import { PageHeader } from "@/components/PageHeader";
 import { StateBanner } from "@/components/feedback/StateBanner";
+import { Button } from "@/components/ui/Button";
 import { useRefreshJobInvalidation } from "@/hooks/useRefreshJobInvalidation";
 import { fetchDataCoverage } from "@/lib/api/dataCoverage";
 import {
   BATCH_SIZE_OPTIONS,
   CVM_MIN_YEAR,
   DataUpdateBlockedError,
+  describeMarketCapFetch,
+  fetchMarketCapSnapshot,
   defaultRefreshWindow,
   fetchBaseHealth,
   fetchCompanyUniverseSelection,
@@ -580,6 +583,7 @@ function UpdatePanel({
           <InlineNotice tone="warning">
             <span className="font-semibold">Configuration needed — no job was started.</span>{" "}
             {error.message}
+            {error.reasonCode === "company_universe_unavailable" ? <MarketCapFetchAction /> : null}
           </InlineNotice>
         ) : (
           <InlineNotice tone="error">
@@ -588,6 +592,23 @@ function UpdatePanel({
         )
       ) : null}
     </Card>
+  );
+}
+
+function MarketCapFetchAction() {
+  const queryClient = useQueryClient();
+  const fetchMutation = useMutation({
+    mutationFn: fetchMarketCapSnapshot,
+    onSuccess: () => void queryClient.invalidateQueries(),
+  });
+  return (
+    <span className="mt-2 flex flex-wrap items-center gap-2">
+      <Button size="xs" variant="secondary" loading={fetchMutation.isPending} onClick={() => fetchMutation.mutate()}>
+        Fetch market caps (Yahoo Finance)
+      </Button>
+      {fetchMutation.data ? <span>{describeMarketCapFetch(fetchMutation.data)}</span> : null}
+      {fetchMutation.error ? <span role="alert">{(fetchMutation.error as Error).message}</span> : null}
+    </span>
   );
 }
 

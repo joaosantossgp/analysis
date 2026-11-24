@@ -455,6 +455,22 @@ class RefreshBridgeMixin:
         except Exception as exc:
             return self._sanitize_for_json({"ok": False, "error": str(exc)})
 
+    def fetch_market_cap_snapshot(self, params=None) -> dict:
+        """Explicit refresh of the market-cap snapshot from Yahoo Finance (unofficial source)."""
+        if not self._is_write_allowed():
+            return self._sanitize_for_json(self._write_blocked_response("fetch_market_cap_snapshot"))
+        try:
+            from src.companies.market_cap import MarketCapService  # noqa: PLC0415
+            svc = self._svc()
+            status = MarketCapService(settings=svc.settings, read_service=svc).fetch_from_yahoo_finance()
+            svc.invalidate_read_caches()
+            self._append_runtime_log(f"fetch_market_cap_snapshot: rows={status.get('row_count')}")
+            return self._sanitize_for_json({"ok": True, "status": status})
+        except Exception as exc:
+            logger.warning("fetch_market_cap_snapshot failed: %s", exc)
+            self._append_runtime_log(f"fetch_market_cap_snapshot failed: {exc}")
+            return self._sanitize_for_json({"ok": False, "error": str(exc)})
+
     def get_market_cap_status(self, params=None) -> dict:
         try:
             from src.companies.market_cap import MarketCapService  # noqa: PLC0415

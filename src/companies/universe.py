@@ -725,7 +725,7 @@ def _market_cap_unavailable_message(
     suffix = f" Details: {details}" if details else ""
     return (
         "Market cap ranking source is unavailable. "
-        "Run database updates to refresh from Yahoo Finance, "
+        "Fetch market caps from Yahoo Finance (unofficial), "
         f"place a versioned local snapshot at {snapshot_path}, "
         "or choose All B3 companies."
         f"{suffix}"

@@ -9,6 +9,7 @@ import type {
   DatabaseDiagnostics,
   DataUpdateSettings,
   DataUpdateStartResponse,
+  MarketCapStatus,
   RefreshDispatchResponse,
   RefreshJobListResponse,
   RefreshJobStatus,
@@ -419,4 +420,18 @@ export function useWorkspaceStatus(bridgeReady = true) {
     mode,
     isLoading: jobsQuery.isLoading || healthQuery.isLoading || diagQuery.isLoading,
   };
+}
+
+/** Explicit market-cap refresh from Yahoo Finance (unofficial); writes the local snapshot. */
+export async function fetchMarketCapSnapshot(): Promise<MarketCapStatus> {
+  if (getBridgeMode() === "browser") throw new Error("Fetching market caps needs the desktop bridge.");
+  const result = await callBridge("fetch_market_cap_snapshot", {});
+  if (!result.ok || !result.status) throw new Error(result.error ?? "Could not fetch market caps.");
+  return result.status;
+}
+
+export function describeMarketCapFetch(status: MarketCapStatus): string {
+  return `Market caps fetched for ${status.row_count} companies from Yahoo Finance (unofficial), as of ${
+    status.as_of_date ?? "today"
+  }. Click Update Database again.`;
 }

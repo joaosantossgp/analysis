@@ -515,3 +515,53 @@ def test_refresh_all_company_market_history_invalidates_cached_reads(tmp_path, m
     assert response["ok"] is True
     assert response["success_count"] == 2
     assert invalidations == [True]
+
+
+def test_fetch_market_cap_snapshot_runs_the_yahoo_refresh_explicitly(tmp_path, monkeypatch):
+    calls = []
+
+    class FakeMarketCapService:
+        def __init__(self, *, settings, read_service):
+            self.settings = settings
+
+        def fetch_from_yahoo_finance(self):
+            calls.append(True)
+            return {"available": True, "row_count": 209, "as_of_date": "2026-11-24", "source": "yahoo_finance"}
+
+    invalidations = []
+    bridge = CVMBridge()
+    bridge._service = SimpleNamespace(
+        settings=build_settings(project_root=tmp_path),
+        invalidate_read_caches=lambda: invalidations.append(True),
+    )
+    monkeypatch.setattr("src.companies.market_cap.MarketCapService", FakeMarketCapService)
+
+    response = bridge.fetch_market_cap_snapshot({})
+
+    assert response["ok"] is True and response["status"]["row_count"] == 209
+    assert calls == [True] and invalidations == [True]
+
+
+def test_fetch_market_cap_snapshot_reports_failure_without_raising(tmp_path, monkeypatch):
+    class FailingMarketCapService:
+        def __init__(self, *, settings, read_service):
+            pass
+
+        def fetch_from_yahoo_finance(self):
+            raise RuntimeError("Yahoo Finance API request failed: offline")
+
+    bridge = CVMBridge()
+    bridge._service = SimpleNamespace(settings=build_settings(project_root=tmp_path), invalidate_read_caches=lambda: None)
+    monkeypatch.setattr("src.companies.market_cap.MarketCapService", FailingMarketCapService)
+
+    response = bridge.fetch_market_cap_snapshot({})
+
+    assert response["ok"] is False and "offline" in response["error"]
+
+
+def test_market_cap_unavailable_message_points_to_an_action_that_exists():
+    from src.companies.universe import _market_cap_unavailable_message
+
+    message = _market_cap_unavailable_message(snapshot_path=Path("snap.csv"), provider_errors=[])
+    assert "Run database updates" not in message
+    assert "Fetch market caps" in message
