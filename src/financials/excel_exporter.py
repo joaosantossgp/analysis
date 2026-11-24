@@ -1808,7 +1808,9 @@ class ExcelExporter:
             self._overrides = resolver.get_overrides(self.info.get("cd_cvm", 0)) if self.engine else {}
             self._aliases = resolver.get_aliases() if self.engine else []
 
-        row_resolved = bool(entry.sources)
+        target_overrides = self._overrides.get(entry.target_id, {})
+        row_resolved = bool(entry.sources) or bool(target_overrides)
+        overridden_periods: list[str] = []
         warnings: list[str] = []
         if entry.operation not in VALID_MAPPING_OPERATIONS:
             warnings.append(f"invalid operation: {entry.operation}")
@@ -1829,9 +1831,21 @@ class ExcelExporter:
                 continue
 
             active_resolutions_for_p = []
-            sources_to_resolve = entry.sources[:1] if entry.operation == "direct" else entry.sources
+            # A saved override (period first, then GLOBAL) replaces the preset sources for this period.
+            override = target_overrides.get(str(p)) or target_overrides.get("GLOBAL")
+            if override:
+                overridden_periods.append(str(p))
+                code = str(override["source_code"])
+                sources_to_resolve = (ModelMappingSource(
+                    statement_type=entry.statement_type,
+                    line_id_base=code,
+                    cd_conta=code,
+                    label_snapshot=override.get("source_desc"),
+                    sign=-1 if int(override.get("sign") or 1) < 0 else 1,
+                ),)
+            else:
+                sources_to_resolve = entry.sources[:1] if entry.operation == "direct" else entry.sources
             for source in sources_to_resolve:
-                # Find matching override or preset source
                 raw_row = self._resolve_raw_row_for_p(source.statement_type, source.line_id_base, p)
                 if raw_row is not None:
                     s_idx = self._raw_index.get(source.statement_type)
@@ -1851,7 +1865,7 @@ class ExcelExporter:
                 cond_terms.append(f"'{safe_sheet}'!{cell_ref}<>\"\"")
                 
                 term = f"'{safe_sheet}'!{cell_ref}/{_MODEL_SCALE_DIVISOR:.0f}"
-                if entry.operation == "sum_with_sign" and source.sign < 0:
+                if (override or entry.operation == "sum_with_sign") and source.sign < 0:
                     term = f"-{term}"
                 elif math_terms:
                     term = f"+{term}"
@@ -1866,6 +1880,8 @@ class ExcelExporter:
                 resolved_formula = formula
             ws.write_formula(row, c_idx, formula, cell_fmt)
 
+        if overridden_periods:
+            warnings.append("manual override applied for periods: " + ", ".join(overridden_periods))
         self._mapping_audit_rows.append(
             {
                 "target_id": entry.target_id,
