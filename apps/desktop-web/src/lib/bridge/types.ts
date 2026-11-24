@@ -310,6 +310,8 @@ export type CompanyInfo = {
   gics_sub_industry?: string | null;
   /** Canonical classification with curation evidence; null before the curated layer loads. */
   classification?: CompanyClassification | null;
+  /** B3 sector labels as published by B3, from the last explicit refresh; null if never fetched. */
+  b3_classification?: B3Classification | null;
   has_local_financial_reports: boolean;
   has_readable_current_data: boolean;
   readable_years_count: number;
@@ -1636,6 +1638,8 @@ export interface BridgeApi {
   save_excel_mapping_override(params: Record<string, unknown>): Promise<{ ok: boolean; error?: string }>;
   delete_excel_mapping_override(params: Record<string, unknown>): Promise<{ ok: boolean; error?: string }>;
   get_gics_structure(params?: Record<string, unknown>): Promise<{ ok: boolean; error?: string; items: GicsSubIndustry[] }>;
+  get_b3_classification_status(params?: Record<string, unknown>): Promise<B3RefreshStatus>;
+  refresh_b3_classification(params?: Record<string, unknown>): Promise<B3RefreshRun & { ok: boolean; error?: string }>;
   set_company_classification(
     params: Record<string, unknown>,
   ): Promise<{ ok: boolean; error?: string; classification?: CompanyClassification }>;
@@ -1768,4 +1772,34 @@ export interface GicsSubIndustry {
   sub_industry_code: string;
   sub_industry: string;
   gics_version: string;
+}
+
+/** B3 sector classification for one company, stored as published by B3. */
+export interface B3Classification {
+  b3_sector: string | null;
+  b3_subsector: string | null;
+  b3_segment: string | null;
+  raw_classification: string | null;
+  source_url: string;
+  fetched_at: string;
+  stale: boolean;
+}
+
+export interface B3RefreshRun {
+  started_at: string;
+  finished_at: string;
+  requested: number;
+  succeeded: number;
+  not_listed: number;
+  failed: number;
+  errors: string[] | string | null;
+}
+
+export interface B3RefreshStatus {
+  ok: boolean;
+  error?: string;
+  last_run: B3RefreshRun | null;
+  stored_companies: number;
+  stale: boolean;
+  stale_after_days: number;
 }

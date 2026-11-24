@@ -604,6 +604,25 @@ class CompanyBridgeMixin:
         except Exception as exc:
             return self._sanitize_for_json({"ok": False, "error": str(exc)})
 
+    def get_b3_classification_status(self, params=None) -> dict:
+        """Last B3 sector refresh and stored coverage (offline read)."""
+        try:
+            from src.companies.b3_classification import b3_refresh_status  # noqa: PLC0415
+            return self._sanitize_for_json({"ok": True, **b3_refresh_status(self._svc().engine)})
+        except Exception as exc:
+            return self._sanitize_for_json({"ok": False, "error": str(exc)})
+
+    def refresh_b3_classification(self, params=None) -> dict:
+        """Explicit refresh of B3 sector labels for local companies (network call to B3)."""
+        if not self._is_write_allowed():
+            return self._sanitize_for_json(self._write_blocked_response("refresh_b3_classification"))
+        try:
+            from src.companies.b3_classification import refresh_b3_classification  # noqa: PLC0415
+            summary = refresh_b3_classification(self._svc().engine)
+            return self._sanitize_for_json({"ok": True, **summary})
+        except Exception as exc:
+            return self._sanitize_for_json({"ok": False, "error": str(exc)})
+
     def get_output_dir(self, params=None) -> dict:
         """Return the absolute path of the persistent output folder so the
         Vite UI can show users where exports will land."""

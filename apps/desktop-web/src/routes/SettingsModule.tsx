@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { fetchSettingsHealthSummary } from "@/lib/api/settingsHealth";
 import { fetchStorageInventory, startStorageInventoryScan, type StorageInventoryResult } from "@/lib/api/storageInventory";
 import { openStatusPath, type StatusPathKind } from "@/lib/api/appStatus";
+import { describeB3Refresh, fetchB3ClassificationStatus, refreshB3Classification } from "@/lib/api/b3Classification";
 import type {
   LocalPathInfo,
   SettingsHealthSegment,
@@ -360,9 +361,12 @@ function SettingsSources({
       </div>
 
       {view === "sources" ? (
-        <Panel title="Data Sources" subtitle="Managed local sources and their current state.">
-          <SegmentList segments={sourceSegments} />
-        </Panel>
+        <>
+          <Panel title="Data Sources" subtitle="Managed local sources and their current state.">
+            <SegmentList segments={sourceSegments} />
+          </Panel>
+          <B3SectorSourcePanel />
+        </>
       ) : (
         <SettingsGroup
           title="Manual Imports"
@@ -373,6 +377,45 @@ function SettingsSources({
 
       )}
     </>
+  );
+}
+
+function B3SectorSourcePanel() {
+  const queryClient = useQueryClient();
+  const status = useQuery({ queryKey: ["b3-classification-status"], queryFn: fetchB3ClassificationStatus });
+  const refresh = useMutation({
+    mutationFn: refreshB3Classification,
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ["b3-classification-status"] });
+      void queryClient.invalidateQueries({ queryKey: ["company-info"] });
+    },
+  });
+  const errors = status.data?.last_run?.errors;
+  const errorText = Array.isArray(errors) ? errors.join("\n") : errors;
+
+  return (
+    <Panel
+      title="B3 sector classification"
+      subtitle="Setor / subsetor / segmento as published by B3 for local companies. Shown as source metadata, never as the GICS classification. Fetched only when you refresh."
+      actions={
+        <Button size="sm" variant="secondary" loading={refresh.isPending} onClick={() => refresh.mutate()}>
+          Refresh B3 sectors
+        </Button>
+      }
+    >
+      {status.isLoading ? <StateBanner variant="loading" title="Loading B3 sector status..." /> : null}
+      {status.error ? <StateBanner variant="error" message={String((status.error as Error).message ?? status.error)} /> : null}
+      {status.data ? (
+        <div className="flex flex-col gap-2 text-sm">
+          <span style={{ color: status.data.stale || status.data.last_run?.failed ? "var(--color-state-warn)" : undefined }}>
+            {describeB3Refresh(status.data)}
+          </span>
+          <span className="text-xs text-zinc-500">{status.data.stored_companies} companies have stored B3 sectors.</span>
+          {errorText ? <pre className="text-xs whitespace-pre-wrap text-zinc-400">{errorText}</pre> : null}
+        </div>
+      ) : null}
+      {refresh.error ? <StateBanner variant="error" message={(refresh.error as Error).message} /> : null}
+    </Panel>
   );
 }
 

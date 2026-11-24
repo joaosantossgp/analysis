@@ -18,6 +18,7 @@ from src.companies.catalog import (
     CompanyCatalogUnavailableError,
     CompanyCatalogService,
 )
+from src.companies.b3_classification import b3_classification_for
 from src.companies.classification import company_classification, has_curated_layer
 
 # Directory filter slug -> (classification_origin, label) for companies without a GICS sector.
@@ -562,7 +563,13 @@ class ReadServiceQueryMixin:
             gics_industry=gics.gics_industry if gics else None,
             gics_sub_industry=gics.gics_sub_industry if gics else None,
             classification=classification,
+            b3_classification=self._b3_classification(int(payload.get("cd_cvm") or default_cd_cvm)),
         )
+
+    def _b3_classification(self, cd_cvm: int) -> dict[str, Any] | None:
+        """Locally stored B3 sector labels (source metadata, never fetched on read)."""
+        with self.engine.connect() as conn:
+            return b3_classification_for(conn, cd_cvm)
 
     def _company_classification(self, cd_cvm: int) -> dict[str, Any] | None:
         """Canonical classification once the curated layer is loaded; None before that."""
