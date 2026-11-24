@@ -1,7 +1,7 @@
 # Project Status
 
 Current snapshot, updated when release state, active work or a major decision changes.
-Keep detail in the owning contract or dated evidence. Last updated: 2026-11-16.
+Keep detail in the owning contract or dated evidence. Last updated: 2026-11-24.
 
 ## Version and releases
 
@@ -28,6 +28,13 @@ Keep detail in the owning contract or dated evidence. Last updated: 2026-11-16.
   see [delivery direction](PRODUCT_DIRECTION.md#delivery-direction-2026-11-13).
 - The [maintenance audit](research/2026-11-16-documentation-architecture-governance-audit.md)
   records the first round (#509-#511). Later CI/refactoring recommendations remain proposals.
+- Canonical company classification delivered (#516, #517-#525): one curated GICS
+  sub-industry per active CVM company, local analyst edits, explicit B3 sector source,
+  and `setor_analitico` removed. Decision: [ADR 0009](decisions/0009-curated-gics-classification.md);
+  contract: [GICS classification](reference/gics-import.md). The curated dataset was
+  accepted without row-by-row review (`accepted_without_review`); low-confidence rows are
+  the first candidates for correction. Next proposed cycle: Excel mapping account tree
+  and presets attached to GICS levels (not yet specified as issues).
 
 ## Validation and historical evidence
 
