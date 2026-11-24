@@ -167,3 +167,18 @@ def test_cancelled_company_keeps_its_classification(service):
     info = svc.get_company_info(10)
     assert info.is_active is False
     assert (info.gics_sector, info.classification["origin"]) == ("Energy", "curated")
+
+
+def test_every_read_path_reports_the_same_canonical_sector(service):
+    svc, _ = service
+    with sqlite3.connect(svc.settings.paths.db_path) as conn:
+        conn.execute("UPDATE companies SET setor_cvm='Petroleo e Gas', setor_analitico='Legacy label' WHERE cd_cvm=10")
+    svc._company_filters_cache = None
+    info = svc.get_company_info(10)
+    item = next(i for i in svc.list_companies(page_size=10).items if i.cd_cvm == 10)
+    by_sector = svc.list_companies(sector_slug="energy", page_size=10).items
+    assert info.sector_name == item.sector_name == item.gics_sector == "Energy"
+    assert [i.cd_cvm for i in by_sector] == [10]
+    assert info.setor_cvm == "Petroleo e Gas"  # CVM label stays available as labelled metadata
+    pending = svc.get_company_info(30)
+    assert pending.sector_name == "Nao classificado"

@@ -60,7 +60,7 @@ export function PriorityQueueCard({
   const uniqueSectors = useMemo(() => {
     const sectors = new Set<string>();
     priorities.forEach((p: any) => {
-      const s = p.gics_sector || p.setor_analitico;
+      const s = p.gics_sector;
       if (s && s !== "Unknown") sectors.add(s);
     });
     return Array.from(sectors).sort();
@@ -69,7 +69,7 @@ export function PriorityQueueCard({
   const filteredPriorities = useMemo(() => {
     return priorities.filter((item: any) => {
       const matchTier = selectedTier === "ALL" || item.tier === selectedTier;
-      const sector = item.gics_sector || item.setor_analitico;
+      const sector = item.gics_sector;
       const matchSector = selectedSector === "ALL" || sector === selectedSector;
       return matchTier && matchSector;
     });

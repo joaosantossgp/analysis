@@ -253,7 +253,7 @@ class ReadServiceExportMixin:
             raw_statement_rows=raw_rows_dict,
             overrides=overrides,
             aliases=aliases,
-            company_sector=company_info.get("setor_analitico"),
+            company_sector=company_info.get("gics_sector"),
         )
         preview_periods = self._mapping_preview_periods(
             raw_statements,
@@ -301,7 +301,7 @@ class ReadServiceExportMixin:
             is_financial,
             engine=self.engine,
             company_id=cd_cvm,
-            company_sector=company_info.get("setor_analitico"),
+            company_sector=company_info.get("gics_sector"),
             resolutions=resolutions_by_key,
         )
 

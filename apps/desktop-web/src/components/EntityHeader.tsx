@@ -38,7 +38,7 @@ const MISSING_CLASSIFICATION = "—";
 export function getCompanyHeaderClassificationBadges(
   info: CompanyHeaderClassificationInput,
 ): CompanyHeaderClassificationBadge[] {
-  const cvmSector = cleanClassification(info.sector_name) || cleanClassification(info.setor_cvm);
+  const cvmSector = cleanClassification(info.setor_cvm);
   const industryGroup = cleanClassification(info.gics_industry_group);
   const classification = info.classification;
   const status = CLASSIFICATION_STATUS_LABEL[classification?.origin ?? ""];

@@ -21,10 +21,10 @@ def sector_slugify(sector_name: str | None) -> str:
 
 def canonical_sector_sql(table_alias: str | None = "c") -> str:
     prefix = f"{table_alias}." if table_alias else ""
+    # The canonical sector is the materialized GICS sector; CVM labels are metadata only.
     return f"""
 COALESCE(
-    NULLIF(TRIM({prefix}setor_analitico), ''),
-    NULLIF(TRIM({prefix}setor_cvm), ''),
+    NULLIF(TRIM({prefix}gics_sector), ''),
     'Nao classificado'
 )
 """

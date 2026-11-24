@@ -140,8 +140,8 @@ def test_companies_empty_search_returns_paginated_directory(client: TestClient):
     assert payload["pagination"]["page_size"] == 20
     assert payload["items"][0]["company_name"] == "PETROBRAS"
     assert payload["items"][0]["anos_disponiveis"] == [2023, 2024]
-    assert payload["items"][0]["sector_name"] == "Energia"
-    assert payload["items"][0]["sector_slug"] == "energia"
+    assert payload["items"][0]["sector_name"] == "Energy"
+    assert payload["items"][0]["sector_slug"] == "energy"
     assert payload["items"][0]["has_financial_data"] is True
     returned_names = [item["company_name"] for item in payload["items"]]
     assert "SEM DADOS" in returned_names
@@ -322,7 +322,7 @@ def test_company_suggestions_payload_has_minimal_fields_only(client: TestClient)
     assert item["cd_cvm"] == 9512
     assert item["company_name"] == "PETROBRAS"
     assert item["ticker_b3"] == "PETR4"
-    assert item["sector_slug"] == "energia"
+    assert item["sector_slug"] == "energy"
 
 
 def test_company_suggestions_filters_by_ticker(client: TestClient):
@@ -360,19 +360,19 @@ def test_company_suggestions_can_limit_to_ready_companies(client: TestClient):
             "cd_cvm": 9512,
             "company_name": "PETROBRAS",
             "ticker_b3": "PETR4",
-            "sector_slug": "energia",
+            "sector_slug": "energy",
         },
         {
             "cd_cvm": 11223,
             "company_name": "SABESP",
             "ticker_b3": "SBSP3",
-            "sector_slug": "saneamento",
+            "sector_slug": "utilities",
         },
         {
             "cd_cvm": 4170,
             "company_name": "VALE",
             "ticker_b3": "VALE3",
-            "sector_slug": "materiais-basicos",
+            "sector_slug": "materials",
         },
     ]
 
@@ -867,8 +867,8 @@ def test_company_detail_returns_metadata(client: TestClient):
     payload = response.json()
     assert payload["company_name"] == "PETROBRAS"
     assert payload["ticker_b3"] == "PETR4"
-    assert payload["sector_name"] == "Energia"
-    assert payload["sector_slug"] == "energia"
+    assert payload["sector_name"] == "Energy"
+    assert payload["sector_slug"] == "energy"
     assert payload["has_readable_current_data"] is True
     assert payload["has_local_financial_reports"] is True
     assert payload["readable_years_count"] == 2
@@ -899,8 +899,9 @@ def test_company_detail_uses_catalog_fallback_for_unknown_local_company(
     payload = response.json()
     assert payload["company_name"] == "ITAU UNIBANCO HOLDING S.A."
     assert payload["nome_comercial"] == "Itau Unibanco"
-    assert payload["sector_name"] == "Financeiro"
-    assert payload["sector_slug"] == "financeiro"
+    # No GICS classification: the CVM label is not used as the sector.
+    assert payload["sector_name"] == "Nao classificado"
+    assert payload["setor_cvm"] == "Financeiro"
     assert payload["ticker_b3"] == "ITUB4"
     assert payload["has_readable_current_data"] is False
     assert payload["has_local_financial_reports"] is False
@@ -914,14 +915,15 @@ def test_company_detail_uses_catalog_fallback_for_unknown_local_company(
     )
 
 
-def test_company_detail_uses_sector_fallback_when_analytical_sector_is_missing(client: TestClient):
+def test_company_detail_sector_is_the_gics_sector_not_the_cvm_label(client: TestClient):
     response = client.get("/companies/11223")
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["company_name"] == "SABESP"
-    assert payload["sector_name"] == "Saneamento"
-    assert payload["sector_slug"] == "saneamento"
+    assert payload["sector_name"] == "Utilities"
+    assert payload["sector_slug"] == "utilities"
+    assert payload["setor_cvm"] == "Saneamento"
 
 
 def test_company_detail_flags_partial_local_financial_rows_without_annual_history(

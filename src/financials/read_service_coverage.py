@@ -1851,7 +1851,7 @@ class ReadServiceCoverageMixin:
             setor_analitico = self._clean_optional_text(row.get("setor_analitico"))
             setor_cvm = self._clean_optional_text(row.get("setor_cvm"))
             raw_sector_name = self._clean_optional_text(row.get("sector_name"))
-            sector_name = raw_sector_name or canonical_sector_name(setor_analitico, setor_cvm)
+            sector_name = raw_sector_name or canonical_sector_name(row.get("persisted_gics_sector"), None)
             gics = resolve_gics_classification(
                 sector_name=sector_name,
                 setor_analitico=setor_analitico,
@@ -1972,8 +1972,8 @@ class ReadServiceCoverageMixin:
             if local_result is not None:
                 items.append(local_result)
                 continue
-            legacy_sector = canonical_sector_name(None, entry.setor_cvm)
             canonical = curated_columns.get(cd, {}) if curated_columns is not None else {}
+            legacy_sector = canonical_sector_name(canonical.get("gics_sector"), None)
             items.append(
                 CompanySearchResult(
                     cd_cvm=cd,
