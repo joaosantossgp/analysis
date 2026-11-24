@@ -291,3 +291,60 @@ def test_public_service_preserves_mapping_commands(tmp_path):
         assert ModelResolver(engine).get_overrides(1234) == {}
     finally:
         engine.dispose()
+
+
+def _override_engine(tmp_path, *overrides):
+    from src.financials.excel_mapping import ensure_excel_mapping_tables_for_connection
+    from src.financials.resolver import ModelResolver
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'overrides.db'}")
+    with engine.begin() as conn:
+        ensure_excel_mapping_tables_for_connection(conn)
+    for period, code, sign in overrides:
+        ModelResolver(engine).save_override(1234, "DRE:3.01", period, code, source_desc=code, sign=sign)
+    return engine
+
+
+def _two_period_statements() -> dict[str, pd.DataFrame]:
+    statements = _statements()
+    statements["DRE"] = statements["DRE"].assign(**{"2023": statements["DRE"]["2024"]})[
+        ["CD_CONTA", "DS_CONTA", "STANDARD_NAME", "LINE_ID_BASE", "2023", "2024"]
+    ]
+    return statements
+
+
+def _revenue_formulas_and_audit(engine, statements):
+    exporter = ExcelExporter(
+        company_info=_company(),
+        statements=statements,
+        kpis_df=pd.DataFrame(),
+        model_mapping=build_default_model_mapping(_company()),
+        engine=engine,
+    )
+    wb = openpyxl.load_workbook(io.BytesIO(exporter.export()), data_only=False)
+    ws = wb["Model"]
+    row = _find_model_row(ws, "Revenue (=)")
+    formulas = [str(ws.cell(row=row, column=col).value) for col in (4, 5)]
+    audit = wb["mapping_audit"]
+    audit_row = next(
+        [audit.cell(row=r, column=c).value for c in range(1, audit.max_column + 1)]
+        for r in range(2, audit.max_row + 1)
+        if audit.cell(row=r, column=2).value == "DRE:3.01"
+    )
+    return formulas, audit_row
+
+
+def test_period_override_replaces_preset_source_only_for_that_period(tmp_path):
+    engine = _override_engine(tmp_path, ("2024", "3.01.01", 1))
+    (f2023, f2024), audit_row = _revenue_formulas_and_audit(engine, _two_period_statements())
+    # raw_DRE rows: 3.01.01 is row 2, 3.01 is row 4.
+    assert "'raw_DRE'!" in f2023 and "4/1000" in f2023
+    assert "'raw_DRE'!" in f2024 and "2/1000" in f2024 and "4/1000" not in f2024
+    assert "manual override" in " ".join(str(v) for v in audit_row if v)
+
+
+def test_global_override_applies_to_every_period_with_its_sign(tmp_path):
+    engine = _override_engine(tmp_path, ("GLOBAL", "3.01.02", -1))
+    (f2023, f2024), _ = _revenue_formulas_and_audit(engine, _two_period_statements())
+    for formula in (f2023, f2024):
+        assert "-'raw_DRE'!" in formula and "3/1000" in formula
