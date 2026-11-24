@@ -166,7 +166,6 @@ def test_excel_exporter_contains_formulas():
         "ticker_b3": "FORM3",
         "cnpj": "00.000.000/0001-99",
         "setor_cvm": "Industrial",
-        "setor_analitico": "Industrial",
     }
     
     # Minimal statements that populate Revenue, Costs and Gross Profit
@@ -317,7 +316,6 @@ def test_excel_exporter_cfo_three_component_formula():
         "ticker_b3": "CFOT3",
         "cnpj": "00.000.000/0001-88",
         "setor_cvm": "Industrial",
-        "setor_analitico": "Industrial",
     }
     
     def _row(cd_conta: str, label: str, value: float) -> dict[str, object]:

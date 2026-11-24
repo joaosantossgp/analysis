@@ -93,7 +93,6 @@ def _companies_ddl() -> str:
         nome_comercial  TEXT,
         cnpj            TEXT,
         setor_cvm       TEXT,
-        setor_analitico TEXT,
         company_type    TEXT NOT NULL DEFAULT 'comercial',
         ticker_b3       TEXT,
         coverage_rank   INTEGER,
@@ -141,7 +140,6 @@ def step2_create_companies_table(conn, dry_run: bool) -> None:
         conn,
         [
             _companies_ddl(),
-            "CREATE INDEX IF NOT EXISTS idx_companies_setor ON companies(setor_analitico)",
             "CREATE UNIQUE INDEX IF NOT EXISTS uix_companies_cnpj ON companies(cnpj) WHERE cnpj IS NOT NULL",
             "CREATE INDEX IF NOT EXISTS idx_companies_ticker ON companies(ticker_b3) WHERE ticker_b3 IS NOT NULL",
         ],

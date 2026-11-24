@@ -172,7 +172,6 @@ Do not copy commands from historical plans.
 | `.github/workflows/release-desktop.yml` | Published artifact creation |
 | `src/platform/settings.py` | User data path resolution |
 | `data/import/canonical_accounts.csv` | Bundled/imported data contract |
-| `data/import/gics_mapping.csv` | Superseded CVM-derived GICS mapping, no longer read by the app; removal in #525 |
 | `data/reference/gics_structure.csv` | Current GICS codes and names (no definitions) used by curation |
 | `data/curation/gics_curated.csv` | Curated GICS sub-industry per active CVM company (to be loaded by the app, #518); review evidence and cost reports live beside it |
 | `src/financials/excel_exporter.py` | Financial workbook auditability |

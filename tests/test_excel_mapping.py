@@ -26,7 +26,6 @@ def _company() -> dict[str, object]:
         "ticker_b3": "MAPT3",
         "cnpj": "00.000.000/0001-00",
         "setor_cvm": "Industrial",
-        "setor_analitico": "Industrial",
     }
 
 

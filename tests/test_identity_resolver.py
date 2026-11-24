@@ -17,7 +17,6 @@ def temp_db_engine():
                 nome_comercial  TEXT,
                 cnpj            TEXT,
                 setor_cvm       TEXT,
-                setor_analitico TEXT,
                 gics_sector     TEXT,
                 gics_sector_slug TEXT,
                 gics_industry_group TEXT,
@@ -33,10 +32,10 @@ def temp_db_engine():
         conn.execute(text("""
             INSERT INTO companies (
                 cd_cvm, company_name, nome_comercial, cnpj, ticker_b3, is_active,
-                setor_cvm, setor_analitico, gics_sector, gics_sector_slug, updated_at
+                setor_cvm, gics_sector, gics_sector_slug, updated_at
             ) VALUES (
                 9512, 'PETROLEO BRASILEIRO S.A. PETROBRAS', 'PETROBRAS', '33000167000101', 'PETR4', 1,
-                'Petróleo e Gás', 'Petróleo', 'Energy', 'energy', '2026-06-16T20:00:00'
+                'Petróleo e Gás', 'Energy', 'energy', '2026-06-16T20:00:00'
             )
         """))
     return engine
@@ -85,10 +84,10 @@ def test_resolver_backfills_missing_db_ticker_from_csv(temp_db_engine, cd_cvm, e
                 """
                 INSERT INTO companies (
                     cd_cvm, company_name, nome_comercial, cnpj, ticker_b3, is_active,
-                    setor_cvm, setor_analitico, gics_sector, gics_sector_slug, updated_at
+                    setor_cvm, gics_sector, gics_sector_slug, updated_at
                 ) VALUES (
                     :cd_cvm, :company_name, NULL, NULL, NULL, 1,
-                    NULL, NULL, NULL, NULL, '2026-06-18T12:00:00'
+                    NULL, NULL, NULL, '2026-06-18T12:00:00'
                 )
                 """
             ),

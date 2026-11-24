@@ -32,7 +32,6 @@ class RefreshCommandsMixin:
         now_iso = now_iso_seconds()
         gics = resolve_gics_classification(
             sector_name=canonical_sector_name(None, catalog_entry.setor_cvm),
-            setor_analitico=None,
             setor_cvm=catalog_entry.setor_cvm,
         )
         with self.engine.begin() as conn:

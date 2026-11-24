@@ -41,7 +41,6 @@ def _seed_db(tmp_path: Path) -> CVMReadService:
                 nome_comercial TEXT,
                 cnpj TEXT,
                 setor_cvm TEXT,
-                setor_analitico TEXT,
                 gics_sector TEXT,
                 gics_sector_slug TEXT,
                 gics_industry_group TEXT,
@@ -78,17 +77,17 @@ def _seed_db(tmp_path: Path) -> CVMReadService:
             """
             INSERT INTO companies (
                 cd_cvm, company_name, nome_comercial, cnpj,
-                setor_cvm, setor_analitico, gics_sector, gics_sector_slug,
+                setor_cvm, gics_sector, gics_sector_slug,
                 gics_industry_group, gics_industry, gics_sub_industry,
                 company_type, ticker_b3, coverage_rank, is_active, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
-                (9512,  "PETROBRAS", None, None, None, None, None, None, None, None, None, "comercial", "PETR4", 1, 1, "2026"),
-                (11223, "ITR_ONLY",  None, None, None, None, None, None, None, None, None, "comercial", None,    2, 1, "2026"),
-                (33445, "PARTIAL_ITR", None, None, None, None, None, None, None, None, None, "comercial", None, 3, 1, "2026"),
-                (44556, "CONFLICTED_ITR", None, None, None, None, None, None, None, None, None, "comercial", None, 4, 1, "2026"),
-                (99999, "NO_DATA",   None, None, None, None, None, None, None, None, None, "comercial", None,    5, 1, "2026"),
+                (9512,  "PETROBRAS", None, None, None, None, None, None, None, None, "comercial", "PETR4", 1, 1, "2026"),
+                (11223, "ITR_ONLY",  None, None, None, None, None, None, None, None, "comercial", None,    2, 1, "2026"),
+                (33445, "PARTIAL_ITR", None, None, None, None, None, None, None, None, "comercial", None, 3, 1, "2026"),
+                (44556, "CONFLICTED_ITR", None, None, None, None, None, None, None, None, "comercial", None, 4, 1, "2026"),
+                (99999, "NO_DATA",   None, None, None, None, None, None, None, None, "comercial", None,    5, 1, "2026"),
             ],
         )
 

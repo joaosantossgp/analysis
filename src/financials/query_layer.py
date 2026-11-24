@@ -10,7 +10,7 @@ Schema relevante:
                      REPORT_YEAR, PERIOD_LABEL, LINE_ID_BASE, CD_CONTA, DS_CONTA,
                      STANDARD_NAME, QA_CONFLICT, VL_CONTA
   companies:         cd_cvm, company_name, nome_comercial, cnpj, setor_cvm,
-                     setor_analitico, company_type, ticker_b3, is_active, updated_at
+                     company_type, ticker_b3, is_active, updated_at
 
 Note: financial_reports columns were created with quoted uppercase identifiers
 (e.g. "CD_CVM"). PostgreSQL treats quoted identifiers as case-sensitive, so all
@@ -318,7 +318,6 @@ class CVMQueryLayer:
                     c.cd_cvm,
                     c.company_name,
                     COALESCE(c.ticker_b3, '') AS ticker_b3,
-                    c.setor_analitico,
                     c.setor_cvm,
                     {self._canonical_sector_sql()} AS sector_name,
                     CASE
@@ -399,7 +398,6 @@ class CVMQueryLayer:
                 c.cd_cvm,
                 c.company_name,
                 COALESCE(c.ticker_b3, '') AS ticker_b3,
-                c.setor_analitico,
                 c.setor_cvm,
                 {self._canonical_sector_sql()} AS sector_name,
                 COALESCE(dm.has_financial_data, 0) AS has_financial_data,
@@ -452,7 +450,6 @@ class CVMQueryLayer:
                 c.cd_cvm,
                 c.company_name,
                 COALESCE(c.ticker_b3, '') AS ticker_b3,
-                c.setor_analitico,
                 c.setor_cvm,
                 {self._canonical_sector_sql()} AS sector_name,
                 0 AS total_rows,
@@ -492,7 +489,6 @@ class CVMQueryLayer:
                 c.cd_cvm,
                 c.company_name,
                 COALESCE(c.ticker_b3, '') AS ticker_b3,
-                c.setor_analitico,
                 c.setor_cvm,
                 {self._canonical_sector_sql()} AS sector_name,
                 0 AS total_rows,
@@ -920,7 +916,6 @@ class CVMQueryLayer:
                     c.cd_cvm,
                     c.company_name,
                     COALESCE(c.ticker_b3, '') AS ticker_b3,
-                    c.setor_analitico,
                     c.setor_cvm,
                     {self._canonical_sector_sql()} AS sector_name,
                     CASE
@@ -966,7 +961,6 @@ class CVMQueryLayer:
                 c.cd_cvm,
                 c.company_name,
                 COALESCE(c.ticker_b3, '') AS ticker_b3,
-                c.setor_analitico,
                 c.setor_cvm,
                 {self._canonical_sector_sql()} AS sector_name,
                 0 AS total_rows,
@@ -999,7 +993,6 @@ class CVMQueryLayer:
                 c.cd_cvm,
                 c.company_name,
                 COALESCE(c.ticker_b3, '') AS ticker_b3,
-                c.setor_analitico,
                 c.setor_cvm,
                 {self._canonical_sector_sql()} AS sector_name,
                 COALESCE(COUNT(fr."CD_CVM"), 0) AS total_rows,
@@ -1010,7 +1003,7 @@ class CVMQueryLayer:
             LEFT JOIN financial_reports fr ON fr."CD_CVM" = c.cd_cvm
             LEFT JOIN company_views cv ON cv.cd_cvm = c.cd_cvm
             GROUP BY c.cd_cvm, c.company_name, c.ticker_b3,
-                     c.setor_analitico, c.setor_cvm, c.coverage_rank, cv.view_count
+                     c.setor_cvm, c.coverage_rank, cv.view_count
             ORDER BY
                 COALESCE(cv.view_count, 0) DESC,
                 CASE WHEN c.coverage_rank IS NULL THEN 1 ELSE 0 END ASC,
@@ -1057,7 +1050,6 @@ class CVMQueryLayer:
                 nome_comercial,
                 cnpj,
                 setor_cvm,
-                setor_analitico,
                 {canonical_sector_sql(None)} AS sector_name,
                 company_type,
                 ticker_b3
@@ -1150,7 +1142,6 @@ class CVMQueryLayer:
                 c.nome_comercial,
                 c.cnpj,
                 c.setor_cvm,
-                c.setor_analitico,
                 {self._canonical_sector_sql()} AS sector_name,
                 c.company_type,
                 c.ticker_b3,
@@ -1223,7 +1214,6 @@ class CVMQueryLayer:
                 c.nome_comercial,
                 c.cnpj,
                 c.setor_cvm,
-                c.setor_analitico,
                 {self._canonical_sector_sql()} AS sector_name,
                 c.company_type,
                 c.ticker_b3,

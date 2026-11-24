@@ -5,8 +5,9 @@ Status: Accepted (2026-11-24)
 ## Context
 
 The app showed different sectors for the same company depending on the screen:
-sector queries read `setor_analitico`/`setor_cvm`, the Companies table read
-`gics_*` columns, and the indicator panel read `setor_cvm`. The bundled GICS
+sector queries read a legacy analytic sector column (removed in #525) or
+`setor_cvm`, the Companies table read `gics_*` columns, and the indicator panel
+read `setor_cvm`. The bundled GICS
 mapping was almost entirely derived from CVM sector labels (656 of 670 rows),
 stored as names without codes and without provenance, which contradicted the
 rule "never infer GICS from CVM/B3/ticker/name". Official GICS assignments

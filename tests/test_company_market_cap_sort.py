@@ -118,7 +118,6 @@ def _seed_db(tmp_path: Path, companies: list[dict]) -> CVMReadService:
                 nome_comercial TEXT,
                 cnpj TEXT,
                 setor_cvm TEXT,
-                setor_analitico TEXT,
                 gics_sector TEXT,
                 gics_sector_slug TEXT,
                 gics_industry_group TEXT,
@@ -153,12 +152,12 @@ def _seed_db(tmp_path: Path, companies: list[dict]) -> CVMReadService:
             """
             INSERT INTO companies (
                 cd_cvm, company_name, nome_comercial, cnpj,
-                setor_cvm, setor_analitico, gics_sector, gics_sector_slug,
+                setor_cvm, gics_sector, gics_sector_slug,
                 gics_industry_group, gics_industry, gics_sub_industry,
                 company_type, ticker_b3, coverage_rank, is_active, updated_at
             ) VALUES (
                 :cd_cvm, :company_name, :nome_comercial, :cnpj,
-                :setor_cvm, :setor_analitico, :gics_sector, :gics_sector_slug,
+                :setor_cvm, :gics_sector, :gics_sector_slug,
                 :gics_industry_group, :gics_industry, :gics_sub_industry,
                 :company_type, :ticker_b3, :coverage_rank, :is_active, :updated_at
             )
@@ -177,7 +176,6 @@ _COMPANY_DEFAULTS = dict(
     nome_comercial=None,
     cnpj=None,
     setor_cvm="Energia",
-    setor_analitico="Energia",
     gics_sector="Energy",
     gics_sector_slug="energy",
     gics_industry_group="Energy",

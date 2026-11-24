@@ -51,7 +51,6 @@ def test_engine(tmp_path):
                     nome_comercial TEXT,
                     cnpj TEXT,
                     setor_cvm TEXT,
-                    setor_analitico TEXT,
                     gics_sector TEXT,
                     gics_sector_slug TEXT,
                     gics_industry_group TEXT,

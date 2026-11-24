@@ -21,7 +21,7 @@ def directory(tmp_path):
         for code, years in [(10, [2023]), (20, [2023, 2024])]:
             for year in years:
                 conn.execute('INSERT INTO financial_reports (CD_CVM, REPORT_YEAR, PERIOD_LABEL) VALUES (?, ?, ?)', (code, year, str(year)))
-        conn.execute("UPDATE companies SET gics_sector=NULL, gics_industry_group=NULL, gics_industry=NULL, gics_sub_industry=NULL, gics_sector_slug=NULL, setor_cvm=NULL, setor_analitico=NULL WHERE cd_cvm=30")
+        conn.execute("UPDATE companies SET gics_sector=NULL, gics_industry_group=NULL, gics_industry=NULL, gics_sub_industry=NULL, gics_sector_slug=NULL, setor_cvm=NULL WHERE cd_cvm=30")
     return svc
 
 

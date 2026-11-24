@@ -249,7 +249,6 @@ class TestDatabaseLifecycleAndMigrations:
             col_names = [c[1] for c in cols]
             assert "cnpj" in col_names
             assert "ticker_b3" in col_names
-            assert "setor_analitico" in col_names
             assert "updated_at" in col_names
             
             count = conn.execute(text("SELECT COUNT(*) FROM companies")).scalar()
@@ -296,7 +295,6 @@ class TestDatabaseLifecycleAndMigrations:
             cols = conn.execute(text("PRAGMA table_info(companies)")).fetchall()
             col_names = [c[1] for c in cols]
             assert "ticker_b3" in col_names
-            assert "setor_analitico" in col_names
             
             # Verify PETROBRAS normalized CNPJ and backfilled ticker
             petr = conn.execute(
@@ -543,3 +541,53 @@ class TestRefreshGatingAndLocking:
 
 
 
+
+
+def test_init_db_tables_drops_legacy_sector_column_and_keeps_company_rows(tmp_path):
+    """#525: databases created before the canonical GICS columns lose setor_analitico on upgrade."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'legacy.db'}")
+    with engine.begin() as conn:
+        conn.execute(text("""
+            CREATE TABLE companies (
+                cd_cvm INTEGER PRIMARY KEY, company_name TEXT NOT NULL, nome_comercial TEXT,
+                cnpj TEXT, setor_cvm TEXT, setor_analitico TEXT, gics_sector TEXT,
+                gics_sector_slug TEXT, gics_industry_group TEXT, gics_industry TEXT,
+                gics_sub_industry TEXT, company_type TEXT NOT NULL DEFAULT 'comercial',
+                ticker_b3 TEXT, coverage_rank INTEGER, is_active INTEGER NOT NULL DEFAULT 1,
+                updated_at TEXT NOT NULL
+            )
+        """))
+        conn.execute(text("CREATE INDEX idx_companies_setor ON companies(setor_analitico)"))
+        conn.execute(text("""
+            INSERT INTO companies (cd_cvm, company_name, cnpj, setor_cvm, setor_analitico,
+                                   gics_sector, ticker_b3, coverage_rank, updated_at)
+            VALUES (9512, 'PETROBRAS', '33000167000101', 'Petroleo e Gas', 'Legacy',
+                    'Energy', 'PETR4', 1, '2026-01-01T00:00:00')
+        """))
+        conn.execute(text("""
+            CREATE TABLE company_financial_directory_mart (
+                cd_cvm INTEGER PRIMARY KEY, company_name TEXT, ticker_b3 TEXT,
+                setor_analitico TEXT, gics_sector TEXT, company_type TEXT,
+                has_financial_data INTEGER NOT NULL DEFAULT 0,
+                financial_row_count INTEGER NOT NULL DEFAULT 0, first_year INTEGER,
+                latest_year INTEGER, latest_period_label TEXT, latest_period_type TEXT,
+                complete_period_count INTEGER NOT NULL DEFAULT 0,
+                rebuilt_at TEXT NOT NULL, build_version TEXT NOT NULL
+            )
+        """))
+
+    init_db_tables(engine)
+    init_db_tables(engine)  # idempotent once the column is gone
+
+    with engine.connect() as conn:
+        company_cols = {c[1] for c in conn.execute(text("PRAGMA table_info(companies)"))}
+        mart_cols = {c[1] for c in conn.execute(text("PRAGMA table_info(company_financial_directory_mart)"))}
+        indexes = {r[0] for r in conn.execute(text("SELECT name FROM sqlite_master WHERE type='index'"))}
+        row = conn.execute(text(
+            "SELECT company_name, cnpj, setor_cvm, gics_sector, ticker_b3, coverage_rank "
+            "FROM companies WHERE cd_cvm = 9512"
+        )).fetchone()
+    assert "setor_analitico" not in company_cols
+    assert "setor_analitico" not in mart_cols
+    assert "idx_companies_setor" not in indexes
+    assert tuple(row) == ("PETROBRAS", "33000167000101", "Petroleo e Gas", "Energy", "PETR4", 1)

@@ -558,7 +558,6 @@ class NewsCollectionService:
                     _select_company_column(columns, "cnpj"),
                     _select_company_column(columns, "ticker_b3"),
                     _select_company_column(columns, "setor_cvm"),
-                    _select_company_column(columns, "setor_analitico"),
                     _select_company_column(columns, "gics_sector"),
                     _select_company_column(columns, "gics_sector_slug"),
                     _select_company_column(columns, "gics_sub_industry"),

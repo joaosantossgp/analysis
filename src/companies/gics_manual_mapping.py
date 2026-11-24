@@ -36,15 +36,6 @@ GICS_11_SECTORS: tuple[str, ...] = (
 
 
 @dataclass(frozen=True)
-class GicsClassification:
-    gics_sector: str
-    gics_sector_slug: str
-    gics_industry_group: str | None = None
-    gics_industry: str | None = None
-    gics_sub_industry: str | None = None
-
-
-@dataclass(frozen=True)
 class ResolvedGicsClassification:
     gics_sector: str
     gics_sector_slug: str
@@ -65,7 +56,6 @@ def _canonical_gics_sector_label(label: str) -> str | None:
 def resolve_gics_classification(
     *,
     sector_name: str | None = None,
-    setor_analitico: str | None = None,
     setor_cvm: str | None = None,
     gics_sector: str | None = None,
     gics_sector_slug: str | None = None,
@@ -108,13 +98,11 @@ def resolve_gics_classification(
 def resolve_gics_sector_name(
     *,
     sector_name: str | None = None,
-    setor_analitico: str | None = None,
     setor_cvm: str | None = None,
     gics_sector: str | None = None,
 ) -> str | None:
     resolved = resolve_gics_classification(
         sector_name=sector_name,
-        setor_analitico=setor_analitico,
         setor_cvm=setor_cvm,
         gics_sector=gics_sector,
     )
@@ -129,25 +117,6 @@ def gics_sector_sort_key(sector_name: str) -> tuple[int, int | str]:
     return (1, sector_name)
 
 
-def build_gics_classification(
-    *,
-    sector_name: str | None,
-    setor_analitico: str | None,
-    setor_cvm: str | None,
-) -> GicsClassification | None:
-    """Legacy compatibility helper: resolve only explicit GICS 11 labels.
-
-    It intentionally does not map Portuguese/CVM/B3 labels to GICS.
-    """
-    for raw in (sector_name, setor_analitico, setor_cvm):
-        if raw is None:
-            continue
-        canon = _canonical_gics_sector_label(str(raw).strip())
-        if canon is not None:
-            return _mk(canon, canon, None, None)
-    return None
-
-
 def _clean_label(value: str | None) -> str | None:
     if value is None:
         return None
@@ -159,17 +128,3 @@ def _clean_label(value: str | None) -> str | None:
     text = str(value).strip()
     return text or None
 
-
-def _mk(
-    sector: str,
-    group: str | None,
-    industry: str | None,
-    sub_industry: str | None,
-) -> GicsClassification:
-    return GicsClassification(
-        gics_sector=sector,
-        gics_sector_slug=sector_slugify(sector),
-        gics_industry_group=group,
-        gics_industry=industry,
-        gics_sub_industry=sub_industry,
-    )

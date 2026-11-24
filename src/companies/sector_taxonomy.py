@@ -4,8 +4,8 @@ import re
 import unicodedata
 
 
-def canonical_sector_name(setor_analitico: str | None, setor_cvm: str | None) -> str:
-    for raw_value in (setor_analitico, setor_cvm):
+def canonical_sector_name(primary: str | None, setor_cvm: str | None) -> str:
+    for raw_value in (primary, setor_cvm):
         normalized = _normalize_label(raw_value)
         if normalized:
             return normalized

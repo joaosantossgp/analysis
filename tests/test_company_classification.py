@@ -172,7 +172,7 @@ def test_cancelled_company_keeps_its_classification(service):
 def test_every_read_path_reports_the_same_canonical_sector(service):
     svc, _ = service
     with sqlite3.connect(svc.settings.paths.db_path) as conn:
-        conn.execute("UPDATE companies SET setor_cvm='Petroleo e Gas', setor_analitico='Legacy label' WHERE cd_cvm=10")
+        conn.execute("UPDATE companies SET setor_cvm='Petroleo e Gas' WHERE cd_cvm=10")
     svc._company_filters_cache = None
     info = svc.get_company_info(10)
     item = next(i for i in svc.list_companies(page_size=10).items if i.cd_cvm == 10)

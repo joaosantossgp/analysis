@@ -217,7 +217,6 @@ class CompanySearchResult:
     cd_cvm: int
     company_name: str
     ticker_b3: str | None
-    setor_analitico: str | None
     setor_cvm: str | None
     sector_name: str
     sector_slug: str
@@ -259,7 +258,6 @@ class CompanyInfoDTO:
     nome_comercial: str | None
     cnpj: str | None
     setor_cvm: str | None
-    setor_analitico: str | None
     sector_name: str
     sector_slug: str
     company_type: str | None

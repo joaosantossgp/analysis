@@ -26,7 +26,6 @@ def _seed_financial_readiness_service(tmp_path):
                 nome_comercial TEXT,
                 cnpj TEXT,
                 setor_cvm TEXT,
-                setor_analitico TEXT,
                 company_type TEXT,
                 ticker_b3 TEXT,
                 is_active INTEGER,

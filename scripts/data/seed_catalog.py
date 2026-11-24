@@ -108,7 +108,6 @@ def load_existing_companies(conn) -> pd.DataFrame:
                 nome_comercial,
                 cnpj,
                 setor_cvm,
-                setor_analitico,
                 company_type,
                 ticker_b3,
                 coverage_rank,
@@ -161,9 +160,6 @@ def build_seed_dataframe(catalog_df: pd.DataFrame, existing_df: pd.DataFrame) ->
                     catalog_row["SETOR_ATIV"] if catalog_row is not None else None,
                     existing_row["setor_cvm"] if existing_row is not None else None,
                 ),
-                "setor_analitico": _first_nonempty(
-                    existing_row["setor_analitico"] if existing_row is not None else None
-                ),
                 "company_type": _first_nonempty(
                     existing_row["company_type"] if existing_row is not None else None,
                     "comercial",
@@ -192,18 +188,17 @@ def upsert_companies(conn, df: pd.DataFrame, dry_run: bool) -> None:
         """
         INSERT INTO companies
             (cd_cvm, company_name, nome_comercial, cnpj, setor_cvm,
-             setor_analitico, company_type, ticker_b3, coverage_rank,
+             company_type, ticker_b3, coverage_rank,
              is_active, updated_at)
         VALUES
             (:cd_cvm, :company_name, :nome_comercial, :cnpj, :setor_cvm,
-             :setor_analitico, :company_type, :ticker_b3, :coverage_rank,
+             :company_type, :ticker_b3, :coverage_rank,
              :is_active, :updated_at)
         ON CONFLICT(cd_cvm) DO UPDATE SET
             company_name = excluded.company_name,
             nome_comercial = excluded.nome_comercial,
             cnpj = excluded.cnpj,
             setor_cvm = excluded.setor_cvm,
-            setor_analitico = excluded.setor_analitico,
             company_type = excluded.company_type,
             ticker_b3 = excluded.ticker_b3,
             coverage_rank = excluded.coverage_rank,
@@ -259,7 +254,6 @@ def build_upsert_records(df: pd.DataFrame, updated_at: str) -> list[dict[str, ob
                 "nome_comercial": _clean_text(row["nome_comercial"]),
                 "cnpj": _clean_text(row["cnpj"]),
                 "setor_cvm": _clean_text(row["setor_cvm"]),
-                "setor_analitico": _clean_text(row["setor_analitico"]),
                 "company_type": _clean_text(row["company_type"]) or "comercial",
                 "ticker_b3": _clean_text(row["ticker_b3"]),
                 "coverage_rank": int(row["coverage_rank"]) if pd.notna(row["coverage_rank"]) else None,

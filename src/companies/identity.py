@@ -25,7 +25,6 @@ class CompanyIdentity:
     is_active: bool
     
     setor_cvm: str | None
-    setor_analitico: str | None
     gics_sector: str | None
     gics_sector_slug: str | None
     gics_industry_group: str | None
@@ -43,7 +42,6 @@ class CompanyIdentity:
             "ticker_b3": self.ticker_b3,
             "is_active": self.is_active,
             "setor_cvm": self.setor_cvm,
-            "setor_analitico": self.setor_analitico,
             "gics_sector": self.gics_sector,
             "gics_sector_slug": self.gics_sector_slug,
             "gics_industry_group": self.gics_industry_group,
@@ -127,7 +125,7 @@ class CompanyIdentityResolver:
                 with engine.connect() as conn:
                     row = conn.execute(text("""
                         SELECT cd_cvm, company_name, nome_comercial, cnpj, ticker_b3, is_active,
-                               setor_cvm, setor_analitico, gics_sector, gics_sector_slug,
+                               setor_cvm, gics_sector, gics_sector_slug,
                                gics_industry_group, gics_industry, gics_sub_industry
                         FROM companies WHERE cd_cvm = :cd
                     """), {"cd": cd_cvm}).fetchone()
@@ -147,13 +145,12 @@ class CompanyIdentityResolver:
 
                         gics = resolve_gics_classification(
                             sector_name=row[6],
-                            setor_analitico=row[7],
                             setor_cvm=row[6],
-                            gics_sector=row[8],
-                            gics_sector_slug=row[9],
-                            gics_industry_group=row[10],
-                            gics_industry=row[11],
-                            gics_sub_industry=row[12],
+                            gics_sector=row[7],
+                            gics_sector_slug=row[8],
+                            gics_industry_group=row[9],
+                            gics_industry=row[10],
+                            gics_sub_industry=row[11],
                         )
 
                         return CompanyIdentity(
@@ -164,7 +161,6 @@ class CompanyIdentityResolver:
                             ticker_b3=ticker_val,
                             is_active=bool(row[5]),
                             setor_cvm=str(row[6]).strip() if row[6] else None,
-                            setor_analitico=str(row[7]).strip() if row[7] else None,
                             gics_sector=gics.gics_sector if gics else None,
                             gics_sector_slug=gics.gics_sector_slug if gics else None,
                             gics_industry_group=gics.gics_industry_group if gics else None,
@@ -210,7 +206,6 @@ class CompanyIdentityResolver:
                 ticker_b3=ticker_val,
                 is_active=catalog_entry.is_active,
                 setor_cvm=catalog_entry.setor_cvm,
-                setor_analitico=None,
                 gics_sector=gics.gics_sector if gics else None,
                 gics_sector_slug=gics.gics_sector_slug if gics else None,
                 gics_industry_group=gics.gics_industry_group if gics else None,
@@ -236,7 +231,6 @@ class CompanyIdentityResolver:
                 ticker_b3=ticker_val,
                 is_active=True,
                 setor_cvm=None,
-                setor_analitico=None,
                 gics_sector=None,
                 gics_sector_slug=None,
                 gics_industry_group=None,

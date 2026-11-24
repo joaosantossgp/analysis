@@ -46,7 +46,6 @@ def _sample_company() -> dict[str, object]:
         "ticker_b3": "EXMP3",
         "cnpj": "00.000.000/0001-00",
         "setor_cvm": "Teste",
-        "setor_analitico": "Teste",
     }
 
 

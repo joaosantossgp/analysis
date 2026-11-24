@@ -83,7 +83,6 @@ def _seed_database(settings: AppSettings) -> None:
             "nome_comercial": "Petrobras",
             "cnpj": "33.000.167/0001-01",
             "setor_cvm": "Energia",
-            "setor_analitico": "Energia",
             "gics_sector": "Energy",
             "gics_sector_slug": "energy",
             "gics_industry_group": "Energy",
@@ -101,7 +100,6 @@ def _seed_database(settings: AppSettings) -> None:
             "nome_comercial": "Vale",
             "cnpj": "33.592.510/0001-54",
             "setor_cvm": "Mineracao",
-            "setor_analitico": "Materiais Basicos",
             "gics_sector": "Materials",
             "gics_sector_slug": "materials",
             "gics_industry_group": "Materials",
@@ -119,7 +117,6 @@ def _seed_database(settings: AppSettings) -> None:
             "nome_comercial": "Sabesp",
             "cnpj": "43.776.517/0001-80",
             "setor_cvm": "Saneamento",
-            "setor_analitico": None,
             "gics_sector": "Utilities",
             "gics_sector_slug": "utilities",
             "gics_industry_group": "Utilities",
@@ -137,7 +134,6 @@ def _seed_database(settings: AppSettings) -> None:
             "nome_comercial": "Sem Dados",
             "cnpj": "00.000.000/0001-00",
             "setor_cvm": "Financeiro",
-            "setor_analitico": "Financeiro",
             "gics_sector": None,
             "gics_sector_slug": None,
             "gics_industry_group": None,
@@ -212,7 +208,6 @@ def _seed_database(settings: AppSettings) -> None:
                     nome_comercial TEXT,
                     cnpj TEXT,
                     setor_cvm TEXT,
-                    setor_analitico TEXT,
                     gics_sector TEXT,
                     gics_sector_slug TEXT,
                     gics_industry_group TEXT,
@@ -271,13 +266,13 @@ def _seed_database(settings: AppSettings) -> None:
                 """
                 INSERT INTO companies (
                     cd_cvm, company_name, nome_comercial, cnpj,
-                    setor_cvm, setor_analitico, gics_sector, gics_sector_slug,
+                    setor_cvm, gics_sector, gics_sector_slug,
                     gics_industry_group, gics_industry, gics_sub_industry,
                     company_type, ticker_b3,
                     coverage_rank, is_active, updated_at
                 ) VALUES (
                     :cd_cvm, :company_name, :nome_comercial, :cnpj,
-                    :setor_cvm, :setor_analitico, :gics_sector, :gics_sector_slug,
+                    :setor_cvm, :gics_sector, :gics_sector_slug,
                     :gics_industry_group, :gics_industry, :gics_sub_industry,
                     :company_type, :ticker_b3,
                     :coverage_rank, :is_active, :updated_at

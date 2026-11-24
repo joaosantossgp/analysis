@@ -60,7 +60,5 @@ never copied into GICS fields.
 
 ## Legacy importer
 
-`scripts/data/import_company_gics.py` and `data/import/gics_mapping.csv` are the
-superseded CVM-derived mapping. The app no longer reads them, and any value
-they write is replaced by the curated classification on the next startup.
-Removal is tracked in #525.
+The CVM-derived GICS importer and its `data/import` mapping CSVs were removed
+in #525.

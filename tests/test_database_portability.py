@@ -108,7 +108,7 @@ def test_init_db_skips_pragmas_for_postgresql(mock_backfill):
     assert "CONCURRENTLY" in idx_sql
     assert "idx_fr_cd_cvm" in idx_sql
     assert "idx_fr_cd_cvm_stmt_year" in idx_sql
-    assert "idx_companies_setor" in idx_sql
+    assert "idx_companies_ticker" in idx_sql
 
 
 def test_upsert_company_metadata_uses_dialect_safe_sql():
