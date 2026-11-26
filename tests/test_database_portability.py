@@ -109,6 +109,24 @@ def test_init_db_skips_pragmas_for_postgresql(mock_backfill):
     assert "idx_fr_cd_cvm" in idx_sql
     assert "idx_fr_cd_cvm_stmt_year" in idx_sql
     assert "idx_companies_ticker" in idx_sql
+    assert "idx_qa_logs_scope" in idx_sql
+
+
+def test_scoped_qa_replacement_uses_an_index_on_a_legacy_database(tmp_path):
+    from sqlalchemy import create_engine, text
+
+    path = tmp_path / "legacy.db"
+    legacy = create_engine(f"sqlite:///{path}")
+    with legacy.begin() as conn:
+        conn.execute(text('CREATE TABLE qa_logs (id INTEGER PRIMARY KEY, "CD_CVM" INTEGER, "STATEMENT_TYPE" TEXT)'))
+    legacy.dispose()
+
+    db = CVMDatabase(str(path))
+    with db._engine.connect() as conn:
+        plan = conn.execute(text('EXPLAIN QUERY PLAN DELETE FROM qa_logs WHERE "CD_CVM" = 1 '
+                                 'AND "STATEMENT_TYPE" = \'DRE\' AND "REPORT_YEAR" = 2024')).fetchall()
+    db._engine.dispose()
+    assert "USING INDEX idx_qa_logs_scope" in " ".join(row[3] for row in plan)
 
 
 def test_upsert_company_metadata_uses_dialect_safe_sql():

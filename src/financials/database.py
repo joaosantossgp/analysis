@@ -145,6 +145,8 @@ def init_db_tables(engine: Engine) -> None:
         'CREATE INDEX {c}IF NOT EXISTS idx_fr_cvm_year ON financial_reports("CD_CVM", "REPORT_YEAR", "PERIOD_LABEL")',
         'CREATE INDEX {c}IF NOT EXISTS idx_fr_cd_conta ON financial_reports("CD_CONTA")',
         "CREATE INDEX {c}IF NOT EXISTS idx_companies_ticker ON companies(ticker_b3)",
+        # #582: each refresh deletes QA by this scope per statement-year; without it every delete scans qa_logs.
+        'CREATE INDEX {c}IF NOT EXISTS idx_qa_logs_scope ON qa_logs("CD_CVM", "STATEMENT_TYPE", "REPORT_YEAR")',
         # Benchmarked 2026-04-20 (issue #134): EXPLAIN QUERY PLAN confirmed full SCAN of
         # financial_reports for any query filtered only by PERIOD_LABEL (sector_years_map,
         # available_years, sector_metric_rows). These composites let the planner eliminate
