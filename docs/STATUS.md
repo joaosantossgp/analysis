@@ -35,7 +35,7 @@ Keep detail in the owning contract or dated evidence. Last updated: 2026-11-26.
   accepted without row-by-row review (`accepted_without_review`); low-confidence rows are
   the first candidates for correction. Next proposed cycle: Excel mapping account tree
   and presets attached to GICS levels (not yet specified as issues).
-- Shell-owned data updates (goal #539, [ADR 0010](decisions/0010-shell-owned-data-updates.md)):
+- Shell-owned data updates (goal #539, closed 2026-11-26, [ADR 0010](decisions/0010-shell-owned-data-updates.md)):
   all sub-issues delivered. The [packaged validation](governance/2026-11-26-data-journey-packaged-validation.md)
   (#550) passed the first-launch, progressive download, cancel, Stale, offline-launch and
   update-check states on a partial run. It found six bugs (#575-#580). All are fixed and
@@ -57,8 +57,8 @@ Keep detail in the owning contract or dated evidence. Last updated: 2026-11-26.
   436 companies with statements and the same 2.37M financial rows. The default scope
   (ADR 0010) stays unchanged. A full run was not done in the packaged app; the 5-minute
   packaged re-check of #575-#580 showed about 4 s per company early in the run (ETA about
-  44 min), against about 2 s in the dev runtime at the same point. Whether DMPL should be
-  persisted is #589.
+  44 min), against about 2 s in the dev runtime at the same point. Decision (#589): DMPL is
+  not persisted; its never-filled export, mapping and API paths were removed.
 
 ## Validation and historical evidence
 

@@ -117,7 +117,7 @@ implementation.
 **2. Download and extraction**
 
 - `src/financials/scraper.py` downloads CVM ZIPs to `data/input/raw`
-- CSVs (BPA/BPP/DRE/DFC/DMPL) are extracted to `data/input/processed`
+- CSVs (BPA/BPP/DRE/DFC) are extracted to `data/input/processed`; DMPL and DVA are not read (#584, #589)
 
 **3. Transform and normalization**
 

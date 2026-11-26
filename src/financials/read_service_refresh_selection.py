@@ -85,7 +85,7 @@ from src.companies.sector_taxonomy import canonical_sector_name, sector_slugify
 from src.platform.settings import AppSettings, get_settings
 from src.financials.utils import current_reporting_year_cap, normalize_account_name, now_iso_seconds
 
-EXPORT_STATEMENT_TYPES = ("DRE", "BPA", "BPP", "DFC", "DMPL")
+EXPORT_STATEMENT_TYPES = ("DRE", "BPA", "BPP", "DFC")
 
 # Top-10 B3 companies by approximate market cap, ordered largest-first.
 # cd_cvm values sourced from src/companies/ticker_map.py.

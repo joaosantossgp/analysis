@@ -396,7 +396,7 @@ def test_company_excel_export_loads_statement_frames_in_one_batch(tmp_path, monk
         (
             9512,
             (2021, 2022, 2023, 2024, 2025, 2026),
-            ("DRE", "BPA", "BPP", "DFC", "DMPL"),
+            ("DRE", "BPA", "BPP", "DFC"),
         )
     ]
 
@@ -486,4 +486,4 @@ def test_model_mapping_workspace_loads_statement_frames_in_one_batch(tmp_path, m
 
     svc.get_excel_mapping_workspace(9512, period_scope="last_5_years")
 
-    assert calls == [("DRE", "BPA", "BPP", "DFC", "DMPL")]
+    assert calls == [("DRE", "BPA", "BPP", "DFC")]
