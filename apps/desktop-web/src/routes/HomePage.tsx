@@ -6,6 +6,7 @@ import { StateBanner } from "@/components/feedback/StateBanner";
 import { useWorkspaceStatus } from "@/lib/api/updateBase";
 import { useLocalDatabaseState } from "@/lib/api/localDatabase";
 import { EmptyDatabaseHero } from "@/components/home/EmptyDatabaseHero";
+import { showsHomeHero } from "@/lib/localDatabase/runStatus";
 import { LocalDatabaseNotice } from "@/components/home/LocalDatabaseNotice";
 
 // Configurable Workspace imports
@@ -284,9 +285,7 @@ export function HomePage() {
   // 3. Status checks and diagnostics summary using the shared status hook
   const { health, browserReason } = useWorkspaceStatus(bridgeReady);
   const localDatabase = useLocalDatabaseState();
-  const databaseEmpty = Boolean(
-    localDatabase.data && localDatabase.data.state !== "unknown" && !localDatabase.data.has_statements,
-  );
+  const databaseEmpty = showsHomeHero(localDatabase.data);
 
   // 4. Toggle Card Visibility (places in the first available gap)
   const handleToggleCard = (id: string) => {

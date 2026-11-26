@@ -26,6 +26,15 @@ export function runRowStatus(
   return null;
 }
 
+/**
+ * Home leads with the hero while the database has no statements or its first
+ * full data update is still running: the first companies land long before it ends (#579).
+ */
+export function showsHomeHero(state: LocalDatabaseState | null | undefined): boolean {
+  if (!state || state.state === "unknown") return false;
+  return !state.has_statements || (state.run?.scope === "data_update" && !state.last_full_update_at);
+}
+
 /** One-line phase status shown above the directory while a run is active. */
 export function runStatusLine(state: LocalDatabaseState | null | undefined): string | null {
   const run = state?.run;
