@@ -1,15 +1,19 @@
 import { useSyncExternalStore } from "react";
 import { useQuery, type QueryClient } from "@tanstack/react-query";
 
-import { callBridge, getBridgeMode } from "../bridge/adapter";
+import { callBridge, whenBridgeReady } from "../bridge/adapter";
 import { retryFailedCompanies as retryCompanies, startDataUpdate } from "./updateBase";
 import type { LocalDatabaseState } from "../bridge/types.localDatabase";
 
 export const LOCAL_DATABASE_STATE_KEY = ["local-database-state"] as const;
 
-/** Local reads only: the bridge never starts network work for this call. */
+/**
+ * Local reads only: the bridge never starts network work for this call.
+ * Waits for pywebview's injection first: a null cached at launch would hide
+ * the pill and the empty-database hero until the next 30 s poll (#576).
+ */
 export async function fetchLocalDatabaseState(): Promise<LocalDatabaseState | null> {
-  if (getBridgeMode() === "browser") return null;
+  if ((await whenBridgeReady()) === "browser") return null;
   return callBridge("get_local_database_state", {});
 }
 
