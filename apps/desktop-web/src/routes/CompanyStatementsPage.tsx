@@ -336,7 +336,9 @@ function StatementQuality({ matrix }: { matrix: StatementMatrix }) {
                 <p>{event.action}</p>
                 {event.source_inputs?.map((source, i) => (
                   <p key={i} className="break-words text-xs text-text-tertiary">
-                    {source.SOURCE_FILE} · version {source.VERSAO ?? "unknown"} · {source.DT_INI_EXERC}–{source.DT_FIM_EXERC} · reported {source.RAW_VL_CONTA}
+                    {source.evidence_status === "missing"
+                      ? `Source observation ${source.observation_id} is missing from the local database`
+                      : <>{source.SOURCE_FILE} · version {source.VERSAO ?? "unknown"} · {source.DT_INI_EXERC}–{source.DT_FIM_EXERC} · reported {source.RAW_VL_CONTA}</>}
                   </p>
                 ))}
               </li>
