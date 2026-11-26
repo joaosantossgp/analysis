@@ -249,6 +249,39 @@ def test_legacy_matrix_reads_without_schema_repair_and_marks_unknown(tmp_path):
     engine.dispose()
 
 
+def test_qa_events_store_source_ids_and_reads_resolve_them(scraper, vale_sources, tmp_path):
+    db = CVMDatabase(str(tmp_path / "financials.db"))
+    reports, qa = scraper.process_all_reports(vale_sources)
+    db.insert_company_data("VALE", 4170, "comercial", reports, qa)
+    with db._engine.connect() as conn:
+        stored = [json.loads(r[0]) for r in conn.execute(text('SELECT "DETAILS_JSON" FROM qa_logs'))]
+        observations = {r[0]: json.loads(r[1]) for r in conn.execute(
+            text("SELECT observation_id, payload_json FROM financial_source_observations"))}
+    assert stored and all("source_inputs" not in e and e["source_ids"] for e in stored)
+
+    events = CVMQueryLayer(engine=db._engine).get_financial_qa(4170, [2024], "DRE")
+    assert events
+    for event in events:
+        assert event["source_inputs"] == [observations[i] for i in event["source_ids"]]
+        assert all(source["SOURCE_FILE"] and source["RAW_VL_CONTA"] for source in event["source_inputs"])
+    db._engine.dispose()
+
+
+def test_qa_reads_keep_legacy_embedded_sources_and_flag_missing_ids(tmp_path):
+    db = CVMDatabase(str(tmp_path / "financials.db"))
+    legacy = dict(type="MISSING_OBSERVATION", statement="DRE", year=2024, period="2024",
+                  source_inputs=[{"observation_id": "a", "SOURCE_FILE": "dfp.csv", "RAW_VL_CONTA": "1"}])
+    slim = dict(type="MISSING_OBSERVATION", statement="DRE", year=2024, period="2024", source_ids=["gone"])
+    with db._engine.begin() as conn:
+        for event in (legacy, slim):
+            conn.execute(text('INSERT INTO qa_logs ("CD_CVM", "STATEMENT_TYPE", "REPORT_YEAR", "DETAILS_JSON") '
+                              "VALUES (4170, 'DRE', 2024, :details)"), {"details": json.dumps(event)})
+    events = CVMQueryLayer(engine=db._engine).get_financial_qa(4170, [2024], "DRE")
+    assert events[0] == legacy
+    assert events[1]["source_inputs"] == [{"observation_id": "gone", "evidence_status": "missing"}]
+    db._engine.dispose()
+
+
 def test_workbook_keeps_qa_sources_and_per_share_units(scraper, vale_sources, tmp_path):
     from openpyxl import load_workbook
     from src.financials.excel_exporter import ExcelExporter
