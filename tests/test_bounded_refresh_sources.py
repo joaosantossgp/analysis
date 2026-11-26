@@ -459,7 +459,8 @@ def test_reuse_preserves_all_existing_source_families(tmp_path, monkeypatch):
     _queue(worker.repository, 4170)
     worker.run_once()
     worker.run_once()
-    assert counts == {"parse": 14, "extract": 14}
+    # DVA/DMPL files left by older versions are not read: refresh never persists them (#584).
+    assert counts == {"parse": 10, "extract": 10}
 
 
 def test_byte_budget_is_shared_across_files_and_falls_back_per_file(tmp_path, monkeypatch):
