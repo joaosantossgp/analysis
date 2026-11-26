@@ -90,7 +90,9 @@ KPI account mart.
 
 ### Phase 3.4: CVM index benchmark on copied DB
 
-No live CVM indexes were dropped.
+No live CVM indexes were dropped at the time. Since #586, startup drops the
+five unused indexes below (all except `idx_fr_year_period`, which sector reads
+still use without marts); see `docs/dev-runtime-and-data-paths.md`.
 
 A copied-database benchmark showed these `financial_reports` indexes are
 candidates for a later backup-and-compact maintenance flow:

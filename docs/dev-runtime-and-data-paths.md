@@ -352,17 +352,15 @@ and source coverage in `financial_mart_builds`. The marts are maintenance/read
 models only; Excel export and audit checks should still validate values against
 the canonical financial rows until each read path is explicitly cut over.
 
-A copied-database benchmark in June 2026 showed that, after the mart cutovers,
-the following `financial_reports` indexes were not used by representative hot
-reads and can be considered for a later backup-and-compact maintenance flow:
-`idx_fr_cd_cvm`, `idx_fr_period_label`, `idx_fr_cd_conta`,
-`idx_fr_cd_cvm_period_label`, `idx_fr_cd_conta_period_label`, and
-`idx_fr_year_period`. Dropping them on the copy freed 40,770 SQLite pages and a
-`VACUUM INTO` compact copy was about 297 MB versus the 480 MB source copy. Keep
-`idx_fr_cd_cvm_stmt_year` and `idx_fr_cvm_year` for now; statement and export
-period reads still depend on them. Do not drop these indexes on the live DB
-without a timestamped backup, copied-DB equality checks, compact-copy quick
-check, and packaged runtime smoke test.
+Since #586, startup drops `idx_fr_cd_cvm`, `idx_fr_period_label`,
+`idx_fr_cd_conta`, `idx_fr_cd_cvm_period_label` and
+`idx_fr_cd_conta_period_label` (`DROP INDEX IF EXISTS`). `EXPLAIN QUERY PLAN` of
+every `financial_reports` reader on a 436-company database used none of them,
+and 126 read results were identical with and without them. `financial_reports`
+keeps its unique key, `idx_fr_cd_cvm_stmt_year`, `idx_fr_cvm_year` and
+`idx_fr_year_period` (sector reads use it when the marts are not built).
+Dropping an index does not change data; the freed pages are reused by later
+writes, and the file only shrinks after a `VACUUM`, which startup does not run.
 
 ### Compact Energy KPI database copy
 
