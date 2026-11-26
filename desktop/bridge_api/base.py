@@ -85,7 +85,10 @@ class BaseBridgeMixin:
         if self._refresh_manager is None:
             from desktop.services import DesktopRefreshJobManager  # noqa: PLC0415
 
-            self._refresh_manager = DesktopRefreshJobManager(read_service=self._svc())
+            self._refresh_manager = DesktopRefreshJobManager(
+                read_service=self._svc(),
+                on_job_finished=self._on_refresh_job_finished,
+            )
         return self._refresh_manager
 
     def _onboarding(self):
@@ -262,6 +265,11 @@ class BaseBridgeMixin:
             temp_path.replace(cache_path)
         except Exception:
             logger.debug("failed to write bridge payload cache %s", cache_path, exc_info=True)
+
+    def _on_refresh_job_finished(self, _job_id: str) -> None:
+        """Runs in the job thread: completeness and reads recompute on next access."""
+        self._svc().invalidate_read_caches()
+        self._clear_data_coverage_cache()
 
     def _clear_data_coverage_cache(self) -> None:
         with self._read_payload_cache_lock:

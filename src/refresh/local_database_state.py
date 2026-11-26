@@ -77,6 +77,8 @@ def _is_partial(job: dict[str, Any]) -> bool:
     failures = int(job.get("failures") or 0)
     processed = int(job.get("processed") or 0)
     queued = int(job.get("queued") or 0)
+    if str(job.get("state")) == "partial":
+        return True
     return str(job.get("state")) == "error" and 0 < failures and processed > 0 and failures < max(queued, processed)
 
 

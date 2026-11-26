@@ -134,3 +134,107 @@ def test_data_update_honors_the_history_range(tmp_path):
 def test_other_missing_mode_batches_keep_the_fast_lane(tmp_path):
     request = _run_job_with_scope(tmp_path, None)
     assert request.policy.enable_fast_lane is True
+
+
+from src.platform.contracts import CompanyRefreshResult
+
+
+def _company(code, status):
+    return CompanyRefreshResult(
+        company_name=f"CO {code}", cvm_code=code, requested_years=(2024,), years_processed=(),
+        rows_inserted=0, status=status, attempts=1, error=None if status == "success" else "boom",
+    )
+
+
+class _ScriptedRefresh:
+    """Returns one scripted result per execute call, recording requested companies."""
+
+    def __init__(self, *rounds):
+        self.rounds = list(rounds)
+        self.calls = []
+
+    def execute(self, request, **_):
+        self.calls.append(tuple(request.companies))
+        statuses = self.rounds.pop(0)
+        companies = tuple(_company(int(code), statuses.get(int(code), "success")) for code in request.companies)
+        return RefreshResult(request=request, companies=companies, planning_stats={})
+
+
+def _manager(tmp_path, refresh, finished=None):
+    class _Read:
+        def list_companies(self, **_):
+            return SimpleNamespace(items=tuple(SimpleNamespace(cd_cvm=code) for code in (1, 2, 3)))
+
+        def list_refresh_status(self):
+            return ()
+
+        def _load_complete_annual_years_map(self, cd_cvms, *, start_year, end_year):
+            return {}
+
+    return DesktopRefreshJobManager(
+        settings=build_settings(project_root=tmp_path), read_service=_Read(), refresh_service=refresh,
+        jobs_path=tmp_path / "jobs.json", autostart=False, on_job_finished=finished,
+    )
+
+
+def _run(manager, scope="data_update"):
+    dispatch = manager.request_refresh({"mode": "missing", "scope": scope, "company_ids": [1, 2, 3], "start_year": 2024, "end_year": 2024})
+    manager._run_job(dispatch["job_id"], threading.Event())
+    return manager.snapshot_jobs()[0]
+
+
+def test_failed_companies_are_retried_once_inside_the_data_update(tmp_path):
+    refresh = _ScriptedRefresh({2: "error"}, {})
+    job = _run(_manager(tmp_path, refresh))
+    assert refresh.calls == [("1", "2", "3"), ("2",)]
+    assert job["state"] == "success"
+    assert job["failures"] == 0
+
+
+def test_a_run_with_some_failed_companies_ends_partial(tmp_path):
+    refresh = _ScriptedRefresh({2: "error"}, {2: "error"})
+    job = _run(_manager(tmp_path, refresh))
+    assert job["state"] == "partial"
+    assert job["failures"] == 1
+
+
+def test_a_run_where_every_company_failed_ends_in_error(tmp_path):
+    refresh = _ScriptedRefresh({1: "error", 2: "error", 3: "error"}, {1: "error", 2: "error", 3: "error"})
+    assert _run(_manager(tmp_path, refresh))["state"] == "error"
+
+
+def test_the_job_refreshes_reads_when_it_finishes(tmp_path):
+    finished = []
+    _run(_manager(tmp_path, _ScriptedRefresh({}), finished=lambda job_id: finished.append(job_id)))
+    assert len(finished) == 1
+
+
+def test_job_store_keeps_only_recent_finished_jobs(tmp_path):
+    import json as _json
+
+    manager = _manager(tmp_path, _ScriptedRefresh(*([{}] * 60)))
+    for _ in range(60):
+        _run(manager, scope="retry")
+    stored = _json.loads((tmp_path / "jobs.json").read_text(encoding="utf-8"))["jobs"]
+    assert len(stored) <= DesktopRefreshJobManager.MAX_STORED_JOBS
+
+
+def test_light_job_reader_never_rewrites_the_store(tmp_path):
+    import json as _json
+
+    bridge = CVMBridge()
+    settings = build_settings(project_root=tmp_path)
+    bridge._service = SimpleNamespace(settings=settings)
+    jobs_path = settings.paths.data_dir / "refresh_jobs.json"
+    jobs_path.parent.mkdir(parents=True, exist_ok=True)
+    original = _json.dumps({"jobs": [{"job_id": "a", "state": "running", "created_at": "2026"}]})
+    jobs_path.write_text(original, encoding="utf-8")
+    import desktop.bridge_api.refresh as refresh_module
+
+    original_path = refresh_module.RefreshBridgeMixin._refresh_jobs_path
+    refresh_module.RefreshBridgeMixin._refresh_jobs_path = staticmethod(lambda: jobs_path)
+    try:
+        bridge._load_refresh_jobs_light()
+    finally:
+        refresh_module.RefreshBridgeMixin._refresh_jobs_path = original_path
+    assert jobs_path.read_text(encoding="utf-8") == original
