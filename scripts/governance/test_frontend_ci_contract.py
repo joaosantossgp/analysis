@@ -116,15 +116,21 @@ def test_ci_runs_single_python_suite_with_coverage_and_pr_concurrency() -> None:
     assert concurrency.get("cancel-in-progress") == "${{ github.ref != 'refs/heads/main' }}"
 
     jobs = workflow["jobs"]
-    assert "coverage-python" not in jobs, "Python coverage must be consolidated into test-python"
+    assert jobs["test-python"].get("name") == "Python core tests"
+    assert jobs["coverage-python"].get("name") == "Python core coverage"
 
-    python_steps = _blocking_named_run_steps_for_job(workflow_text, "test-python")
-    full_suite_steps = [cmd for _, cmd in python_steps if "pytest tests apps/api/tests" in cmd]
-    assert len(full_suite_steps) == 1
-    assert "--cov=src" in full_suite_steps[0]
-    assert "--cov=desktop" in full_suite_steps[0]
-    assert "--cov-report=xml:coverage.xml" in full_suite_steps[0]
+    test_python_steps = _blocking_named_run_steps_for_job(workflow_text, "test-python")
+    coverage_steps = _blocking_named_run_steps_for_job(workflow_text, "coverage-python")
+    all_full_suite_steps = [
+        cmd
+        for _, cmd in (*test_python_steps, *coverage_steps)
+        if "pytest tests apps/api/tests" in cmd
+    ]
+    assert len(all_full_suite_steps) == 1, "full Python suite must run once across CI jobs"
+    assert "--cov=src" in all_full_suite_steps[0]
+    assert "--cov=desktop" in all_full_suite_steps[0]
+    assert "--cov-report=xml:coverage.xml" in all_full_suite_steps[0]
 
-    step_names = [step.get("name") for step in jobs["test-python"]["steps"]]
+    step_names = [step.get("name") for step in jobs["coverage-python"]["steps"]]
     assert "Upload coverage artifact" in step_names
     assert "Upload coverage to Codecov" in step_names
