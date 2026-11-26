@@ -1,17 +1,32 @@
-# Data files — large raw inputs, databases, caches
+# Data files — large raw inputs, databases, caches, dev runtime
 data/input/
 data/db/
 data/cache/
 data/metadata/
+data/raw/
+data/dev-runtime/
+data/legacy_archives/
 
-# Output reports
+# Build, dist, runtime, and scratch outputs
+build/
+dist/
 output/
+tmp/
+scratch/
+release_validation_*/
+repomix-output.*
 
-# Archived/dead scripts — do not explore
+# Archived/dead scripts and historical docs — do not index by default
 archive/
+docs/archive/
+docs/releases/
 
-# Scratchpad and review artifacts — transient, not code
+# Nested agent worktrees and transient tooling artifacts
+.claude/worktrees/
 .workflow/.scratchpad/
+.playwright-cli/
+.playwright-mcp/
+.orchestration/
 
 # Stale UI audit reports — reference apps/web (removed) and are not active code
 data/reports/
@@ -19,16 +34,21 @@ data/reports/
 # Reference documents — binary, for human reading only
 docs/vendor/
 
-# Python environment
+# Python environment and caches
 .venv/
+__pycache__/
+.pytest_cache/
 
 # Node.js
 node_modules/
 
-# Binary and large files
+# Binary, logs, and large files
 *.xlsx
 *.pdf
 *.zip
 *.db
+*.db-wal
+*.db-shm
 *.sqlite
 *.docx
+*.log

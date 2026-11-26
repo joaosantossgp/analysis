@@ -4,6 +4,8 @@ import ast
 import importlib
 import json
 import re
+import shutil
+import subprocess
 import textwrap
 from pathlib import Path
 
@@ -416,7 +418,11 @@ def test_release_workflow_preserves_updater_version_grammar() -> None:
 
 
 def test_release_and_ci_actions_are_full_sha_pinned() -> None:
-    for relative_path in (".github/workflows/release-desktop.yml", ".github/workflows/ci.yml"):
+    for relative_path in (
+        ".github/workflows/release-desktop.yml",
+        ".github/workflows/ci.yml",
+        ".github/workflows/pr-issue-guardrails.yml",
+    ):
         workflow = yaml.safe_load((ROOT / relative_path).read_text(encoding="utf-8"))
         jobs = workflow["jobs"]
         uses = [
@@ -426,7 +432,7 @@ def test_release_and_ci_actions_are_full_sha_pinned() -> None:
             if "uses" in step
         ]
         assert uses, relative_path
-        assert all(re.fullmatch(r"[^@]+@[0-9a-f]{40}", action) for action in uses)
+        assert all(re.fullmatch(r"[^@]+@[0-9a-f]{40}", action) for action in uses), relative_path
 
 
 def test_release_workflow_keeps_publish_write_only_and_never_rebuilds_or_retags() -> None:
@@ -447,3 +453,135 @@ def test_release_workflow_keeps_publish_write_only_and_never_rebuilds_or_retags(
     assert "build_desktop.ps1" not in final_source
     assert "Compress-Archive" not in final_source
     assert "git tag " not in final_source
+
+
+def _run_pr_guardrail_script(body: str, issues: dict[int, dict[str, object]]) -> dict[str, object]:
+    node = shutil.which("node")
+    assert node is not None, "node is required to validate pr-issue-guardrails.yml"
+    workflow = yaml.safe_load(
+        (ROOT / ".github/workflows/pr-issue-guardrails.yml").read_text(encoding="utf-8")
+    )
+    script = workflow["jobs"]["validate-pr-issue-contract"]["steps"][0]["with"]["script"]
+    runner = (
+        "const payload = JSON.parse(process.argv[1]);\n"
+        "const failed = [];\n"
+        "const info = [];\n"
+        "const lookups = [];\n"
+        "const core = { setFailed: (m) => failed.push(m), info: (m) => info.push(m) };\n"
+        "const context = { repo: { owner: 'o', repo: 'r' }, payload: { pull_request: { body: payload.body } } };\n"
+        "const github = { rest: { issues: { get: async ({ issue_number }) => {\n"
+        "  lookups.push(issue_number);\n"
+        "  const item = payload.issues[String(issue_number)];\n"
+        "  if (!item) { const e = new Error('Not Found'); e.status = 404; throw e; }\n"
+        "  return { data: item };\n"
+        "} } } };\n"
+        "(async () => {\n"
+        "  await (async () => {\n"
+        f"{script}\n"
+        "  })();\n"
+        "  console.log(JSON.stringify({ failed, info, lookups }));\n"
+        "})().catch((err) => { console.error(err); process.exit(1); });\n"
+    )
+    proc = subprocess.run(
+        [node, "-e", runner, json.dumps({"body": body, "issues": issues})],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return json.loads(proc.stdout)
+
+
+def test_pr_issue_guardrails_validates_closing_and_linked_references() -> None:
+    issues = {
+        10: {"labels": [{"name": "enhancement"}]},
+        11: {"labels": [{"name": "goal"}]},
+        12: {"labels": [], "pull_request": {"url": "https://example.invalid/pr/12"}},
+    }
+
+    assert _run_pr_guardrail_script("No reference", issues)["failed"]
+    assert not _run_pr_guardrail_script("Closes #10", issues)["failed"]
+    assert not _run_pr_guardrail_script("Refs #11", issues)["failed"]
+    assert not _run_pr_guardrail_script("Part of #10", issues)["failed"]
+
+    closing_goal = _run_pr_guardrail_script("Closes #11", issues)
+    assert any("goal" in msg for msg in closing_goal["failed"])
+
+    closing_pr = _run_pr_guardrail_script("Closes #12", issues)
+    assert any("pull request" in msg for msg in closing_pr["failed"])
+
+    missing_ref = _run_pr_guardrail_script("Refs #999", issues)
+    assert any("#999 was not found" in msg for msg in missing_ref["failed"])
+
+    pr_ref = _run_pr_guardrail_script("Refs #12", issues)
+    assert any("pull request" in msg for msg in pr_ref["failed"])
+
+    dedup = _run_pr_guardrail_script("Closes #10\nRefs #10", issues)
+    assert not dedup["failed"]
+    assert dedup["lookups"] == [10]
+
+
+def test_issue_templates_apply_needs_triage_label() -> None:
+    for relative_path in (
+        ".github/ISSUE_TEMPLATE/bug.yml",
+        ".github/ISSUE_TEMPLATE/task.yml",
+        ".github/ISSUE_TEMPLATE/goal.yml",
+    ):
+        template = yaml.safe_load((ROOT / relative_path).read_text(encoding="utf-8"))
+        assert "needs-triage" in (template.get("labels") or []), relative_path
+
+
+def test_agent_ignore_and_context_configs_exclude_high_noise_roots() -> None:
+    claudeignore = {
+        line.strip()
+        for line in (ROOT / ".claudeignore").read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+    geminiignore = {
+        line.strip()
+        for line in (ROOT / ".geminiignore").read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+    context_prefs = json.loads(
+        (ROOT / ".claude/agent-context-preferences.json").read_text(encoding="utf-8")
+    )
+    excluded = set(context_prefs.get("exclude_from_context") or [])
+
+    for entry in (
+        ".claude/worktrees/",
+        "build/",
+        "dist/",
+        "data/dev-runtime/",
+        "data/raw/",
+        ".venv/",
+        "node_modules/",
+        ".pytest_cache/",
+        "tmp/",
+        "scratch/",
+    ):
+        assert entry in claudeignore, f"missing from .claudeignore: {entry}"
+
+    for entry in (
+        ".claude/",
+        "build/",
+        "dist/",
+        "data/",
+        ".venv/",
+        "node_modules/",
+        ".pytest_cache/",
+        "tmp/",
+        "scratch/",
+    ):
+        assert entry in geminiignore, f"missing from .geminiignore: {entry}"
+
+    for entry in (
+        ".claude/worktrees/",
+        "build/",
+        "dist/",
+        "data/dev-runtime/",
+        "data/raw/",
+        "node_modules/",
+        ".pytest_cache/",
+        "tmp/",
+        "scratch/",
+    ):
+        assert entry in excluded, f"missing from agent-context-preferences.json: {entry}"
