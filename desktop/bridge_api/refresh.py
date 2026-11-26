@@ -432,15 +432,17 @@ class RefreshBridgeMixin:
     def start_data_update(self, params=None) -> dict:
         if not self._is_write_allowed():
             return self._sanitize_for_json(self._write_blocked_response("start_data_update"))
+        from src.companies.catalog import CompanyCatalogUnavailableError  # noqa: PLC0415
         from src.companies.universe import CompanyUniverseUnavailableError  # noqa: PLC0415
 
         p = params or {}
+        mode = "failed" if str(p.get("mode") or "").strip().lower() == "failed" else "missing"
+        scope = "retry" if mode == "failed" else "data_update"
         try:
             # One action, fixed scope (ADR 0010): every active CVM company over
             # the history range, official CVM only. Presets and batch sizes are
             # no longer inputs.
             settings = self._resolve_data_update_settings()
-            mode = "failed" if str(p.get("mode") or "").strip().lower() == "failed" else "missing"
 
             selection = self._onboarding().get_company_universe_by_preset("all", refresh_catalog=True)
             ordered = sorted(
@@ -449,7 +451,7 @@ class RefreshBridgeMixin:
             )
             refresh_params: dict[str, Any] = {
                 "mode": mode,
-                "scope": "retry" if mode == "failed" else "data_update",
+                "scope": scope,
                 "company_ids": [int(row.cd_cvm) for row in ordered],
                 "start_year": int(settings["start_year"]),
                 "end_year": int(settings["end_year"]),
@@ -463,11 +465,26 @@ class RefreshBridgeMixin:
                 "selection": selection.to_dict(),
                 "settings": settings,
             })
+        except CompanyCatalogUnavailableError as exc:
+            # The catalog's own message speaks of a preserved snapshot; on this path nothing started.
+            message = "Could not reach CVM to get the company list. Nothing was downloaded."
+            logger.warning("start_data_update failed: company catalog unavailable: %s", exc)
+            self._append_runtime_log(f"start_data_update failed: company_catalog_unavailable: {exc}")
+            self._refresh().record_failed_start(scope=scope, error=message)
+            return self._sanitize_for_json({
+                "status": "error",
+                "job_id": None,
+                "message": message,
+                "status_reason_code": "company_catalog_unavailable",
+                "status_reason_message": message,
+                "is_retry_allowed": True,
+            })
         except CompanyUniverseUnavailableError as exc:
             logger.warning("start_data_update blocked: company universe unavailable: %s", exc)
             self._append_runtime_log(
                 f"start_data_update blocked: company_universe_unavailable: {exc}"
             )
+            self._refresh().record_failed_start(scope=scope, error=str(exc))
             return self._sanitize_for_json({
                 "status": "blocked",
                 "job_id": None,
@@ -479,6 +496,7 @@ class RefreshBridgeMixin:
         except Exception as exc:
             logger.exception("start_data_update failed")
             self._append_runtime_log(f"start_data_update failed: {exc}")
+            self._refresh().record_failed_start(scope=scope, error=str(exc))
             return self._sanitize_for_json({
                 "status": "error",
                 "job_id": None,

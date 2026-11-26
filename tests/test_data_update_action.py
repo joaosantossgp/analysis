@@ -264,3 +264,26 @@ def test_eta_uses_the_whole_company_phase_not_the_current_stage(tmp_path, monkey
 
     # Company phase began 12:10: 1 company in 3000 s, 2 left -> 6000 s (not 2400 s from the 12:40 stage).
     assert state["run"]["eta_seconds"] == 6000
+
+
+def test_unreachable_cvm_on_start_is_a_failed_data_update(tmp_path):
+    # #580: CVM unreachable before any company is queued must read as Failed everywhere, not Empty.
+    from src.companies.catalog import CompanyCatalogUnavailableError
+
+    class _UnreachableOnboarding:
+        def get_company_universe_by_preset(self, preset, *, refresh_catalog=False):
+            raise CompanyCatalogUnavailableError("Catalog refresh failed. The previous local snapshot has been preserved.")
+
+    bridge = _bridge(tmp_path, [])
+    bridge._onboarding_service = _UnreachableOnboarding()
+    bridge._refresh_manager = _manager(tmp_path, _ScriptedRefresh())
+
+    response = bridge.start_data_update({})
+    state = bridge.get_local_database_state({})
+
+    expected = "Could not reach CVM to get the company list. Nothing was downloaded."
+    assert response["status"] == "error"
+    assert response["message"] == expected
+    assert state["state"] == "failed"
+    assert state["last_run"]["error"] == expected
+    assert state["last_run"]["scope"] == "data_update"
