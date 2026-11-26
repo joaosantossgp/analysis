@@ -52,3 +52,34 @@ def get_base_health(
 
         raise InvalidRequestError(str(exc)) from exc
     return present_health_snapshot(snapshot)
+
+
+@router.get(
+    "/local-database-state",
+    summary="Returns the local database state shown by the app shell.",
+)
+def get_local_database_state(request: Request) -> dict:
+    from datetime import datetime, timezone
+
+    from src.platform.db import build_engine
+    from src.refresh.local_database_state import (
+        derive_local_database_state,
+        read_local_database_facts,
+    )
+
+    settings = get_settings(request)
+    ensure_api_ready(settings)
+    engine = build_engine(settings)
+    try:
+        has_statements, failures = read_local_database_facts(engine)
+    finally:
+        engine.dispose()
+    manager = getattr(request.app.state, "refresh_job_manager", None)
+    jobs = manager.list_jobs(active_only=False) if manager is not None else []
+    state = derive_local_database_state(
+        has_statements=has_statements,
+        jobs=jobs,
+        now=datetime.now(timezone.utc),
+    )
+    state["failures"] = failures
+    return state

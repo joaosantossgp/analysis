@@ -5,6 +5,7 @@ const REFRESH_JOB_QUERY_KEYS: Array<readonly unknown[]> = [
   ["companies"],
   ["company-filters"],
   ["db-diagnostics"],
+  ["local-database-state"],
   ["sectors"],
   ["sector-detail"],
   ["sub-sector-detail"],

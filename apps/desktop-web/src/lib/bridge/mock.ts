@@ -19,6 +19,7 @@ if (!import.meta.env.DEV) {
   throw new Error("[CVMAnalytics] mock bridge loaded in non-dev build — this is a bug");
 }
 
+import { mockLocalDatabaseState } from "./mockLocalDatabase";
 import type {
   BridgeApi,
   AppStatusPayload,
@@ -1471,6 +1472,8 @@ export function createMockBridge(): Partial<BridgeApi> {
     }),
 
     get_database_diagnostics: async () => MOCK_DB_DIAGNOSTICS,
+
+    get_local_database_state: async () => mockLocalDatabaseState(),
 
     get_base_health: async () => MOCK_BASE_HEALTH,
 

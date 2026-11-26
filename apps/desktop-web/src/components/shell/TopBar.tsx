@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useBridgeStatus, type BridgeProbe } from "@/hooks/useBridgeStatus";
 import { Kbd } from "@/components/ui/Kbd";
 
+import { DataIndicator } from "./DataIndicator";
 import { ModuleNav } from "./ModuleNav";
 
 /**
@@ -104,6 +105,8 @@ export function TopBar({ onOpenPalette }: Props) {
             <Kbd>Ctrl K</Kbd>
           </span>
         </button>
+
+        <DataIndicator />
 
         <span
           className="hidden items-center gap-1 rounded-sm border px-2 py-0.5 font-mono text-2xs uppercase tracking-wider lg:inline-flex"

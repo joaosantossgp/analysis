@@ -1916,3 +1916,13 @@ def test_sentry_initialized_when_dsn_is_present(monkeypatch: pytest.MonkeyPatch,
     client = sentry_sdk.get_client()
     assert client.dsn == fake_dsn
     assert client.options["environment"] == "staging"
+
+
+def test_local_database_state_returns_shell_contract(client: TestClient):
+    response = client.get("/local-database-state")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["state"] in {"empty", "files", "updating", "current", "stale", "partial", "failed"}
+    assert isinstance(payload["has_statements"], bool)
+    assert isinstance(payload["failures"], list)
+    assert "last_full_update_at" in payload and "stale_reason" in payload and "run" in payload
