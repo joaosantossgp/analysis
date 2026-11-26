@@ -1387,6 +1387,35 @@ class DesktopRefreshJobManager:
             "is_retry_allowed": False,
         }
 
+    def record_failed_start(self, *, scope: str, error: str) -> str:
+        """Records a run that failed before any company was queued, so the shell shows Failed (#580)."""
+        job_id = uuid4().hex
+        now = self._now_iso()
+        job = {
+            "job_id": job_id,
+            "state": "error",
+            "mode": "missing",
+            "accepted_at": now,
+            "created_at": now,
+            "updated_at": now,
+            "started_at": now,
+            "finished_at": now,
+            "queued": 0,
+            "processed": 0,
+            "failures": 0,
+            "current_cvm": None,
+            "log_lines": [error],
+            "params": {"scope": scope},
+            "scope": scope,
+            "request": {"companies": []},
+            "error": error,
+            "result": None,
+        }
+        with self._lock:
+            self._jobs[job_id] = job
+            self._save_jobs()
+        return job_id
+
     def get_refresh_status(self, params: dict[str, Any] | None = None) -> dict[str, Any]:
         p = dict(params or {})
         job_id = p.get("job_id")

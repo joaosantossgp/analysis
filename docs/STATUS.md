@@ -38,16 +38,15 @@ Keep detail in the owning contract or dated evidence. Last updated: 2026-11-26.
 - Shell-owned data updates (goal #539, [ADR 0010](decisions/0010-shell-owned-data-updates.md)):
   all sub-issues delivered. The [packaged validation](governance/2026-11-26-data-journey-packaged-validation.md)
   (#550) passed the first-launch, progressive download, cancel, Stale, offline-launch and
-  update-check states on a partial run. It found six bugs (#575-#580). The most serious,
-  #575 (a mid-session network drop paused every bridge read), is fixed: bridge queries no
-  longer pause on the browser `offline` event (checked in the mock dev runtime, not yet in
-  the packaged app). #576 is fixed: the local database pill and the empty-database hero
-  appear within about 0.3 s of launch instead of 30 s (dev desktop app, empty sandbox).
-  #577 is fixed: an open Companies directory now lists the catalog within about 20 s of
-  starting a data update and moves rows out of Queued as companies finish. #578 is fixed:
-  the run ETA uses the whole company phase (20 min shown vs 19 min measured on a real run).
-  #579 is fixed: Home keeps the hero and its progress until the first full data update ends.
-  The goal stays open until the remaining bugs are triaged.
+  update-check states on a partial run. It found six bugs (#575-#580), all fixed and checked
+  in the dev desktop app or mock runtime, not yet in a packaged build:
+  - #575: bridge reads no longer pause on the browser `offline` event.
+  - #576: the local database pill and empty-database hero appear in about 0.3 s, not 30 s.
+  - #577: an open Companies directory follows a running data update.
+  - #578: the run ETA uses the whole company phase (20 min shown vs 19 min measured).
+  - #579: Home keeps the hero until the first full data update ends.
+  - #580: a start that cannot reach CVM is a Failed data update on every surface.
+  The goal stays open until a packaged build re-checks these states.
 - First data update cost (goal #574, #582-#587): QA log scope index, QA events stored as
   source observation ids, DMPL/DVA no longer read, batched evidence inserts, and five unused
   `financial_reports` indexes dropped. A full fresh first run (655 active companies,

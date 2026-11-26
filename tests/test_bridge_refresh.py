@@ -330,6 +330,9 @@ def test_start_data_update_returns_blocked_without_dispatching_when_universe_una
             self.called = True
             raise AssertionError("request_refresh must not be called for blocked universe")
 
+        def record_failed_start(self, *, scope, error):
+            self.failed_start = (scope, error)
+
     bridge = CVMBridge()
     fake_manager = FakeManager()
     market_cap_fetches = []
@@ -370,6 +373,7 @@ def test_start_data_update_returns_blocked_without_dispatching_when_universe_una
     assert response["job_id"] is None
     assert "missing market-cap source" in response["message"]
     assert fake_manager.called is False
+    assert fake_manager.failed_start == ("data_update", "missing market-cap source")
     assert market_cap_fetches == []
 
 
