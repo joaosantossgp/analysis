@@ -109,3 +109,20 @@ def test_history_range_preference_drives_the_data_update_and_survives_rebuild(sa
     bridge.start_data_update({})
 
     assert (manager.params["start_year"], manager.params["end_year"]) == (end_year - 9, end_year)
+
+
+def test_history_range_rolls_forward_into_a_new_year(sandbox_bridge):
+    bridge, _settings = sandbox_bridge
+    year = datetime.now(timezone.utc).year
+    # A "last 5 years" range saved last year must cover this year now.
+    bridge._write_app_settings({**bridge.get_data_update_settings({}), "start_year": year - 5, "end_year": year - 1})
+    resolved = bridge.get_data_update_settings({})
+    assert (resolved["start_year"], resolved["end_year"]) == (year - 4, year)
+
+
+def test_since_2010_history_stays_anchored_at_2010(sandbox_bridge):
+    bridge, _settings = sandbox_bridge
+    year = datetime.now(timezone.utc).year
+    bridge._write_app_settings({**bridge.get_data_update_settings({}), "start_year": 2010, "end_year": year - 1})
+    resolved = bridge.get_data_update_settings({})
+    assert (resolved["start_year"], resolved["end_year"]) == (2010, year)

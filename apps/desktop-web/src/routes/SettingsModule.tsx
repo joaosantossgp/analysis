@@ -472,8 +472,7 @@ function HistoryRangePanel({ bridgeReady }: { bridgeReady: boolean }) {
     mutationFn: saveDataUpdateSettings,
     onSuccess: (settings) => queryClient.setQueryData(["data-update-settings"], { mode: "desktop", settings }),
   });
-  // shortcut: the bridge stores absolute years, so a range saved last year shows as Custom
-  // until it is picked again; store the range itself if analysts trip over it.
+  // The bridge rolls a saved range forward each year, so presets keep matching.
   const endYear = new Date().getFullYear();
   const result = settingsQuery.data;
   const settings = result?.settings ?? null;

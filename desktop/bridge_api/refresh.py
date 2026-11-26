@@ -661,6 +661,16 @@ class RefreshBridgeMixin:
             "start_year": stored.get("data_update_start_year", defaults["start_year"]),
             "end_year": stored.get("data_update_end_year", defaults["end_year"]),
         }
+        # The History range is a span of years, not fixed years: roll a saved
+        # range forward so a new year's filings are always included.
+        try:
+            start, end = int(raw["start_year"]), int(raw["end_year"])
+            current_year = datetime.now(timezone.utc).year
+            if end < current_year:
+                raw["start_year"] = start if start <= self.CVM_MIN_YEAR else current_year - (end - start)
+                raw["end_year"] = current_year
+        except (TypeError, ValueError):
+            pass
         return self._normalize_data_update_settings(raw)
 
     def _normalize_data_update_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
