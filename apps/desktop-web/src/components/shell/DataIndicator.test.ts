@@ -58,3 +58,11 @@ describe("DataPanelBody", () => {
     expect(html).toContain("OI SA");
   });
 });
+
+describe("DataPanelBody failure retries", () => {
+  it("offers a bulk retry and a retry per failed company", () => {
+    const html = renderPanel(S.partial, true);
+    expect(html).toContain("Retry 3 failed");
+    expect(html.match(/>Retry</g)?.length).toBe(3);
+  });
+});
