@@ -86,6 +86,7 @@ export function isTerminalRefreshJob(job: RefreshJobStatus | null | undefined): 
   return (
     job != null &&
     (job.state === "success" ||
+      job.state === "partial" ||
       job.state === "error" ||
       job.state === "cancelled" ||
       job.state === "interrupted")

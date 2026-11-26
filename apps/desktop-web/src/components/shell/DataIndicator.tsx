@@ -1,8 +1,17 @@
 import { useEffect, useRef, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-import { useLocalDatabaseState, useOnline } from "@/lib/api/localDatabase";
+import { Button } from "@/components/ui/Button";
+import { useRefreshJobInvalidation } from "@/hooks/useRefreshJobInvalidation";
+import {
+  LOCAL_DATABASE_STATE_KEY,
+  retryFailedCompanies,
+  useLocalDatabaseState,
+  useOnline,
+} from "@/lib/api/localDatabase";
 import type { LocalDatabaseState } from "@/lib/bridge/types.localDatabase";
 import { describeLocalDatabaseState, LOCAL_DATABASE_TONE_COLOR } from "@/lib/localDatabase/describe";
+import { OPEN_DATA_PANEL_EVENT } from "@/lib/localDatabase/panel";
 
 import { DataAction } from "./DataAction";
 
@@ -20,6 +29,21 @@ export function DataIndicator() {
   const state = query.isError
     ? ({ state: "unknown", error: String(query.error) } as LocalDatabaseState)
     : query.data;
+
+  // Refresh every data screen when a run ends, wherever the analyst is.
+  const invalidateAll = useRefreshJobInvalidation();
+  const running = Boolean(state?.run);
+  const wasRunning = useRef(running);
+  useEffect(() => {
+    if (wasRunning.current && !running) invalidateAll();
+    wasRunning.current = running;
+  }, [running, invalidateAll]);
+
+  useEffect(() => {
+    const onOpen = () => setOpen(true);
+    window.addEventListener(OPEN_DATA_PANEL_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_DATA_PANEL_EVENT, onOpen);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -106,6 +130,11 @@ export function DataIndicator() {
 export function DataPanelBody({ state, online }: { state: LocalDatabaseState; online: boolean }) {
   const d = describeLocalDatabaseState(state, { online });
   const failures = state.state === "partial" || state.state === "failed" ? state.failures : [];
+  const queryClient = useQueryClient();
+  const retry = useMutation({
+    mutationFn: (ids?: number[]) => retryFailedCompanies(ids),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: LOCAL_DATABASE_STATE_KEY }),
+  });
   return (
     <div className="space-y-3">
       <div>
@@ -130,12 +159,30 @@ export function DataPanelBody({ state, online }: { state: LocalDatabaseState; on
       ) : null}
       <DataAction state={state} online={online} context="panel" />
       {failures.length ? (
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="font-mono text-2xs uppercase tracking-wider" style={{ color: "var(--color-text-tertiary)" }}>
+            Failed companies
+          </h3>
+          <Button variant="secondary" size="xs" disabled={!online} loading={retry.isPending} onClick={() => retry.mutate(undefined)}>
+            Retry {failures.length} failed
+          </Button>
+        </div>
+      ) : null}
+      {retry.error ? (
+        <p role="alert" className="text-xs" style={{ color: "var(--color-state-err)" }}>{(retry.error as Error).message}</p>
+      ) : null}
+      {failures.length ? (
         <ul style={{ borderTop: "1px solid var(--color-border-subtle)" }}>
           {failures.slice(0, MAX_LISTED_FAILURES).map((f) => (
-            <li key={f.cd_cvm} className="py-1.5 text-xs" style={{ borderBottom: "1px solid var(--color-border-subtle)" }}>
-              <span className="font-mono text-2xs" style={{ color: "var(--color-text-tertiary)" }}>CVM {f.cd_cvm} </span>
-              <span style={{ color: "var(--color-text-primary)" }}>{f.company_name ?? "Unknown company"}</span>
-              <span className="block text-2xs" style={{ color: "var(--color-text-tertiary)" }}>{f.error}</span>
+            <li key={f.cd_cvm} className="flex items-start justify-between gap-2 py-1.5 text-xs" style={{ borderBottom: "1px solid var(--color-border-subtle)" }}>
+              <span className="min-w-0">
+                <span className="font-mono text-2xs" style={{ color: "var(--color-text-tertiary)" }}>CVM {f.cd_cvm} </span>
+                <span style={{ color: "var(--color-text-primary)" }}>{f.company_name ?? "Unknown company"}</span>
+                <span className="block text-2xs" style={{ color: "var(--color-text-tertiary)" }}>{f.error}</span>
+              </span>
+              <Button variant="ghost" size="xs" disabled={!online || retry.isPending} onClick={() => retry.mutate([f.cd_cvm])}>
+                Retry
+              </Button>
             </li>
           ))}
           {failures.length > MAX_LISTED_FAILURES ? (

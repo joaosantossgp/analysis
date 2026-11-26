@@ -2,6 +2,7 @@ import { useSyncExternalStore } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { callBridge, getBridgeMode } from "../bridge/adapter";
+import { startDataUpdate } from "./updateBase";
 import type { LocalDatabaseState } from "../bridge/types.localDatabase";
 
 export const LOCAL_DATABASE_STATE_KEY = ["local-database-state"] as const;
@@ -37,4 +38,14 @@ export function useOnline(): boolean {
     () => navigator.onLine,
     () => true,
   );
+}
+
+/** Retries failed companies: all of them, or only `companyIds`. Never resets Stale. */
+export async function retryFailedCompanies(companyIds?: number[]): Promise<void> {
+  if (!companyIds?.length) {
+    await startDataUpdate({ mode: "failed" });
+    return;
+  }
+  const response = await callBridge("request_refresh", { mode: "failed", scope: "retry", company_ids: companyIds });
+  if (response.status === "error") throw new Error(response.message || "Retry could not start.");
 }

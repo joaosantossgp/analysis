@@ -77,6 +77,8 @@ def _is_partial(job: dict[str, Any]) -> bool:
     failures = int(job.get("failures") or 0)
     processed = int(job.get("processed") or 0)
     queued = int(job.get("queued") or 0)
+    if str(job.get("state")) == "partial":
+        return True
     return str(job.get("state")) == "error" and 0 < failures and processed > 0 and failures < max(queued, processed)
 
 
@@ -108,6 +110,14 @@ def _run_payload(job: dict[str, Any], now: datetime) -> dict[str, Any]:
         "failures": int(job.get("failures") or 0),
         "started_at": job.get("started_at"),
         "eta_seconds": eta_seconds,
+        # The run's companies in processing order, so the directory can mark
+        # rows of this run only (never inferred for other companies).
+        "company_ids": [
+            int(code)
+            for code in ((job.get("request") or {}).get("companies") or (job.get("params") or {}).get("company_ids") or [])
+            if str(code).isdigit()
+        ],
+        "current_cvm": int(job["current_cvm"]) if str(job.get("current_cvm") or "").isdigit() else None,
     }
 
 

@@ -32,6 +32,8 @@ const RUN = {
   scope: "data_update",
   failures: 0,
   started_at: "2026-11-25T11:40:00+00:00",
+  // Mock directory companies, tickers first.
+  company_ids: [9512, 14311, 14673, 5258, 4170, 99001],
 };
 
 export const MOCK_LOCAL_DATABASE_STATES: Record<Exclude<LocalDatabaseStateKey, "unknown">, LocalDatabaseState> = {
@@ -42,12 +44,12 @@ export const MOCK_LOCAL_DATABASE_STATES: Record<Exclude<LocalDatabaseStateKey, "
     has_statements: false,
     last_full_update_at: null,
     last_run: null,
-    run: { ...RUN, phase: "files", files_done: 6, files_total: 10, processed: 0, queued: 438, eta_seconds: null },
+    run: { ...RUN, phase: "files", files_done: 6, files_total: 10, processed: 0, queued: 438, eta_seconds: null, current_cvm: null },
   },
   updating: {
     ...BASE,
     state: "updating",
-    run: { ...RUN, phase: "companies", files_done: null, files_total: null, processed: 162, queued: 438, eta_seconds: 1440 },
+    run: { ...RUN, phase: "companies", files_done: null, files_total: null, processed: 162, queued: 438, eta_seconds: 1440, current_cvm: 14673 },
   },
   current: BASE,
   stale: {

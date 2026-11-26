@@ -2,9 +2,11 @@ import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 
 import { whenBridgeReady } from "@/lib/bridge/adapter";
-import { resolveBridgeMode, getBridgeBadgeStyles } from "@/lib/bridge/badgeResolver";
 import { StateBanner } from "@/components/feedback/StateBanner";
 import { useWorkspaceStatus } from "@/lib/api/updateBase";
+import { useLocalDatabaseState } from "@/lib/api/localDatabase";
+import { EmptyDatabaseHero } from "@/components/home/EmptyDatabaseHero";
+import { LocalDatabaseNotice } from "@/components/home/LocalDatabaseNotice";
 
 // Configurable Workspace imports
 import { WORKSPACE_REGISTRY } from "@/components/home/WorkspaceRegistry";
@@ -280,7 +282,11 @@ export function HomePage() {
   }, [cardConfigs, bridgeReady]);
 
   // 3. Status checks and diagnostics summary using the shared status hook
-  const { activeJob, isRunning, health, diagnostics: diag, browserReason } = useWorkspaceStatus(bridgeReady);
+  const { health, browserReason } = useWorkspaceStatus(bridgeReady);
+  const localDatabase = useLocalDatabaseState();
+  const databaseEmpty = Boolean(
+    localDatabase.data && localDatabase.data.state !== "unknown" && !localDatabase.data.has_statements,
+  );
 
   // 4. Toggle Card Visibility (places in the first available gap)
   const handleToggleCard = (id: string) => {
@@ -582,42 +588,15 @@ export function HomePage() {
           </p>
         </div>
 
-        {/* Status Dashboard Summary */}
+        {/* Status Dashboard Summary: the shell indicator owns database and job state. */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-3xs text-zinc-400 font-mono bg-zinc-950/30 border border-zinc-900 rounded-md px-3 py-1.5">
-          <Link to="/settings/diagnostics" className="flex items-center gap-1 hover:text-zinc-200 transition-colors">
-            <span className="text-zinc-500">MODE:</span>
-            <span className={`font-bold uppercase ${resolveBridgeMode() === "browser" ? "text-amber-400" : resolveBridgeMode() === "mock" ? "text-purple-400" : "text-emerald-400"}`}>
-              {getBridgeBadgeStyles(resolveBridgeMode()).text}
-            </span>
-          </Link>
-          <div className="h-3 w-px bg-zinc-900" />
           <Link to="/settings/coverage" className="flex items-center gap-1 hover:text-zinc-200 transition-colors">
-            <span className="text-zinc-500">COVERAGE:</span>
-            <span className="text-zinc-200 font-bold">{health ? `${health.pct.toFixed(1)}%` : "—"}</span>
-          </Link>
-          <div className="h-3 w-px bg-zinc-900" />
-          <Link to="/settings/updates" className="flex items-center gap-1 hover:text-zinc-200 transition-colors">
-            <span className="text-zinc-500">SYNC TIME:</span>
-            <span className="text-zinc-200 font-bold">
-              {diag?.latest_success_at 
-                ? new Date(diag.latest_success_at).toLocaleDateString("en-US", { month: "short", day: "2-digit" }) + " " + new Date(diag.latest_success_at).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false })
-                : "NEVER"}
-            </span>
+            <span className="text-zinc-500">COMPLETENESS:</span><span className="text-zinc-200 font-bold">{health && !databaseEmpty ? `${health.pct.toFixed(1)}%` : "—"}</span>
           </Link>
           <div className="h-3 w-px bg-zinc-900" />
           <Link to="/empresas/coverage/prioritization" className="flex items-center gap-1 hover:text-zinc-200 transition-colors">
-            <span className="text-zinc-500">GAPS:</span>
-            <span className="text-zinc-200 font-bold">{health ? health.missing_cells : "—"}</span>
+            <span className="text-zinc-500">GAPS:</span><span className="text-zinc-200 font-bold">{health && !databaseEmpty ? health.missing_cells : "—"}</span>
           </Link>
-          {isRunning && activeJob && (
-            <>
-              <div className="h-3 w-px bg-zinc-900" />
-              <Link to="/settings/updates" className="flex items-center gap-1.5 text-orange-400 animate-pulse hover:text-orange-300 transition-colors">
-                <span className="h-1.5 w-1.5 rounded-full bg-orange-500" />
-                <span className="font-bold uppercase">JOB ACTIVE: {activeJob.stage}</span>
-              </Link>
-            </>
-          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -647,8 +626,20 @@ export function HomePage() {
         </div>
       </div>
 
+      <LocalDatabaseNotice />
+
+      {databaseEmpty ? (
+        <EmptyDatabaseHero
+          onLoadRecommended={() => setActiveCards(resolveLayout(RECOMMENDED_LAYOUT))}
+          onChooseWidgets={() => {
+            setIsConfigOpen(true);
+            setIsEditMode(true);
+          }}
+        />
+      ) : null}
+
       {/* Main Grid Area */}
-      {activeCards.length === 0 ? (
+      {activeCards.length === 0 && databaseEmpty ? null : activeCards.length === 0 ? (
         <div className="border border-zinc-850 rounded-lg p-6 bg-zinc-900/10 max-w-2xl mx-auto mt-10 font-mono space-y-6">
           <div className="text-center space-y-2">
             <span className="text-orange-500 text-3xl block" aria-hidden="true">⛭</span>

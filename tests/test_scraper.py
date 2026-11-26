@@ -519,9 +519,16 @@ class TestDownloadAndExtract:
             result = scraper.download_and_extract(2024, 'DFP')
         assert result is True
 
-    def test_404_returns_false(self, scraper):
+    def test_404_means_not_published_yet(self, scraper):
         mock_resp = MagicMock()
         mock_resp.status_code = 404
+        with patch('requests.get', return_value=mock_resp):
+            result = scraper.download_and_extract(2099, 'DFP')
+        assert result is None
+
+    def test_server_error_is_a_download_failure(self, scraper):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 503
         with patch('requests.get', return_value=mock_resp):
             result = scraper.download_and_extract(2099, 'DFP')
         assert result is False
@@ -757,3 +764,55 @@ def test_fetch_company_list_reuses_fresh_catalog_snapshot_without_network(scrape
     assert scraper.companies_map["PETROBRAS"] == 9512
     assert scraper.setores_map["9512"] == "Petroleo e Gas"
     assert scraper.cnpjs_map["9512"] == "33.000.167/0001-01"
+
+
+def test_concurrent_runs_never_download_the_same_cvm_file_at_once(scraper, monkeypatch):
+    import threading as _threading
+    import time as _time
+
+    active = {"now": 0, "max": 0}
+    guard = _threading.Lock()
+
+    def slow_unlocked(year, doc_type):
+        with guard:
+            active["now"] += 1
+            active["max"] = max(active["max"], active["now"])
+        _time.sleep(0.05)
+        with guard:
+            active["now"] -= 1
+        return True
+
+    monkeypatch.setattr(scraper, "_download_and_extract_unlocked", slow_unlocked)
+    threads = [_threading.Thread(target=scraper.download_and_extract, args=(2024, "DFP")) for _ in range(3)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert active["max"] == 1
+
+
+def test_failed_cvm_file_download_is_a_company_error_not_no_data(scraper):
+    from unittest.mock import MagicMock as _MagicMock
+
+    scraper.fetch_company_list = _MagicMock()
+    scraper.resolve_company_codes = _MagicMock(return_value={"VALE": 4170})
+    scraper.download_and_extract = _MagicMock(side_effect=lambda year, doc: doc != "DFP")
+    scraper.process_data = _MagicMock(return_value=None)
+
+    results = scraper.run(companies=["VALE"], start_year=2024, end_year=2024)
+
+    assert results["4170"]["status"] == "error"
+    assert "DFP 2024" in results["4170"]["error"]
+
+
+def test_unpublished_cvm_file_is_not_a_download_failure(scraper):
+    from unittest.mock import MagicMock as _MagicMock
+
+    scraper.fetch_company_list = _MagicMock()
+    scraper.resolve_company_codes = _MagicMock(return_value={"VALE": 4170})
+    scraper.download_and_extract = _MagicMock(side_effect=lambda year, doc: None if doc == "DFP" else True)
+    scraper.process_data = _MagicMock(return_value=None)
+
+    results = scraper.run(companies=["VALE"], start_year=2026, end_year=2026)
+
+    assert results["4170"]["status"] == "no_data"

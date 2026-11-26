@@ -14,6 +14,9 @@ import { whenBridgeReady } from "@/lib/bridge/adapter";
 import type { ClassificationOrigin } from "@/lib/bridge/types";
 import { CLASSIFICATION_STATUS_LABEL } from "@/lib/classification";
 import { StateBanner } from "@/components/feedback/StateBanner";
+import { LocalDataEmptyState } from "@/components/shell/LocalDataEmptyState";
+import { useLocalDatabaseState } from "@/lib/api/localDatabase";
+import { runCompanyIds, runRowStatus, runStatusLine, type RunRowStatus } from "@/lib/localDatabase/runStatus";
 
 const PAGE_SIZE = 25;
 
@@ -486,14 +489,30 @@ function Body({
       );
     }
     return (
-      <StateBanner
-        variant="empty"
+      <LocalDataEmptyState
         title="No companies"
-        message="No companies in the local database. Run Database Updates to populate data."
+        emptyMessage="The local database is empty. Download CVM data to list every active company; statements follow company by company."
+        fallbackMessage="No companies are listed in the local database."
       />
     );
   }
-  return <CompaniesGrid items={items} coverageMap={coverageMap} sort={sort} onSort={onSort} />;
+  return (
+    <>
+      <RunStatusLine />
+      <CompaniesGrid items={items} coverageMap={coverageMap} sort={sort} onSort={onSort} />
+    </>
+  );
+}
+
+function RunStatusLine() {
+  const line = runStatusLine(useLocalDatabaseState().data);
+  if (!line) return null;
+  return (
+    <p className="mb-2 text-xs" style={{ color: "var(--color-text-secondary)" }} aria-live="polite">
+      <span aria-hidden="true" style={{ color: "var(--color-id-ticker)" }}>↻ </span>
+      {line}
+    </p>
+  );
 }
 
 function CompaniesGrid({
@@ -507,6 +526,8 @@ function CompaniesGrid({
   sort: CompanyDirectorySort;
   onSort: (sortBy: CompanyDirectorySort["sortBy"]) => void;
 }) {
+  const localState = useLocalDatabaseState().data;
+  const runIds = useMemo(() => runCompanyIds(localState), [localState]);
   return (
     <div className="overflow-hidden rounded border border-zinc-800">
       <table className="w-full border-collapse text-sm">
@@ -531,7 +552,12 @@ function CompaniesGrid({
         </thead>
         <tbody className="divide-y divide-zinc-800/80 text-zinc-200">
           {items.map((company) => (
-            <CompanyRow key={company.cd_cvm} company={company} coverageMap={coverageMap} />
+            <CompanyRow
+              key={company.cd_cvm}
+              company={company}
+              coverageMap={coverageMap}
+              runStatus={runRowStatus(localState, runIds, company.cd_cvm, company.has_financial_data)}
+            />
           ))}
         </tbody>
       </table>
@@ -542,11 +568,13 @@ function CompaniesGrid({
 function CompanyRow({
   company,
   coverageMap,
+  runStatus,
 }: {
   company: NonNullable<
     (CompaniesResult & { mode: "desktop" })["page"]
   >["items"][number];
   coverageMap: Map<number, string>;
+  runStatus: RunRowStatus | null;
 }) {
   const navigate = useNavigate();
   const yearsSummary = useMemo(
@@ -590,7 +618,11 @@ function CompanyRow({
         {company.market_cap_brl != null ? formatMarketCap(company.market_cap_brl) : <span className="text-zinc-600">—</span>}
       </td>
       <td className="px-3 py-2 text-center text-xs">
-        <DataStatusBadge status={company.data_status} hasFinancialData={company.has_financial_data} />
+        {runStatus ? (
+          <RunStatusBadge status={runStatus} />
+        ) : (
+          <DataStatusBadge status={company.data_status} hasFinancialData={company.has_financial_data} />
+        )}
       </td>
       <td className="px-3 py-2 font-mono text-xs text-zinc-400">{yearsSummary}</td>
       <td className="px-3 py-2 font-mono text-xs text-zinc-400">
@@ -678,6 +710,25 @@ function Pagination({
         Next →
       </button>
     </nav>
+  );
+}
+
+const RUN_BADGES: Record<RunRowStatus, { text: string; color: string; title: string }> = {
+  downloading: { text: "↻ Downloading", color: "var(--color-id-ticker)", title: "Being processed by the running data update" },
+  queued: { text: "◌ Queued", color: "var(--color-text-secondary)", title: "Queued in the running data update. Open the company to download it now." },
+  failed: { text: "▲ Failed", color: "var(--color-state-warn)", title: "Failed in the last data update. See the Data panel." },
+};
+
+function RunStatusBadge({ status }: { status: RunRowStatus }) {
+  const badge = RUN_BADGES[status];
+  return (
+    <span
+      title={badge.title}
+      className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono"
+      style={{ borderColor: "var(--color-border-default)", color: badge.color }}
+    >
+      {badge.text}
+    </span>
   );
 }
 

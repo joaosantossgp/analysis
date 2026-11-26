@@ -101,6 +101,14 @@ class RefreshBridgeMixin:
         return get_settings().paths.data_dir / "refresh_jobs.json"
 
     def _load_refresh_jobs_light(self) -> dict[str, dict[str, Any]]:
+        manager = getattr(self, "_refresh_manager", None)
+        if manager is not None and hasattr(manager, "snapshot_jobs"):
+            # A live manager knows which jobs are really running.
+            return {
+                str(job.get("job_id")): self._persistable_refresh_job(job)
+                for job in manager.snapshot_jobs()
+                if job.get("job_id")
+            }
         jobs_path = self._refresh_jobs_path()
         if not jobs_path.exists():
             return {}
@@ -111,9 +119,10 @@ class RefreshBridgeMixin:
         if not isinstance(payload, dict) or not isinstance(payload.get("jobs"), list):
             return {}
 
+        # Read-only: a job left active by a closed app reads as interrupted here,
+        # without rewriting the store the job manager owns.
         now_iso = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
         jobs: dict[str, dict[str, Any]] = {}
-        changed = False
         for raw_job in payload["jobs"]:
             if not isinstance(raw_job, dict) or not raw_job.get("job_id"):
                 continue
@@ -122,33 +131,12 @@ class RefreshBridgeMixin:
                 job["state"] = "interrupted"
                 job["finished_at"] = now_iso
                 job["updated_at"] = now_iso
-                job["error"] = "O app foi encerrado antes do refresh terminar."
+                job["error"] = "The app closed before the data update finished."
                 log_lines = list(job.get("log_lines") or [])
                 log_lines.append(str(job["error"]))
                 job["log_lines"] = log_lines[-200:]
-            if job != raw_job:
-                changed = True
             jobs[str(job["job_id"])] = job
 
-        if changed:
-            try:
-                jobs_path.write_text(
-                    json.dumps(
-                        {
-                            "jobs": sorted(
-                                jobs.values(),
-                                key=lambda row: str(row.get("created_at") or ""),
-                                reverse=True,
-                            )
-                        },
-                        ensure_ascii=True,
-                        indent=2,
-                        default=str,
-                    ),
-                    encoding="utf-8",
-                )
-            except Exception:
-                pass
         return jobs
 
     @staticmethod
