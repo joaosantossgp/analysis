@@ -53,6 +53,17 @@ describe("Statement financial QA", () => {
     expect(markup).toContain("Review the original filing.");
   });
 
+  it("lists each QA source and flags one missing from the local database", () => {
+    const markup = render({ ...base, quality_evidence: "available",
+      qa_events: [{ type: "MISSING_OBSERVATION", cd_conta: "3.01", period: "2024", action: "Review.",
+        source_inputs: [
+          { SOURCE_FILE: "dfp_cia_aberta_DRE_con_2024.csv", VERSAO: "2", DT_INI_EXERC: "2024-01-01", DT_FIM_EXERC: "2024-12-31", RAW_VL_CONTA: "10" },
+          { observation_id: "abc123", evidence_status: "missing" },
+        ] }] } as StatementMatrix);
+    expect(markup).toContain("dfp_cia_aberta_DRE_con_2024.csv · version 2");
+    expect(markup).toContain("Source observation abc123 is missing from the local database");
+  });
+
   it("keeps missing legacy evidence explicit", () => {
     expect(render(base)).toContain("Legacy source/period QA evidence unavailable");
   });

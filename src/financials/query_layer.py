@@ -1624,6 +1624,20 @@ class CVMQueryLayer:
                                        description=row.get('DESCRIPTION'), action=row.get('ACTION') or
                                        'Legacy QA lacks source context; explicitly refresh the affected year to capture evidence.',
                                        evidence_status='legacy_unknown'))
+            # Legacy events embed source_inputs; newer ones keep ids. A missing observation stays visible.
+            ids = sorted({i for e in events if 'source_inputs' not in e for i in e.get('source_ids') or []})
+            found = {}
+            for start in range(0, len(ids), 500):
+                chunk = ids[start:start + 500]
+                marks = ', '.join(f':o{i}' for i in range(len(chunk)))
+                found.update((row[0], json.loads(row[1])) for row in conn.execute(
+                    text(f'SELECT observation_id, payload_json FROM financial_source_observations '
+                         f'WHERE observation_id IN ({marks})'),
+                    {f'o{i}': value for i, value in enumerate(chunk)}))
+        for event in events:
+            if 'source_inputs' not in event and 'source_ids' in event:
+                event['source_inputs'] = [found.get(i) or {'observation_id': i, 'evidence_status': 'missing'}
+                                          for i in event['source_ids']]
         return events
 
     def get_statement_provenance(self, cd_cvm: int, years: list[int], stmt_type: str) -> dict:

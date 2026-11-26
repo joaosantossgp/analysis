@@ -187,7 +187,7 @@ export type StatementMatrix = {
     type?: string; cd_conta?: string; period?: string; year?: number;
     description?: string; unit?: string; missing_inputs?: string[];
     diff?: number; action?: string;
-    source_inputs?: Array<{ SOURCE_FILE?: string; VERSAO?: string; DT_INI_EXERC?: string; DT_FIM_EXERC?: string; RAW_VL_CONTA?: string }>;
+    source_inputs?: Array<{ observation_id?: string; evidence_status?: "missing"; SOURCE_FILE?: string; VERSAO?: string; DT_INI_EXERC?: string; DT_FIM_EXERC?: string; RAW_VL_CONTA?: string }>;
   }>;
   error?: string;
 };

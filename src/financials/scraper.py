@@ -379,7 +379,7 @@ class CVMScraper:
             extracted = []
             with zipfile.ZipFile(local_zip_path, 'r') as zip_ref:
                 for file in zip_ref.namelist():
-                    if any(f'_{self.suffix}_' in file and x in file for x in ['BPA', 'BPP', 'DRE', 'DFC', 'DVA', 'DMPL']):
+                    if any(f'_{self.suffix}_' in file and x in file for x in ['BPA', 'BPP', 'DRE', 'DFC']):
                         extracted.append(zip_ref.extract(file, self.processed_dir))
             if cache is not None:
                 cache.remember_prepared(local_zip_path, extracted, zip_signature)
@@ -464,7 +464,8 @@ class CVMScraper:
 
     def process_data(self, cvm_code, years):
         all_data = []
-        file_patterns = ['BPA', 'BPP', 'DRE', 'DFC_MD', 'DFC_MI', 'DVA', 'DMPL']
+        # Only statements process_all_reports persists; DMPL/DVA were read and discarded (#584).
+        file_patterns = ['BPA', 'BPP', 'DRE', 'DFC_MD', 'DFC_MI']
         for year in years:
             for doc_type in ['dfp', 'itr']:
                 for pattern in file_patterns:
@@ -487,7 +488,7 @@ class CVMScraper:
                                     df_company = df_company[df_company['ORDEM_EXERC'] == 'ÚLTIMO'].copy()
                                 if df_company.empty:
                                     continue
-                            stmt_map = {'BPA':'BPA', 'BPP':'BPP', 'DRE':'DRE', 'DFC_MD':'DFC', 'DFC_MI':'DFC', 'DVA':'DVA', 'DMPL':'DMPL'}
+                            stmt_map = {'BPA':'BPA', 'BPP':'BPP', 'DRE':'DRE', 'DFC_MD':'DFC', 'DFC_MI':'DFC'}
                             stmt_type = stmt_map.get(pattern, 'OTHER')
                             df_company['DS_CONTA_norm'] = normalize_account_names(df_company['DS_CONTA'])
                             df_company['LINE_ID_BASE'] = generate_line_id_bases(df_company, stmt_type)

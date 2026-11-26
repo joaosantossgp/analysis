@@ -114,9 +114,13 @@ The additive persistence contract is:
   the entire annual CVM corpus is not duplicated in the company database.
 - `financial_value_lineage`: analytical cell status, unit, formula and source
   observation IDs, replaced only for explicitly imported statement-years.
-- `qa_logs.REPORT_YEAR` and `DETAILS_JSON`: full account/period/source inputs,
-  missing inputs, expected/actual/difference where applicable, units and action.
-  Existing scalar QA columns remain compatible with older readers.
+- `qa_logs.REPORT_YEAR` and `DETAILS_JSON`: account/period, source observation
+  IDs (`source_ids`), missing inputs, expected/actual/difference where
+  applicable, units and action. QA reads resolve the IDs from
+  `financial_source_observations` into `source_inputs`; an ID with no stored
+  observation is returned as `evidence_status: missing`. Events written before
+  #583 embed full `source_inputs` and are read as they are until the company is
+  refreshed. Existing scalar QA columns remain compatible with older readers.
 
 All three are written with the financial rows in one transaction. Failed writes
 roll back; repeated imports preserve source identity and other years' QA.

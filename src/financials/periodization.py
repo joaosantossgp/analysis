@@ -80,7 +80,8 @@ def build_statement(frame: pd.DataFrame, statement: str, tolerance: float) -> tu
                 type=kind, statement=statement, cd_cvm=first.get("CD_CVM"),
                 line_id_base=line_id, cd_conta=first.get("CD_CONTA"),
                 description=first.get("DS_CONTA"), year=year, period=period,
-                unit=first["UNIT"], source_inputs=inputs,
+                # Observations are stored once in financial_source_observations; QA reads resolve ids (#583).
+                unit=first["UNIT"], source_ids=[s["observation_id"] for s in inputs],
                 action="Review the original filing and required period inputs; refresh explicitly after resolving source comparability.",
                 **details,
             ))
