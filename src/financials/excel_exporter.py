@@ -13,7 +13,7 @@ Visible sheets:
     README   — sheet map, conventions, period policy
 
 Hidden sheets:
-    raw_DRE / raw_BPA / raw_BPP / raw_DFC / raw_DMPL (optional)
+    raw_DRE / raw_BPA / raw_BPP / raw_DFC
     raw_KPIs
     metadata
 
@@ -91,7 +91,6 @@ _LEGACY_TO_RAW = {
     "BPA": "raw_BPA",
     "BPP": "raw_BPP",
     "DFC": "raw_DFC",
-    "DMPL": "raw_DMPL",
 }
 
 # Period window defaults — controlled by ExcelExporter(period_window=(annuals,
@@ -700,8 +699,6 @@ class ExcelExporter:
         Map of ``stmt_type -> wide pivot``.
     kpis_df : pd.DataFrame
         Output of ``KPIBundle.quarterly_dataframe()``.
-    extra_sheets : list[str], optional
-        Extra statement types to include (e.g. ``["DMPL"]``).
     statement_type : str, optional
         If set, the workbook is scoped to a single statement.
     period_window : (int, int), optional
@@ -715,7 +712,6 @@ class ExcelExporter:
         company_info: dict,
         statements: dict[str, pd.DataFrame],
         kpis_df: pd.DataFrame,
-        extra_sheets: Optional[list[str]] = None,
         statement_type: Optional[str] = None,
         period_window: tuple[int, int] = DEFAULT_PERIOD_WINDOW,
         period_scope_label: Optional[str] = None,
@@ -734,7 +730,6 @@ class ExcelExporter:
         self.evidence_only_reason = evidence_only_reason
         self.stmts = statements or {}
         self.kpis = kpis_df if kpis_df is not None else pd.DataFrame()
-        self.extra = extra_sheets or []
         self.statement_type = statement_type
         self.period_window = period_window
         self.period_scope_label: Optional[str] = period_scope_label
@@ -824,9 +819,6 @@ class ExcelExporter:
             # can reference their final row coordinates via formulas.
             for stype in ("DRE", "BPA", "BPP", "DFC"):
                 self._write_raw_statement(stype)
-            for stype in ("DMPL",):
-                if stype in self.stmts and not self.stmts[stype].empty:
-                    self._write_raw_statement(stype)
             self._write_raw_kpi_sheet()
             self._write_metadata_sheet(scope=None)
             # Visible analyst sheets are written last so they appear at
@@ -1182,7 +1174,7 @@ class ExcelExporter:
         info = self.info
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         stmts_present = scope or ", ".join(
-            k for k in ("DRE", "BPA", "BPP", "DFC", "DMPL")
+            k for k in ("DRE", "BPA", "BPP", "DFC")
             if k in self.stmts and not self.stmts[k].empty
         )
 
@@ -2672,7 +2664,7 @@ class ExcelExporter:
         row = self._write_section_heading(ws, start_row, "Source / Data Quality")
         info = self.info
 
-        stmts_present = [k for k in ("DRE", "BPA", "BPP", "DFC", "DMPL")
+        stmts_present = [k for k in ("DRE", "BPA", "BPP", "DFC")
                          if k in self.stmts and not self.stmts[k].empty]
         rows_by_stmt = ", ".join(
             f"{k}={len(self.stmts[k])}"
@@ -2698,7 +2690,7 @@ class ExcelExporter:
         ]
         # Surface unmapped spine codes per statement so the analyst can
         # see exactly which lines were not present in the raw filing.
-        for stype in ("DRE", "BPA", "BPP", "DFC", "DMPL"):
+        for stype in ("DRE", "BPA", "BPP", "DFC"):
             unmapped = self._unmapped_codes.get(stype, [])
             if unmapped:
                 rows_src.append(

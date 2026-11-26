@@ -1134,6 +1134,17 @@ def test_company_statement_returns_empty_table_for_year_without_data(client: Tes
     assert payload["table"] == {"columns": [], "rows": []}
 
 
+def test_company_statement_rejects_dmpl_which_is_never_persisted(client: TestClient):
+    # #589: DMPL is not persisted, so asking for it is an invalid request, not an empty table.
+    response = client.get(
+        "/companies/9512/statements",
+        params={"stmt": "DMPL", "years": "2024"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "invalid_request"
+
+
 def test_company_statement_rejects_invalid_years(client: TestClient):
     response = client.get(
         "/companies/9512/statements",

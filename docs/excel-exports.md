@@ -31,7 +31,7 @@ Visible sheets in the full company workbook:
 
 Hidden/audit sheets:
 
-- `raw_DRE`, `raw_BPA`, `raw_BPP`, `raw_DFC`, and optional `raw_DMPL`;
+- `raw_DRE`, `raw_BPA`, `raw_BPP`, `raw_DFC` (DMPL is not persisted, so there is no DMPL sheet; #589);
 - `raw_KPIs`;
 - `metadata`;
 - `mapping_audit`.

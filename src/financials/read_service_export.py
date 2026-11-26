@@ -899,17 +899,10 @@ class ReadServiceExportMixin:
         company_info = read_pack.company_info
         years = read_pack.years
 
+        exportable_statements = read_pack.statements
         if statement_type:
-            exportable_statements = read_pack.statements
-            extra_sheets = [statement_type] if statement_type == "DMPL" else []
             kpis_df = pd.DataFrame()
         else:
-            exportable_statements = read_pack.statements
-            extra_sheets = [
-                stmt_type
-                for stmt_type in ("DMPL",)
-                if stmt_type in exportable_statements
-            ]
             kpis_df = (
                 self.get_kpi_bundle(cd_cvm, read_pack.analytical_years).quarterly_dataframe()
                 if read_pack.analytical_years else pd.DataFrame()
@@ -950,7 +943,6 @@ class ReadServiceExportMixin:
             company_info=company_info,
             statements=exportable_statements,
             kpis_df=kpis_df,
-            extra_sheets=extra_sheets,
             statement_type=statement_type,
             period_window=read_pack.period_window,
             period_scope_label=read_pack.scope_label,

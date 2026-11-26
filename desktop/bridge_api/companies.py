@@ -401,7 +401,7 @@ class CompanyBridgeMixin:
             statement_type = p.get("statement_type")
             if statement_type:
                 statement_type = str(statement_type).upper()
-                if statement_type not in ("DRE", "BPA", "BPP", "DFC", "DMPL"):
+                if statement_type not in ("DRE", "BPA", "BPP", "DFC"):
                     return self._sanitize_for_json({
                         "ok": False,
                         "error": f"Invalid statement type: {statement_type}",

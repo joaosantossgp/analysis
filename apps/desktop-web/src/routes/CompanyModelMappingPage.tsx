@@ -46,16 +46,14 @@ const STATEMENT_LABELS: Record<string, string> = {
   BPA: "Balance Sheet Assets",
   BPP: "Liabilities & Equity",
   DFC: "Cash Flow",
-  DMPL: "Changes in Equity",
 };
 const STATEMENT_DESCRIPTIONS: Record<string, string> = {
   DRE: "Revenue, costs, margins, and earnings",
   BPA: "Asset accounts mapped into the model",
   BPP: "Liability and equity accounts",
   DFC: "Cash flow accounts and subtotal lines",
-  DMPL: "Equity movement accounts",
 };
-const STATEMENT_ORDER = ["DRE", "BPA", "BPP", "DFC", "DMPL"] as const;
+const STATEMENT_ORDER = ["DRE", "BPA", "BPP", "DFC"] as const;
 const CORE_STATEMENT_TYPES = ["DRE", "BPA", "BPP", "DFC"] as const;
 const UNKNOWN_STATEMENT_TYPE = "UNKNOWN";
 
