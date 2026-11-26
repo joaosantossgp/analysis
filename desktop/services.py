@@ -23,6 +23,7 @@ import pandas as pd
 from src.companies.identity import CompanyIdentityResolver
 from src.platform.contracts import RefreshPolicy, RefreshProgressUpdate, RefreshRequest
 from src.financials.read_service import resolve_refresh_year_range
+from src.refresh.local_database_state import COMPANY_STAGES
 from src.refresh.service import HeadlessRefreshService
 from src.platform.settings import AppSettings, build_settings
 from src.financials.utils import now_iso_seconds
@@ -1744,11 +1745,14 @@ class DesktopRefreshJobManager:
     def _handle_stage(self, job_id: str, update: RefreshProgressUpdate) -> None:
         with self._lock:
             job = self._jobs.get(job_id)
-            stage_changed = job is not None and job.get("stage") != update.stage
+            # Set once: the stage alternates per company, the ETA needs the whole phase (#578).
+            enters_companies = (
+                job is not None and update.stage in COMPANY_STAGES and not job.get("companies_started_at")
+            )
         self._update_job(
             job_id,
             stage=update.stage,
-            stage_started_at=self._now_iso() if stage_changed else None,
+            companies_started_at=self._now_iso() if enters_companies else None,
             progress_current=int(update.current),
             progress_total=max(1, int(update.total)),
             log_line=update.message,

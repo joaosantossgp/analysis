@@ -41,7 +41,7 @@ writes):
 | `has_statements` | Whether `financial_reports` has any row (cheap existence check) |
 | `last_full_update_at` | Finish time of the last successful or partial data update covering all active companies |
 | `stale_reason` | `{label, due}` of the latest CVM deadline passed since then; label null when no full data update was ever recorded |
-| `run` | Active run: scope, phase (`starting`, `files`, `companies`, `finalizing`), file and company counts, pace-based ETA, company ids, current company |
+| `run` | Active run: scope, phase (`starting`, `files`, `companies`, `finalizing`), file and company counts, pace-based ETA (time since the company phase began ÷ companies processed × companies left), company ids, current company |
 | `last_run` | Last finished data update or retry, with failures and error |
 | `failures` | Companies whose last refresh failed, with company name and error |
 

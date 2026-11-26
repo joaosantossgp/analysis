@@ -44,7 +44,8 @@ Keep detail in the owning contract or dated evidence. Last updated: 2026-11-26.
   the packaged app). #576 is fixed: the local database pill and the empty-database hero
   appear within about 0.3 s of launch instead of 30 s (dev desktop app, empty sandbox).
   #577 is fixed: an open Companies directory now lists the catalog within about 20 s of
-  starting a data update and moves rows out of Queued as companies finish.
+  starting a data update and moves rows out of Queued as companies finish. #578 is fixed:
+  the run ETA uses the whole company phase (20 min shown vs 19 min measured on a real run).
   The goal stays open until the remaining bugs are triaged.
 - First data update cost (goal #574, #582-#587): QA log scope index, QA events stored as
   source observation ids, DMPL/DVA no longer read, batched evidence inserts, and five unused

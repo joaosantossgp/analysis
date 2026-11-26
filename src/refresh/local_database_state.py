@@ -95,9 +95,9 @@ def _run_payload(job: dict[str, Any], now: datetime) -> dict[str, Any]:
     processed = int(job.get("processed") or 0)
     queued = int(job.get("queued") or 0)
     eta_seconds = None
-    stage_started = _parse(job.get("stage_started_at"))
-    if phase == "companies" and processed > 0 and stage_started is not None and queued > processed:
-        elapsed = (now - stage_started).total_seconds()
+    companies_started = _parse(job.get("companies_started_at"))
+    if phase == "companies" and processed > 0 and companies_started is not None and queued > processed:
+        elapsed = (now - companies_started).total_seconds()
         eta_seconds = int(round(elapsed / processed * (queued - processed)))
     return {
         "job_id": job.get("job_id"),
