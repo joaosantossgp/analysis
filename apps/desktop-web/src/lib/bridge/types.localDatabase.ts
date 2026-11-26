@@ -22,6 +22,9 @@ export type LocalDatabaseRun = {
   failures: number;
   started_at: string | null;
   eta_seconds: number | null;
+  /** The run's companies in processing order. */
+  company_ids: number[];
+  current_cvm: number | null;
 };
 
 export type LocalDatabaseLastRun = {
