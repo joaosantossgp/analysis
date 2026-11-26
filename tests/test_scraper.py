@@ -506,6 +506,8 @@ class TestDownloadAndExtract:
         zip_bytes = _make_zip_bytes({
             f'dfp_cia_aberta_BPA_{scraper_suffix}_2024.csv': 'CD_CVM;VL_CONTA\n9512;100\n',
             f'dfp_cia_aberta_DRE_{scraper_suffix}_2024.csv': 'CD_CVM;VL_CONTA\n9512;200\n',
+            f'dfp_cia_aberta_DMPL_{scraper_suffix}_2024.csv': 'CD_CVM;VL_CONTA\n9512;300\n',
+            f'dfp_cia_aberta_DVA_{scraper_suffix}_2024.csv': 'CD_CVM;VL_CONTA\n9512;400\n',
             'some_other_file.csv': 'irrelevant',
         })
         mock_resp = MagicMock()
@@ -539,8 +541,15 @@ class TestDownloadAndExtract:
         names = [f.name for f in extracted]
         assert any('BPA_con' in n for n in names)
         assert any('DRE_con' in n for n in names)
-        # Arquivo não-alvo NÃO deve ser extraído
+        # Non-target files, and statements that are never persisted, are not extracted
         assert not any('other_file' in n for n in names)
+        assert not any('DMPL' in n or 'DVA' in n for n in names)
+
+    def test_process_data_ignores_statements_that_are_never_persisted(self, scraper):
+        for stmt in ('DMPL', 'DVA'):
+            (Path(scraper.processed_dir) / f'dfp_cia_aberta_{stmt}_con_2024.csv').write_text(
+                'CD_CVM;CD_CONTA;DS_CONTA;VL_CONTA\n9512;5.01;Saldo;1\n', encoding='latin1')
+        assert scraper.process_data(9512, [2024]) is None
 
     def test_request_exception_returns_false(self, scraper):
         import requests
