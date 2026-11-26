@@ -2,6 +2,7 @@ name: Goal
 description: A larger outcome delivered by several sub-issues.
 labels:
   - goal
+  - needs-triage
 body:
   - type: markdown
     attributes:

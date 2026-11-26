@@ -8,6 +8,10 @@ on:
   pull_request:
   merge_group:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   test-python:
     name: Python core tests
@@ -23,17 +27,11 @@ jobs:
       - name: Install root dependencies
         run: python -m pip install -r requirements.txt
 
-      - name: Install API compatibility dependencies
-        run: python -m pip install -r apps/api/requirements-dev.txt
-
       - name: Run repository governance contract tests
         run: python -m pytest scripts/governance/test_repository_operational_contracts.py scripts/governance/test_frontend_ci_contract.py scripts/diagnostics/test_bridge_method_inventory.py scripts/governance/test_packaged_candidate_harness.py -q
 
       - name: Compile desktop entry points
         run: python -m py_compile desktop/app.py desktop/bridge.py
-
-      - name: Run desktop/core test suite
-        run: pytest tests apps/api/tests -q
 
   coverage-python:
     name: Python core coverage

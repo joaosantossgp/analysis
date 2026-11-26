@@ -15,5 +15,12 @@ def test_api_process_local_jobs_use_single_worker_container():
 
 def test_ci_executes_api_tests():
     workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
-    commands = [step.get("run", "") for step in workflow["jobs"]["test-python"]["steps"]]
+    jobs = workflow["jobs"]
+    commands = [
+        step.get("run", "")
+        for job_name in ("test-python", "coverage-python")
+        if job_name in jobs and "if" not in jobs[job_name]
+        for step in jobs[job_name].get("steps", [])
+        if "if" not in step and step.get("continue-on-error") is not True
+    ]
     assert any("pytest" in command and "apps/api/tests" in command for command in commands)
