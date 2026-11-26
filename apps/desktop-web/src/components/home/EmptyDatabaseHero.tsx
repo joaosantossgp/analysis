@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { useLocalDatabaseState, useOnline } from "@/lib/api/localDatabase";
 import { describeLocalDatabaseState } from "@/lib/localDatabase/describe";
 import { openDataPanel } from "@/lib/localDatabase/panel";
+import { showsHomeHero } from "@/lib/localDatabase/runStatus";
 
 type Props = {
   onLoadRecommended: () => void;
@@ -18,7 +19,7 @@ type Props = {
 export function EmptyDatabaseHero({ onLoadRecommended, onChooseWidgets }: Props) {
   const { data } = useLocalDatabaseState();
   const online = useOnline();
-  if (!data || data.state === "unknown" || data.has_statements) return null;
+  if (!data || !showsHomeHero(data)) return null;
 
   const d = describeLocalDatabaseState(data, { online });
   const running = data.state === "files" || data.state === "updating";
