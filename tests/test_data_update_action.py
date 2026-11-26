@@ -238,3 +238,29 @@ def test_light_job_reader_never_rewrites_the_store(tmp_path):
     finally:
         refresh_module.RefreshBridgeMixin._refresh_jobs_path = original_path
     assert jobs_path.read_text(encoding="utf-8") == original
+
+
+def test_eta_uses_the_whole_company_phase_not_the_current_stage(tmp_path, monkeypatch):
+    # #578: the stage alternates process_data <-> persist_reports for every company.
+    from datetime import datetime, timezone
+
+    from src.platform.contracts import RefreshProgressUpdate
+    from src.refresh.local_database_state import derive_local_database_state
+
+    clock = {"now": "2026-11-25T12:00:00+00:00"}
+    monkeypatch.setattr(DesktopRefreshJobManager, "_now_iso", staticmethod(lambda: clock["now"]))
+    manager = _manager(tmp_path, _ScriptedRefresh())
+    job_id = manager.request_refresh(
+        {"mode": "missing", "scope": "data_update", "company_ids": [1, 2, 3], "start_year": 2024, "end_year": 2024}
+    )["job_id"]
+    for minute, stage in ((0, "download_extract"), (10, "process_data"), (20, "persist_reports"), (30, "process_data"), (40, "persist_reports")):
+        clock["now"] = f"2026-11-25T12:{minute:02d}:00+00:00"
+        manager._handle_stage(job_id, RefreshProgressUpdate(stage=stage, current=1, total=1, message=stage))
+    manager._update_job(job_id, state="running", processed=1, queued=3)
+
+    state = derive_local_database_state(
+        has_statements=False, jobs=manager.snapshot_jobs(), now=datetime(2026, 11, 25, 13, 0, tzinfo=timezone.utc)
+    )
+
+    # Company phase began 12:10: 1 company in 3000 s, 2 left -> 6000 s (not 2400 s from the 12:40 stage).
+    assert state["run"]["eta_seconds"] == 6000

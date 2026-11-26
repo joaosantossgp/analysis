@@ -87,7 +87,7 @@ def test_running_job_in_company_phase_is_updating_with_pace_eta():
         queued=400,
         processed=100,
         finished_at=None,
-        stage_started_at="2026-11-25T11:00:00+00:00",
+        companies_started_at="2026-11-25T11:00:00+00:00",
     )
     state = derive_local_database_state(has_statements=True, jobs=[job], now=NOW)
     assert state["state"] == "updating"
@@ -97,7 +97,7 @@ def test_running_job_in_company_phase_is_updating_with_pace_eta():
 
 
 def test_eta_is_unknown_before_any_company_finishes():
-    job = _job(state="running", stage="process_data", processed=0, finished_at=None, stage_started_at="2026-11-25T11:59:00+00:00")
+    job = _job(state="running", stage="process_data", processed=0, finished_at=None, companies_started_at="2026-11-25T11:59:00+00:00")
     state = derive_local_database_state(has_statements=True, jobs=[job], now=NOW)
     assert state["run"]["eta_seconds"] is None
 
