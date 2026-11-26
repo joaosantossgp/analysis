@@ -136,7 +136,7 @@ There is no root `package.json`. The active Node package is
 | `ingest.yml` | Manual CVM ingestion |
 | `on_demand_ingest.yml` | Manual per-company ingestion |
 | `seed_catalog.yml` | Manual catalog seed |
-| `pr-issue-guardrails.yml` | Requires reference syntax; validates closing references and rejects closing goals. `Refs` existence is not currently checked |
+| `pr-issue-guardrails.yml` | Requires reference syntax; validates existence and non-PR identity for closing and `Refs` references, and rejects closing goals |
 | `update-agent-skills.yml` | Offline skill integrity and regression checks on PRs or manual dispatch; updates are manual |
 
 ## Active Commands

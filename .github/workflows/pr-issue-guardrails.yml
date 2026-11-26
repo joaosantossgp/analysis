@@ -24,35 +24,45 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Validate issue references
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           script: |
             const body = context.payload.pull_request.body || "";
-            const closing = [...body.matchAll(/\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)/gi)].map((m) => Number(m[1]));
-            const linked = [...body.matchAll(/\b(?:refs?|part of)\s+#(\d+)/gi)].map((m) => Number(m[1]));
+            const closing = new Set([...body.matchAll(/\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)/gi)].map((m) => Number(m[1])));
+            const linked = new Set([...body.matchAll(/\b(?:refs?|part of)\s+#(\d+)/gi)].map((m) => Number(m[1])));
 
-            if (closing.length + linked.length === 0) {
+            if (closing.size + linked.size === 0) {
               core.setFailed("Reference at least one issue in the PR body: `Closes #n` for tasks/bugs, `Refs #n` for goals or related issues.");
               return;
             }
 
-            for (const number of new Set(closing)) {
+            const cache = new Map();
+            const loadIssue = async (number) => {
+              if (cache.has(number)) return cache.get(number);
+              const { data } = await github.rest.issues.get({ ...context.repo, issue_number: number });
+              cache.set(number, data);
+              return data;
+            };
+
+            for (const number of new Set([...closing, ...linked])) {
               let issue;
               try {
-                ({ data: issue } = await github.rest.issues.get({ ...context.repo, issue_number: number }));
+                issue = await loadIssue(number);
               } catch (error) {
                 core.setFailed(`#${number} was not found in this repository.`);
                 return;
               }
               if (issue.pull_request) {
-                core.setFailed(`#${number} is a pull request. Close issues, not PRs.`);
+                core.setFailed(`#${number} is a pull request. Reference issues, not PRs.`);
                 return;
               }
-              const labels = issue.labels.map((label) => (typeof label === "string" ? label : label.name));
-              if (labels.includes("goal")) {
-                core.setFailed(`#${number} is a goal. Use \`Refs #${number}\`; close the goal by hand when its sub-issues are done.`);
-                return;
+              if (closing.has(number)) {
+                const labels = issue.labels.map((label) => (typeof label === "string" ? label : label.name));
+                if (labels.includes("goal")) {
+                  core.setFailed(`#${number} is a goal. Use \`Refs #${number}\`; close the goal by hand when its sub-issues are done.`);
+                  return;
+                }
               }
             }
 
-            core.info(`Closes: ${[...new Set(closing)].join(", ") || "none"}; refs: ${[...new Set(linked)].join(", ") || "none"}.`);
+            core.info(`Closes: ${[...closing].join(", ") || "none"}; refs: ${[...linked].join(", ") || "none"}.`);
