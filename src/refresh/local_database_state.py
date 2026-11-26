@@ -108,6 +108,14 @@ def _run_payload(job: dict[str, Any], now: datetime) -> dict[str, Any]:
         "failures": int(job.get("failures") or 0),
         "started_at": job.get("started_at"),
         "eta_seconds": eta_seconds,
+        # The run's companies in processing order, so the directory can mark
+        # rows of this run only (never inferred for other companies).
+        "company_ids": [
+            int(code)
+            for code in ((job.get("request") or {}).get("companies") or (job.get("params") or {}).get("company_ids") or [])
+            if str(code).isdigit()
+        ],
+        "current_cvm": int(job["current_cvm"]) if str(job.get("current_cvm") or "").isdigit() else None,
     }
 
 

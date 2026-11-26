@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useLocalDatabaseState, useOnline } from "@/lib/api/localDatabase";
 import type { LocalDatabaseState } from "@/lib/bridge/types.localDatabase";
 import { describeLocalDatabaseState, LOCAL_DATABASE_TONE_COLOR } from "@/lib/localDatabase/describe";
+import { OPEN_DATA_PANEL_EVENT } from "@/lib/localDatabase/panel";
 
 import { DataAction } from "./DataAction";
 
@@ -20,6 +21,12 @@ export function DataIndicator() {
   const state = query.isError
     ? ({ state: "unknown", error: String(query.error) } as LocalDatabaseState)
     : query.data;
+
+  useEffect(() => {
+    const onOpen = () => setOpen(true);
+    window.addEventListener(OPEN_DATA_PANEL_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_DATA_PANEL_EVENT, onOpen);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
