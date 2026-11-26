@@ -75,22 +75,35 @@ new candidate; the workflow never promotes a different SHA by tag movement.
 
 ### Remote publication protection
 
-The final job names the `release-publication` environment. The intended reviewer
-and branch protections are remote configuration, separate from the workflow's
-SHA, artifact and checksum checks.
+The final job names the `release-publication` environment. The reviewer and
+branch protections are remote configuration, separate from the workflow's SHA,
+artifact and checksum checks.
 
-Read-back on 2026-11-16 found `main.protected=false` and no required status checks.
-The environment had `can_admins_bypass=false`, but only a branch-policy rule and
-no required reviewers. Its protected-branches-only policy does not restrict
-deployment when no branches are protected. See the
-[dated audit](research/2026-11-16-documentation-architecture-governance-audit.md#1-high-documented-remote-release-protections-are-not-established).
+After the [2026-11-16 audit](research/2026-11-16-documentation-architecture-governance-audit.md#1-high-documented-remote-release-protections-are-not-established)
+identified private-repository plan limits, the owner authorized making
+`joaosantossgp/analysis` public on GitHub Free and enabling remote controls
+([#512](https://github.com/joaosantossgp/analysis/issues/512)). API read-back on
+2026-11-25 confirmed:
 
-The required publication approval remains a policy requirement; GitHub does not
-currently enforce that reviewer gate. [Issue #512](https://github.com/joaosantossgp/analysis/issues/512)
-tracks the owner's decision on available protections and any explicitly approved
-alternative. Re-read the remote configuration before release work. CI success is
-not publication authorization, and this correction approves neither a replacement
-gate nor a release. Preserve the existing workflow checks and environment.
+- **`main` branch protection:** `main` is the only protected branch in the
+  repository (`protected: true`, `enforce_admins: true`,
+  `allow_force_pushes: false`, `allow_deletions: false`). Merges require a pull
+  request (`required_approving_review_count: 0` for the solo-maintainer flow)
+  with up-to-date branch checks (`strict: true`) for `Python core tests`,
+  `Python core coverage`, `Windows storage inventory`, `Vite desktop UI`, and
+  `validate-pr-issue-contract`.
+- **`release-publication` environment:** `can_admins_bypass: false`,
+  `deployment_branch_policy: { protected_branches: true, custom_branch_policies: false }`
+  (restricting deployments exclusively to `main`), and `required_reviewers`
+  configured for owner `joaosantossgp` (`prevent_self_review: false`).
+
+**Scope and limits:** because `joaosantossgp` is the sole repository owner and
+`prevent_self_review` is `false`, these controls prevent direct pushes to
+`main`, enforce required CI/guardrail checks, restrict publication jobs to
+`main`, and require an explicit manual deployment approval click; they do not
+provide two-person separation of duties. Re-read the remote configuration before
+release work, do not treat green CI as publication authorization, and preserve
+the existing workflow checks and environment.
 
 ### Artifact-expiry recovery
 

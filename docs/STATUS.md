@@ -1,15 +1,16 @@
 # Project Status
 
 Current snapshot, updated when release state, active work or a major decision changes.
-Keep detail in the owning contract or dated evidence. Last updated: 2026-11-24.
+Keep detail in the owning contract or dated evidence. Last updated: 2026-11-25.
 
 ## Version and releases
 
 - Runtime version: `0.30.0-rc.1` (`desktop/__version__.py`).
 - Latest stable: `v0.29.2` (2026-07-09); prerelease: `v0.30.0-rc.1` (2026-07-16).
 - Later source changes are not a new published release. Follow [build/release](build-release.md).
-- The release workflow is enabled, but its documented remote approval protection
-  is not established. See [observed configuration](build-release.md#remote-publication-protection).
+- The release workflow is enabled and protected on the public repository (`main`
+  branch protection + `release-publication` required reviewer, verified
+  2026-11-25). See [remote publication protection](build-release.md#remote-publication-protection).
 
 ## Production and external writes
 
@@ -22,7 +23,6 @@ Keep detail in the owning contract or dated evidence. Last updated: 2026-11-24.
 ## Active work and direction
 
 - [GitHub Issues](https://github.com/joaosantossgp/analysis/issues) owns live work status.
-  [#512](https://github.com/joaosantossgp/analysis/issues/512) tracks the owner's remote-protection decision.
 - Evolve the existing app through scoped analyst improvements. Multi-window work,
   shell/storage migration and the withdrawn entity-registry plan are not approved;
   see [delivery direction](PRODUCT_DIRECTION.md#delivery-direction-2026-11-13).
