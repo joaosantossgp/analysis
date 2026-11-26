@@ -66,7 +66,7 @@ News is retired from primary navigation. Old `/news/*` URLs show
 [RetiredNewsPage](../../apps/desktop-web/src/routes/RetiredNewsPage.tsx#L4), and
 saved Home news widgets show
 [RetiredNewsCard](../../apps/desktop-web/src/components/home/widgets/RetiredNewsCard.tsx#L5)
-without querying news. The former `NewsPage.tsx` is not mounted by `App.tsx`;
+without querying news. The former `NewsPage.tsx` route file was removed;
 `src/news/`, the News bridge and downloaded data/settings remain preserved.
 
 ## Top-Level Folders

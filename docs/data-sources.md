@@ -157,7 +157,7 @@ statements.
 
 News is retired from the active interface. Existing `/news/*` URLs show a
 [retirement notice](../apps/desktop-web/src/App.tsx#L154); the former
-`NewsPage.tsx` is not mounted. Saved settings and downloaded data remain, as do
+`NewsPage.tsx` route file was removed. Saved settings and downloaded data remain, as do
 [`src/news/`](../src/news/) and the [News bridge](../desktop/bridge.py#L26).
 See [retired News UI](architecture.md#retired-news-ui) for compatibility behavior.
 
