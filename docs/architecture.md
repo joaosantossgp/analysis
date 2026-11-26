@@ -101,7 +101,7 @@ navigation contains Home, Companies, Sectors, Indicators and Settings.
 | Companies Assets & Mapping | `/empresas/assets` | Company/asset mapping tools |
 | Sectors | `/setores`, `/setores/:slug`, `/setores/:sectorSlug/:subSectorSlug` | Sector directory and detail |
 | Indicators | `/indicators` | Indicator Library and Energy sections |
-| Settings data | `/settings`, `/settings/health`, `/settings/updates`, `/settings/coverage` | Overview and local-data health, updates and coverage |
+| Settings data | `/settings`, `/settings/data` | Overview, History range and Data completeness |
 | Settings sources | `/settings/sources`, `/settings/imports`, `/settings/indicator-sources` | Sources, imports and indicator source health |
 | Settings system | `/settings/storage`, `/settings/app`, `/settings/diagnostics` | Storage, app settings and diagnostics |
 
@@ -111,8 +111,9 @@ Statements and Coverage Status. Coverage's Prioritization, Work Queue and
 Capacity tabs appear when a universe is selected; direct links to those sections
 return to Coverage overview if the universe query succeeds without an active
 universe ([selection guard](../apps/desktop-web/src/routes/CoveragePage.tsx#L77)).
-`/settings/coverage` remains a data-health surface; it is separate from the
-analyst Coverage workflow under Companies. Excel Mapping remains a registered
+Data completeness (`/settings/data`) is a local-data audit surface; it is separate
+from the analyst Coverage workflow under Companies. The data update itself is owned
+by the app shell ([database-updates.md](database-updates.md)). Excel Mapping remains a registered
 route and dedicated window, rather than a company sub-navigation tab
 ([window routing](../apps/desktop-web/src/App.tsx#L85)).
 
@@ -133,8 +134,7 @@ DEV build and `localStorage.cvm_dev_tools = "1"`
 | `/coverage/*` | Redirects to the matching `/empresas/coverage/*` path, including the base `/coverage` route; preserves suffix, query and fragment |
 | `/indicators?section=entities` (also `section=discover`) | Redirects to `/empresas/assets` |
 | `/indicators?section=health` | Redirects to `/settings/indicator-sources` |
-| `/atualizar-base`, `/company-universe` | Redirect to `/settings/updates` |
-| `/data-coverage` | Redirects to `/settings/coverage` |
+| `/settings/updates`, `/settings/health`, `/settings/coverage`, `/atualizar-base`, `/company-universe`, `/data-coverage` | Redirect to `/settings/data` |
 | `/status` | Redirects to `/settings/diagnostics` |
 | `/country-kpis` | Redirects to `/indicators` |
 | `/empresas/:cdCvm/indicadores` | Redirects to that company's overview at `/empresas/:cdCvm` |

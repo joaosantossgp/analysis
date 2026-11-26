@@ -230,8 +230,6 @@ import type {
   MarketCapEntry,
   MarketCapImportResponse,
   MarketCapStatus,
-  OnboardingStartResponse,
-  OnboardingState,
   RefreshDispatchResponse,
   RefreshJobListResponse,
   RefreshJobStatus,
@@ -338,10 +336,6 @@ export interface BridgeApi {
     params?: Record<string, unknown>,
   ): Promise<RefreshJobStatus | RefreshJobListResponse | CompanyRefreshStatusListResponse>;
   cancel_refresh(params: Record<string, unknown>): Promise<CancelRefreshResponse>;
-  get_onboarding_state(params?: Record<string, unknown>): Promise<OnboardingState>;
-  start_onboarding_setup(params: Record<string, unknown>): Promise<OnboardingStartResponse>;
-  complete_onboarding_setup(params?: Record<string, unknown>): Promise<OnboardingState>;
-  skip_onboarding_setup(params?: Record<string, unknown>): Promise<OnboardingState>;
   get_market_cap_list(params?: Record<string, unknown>): Promise<{ ok: boolean; error?: string; items: MarketCapEntry[] }>;
   import_market_cap_snapshot(params: { csv_content?: string; file_path?: string }): Promise<MarketCapImportResponse>;
   get_market_cap_status(params?: Record<string, unknown>): Promise<MarketCapStatus>;
@@ -383,7 +377,6 @@ export interface BridgeApi {
   get_update_progress(params?: Record<string, unknown>): Promise<UpdateProgressStatus>;
   snooze_update(params?: Record<string, unknown>): Promise<{ ok: boolean; error?: string }>;
   // Dev tools — only callable from /dev/data-ops (DEV build + flag)
-  dev_reset_onboarding(params?: Record<string, unknown>): Promise<{ ok: boolean; error?: string }>;
   dev_reset_universe(params?: Record<string, unknown>): Promise<{ ok: boolean; error?: string }>;
   dev_reset_jobs(params?: Record<string, unknown>): Promise<{ ok: boolean; error?: string }>;
   dev_simulate_refresh(params: { mode: "success" | "partial" | "fail" | "slow" }): Promise<{ ok: boolean; mode: string; job_id?: string; error?: string }>;

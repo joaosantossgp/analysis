@@ -594,7 +594,3 @@ function buildMockKpiCatalog(): KPICatalogEntry[] {
 }
 
 export const MOCK_KPI_CATALOG = buildMockKpiCatalog();
-
-// ---------------------------------------------------------------------------
-// Onboarding state
-// ---------------------------------------------------------------------------

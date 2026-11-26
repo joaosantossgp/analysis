@@ -1,28 +1,32 @@
-# Company-Level On-Demand Updates
+# Company Updates
 
-Per-company refresh from the company pages, separate from the bulk Update Base
-flow ([database-updates.md](database-updates.md)). Bridge contract:
-`desktop/bridge.py`; typed mirror `apps/desktop-web/src/lib/bridge/types.ts`;
-facade `apps/desktop-web/src/lib/api/companyRefresh.ts`.
+A **company update** is a data update limited to one company
+([GLOSSARY.md](../GLOSSARY.md)), started from the company pages. The data update
+for all active companies is described in [database-updates.md](database-updates.md).
+Bridge contract: `desktop/bridge.py`; typed mirror under
+`apps/desktop-web/src/lib/bridge/`; facade `apps/desktop-web/src/lib/api/companyRefresh.ts`.
 
-## Companies search includes no-history companies
+## Companies directory lists the catalog
 
-`get_companies` returns the full catalog, including companies with no local
-financial data. Each `CompanyDirectoryItem` carries `data_status`
-(`CompanyDataStatus`): `no_history` | `partial` | `complete` | `failed` |
-`unmapped`. A company can be found and opened even before any data is downloaded.
+`get_companies` merges the active CVM catalog with local rows until the local
+rows cover every active company, so a company can be found and opened before it
+is downloaded. Each `CompanyDirectoryItem` carries `data_status`: `no_history` |
+`partial` | `complete` | `failed` | `unmapped`. During a data update, rows of that
+run show Downloading or Queued, and companies that failed in the last partial
+run show Failed.
 
-## On-demand update from the company page
+## Actions on the company page
 
-The company detail page (`/empresas/:cdCvm`) triggers `request_refresh` for a
-single company. Use it to:
+The company command bar (`components/CompanyCommandBar.tsx`) offers:
 
-- download history for a company that currently shows `no_history`
-- fetch new ITRs / newly published filings
-- pull a specific year range (`start_year` / `end_year`)
-- retry a company that previously failed
+- **Update company**: CVM statements for this company over the chosen history
+  range (`request_refresh` with `cd_cvm`). While the company waits in a running
+  data update the label is **Download now**, which pulls it ahead.
+- **Update market prices (external)**: market price history, external data kept
+  apart from CVM statements.
+- **History range…**: a custom CVM year range.
 
-`cancel_refresh` stops an in-flight single-company job.
+A company update never moves the "last full data update" used for Stale.
 
 ## Status and progress
 
@@ -36,18 +40,8 @@ single company. Use it to:
   `latest_attempt_outcome`, `freshness_summary_*`
 - `is_retry_allowed`, `status_reason_code` — drive the retry affordance
 
-## Status badges
-
-UI badges map from `data_status` / `tracking_state`:
-
-- **complete** — readable current data present
-- **partial** — some years present, gaps remain
-- **no_history** — in catalog, no local financial data yet
-- **failed** / **error** — last attempt failed (`last_error`, retry if allowed)
-- **unmapped** — ticker/CVM mapping missing (won't fetch until resolved)
-
 ## Write/lock safety
 
-On-demand updates are destructive bridge calls: blocked in dev+release-data mode
-without `CVMANALYTICS_ALLOW_RELEASE_DATA_WRITES=1`, and blocked under a
-concurrent lock. See [dev-runtime-and-data-paths.md](dev-runtime-and-data-paths.md).
+Company updates are write operations: blocked in dev+release-data mode without
+`CVMANALYTICS_ALLOW_RELEASE_DATA_WRITES=1`, and blocked under a concurrent lock.
+See [dev-runtime-and-data-paths.md](dev-runtime-and-data-paths.md).

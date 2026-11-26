@@ -1,17 +1,15 @@
 from __future__ import annotations
 
 import csv
-import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
 import requests
-from sqlalchemy import inspect, text
+from sqlalchemy import text
 
 from src.platform.settings import AppSettings
 from src.companies.identity import CompanyIdentityResolver
-from src.financials.utils import now_iso_seconds
 from src.companies.market_cap import MarketCapService
 
 
@@ -448,41 +446,6 @@ class CompanyUniverseService:
             settings=settings,
             read_service=read_service,
         )
-        self.state_path = Path(settings.paths.onboarding_state_path)
-
-    def get_onboarding_state(self) -> dict[str, Any]:
-        state = self._read_state()
-        has_local_data = self._has_local_financial_data()
-        source_status = self.provider.source_status()
-        if not state:
-            return {
-                "first_run_completed": bool(has_local_data),
-                "should_show": not has_local_data,
-                "selected_company_universe": None,
-                "company_universe_source": None,
-                "company_universe_source_date": None,
-                "setup_status": "existing_data" if has_local_data else "not_started",
-                "selected_company_count": 0,
-                "refresh_job_id": None,
-                "warning": None,
-                "has_local_financial_data": bool(has_local_data),
-                **source_status,
-            }
-
-        first_run_completed = bool(state.get("first_run_completed"))
-        return {
-            "first_run_completed": first_run_completed,
-            "should_show": not first_run_completed,
-            "selected_company_universe": state.get("selected_company_universe"),
-            "company_universe_source": state.get("company_universe_source"),
-            "company_universe_source_date": state.get("company_universe_source_date"),
-            "setup_status": state.get("setup_status") or "not_started",
-            "selected_company_count": int(state.get("selected_company_count") or 0),
-            "refresh_job_id": state.get("refresh_job_id"),
-            "warning": state.get("warning"),
-            "has_local_financial_data": bool(has_local_data),
-            **source_status,
-        }
 
     def get_company_universe_by_preset(
         self,
@@ -496,158 +459,6 @@ class CompanyUniverseService:
             self.read_service.company_catalog.refresh()
             self.read_service.invalidate_read_caches()
         return self.provider.get_company_universe_by_preset(preset)
-
-    def mark_setup_started(
-        self,
-        selection: CompanyUniverseSelection,
-        *,
-        refresh_job_id: str | None,
-    ) -> None:
-        self._persist_selection(selection)
-        payload = {
-            "first_run_completed": False,
-            "selected_company_universe": selection.preset,
-            "company_universe_source": selection.source,
-            "company_universe_source_date": selection.source_date,
-            "setup_status": "running",
-            "selected_company_count": len(selection.entries),
-            "refresh_job_id": refresh_job_id,
-            "warning": selection.warning,
-            "updated_at": now_iso_seconds(),
-        }
-        self._write_state(payload)
-        self._write_app_settings(payload)
-
-    def mark_setup_completed(self, *, status: str = "success") -> dict[str, Any]:
-        state = self._read_state()
-        state.update(
-            {
-                "first_run_completed": True,
-                "setup_status": status,
-                "completed_at": now_iso_seconds(),
-                "updated_at": now_iso_seconds(),
-            }
-        )
-        self._write_state(state)
-        self._write_app_settings(state)
-        return self.get_onboarding_state()
-
-    def skip_setup(self) -> dict[str, Any]:
-        payload = {
-            "first_run_completed": True,
-            "selected_company_universe": None,
-            "company_universe_source": "configure_later",
-            "company_universe_source_date": None,
-            "setup_status": "skipped",
-            "selected_company_count": 0,
-            "refresh_job_id": None,
-            "warning": None,
-            "completed_at": now_iso_seconds(),
-            "updated_at": now_iso_seconds(),
-        }
-        self._write_state(payload)
-        self._write_app_settings(payload)
-        return self.get_onboarding_state()
-
-    def _persist_selection(self, selection: CompanyUniverseSelection) -> None:
-        self._ensure_schema()
-        now = now_iso_seconds()
-        with self.engine.begin() as conn:
-            conn.execute(
-                text("DELETE FROM company_universe WHERE selected_preset = :preset"),
-                {"preset": selection.preset},
-            )
-            for entry in selection.entries:
-                conn.execute(
-                    text(
-                        """
-                        INSERT INTO company_universe (
-                            cd_cvm, ticker, company_name, market_cap, market_cap_rank,
-                            source, source_date, selected_preset, created_at, updated_at
-                        ) VALUES (
-                            :cd_cvm, :ticker, :company_name, :market_cap, :market_cap_rank,
-                            :source, :source_date, :selected_preset, :created_at, :updated_at
-                        )
-                        """
-                    ),
-                    {
-                        "cd_cvm": int(entry.cd_cvm),
-                        "ticker": entry.ticker,
-                        "company_name": entry.company_name,
-                        "market_cap": entry.market_cap,
-                        "market_cap_rank": entry.market_cap_rank,
-                        "source": entry.source,
-                        "source_date": entry.source_date,
-                        "selected_preset": selection.preset,
-                        "created_at": now,
-                        "updated_at": now,
-                    },
-                )
-
-    def _write_app_settings(self, payload: dict[str, Any]) -> None:
-        self._ensure_schema()
-        keys = {
-            "first_run_completed": payload.get("first_run_completed"),
-            "selected_company_universe": payload.get("selected_company_universe"),
-            "company_universe_source": payload.get("company_universe_source"),
-            "company_universe_source_date": payload.get("company_universe_source_date"),
-            "download_status": payload.get("setup_status"),
-            "refresh_job_id": payload.get("refresh_job_id"),
-        }
-        now = now_iso_seconds()
-        with self.engine.begin() as conn:
-            for key, value in keys.items():
-                conn.execute(text("DELETE FROM app_settings WHERE key = :key"), {"key": key})
-                conn.execute(
-                    text(
-                        """
-                        INSERT INTO app_settings (key, value, updated_at)
-                        VALUES (:key, :value, :updated_at)
-                        """
-                    ),
-                    {
-                        "key": key,
-                        "value": json.dumps(value, ensure_ascii=True),
-                        "updated_at": now,
-                    },
-                )
-
-    def _ensure_schema(self) -> None:
-        if not self.settings.database_url:
-            Path(self.settings.paths.db_path).parent.mkdir(parents=True, exist_ok=True)
-        with self.engine.begin() as conn:
-            ensure_company_universe_tables_for_connection(conn)
-
-    def _read_state(self) -> dict[str, Any]:
-        if not self.state_path.exists():
-            return {}
-        try:
-            payload = json.loads(self.state_path.read_text(encoding="utf-8"))
-        except Exception:
-            return {}
-        return dict(payload) if isinstance(payload, dict) else {}
-
-    def _write_state(self, payload: dict[str, Any]) -> None:
-        self.state_path.parent.mkdir(parents=True, exist_ok=True)
-        self.state_path.write_text(
-            json.dumps(payload, ensure_ascii=True, indent=2),
-            encoding="utf-8",
-        )
-
-    def _has_local_financial_data(self) -> bool:
-        if not self.settings.database_url and not Path(self.settings.paths.db_path).exists():
-            return False
-        try:
-            inspector = inspect(self.engine)
-            if not inspector.has_table("financial_reports"):
-                return False
-            with self.engine.connect() as conn:
-                count = conn.execute(
-                    text('SELECT COUNT(*) FROM "financial_reports"')
-                ).scalar()
-            return int(count or 0) > 0
-        except Exception:
-            return False
 
 
 def _dedupe_ranked_rows(rows: list[CompanyUniverseEntry]) -> list[CompanyUniverseEntry]:

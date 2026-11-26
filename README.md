@@ -55,7 +55,8 @@ For end users:
    `Documents\Apps\CVMAnalytics`.
 3. Keep `CVMAnalytics.exe` and `_internal\` together.
 4. Run `CVMAnalytics.exe`.
-5. Use Settings -> Updates to download CVM data for the companies you follow.
+5. On Home, choose **Download CVM data**. The company list appears first and
+   statements fill in as each company is processed; the top-bar pill shows progress.
 
 Runtime data is stored outside the install folder:
 

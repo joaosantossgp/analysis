@@ -16,7 +16,6 @@ const REFRESH_JOB_QUERY_KEYS: Array<readonly unknown[]> = [
   ["company-kpis"],
   ["company-statement"],
   ["company-refresh-status"],
-  ["onboarding-state"],
   ["app-status"],
   ["data-coverage"],
   ["data-update-settings"],

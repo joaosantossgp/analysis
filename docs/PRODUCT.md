@@ -54,10 +54,15 @@ routes and saved News widgets explain retirement without querying news. Stored
 news, backend services and widget configuration remain intact; removing a saved
 widget requires an explicit user action.
 
-An empty Home offers Open Companies. The explicitly chosen recommended layout
-contains Watchlist and Market Price; Database Monitor and Priority Queue remain
-optional. Existing v4 custom and empty layouts/configurations are preserved.
-The compact status/job summary and source/error/offline states remain visible.
+While the local database has no statements, Home leads with one action,
+"Download CVM data", below the Analyst Workspace header; layout choices stay as
+secondary actions. Otherwise an empty Home offers Open Companies. The explicitly
+chosen recommended layout contains Watchlist and Market Price; Database Monitor
+and Priority Queue remain optional. Existing v4 custom and empty
+layouts/configurations are preserved. Home shows Completeness and Gaps ("—" on
+an empty database); the shell's top-bar pill carries the local database state,
+and a slim Home notice appears when it is Stale or Completed with failures
+([database-updates.md](database-updates.md)).
 
 Sectors keeps GICS analytical comparison and the distinct Macro / Country matrix.
 CVM is an alternate classification control; sector names replace the redundant

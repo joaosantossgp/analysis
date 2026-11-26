@@ -188,33 +188,6 @@ export type CompanyUniverseProviderStatus = {
   message?: string | null;
 };
 
-export type OnboardingState = {
-  first_run_completed: boolean;
-  should_show: boolean;
-  selected_company_universe: CompanyUniversePreset | null;
-  company_universe_source: string | null;
-  company_universe_source_date: string | null;
-  setup_status: string;
-  selected_company_count: number;
-  refresh_job_id: string | null;
-  refresh_job?: RefreshJobStatus;
-  warning: string | null;
-  has_local_financial_data: boolean;
-  market_cap_source_available?: boolean;
-  market_cap_source?: string | null;
-  market_cap_source_date?: string | null;
-  market_cap_snapshot_path?: string | null;
-  market_cap_ranked_companies?: number | null;
-  company_universe_provider_order?: string[];
-  company_universe_provider_status?: CompanyUniverseProviderStatus[];
-  yfinance_universe_provider_enabled?: boolean;
-  error?: string;
-};
-
-export type OnboardingStartResponse = RefreshDispatchResponse & {
-  selection?: CompanyUniverseSelection;
-};
-
 export type CompanyRefreshTrackingState =
   | "idle"
   | "queued"

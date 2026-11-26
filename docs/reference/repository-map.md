@@ -58,7 +58,8 @@ with contextual tabs in
 | Settings | `/settings` | Data, sources, Indicator Sources (`/settings/indicator-sources`), storage and app diagnostics |
 
 Coverage is inside Companies; old `/coverage/*` URLs redirect there. Settings'
-`/settings/coverage` still reports local-data coverage and is a separate surface.
+Data completeness (`/settings/data`) reports local-data completeness and is a
+separate surface.
 Company Excel mapping retains its route and dedicated window.
 
 News is retired from primary navigation. Old `/news/*` URLs show
