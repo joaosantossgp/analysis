@@ -66,9 +66,9 @@ def create_app(
         yield
 
     app = FastAPI(
-        title="CVM V2 API",
-        version="v2-phase1",
-        description="API read-only da Fase 1 da V2, reaproveitando o nucleo headless da V1.",
+        title="CVMAnalytics HTTP API",
+        version="v2",
+        description="HTTP adapter for CVMAnalytics financial queries, exports, and explicit refresh commands.",
         lifespan=lifespan,
     )
     app.state.settings = resolved_settings
