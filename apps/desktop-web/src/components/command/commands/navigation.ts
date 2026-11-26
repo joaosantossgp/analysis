@@ -74,15 +74,6 @@ export function buildNavigationCommands(navigate: NavigateFunction): Command[] {
       run: goto("/settings/app"),
     },
     {
-      id: "nav:data-coverage",
-      group: "navigation",
-      glyph: "route",
-      label: "Data Coverage",
-      secondary: "/settings/coverage",
-      keywords: ["coverage", "cobertura", "pendentes", "missing"],
-      run: goto("/settings/coverage"),
-    },
-    {
       id: "nav:status",
       group: "navigation",
       glyph: "route",

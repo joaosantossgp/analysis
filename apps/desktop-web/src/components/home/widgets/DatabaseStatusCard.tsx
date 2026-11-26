@@ -159,10 +159,10 @@ export function DatabaseStatusCard({
 
           <div className={isCompact ? "pt-0.5" : "pt-1"}>
             <Link
-              to="/settings/updates"
+              to="/settings/data"
               className="flex w-full items-center justify-center rounded bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 hover:text-white text-center text-xs text-zinc-300 py-1.5 transition-colors font-semibold"
             >
-              {isRunning ? "View active job →" : "Manage updates & sync →"}
+              Data completeness →
             </Link>
           </div>
         </div>

@@ -195,7 +195,7 @@ export function DataPanelBody({ state, online }: { state: LocalDatabaseState; on
       <p className="font-mono text-2xs" style={{ color: "var(--color-text-tertiary)" }}>
         Official CVM · DFP, ITR · Data updates run only when you start them, and are logged.
       </p>
-      <a href="#/settings/coverage" className="text-xs" style={{ color: "var(--color-id-link)" }}>
+      <a href="#/settings/data" className="text-xs" style={{ color: "var(--color-id-link)" }}>
         Data completeness →
       </a>
     </div>
