@@ -1,4 +1,4 @@
-# Ignore large folders to prevent AI indexer crashes
+# Ignore large, generated, and historical folders to save agent tokens and search time
 node_modules/
 data/
 _backup.claude/
@@ -7,3 +7,26 @@ __pycache__/
 .venv/
 venv/
 .claude/
+build/
+dist/
+output/
+tmp/
+scratch/
+archive/
+docs/vendor/
+docs/archive/
+docs/releases/
+.playwright-cli/
+.playwright-mcp/
+.orchestration/
+release_validation_*/
+repomix-output.*
+*.xlsx
+*.pdf
+*.zip
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.docx
+*.log
