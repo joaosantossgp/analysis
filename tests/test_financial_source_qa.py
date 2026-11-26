@@ -249,6 +249,20 @@ def test_legacy_matrix_reads_without_schema_repair_and_marks_unknown(tmp_path):
     engine.dispose()
 
 
+def test_batched_observation_insert_keeps_one_row_per_id(tmp_path):
+    db = CVMDatabase(str(tmp_path / "financials.db"))
+    frame = pd.DataFrame([{"LINE_ID_BASE": "3.01", "CD_CONTA": "3.01", "DS_CONTA": "Receita", "2024": 1.0}])
+    obs = {"observation_id": "same", "DT_FIM_EXERC": "2024-12-31", "VL_CONTA": 1.0}
+    frame.attrs["source_observations"] = [obs, dict(obs)]
+    frame.attrs["value_lineage"] = [dict(line_id_base="3.01", period="2024", year=2024, status="reported", source_ids=["same"])]
+    db.insert_company_data("X", 1, "comercial", {"DRE": frame}, [])
+    db.insert_company_data("X", 1, "comercial", {"DRE": frame}, [])
+    with db._engine.connect() as conn:
+        assert conn.execute(text("SELECT count(*) FROM financial_source_observations")).scalar() == 1
+        assert conn.execute(text("SELECT count(*) FROM financial_value_lineage")).scalar() == 1
+    db._engine.dispose()
+
+
 def test_qa_events_store_source_ids_and_reads_resolve_them(scraper, vale_sources, tmp_path):
     db = CVMDatabase(str(tmp_path / "financials.db"))
     reports, qa = scraper.process_all_reports(vale_sources)
