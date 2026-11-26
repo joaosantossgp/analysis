@@ -41,7 +41,9 @@ Keep detail in the owning contract or dated evidence. Last updated: 2026-11-26.
   update-check states on a partial run. It found six bugs (#575-#580). The most serious,
   #575 (a mid-session network drop paused every bridge read), is fixed: bridge queries no
   longer pause on the browser `offline` event (checked in the mock dev runtime, not yet in
-  the packaged app). The goal stays open until the remaining bugs are triaged.
+  the packaged app). #576 is fixed: the local database pill and the empty-database hero
+  appear within about 0.3 s of launch instead of 30 s (dev desktop app, empty sandbox).
+  The goal stays open until the remaining bugs are triaged.
 - First data update cost (goal #574, #582-#587): QA log scope index, QA events stored as
   source observation ids, DMPL/DVA no longer read, batched evidence inserts, and five unused
   `financial_reports` indexes dropped. A full fresh first run (655 active companies,
