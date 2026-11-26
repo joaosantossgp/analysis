@@ -21,3 +21,13 @@ it("invalidates cached empty statement evidence after a Database Updates job", (
   expect(client.getQueryState(evidenceKey)?.isInvalidated).toBe(true);
   expect(client.getQueryState(["company-years", 4170])?.isInvalidated).toBe(true);
 });
+
+it("refreshes the command palette company index after a data update", () => {
+  client = new QueryClient({ defaultOptions: { queries: { staleTime: 60_000 } } });
+  const indexKey = ["command-palette", "companies-index"];
+  client.setQueryData(indexKey, []);
+
+  useRefreshJobInvalidation()();
+
+  expect(client.getQueryState(indexKey)?.isInvalidated).toBe(true);
+});
