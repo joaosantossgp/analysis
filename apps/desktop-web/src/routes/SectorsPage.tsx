@@ -6,6 +6,7 @@ import { fetchSectors, type SectorDirectoryResult, type SectorGroupBy } from "@/
 import { whenBridgeReady } from "@/lib/bridge/adapter";
 import { PageHeader } from "@/components/PageHeader";
 import { StateBanner } from "@/components/feedback/StateBanner";
+import { LocalDataEmptyState } from "@/components/shell/LocalDataEmptyState";
 
 function normalizeGroupBy(value: string | null): SectorGroupBy {
   if (value === "sub_sector") return "sub_sector";
@@ -164,10 +165,10 @@ function Body({
   }
   if (items.length === 0) {
     return (
-      <StateBanner
-        variant="empty"
+      <LocalDataEmptyState
         title="No sector classifications"
-        message="No companies have this classification in the local directory. Check company coverage and classification in Companies."
+        emptyMessage="The local database is empty. Download CVM data to see sectors and their companies."
+        fallbackMessage="No companies have this classification in the local directory. Check company coverage and classification in Companies."
       />
     );
   }
