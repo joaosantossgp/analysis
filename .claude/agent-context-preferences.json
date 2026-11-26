@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "version": "2.0",
+    "version": "2.1",
     "purpose": "Hints for agent context initialization to reduce token consumption"
   },
   "governance_mode": "compact",
@@ -14,16 +14,25 @@
   },
   "exclude_from_context": [
     ".workflow/.scratchpad/",
+    ".claude/worktrees/",
+    ".playwright-cli/",
+    ".playwright-mcp/",
+    ".orchestration/",
     "docs/vendor/",
+    "docs/archive/",
+    "docs/releases/",
     "build/",
     "dist/",
+    "output/",
+    "tmp/",
+    "scratch/",
     ".pytest_cache/",
     "node_modules/",
     "data/db/",
-    ".claude/worktrees/",
-    "docs/archive/"
+    "data/dev-runtime/",
+    "data/raw/"
   ],
   "context_optimization": {
-    "default_mode": "Fast Mode per AGENTS.md \u2014 load AGENTS.md once, on demand for CONTEXT.md / reference docs."
+    "default_mode": "Fast Mode per AGENTS.md — load AGENTS.md once, on demand for CONTEXT.md / reference docs."
   }
 }
