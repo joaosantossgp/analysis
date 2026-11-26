@@ -321,24 +321,24 @@ def test_unavailable_statement_cannot_complete_a_period(scraper, tmp_path):
     db._engine.dispose()
 
 
-def test_ingestion_workbook_preserves_audit_and_per_share_units(scraper, vale_sources, tmp_path):
-    from unittest.mock import MagicMock, patch
-    from openpyxl import load_workbook
+def test_refresh_persistence_writes_no_workbook(scraper, vale_sources, monkeypatch):
+    """Refresh only persists; workbooks come from the on-demand export (#548)."""
+    from unittest.mock import MagicMock
+
+    def no_workbook(*args, **kwargs):
+        raise AssertionError("refresh must not write a workbook")
+
+    monkeypatch.setattr(pd, "ExcelWriter", no_workbook)
+    monkeypatch.setattr(pd.DataFrame, "to_excel", no_workbook)
+    monkeypatch.setattr("src.companies.identity.CompanyIdentityResolver.resolve", lambda *_: None)
     scraper.db = MagicMock()
-    scraper.db.insert_company_data.return_value = 1
-    scraper.output_dir = str(tmp_path)
+    scraper.db.insert_company_data.return_value = 7
     scraper.setores_map = {}
     scraper.cnpjs_map = {}
     scraper.standardizer = None
-    scraper.max_excel_lock_retries = 1
     reports, qa = scraper.process_all_reports(vale_sources)
-    with patch('src.companies.identity.CompanyIdentityResolver') as resolver:
-        resolver.return_value.resolve.return_value = None
-        scraper.generate_excel('VALE', 4170, reports, qa)
-    workbook = load_workbook(tmp_path / 'VALE_financials.xlsx', data_only=True)
-    assert 'financial_qa' in workbook.sheetnames
-    assert 'source_observations' in workbook.sheetnames
-    assert 'BRL/share' in workbook['DRE']['A2'].value
+    assert scraper.persist_reports("VALE", 4170, reports, qa) == 7
+    scraper.db.insert_company_data.assert_called_once()
 
 
 class _TrackedAuditRecords(list):
@@ -420,71 +420,39 @@ def test_persistence_does_not_copy_or_mutate_report_audit(scraper, vale_sources,
 
 
 @pytest.mark.parametrize('standardize', [False, True])
-@pytest.mark.parametrize('failure', [None, 'database', 'workbook'])
+@pytest.mark.parametrize('failure', [None, 'database'])
 def test_ingestion_keeps_audit_without_tabular_deepcopies(scraper, vale_sources, tmp_path, monkeypatch, standardize, failure):
-    from openpyxl import load_workbook
     from src.financials.standardizer import AccountStandardizer
 
     reports, qa = scraper.process_all_reports(vale_sources)
     before, copies = _track_report_audit(reports)
     qa_before = deepcopy(qa)
     scraper.db = CVMDatabase(str(tmp_path / 'financials.db'))
-    scraper.output_dir = str(tmp_path)
     scraper.setores_map = {}
     scraper.cnpjs_map = {}
-    scraper.max_excel_lock_retries = 1
     scraper.standardizer = AccountStandardizer(str(Path(__file__).parents[1] / 'data/import/canonical_accounts.csv')) if standardize else None
     # Identity resolution otherwise uses the default runtime database/catalog.
     monkeypatch.setattr('src.companies.identity.CompanyIdentityResolver.resolve', lambda *_: None)
     write = scraper.db._to_sql_with_retry
-    to_excel = pd.DataFrame.to_excel
 
     def fail_financial(table, frame, conn):
         if table == 'financial_reports':
             raise RuntimeError('injected database failure')
         return write(table, frame, conn)
 
-    def fail_workbook(frame, *args, **kwargs):
-        if kwargs.get('sheet_name') == 'source_observations':
-            raise RuntimeError('injected workbook failure')
-        return to_excel(frame, *args, **kwargs)
-
     try:
         if failure == 'database':
             monkeypatch.setattr(scraper.db, '_to_sql_with_retry', fail_financial)
-        elif failure == 'workbook':
-            monkeypatch.setattr(pd.DataFrame, 'to_excel', fail_workbook)
         if failure:
             with pytest.raises(RuntimeError, match=f'injected {failure} failure'):
-                scraper.generate_excel('VALE', 4170, reports, qa)
+                scraper.persist_reports('VALE', 4170, reports, qa)
         else:
-            assert scraper.generate_excel('VALE', 4170, reports, qa) > 0
+            assert scraper.persist_reports('VALE', 4170, reports, qa) > 0
         operation_copies = list(copies)
         _assert_reports_unchanged(reports, before)
         assert qa == qa_before
         if failure != 'database':
             _assert_persisted_audit(scraper.db, reports, qa)
-        if not failure:
-            workbook = load_workbook(tmp_path / 'VALE_financials.xlsx', data_only=False)
-            try:
-                for key in ('source_observations', 'value_lineage'):
-                    rows = list(workbook[key].values)
-                    expected = [record for report in reports.values() for record in report.attrs[key]]
-                    assert set(rows[0]) == {column for record in expected for column in record}
-                    assert len(rows) == len(expected) + 1
-                    for actual, record in zip(rows[1:], expected):
-                        assert actual == tuple(str(record.get(column)) if isinstance(record.get(column), (list, dict))
-                                               else record.get(column) for column in rows[0])
-                assert workbook['financial_qa'].max_row == len(qa) + 1
-                dre = workbook['DRE']
-                headers = [cell.value for cell in dre[3]]
-                eps = next(row for row in dre.iter_rows(min_row=4) if row[headers.index('CD_CONTA')].value == '3.99.01.02')
-                assert eps[headers.index('3Q24')].value == 3.14
-                assert '.00' in eps[headers.index('3Q24')].number_format
-                assert eps[headers.index('4Q24')].value is None
-                assert ('STANDARD_NAME' in headers) == standardize
-            finally:
-                workbook.close()
         assert operation_copies == []
     finally:
         scraper.db._engine.dispose()

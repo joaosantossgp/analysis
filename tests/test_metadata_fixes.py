@@ -168,7 +168,6 @@ class TestScraperIngestionMetadata:
         
         # Instantiate scraper with temp directory
         scraper = CVMScraper(
-            output_dir=str(tmp_path / "output"),
             data_dir=str(tmp_path / "data"),
             report_type="consolidated"
         )

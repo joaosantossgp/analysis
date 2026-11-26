@@ -238,7 +238,6 @@ def run_refresh_batches(
             end_year=batch_end_year,
             max_workers=2,
             data_dir=str(settings.paths.input_dir),
-            output_dir=str(settings.paths.reports_dir),
             policy=RefreshPolicy(
                 skip_complete_company_years=not force_refresh,
                 enable_fast_lane=False,

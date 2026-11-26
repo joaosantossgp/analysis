@@ -112,6 +112,25 @@ def test_sync_is_idempotent_and_new_companies_pick_up_curation(service):
     assert _company_row(svc, 10)["classification_origin"] == "curated"
 
 
+def test_launch_sync_skips_only_when_dataset_structure_and_companies_are_unchanged(service, tmp_path):
+    svc, curated = service
+    assert sync_curated_classification(svc.engine, curated_path=curated) == {"skipped_unchanged": 1}
+
+    # A company row left unmaterialized forces the full sync.
+    with svc.engine.begin() as conn:
+        conn.exec_driver_sql("UPDATE companies SET classification_origin=NULL WHERE cd_cvm=30")
+    assert "skipped_unchanged" not in sync_curated_classification(svc.engine, curated_path=curated)
+    assert _company_row(svc, 30)["classification_origin"] == "pending"
+
+    # A changed GICS structure with the same dataset also forces it.
+    structure = tmp_path / "structure.csv"
+    structure.write_bytes(STRUCTURE_PATH.read_bytes() + b"\n")
+    result = sync_curated_classification(svc.engine, curated_path=curated, structure_path=structure)
+    assert result["companies"] == 3
+    assert sync_curated_classification(svc.engine, curated_path=curated, structure_path=structure) == {
+        "skipped_unchanged": 1}
+
+
 def test_local_edit_wins_everywhere_and_survives_dataset_reload(service, tmp_path):
     svc, curated = service
     bridge = CVMBridge()

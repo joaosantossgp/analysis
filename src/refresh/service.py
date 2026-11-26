@@ -507,7 +507,6 @@ class HeadlessRefreshService:
 
         scraper = CVMScraper(
             data_dir=request.data_dir or str(self.settings.paths.input_dir),
-            output_dir=request.output_dir or str(self.settings.paths.reports_dir),
             report_type=request.report_type,
             max_workers=request.max_workers,
             settings=self.settings,

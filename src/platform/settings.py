@@ -133,7 +133,6 @@ class AppSettings:
     enable_yfinance_universe_provider: bool
     enable_experimental_yfinance: bool
     yfinance_universe_fetch_limit: int
-    max_excel_lock_retries: int
     company_db_max_retries: int
     company_db_retry_backoff_seconds: float
     updater_skip_complete: bool
@@ -320,7 +319,6 @@ def build_settings(project_root: Path | None = None) -> AppSettings:
         ),
         enable_experimental_yfinance=(market_cap_provider == "yahoo_finance"),
         yfinance_universe_fetch_limit=_env_int("CVM_YFINANCE_UNIVERSE_FETCH_LIMIT", 60),
-        max_excel_lock_retries=_env_int("CVM_MAX_EXCEL_LOCK_RETRIES", 10),
         company_db_max_retries=_env_int("CVM_COMPANY_DB_MAX_RETRIES", 3),
         company_db_retry_backoff_seconds=_env_float("CVM_COMPANY_DB_RETRY_BACKOFF_SECONDS", 1.2),
         updater_skip_complete=_env_bool("UPDATER_SKIP_COMPLETE", True),

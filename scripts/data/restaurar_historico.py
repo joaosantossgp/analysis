@@ -77,7 +77,6 @@ def build_restore_items(service: HeadlessRefreshService, settings, anos: list[in
         end_year=max(anos),
         max_workers=2,
         data_dir=str(settings.paths.input_dir),
-        output_dir=str(settings.paths.reports_dir),
         policy=default_incremental_refresh_policy(),
     )
     planned_companies, year_overrides, stats = service.build_company_year_plan(request)
@@ -120,7 +119,6 @@ def run_restore(service: HeadlessRefreshService, settings, items: list[dict], an
             end_year=max(anos),
             max_workers=2,
             data_dir=str(settings.paths.input_dir),
-            output_dir=str(settings.paths.reports_dir),
             policy=default_incremental_refresh_policy(),
         )
         started_at = time.time()
