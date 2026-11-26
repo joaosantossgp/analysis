@@ -10,7 +10,6 @@ import { Link } from "react-router-dom";
 
 import { useExportAction } from "@/components/export/useExportAction";
 import { Button } from "@/components/ui/Button";
-import { Checkbox } from "@/components/ui/Checkbox";
 import { Select } from "@/components/ui/Select";
 import { openCompanyExcelMappingWindow } from "@/lib/api/companyWindows";
 import {
@@ -35,6 +34,7 @@ import type {
   CompanyRefreshStatus,
   RefreshDispatchResponse,
 } from "@/lib/bridge/types";
+import { useLocalDatabaseState } from "@/lib/api/localDatabase";
 
 const ACTIVE_POLL_MS = 2_000;
 const CVM_MIN_YEAR = 2010;
@@ -48,30 +48,14 @@ const PERIOD_SCOPE_OPTIONS = [
 
 type HistoryScope = (typeof PERIOD_SCOPE_OPTIONS)[number]["value"];
 
-export type OnDemandUpdateSources = {
-  cvm: boolean;
-  market: boolean;
-};
-
-const ON_DEMAND_UPDATE_SOURCES_STORAGE_KEY = "company_on_demand_update_sources";
-
-export function loadOnDemandUpdateSources(raw: string | null): OnDemandUpdateSources {
-  try {
-    const value = raw ? JSON.parse(raw) : null;
-    return { cvm: value?.cvm !== false, market: value?.market !== false };
-  } catch {
-    return { cvm: true, market: true };
-  }
-}
-
-export function updateSourcesEnabled(sources: OnDemandUpdateSources): boolean {
-  return sources.cvm || sources.market;
-}
-
-export function selectedOnDemandRefreshSources(
-  sources: OnDemandUpdateSources,
-): Array<keyof OnDemandUpdateSources> {
-  return (Object.keys(sources) as Array<keyof OnDemandUpdateSources>).filter((source) => sources[source]);
+/**
+ * Label of the company update (Company update in GLOSSARY.md). Its scope is one
+ * company, so it is never called "Update data" (that is the data update).
+ */
+export function companyActionLabel({ queued, pending, failed }: { queued: boolean; pending: boolean; failed: boolean }): string {
+  if (pending) return "Updating company";
+  if (failed) return "Retry update";
+  return queued ? "Download now" : "Update company";
 }
 
 export function historyPresetRange(scope: HistoryScope, endYear: number) {
@@ -90,6 +74,7 @@ export const COMPANY_COMMAND_LABELS = {
   statements: "Statements",
   excelMappingWindow: "Open Excel Mapping in a separate window",
   historyDisclosure: "History range",
+  marketPrices: "Update market prices (external)",
   refreshDetails: "Refresh details",
 } as const;
 
@@ -227,19 +212,9 @@ export function CompanyCommandBar({
   const [startYear, setStartYear] = useState(currentYear - 4);
   const [endYear, setEndYear] = useState(currentYear);
   const [yearError, setYearError] = useState<string | null>(null);
-  const [updateSources, setUpdateSources] = useState<OnDemandUpdateSources>(() =>
-    typeof window === "undefined"
-      ? { cvm: true, market: true }
-      : loadOnDemandUpdateSources(window.localStorage.getItem(ON_DEMAND_UPDATE_SOURCES_STORAGE_KEY)),
-  );
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(ON_DEMAND_UPDATE_SOURCES_STORAGE_KEY, JSON.stringify(updateSources));
-    } catch {
-      // Preference remains usable for this session when storage is unavailable.
-    }
-  }, [updateSources]);
+  // Queued in a running data update: the company action pulls it ahead.
+  const localRun = useLocalDatabaseState().data?.run;
+  const queued = Boolean(localRun && localRun.company_ids.includes(cdCvm) && localRun.current_cvm !== cdCvm);
 
   useEffect(() => {
     if (bridgeReadyProp !== undefined) return;
@@ -359,11 +334,12 @@ export function CompanyCommandBar({
     hasRefreshError ||
     (!latestPeriodLabel && !status?.has_readable_current_data);
   const updateDisabled =
-    !bridgeReady || Boolean(browserReason) || refreshMutation.isPending || marketRefreshMutation.isPending || (updateSources.cvm && isActive) || !updateSourcesEnabled(updateSources);
+    !bridgeReady || Boolean(browserReason) || refreshMutation.isPending || isActive;
+  const marketDisabled = !bridgeReady || Boolean(browserReason) || marketRefreshMutation.isPending;
   const historyDisabled =
     !bridgeReady || Boolean(browserReason) || isActive || refreshMutation.isPending || marketRefreshMutation.isPending;
   const pendingIncremental =
-    (refreshMutation.isPending && refreshMutation.variables?.type === "incremental") || marketRefreshMutation.isPending;
+    refreshMutation.isPending && refreshMutation.variables?.type === "incremental";
   const pendingHistory =
     refreshMutation.isPending && refreshMutation.variables?.type === "history";
   const progress = companyRefreshProgress(status);
@@ -433,17 +409,7 @@ export function CompanyCommandBar({
   }
 
   function updateCompanyData() {
-    const selectedSources = selectedOnDemandRefreshSources(updateSources);
-    if (selectedSources.includes("cvm")) {
-      refreshMutation.mutate({ type: "incremental" });
-    } else {
-      refreshMutation.reset();
-    }
-    if (selectedSources.includes("market")) {
-      marketRefreshMutation.mutate();
-    } else {
-      marketRefreshMutation.reset();
-    }
+    refreshMutation.mutate({ type: "incremental" });
   }
 
   return (
@@ -455,7 +421,7 @@ export function CompanyCommandBar({
     >
       {downloadControls ? (
         <div className="flex w-full flex-1 flex-col gap-2" style={{ paddingBottom: 5, paddingRight: 5 }}>
-          <label className="flex" aria-label="History download period">
+          <label className="flex" aria-label="History range">
             <Select
               block
               value={historyScope}
@@ -476,20 +442,21 @@ export function CompanyCommandBar({
             loading={pendingHistory}
             onClick={downloadHistory}
             style={{ flex: 1, minHeight: 34, width: "100%" }}
+            title={`CVM statements ${startYear}-${endYear} for this company`}
           >
             <DownloadIcon />
-            {pendingHistory ? `Downloading ${startYear}-${endYear}` : "Download history"}
+            {companyActionLabel({ queued, pending: pendingHistory, failed: hasRefreshError })}
           </Button>
           <Button
-            variant="primary"
+            variant="secondary"
             size="xs"
-            disabled={updateDisabled}
-            loading={pendingIncremental}
-            onClick={updateCompanyData}
-            style={{ flex: 1, minHeight: 34, width: "100%" }}
+            disabled={marketDisabled}
+            loading={marketRefreshMutation.isPending}
+            onClick={() => marketRefreshMutation.mutate()}
+            style={{ width: "100%" }}
           >
             <RefreshIcon />
-            {hasRefreshError ? "Retry update" : pendingIncremental ? "Updating data" : updateSourcesEnabled(updateSources) ? "Update data" : "Select a source"}
+            {COMPANY_COMMAND_LABELS.marketPrices}
           </Button>
         </div>
       ) : (
@@ -511,7 +478,7 @@ export function CompanyCommandBar({
             loading={pendingIncremental}
             onClick={updateCompanyData}
           >
-            {hasRefreshError ? "Retry update" : updateSourcesEnabled(updateSources) ? "Update data" : "Select a source"}
+            {companyActionLabel({ queued, pending: pendingIncremental, failed: hasRefreshError })}
           </Button>
           <Button
             type="button"
@@ -602,8 +569,6 @@ export function CompanyCommandBar({
             error={yearError}
             disabled={historyDisabled}
             loading={pendingHistory}
-            sources={updateSources}
-            onSourcesChange={setUpdateSources}
             onStartYearChange={(value) => {
               setStartYear(value);
               setYearError(null);
@@ -1115,8 +1080,6 @@ function HistoryRangePopover({
   error,
   disabled,
   loading,
-  sources,
-  onSourcesChange,
   onStartYearChange,
   onEndYearChange,
   onDownload,
@@ -1131,8 +1094,6 @@ function HistoryRangePopover({
   error: string | null;
   disabled: boolean;
   loading: boolean;
-  sources: OnDemandUpdateSources;
-  onSourcesChange: (sources: OnDemandUpdateSources) => void;
   onStartYearChange: (value: number) => void;
   onEndYearChange: (value: number) => void;
   onDownload: () => void;
@@ -1165,25 +1126,7 @@ function HistoryRangePopover({
         transform: entered ? "translateY(0)" : "translateY(-4px)",
       }}
     >
-      <span style={popoverLabelStyle}>On-demand settings</span>
-      <div className="mt-2 flex flex-col gap-1.5">
-        <Checkbox
-          label="CVM financial data"
-          checked={sources.cvm}
-          disabled={disabled}
-          onChange={(event) => onSourcesChange({ ...sources, cvm: event.currentTarget.checked })}
-        />
-        <Checkbox
-          label="Market data"
-          checked={sources.market}
-          disabled={disabled}
-          onChange={(event) => onSourcesChange({ ...sources, market: event.currentTarget.checked })}
-        />
-      </div>
-      <p style={historySourceHintStyle}>
-        Download history retrieves CVM financial data only. Market data refreshes its complete available history.
-      </p>
-      <span style={{ ...popoverLabelStyle, display: "block", marginTop: 10 }}>Custom CVM history range</span>
+      <span style={popoverLabelStyle}>Custom CVM history range</span>
       <div className="mt-2 flex gap-2">
         <YearInput
           id={`${id}-start-year`}
@@ -1255,13 +1198,6 @@ export const historyPopoverStyle: CSSProperties = {
   transition: "opacity 180ms ease, transform 180ms ease",
   width: 284,
   zIndex: 10,
-};
-
-const historySourceHintStyle: CSSProperties = {
-  color: "var(--color-text-secondary)",
-  fontSize: "var(--text-2xs)",
-  lineHeight: 1.45,
-  margin: "8px 0 0",
 };
 
 const feedbackPopoverStyle: CSSProperties = {
