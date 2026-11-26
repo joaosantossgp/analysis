@@ -14,6 +14,12 @@ function renderIndicator(state: LocalDatabaseState) {
   return renderToStaticMarkup(createElement(QueryClientProvider, { client }, createElement(DataIndicator)));
 }
 
+function renderPanel(state: LocalDatabaseState, online: boolean) {
+  return renderToStaticMarkup(
+    createElement(QueryClientProvider, { client: new QueryClient() }, createElement(DataPanelBody, { state, online })),
+  );
+}
+
 describe("DataIndicator", () => {
   it.each([
     ["empty", "EMPTY"],
@@ -34,20 +40,20 @@ describe("DataIndicator", () => {
 
 describe("DataPanelBody", () => {
   it("lists failed companies after a partial run", () => {
-    const html = renderToStaticMarkup(createElement(DataPanelBody, { state: S.partial, online: true }));
+    const html = renderPanel(S.partial, true);
     expect(html).toContain("Completed with 3 failures");
     expect(html).toContain("OI SA");
     expect(html).toContain("DFP 2024 rows rejected by validation");
   });
 
   it("states that data updates never start on their own", () => {
-    const html = renderToStaticMarkup(createElement(DataPanelBody, { state: S.current, online: true }));
+    const html = renderPanel(S.current, true);
     expect(html).toContain("Data updates run only when you start them");
     expect(html).toContain("Official CVM");
   });
 
   it("keeps failures visible while offline", () => {
-    const html = renderToStaticMarkup(createElement(DataPanelBody, { state: S.partial, online: false }));
+    const html = renderPanel(S.partial, false);
     expect(html).toContain("No internet connection.");
     expect(html).toContain("OI SA");
   });

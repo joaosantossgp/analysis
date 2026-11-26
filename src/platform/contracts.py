@@ -57,6 +57,9 @@ class RefreshPolicy:
     skip_complete_company_years: bool = False
     enable_fast_lane: bool = False
     force_refresh: bool = False
+    # Data updates refresh the CVM catalog right before dispatch; the scraper
+    # then reads the company registry from that snapshot instead of downloading it again.
+    reuse_catalog_snapshot: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
