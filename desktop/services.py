@@ -34,7 +34,6 @@ class RankedCompany:
     company_name: str
     ticker: str | None
     last_report_year: int | None
-    last_file_update: datetime | None
     last_update_ref: datetime | None
     mktcap: float
     avg_volume: float
@@ -69,10 +68,6 @@ class RankedCompany:
             "coverage": "So ano final" if self.only_end_year_history else "Multi-ano",
             "only_end_year_history": self.only_end_year_history,
         }
-
-
-def _safe_name(company_name: str) -> str:
-    return company_name.replace(" ", "_").replace("/", "_").replace("\\", "_")
 
 
 def _minmax_normalize(value: float | None, values: list[float]) -> float:
@@ -114,7 +109,6 @@ class IntelligentSelectorService:
         self.project_root = self.settings.paths.project_root
         self.db_path = self.settings.paths.db_path
         self.cache_path = self.settings.paths.yfinance_cache_path
-        self.reports_dir = self.settings.paths.reports_dir
         self.base_health_cache_path = self.settings.paths.base_health_snapshot_path
         self.active_universe_cache_path = self.settings.paths.active_universe_cache_path
         self.processed_presence_cache_path = self.settings.paths.processed_presence_index_path
@@ -181,16 +175,6 @@ class IntelligentSelectorService:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(query).fetchall()
         return [dict(r) for r in rows]
-
-    def _find_last_file_update(self, company_name: str) -> datetime | None:
-        safe = _safe_name(company_name)
-        if not self.reports_dir.exists():
-            return None
-        files = list(self.reports_dir.glob(f"{safe}_financials*.xlsx"))
-        if not files:
-            return None
-        latest = max(files, key=lambda p: p.stat().st_mtime)
-        return datetime.fromtimestamp(latest.stat().st_mtime)
 
     @staticmethod
     def _parse_fetched_at(raw: str | None) -> datetime | None:
@@ -1140,14 +1124,13 @@ class IntelligentSelectorService:
             refresh_attempt = self._parse_fetched_at(refresh_row.get("last_attempt_at"))
             refresh_state = str(refresh_row.get("last_status") or "").strip().lower()
             refresh_error = str(refresh_row.get("last_error") or "")
-            last_file_update = self._find_last_file_update(company_name)
             db_ref = datetime(last_report_year, 12, 31) if last_report_year else None
             if refresh_success is not None:
                 # Primary recency source for rotation: explicit updater success timestamp.
                 last_update_ref = refresh_success
             else:
                 candidates = [
-                    d for d in (refresh_attempt, db_ref, last_file_update) if d is not None
+                    d for d in (refresh_attempt, db_ref) if d is not None
                 ]
                 last_update_ref = max(candidates) if candidates else None
             if last_update_ref is not None:
@@ -1187,7 +1170,6 @@ class IntelligentSelectorService:
                     "company_name": company_name,
                     "ticker": ticker,
                     "last_report_year": last_report_year,
-                    "last_file_update": last_file_update,
                     "last_update_ref": last_update_ref,
                     "mktcap": mktcap,
                     "avg_volume": avg_volume,
@@ -1238,7 +1220,6 @@ class IntelligentSelectorService:
                     company_name=row["company_name"],
                     ticker=row["ticker"],
                     last_report_year=row["last_report_year"],
-                    last_file_update=row["last_file_update"],
                     last_update_ref=row["last_update_ref"],
                     mktcap=row["mktcap"],
                     avg_volume=row["avg_volume"],

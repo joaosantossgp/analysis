@@ -310,7 +310,8 @@ export function useWorkspaceStatus(bridgeReady = true) {
         forceRefresh: false,
       }),
     enabled: bridgeReady,
-    refetchInterval: isRunning ? 10_000 : false,
+    // No polling: each poll during a run rebuilds the snapshot while rows are written.
+    // The shell's DataIndicator invalidates this key when the run ends.
   });
   const health = healthQuery.data?.mode === "desktop" ? healthQuery.data.snapshot : null;
 
@@ -318,7 +319,6 @@ export function useWorkspaceStatus(bridgeReady = true) {
     queryKey: ["db-diagnostics", { summaryOnly: true }],
     queryFn: () => fetchDatabaseDiagnostics({ summaryOnly: true }),
     enabled: bridgeReady,
-    refetchInterval: isRunning ? 10_000 : 60_000,
   });
   const diagnostics = diagQuery.data?.mode === "desktop" ? diagQuery.data.diagnostics : null;
   const browserReason = diagQuery.data?.mode === "browser" ? diagQuery.data.reason : null;

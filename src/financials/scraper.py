@@ -2,7 +2,7 @@
 CVM Financial Data Extractor
 =============================
 
-Extracts, processes, and generates Excel reports from CVM financial statements.
+Extracts, processes, and persists CVM financial statements to the local database.
 """
 
 # ============================================================================
@@ -27,9 +27,6 @@ DATA_DIR = "data/input"
 
 # Force re-download even if files exist
 FORCE_REFRESH = False
-
-# Maximum retries when output Excel file is locked by another process
-MAX_EXCEL_LOCK_RETRIES = 10
 
 # Network timeouts (seconds)
 COMPANY_LIST_TIMEOUT = 30
@@ -114,7 +111,6 @@ _RAW_FILE_LOCKS_GUARD = threading.Lock()
 class CVMScraper:
     def __init__(
         self,
-        output_dir="output/reports",
         data_dir="data/input",
         report_type="consolidated",
         max_workers=5,
@@ -122,7 +118,6 @@ class CVMScraper:
         source_cache: AnnualSourceCache | None = None,
     ):
         self.settings = settings or get_settings()
-        self.output_dir = str(output_dir or self.settings.paths.reports_dir)
         self.data_dir = str(data_dir or self.settings.paths.input_dir)
         self.raw_dir = os.path.join(self.data_dir, "raw")
         self.processed_dir = os.path.join(self.data_dir, "processed")
@@ -131,7 +126,6 @@ class CVMScraper:
         self.base_url = self.settings.cvm_base_url
         self.company_list_timeout = self.settings.company_list_timeout
         self.download_timeout = self.settings.download_timeout
-        self.max_excel_lock_retries = self.settings.max_excel_lock_retries
         self.company_db_max_retries = self.settings.company_db_max_retries
         self.company_db_retry_backoff_seconds = self.settings.company_db_retry_backoff_seconds
         self.force_refresh = os.getenv("CVM_FORCE_REFRESH", "0") == "1"
@@ -149,7 +143,6 @@ class CVMScraper:
         else:
             self.suffix = "ind"
             
-        os.makedirs(self.output_dir, exist_ok=True)
         os.makedirs(self.raw_dir, exist_ok=True)
         os.makedirs(self.processed_dir, exist_ok=True)
         
@@ -656,20 +649,18 @@ class CVMScraper:
     def validate_final_output(self, reports):
         return True, [] # Simplified for restoration
 
-    def generate_excel(self, name, cvm, reports, qas=None):
-        import re
-        safe = re.sub(r'[\\/*?:"<>|]', '_', name).replace(' ', '_')
-        path = os.path.join(self.output_dir, f"{safe}_financials.xlsx")
+    def persist_reports(self, name, cvm, reports, qas=None):
+        """Persist one company's processed statements; the on-demand export builds workbooks."""
         setor = str(self.setores_map.get(str(cvm), '')).lower()
         tipo = 'financeira' if any(k in setor for k in ['banc', 'financ']) else 'comercial'
-        
+
         final = {}
         if self.standardizer:
             for s, df in reports.items():
                 # Enrich only the table; restore the original audit evidence below.
                 final[s] = self.standardizer.enrich(_pd().DataFrame(df, copy=True), s, tipo, (self.report_type=="consolidated"))
         else: final = reports
-        
+
         for statement, report in final.items():
             report.attrs.update(reports[statement].attrs)
 
@@ -691,45 +682,6 @@ class CVMScraper:
             ticker_b3=ticker_b3,
             cnpj=self.cnpjs_map.get(str(cvm)),
         )
-        
-        for attempt in range(1, self.max_excel_lock_retries + 1):
-            try:
-                with _pd().ExcelWriter(path, engine='openpyxl') as writer:
-                    for s, report in final.items():
-                        # Keep audit attrs on the report for the explicit evidence sheets.
-                        df = _pd().DataFrame(report, copy=True)
-                        df.to_excel(writer, sheet_name=s, startrow=2, index=False)
-                        ws = writer.sheets[s]
-                        ws['A1'] = f"Type: {self.report_type}"
-                        ws['A2'] = "Values in BRL thousands; DRE 3.99 per-share accounts in BRL/share. Review financial_qa."
-                        if s == 'DRE' and 'CD_CONTA' in df.columns:
-                            for row_index, code in enumerate(df['CD_CONTA'], start=4):
-                                if is_per_share(s, code):
-                                    for cell in ws[row_index]:
-                                        if isinstance(cell.value, (int, float)):
-                                            cell.number_format = '#,##0.00####;(#,##0.00####);-'
-                    if qas:
-                        audit = []
-                        for event in qas:
-                            item = {key: value for key, value in event.items() if key != 'source_inputs'}
-                            item['source_ids'] = json.dumps([source.get('observation_id') for source in event.get('source_inputs', [])])
-                            audit.append(item)
-                        _pd().DataFrame(audit).to_excel(writer, sheet_name='financial_qa', index=False)
-                    for key in ('source_observations', 'value_lineage'):
-                        evidence = [record for df in final.values() for record in df.attrs.get(key, [])]
-                        if evidence:
-                            _pd().DataFrame(evidence).to_excel(writer, sheet_name=key, index=False)
-                break
-            except PermissionError:
-                if attempt >= self.max_excel_lock_retries:
-                    raise
-                wait_s = min(2.0, 0.2 * attempt)
-                print(
-                    f"Excel file locked for {name} "
-                    f"(attempt {attempt}/{self.max_excel_lock_retries}). Retrying in {wait_s:.1f}s..."
-                )
-                time.sleep(wait_s)
-        print(f"Saved to {path}")
         return int(rows_inserted or 0)
 
     @staticmethod
@@ -899,13 +851,13 @@ class CVMScraper:
                 "persist_reports",
                 completed,
                 total_companies or 1,
-                f"Gravando relatorios e persistindo dados de {name}.",
+                f"Persisting data for {name}.",
             )
             while attempt < self.company_db_max_retries:
                 attempt += 1
                 payload["attempts"] = int(attempt)
                 try:
-                    rows_inserted = self.generate_excel(name, cvm, proc, qas)
+                    rows_inserted = self.persist_reports(name, cvm, proc, qas)
                     payload["rows_inserted"] = int(rows_inserted or 0)
                     payload["status"] = "success"
                     payload["error"] = None
@@ -913,7 +865,7 @@ class CVMScraper:
                         "persist_reports",
                         completed + 1,
                         total_companies or 1,
-                        f"Persistencia concluida para {name}.",
+                        f"Persisted data for {name}.",
                     )
                     break
                 except OperationalError as exc:

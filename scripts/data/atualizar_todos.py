@@ -93,7 +93,6 @@ def run_update(anos: list[int], dry_run: bool = False) -> None:
                 end_year=end_year,
                 max_workers=2,
                 data_dir=str(settings.paths.input_dir),
-                output_dir=str(settings.paths.reports_dir),
                 policy=default_incremental_refresh_policy(),
             )
             result = service.execute(request)

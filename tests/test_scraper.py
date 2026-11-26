@@ -47,7 +47,6 @@ def scraper(tmp_path):
         from src.platform.settings import build_settings
         s = CVMScraper(
             settings=build_settings(project_root=tmp_path),  # never read or write real runtime data
-            output_dir=str(tmp_path / 'output' / 'reports'),
             data_dir=str(tmp_path / 'data'),
             report_type='consolidated',
         )
@@ -600,7 +599,7 @@ class TestRunFlow:
         )
         scraper.validate_final_output = MagicMock(return_value=(True, []))
         scraper.validate_line_id_uniqueness = MagicMock(return_value=(True, []))
-        scraper.generate_excel = MagicMock(return_value=12)
+        scraper.persist_reports = MagicMock(return_value=12)
 
         results = scraper.run(
             companies=["VALE", "PETROBRAS"],
@@ -615,7 +614,7 @@ class TestRunFlow:
         assert results["4170"]["company_name"] == "VALE"
         assert scraper.download_and_extract.call_count == 2
         assert scraper.process_data.call_count == 2
-        assert scraper.generate_excel.call_count == 2
+        assert scraper.persist_reports.call_count == 2
 
     def test_run_supports_progress_and_cancel_callbacks(self, scraper):
         scraper.fetch_company_list = MagicMock()
@@ -627,7 +626,7 @@ class TestRunFlow:
         scraper.process_all_reports = MagicMock(
             return_value=({"BPA": pd.DataFrame({"LINE_ID_BASE": ["A"]})}, [])
         )
-        scraper.generate_excel = MagicMock(return_value=9)
+        scraper.persist_reports = MagicMock(return_value=9)
 
         progress_calls = []
         state = {"first": True}
@@ -663,7 +662,7 @@ class TestRunFlow:
         scraper.process_all_reports = MagicMock(
             return_value=({"BPA": pd.DataFrame({"LINE_ID_BASE": ["A"]})}, [])
         )
-        scraper.generate_excel = MagicMock(
+        scraper.persist_reports = MagicMock(
             side_effect=[
                 OperationalError("INSERT INTO x", {"id": 1}, Exception("database is locked")),
                 5,
@@ -678,7 +677,7 @@ class TestRunFlow:
 
         assert results["4170"]["status"] == "success"
         assert results["4170"]["rows_inserted"] == 5
-        assert scraper.generate_excel.call_count == 2
+        assert scraper.persist_reports.call_count == 2
 
 
 # ──────────────────────────────────────────────────────────────────────────────

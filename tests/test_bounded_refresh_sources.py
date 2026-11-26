@@ -80,13 +80,13 @@ def _worker(tmp_path, monkeypatch):
     monkeypatch.setattr(zipfile.ZipFile, "extract", unpack)
     monkeypatch.setattr(CVMScraper, "fetch_company_list", catalog)
     monkeypatch.setattr(CVMScraper, "_fetch_remote_zip_metadata", lambda *_: {})
-    monkeypatch.setattr(CVMScraper, "generate_excel", persist)
+    monkeypatch.setattr(CVMScraper, "persist_reports", persist)
     return RefreshJobWorker(settings=settings, repository=repository), counts, scrapers
 
 
 def _observe_persistence(monkeypatch):
     snapshots = []
-    persist = CVMScraper.generate_excel
+    persist = CVMScraper.persist_reports
 
     def write(scraper, name, cvm, reports, qas=None):
         cache = scraper.source_cache
@@ -98,7 +98,7 @@ def _observe_persistence(monkeypatch):
         })
         return persist(scraper, name, cvm, reports, qas)
 
-    monkeypatch.setattr(CVMScraper, "generate_excel", write)
+    monkeypatch.setattr(CVMScraper, "persist_reports", write)
     return snapshots
 
 
@@ -364,7 +364,7 @@ def test_company_failure_or_retry_discards_reuse_and_preserves_individual_result
     worker, counts, _ = _worker(tmp_path, monkeypatch)
     first = _queue(worker.repository, 9512)
     second = _queue(worker.repository, 4170)
-    persist = CVMScraper.generate_excel
+    persist = CVMScraper.persist_reports
     attempts = Counter()
 
     def write(scraper, name, cvm, reports, qas=None):
@@ -377,7 +377,7 @@ def test_company_failure_or_retry_discards_reuse_and_preserves_individual_result
             raise OperationalError("persist", {}, RuntimeError("transient locked database"))
         return persist(scraper, name, cvm, reports, qas)
 
-    monkeypatch.setattr(CVMScraper, "generate_excel", write)
+    monkeypatch.setattr(CVMScraper, "persist_reports", write)
     monkeypatch.setattr("src.financials.scraper.time.sleep", lambda _: None)
     worker.run_once()
     assert worker._source_cache is None

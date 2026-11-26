@@ -36,6 +36,9 @@ never copied into GICS fields. The B3 source and its refresh are described in
 - On every startup (packaged and dev), the app validates the shipped curated
   dataset, loads it into `company_classification_curated`, and materializes it
   into `companies.gics_*`, `gics_sub_industry_code` and `classification_origin`.
+  It skips this work when `dataset_sha256` (a hash of the curated dataset and the
+  GICS structure together) matches the shipped files and no company row is left
+  unmaterialized.
 - `classification_origin` is `user` (local edit), `curated`, `unclassified` (curated as not
   classifiable, with a reason) or `pending` (not curated yet). Pending and
   unclassified companies have empty GICS fields; screens show "Pending" or

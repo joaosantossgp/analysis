@@ -81,7 +81,6 @@ class RefreshRequest:
     report_type: str = "consolidated"
     max_workers: int = 2
     data_dir: str | None = None
-    output_dir: str | None = None
     policy: RefreshPolicy = field(default_factory=RefreshPolicy)
 
     def __post_init__(self) -> None:

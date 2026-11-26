@@ -26,11 +26,6 @@ def main() -> None:
         help="Report type",
     )
     parser.add_argument(
-        "--output_dir",
-        default=str(settings.paths.reports_dir),
-        help="Directory for output files",
-    )
-    parser.add_argument(
         "--data_dir",
         default=str(settings.paths.input_dir),
         help="Directory for data storage",
@@ -56,7 +51,6 @@ def main() -> None:
         end_year=args.end_year,
         report_type=args.type,
         data_dir=args.data_dir,
-        output_dir=args.output_dir,
         policy=RefreshPolicy(
             skip_complete_company_years=bool(args.skip_complete),
             enable_fast_lane=bool(args.fast_lane),

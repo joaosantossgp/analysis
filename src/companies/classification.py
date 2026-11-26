@@ -176,10 +176,16 @@ def sync_curated_classification(
 
     Validation happens before any write, so an invalid dataset leaves the previous
     classification untouched. Companies absent from the dataset become pending.
+    Skips all work when the same dataset and structure are already loaded and every
+    company row is materialized (companies written later materialize on insert).
     """
+    # The structure is part of the digest: it alone can change what gets materialized.
+    digest = hashlib.sha256(Path(curated_path).read_bytes() + Path(structure_path).read_bytes()).hexdigest()
+    with engine.connect() as conn:
+        if _already_synced(conn, digest):
+            return {"skipped_unchanged": 1}
     structure = load_gics_structure(Path(structure_path))
     rows = read_curated_dataset(Path(curated_path), structure)
-    digest = hashlib.sha256(Path(curated_path).read_bytes()).hexdigest()
     loaded_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     by_cd = {row["cd_cvm"]: row for row in rows}
     with engine.begin() as conn:
@@ -209,6 +215,16 @@ def sync_curated_classification(
         "companies": len(company_ids),
         "curated_companies": sum(1 for cd in company_ids if cd in by_cd and by_cd[cd]["sub_industry_code"]),
     }
+
+
+def _already_synced(conn, digest: str) -> bool:
+    if not has_curated_layer(conn):
+        return False
+    loaded = {r[0] for r in conn.execute(text("SELECT DISTINCT dataset_sha256 FROM company_classification_curated"))}
+    if loaded != {digest}:
+        return False
+    unmaterialized = conn.execute(text("SELECT 1 FROM companies WHERE classification_origin IS NULL LIMIT 1"))
+    return unmaterialized.first() is None
 
 
 def has_curated_layer(conn) -> bool:

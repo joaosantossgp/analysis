@@ -281,8 +281,10 @@ Runtime diagnostics:
 .\.venv\Scripts\python.exe scripts/diagnostics/db_portability_smoke.py --database-url postgresql://user:pass@host:5432/db --write-check
 ```
 
-Workbook QA (manual; run only after generating an XLSX through `main.py` or
-the desktop export; not part of setup or CI):
+Legacy workbook QA (manual; not part of setup or CI). These scripts read the
+per-company ingestion workbook layout (`BPA`/`BPP`/`DRE`/`DFC` sheets) that
+refresh wrote before #548. Refresh no longer writes it, and the desktop export
+uses a different layout, so they only apply to workbooks kept from earlier runs:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts/qa/quick_verify.py --xlsx output/reports/PETROBRAS_financials.xlsx

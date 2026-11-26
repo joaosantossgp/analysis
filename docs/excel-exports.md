@@ -41,8 +41,8 @@ When imported financial evidence exists, `source_observations` and
 when events exist, including missing inputs and excluded ambiguous accounts.
 The source sheet preserves both accumulated and standalone durations, original
 value text, filing version, currency/scale and source identity. The lineage
-sheet distinguishes reported, calculated and unavailable cells. Ingestion
-workbooks from `CVMScraper.generate_excel` also include these audit sheets.
+sheet distinguishes reported, calculated and unavailable cells. Refresh does
+not write workbooks; every workbook comes from this on-demand export.
 
 Single-statement scoped exports contain the relevant raw sheet plus metadata.
 They also include available source/lineage and QA evidence. Metadata marks
