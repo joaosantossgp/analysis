@@ -39,8 +39,17 @@ Keep detail in the owning contract or dated evidence. Last updated: 2026-11-26.
   all sub-issues delivered. The [packaged validation](governance/2026-11-26-data-journey-packaged-validation.md)
   (#550) passed the first-launch, progressive download, cancel, Stale, offline-launch and
   update-check states on a partial run. It found six bugs (#575-#580); the most serious is
-  #575 (a mid-session network drop makes downloaded data unreadable). A full first run
-  takes about 2 hours and was not completed (#574). The goal stays open until the bugs are triaged.
+  #575 (a mid-session network drop makes downloaded data unreadable). The goal stays open
+  until the bugs are triaged.
+- First data update cost (goal #574, #582-#587): QA log scope index, QA events stored as
+  source observation ids, DMPL/DVA no longer read, batched evidence inserts, and five unused
+  `financial_reports` indexes dropped. A full fresh first run (655 active companies,
+  2022-2026, official CVM, dev runtime) now takes **17 minutes**, with a flat pace (about
+  27 companies with statements per minute from start to end), and ends with a **5.4 GB**
+  database (storage budget check passes). Before: well over 2 hours and 10.7 GB for the same
+  436 companies with statements and the same 2.37M financial rows. The default scope
+  (ADR 0010) stays unchanged. Not validated in the packaged app. Whether DMPL should be
+  persisted is #589.
 
 ## Validation and historical evidence
 
