@@ -112,6 +112,25 @@ def test_init_db_skips_pragmas_for_postgresql(mock_backfill):
     assert "idx_qa_logs_scope" in idx_sql
 
 
+def test_startup_keeps_only_the_financial_reports_indexes_reads_use(tmp_path):
+    from sqlalchemy import create_engine, text
+
+    path = tmp_path / "legacy.db"
+    CVMDatabase(str(path))._engine.dispose()
+    legacy = create_engine(f"sqlite:///{path}")
+    with legacy.begin() as conn:  # indexes created by versions before #586
+        conn.execute(text('CREATE INDEX idx_fr_cd_cvm ON financial_reports("CD_CVM")'))
+        conn.execute(text('CREATE INDEX idx_fr_cd_conta_period_label ON financial_reports("CD_CONTA", "PERIOD_LABEL")'))
+    legacy.dispose()
+
+    db = CVMDatabase(str(path))
+    with db._engine.connect() as conn:
+        names = {row[1] for row in conn.execute(text("PRAGMA index_list('financial_reports')"))}
+    db._engine.dispose()
+    assert names == {"sqlite_autoindex_financial_reports_1", "idx_fr_cd_cvm_stmt_year",
+                     "idx_fr_cvm_year", "idx_fr_year_period"}
+
+
 def test_scoped_qa_replacement_uses_an_index_on_a_legacy_database(tmp_path):
     from sqlalchemy import create_engine, text
 

@@ -19,6 +19,10 @@ this as implementation guidance.
 > `idx_fr_year_period` are candidates for later backup-and-compact removal.
 > Keep `idx_fr_cd_cvm_stmt_year` and `idx_fr_cvm_year` for now because statement,
 > export-period, and DFC depreciation reads still use raw `financial_reports`.
+>
+> **2026-11-26 update (#586):** startup now drops `idx_fr_cd_cvm`,
+> `idx_fr_period_label`, `idx_fr_cd_conta`, `idx_fr_cd_cvm_period_label` and
+> `idx_fr_cd_conta_period_label`; `idx_fr_year_period` is kept.
 
 > **SQLite vs PostgreSQL note:** The benchmark runs on in-memory SQLite to be self-contained. SQLite's query planner differs from PostgreSQL's in two relevant ways: (1) it will not use a column index when comparing two columns from the same table (self-referential joins), and (2) it does not support partial/functional indexes. The findings below distinguish SQLite-confirmed improvements from PostgreSQL-expected improvements.
 

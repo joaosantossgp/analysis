@@ -140,21 +140,20 @@ def init_db_tables(engine: Engine) -> None:
 
     _index_ddl = [
         'CREATE INDEX {c}IF NOT EXISTS idx_company_views_count ON company_views(view_count DESC)',
-        'CREATE INDEX {c}IF NOT EXISTS idx_fr_cd_cvm ON financial_reports("CD_CVM")',
         'CREATE INDEX {c}IF NOT EXISTS idx_fr_cd_cvm_stmt_year ON financial_reports("CD_CVM", "STATEMENT_TYPE", "REPORT_YEAR")',
         'CREATE INDEX {c}IF NOT EXISTS idx_fr_cvm_year ON financial_reports("CD_CVM", "REPORT_YEAR", "PERIOD_LABEL")',
-        'CREATE INDEX {c}IF NOT EXISTS idx_fr_cd_conta ON financial_reports("CD_CONTA")',
         "CREATE INDEX {c}IF NOT EXISTS idx_companies_ticker ON companies(ticker_b3)",
         # #582: each refresh deletes QA by this scope per statement-year; without it every delete scans qa_logs.
         'CREATE INDEX {c}IF NOT EXISTS idx_qa_logs_scope ON qa_logs("CD_CVM", "STATEMENT_TYPE", "REPORT_YEAR")',
-        # Benchmarked 2026-04-20 (issue #134): EXPLAIN QUERY PLAN confirmed full SCAN of
-        # financial_reports for any query filtered only by PERIOD_LABEL (sector_years_map,
-        # available_years, sector_metric_rows). These composites let the planner eliminate
-        # annual-vs-quarterly rows and the CD_CONTA IN filter without additional table scans.
         'CREATE INDEX {c}IF NOT EXISTS idx_fr_year_period ON financial_reports("REPORT_YEAR", "PERIOD_LABEL")',
-        'CREATE INDEX {c}IF NOT EXISTS idx_fr_period_label ON financial_reports("PERIOD_LABEL")',
-        'CREATE INDEX {c}IF NOT EXISTS idx_fr_cd_cvm_period_label ON financial_reports("CD_CVM", "PERIOD_LABEL")',
-        'CREATE INDEX {c}IF NOT EXISTS idx_fr_cd_conta_period_label ON financial_reports("CD_CONTA", "PERIOD_LABEL")',
+        # #586: no read path uses these (EXPLAIN QUERY PLAN of every financial_reports reader on a
+        # 436-company DB); each cost a write per inserted row. Reads use the unique key,
+        # idx_fr_cd_cvm_stmt_year, idx_fr_cvm_year and idx_fr_year_period.
+        'DROP INDEX {c}IF EXISTS idx_fr_cd_cvm',
+        'DROP INDEX {c}IF EXISTS idx_fr_cd_conta',
+        'DROP INDEX {c}IF EXISTS idx_fr_period_label',
+        'DROP INDEX {c}IF EXISTS idx_fr_cd_cvm_period_label',
+        'DROP INDEX {c}IF EXISTS idx_fr_cd_conta_period_label',
     ]
     if dialect == "postgresql":
         # CONCURRENTLY cannot run inside a transaction — requires AUTOCOMMIT
