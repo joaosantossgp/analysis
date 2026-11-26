@@ -509,26 +509,34 @@ class CVMDatabase:
                 conn.execute(text('DELETE FROM financial_value_lineage WHERE cd_cvm = :cvm '
                                   'AND statement_type = :stmt AND report_year = :year'), params)
             imported_at = datetime.now(timezone.utc).isoformat()
+            observation_rows, lineage_rows = [], []
             for statement, frame in processed_reports.items():
                 if frame is None:
                     continue
                 for observation in frame.attrs.get('source_observations', []):
                     end = observation.get('DT_FIM_EXERC') or observation.get('DT_REFER') or ''
                     year = int(str(end)[:4]) if str(end)[:4].isdigit() else None
-                    conn.execute(text('''
-                        INSERT INTO financial_source_observations
-                        (observation_id, cd_cvm, statement_type, report_year, payload_json, imported_at)
-                        VALUES (:id, :cvm, :stmt, :year, :payload, :imported)
-                        ON CONFLICT (observation_id) DO NOTHING
-                    '''), dict(id=observation['observation_id'], cvm=int(cvm_code), stmt=statement,
-                              year=year, payload=json.dumps(observation, ensure_ascii=False, default=str, allow_nan=False), imported=imported_at))
+                    observation_rows.append(dict(
+                        id=observation['observation_id'], cvm=int(cvm_code), stmt=statement, year=year,
+                        payload=json.dumps(observation, ensure_ascii=False, default=str, allow_nan=False),
+                        imported=imported_at))
                 for cell in frame.attrs.get('value_lineage', []):
-                    conn.execute(text('''
-                        INSERT INTO financial_value_lineage
-                        (cd_cvm, statement_type, report_year, period_label, line_id_base, payload_json)
-                        VALUES (:cvm, :stmt, :year, :period, :line, :payload)
-                    '''), dict(cvm=int(cvm_code), stmt=statement, year=cell['year'], period=cell['period'],
-                              line=cell['line_id_base'], payload=json.dumps(cell, ensure_ascii=False)))
+                    lineage_rows.append(dict(cvm=int(cvm_code), stmt=statement, year=cell['year'], period=cell['period'],
+                                             line=cell['line_id_base'], payload=json.dumps(cell, ensure_ascii=False)))
+            # One executemany per table instead of one statement per row (#585).
+            if observation_rows:
+                conn.execute(text('''
+                    INSERT INTO financial_source_observations
+                    (observation_id, cd_cvm, statement_type, report_year, payload_json, imported_at)
+                    VALUES (:id, :cvm, :stmt, :year, :payload, :imported)
+                    ON CONFLICT (observation_id) DO NOTHING
+                '''), observation_rows)
+            if lineage_rows:
+                conn.execute(text('''
+                    INSERT INTO financial_value_lineage
+                    (cd_cvm, statement_type, report_year, period_label, line_id_base, payload_json)
+                    VALUES (:cvm, :stmt, :year, :period, :line, :payload)
+                '''), lineage_rows)
 
             # 2. Insert QA Logs
             if qa_logs:
