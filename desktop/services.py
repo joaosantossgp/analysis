@@ -385,6 +385,10 @@ class IntelligentSelectorService:
             latest_mtime = max(latest_mtime, csv_path.stat().st_mtime)
         return {"count": int(count), "latest_mtime": float(latest_mtime)}
 
+    def load_active_universe(self) -> list[dict[str, Any]]:
+        """Public accessor for the active CVM company universe."""
+        return self._load_active_universe()
+
     def _load_active_universe(self) -> list[dict[str, Any]]:
         from src.companies.catalog import CompanyCatalogService, CompanyCatalogUnavailableError
 
