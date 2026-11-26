@@ -40,3 +40,37 @@ describe("company-focused shell", () => {
     expect(render(createElement(HomePage))).toMatch(/href="\/empresas"[^>]*>Open Companies/);
   });
 });
+
+describe("Home with an empty local database", () => {
+  const renderWith = (state: unknown) => {
+    const client = new QueryClient();
+    client.setQueryData(["local-database-state"], state);
+    return renderToStaticMarkup(
+      createElement(QueryClientProvider, { client }, createElement(MemoryRouter, { initialEntries: ["/"] }, createElement(HomePage))),
+    );
+  };
+
+  it("leads with the download instead of the layout chooser", async () => {
+    const { MOCK_LOCAL_DATABASE_STATES } = await import("../lib/bridge/mockLocalDatabase");
+    const html = renderWith(MOCK_LOCAL_DATABASE_STATES.empty);
+    expect(html).toContain("No CVM data on this computer yet");
+    expect(html).not.toContain("Start with a company");
+    expect(html.indexOf("Analyst Workspace")).toBeLessThan(html.indexOf("No CVM data on this computer yet"));
+  });
+
+  it("drops the MODE, SYNC TIME and JOB ACTIVE chips and renames COVERAGE", async () => {
+    const { MOCK_LOCAL_DATABASE_STATES } = await import("../lib/bridge/mockLocalDatabase");
+    const html = renderWith(MOCK_LOCAL_DATABASE_STATES.current);
+    expect(html).not.toContain("MODE:");
+    expect(html).not.toContain("SYNC TIME:");
+    expect(html).not.toContain("COVERAGE:");
+    expect(html).toContain("COMPLETENESS:");
+  });
+
+  it("shows completeness and gaps as unknown on an empty database", async () => {
+    const { MOCK_LOCAL_DATABASE_STATES } = await import("../lib/bridge/mockLocalDatabase");
+    const html = renderWith(MOCK_LOCAL_DATABASE_STATES.empty);
+    expect(html).toMatch(/COMPLETENESS:<\/span><span[^>]*>—/);
+    expect(html).toMatch(/GAPS:<\/span><span[^>]*>—/);
+  });
+});

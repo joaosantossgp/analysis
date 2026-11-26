@@ -7,6 +7,7 @@ import { whenBridgeReady } from "@/lib/bridge/adapter";
 import { PageHeader } from "@/components/PageHeader";
 import { StateBanner } from "@/components/feedback/StateBanner";
 import { CountryKpiGrid } from "@/components/indicators/CountryKpiGrid";
+import { LocalDataEmptyState } from "@/components/shell/LocalDataEmptyState";
 
 const ENERGY_UTILITIES_SLUG = "utilities";
 
@@ -332,10 +333,10 @@ function Body({
   }
   if (detail.companies.length === 0) {
     return (
-      <StateBanner
-        variant="empty"
+      <LocalDataEmptyState
         title="No companies"
-        message="No companies registered in this sector. Run Database Updates to populate data."
+        emptyMessage="The local database is empty. Download CVM data to see the companies in this sector."
+        fallbackMessage="No companies are classified in this sector yet."
       />
     );
   }

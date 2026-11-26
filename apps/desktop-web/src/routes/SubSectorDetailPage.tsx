@@ -287,7 +287,7 @@ function Body({
       <StateBanner
         variant="empty"
         title="No companies"
-        message="No companies registered in this sub-sector. Run Database Updates to populate data."
+        message="No companies are classified in this sub-sector yet."
       />
     );
   }

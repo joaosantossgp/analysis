@@ -14,6 +14,7 @@ import { whenBridgeReady } from "@/lib/bridge/adapter";
 import type { ClassificationOrigin } from "@/lib/bridge/types";
 import { CLASSIFICATION_STATUS_LABEL } from "@/lib/classification";
 import { StateBanner } from "@/components/feedback/StateBanner";
+import { LocalDataEmptyState } from "@/components/shell/LocalDataEmptyState";
 
 const PAGE_SIZE = 25;
 
@@ -486,10 +487,10 @@ function Body({
       );
     }
     return (
-      <StateBanner
-        variant="empty"
+      <LocalDataEmptyState
         title="No companies"
-        message="No companies in the local database. Run Database Updates to populate data."
+        emptyMessage="The local database is empty. Download CVM data to list every active company; statements follow company by company."
+        fallbackMessage="No companies are listed in the local database."
       />
     );
   }

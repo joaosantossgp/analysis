@@ -271,7 +271,7 @@ export function StatementGrid({
       <StateBanner
         variant="empty"
         title={`${statementType} — no rows for ${selectedYears.join(", ")}`}
-        message="Try another statement type or refresh this company in Database Updates."
+        message="Try another statement type or update this company."
       />
       </>
     );
