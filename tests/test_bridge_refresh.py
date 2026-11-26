@@ -281,7 +281,7 @@ def test_running_jobs_are_marked_interrupted_after_restart(tmp_path: Path):
 
     status = manager.get_refresh_status({"job_id": "job-1"})
     assert status["state"] == "interrupted"
-    assert "encerrado" in status["error"]
+    assert "app closed" in status["error"]
 
 
 def test_bridge_refresh_methods_delegate_to_manager():

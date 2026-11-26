@@ -6,6 +6,7 @@ import { StateBanner } from "@/components/feedback/StateBanner";
 import { useWorkspaceStatus } from "@/lib/api/updateBase";
 import { useLocalDatabaseState } from "@/lib/api/localDatabase";
 import { EmptyDatabaseHero } from "@/components/home/EmptyDatabaseHero";
+import { LocalDatabaseNotice } from "@/components/home/LocalDatabaseNotice";
 
 // Configurable Workspace imports
 import { WORKSPACE_REGISTRY } from "@/components/home/WorkspaceRegistry";
@@ -624,6 +625,8 @@ export function HomePage() {
           </button>
         </div>
       </div>
+
+      <LocalDatabaseNotice />
 
       {databaseEmpty ? (
         <EmptyDatabaseHero
