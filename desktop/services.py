@@ -1591,7 +1591,10 @@ class DesktopRefreshJobManager:
                 end_year=int(request_payload["end_year"]),
                 policy=RefreshPolicy(
                     skip_complete_company_years=mode != "full",
-                    enable_fast_lane=mode == "missing",
+                    # A data update honors its history range; the fast lane is
+                    # for other "missing" batches only.
+                    enable_fast_lane=mode == "missing" and job.get("scope") != "data_update",
+                    reuse_catalog_snapshot=job.get("scope") in {"data_update", "retry"},
                     force_refresh=mode == "full",
                 ),
             )

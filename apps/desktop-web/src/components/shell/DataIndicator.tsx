@@ -4,6 +4,8 @@ import { useLocalDatabaseState, useOnline } from "@/lib/api/localDatabase";
 import type { LocalDatabaseState } from "@/lib/bridge/types.localDatabase";
 import { describeLocalDatabaseState, LOCAL_DATABASE_TONE_COLOR } from "@/lib/localDatabase/describe";
 
+import { DataAction } from "./DataAction";
+
 const MAX_LISTED_FAILURES = 5;
 
 /**
@@ -126,6 +128,7 @@ export function DataPanelBody({ state, online }: { state: LocalDatabaseState; on
           <div style={{ width: `${d.percent}%`, height: "100%", background: "var(--color-id-ticker)", transition: "width 180ms ease" }} />
         </div>
       ) : null}
+      <DataAction state={state} online={online} context="panel" />
       {failures.length ? (
         <ul style={{ borderTop: "1px solid var(--color-border-subtle)" }}>
           {failures.slice(0, MAX_LISTED_FAILURES).map((f) => (

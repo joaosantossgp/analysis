@@ -44,7 +44,9 @@ def scraper(tmp_path):
         mock_std_cls.return_value = MagicMock()
 
         from src.financials.scraper import CVMScraper
+        from src.platform.settings import build_settings
         s = CVMScraper(
+            settings=build_settings(project_root=tmp_path),  # never read or write real runtime data
             output_dir=str(tmp_path / 'output' / 'reports'),
             data_dir=str(tmp_path / 'data'),
             report_type='consolidated',
@@ -733,3 +735,25 @@ class TestProcessAllReports:
 
         assert 'BPA' in reports
         assert qa_errors == []
+
+
+def test_fetch_company_list_reuses_fresh_catalog_snapshot_without_network(scraper, monkeypatch):
+    import json as _json
+
+    csv_text = "CD_CVM;DENOM_SOCIAL;DENOM_COMERC;SETOR_ATIV;CNPJ_CIA\n9512;PETROLEO BRASILEIRO S.A.;PETROBRAS;Petroleo e Gas;33.000.167/0001-01\n"
+    snapshot_path = scraper.settings.paths.metadata_dir / "cvm_company_catalog.json"
+    snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+    snapshot_path.write_text(
+        _json.dumps({"schema_version": 1, "source_url": "x", "downloaded_at": "2026-11-25T00:00:00+00:00", "csv": csv_text}),
+        encoding="utf-8",
+    )
+
+    def _no_network(*_args, **_kwargs):
+        raise AssertionError("company list must come from the catalog snapshot")
+
+    monkeypatch.setattr(scraper, "_http_get", _no_network)
+    scraper.reuse_catalog_snapshot = True
+    scraper.fetch_company_list()
+    assert scraper.companies_map["PETROBRAS"] == 9512
+    assert scraper.setores_map["9512"] == "Petroleo e Gas"
+    assert scraper.cnpjs_map["9512"] == "33.000.167/0001-01"

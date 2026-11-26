@@ -152,6 +152,7 @@ class CVMScraper:
         self.companies_map = {}
         self.setores_map = {}
         self.cnpjs_map = {}
+        self.reuse_catalog_snapshot = False
         
         # Standardizer
         canonical_csv_path = str(self.settings.paths.canonical_accounts_path)
@@ -187,13 +188,27 @@ class CVMScraper:
             return requests.head(*args, **kwargs)
         return self._http_session().head(*args, **kwargs)
 
+    def _catalog_snapshot_csv(self) -> bytes | None:
+        """The CVM registry CSV saved by the explicit catalog refresh, if any."""
+        snapshot_path = self.settings.paths.metadata_dir / "cvm_company_catalog.json"
+        try:
+            payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
+            return str(payload["csv"]).encode("latin1") if payload.get("schema_version") == 1 else None
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
+
     def fetch_company_list(self):
         print("Fetching company list...")
         url = "https://dados.cvm.gov.br/dados/CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv"
         try:
-            response = self._http_get(url, timeout=self.company_list_timeout)
-            response.raise_for_status()
-            df = _pd().read_csv(io.BytesIO(response.content), sep=";", encoding="latin1")
+            # Data updates refresh the catalog just before dispatch: reuse it
+            # instead of downloading the same registry file a second time.
+            content = self._catalog_snapshot_csv() if self.reuse_catalog_snapshot else None
+            if content is None:
+                response = self._http_get(url, timeout=self.company_list_timeout)
+                response.raise_for_status()
+                content = response.content
+            df = _pd().read_csv(io.BytesIO(content), sep=";", encoding="latin1")
             
             social = df[df['DENOM_SOCIAL'].notna()].set_index(df[df['DENOM_SOCIAL'].notna()]['DENOM_SOCIAL'].str.upper().str.strip())['CD_CVM']
             comerc = df[df['DENOM_COMERC'].notna()].set_index(df[df['DENOM_COMERC'].notna()]['DENOM_COMERC'].str.upper().str.strip())['CD_CVM']

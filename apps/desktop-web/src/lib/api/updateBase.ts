@@ -53,14 +53,15 @@ export type StartRefreshParams = {
   companyIds?: number[];
 };
 
+/** Only `mode` matters now: the backend fixes the scope (ADR 0010). */
 export type StartDataUpdateParams = {
   mode?: RefreshMode;
-  universePreset: CompanyUniversePreset;
-  batchSize: DataUpdateSettings["batch_size"];
-  retryFailed: boolean;
-  recomputeCoverage: boolean;
-  startYear: number;
-  endYear: number;
+  universePreset?: CompanyUniversePreset;
+  batchSize?: DataUpdateSettings["batch_size"];
+  retryFailed?: boolean;
+  recomputeCoverage?: boolean;
+  startYear?: number;
+  endYear?: number;
 };
 
 export type ResetLocalDatabaseParams = {
