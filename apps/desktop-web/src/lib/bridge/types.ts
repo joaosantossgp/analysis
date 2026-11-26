@@ -372,7 +372,7 @@ export interface BridgeApi {
     params: Record<string, unknown>,
   ): Promise<{ ok: boolean; error?: string; classification?: CompanyClassification }>;
   get_sub_sector_detail(params: Record<string, unknown>): Promise<SectorDetailResponse>;
-  check_update(params?: Record<string, unknown>): Promise<{ available: boolean; version?: string; zip_url?: string; error?: string }>;
+  check_update(params?: Record<string, unknown>): Promise<{ available: boolean; version?: string; zip_url?: string; status?: string; error?: string }>;
   apply_update(params?: Record<string, unknown>): Promise<{ started: boolean; error?: string }>;
   get_update_progress(params?: Record<string, unknown>): Promise<UpdateProgressStatus>;
   snooze_update(params?: Record<string, unknown>): Promise<{ ok: boolean; error?: string }>;

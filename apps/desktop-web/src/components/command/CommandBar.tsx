@@ -142,7 +142,7 @@ export function CommandBar({ open, primed, onClose }: Props) {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="Buscar empresas, rotas, ações…"
+            placeholder="Search companies, pages and actions…"
             className="w-full bg-transparent font-mono outline-none"
             style={{ color: "var(--color-text-primary)", fontSize: "var(--text-base)" }}
             aria-label="Comando ou busca"
@@ -170,8 +170,8 @@ export function CommandBar({ open, primed, onClose }: Props) {
               style={{ color: "var(--color-text-tertiary)" }}
             >
               {query.trim()
-                ? "Nenhum resultado."
-                : "Digite para buscar empresas, ou selecione uma rota."}
+                ? "No results."
+                : "Type to search companies, or pick a page."}
             </li>
           ) : (
             results.map((cmd, idx) => {

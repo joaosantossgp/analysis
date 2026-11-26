@@ -195,10 +195,10 @@ class CompanyBridgeMixin:
             svc = self._svc()
             metrics_by_year = svc.query_layer.get_company_historical_indicator_metrics(cd_cvm)
 
-            # 2. Fetch stock price history from Yahoo Finance or local cache
-            from src.companies.market_cap import MarketCapService  # noqa: PLC0415
+            # 2. Stock prices come from the local market_history cache only. A
+            # normal view never calls an external source; fetching prices is an
+            # explicit action (refresh_company_market_history).
             from sqlalchemy import text  # noqa: PLC0415
-            mkt_cap_svc = MarketCapService(settings=svc.settings, read_service=svc)
 
             # Resolve ticker
             ticker = None
@@ -211,9 +211,10 @@ class CompanyBridgeMixin:
                 ticker = identity.ticker_b3 if identity else None
 
             prices_by_year = {}
+            price_history_status = "no_ticker"
             if ticker:
+                price_history_status = "missing"
                 try:
-                    # Try local cache first
                     with svc.engine.connect() as conn:
                         rows = conn.execute(
                             text(
@@ -226,15 +227,14 @@ class CompanyBridgeMixin:
                             ),
                             {"cd_cvm": cd_cvm},
                         ).fetchall()
-                    if rows:
-                        for r_date, r_close in rows:
-                            if r_close is not None:
-                                yr = datetime.strptime(r_date, "%Y-%m-%d").year
-                                prices_by_year[yr] = float(r_close)
-                    else:
-                        prices_by_year = mkt_cap_svc.fetch_yahoo_price_history(ticker)
+                    for r_date, r_close in rows:
+                        if r_close is not None:
+                            yr = datetime.strptime(r_date, "%Y-%m-%d").year
+                            prices_by_year[yr] = float(r_close)
+                    if prices_by_year:
+                        price_history_status = "local"
                 except Exception:
-                    prices_by_year = mkt_cap_svc.fetch_yahoo_price_history(ticker)
+                    price_history_status = "unavailable"
 
             # 3. Merge
             all_years = sorted(list(set(metrics_by_year.keys()) | set(prices_by_year.keys())))
@@ -254,6 +254,7 @@ class CompanyBridgeMixin:
                 "ok": True,
                 "cd_cvm": cd_cvm,
                 "ticker_b3": ticker,
+                "price_history_status": price_history_status,
                 "yearly_data": yearly_data
             })
 

@@ -7,10 +7,8 @@ import {
   getCompanyCommandWorkspaceLinks,
   historyPresetRange,
   historyPopoverStyle,
-  loadOnDemandUpdateSources,
-  selectedOnDemandRefreshSources,
+  companyActionLabel,
   shouldShowRefreshOutcome,
-  updateSourcesEnabled,
 } from "./CompanyCommandBar";
 
 type InvalidationKeys = (cdCvm: number) => Array<readonly unknown[]>;
@@ -60,16 +58,21 @@ describe("Company Command Bar on-demand settings popover", () => {
 });
 
 describe("Company Command Bar action contract", () => {
-  it("defaults on-demand updates to both financial and market sources", () => {
-    expect(loadOnDemandUpdateSources(null)).toEqual({ cvm: true, market: true });
-    expect(updateSourcesEnabled({ cvm: true, market: false })).toBe(true);
-    expect(updateSourcesEnabled({ cvm: false, market: false })).toBe(false);
+  it("names the company action by its scope, never Update data", () => {
+    expect(companyActionLabel({ queued: false, pending: false, failed: false })).toBe("Update company");
+    expect(companyActionLabel({ queued: false, pending: true, failed: false })).toBe("Updating company");
+    expect(companyActionLabel({ queued: false, pending: false, failed: true })).toBe("Retry update");
+    for (const state of [{ queued: false, pending: false, failed: false }, { queued: true, pending: false, failed: false }]) {
+      expect(companyActionLabel(state)).not.toBe("Update data");
+    }
   });
 
-  it("uses only the sources selected for an on-demand update", () => {
-    expect(selectedOnDemandRefreshSources({ cvm: true, market: true })).toEqual(["cvm", "market"]);
-    expect(selectedOnDemandRefreshSources({ cvm: false, market: true })).toEqual(["market"]);
-    expect(selectedOnDemandRefreshSources({ cvm: false, market: false })).toEqual([]);
+  it("pulls a company queued in a running data update ahead with Download now", () => {
+    expect(companyActionLabel({ queued: true, pending: false, failed: false })).toBe("Download now");
+  });
+
+  it("labels market prices as external data", () => {
+    expect(COMPANY_COMMAND_LABELS.marketPrices).toBe("Update market prices (external)");
   });
 
   it("turns the five-year history preset into an inclusive download range", () => {

@@ -1,8 +1,9 @@
 import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 
 import { fetchCompanyHistoricalIndicators } from "@/lib/api/companies";
+import { triggerMarketHistoryRefresh } from "@/lib/api/marketHistory";
 import { Panel } from "@/components/surface/Panel";
 import { Sparkline } from "@/components/data/Sparkline";
 import { CompanySelector } from "./shared/CompanySelector";
@@ -229,7 +230,7 @@ export function WatchlistCard({
   );
 }
 
-function WatchlistRow({
+export function WatchlistRow({
   company,
   metric,
   isCompact,
@@ -238,10 +239,18 @@ function WatchlistRow({
   metric: "mg_ebit" | "stock_price" | "roe" | "mg_liq";
   isCompact: boolean;
 }) {
+  const queryClient = useQueryClient();
   const { data, isLoading, error } = useQuery({
     queryKey: ["company-historical-indicators", company.cdCvm],
     queryFn: () => fetchCompanyHistoricalIndicators(company.cdCvm),
   });
+  // Prices are external data: fetched only when the analyst asks for them.
+  const fetchPrices = useMutation({
+    mutationFn: () => triggerMarketHistoryRefresh(company.cdCvm, company.ticker || null),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["company-historical-indicators", company.cdCvm] }),
+  });
+  const pricesMissing =
+    metric === "stock_price" && data?.mode === "desktop" && data.data?.price_history_status === "missing";
 
   const values = useMemo(() => {
     if (data?.mode !== "desktop" || !data.data?.yearly_data) return [];
@@ -304,8 +313,28 @@ function WatchlistRow({
       <td className="py-2 text-cyan-400">{company.ticker || `CVM ${company.cdCvm}`}</td>
       {isLoading ? (
         <td colSpan={3} className="py-2 text-3xs text-zinc-600">Loading...</td>
-      ) : error || data?.mode === "browser" ? (
-        <td colSpan={3} className="py-2 text-[10px] text-zinc-650">Browser Mock</td>
+      ) : data?.mode === "browser" ? (
+        <td colSpan={3} className="py-2 text-[10px] text-zinc-500">Browser preview</td>
+      ) : error ? (
+        <td colSpan={3} className="py-2 text-[10px]" style={{ color: "var(--color-state-err)" }}>Unavailable</td>
+      ) : pricesMissing ? (
+        <td colSpan={3} className="py-2 text-[10px] text-zinc-400">
+          No local price history{" "}
+          <button
+            type="button"
+            onClick={() => fetchPrices.mutate()}
+            disabled={fetchPrices.isPending}
+            className="underline"
+            style={{ color: "var(--color-id-link)" }}
+          >
+            {fetchPrices.isPending ? "Fetching…" : "Fetch prices (external)"}
+          </button>
+          {fetchPrices.error ? (
+            <span role="alert" className="ml-2" style={{ color: "var(--color-state-err)" }}>
+              {(fetchPrices.error as Error).message}
+            </span>
+          ) : null}
+        </td>
       ) : (
         <>
           <td className="py-2 font-medium text-zinc-100">
