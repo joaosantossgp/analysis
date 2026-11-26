@@ -536,35 +536,26 @@ class RefreshBridgeMixin:
 
         p = params or {}
         try:
-            current_settings = self._resolve_data_update_settings()
-            settings = self._normalize_data_update_settings({
-                **current_settings,
-                **p,
-            })
-            mode = str(p.get("mode") or "missing").strip().lower()
-            if mode not in {"missing", "full", "outdated", "failed"}:
-                raise ValueError(f"Invalid update mode: {mode}")
+            # One action, fixed scope (ADR 0010): every active CVM company over
+            # the history range, official CVM only. Presets and batch sizes are
+            # no longer inputs.
+            settings = self._resolve_data_update_settings()
+            mode = "failed" if str(p.get("mode") or "").strip().lower() == "failed" else "missing"
 
-            selection = self._onboarding().get_company_universe_by_preset(
-                str(settings["universe_preset"]), refresh_catalog=True
+            selection = self._onboarding().get_company_universe_by_preset("all", refresh_catalog=True)
+            ordered = sorted(
+                selection.entries,
+                key=lambda row: (0 if row.ticker else 1, str(row.company_name or "").upper()),
             )
             refresh_params: dict[str, Any] = {
                 "mode": mode,
                 "scope": "retry" if mode == "failed" else "data_update",
-                "company_ids": list(selection.company_ids),
-                # The current backend processes one queue per request. This is
-                # the safe per-run cap exposed as "empresas por lote" in the UI.
-                "limit": int(settings["batch_size"]),
+                "company_ids": [int(row.cd_cvm) for row in ordered],
                 "start_year": int(settings["start_year"]),
                 "end_year": int(settings["end_year"]),
             }
 
             dispatch = self._refresh().request_refresh(refresh_params)
-            if str(dispatch.get("status") or "").lower() not in {
-                "error",
-                "already_running",
-            }:
-                self._write_app_settings(settings)
             self._svc().invalidate_read_caches()
             self._clear_data_coverage_cache()
             return self._sanitize_for_json({

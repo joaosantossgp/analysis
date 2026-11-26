@@ -1106,11 +1106,21 @@ class ReadServiceQueryMixin:
 
     def _has_sufficient_local_company_catalog(self) -> bool:
         if self._local_company_catalog_is_sufficient_cache is None:
-            self._local_company_catalog_is_sufficient_cache = (
-                len(self._load_local_active_company_rows())
-                >= self.CATALOG_FALLBACK_MIN_LOCAL_COMPANIES
+            self._local_company_catalog_is_sufficient_cache = self._local_covers_active_catalog(
+                {int(row["cd_cvm"]) for row in self._load_local_active_company_rows()}
             )
         return self._local_company_catalog_is_sufficient_cache
+
+    def _local_covers_active_catalog(self, local_codes: set[int]) -> bool:
+        """Local rows stand in for the CVM catalog only once they include every
+        active company; until then the directory merges the catalog so companies
+        not downloaded yet stay visible."""
+        try:
+            active = {int(entry.cd_cvm) for entry in self.company_catalog.list_entries() if entry.is_active}
+        except Exception:
+            # No catalog: the merge path already falls back to local rows.
+            return False
+        return bool(active) and active.issubset(local_codes)
 
     def get_populares_companies(self) -> CompanyDirectoryPage:
         """Returns top-10 B3 companies by market cap in static rank order.

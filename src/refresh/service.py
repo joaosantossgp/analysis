@@ -513,6 +513,7 @@ class HeadlessRefreshService:
             settings=self.settings,
             source_cache=source_cache,
         )
+        scraper.reuse_catalog_snapshot = bool(request.policy.reuse_catalog_snapshot)
         try:
             payload = scraper.run(
                 companies=planned_companies,

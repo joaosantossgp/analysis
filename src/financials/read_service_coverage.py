@@ -750,7 +750,7 @@ class ReadServiceCoverageMixin:
 
     def _load_active_company_rows(self) -> list[dict[str, Any]]:
         local_rows = self._load_local_active_company_rows()
-        if len(local_rows) >= self.CATALOG_FALLBACK_MIN_LOCAL_COMPANIES:
+        if self._local_covers_active_catalog({int(row["cd_cvm"]) for row in local_rows}):
             return local_rows
 
         local_by_code = {int(row["cd_cvm"]): row for row in local_rows}
@@ -1909,9 +1909,9 @@ class ReadServiceCoverageMixin:
         financial-data counts, GICS, coverage_rank).  Catalog-only entries get
         a lightweight stub (name, ticker, legacy sector).
 
-        Unlike _list_company_universe_results this method is never gated by the
-        CATALOG_FALLBACK_MIN_LOCAL_COMPANIES threshold, so it always exposes the
-        full known universe regardless of how many companies have been downloaded.
+        Unlike _list_company_universe_results this method never switches to
+        local-only rows, so it always exposes the full known universe regardless
+        of how many companies have been downloaded.
         """
         cached = (
             self._merged_company_catalog_cache
@@ -2011,7 +2011,7 @@ class ReadServiceCoverageMixin:
             return list(self._company_universe_cache)
 
         local_items = self._load_local_company_universe_results()
-        if len(local_items) >= self.CATALOG_FALLBACK_MIN_LOCAL_COMPANIES:
+        if self._local_covers_active_catalog({int(item.cd_cvm) for item in local_items}):
             return _cache_and_return(local_items)
 
         merged = self._merge_catalog_with_db()
@@ -2027,7 +2027,7 @@ class ReadServiceCoverageMixin:
             return list(self._company_universe_light_cache)
 
         local_items = self._load_local_company_universe_results(include_years=False)
-        if len(local_items) >= self.CATALOG_FALLBACK_MIN_LOCAL_COMPANIES:
+        if self._local_covers_active_catalog({int(item.cd_cvm) for item in local_items}):
             return _cache_and_return(local_items)
 
         merged = self._merge_catalog_with_db(include_years=False)

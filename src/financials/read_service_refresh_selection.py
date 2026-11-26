@@ -279,12 +279,12 @@ def _load_batch_candidate_companies(
         ]
 
     if company_ids:
-        wanted = {int(value) for value in company_ids}
-        items = [
-            item
-            for item in items
-            if int(_get_batch_attr(item, "cd_cvm") or 0) in wanted
-        ]
+        # Keep the caller's order (data updates process listed companies first).
+        position = {int(value): index for index, value in enumerate(company_ids)}
+        items = sorted(
+            (item for item in items if int(_get_batch_attr(item, "cd_cvm") or 0) in position),
+            key=lambda item: position[int(_get_batch_attr(item, "cd_cvm") or 0)],
+        )
 
     return _unique_company_codes(items)
 
