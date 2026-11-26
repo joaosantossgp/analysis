@@ -212,3 +212,16 @@ def test_summary_diagnostics_report_schema_only_database_as_empty(tmp_path):
     _schema_only_db(settings.paths.db_path)
     diagnostics = bridge.get_database_diagnostics({"summary_only": True})
     assert diagnostics["is_empty"] is True
+
+
+def test_running_job_lists_its_companies_and_the_current_one():
+    job = _job(
+        state="running",
+        stage="process_data",
+        finished_at=None,
+        current_cvm=4170,
+        request={"companies": ["9512", "4170", "1023"], "start_year": 2022, "end_year": 2026},
+    )
+    state = derive_local_database_state(has_statements=True, jobs=[job], now=NOW)
+    assert state["run"]["company_ids"] == [9512, 4170, 1023]
+    assert state["run"]["current_cvm"] == 4170

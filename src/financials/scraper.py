@@ -107,6 +107,10 @@ def _pl():
     return pl
 
 
+_RAW_FILE_LOCKS: dict[str, threading.Lock] = {}
+_RAW_FILE_LOCKS_GUARD = threading.Lock()
+
+
 class CVMScraper:
     def __init__(
         self,
@@ -316,6 +320,15 @@ class CVMScraper:
         return False, "local_cache_fresh"
 
     def download_and_extract(self, year, doc_type) -> bool:
+        # A data update and a company update can run at the same time in this
+        # process; both write the same yearly ZIP, so one writer per file.
+        key = os.path.abspath(os.path.join(self.raw_dir, f"{doc_type.lower()}_cia_aberta_{year}.zip"))
+        with _RAW_FILE_LOCKS_GUARD:
+            lock = _RAW_FILE_LOCKS.setdefault(key, threading.Lock())
+        with lock:
+            return self._download_and_extract_unlocked(year, doc_type)
+
+    def _download_and_extract_unlocked(self, year, doc_type) -> bool:
         filename = f"{doc_type.lower()}_cia_aberta_{year}.zip"
         url = f"{self.base_url}/{doc_type}/DADOS/{filename}"
         local_zip_path = os.path.join(self.raw_dir, filename)

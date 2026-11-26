@@ -25,6 +25,7 @@ import { buildIndicatorDefs, defaultSelectedIds } from "@/lib/indicators/catalog
 import { resolveSeries, selectPeriods } from "@/lib/indicators/series";
 import type { ChartType, Frequency, IndicatorSelection } from "@/lib/indicators/types";
 import { useIndicatorConfig } from "@/lib/indicators/useIndicatorConfig";
+import { QueuedCompanyNotice } from "@/components/shell/QueuedCompanyNotice";
 
 const MAX_SELECTED = 6;
 const DEFAULT_RECENT_YEARS = 5;
@@ -81,6 +82,7 @@ export function CompanyDetailPage() {
     <section className="space-y-4">
       <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(260px,1fr)_minmax(260px,1fr)]">
         <EntityHeader cdCvm={cdCvm} activeTab="overview" />
+        <QueuedCompanyNotice cdCvm={cdCvm} />
         <CompanyCommandBar cdCvm={cdCvm} bridgeReady={bridgeReady} hideExport downloadControls />
         <CompanyExportCard cdCvm={cdCvm} />
       </div>
