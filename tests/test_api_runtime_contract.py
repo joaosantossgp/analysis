@@ -24,3 +24,9 @@ def test_ci_executes_api_tests():
         if "if" not in step and step.get("continue-on-error") is not True
     ]
     assert any("pytest" in command and "apps/api/tests" in command for command in commands)
+
+
+def test_api_metadata_does_not_claim_read_only():
+    main_source = (ROOT / "apps/api/app/main.py").read_text(encoding="utf-8")
+    assert "read-only" not in main_source.lower()
+    assert "explicit refresh" in main_source.lower()
