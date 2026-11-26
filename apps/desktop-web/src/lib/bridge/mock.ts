@@ -558,8 +558,8 @@ const MOCK_SETTINGS_HEALTH: SettingsHealthSummary = {
       },
       warnings: [],
       errors: [],
-      action_route: "/settings/coverage",
-      details: { coverage_route: "/settings/coverage" },
+      action_route: "/",
+      details: { coverage_route: "/settings/data" },
     },
     {
       id: "cvm_registry",
@@ -583,7 +583,7 @@ const MOCK_SETTINGS_HEALTH: SettingsHealthSummary = {
       },
       warnings: [],
       errors: [],
-      action_route: "/settings/health",
+      action_route: "/settings/data",
       details: {},
     },
     {
@@ -2346,8 +2346,8 @@ export function createMockBridge(): Partial<BridgeApi> {
 
     reset_local_database: async () => ({
       ok: true,
-      action: "restart_current",
-      message: "[mock] Database state reset",
+      action: "recreate_local",
+      message: "[mock] Local database rebuilt after a backup. Ignore flags were kept.",
       backup_path: "[mock] /dev/mock/backup",
       backup_items: ["[mock] cvm_financials.db.bak"],
       removed: ["onboarding_state.json", "refresh_jobs.json"],

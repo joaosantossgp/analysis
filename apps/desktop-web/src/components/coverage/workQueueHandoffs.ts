@@ -45,11 +45,11 @@ type HandoffDefinition = {
 const HANDOFFS: Record<SupportedCoverageWorkQueueType, HandoffDefinition> = {
   missing_market_cap: {
     analystQuestion: "Is market-cap evidence available for coverage scoring?",
-    evidenceSurface: "Settings Data Updates",
-    actionLabel: "Open data updates",
+    evidenceSurface: "Settings Sources · Market caps (Yahoo Finance, unofficial)",
+    actionLabel: "Open market caps",
     completionSignal:
       "Market-cap evidence becomes available for scoring, or the provider/snapshot failure remains visible.",
-    destination: () => "/settings/updates",
+    destination: () => "/settings/sources",
   },
   missing_liquidity: {
     analystQuestion: "Is recent trading liquidity available for scoring?",

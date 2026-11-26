@@ -5,6 +5,7 @@ import { useCommandPalette } from "./components/command/useCommandPalette";
 import { StateBanner } from "./components/feedback/StateBanner";
 import { TerminalShell } from "./components/shell/TerminalShell";
 import { isExcelMappingWindow } from "./lib/windowMode";
+import { SETTINGS_REDIRECTS } from "./lib/settingsNav";
 import { useGlobalHotkeys } from "./lib/keyboard/useGlobalHotkeys";
 import { DEV_DESIGN_SYSTEM_PATH, resolveDevDesignSystemShortcut } from "./lib/keyboard/devDesignSystemShortcut";
 
@@ -58,7 +59,6 @@ const CompanyCoveragePage = lazy(() =>
 );
 const RetiredNewsPage = lazy(() => import("./routes/RetiredNewsPage").then(m => ({default: m.RetiredNewsPage})));
 const CompaniesAssetsPage = lazy(() => import("./routes/CountryKpisPage").then(m => ({default: m.CompaniesAssetsPage})));
-const IndicatorSourcesPage = lazy(() => import("./routes/CountryKpisPage").then(m => ({default: m.IndicatorSourcesPage})));
 const CommandBar = lazy(() =>
   import("./components/command/CommandBar").then((m) => ({ default: m.CommandBar })),
 );
@@ -108,21 +108,18 @@ function AppShellWithPalette() {
             <Route path="/" element={<HomePage />} />
             <Route path="/empresas" element={<CompaniesPage />} />
             <Route path="/empresas/assets" element={<CompaniesAssetsPage />} />
-            <Route path="/settings/indicator-sources" element={<IndicatorSourcesPage />} />
             <Route path="/settings" element={<SettingsModule section="overview" />} />
-            <Route path="/settings/health" element={<SettingsModule section="health" />} />
+            <Route path="/settings/data" element={<SettingsModule section="data" />} />
             <Route path="/settings/storage" element={<SettingsModule section="storage" />} />
             <Route path="/settings/sources" element={<SettingsModule section="sources" />} />
             <Route path="/settings/imports" element={<SettingsModule section="imports" />} />
-            <Route path="/settings/updates" element={<SettingsModule section="updates" />} />
-            <Route path="/settings/coverage" element={<SettingsModule section="coverage" />} />
+            <Route path="/settings/indicator-sources" element={<SettingsModule section="indicator-sources" />} />
             <Route path="/settings/app" element={<SettingsModule section="app" />} />
             <Route path="/settings/diagnostics" element={<SettingsModule section="diagnostics" />} />
             {/* Backwards compatibility redirects */}
-            <Route path="/atualizar-base" element={<Navigate to="/settings/updates" replace />} />
-            <Route path="/data-coverage" element={<Navigate to="/settings/coverage" replace />} />
-            <Route path="/status" element={<Navigate to="/settings/diagnostics" replace />} />
-            <Route path="/company-universe" element={<Navigate to="/settings/updates" replace />} />
+            {Object.entries(SETTINGS_REDIRECTS).map(([from, to]) => (
+              <Route key={from} path={from} element={<Navigate to={to} replace />} />
+            ))}
             <Route path="/setores" element={<SectorsPage />} />
             <Route path="/setores/:slug" element={<SectorDetailPage />} />
             <Route
