@@ -319,7 +319,8 @@ class CVMScraper:
             return True, "; ".join(reasons)
         return False, "local_cache_fresh"
 
-    def download_and_extract(self, year, doc_type) -> bool:
+    def download_and_extract(self, year, doc_type) -> bool | None:
+        """True when ready, None when CVM has not published the file, False on failure."""
         # A data update and a company update can run at the same time in this
         # process; both write the same yearly ZIP, so one writer per file.
         key = os.path.abspath(os.path.join(self.raw_dir, f"{doc_type.lower()}_cia_aberta_{year}.zip"))
@@ -328,7 +329,7 @@ class CVMScraper:
         with lock:
             return self._download_and_extract_unlocked(year, doc_type)
 
-    def _download_and_extract_unlocked(self, year, doc_type) -> bool:
+    def _download_and_extract_unlocked(self, year, doc_type) -> bool | None:
         filename = f"{doc_type.lower()}_cia_aberta_{year}.zip"
         url = f"{self.base_url}/{doc_type}/DADOS/{filename}"
         local_zip_path = os.path.join(self.raw_dir, filename)
@@ -354,7 +355,9 @@ class CVMScraper:
                     if response.status_code != 200:
                         if cache is not None:
                             cache.clear()
-                        return False
+                        # 404: CVM has not published this file yet (e.g. the
+                        # current year's DFP). Not a failure; other codes are.
+                        return None if response.status_code == 404 else False
                     with open(tmp_zip_path, 'wb') as f:
                         for chunk in response.iter_content(chunk_size=8192):
                             f.write(chunk)
@@ -784,6 +787,8 @@ class CVMScraper:
             for doc_type in ('DFP', 'ITR')
         ]
         completed_downloads = 0
+        # A missing source file must surface as an error, never as "no data".
+        failed_downloads: set[tuple[int, str]] = set()
         _emit_stage(
             "download_extract",
             0,
@@ -796,8 +801,10 @@ class CVMScraper:
             for fut in as_completed(futures):
                 year_done, dt_done = futures[fut]
                 try:
-                    fut.result()
+                    if fut.result() is False:
+                        failed_downloads.add((int(year_done), dt_done))
                 except Exception as exc:
+                    failed_downloads.add((int(year_done), dt_done))
                     if self.source_cache is not None:
                         self.source_cache.clear()
                     with self._print_lock:
@@ -845,6 +852,14 @@ class CVMScraper:
                 "traceback": None,
                 "attempts": 0,
             }
+            missing_files = sorted(
+                f"{doc} {year}" for year, doc in failed_downloads if year in years_requested
+            )
+            if missing_files:
+                completed += 1
+                payload["error"] = "CVM files could not be downloaded: " + ", ".join(missing_files)
+                results[str(int(cvm))] = payload
+                continue
             raw = self.process_data(cvm, years_requested)
             if raw is None:
                 _emit_stage(

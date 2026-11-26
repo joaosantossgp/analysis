@@ -259,6 +259,13 @@ def test_changed_or_missing_source_is_not_reused(tmp_path, monkeypatch, change):
     else:
         source.write_bytes(b"invalid zip")
     worker.run_once()
+    if change == "corrupt_zip":
+        # An unreadable source is a visible failure, never a reuse of old frames.
+        assert counts["parse"] == 2
+        with worker.engine.connect() as conn:
+            errors = conn.execute(text("SELECT last_error FROM company_refresh_status WHERE cd_cvm IN (9512, 4170)")).scalars().all()
+        assert any("could not be downloaded" in str(error) for error in errors)
+        return
     assert counts["parse"] > 2
     if change not in {"missing_zip", "corrupt_zip"}:
         assert counts["extract"] > 2

@@ -10,11 +10,12 @@ import json
 import os
 import sqlite3
 import threading
+import time
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from uuid import uuid4
 
 import pandas as pd
@@ -1272,9 +1273,12 @@ class DesktopRefreshJobManager:
     """Local background refresh queue used by the pywebview bridge."""
 
     VALID_MODES = {"full", "missing", "outdated", "failed"}
-    TERMINAL_STATES = {"success", "error", "cancelled", "interrupted"}
+    TERMINAL_STATES = {"success", "partial", "error", "cancelled", "interrupted"}
     DEFAULT_START_YEAR = 2010
     MAX_LOG_LINES = 200
+    MAX_STORED_JOBS = 50
+    # Progress-only updates are written at most this often; state changes always are.
+    SAVE_INTERVAL_SECONDS = 2.0
 
     def __init__(
         self,
@@ -1284,8 +1288,11 @@ class DesktopRefreshJobManager:
         refresh_service: HeadlessRefreshService | None = None,
         jobs_path: Path | None = None,
         autostart: bool = True,
+        on_job_finished: Callable[[str], None] | None = None,
     ) -> None:
         self.settings = settings or build_settings()
+        self.on_job_finished = on_job_finished
+        self._last_save_monotonic = 0.0
         self.read_service = read_service
         self._refresh_service = refresh_service
         self.jobs_path = jobs_path or (self.settings.paths.data_dir / "refresh_jobs.json")
@@ -1620,20 +1627,45 @@ class DesktopRefreshJobManager:
             self._cleanup_job_runtime(job_id)
             return
 
-        state = "cancelled" if result.cancelled else "success"
         failures = int(result.error_count)
-        if failures and not result.cancelled:
+        failed_codes = [str(row.cvm_code) for row in result.companies if row.status not in {"success", "no_data"}]
+        if failed_codes and not result.cancelled and job.get("scope") == "data_update" and not cancel_event.is_set():
+            # Retry failed companies once inside the run, so it never depends on a page being open.
+            self._update_job(job_id, log_line=f"Retrying {len(failed_codes)} failed companies once.")
+            try:
+                retry = self.refresh_service.execute(
+                    replace(request, companies=tuple(failed_codes)),
+                    stage_callback=lambda update: self._handle_stage(job_id, update),
+                    should_cancel=cancel_event.is_set,
+                )
+                failures = int(retry.error_count)
+            except Exception as exc:
+                self._append_log(job_id, f"Retry failed: {exc}")
+
+        processed = len(result.companies)
+        if result.cancelled:
+            state = "cancelled"
+        elif not failures:
+            state = "success"
+        elif failures < processed:
+            state = "partial"
+        else:
             state = "error"
         self._update_job(
             job_id,
             state=state,
-            processed=len(result.companies),
+            processed=processed,
             failures=failures,
             finished_at=self._now_iso(),
             result=result.to_dict(),
             log_line="Refresh finalizado.",
         )
         self._cleanup_job_runtime(job_id)
+        if self.on_job_finished is not None:
+            try:
+                self.on_job_finished(job_id)
+            except Exception:
+                pass
 
     def _resolve_batch_selection(self, params: dict[str, Any], *, mode: str):
         from src.financials.read_service import resolve_refresh_batch_selection  # noqa: PLC0415
@@ -1768,13 +1800,15 @@ class DesktopRefreshJobManager:
             job = self._jobs.get(job_id)
             if job is None:
                 return
+            state_changed = "state" in changes and changes["state"] != job.get("state")
             for key, value in changes.items():
                 if value is not None or key in {"current_cvm", "error", "finished_at"}:
                     job[key] = value
             job["updated_at"] = self._now_iso()
             if log_line:
                 self._append_log_locked(job, str(log_line))
-            self._save_jobs()
+            if state_changed or time.monotonic() - self._last_save_monotonic >= self.SAVE_INTERVAL_SECONDS:
+                self._save_jobs()
 
     def _append_log(self, job_id: str, message: str) -> None:
         with self._lock:
@@ -1815,11 +1849,19 @@ class DesktopRefreshJobManager:
 
     def _save_jobs(self) -> None:
         self.jobs_path.parent.mkdir(parents=True, exist_ok=True)
-        jobs = sorted(
-            (self._persistable_job(job) for job in self._jobs.values()),
+        ordered = sorted(
+            self._jobs.values(),
             key=lambda row: str(row.get("created_at") or ""),
             reverse=True,
         )
+        active = [job for job in ordered if str(job.get("state")) not in self.TERMINAL_STATES]
+        finished = [job for job in ordered if str(job.get("state")) in self.TERMINAL_STATES]
+        kept = active + finished[: max(0, self.MAX_STORED_JOBS - len(active))]
+        for stale in ordered:
+            if stale not in kept:
+                self._jobs.pop(str(stale.get("job_id")), None)
+        jobs = [self._persistable_job(job) for job in kept]
+        self._last_save_monotonic = time.monotonic()
         self.jobs_path.write_text(
             json.dumps({"jobs": jobs}, ensure_ascii=True, indent=2, default=str),
             encoding="utf-8",
@@ -1838,7 +1880,7 @@ class DesktopRefreshJobManager:
                 job["state"] = "interrupted"
                 job["finished_at"] = self._now_iso()
                 job["updated_at"] = job["finished_at"]
-                job["error"] = "O app foi encerrado antes do refresh terminar."
+                job["error"] = "The app closed before the data update finished."
                 self._append_log_locked(job, job["error"])
                 changed = True
         if changed:
