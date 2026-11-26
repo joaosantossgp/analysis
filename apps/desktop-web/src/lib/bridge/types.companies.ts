@@ -276,6 +276,8 @@ export interface CompanyHistoricalIndicatorsResult {
   ok: boolean;
   cd_cvm: number;
   ticker_b3: string | null;
+  /** "local" from market_history; "missing" means no local prices (never fetched on view). */
+  price_history_status?: "local" | "missing" | "no_ticker" | "unavailable";
   yearly_data: Array<{
     year: number;
     roe: number | null;

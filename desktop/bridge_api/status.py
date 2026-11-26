@@ -22,22 +22,26 @@ logger = logging.getLogger("desktop.bridge")
 
 class StatusBridgeMixin:
     def _start_update_check(self) -> None:
-        """Called from a daemon thread in app.py after window creation."""
+        """Called from a daemon thread in app.py after window creation.
+
+        Records the full status, so a failed check (offline) is remembered as
+        "check_failed" instead of reading as "up to date".
+        """
         try:
-            from desktop.__version__ import __version__  # noqa: PLC0415
-            from desktop.updater import UpdateChecker  # noqa: PLC0415
-            checker = UpdateChecker()
-            info = checker.check_for_update(__version__)
-            with self._update_lock:
-                self._update_info = info
+            self._get_software_update_status(force=True)
         except Exception:
-            pass
+            logger.exception("startup update check failed")
 
     def check_update(self, params=None) -> dict:
         with self._update_lock:
             info = self._update_info
+            status = dict(self._latest_update_status or {})
         if not info:
-            return self._sanitize_for_json({"available": False})
+            return self._sanitize_for_json({
+                "available": False,
+                "status": status.get("status") or "not_checked",
+                "error": status.get("error"),
+            })
         return self._sanitize_for_json({
             "available": True,
             "version": info["version"],
