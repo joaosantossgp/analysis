@@ -1,3 +1,4 @@
+import type { LocalDatabaseState } from "./types.localDatabase";
 import type {
   EnergyKPIHealthResponse,
   EnergyKPICatalogParams,
@@ -1622,6 +1623,7 @@ export interface BridgeApi {
     params?: Record<string, unknown>,
   ): Promise<{ ok: boolean; error?: string; status?: MarketCapStatus }>;
   get_database_diagnostics(params?: Record<string, unknown>): Promise<DatabaseDiagnostics>;
+  get_local_database_state(params?: Record<string, unknown>): Promise<LocalDatabaseState>;
   get_data_coverage(params?: Record<string, unknown>): Promise<DataCoverageResponse>;
   set_company_ignored(params: Record<string, unknown>): Promise<SetCompanyIgnoredResponse>;
   get_company_filters(params?: Record<string, unknown>): Promise<CompanyFiltersResponse>;

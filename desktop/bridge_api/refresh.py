@@ -550,6 +550,7 @@ class RefreshBridgeMixin:
             )
             refresh_params: dict[str, Any] = {
                 "mode": mode,
+                "scope": "retry" if mode == "failed" else "data_update",
                 "company_ids": list(selection.company_ids),
                 # The current backend processes one queue per request. This is
                 # the safe per-run cap exposed as "empresas por lote" in the UI.

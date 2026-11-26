@@ -1751,6 +1751,57 @@ class StatusBridgeMixin:
                 "error": str(exc),
             })
 
+    def get_local_database_state(self, params=None) -> dict:
+        """Single read of the local database state for the shell indicator.
+
+        Reads local files only: never starts network work and never rewrites
+        the refresh job store.
+        """
+        from src.refresh.local_database_state import (  # noqa: PLC0415
+            derive_local_database_state,
+            read_local_database_facts,
+        )
+
+        try:
+            paths = self._svc().settings.paths
+            has_statements, failures = False, []
+            if paths.db_path.exists():
+                from sqlalchemy import create_engine  # noqa: PLC0415
+
+                engine = create_engine(f"sqlite:///file:{paths.db_path.as_posix()}?mode=ro&uri=true")
+                try:
+                    has_statements, failures = read_local_database_facts(engine)
+                finally:
+                    engine.dispose()
+            state = derive_local_database_state(
+                has_statements=has_statements,
+                jobs=self._local_state_jobs(paths.data_dir / "refresh_jobs.json"),
+                now=datetime.now(timezone.utc),
+            )
+            state["failures"] = failures
+            return self._sanitize_for_json(state)
+        except Exception as exc:
+            logger.exception("get_local_database_state failed")
+            return self._sanitize_for_json({"state": "unknown", "error": str(exc)})
+
+    def _local_state_jobs(self, jobs_path: Path) -> list[dict[str, Any]]:
+        manager = getattr(self, "_refresh_manager", None)
+        if manager is not None:
+            return manager.snapshot_jobs()
+        if not jobs_path.exists():
+            return []
+        try:
+            payload = json.loads(jobs_path.read_text(encoding="utf-8"))
+        except Exception:
+            return []
+        jobs = [j for j in (payload or {}).get("jobs") or [] if isinstance(j, dict)]
+        # No manager in this process means nothing is running here: a job left
+        # active by a closed app reads as interrupted, without rewriting the file.
+        return [
+            {**j, "state": "interrupted"} if str(j.get("state")) in {"queued", "running"} else j
+            for j in jobs
+        ]
+
     def get_base_health(self, params=None) -> dict:
         p = params or {}
         try:
@@ -1830,6 +1881,7 @@ class StatusBridgeMixin:
                 "company_refresh_status": None,
                 "qa_logs": None,
             }
+            has_statements = False
             latest_success_at: str | None = None
             latest_attempt_at: str | None = None
             latest_error: str | None = None
@@ -1843,6 +1895,9 @@ class StatusBridgeMixin:
                         cur = conn.cursor()
                         cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
                         present = {row[0] for row in cur.fetchall()}
+                        if "financial_reports" in present:
+                            cur.execute('SELECT EXISTS(SELECT 1 FROM "financial_reports")')
+                            has_statements = cur.fetchone()[0] == 1
                         if not summary_only:
                             for table in counts.keys():
                                 if table not in present:
@@ -1917,7 +1972,7 @@ class StatusBridgeMixin:
                     })
 
             if summary_only:
-                is_empty = not db_exists
+                is_empty = not db_exists or not has_statements
             else:
                 is_empty = (
                     not db_exists

@@ -1368,6 +1368,7 @@ class DesktopRefreshJobManager:
             "current_cvm": None,
             "log_lines": ["Refresh enfileirado."],
             "params": p,
+            "scope": p.get("scope"),
             "request": {
                 "companies": [str(company) for company in companies],
                 "start_year": int(start_year),
@@ -1715,10 +1716,19 @@ class DesktopRefreshJobManager:
                     return self._public_job(job)
         return None
 
+    def snapshot_jobs(self) -> list[dict[str, Any]]:
+        """Copies of every job, including stage progress, for state derivation."""
+        with self._lock:
+            return [dict(job) for job in self._jobs.values()]
+
     def _handle_stage(self, job_id: str, update: RefreshProgressUpdate) -> None:
+        with self._lock:
+            job = self._jobs.get(job_id)
+            stage_changed = job is not None and job.get("stage") != update.stage
         self._update_job(
             job_id,
             stage=update.stage,
+            stage_started_at=self._now_iso() if stage_changed else None,
             progress_current=int(update.current),
             progress_total=max(1, int(update.total)),
             log_line=update.message,
