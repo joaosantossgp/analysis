@@ -116,7 +116,6 @@ class ReadServiceQueryMixin:
         self.refresh_job_repository = RefreshJobRepository(self.engine)
         self.excel_mapping_repository = ExcelMappingRepository(self.engine)
         self._company_catalog = None
-        self._operational_service = None
         self._refresh_service = None
         self._read_cache_data_version: int | None = None
         self._read_cache_checked_at = 0.0
@@ -184,13 +183,6 @@ class ReadServiceQueryMixin:
             return
         self.invalidate_read_caches()
         self._read_cache_data_version = data_version
-
-    @property
-    def operational_service(self):
-        if self._operational_service is None:
-            from desktop.services import IntelligentSelectorService
-            self._operational_service = IntelligentSelectorService(settings=self.settings)
-        return self._operational_service
 
     @property
     def refresh_service(self) -> HeadlessRefreshService:

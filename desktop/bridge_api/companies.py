@@ -417,6 +417,10 @@ class CompanyBridgeMixin:
                     ),
                 })
             mapping_preset_id = str(p.get("mapping_preset_id") or "").strip() or None
+            from desktop.__version__ import __version__ as _desktop_version  # noqa: PLC0415
+            from src.financials.excel_exporter import set_default_app_version  # noqa: PLC0415
+
+            set_default_app_version(_desktop_version)
             svc = self._svc()
             filename, payload = svc.build_company_excel_export(
                 cd_cvm,
