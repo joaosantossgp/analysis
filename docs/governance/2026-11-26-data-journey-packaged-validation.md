@@ -7,6 +7,9 @@ filed (#575-#580). One of them breaks offline reads after a mid-session network
 drop.** This is targeted local validation, not release acceptance or
 publication.
 
+**Re-check (same day, after #595-#600): all six pass in a new packaged build.**
+See [Packaged re-check after the fixes](#packaged-re-check-after-the-fixes).
+
 ## Artifact identity
 
 | Field | Observed value |
@@ -156,3 +159,54 @@ committed or published.
 | [#578](https://github.com/joaosantossgp/analysis/issues/578) | Data update ETA uses time in the current stage |
 | [#579](https://github.com/joaosantossgp/analysis/issues/579) | Home hero disappears after the first company lands during the first data update |
 | [#580](https://github.com/joaosantossgp/analysis/issues/580) | Data update that cannot reach CVM shows a misleading inline error and no Failed state |
+
+## Packaged re-check after the fixes
+
+A second packaged build re-checked the six failures after their fixes merged
+(#595, #596, #597, #598, #599, #600; #574's first-run cost work was already on `main`).
+
+| Field | Observed value |
+|---|---|
+| Source commit | `0378696` (`origin/main`, merge of #600), tracked-clean before build |
+| Build command | `desktop/build_desktop.ps1` with the project `.venv/Scripts` first on PATH; 50 s |
+| Runtime | `0.30.0-rc.1-254-g0378696`, built `2026-11-26T21:35:36Z` |
+| Executable | `dist/CVMAnalytics/CVMAnalytics.exe`, 23,191,144 bytes |
+| EXE SHA-256 | `20c99c59af19482df10f6661721730bb5cfd22f129526fd868f7ade46c732f19` |
+| Bundle | 1,558 files, 282,098,938 bytes; no `.db`, `.sqlite` or `.sqlite3` files |
+| Bundle manifest SHA-256 | `e2ac695a1d0b386349feed58874d516e2eb85295f1c7fc548131d2b4b487ade7` (same line format as above) |
+
+The build's `desktop/__version__.py` rewrite was reverted. Isolation followed the
+method above: the
+[#479 recipe](2026-11-06-packaged-storage-validation.md#reproduction)
+environment with every data path in a fresh `fixture`, `LOCALAPPDATA` in a
+sibling directory, `DATABASE_URL`/`TEST_DATABASE_URL` unset, and the CDP port in
+`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS`. The fixture database was created on
+first launch. The modification time of the real
+`%USERPROFILE%\Documents\CVMAnalytics\db\cvm_financials.db` was the same before and
+after (`2026-11-26T19:13:38Z`). A throwaway Node CDP driver clicked the real UI
+and read the real bridge, as before. The "connection lost" and "CVM unreachable"
+cases used the same emulation as the original runs.
+
+| Issue | Re-check | Result |
+|---|---|---|
+| #576 | Fresh fixture, page reloaded twice: bridge ready 103-104 ms, pill 103-104 ms, empty hero 428-436 ms (was 30.1 s). | Pass |
+| #579 | Clicked "Download CVM data" on Home at 21:37:58 UTC. `has_statements` was true from about 30 s; at 30-81 s with 0-10 of 655 processed, Home still showed the "Getting CVM data" hero and never "Start with a company". | Pass |
+| #577 | Companies opened at 90 s during the run: "655 companies", 25 rows. Queued rows fell 25 → 11 by 310 s while the page stayed open. Six row-by-row checks (80-86 processed) compared every Queued row with `get_companies`: no row was Queued while the bridge already reported data. | Pass |
+| #578 | `eta_seconds` against the pace measured from the samples: 3,735 vs 3,265 at 13/655; 2,825 vs 2,631 at 29/655; 2,644 vs 2,566 at 65/655 (about 44 vs 43 min). Previously "Under a minute left" at 20/655. | Pass |
+| #575 | Run cancelled at 91 of 655 (state `stale`). Then `navigator.onLine` was forced false and `offline` dispatched. Pill showed `STALE · OFFLINE`. Companies listed 655 with no loading banner. Company 25283 (AERIS) opened. Its Financial Statements showed "DRE · 13 periods · 31 rows", not "No local statement evidence". | Pass |
+| #580 | Fresh fixture, dead proxy, browser online. Clicked "Download CVM data". After 20 s: state `failed`, pill "Data update failed", Home "The download didn't finish" with "Could not reach CVM to get the company list. Nothing was downloaded.", action "Try again". Companies also offered "Try again". No "previous local snapshot" copy anywhere. | Pass |
+
+Still not validated: a full first run to completion in the packaged app, packet-level
+offline, and the other items listed under [Not validated](#not-validated).
+
+Local evidence stays outside the repository (session scratch directory), not committed:
+
+| Local evidence file | SHA-256 |
+|---|---|
+| `online/run.jsonl` | `aa7ee0504a7fedbe9e9ea47fc03d697976445caeee8f2f32da137cd2e4c46b09` |
+| `online/rows.jsonl` | `e704d11c942ca047904a61aaeb0ec3b632e4b85f9f9f3b4527335e6ea7c2566a` |
+| `online/dropnet.jsonl` | `d4c1f7c18dfc1d50a03f50d91bfeb26cd07fd02b4fd88ef9f6eef3da0c5c7945` |
+| `unreachable/driver.jsonl` | `c1f7ff95e6fd5cba9225afbecc93c6f6e0836e6434e9b6dfe148f69de5c210ca` |
+| `drive.mjs` | `c458af1e3172b992d550d74c330d4bb7683a3f91ad04811ac1e69afdea5b9a59` |
+| `rows.mjs` | `c00f248c3c2593d132cc94a0f5b19853052cb03896e276cbc80316129166b6af` |
+| `launch.ps1` | `e12fb9ea23fa6fde34b4df0e3048ac58b91ee045214fe6b383d4f79fc02bf6c0` |

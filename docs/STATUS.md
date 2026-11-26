@@ -38,15 +38,16 @@ Keep detail in the owning contract or dated evidence. Last updated: 2026-11-26.
 - Shell-owned data updates (goal #539, [ADR 0010](decisions/0010-shell-owned-data-updates.md)):
   all sub-issues delivered. The [packaged validation](governance/2026-11-26-data-journey-packaged-validation.md)
   (#550) passed the first-launch, progressive download, cancel, Stale, offline-launch and
-  update-check states on a partial run. It found six bugs (#575-#580), all fixed and checked
-  in the dev desktop app or mock runtime, not yet in a packaged build:
+  update-check states on a partial run. It found six bugs (#575-#580). All are fixed and
+  [passed a packaged re-check](governance/2026-11-26-data-journey-packaged-validation.md#packaged-re-check-after-the-fixes)
+  (build `0378696`):
   - #575: bridge reads no longer pause on the browser `offline` event.
   - #576: the local database pill and empty-database hero appear in about 0.3 s, not 30 s.
   - #577: an open Companies directory follows a running data update.
   - #578: the run ETA uses the whole company phase (20 min shown vs 19 min measured).
   - #579: Home keeps the hero until the first full data update ends.
   - #580: a start that cannot reach CVM is a Failed data update on every surface.
-  The goal stays open until a packaged build re-checks these states.
+  A full first run to completion has not been done in the packaged app.
 - First data update cost (goal #574, #582-#587): QA log scope index, QA events stored as
   source observation ids, DMPL/DVA no longer read, batched evidence inserts, and five unused
   `financial_reports` indexes dropped. A full fresh first run (655 active companies,
@@ -54,7 +55,9 @@ Keep detail in the owning contract or dated evidence. Last updated: 2026-11-26.
   27 companies with statements per minute from start to end), and ends with a **5.4 GB**
   database (storage budget check passes). Before: well over 2 hours and 10.7 GB for the same
   436 companies with statements and the same 2.37M financial rows. The default scope
-  (ADR 0010) stays unchanged. Not validated in the packaged app. Whether DMPL should be
+  (ADR 0010) stays unchanged. A full run was not done in the packaged app; the 5-minute
+  packaged re-check of #575-#580 showed about 4 s per company early in the run (ETA about
+  44 min), against about 2 s in the dev runtime at the same point. Whether DMPL should be
   persisted is #589.
 
 ## Validation and historical evidence
