@@ -1446,6 +1446,8 @@ export interface CompanyHistoricalIndicatorsResult {
   ok: boolean;
   cd_cvm: number;
   ticker_b3: string | null;
+  /** "local" from market_history; "missing" means no local prices (never fetched on view). */
+  price_history_status?: "local" | "missing" | "no_ticker" | "unavailable";
   yearly_data: Array<{
     year: number;
     roe: number | null;
@@ -1652,7 +1654,7 @@ export interface BridgeApi {
     params: Record<string, unknown>,
   ): Promise<{ ok: boolean; error?: string; classification?: CompanyClassification }>;
   get_sub_sector_detail(params: Record<string, unknown>): Promise<SectorDetailResponse>;
-  check_update(params?: Record<string, unknown>): Promise<{ available: boolean; version?: string; zip_url?: string; error?: string }>;
+  check_update(params?: Record<string, unknown>): Promise<{ available: boolean; version?: string; zip_url?: string; status?: string; error?: string }>;
   apply_update(params?: Record<string, unknown>): Promise<{ started: boolean; error?: string }>;
   get_update_progress(params?: Record<string, unknown>): Promise<UpdateProgressStatus>;
   snooze_update(params?: Record<string, unknown>): Promise<{ ok: boolean; error?: string }>;

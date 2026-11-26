@@ -29,17 +29,17 @@ export function buildActionCommands(deps: ActionDeps = {}): Command[] {
     id: `action:open:${kind}`,
     group: "actions",
     glyph: "action",
-    label: `Abrir pasta ${label}`,
+    label: `Open ${label} folder`,
     secondary: kind,
     keywords: ["open", "reveal", "folder", "pasta", kind],
     run: () => safeRun(openStatusPath(kind), deps.onError),
   });
 
   return [
-    reveal("output", "de exportações"),
-    reveal("data", "de dados"),
-    reveal("database", "do banco SQLite"),
-    reveal("logs", "de logs"),
-    reveal("cache", "de cache"),
+    reveal("output", "exports"),
+    reveal("data", "data"),
+    reveal("database", "SQLite database"),
+    reveal("logs", "logs"),
+    reveal("cache", "cache"),
   ];
 }
