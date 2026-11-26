@@ -1,7 +1,7 @@
 # Project Status
 
 Current snapshot, updated when release state, active work or a major decision changes.
-Keep detail in the owning contract or dated evidence. Last updated: 2026-11-25.
+Keep detail in the owning contract or dated evidence. Last updated: 2026-11-26.
 
 ## Version and releases
 
@@ -35,6 +35,12 @@ Keep detail in the owning contract or dated evidence. Last updated: 2026-11-25.
   accepted without row-by-row review (`accepted_without_review`); low-confidence rows are
   the first candidates for correction. Next proposed cycle: Excel mapping account tree
   and presets attached to GICS levels (not yet specified as issues).
+- Shell-owned data updates (goal #539, [ADR 0010](decisions/0010-shell-owned-data-updates.md)):
+  all sub-issues delivered. The [packaged validation](governance/2026-11-26-data-journey-packaged-validation.md)
+  (#550) passed the first-launch, progressive download, cancel, Stale, offline-launch and
+  update-check states on a partial run. It found six bugs (#575-#580); the most serious is
+  #575 (a mid-session network drop makes downloaded data unreadable). A full first run
+  takes about 2 hours and was not completed (#574). The goal stays open until the bugs are triaged.
 
 ## Validation and historical evidence
 
