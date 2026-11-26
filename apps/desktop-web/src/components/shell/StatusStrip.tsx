@@ -1,4 +1,5 @@
 import { useBridgeStatus, type BridgeProbe } from "@/hooks/useBridgeStatus";
+import { DataShellStatusSlot, useDataShellHidesStatusBrand } from "@/prototypes/dataShell/slots";
 
 /**
  * Bottom status strip — single-row 24px. Mirrors the bridge probe + an
@@ -54,6 +55,7 @@ function lastRefreshLabel(probe: BridgeProbe): string {
 export function StatusStrip() {
   const probe = useBridgeStatus();
   const bridge = bridgeLabel(probe);
+  const hideBrand = useDataShellHidesStatusBrand();
 
   return (
     <div
@@ -73,7 +75,8 @@ export function StatusStrip() {
       <span>{lastRefreshLabel(probe)}</span>
       <span aria-hidden="true">|</span>
       <span>ENV · {ENV_LABEL}</span>
-      <span className="ml-auto">CVMAnalytics Terminal</span>
+      {hideBrand ? null : <span className="ml-auto">CVMAnalytics Terminal</span>}
+      <DataShellStatusSlot />
     </div>
   );
 }

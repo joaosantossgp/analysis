@@ -45,6 +45,11 @@ export function DevDesignSystemPage() {
             The approved vocabulary for a dense, minimal, and dependable analytical workspace.
           </p>
           <p className="design-reference-shortcut">Ctrl + Alt + D</p>
+          {/* PROTOTYPE (throwaway): entry to the data shell variants. */}
+          <p>
+            Prototype: <a href="#/?prototype=data-shell&variant=E&state=empty">Data shell — 5 variants</a>{" "}
+            (← → variant, ↑ ↓ simulated state)
+          </p>
         </div>
         <nav aria-label="Design reference sections" className="design-reference-nav">
           {NAV_ITEMS.map(([id, label]) => (

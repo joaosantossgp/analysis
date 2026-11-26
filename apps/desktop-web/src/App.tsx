@@ -44,6 +44,10 @@ const SettingsModule = lazy(() =>
 const DevDataOpsPage = lazy(() =>
   import("./routes/DevDataOpsPage").then((m) => ({ default: m.DevDataOpsPage })),
 );
+const PrototypeSwitcher = import.meta.env.DEV
+  ? lazy(() => import("./prototypes/dataShell/PrototypeSwitcher").then((m) => ({ default: m.PrototypeSwitcher })))
+  : null;
+
 const DevDesignSystemPage = import.meta.env.DEV
   ? lazy(() => import("./routes/DevDesignSystemPage").then((m) => ({ default: m.DevDesignSystemPage })))
   : null;
@@ -102,6 +106,11 @@ function AppShellWithPalette() {
   return (
     <>
       {import.meta.env.DEV ? <DevDesignSystemShortcut /> : null}
+      {PrototypeSwitcher ? (
+        <Suspense fallback={null}>
+          <PrototypeSwitcher />
+        </Suspense>
+      ) : null}
       <TerminalShell onOpenPalette={palette.open_}>
         <Suspense fallback={<RouteFallback />}>
           <Routes>

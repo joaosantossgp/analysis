@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+import { DataShellAside, useDataShellAsideWidth } from "@/prototypes/dataShell/slots";
+
 import { StatusStrip } from "./StatusStrip";
 import { SubNav } from "./SubNav";
 import { TopBar } from "./TopBar";
@@ -16,13 +18,16 @@ type Props = {
  * `max-w-5xl` container in App.tsx.
  */
 export function TerminalShell({ children, onOpenPalette }: Props) {
+  const asideWidth = useDataShellAsideWidth();
   return (
     <div
       className="grid h-full w-full"
       style={{
-        gridTemplateColumns: "minmax(0, 1fr)",
+        gridTemplateColumns: asideWidth ? `minmax(0, 1fr) ${asideWidth}px` : "minmax(0, 1fr)",
         gridTemplateRows: "36px 32px 1fr 24px",
-        gridTemplateAreas: '"top" "subnav" "main" "status"',
+        gridTemplateAreas: asideWidth
+          ? '"top top" "subnav subnav" "main aside" "status status"'
+          : '"top" "subnav" "main" "status"',
         background: "var(--color-surface-1)",
         color: "var(--color-text-primary)",
       }}
@@ -44,6 +49,7 @@ export function TerminalShell({ children, onOpenPalette }: Props) {
       >
         {children}
       </main>
+      <DataShellAside />
       <div style={{ gridArea: "status" }}>
         <StatusStrip />
       </div>

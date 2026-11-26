@@ -1,3 +1,4 @@
+import { useDataShellHome } from "@/prototypes/dataShell/slots";
 import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 
@@ -193,6 +194,7 @@ export const RECOMMENDED_LAYOUT: LayoutItem[] = [
 
 
 export function HomePage() {
+  const dataShell = useDataShellHome();
   const [bridgeReady, setBridgeReady] = useState(false);
   const [activeCards, setActiveCards] = useState<LayoutItem[]>([]);
   const [cardConfigs, setCardConfigs] = useState<Record<string, any>>({});
@@ -564,6 +566,8 @@ export function HomePage() {
         <StateBanner variant="browser-only" message={browserReason} />
       ) : null}
 
+      {dataShell.lead}
+
       {/* Top Controls Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-900 pb-3 font-mono">
         <div>
@@ -583,6 +587,7 @@ export function HomePage() {
         </div>
 
         {/* Status Dashboard Summary */}
+        {dataShell.active ? null : (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-3xs text-zinc-400 font-mono bg-zinc-950/30 border border-zinc-900 rounded-md px-3 py-1.5">
           <Link to="/settings/diagnostics" className="flex items-center gap-1 hover:text-zinc-200 transition-colors">
             <span className="text-zinc-500">MODE:</span>
@@ -619,6 +624,7 @@ export function HomePage() {
             </>
           )}
         </div>
+        )}
 
         <div className="flex items-center gap-2">
           <button
@@ -647,8 +653,10 @@ export function HomePage() {
         </div>
       </div>
 
+      {dataShell.leadBelowHeader}
+
       {/* Main Grid Area */}
-      {activeCards.length === 0 ? (
+      {activeCards.length === 0 && dataShell.hideChooser ? null : activeCards.length === 0 ? (
         <div className="border border-zinc-850 rounded-lg p-6 bg-zinc-900/10 max-w-2xl mx-auto mt-10 font-mono space-y-6">
           <div className="text-center space-y-2">
             <span className="text-orange-500 text-3xl block" aria-hidden="true">⛭</span>

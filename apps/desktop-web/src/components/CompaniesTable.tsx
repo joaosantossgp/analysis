@@ -1,3 +1,4 @@
+import { useDataShellCompanies } from "@/prototypes/dataShell/slots";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
@@ -452,6 +453,8 @@ function Body({
   sort: CompanyDirectorySort;
   onSort: (sortBy: CompanyDirectorySort["sortBy"]) => void;
 }) {
+  const dataShell = useDataShellCompanies();
+  if (dataShell.empty) return <>{dataShell.empty}</>;
   if (query.isError) {
     return (
       <StateBanner
@@ -493,7 +496,12 @@ function Body({
       />
     );
   }
-  return <CompaniesGrid items={items} coverageMap={coverageMap} sort={sort} onSort={onSort} />;
+  return (
+    <>
+      {dataShell.statusLine}
+      <CompaniesGrid items={items} coverageMap={coverageMap} sort={sort} onSort={onSort} />
+    </>
+  );
 }
 
 function CompaniesGrid({
@@ -549,6 +557,7 @@ function CompanyRow({
   coverageMap: Map<number, string>;
 }) {
   const navigate = useNavigate();
+  const protoBadge = useDataShellCompanies().rowBadge(company.cd_cvm);
   const yearsSummary = useMemo(
     () => formatYears(company.anos_disponiveis),
     [company.anos_disponiveis],
@@ -590,7 +599,7 @@ function CompanyRow({
         {company.market_cap_brl != null ? formatMarketCap(company.market_cap_brl) : <span className="text-zinc-600">—</span>}
       </td>
       <td className="px-3 py-2 text-center text-xs">
-        <DataStatusBadge status={company.data_status} hasFinancialData={company.has_financial_data} />
+        {protoBadge ?? <DataStatusBadge status={company.data_status} hasFinancialData={company.has_financial_data} />}
       </td>
       <td className="px-3 py-2 font-mono text-xs text-zinc-400">{yearsSummary}</td>
       <td className="px-3 py-2 font-mono text-xs text-zinc-400">
