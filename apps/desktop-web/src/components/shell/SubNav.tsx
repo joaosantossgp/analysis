@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { NavLink, useLocation, useParams } from "react-router-dom";
 
+import { SETTINGS_NAV_ITEMS } from "@/lib/settingsNav";
+
 /**
  * Contextual sub-navigation under the top bar. Renders a horizontal tab
  * strip when the current route belongs to a module that has intra-module
@@ -44,15 +46,7 @@ export function subNavFor(pathname: string, params: Record<string, string | unde
     pathname.startsWith("/data-coverage") ||
     pathname.startsWith("/atualizar-base")
   ) {
-    return [
-      { to: "/settings", label: "Overview", end: true },
-      { to: "/settings/health", label: "Data", activeOn: ["/settings/coverage", "/settings/updates"] },
-      { to: "/settings/sources", label: "Sources", activeOn: ["/settings/imports"] },
-      { to: "/settings/indicator-sources", label: "Indicator Sources" },
-      { to: "/settings/storage", label: "Storage" },
-      { to: "/settings/app", label: "App" },
-      { to: "/settings/diagnostics", label: "Advanced" },
-    ];
+    return SETTINGS_NAV_ITEMS.map(({ id, label, to, activeOn }) => ({ to, label, activeOn, end: id === "overview" }));
   }
 
   // Setores hub keeps breadcrumb-based navigation inside the page itself;

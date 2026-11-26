@@ -5,7 +5,6 @@ import type {
   BaseHealthSnapshot,
   CancelRefreshResponse,
   CompanyUniversePreset,
-  CompanyUniverseSelection,
   DatabaseDiagnostics,
   DataUpdateSettings,
   DataUpdateStartResponse,
@@ -40,19 +39,6 @@ export type DataUpdateSettingsResult =
   | { mode: "desktop"; settings: DataUpdateSettings }
   | { mode: "browser"; settings: DataUpdateSettings; reason: string };
 
-export type CompanyUniverseSelectionResult =
-  | { mode: "desktop"; selection: CompanyUniverseSelection }
-  | { mode: "browser"; selection: null; reason: string };
-
-export type StartRefreshParams = {
-  mode: RefreshMode;
-  limit: number;
-  startYear: number;
-  endYear: number;
-  cdCvm?: number | null;
-  companyIds?: number[];
-};
-
 /** Only `mode` matters now: the backend fixes the scope (ADR 0010). */
 export type StartDataUpdateParams = {
   mode?: RefreshMode;
@@ -65,8 +51,8 @@ export type StartDataUpdateParams = {
 };
 
 export type ResetLocalDatabaseParams = {
-  action: "restart_current" | "recreate_local";
-  confirm: "RESET" | "REBUILD" | string;
+  action: "recreate_local";
+  confirm: "REBUILD" | string;
 };
 
 /**
@@ -84,40 +70,6 @@ export class DataUpdateBlockedError extends Error {
   }
 }
 
-export const BATCH_SIZE_OPTIONS: DataUpdateSettings["batch_size"][] = [
-  50,
-  100,
-  200,
-  500,
-];
-
-export const REFRESH_MODES: Array<{
-  value: RefreshMode;
-  label: string;
-  description: string;
-}> = [
-  {
-    value: "missing",
-    label: "Missing data",
-    description: "Fill gaps in the selected years. Best first-run choice.",
-  },
-  {
-    value: "failed",
-    label: "Failed only",
-    description: "Retry companies with previous refresh errors.",
-  },
-  {
-    value: "outdated",
-    label: "Outdated",
-    description: "Refresh companies with stale local coverage.",
-  },
-  {
-    value: "full",
-    label: "Full refresh",
-    description: "Reprocess selected companies even if data exists.",
-  },
-];
-
 export function defaultRefreshWindow(referenceDate = new Date()): {
   startYear: number;
   endYear: number;
@@ -125,8 +77,6 @@ export function defaultRefreshWindow(referenceDate = new Date()): {
   const endYear = referenceDate.getFullYear() - 1;
   return { startYear: endYear - 1, endYear };
 }
-
-export const CVM_MIN_YEAR = 2010;
 
 export function isActiveRefreshJob(job: RefreshJobStatus | null | undefined): boolean {
   return job != null && (job.state === "queued" || job.state === "running");
@@ -236,29 +186,6 @@ export async function fetchRefreshJob(jobId: string): Promise<RefreshJobResult> 
   return { mode: "desktop", job };
 }
 
-export async function startBaseRefresh(
-  params: StartRefreshParams,
-): Promise<RefreshDispatchResponse> {
-  if (getBridgeMode() === "browser") {
-    throw new Error(BROWSER_REASON);
-  }
-  const response = await callBridge("request_refresh", {
-    mode: params.mode,
-    limit: Math.max(1, Math.min(10_000, Math.trunc(params.limit))),
-    start_year: params.startYear,
-    end_year: params.endYear,
-    ...(params.cdCvm != null ? { cd_cvm: params.cdCvm } : {}),
-    ...(params.companyIds?.length ? { company_ids: params.companyIds } : {}),
-  });
-  if (response.error) {
-    throw new Error(response.error);
-  }
-  if (response.status === "error") {
-    throw new Error(response.message || response.status_reason_message || "Refresh failed to start.");
-  }
-  return response;
-}
-
 export async function fetchDataUpdateSettings(): Promise<DataUpdateSettingsResult> {
   const currentYear = new Date().getFullYear();
   const fallback: DataUpdateSettings = {
@@ -290,21 +217,6 @@ export async function saveDataUpdateSettings(
     throw new Error(response.error);
   }
   return response;
-}
-
-export async function fetchCompanyUniverseSelection(
-  preset: CompanyUniversePreset,
-): Promise<CompanyUniverseSelectionResult> {
-  if (getBridgeMode() === "browser") {
-    return { mode: "browser", selection: null, reason: BROWSER_REASON };
-  }
-  const selection = (await callBridge("get_company_universe_selection", {
-    preset,
-  })) as CompanyUniverseSelection & { error?: string };
-  if (selection.error) {
-    throw new Error(selection.error);
-  }
-  return { mode: "desktop", selection };
 }
 
 export async function startDataUpdate(
@@ -431,8 +343,27 @@ export async function fetchMarketCapSnapshot(): Promise<MarketCapStatus> {
   return result.status;
 }
 
-export function describeMarketCapFetch(status: MarketCapStatus): string {
-  return `Market caps fetched for ${status.row_count} companies from Yahoo Finance (unofficial), as of ${
-    status.as_of_date ?? "today"
-  }. Click Update Database again.`;
+/** Last fetched market-cap snapshot; a local read, never a network call. */
+export async function fetchMarketCapStatus(): Promise<MarketCapStatus | null> {
+  if (getBridgeMode() === "browser") return null;
+  return callBridge("get_market_cap_status", {});
+}
+
+/** Retry failed companies: the shared retry contract used by every surface. */
+export async function retryFailedCompanies(companyIds: number[]): Promise<RefreshDispatchResponse> {
+  if (getBridgeMode() === "browser") {
+    throw new Error(BROWSER_REASON);
+  }
+  const response = await callBridge("request_refresh", {
+    mode: "failed",
+    scope: "retry",
+    company_ids: companyIds,
+  });
+  if (response.error) {
+    throw new Error(response.error);
+  }
+  if (response.status === "error") {
+    throw new Error(response.message || response.status_reason_message || "Retry failed to start.");
+  }
+  return response;
 }

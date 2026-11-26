@@ -421,7 +421,8 @@ class StatusBridgeMixin:
                 },
                 "warnings": [],
                 "errors": [str(db_error)] if db_error else [],
-                "action_route": "/settings/storage" if companies_status == "empty" else "/settings/health",
+                # Missing CVM data is fixed by "Download CVM data" on Home.
+                "action_route": "/" if companies_status == "empty" else "/settings/data",
                 "details": {"metric_source": "bounded_presence_probe"},
             })
 
@@ -464,8 +465,8 @@ class StatusBridgeMixin:
                 },
                 "warnings": [database.get("latest_error")] if database.get("latest_error") else [],
                 "errors": [str(db_error)] if db_error else [],
-                "action_route": "/settings/updates" if reports_status in {"empty", "degraded"} else "/settings/coverage",
-                "details": {"coverage_route": "/settings/coverage"},
+                "action_route": "/" if reports_status in {"empty", "updating"} else "/settings/data",
+                "details": {"coverage_route": "/settings/data"},
             })
 
             self._append_optional_settings_segments(
@@ -506,14 +507,14 @@ class StatusBridgeMixin:
                     "severity": "critical",
                     "message": "Refresh worker failed: "
                     + str(refresh_worker.get("last_error") or "no error recorded"),
-                    "action_route": "/settings/updates",
+                    "action_route": "/settings/diagnostics",
                 })
             elif int(refresh_worker.get("active_jobs") or 0) > 0 and refresh_worker.get("stale"):
                 warnings.append({
                     "segment_id": "runtime",
                     "severity": "warning",
                     "message": "Refresh jobs are queued/running but the worker heartbeat is missing or stale.",
-                    "action_route": "/settings/updates",
+                    "action_route": "/settings/diagnostics",
                 })
 
             overall_status = self._settings_overall_status(
@@ -893,7 +894,7 @@ class StatusBridgeMixin:
             },
             "warnings": [],
             "errors": [],
-            "action_route": "/settings/updates",
+            "action_route": "/settings/sources",
             "details": {"note": "Yahoo Finance data is unofficial and not CVM/B3 official data."},
         })
 
@@ -981,7 +982,7 @@ class StatusBridgeMixin:
         if status == "healthy":
             return "Required CVM registry and financial statement checks passed. Optional segments may still have deferred details."
         if status == "empty":
-            return "Required CVM local data is not populated yet. Start with Database Updates."
+            return "The local database is empty. Use Download CVM data on Home."
         return "Some optional segment evidence is unavailable or deferred."
 
     def open_status_path(self, params=None) -> dict:

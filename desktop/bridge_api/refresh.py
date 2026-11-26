@@ -593,8 +593,8 @@ class RefreshBridgeMixin:
             return self._sanitize_for_json(self._write_blocked_response("reset_local_database"))
         p = params or {}
         action = str(p.get("action") or "").strip().lower()
-        expected = "RESET" if action == "restart_current" else "REBUILD"
-        if action not in {"restart_current", "recreate_local"}:
+        expected = "REBUILD"
+        if action != "recreate_local":
             return self._sanitize_for_json({
                 "ok": False,
                 "action": action,
@@ -617,10 +617,7 @@ class RefreshBridgeMixin:
                     "active_job_id": active_job.get("job_id"),
                 })
 
-            if action == "restart_current":
-                result = self._restart_current_database_state()
-            else:
-                result = self._recreate_local_database()
+            result = self._recreate_local_database()
             self._reset_bridge_runtime()
             return self._sanitize_for_json({
                 "ok": True,
@@ -826,62 +823,6 @@ class RefreshBridgeMixin:
             return None
         return None
 
-    def _restart_current_database_state(self) -> dict[str, Any]:
-        from sqlalchemy import text  # noqa: PLC0415
-        from src.companies.universe import ensure_company_universe_tables_for_connection  # noqa: PLC0415
-        from src.refresh.jobs import ensure_refresh_runtime_tables_for_connection  # noqa: PLC0415
-
-        svc = self._svc()
-        removed: list[str] = []
-        settings_snapshot = self._resolve_data_update_settings()
-
-        blank: dict[str, Any] = {
-            "first_run_completed": False,
-            "should_show": True,
-            "selected_company_universe": None,
-            "company_universe_source": None,
-            "company_universe_source_date": None,
-            "setup_status": None,
-            "selected_company_count": 0,
-            "refresh_job_id": None,
-            "warning": None,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        }
-        onboarding = self._onboarding()
-        onboarding._write_state(blank)  # type: ignore[attr-defined]
-
-        with svc.engine.begin() as conn:
-            ensure_company_universe_tables_for_connection(conn)
-            ensure_refresh_runtime_tables_for_connection(conn)
-            conn.execute(text("DELETE FROM company_universe"))
-            conn.execute(text("DELETE FROM refresh_jobs"))
-            conn.execute(text("DELETE FROM company_refresh_status"))
-            conn.execute(
-                text(
-                    """
-                    DELETE FROM app_settings
-                    WHERE key IN (
-                        'first_run_completed',
-                        'selected_company_universe',
-                        'company_universe_source',
-                        'company_universe_source_date',
-                        'download_status',
-                        'refresh_job_id'
-                    )
-                    """
-                )
-            )
-        removed.extend(["company_universe", "refresh_jobs", "company_refresh_status", "onboarding_state"])
-        self._remove_runtime_state_files(removed)
-        self._write_app_settings(settings_snapshot)
-        svc.invalidate_read_caches()
-        self._clear_data_coverage_cache()
-        return {
-            "backup_path": None,
-            "removed": removed,
-            "message": "Setup state and update history cleared. Local financial data was preserved.",
-        }
-
     def _recreate_local_database(self) -> dict[str, Any]:
         from src.financials.database import init_db_tables  # noqa: PLC0415
         from src.platform.db import build_engine  # noqa: PLC0415
@@ -898,6 +839,7 @@ class RefreshBridgeMixin:
         backup_dir.mkdir(parents=True, exist_ok=True)
 
         backup_items = self._backup_database_artifacts(db_path, backup_dir)
+        ignored_companies = self._read_ignored_companies(svc.engine)
 
         try:
             svc.engine.dispose()
@@ -915,6 +857,7 @@ class RefreshBridgeMixin:
         engine = build_engine(svc.settings)
         try:
             init_db_tables(engine)
+            self._restore_ignored_companies(engine, ignored_companies)
         finally:
             engine.dispose()
 
@@ -924,8 +867,56 @@ class RefreshBridgeMixin:
             "backup_path": str(backup_dir),
             "backup_items": backup_items,
             "removed": removed,
-            "message": "Local SQLite database rebuilt. Start an update to populate the database.",
+            "kept_ignored_companies": len(ignored_companies),
+            "message": (
+                "Local database rebuilt after a backup. Ignore flags were kept. "
+                "Start a data update to fill it."
+            ),
         }
+
+    @staticmethod
+    def _read_ignored_companies(engine) -> list[dict[str, Any]]:
+        """The analyst's ignore flags are curation, not data: a rebuild keeps them."""
+        from sqlalchemy import text  # noqa: PLC0415
+        from src.refresh.jobs import ensure_refresh_runtime_tables_for_connection  # noqa: PLC0415
+
+        with engine.begin() as conn:
+            ensure_refresh_runtime_tables_for_connection(conn)
+            rows = conn.execute(
+                text(
+                    """
+                    SELECT cd_cvm, company_name, ignored_at, ignored_reason
+                    FROM company_refresh_status
+                    WHERE ignored = 1
+                    """
+                )
+            ).mappings().all()
+        return [dict(row) for row in rows]
+
+    @staticmethod
+    def _restore_ignored_companies(engine, rows: list[dict[str, Any]]) -> None:
+        if not rows:
+            return
+        from sqlalchemy import text  # noqa: PLC0415
+        from src.refresh.jobs import ensure_refresh_runtime_tables_for_connection  # noqa: PLC0415
+
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        with engine.begin() as conn:
+            ensure_refresh_runtime_tables_for_connection(conn)
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO company_refresh_status (
+                        cd_cvm, company_name, source_scope, updated_at,
+                        ignored, ignored_at, ignored_reason
+                    ) VALUES (
+                        :cd_cvm, :company_name, 'local', :updated_at,
+                        1, :ignored_at, :ignored_reason
+                    )
+                    """
+                ),
+                [{**row, "updated_at": now} for row in rows],
+            )
 
     def _backup_database_artifacts(self, db_path: Path, backup_dir: Path) -> list[str]:
         copied: list[str] = []

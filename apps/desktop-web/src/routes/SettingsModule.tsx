@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, NavLink } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -10,7 +10,15 @@ import { fetchSettingsHealthSummary } from "@/lib/api/settingsHealth";
 import { fetchStorageInventory, startStorageInventoryScan, type StorageInventoryResult } from "@/lib/api/storageInventory";
 import { openStatusPath, type StatusPathKind } from "@/lib/api/appStatus";
 import { describeB3Refresh, fetchB3ClassificationStatus, refreshB3Classification } from "@/lib/api/b3Classification";
+import {
+  fetchDataUpdateSettings,
+  fetchMarketCapSnapshot,
+  fetchMarketCapStatus,
+  resetLocalDatabase,
+  saveDataUpdateSettings,
+} from "@/lib/api/updateBase";
 import type {
+  DataUpdateSettings,
   LocalPathInfo,
   SettingsHealthSegment,
   SettingsHealthStatus,
@@ -19,45 +27,31 @@ import type {
   StorageInventory,
 } from "@/lib/bridge/types";
 import { whenBridgeReady } from "@/lib/bridge/adapter";
+import { SETTINGS_NAV_ITEMS, type SettingsNavSection } from "@/lib/settingsNav";
 
 import { DataCoveragePage } from "./DataCoveragePage";
 import { StatusPage } from "./StatusPage";
-import { UpdateBasePage } from "./UpdateBasePage";
 import { UserImportsPage } from "./UserImportsPage";
+
+// Lazy so the Indicators chunk loads only when its tab opens.
+const IndicatorSourcesPage = lazy(() => import("./CountryKpisPage").then((m) => ({ default: m.IndicatorSourcesPage })));
 
 type SettingsSection =
   | "overview"
+  | "data"
   | "app"
-  | "health"
-  | "coverage"
   | "storage"
   | "sources"
   | "imports"
-  | "updates"
+  | "indicator-sources"
   | "diagnostics";
 
 type SettingsModuleProps = {
   section: SettingsSection;
 };
 
-type SettingsNavSection = "overview" | "data" | "sources" | "storage" | "app" | "advanced";
-
-export const SETTINGS_NAV_ITEMS: Array<{
-  id: SettingsNavSection;
-  label: string;
-  to: string;
-}> = [
-  { id: "overview", label: "Overview", to: "/settings" },
-  { id: "data", label: "Data", to: "/settings/health" },
-  { id: "sources", label: "Sources", to: "/settings/sources" },
-  { id: "storage", label: "Storage", to: "/settings/storage" },
-  { id: "app", label: "App", to: "/settings/app" },
-  { id: "advanced", label: "Advanced", to: "/settings/diagnostics" },
-];
-
 export function getSettingsNavSection(section: SettingsSection): SettingsNavSection {
-  if (section === "health" || section === "coverage" || section === "updates") return "data";
-  if (section === "imports") return "sources";
+  if (section === "imports" || section === "indicator-sources") return "sources";
   if (section === "diagnostics") return "advanced";
   return section;
 }
@@ -93,7 +87,7 @@ export function SettingsModule({ section }: SettingsModuleProps) {
     <section className="space-y-5">
       <PageHeader
         title="Settings"
-        subtitle="Health, data sources, storage, app state, and diagnostics."
+        subtitle="Preferences and maintenance. Data updates run from the Data panel in the top bar."
         actions={
           <StatusBadge status={summary?.overall_status ?? "unknown"}>
             {loading ? "Connecting" : statusLabel(summary?.overall_status ?? "unknown")}
@@ -116,20 +110,19 @@ export function SettingsModule({ section }: SettingsModuleProps) {
         <main className="min-w-0 space-y-5">
           {section === "overview" ? (
             <SettingsOverview loading={loading} summary={summary} />
-          ) : section === "health" ? (
-            <SettingsDataHealth loading={loading} summary={summary} />
-          ) : section === "coverage" ? (
-            <SettingsNestedPage intro={<CoverageIntro summary={summary} />}>
+          ) : section === "data" ? (
+            <>
+              <HistoryRangePanel bridgeReady={bridgeReady} />
               <DataCoveragePage />
-            </SettingsNestedPage>
-          ) : section === "updates" ? (
-            <SettingsNestedPage intro={<UpdatesIntro summary={summary} />}>
-              <UpdateBasePage />
-            </SettingsNestedPage>
+            </>
           ) : section === "storage" ? (
             <SettingsStorage loading={loading} summary={summary} />
-          ) : section === "sources" || section === "imports" ? (
-            <SettingsSources loading={loading} summary={summary} initialView={section === "imports" ? "imports" : "sources"} />
+          ) : section === "sources" || section === "imports" || section === "indicator-sources" ? (
+            <SettingsSources
+              loading={loading}
+              summary={summary}
+              initialView={section === "imports" ? "imports" : section === "indicator-sources" ? "indicators" : "sources"}
+            />
           ) : section === "app" ? (
             <SettingsApp loading={loading} summary={summary} />
           ) : (
@@ -178,7 +171,7 @@ function SettingsNav({ current }: { current: SettingsNavSection }) {
   );
 }
 
-function SettingsOverview({
+export function SettingsOverview({
   loading,
   summary,
 }: {
@@ -196,18 +189,7 @@ function SettingsOverview({
 
   return (
     <>
-      <Panel
-        title="System status"
-        subtitle={summary.summary.title}
-        actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <LinkButton to="/settings/health">Open Data</LinkButton>
-            <LinkButton to="/settings/updates">Update Data</LinkButton>
-            <LinkButton to="/settings/sources">Open Sources</LinkButton>
-            <LinkButton to="/settings/storage">Open Storage</LinkButton>
-          </div>
-        }
-      >
+      <Panel title="System status" subtitle={summary.summary.title}>
         <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
           <Metric label="Overall" value={statusLabel(summary.overall_status)} status={summary.overall_status} />
           <Metric label="Critical" value={formatNumber(summary.summary.critical_segments)} status={summary.summary.critical_segments ? "critical" : "healthy"} />
@@ -219,9 +201,8 @@ function SettingsOverview({
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
         <Panel
-          title="Needs Attention"
-          subtitle="Top issues from the lightweight local summary."
-          actions={<LinkButton to="/settings/health">Open Data</LinkButton>}
+          title="Needs attention"
+          subtitle="Each item links to where it is fixed."
         >
           {attention.length === 0 ? (
             <StateBanner
@@ -242,8 +223,8 @@ function SettingsOverview({
           title="Data"
           status={worstStatus(summary.segments.filter((segment) => isDataSegment(segment)))}
           meta={`${formatNumber(summary.segments.filter((segment) => isDataSegment(segment)).length)} checks`}
-          to="/settings/health"
-          action="Review health"
+          to="/settings/data"
+          action="Data completeness"
         />
         <SettingsIntentCard
           title="Sources"
@@ -280,45 +261,7 @@ function SettingsOverview({
   );
 }
 
-function SettingsDataHealth({
-  loading,
-  summary,
-}: {
-  loading: boolean;
-  summary: SettingsHealthSummary | null;
-}) {
-  if (loading || !summary) {
-    return <StateBanner variant="loading" title="Loading data health..." />;
-  }
-  return (
-    <>
-      <Panel
-        title="Data"
-        subtitle="Local data state and update entry points."
-        actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <LinkButton to="/settings/updates">Data Updates</LinkButton>
-            <LinkButton to="/settings/coverage">Coverage</LinkButton>
-          </div>
-        }
-      >
-        <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
-          <Metric label="Required" value={formatNumber(summary.summary.required_segments)} />
-          <Metric label="Critical" value={formatNumber(summary.summary.critical_segments)} status={summary.summary.critical_segments ? "critical" : "healthy"} />
-          <Metric label="Degraded" value={formatNumber(summary.summary.degraded_segments)} status={summary.summary.degraded_segments ? "degraded" : "healthy"} />
-          <Metric label="Empty" value={formatNumber(summary.summary.empty_segments)} status={summary.summary.empty_segments ? "empty" : "healthy"} />
-          <Metric label="Updating" value={formatNumber(summary.summary.updating_segments)} status={summary.summary.updating_segments ? "updating" : "healthy"} />
-        </div>
-      </Panel>
-
-      <Panel title="Health" subtitle="Fast local evidence. Coverage details and update jobs open explicitly.">
-        <SegmentList segments={summary.segments.filter((segment) => isDataSegment(segment) || isSourceSegment(segment))} />
-      </Panel>
-    </>
-  );
-}
-
-type SourcesView = "sources" | "imports";
+type SourcesView = "sources" | "imports" | "indicators";
 
 function SettingsSources({
   loading,
@@ -358,6 +301,7 @@ function SettingsSources({
       <div className="flex flex-wrap gap-2 rounded-lg border border-zinc-800 bg-zinc-900/55 p-2">
         <TabButton active={view === "sources"} onClick={() => setView("sources")}>Data Sources</TabButton>
         <TabButton active={view === "imports"} onClick={() => setView("imports")}>Manual Imports</TabButton>
+        <TabButton active={view === "indicators"} onClick={() => setView("indicators")}>Indicator sources</TabButton>
       </div>
 
       {view === "sources" ? (
@@ -366,15 +310,24 @@ function SettingsSources({
             <SegmentList segments={sourceSegments} />
           </Panel>
           <B3SectorSourcePanel />
+          <MarketCapSourcePanel />
         </>
-      ) : (
+      ) : view === "imports" ? (
         <SettingsGroup
           title="Manual Imports"
           subtitle="CCEE source files, drag-and-drop import, status, and audit evidence."
         >
           <UserImportsPage />
         </SettingsGroup>
-
+      ) : (
+        <SettingsGroup
+          title="Indicator sources"
+          subtitle="Distribution source health for the Indicators module."
+        >
+          <Suspense fallback={<StateBanner variant="loading" title="Loading indicator sources..." />}>
+            <IndicatorSourcesPage />
+          </Suspense>
+        </SettingsGroup>
       )}
     </>
   );
@@ -415,6 +368,173 @@ function B3SectorSourcePanel() {
         </div>
       ) : null}
       {refresh.error ? <StateBanner variant="error" message={(refresh.error as Error).message} /> : null}
+    </Panel>
+  );
+}
+
+function MarketCapSourcePanel() {
+  const queryClient = useQueryClient();
+  const status = useQuery({ queryKey: ["market-cap-status"], queryFn: fetchMarketCapStatus, refetchOnWindowFocus: false });
+  const fetchCaps = useMutation({
+    mutationFn: fetchMarketCapSnapshot,
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ["market-cap-status"] });
+      void queryClient.invalidateQueries({ queryKey: ["companies"] });
+    },
+  });
+  const data = status.data;
+  const notes = data ? [...(data.error ? [data.error] : []), ...(data.warnings ?? [])] : [];
+
+  return (
+    <Panel
+      title="Market caps · Yahoo Finance (unofficial)"
+      subtitle="Unofficial external market capitalizations, used for market-cap columns and sorting. Never part of CVM statements. Fetched only when you click."
+      actions={
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={data === null}
+          loading={fetchCaps.isPending}
+          onClick={() => fetchCaps.mutate()}
+        >
+          Fetch market caps
+        </Button>
+      }
+    >
+      {status.isLoading ? <StateBanner variant="loading" title="Loading market-cap status..." size="dense" /> : null}
+      {status.error ? (
+        <StateBanner
+          variant="error"
+          title="Could not read market-cap status"
+          message={status.error instanceof Error ? status.error.message : String(status.error)}
+          size="dense"
+          onRetry={() => { void status.refetch(); }}
+        />
+      ) : null}
+      {data === null ? <StateBanner variant="browser-only" message="Market caps need the desktop bridge." size="dense" /> : null}
+      {data ? (
+        <div className="flex flex-col gap-1 text-sm">
+          <span style={{ color: data.available ? undefined : "var(--color-state-warn)" }}>
+            {data.available
+              ? `Last fetch: ${formatNumber(data.row_count)} companies · as of ${data.as_of_date ?? "unknown date"}${
+                  data.downloaded_at ? ` · fetched ${formatDate(data.downloaded_at)}` : ""
+                }`
+              : "No market caps stored locally."}
+          </span>
+          {notes.map((note) => <span key={note} className="text-xs text-zinc-500">{note}</span>)}
+        </div>
+      ) : null}
+      {fetchCaps.error ? (
+        <StateBanner
+          variant="error"
+          title="Could not fetch market caps"
+          message={fetchCaps.error instanceof Error ? fetchCaps.error.message : String(fetchCaps.error)}
+          size="dense"
+        />
+      ) : null}
+    </Panel>
+  );
+}
+
+type HistoryRange = "3" | "5" | "10" | "2010";
+
+const HISTORY_RANGE_OPTIONS: Array<{ value: HistoryRange; label: string }> = [
+  { value: "3", label: "Last 3 years" },
+  { value: "5", label: "Last 5 years (default)" },
+  { value: "10", label: "Last 10 years" },
+  { value: "2010", label: "Since 2010" },
+];
+
+export function historyRangeYears(range: HistoryRange, endYear: number): Pick<DataUpdateSettings, "start_year" | "end_year"> {
+  return { start_year: range === "2010" ? 2010 : endYear - Number(range) + 1, end_year: endYear };
+}
+
+export function historyRangeOf(
+  years: Pick<DataUpdateSettings, "start_year" | "end_year">,
+  endYear: number,
+): HistoryRange | "custom" {
+  const match = HISTORY_RANGE_OPTIONS.find(({ value }) => {
+    const option = historyRangeYears(value, endYear);
+    return option.start_year === years.start_year && option.end_year === years.end_year;
+  });
+  return match?.value ?? "custom";
+}
+
+function HistoryRangePanel({ bridgeReady }: { bridgeReady: boolean }) {
+  const queryClient = useQueryClient();
+  const settingsQuery = useQuery({
+    queryKey: ["data-update-settings"],
+    queryFn: fetchDataUpdateSettings,
+    enabled: bridgeReady,
+    refetchOnWindowFocus: false,
+  });
+  const save = useMutation({
+    mutationFn: saveDataUpdateSettings,
+    onSuccess: (settings) => queryClient.setQueryData(["data-update-settings"], { mode: "desktop", settings }),
+  });
+  // shortcut: the bridge stores absolute years, so a range saved last year shows as Custom
+  // until it is picked again; store the range itself if analysts trip over it.
+  const endYear = new Date().getFullYear();
+  const result = settingsQuery.data;
+  const settings = result?.settings ?? null;
+  const current = settings ? historyRangeOf(settings, endYear) : null;
+
+  return (
+    <Panel
+      title="History range"
+      subtitle="How many past fiscal years a data update fetches from CVM. Applies to the next data update."
+    >
+      {!bridgeReady || settingsQuery.isLoading ? (
+        <StateBanner variant="loading" title="Loading history range..." size="dense" />
+      ) : null}
+      {settingsQuery.isError ? (
+        <StateBanner
+          variant="error"
+          title="Could not load the history range"
+          message={settingsQuery.error instanceof Error ? settingsQuery.error.message : String(settingsQuery.error)}
+          size="dense"
+          onRetry={() => { void settingsQuery.refetch(); }}
+        />
+      ) : null}
+      {result?.mode === "browser" ? <StateBanner variant="browser-only" message={result.reason} size="dense" /> : null}
+      {settings && current ? (
+        <div className="flex flex-wrap items-center gap-3 text-sm">
+          <select
+            aria-label="History range"
+            value={current}
+            disabled={result?.mode !== "desktop" || save.isPending}
+            onChange={(event) => save.mutate({ ...settings, ...historyRangeYears(event.target.value as HistoryRange, endYear) })}
+            className="rounded border px-2 py-1.5 text-sm focus:outline-none"
+            style={{
+              background: "var(--color-surface-2)",
+              borderColor: "var(--color-border-default)",
+              color: "var(--color-text-primary)",
+            }}
+          >
+            {current === "custom" ? (
+              <option value="custom" disabled>
+                Custom ({settings.start_year}–{settings.end_year})
+              </option>
+            ) : null}
+            {HISTORY_RANGE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+          <span className="font-mono text-xs text-zinc-500">
+            Fiscal years {settings.start_year}–{settings.end_year}
+          </span>
+          {save.isPending ? <span className="text-xs text-zinc-500">Saving...</span> : null}
+          {save.isSuccess && !save.isPending ? <span className="text-xs text-emerald-200">Saved</span> : null}
+        </div>
+      ) : null}
+      {save.error ? (
+        <StateBanner
+          variant="error"
+          title="Could not save the history range"
+          message={save.error instanceof Error ? save.error.message : String(save.error)}
+          size="dense"
+        />
+      ) : null}
     </Panel>
   );
 }
@@ -661,6 +781,8 @@ export function SettingsStorage({
         ) : null}
       </Panel>
 
+      <RebuildDatabasePanel desktopMode={desktopMode} />
+
       {inventory ? (
         <AdvancedDisclosure title="Advanced details">
           <StorageArchitectureSnapshot inventory={inventory} />
@@ -668,6 +790,90 @@ export function SettingsStorage({
         </AdvancedDisclosure>
       ) : null}
     </>
+  );
+}
+
+const REBUILD_CONFIRMATION = "REBUILD";
+
+function RebuildDatabasePanel({ desktopMode }: { desktopMode: boolean }) {
+  const queryClient = useQueryClient();
+  const [confirming, setConfirming] = useState(false);
+  const [typed, setTyped] = useState("");
+  const rebuild = useMutation({
+    mutationFn: resetLocalDatabase,
+    onSuccess: () => {
+      setConfirming(false);
+      setTyped("");
+    },
+    // Every screen reads the database that was just replaced.
+    onSettled: () => { void queryClient.invalidateQueries(); },
+  });
+  const cancel = () => {
+    setConfirming(false);
+    setTyped("");
+  };
+
+  return (
+    <Panel
+      title="Rebuild local database"
+      subtitle="Backs up the current database, then recreates it empty. Your ignore flags and History range are kept. Nothing downloads until you start a data update."
+      actions={
+        confirming ? null : (
+          <Button size="sm" variant="danger" disabled={!desktopMode || rebuild.isPending} onClick={() => setConfirming(true)}>
+            Rebuild local database
+          </Button>
+        )
+      }
+    >
+      {confirming ? (
+        <div className="space-y-3">
+          <label className="block text-xs text-zinc-400">
+            Statements stay out of the local database until the next data update. Type{" "}
+            <span className="font-mono text-zinc-100">{REBUILD_CONFIRMATION}</span> to confirm.
+            <input
+              value={typed}
+              onChange={(event) => setTyped(event.target.value)}
+              aria-label="Type REBUILD to confirm"
+              autoFocus
+              className="mt-2 block w-full max-w-xs rounded border border-zinc-700 bg-zinc-900 px-3 py-1.5 font-mono text-sm text-zinc-100 focus:border-amber-500 focus:outline-none"
+            />
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant="danger"
+              disabled={typed !== REBUILD_CONFIRMATION}
+              loading={rebuild.isPending}
+              onClick={() => rebuild.mutate({ action: "recreate_local", confirm: typed })}
+            >
+              Back up and rebuild
+            </Button>
+            <Button size="sm" variant="ghost" disabled={rebuild.isPending} onClick={cancel}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : null}
+      {!desktopMode ? (
+        <StateBanner variant="browser-only" message="Rebuilding needs the desktop bridge." size="dense" />
+      ) : null}
+      {rebuild.data ? (
+        <StateBanner
+          variant="success"
+          title="Local database rebuilt"
+          message={`${rebuild.data.message ?? ""}${rebuild.data.backup_path ? ` Backup: ${rebuild.data.backup_path}` : ""}`}
+          size="dense"
+        />
+      ) : null}
+      {rebuild.error ? (
+        <StateBanner
+          variant="error"
+          title="Could not rebuild the local database"
+          message={rebuild.error instanceof Error ? rebuild.error.message : String(rebuild.error)}
+          size="dense"
+        />
+      ) : null}
+    </Panel>
   );
 }
 
@@ -1064,28 +1270,6 @@ function SettingsGroup({
   );
 }
 
-function CoverageIntro({ summary }: { summary: SettingsHealthSummary | null }) {
-  const financial = summary?.segments.find((segment) => segment.id === "cvm_financials");
-  return (
-    <SectionIntro
-      title="Data Coverage"
-      description="CVM coverage details are loaded here only after opening the coverage section."
-      segment={financial}
-    />
-  );
-}
-
-function UpdatesIntro({ summary }: { summary: SettingsHealthSummary | null }) {
-  const financial = summary?.segments.find((segment) => segment.id === "cvm_financials");
-  return (
-    <SectionIntro
-      title="Data Updates"
-      description="Database updates are separate from software updates. Write actions are disabled in read-only mode by the bridge."
-      segment={financial}
-    />
-  );
-}
-
 function DiagnosticsIntro({ summary }: { summary: SettingsHealthSummary | null }) {
   return (
     <SectionIntro
@@ -1159,7 +1343,7 @@ function SegmentList({
             ) : null}
           </div>
           <div className="flex justify-start xl:justify-end">
-            <LinkButton to={segment.action_route}>Open</LinkButton>
+            <LinkButton to={segment.action_route}>{actionLabel(segment.action_route)}</LinkButton>
           </div>
         </div>
       ))}
@@ -1270,6 +1454,16 @@ function pathLabel(kind: string): string {
   if (kind === "logs") return "Logs";
   if (kind === "cache") return "Cache";
   return kind;
+}
+
+function actionLabel(route: string): string {
+  if (route === "/") return "Download CVM data on Home";
+  if (route.startsWith("/settings/data")) return "Open Data completeness";
+  if (route.startsWith("/settings/sources")) return "Open Sources";
+  if (route.startsWith("/settings/storage")) return "Open Storage";
+  if (route.startsWith("/settings/diagnostics")) return "Open Advanced";
+  if (route.startsWith("/indicators")) return "Open Indicators";
+  return "Open";
 }
 
 function canOpenPath(kind: string): boolean {

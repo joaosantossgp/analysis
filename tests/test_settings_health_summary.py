@@ -31,9 +31,7 @@ def _seed_minimal_cvm_db(db_path):
         )
 
 
-def test_settings_health_summary_uses_fast_summary_path(tmp_path, monkeypatch):
-    settings = build_settings(project_root=tmp_path)
-    _seed_minimal_cvm_db(settings.paths.db_path)
+def _summary_bridge(settings, monkeypatch):
     bridge = CVMBridge()
     bridge._service = SimpleNamespace(settings=settings)
 
@@ -72,6 +70,13 @@ def test_settings_health_summary_uses_fast_summary_path(tmp_path, monkeypatch):
     )
     monkeypatch.delenv("CVMANALYTICS_USE_RELEASE_DATA", raising=False)
     monkeypatch.delenv("CVMANALYTICS_CONCURRENT_LOCK_DETECTED", raising=False)
+    return bridge
+
+
+def test_settings_health_summary_uses_fast_summary_path(tmp_path, monkeypatch):
+    settings = build_settings(project_root=tmp_path)
+    _seed_minimal_cvm_db(settings.paths.db_path)
+    bridge = _summary_bridge(settings, monkeypatch)
 
     payload = bridge.get_settings_health_summary({})
 
@@ -83,3 +88,27 @@ def test_settings_health_summary_uses_fast_summary_path(tmp_path, monkeypatch):
     required = {row["id"]: row for row in payload["segments"] if row["required"]}
     assert required["cvm_registry"]["status"] == "healthy"
     assert required["cvm_financials"]["status"] == "healthy"
+
+
+def test_attention_items_link_to_where_they_are_fixed(tmp_path, monkeypatch):
+    settings = build_settings(project_root=tmp_path)
+    db_path = settings.paths.db_path
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(str(db_path)) as conn:
+        conn.execute("CREATE TABLE companies (cd_cvm INTEGER PRIMARY KEY, company_name TEXT)")
+        conn.execute('CREATE TABLE financial_reports ("CD_CVM" INTEGER, "REPORT_YEAR" INTEGER, "PERIOD_LABEL" TEXT)')
+    bridge = _summary_bridge(settings, monkeypatch)
+
+    payload = bridge.get_settings_health_summary({})
+
+    segments = {row["id"]: row for row in payload["segments"]}
+    # Missing CVM data is fixed by "Download CVM data" on Home, never by Storage.
+    assert segments["cvm_registry"]["status"] == "empty"
+    assert segments["cvm_registry"]["action_route"] == "/"
+    assert segments["cvm_financials"]["status"] == "empty"
+    assert segments["cvm_financials"]["action_route"] == "/"
+    # Market caps are fetched explicitly in Settings -> Sources.
+    assert segments["market_data"]["action_route"] == "/settings/sources"
+    routes = [row["action_route"] for row in payload["segments"]]
+    routes += [item["action_route"] for item in payload["warnings"] + payload["errors"]]
+    assert not any(route.startswith(("/settings/updates", "/settings/health", "/settings/coverage")) for route in routes)

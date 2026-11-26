@@ -492,7 +492,7 @@ export type DataUpdateStartResponse = RefreshDispatchResponse & {
 
 export type ResetLocalDatabaseResponse = {
   ok: boolean;
-  action: "restart_current" | "recreate_local" | string;
+  action: "recreate_local" | string;
   message?: string;
   backup_path?: string | null;
   backup_items?: string[];

@@ -176,7 +176,7 @@ function PageHeader({
     <header className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-5 shadow-lg">
       <UnifiedPageHeader
         title="Status"
-        subtitle="Runtime, local data, database, software updater, and diagnostics for the default Vite desktop mode. Software update is separate from Database Updates."
+        subtitle="Runtime, local data, database, software updater, and diagnostics for the default Vite desktop mode. Software update is separate from data updates."
         actions={
           <div className="flex flex-col items-end gap-2 text-right">
             <StatusPill tone={runtime?.bridge_status === "ready" ? "good" : "warn"}>
@@ -697,14 +697,7 @@ function UpdateCard({
           <div className="mt-4 border-t border-zinc-800 pt-3 text-[11px] leading-relaxed text-zinc-500 space-y-2">
             <p>
               <span className="font-semibold text-zinc-400">Note:</span> This update changes the software version via GitHub Releases.
-              To update company data (CVM financial statements), use the{" "}
-              <a
-                href="#/settings/updates"
-                className="font-semibold text-zinc-300 underline decoration-zinc-600 underline-offset-2 hover:text-cyan-100"
-              >
-                Database Updates
-              </a>{" "}
-              page.
+              To update company data (CVM financial statements), use Update data in the Data panel of the top bar.
             </p>
           </div>
         </>

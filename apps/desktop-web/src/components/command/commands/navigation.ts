@@ -47,13 +47,13 @@ export function buildNavigationCommands(navigate: NavigateFunction): Command[] {
       run: goto("/empresas/coverage"),
     },
     {
-      id: "nav:database",
+      id: "nav:data-completeness",
       group: "navigation",
       glyph: "route",
-      label: "Data Updates",
-      secondary: "/settings/updates",
-      keywords: ["database", "refresh", "update", "ingest", "base", "atualizacao", "atualização"],
-      run: goto("/settings/updates"),
+      label: "Data completeness",
+      secondary: "/settings/data",
+      keywords: ["data completeness", "missing", "gaps", "failed", "retry", "history range", "database"],
+      run: goto("/settings/data"),
     },
     {
       id: "nav:sources",

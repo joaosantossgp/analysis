@@ -16,7 +16,7 @@ import {
   fetchRefreshJob,
   isActiveRefreshJob,
   isTerminalRefreshJob,
-  startBaseRefresh,
+  retryFailedCompanies,
 } from "@/lib/api/updateBase";
 import type {
   DataCoverageFilterId,
@@ -123,13 +123,7 @@ export function DataCoveragePage() {
   const retryMutation = useMutation({
     mutationFn: async (cdCvm: number) => {
       setRetryingCvm(cdCvm);
-      return startBaseRefresh({
-        mode: "missing",
-        limit: 1,
-        startYear: 2010,
-        endYear: new Date().getFullYear() - 1,
-        cdCvm,
-      });
+      return retryFailedCompanies([cdCvm]);
     },
     onSuccess: (result) => {
       invalidatedRetryJobRef.current = null;
@@ -257,32 +251,20 @@ export function DataCoveragePage() {
   return (
     <section className="space-y-6">
       <PageHeader
-        title="Data Coverage"
-        subtitle="Companies with missing, incomplete, stale, or failed data."
-        actions={
-          <Link
-            to="/settings/updates"
-            style={{
-              color: "var(--color-text-secondary)",
-              fontSize: "var(--text-xs)",
-              textDecoration: "underline",
-            }}
-          >
-            ← Database Updates
-          </Link>
-        }
+        title="Data completeness"
+        subtitle="Companies whose statements in the local database are missing, incomplete, stale, or failed. Failed companies can be retried here."
       />
 
       {browserReason ? <StateBanner variant="browser-only" message={browserReason} /> : null}
 
       {coverageQuery.isLoading || !bridgeReady ? (
-        <StateBanner variant="loading" title="Loading coverage…" />
+        <StateBanner variant="loading" title="Loading data completeness…" />
       ) : null}
 
       {coverageQuery.isError ? (
         <StateBanner
           variant="error"
-          title="Failed to load coverage"
+          title="Could not load data completeness"
           message={
             coverageQuery.error instanceof Error
               ? coverageQuery.error.message
@@ -329,7 +311,7 @@ export function DataCoveragePage() {
           <StateBanner
             variant="empty"
             title="No issues for this filter"
-            message="All companies in the selected universe have usable data for this criterion."
+            message="Every company in the local database has usable statements for this criterion."
           />
         ) : (
           <>
@@ -381,7 +363,7 @@ export function DataCoveragePage() {
       {retryMutation.isError ? (
         <StateBanner
           variant="error"
-          title="Could not start update"
+          title="Could not start retry"
           message={
             retryMutation.error instanceof Error
               ? retryMutation.error.message
@@ -501,7 +483,7 @@ function BulkActionsBar({
 function SummaryCards({ data }: { data: DataCoverageResponse }) {
   const { summary } = data;
   const cards: Array<{ label: string; value: number; tone?: DataCoverageStatus }> = [
-    { label: "Total in Universe", value: summary.total },
+    { label: "Total companies", value: summary.total },
     { label: "Complete", value: summary.complete, tone: "complete" },
     { label: "Partial", value: summary.partial, tone: "partial" },
     { label: "No Data", value: summary.no_financial, tone: "no_financial" },
