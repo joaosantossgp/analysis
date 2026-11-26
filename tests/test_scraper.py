@@ -757,3 +757,28 @@ def test_fetch_company_list_reuses_fresh_catalog_snapshot_without_network(scrape
     assert scraper.companies_map["PETROBRAS"] == 9512
     assert scraper.setores_map["9512"] == "Petroleo e Gas"
     assert scraper.cnpjs_map["9512"] == "33.000.167/0001-01"
+
+
+def test_concurrent_runs_never_download_the_same_cvm_file_at_once(scraper, monkeypatch):
+    import threading as _threading
+    import time as _time
+
+    active = {"now": 0, "max": 0}
+    guard = _threading.Lock()
+
+    def slow_unlocked(year, doc_type):
+        with guard:
+            active["now"] += 1
+            active["max"] = max(active["max"], active["now"])
+        _time.sleep(0.05)
+        with guard:
+            active["now"] -= 1
+        return True
+
+    monkeypatch.setattr(scraper, "_download_and_extract_unlocked", slow_unlocked)
+    threads = [_threading.Thread(target=scraper.download_and_extract, args=(2024, "DFP")) for _ in range(3)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert active["max"] == 1
