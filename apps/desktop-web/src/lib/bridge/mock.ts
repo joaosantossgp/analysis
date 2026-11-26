@@ -10,7 +10,6 @@
  *   base health snapshot
  *   data coverage
  *   financial KPIs and statements (two companies)
- *   onboarding (completed state)
  *   app status with mock runtime info
  */
 
@@ -44,7 +43,6 @@ import type {
   FuelDistributionStateMonthSeriesResponse,
   EnergyKPIRefreshResult,
   KPIBundle,
-  OnboardingState,
   PlantParcelCatalogResponse,
   PlantParcelRefreshResult,
   RefreshJobListResponse,
@@ -911,23 +909,6 @@ MOCK_SETTINGS_HEALTH.storage_inventory = {
 // Country Energy KPI fixtures
 // ---------------------------------------------------------------------------
 
-const MOCK_ONBOARDING: OnboardingState = {
-  first_run_completed: true,
-  should_show: false,
-  selected_company_universe: "top_200",
-  company_universe_source: "mock-fixture",
-  company_universe_source_date: `${YEAR - 1}-01-01`,
-  setup_status: "completed",
-  selected_company_count: 200,
-  refresh_job_id: MOCK_JOB_COMPLETED.job_id,
-  refresh_job: MOCK_JOB_COMPLETED,
-  warning: null,
-  has_local_financial_data: true,
-  market_cap_source_available: true,
-  market_cap_source: "mock-fixture",
-  market_cap_ranked_companies: 200,
-  yfinance_universe_provider_enabled: true,
-};
 
 // ---------------------------------------------------------------------------
 // Data update settings
@@ -2278,11 +2259,8 @@ export function createMockBridge(): Partial<BridgeApi> {
       } satisfies SectorDetailResponse;
     },
 
-    get_onboarding_state: async () => MOCK_ONBOARDING,
 
-    complete_onboarding_setup: async () => ({ ...MOCK_ONBOARDING, setup_status: "completed" }),
 
-    skip_onboarding_setup: async () => ({ ...MOCK_ONBOARDING, should_show: false }),
 
     get_data_update_settings: async () => MOCK_UPDATE_SETTINGS,
 
@@ -2350,17 +2328,10 @@ export function createMockBridge(): Partial<BridgeApi> {
       message: "[mock] Local database rebuilt after a backup. Ignore flags were kept.",
       backup_path: "[mock] /dev/mock/backup",
       backup_items: ["[mock] cvm_financials.db.bak"],
-      removed: ["onboarding_state.json", "refresh_jobs.json"],
+      removed: ["refresh_jobs.json"],
       active_job_id: null,
     }),
 
-    start_onboarding_setup: async () => ({
-      status: "accepted",
-      job_id: "mock-setup-" + Date.now(),
-      accepted_at: NOW,
-      queued: 100,
-      is_retry_allowed: false,
-    }),
 
     check_update: async () => ({ available: false, version: "0.29.1" }),
 
@@ -2701,7 +2672,6 @@ export function createMockBridge(): Partial<BridgeApi> {
       };
     },
 
-    dev_reset_onboarding: async () => ({ ok: true }),
     dev_reset_universe: async () => ({ ok: true }),
     dev_reset_jobs: async () => ({ ok: true }),
     dev_simulate_refresh: async () => ({ ok: true, mode: "mock" }),

@@ -16,12 +16,6 @@ function requireDesktop(label: string): void {
   }
 }
 
-export async function devResetOnboarding(): Promise<void> {
-  requireDesktop("dev_reset_onboarding");
-  const r = await callBridge("dev_reset_onboarding", {});
-  if (r.error) throw new Error(r.error);
-}
-
 export async function devResetUniverse(): Promise<void> {
   requireDesktop("dev_reset_universe");
   const r = await callBridge("dev_reset_universe", {});

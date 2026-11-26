@@ -40,8 +40,9 @@ snapshot is stored at `metadata/cvm_company_catalog.json` under the configured
 data root, preserving the source URL, UTC download timestamp and source CSV.
 Cache expiry only re-reads that local file; it does not authorize network access.
 
-Explicit onboarding and Settings -> Update Data refresh the catalog before
-selecting companies. An explicit single-company refresh can download a missing
+A data update ("Download CVM data" / "Update data") refreshes the catalog once
+before selecting companies, and the scraper reads the company registry from that
+snapshot. An explicit single-company refresh can download a missing
 catalog to bootstrap that company. A failed download or invalid response reports
 an error and preserves the previous snapshot. Missing local catalog evidence is
 reported where needed; existing database rows remain readable. Startup CNPJ

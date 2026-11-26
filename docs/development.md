@@ -214,7 +214,8 @@ Optional ticker expansion preview:
 
 ## Refreshing Data Outside The App
 
-The normal path is Settings -> Updates in the desktop app. For headless work:
+The normal path is **Download CVM data** / **Update data** in the desktop app
+(Home or the top-bar Data panel). For headless work:
 
 ```powershell
 # one-off CLI refresh

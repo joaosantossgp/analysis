@@ -21,14 +21,14 @@ Key local paths:
 
 | Symptom | Check |
 |---|---|
-| App opens but has no financial data | Confirm `db/cvm_financials.db` exists and run Settings -> Updates for target companies |
+| App opens but has no financial data | Choose **Download CVM data** on Home (or in the top-bar Data panel); the pill shows progress |
 | Browser preview shows no data | `npm run dev` has no pywebview bridge; use `python -m desktop.app --dev` or `npm run dev:mock` |
 | `ModuleNotFoundError: webview` or another declared package | Run `python -m desktop.app --repair-dev-environment --dev`; do not install the missing package globally. |
 | Bootstrap fails before the app opens | Read the printed command, exit code, and output; confirm Python 3.11+, Node.js 22+, permissions, and network access, then run the repair command. |
 | Writes are blocked in dev | Dev mode is using release Documents data; set isolated `CVM_DATA_DIR` or explicitly allow writes |
 | Another instance warning | A live process owns `{data_dir}/runtime.lock`; close the other process before writes |
-| Update Base cannot start Top N universe | Market-cap ranking source unavailable; choose `all`, import a snapshot, or resolve Yahoo Finance/network issue |
-| Company has no history | It may exist in the catalog but have no local CVM statement rows; run company-level refresh |
+| Data update ends "Completed with N failures" | Open the Data panel: failed companies are listed with their error and a Retry |
+| Company has no history | It may exist in the catalog but have no local CVM statement rows; use **Update company** on its page |
 | Market widgets empty | Ticker mapping or unofficial market-data provider may be unavailable |
 | News content unavailable | Only metadata/feed summary may be stored; the app does not bypass paywalls |
 | Excel export fails | Check output directory permissions, open-file locks, and exporter tests |

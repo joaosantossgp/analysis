@@ -1,52 +1,54 @@
 # Settings Module
 
-The Vite desktop app uses Settings as the canonical place for application
-configuration, local data health, storage paths, sources/imports, database
-updates, and diagnostics.
+Settings keeps preferences and maintenance only: local data preferences, data
+completeness, sources and imports, storage, app state, and diagnostics. It is
+never a required step to see data; the app shell owns the local database state
+and the data update ([ADR 0010](decisions/0010-shell-owned-data-updates.md),
+[database-updates.md](database-updates.md)).
 
 ## Navigation
+
+One list, `apps/desktop-web/src/lib/settingsNav.ts`, drives both the shell
+sub-navigation and the Settings sidebar, so they cannot disagree.
 
 | Route | Section |
 |-------|---------|
 | `/settings` | Overview |
-| `/settings/health` | Data |
-| `/settings/coverage` | Data > Coverage deep link |
-| `/settings/updates` | Data > Updates deep link |
+| `/settings/data` | Data: History range and Data completeness |
 | `/settings/sources` | Sources |
-| `/settings/imports` | Sources > Manual Imports deep link |
+| `/settings/imports` | Sources > Manual imports |
+| `/settings/indicator-sources` | Sources > Indicator sources |
 | `/settings/storage` | Storage |
 | `/settings/app` | App |
 | `/settings/diagnostics` | Advanced |
-| `/status` | Redirects to `/settings/diagnostics` |
-| `/data-coverage` | Redirects to `/settings/coverage` |
-| `/atualizar-base` | Redirects to `/settings/updates` |
 
-The top-level Settings navigation is intentionally limited to six user-facing
-sections: Overview, Data, Sources, Storage, App, and Advanced. Legacy deep links
-remain routed to their original workflows, but they are grouped under the new
-section labels.
+Retired routes redirect: `/settings/updates`, `/settings/health`,
+`/settings/coverage`, `/atualizar-base`, `/company-universe` and `/data-coverage`
+go to `/settings/data`; `/status` goes to `/settings/diagnostics`.
 
 ## Information Architecture
 
 Overview is a calm, action-first summary. It shows overall status, issue counts,
-a capped Needs Attention list, and cards for Data, Sources, Storage, and App.
-Advanced appears from Overview only when the health summary reports critical
-diagnostic errors. Overview uses only the cached lightweight Settings health
-summary and cached storage summary; it does not trigger coverage loads, storage
-scans, imports, refreshes, repair actions, migrations, or network work.
+a capped Needs Attention list whose items link to where each issue is fixed (an
+empty CVM registry or empty statements link to Home, where "Download CVM data"
+lives), and cards for Data, Sources, Storage, and App. Overview uses only the
+cached lightweight Settings health summary and cached storage summary; it does
+not trigger coverage loads, storage scans, imports, refreshes, repair actions,
+migrations, or network work.
 
-Data is the default data-state section. It focuses on required CVM registry and
-financial statement checks, coverage entry points, market/energy/source status
-when reported by the health summary, and the Data Updates workflow. Status
-definitions and provenance are no longer part of the default Data screen.
+Data holds the History range preference (Last 3 / 5 / 10 years or Since 2010; a
+span of years that rolls forward each year) and the Data completeness table.
+Data completeness is an audit surface, not an update launcher: failed rows offer
+Retry, no-data rows offer Open and Ignore.
 
-Sources is a source hub. The default view shows source segment health. Manual
-Imports and News are opened through the local segmented control so the CCEE file
-import workflow and the full News settings panel are not rendered together by
-default. `/settings/imports` still opens Manual Imports directly.
+Sources is a source hub: B3 sectors, manual imports, indicator sources, and
+"Fetch market caps", an explicit action labelled Yahoo Finance (unofficial)
+with its last status.
 
 Storage shows local footprint, file count, free space, largest category, last
-measured time, an explicit Refresh inventory button, and managed paths first.
+measured time, an explicit Refresh inventory button, managed paths first, and
+"Rebuild local database" (typed confirmation, backup first, keeps ignore flags,
+starts nothing afterwards).
 Technical inventory tables remain available under Storage > Advanced details.
 
 App contains user-facing runtime state: version, runtime mode, bridge status,

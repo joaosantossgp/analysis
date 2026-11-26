@@ -28,8 +28,8 @@ compatibility behavior.
 | Configure Excel model mapping | `/empresas/:cdCvm/model-mapping` and bridge Excel mapping methods |
 | Export company workbook | Company command/export flow through `export_company_excel` |
 | Refresh one company | Company page via `request_refresh` and `get_refresh_status` |
-| Refresh database | Settings -> Updates (`/settings/updates`) |
-| Audit local-data coverage gaps | Settings -> Health (`/settings/health`) and local-data Coverage (`/settings/coverage`) |
+| Refresh database | **Download CVM data** / **Update data** on Home or in the top-bar Data panel |
+| Audit local-data completeness | Settings -> Data (`/settings/data`) |
 | Manage analyst coverage universes | Companies -> Coverage (`/empresas/coverage`), prioritization, work queue, and capacity |
 | Inspect company coverage readiness | `/empresas/:cdCvm/coverage` for issuer-level Coverage Status |
 | Inspect sectors/industries | `/setores` and sector/subsector detail routes |

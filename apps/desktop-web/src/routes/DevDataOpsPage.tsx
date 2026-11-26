@@ -4,7 +4,6 @@ import { Button } from "../components/ui/Button";
 import {
   devGetRawState,
   devResetJobs,
-  devResetOnboarding,
   devResetUniverse,
   devSimulateRefresh,
   devStartSmallSetup,
@@ -77,9 +76,6 @@ function ResetPanel() {
   return (
     <Section title="Reset controls">
       <div className="flex flex-wrap gap-2">
-        <Button size="sm" variant="danger" onClick={makeReset("onboarding", devResetOnboarding)}>
-          Reset onboarding state
-        </Button>
         <Button size="sm" variant="danger" onClick={makeReset("universe", devResetUniverse)}>
           Reset universe
         </Button>
@@ -90,7 +86,6 @@ function ResetPanel() {
           size="sm"
           variant="danger"
           onClick={makeReset("all", async () => {
-            await devResetOnboarding();
             await devResetUniverse();
             await devResetJobs();
           })}

@@ -115,7 +115,7 @@ of `window.pywebview.api`. The fixture provides:
 - One running and one completed refresh job
 - Financial KPIs and statement matrices for two companies
 - Base health snapshot at 70% coverage
-- Onboarding state (completed), update settings, sector directory
+- Local database state scenarios (`localStorage.cvm_mock_local_database`), update settings, sector directory
 
 **This mode is dev-only.** The mock bridge module is dead-code-eliminated from
 production builds (Vite tree-shakes `import.meta.env.DEV === false` paths). A
@@ -249,10 +249,6 @@ python -m desktop.app --dev
 ```
 
 Safe for resets. Data under `{repo}/data/` is not shared with the release app.
-
-### Reset only onboarding state (explicit isolated data)
-
-Delete `{repo}/data/onboarding_state.json`, then reload the app.
 
 ### Reset explicit isolated dev database
 

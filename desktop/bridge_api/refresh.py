@@ -317,94 +317,6 @@ class RefreshBridgeMixin:
         except Exception as exc:
             return self._sanitize_for_json({"ok": False, "message": str(exc)})
 
-    def get_onboarding_state(self, params=None) -> dict:
-        try:
-            state = self._onboarding().get_onboarding_state()
-            job_id = state.get("refresh_job_id")
-            if job_id:
-                state["refresh_job"] = self._refresh().get_refresh_status({"job_id": job_id})
-            return self._sanitize_for_json(state)
-        except Exception as exc:
-            return self._sanitize_for_json({
-                "first_run_completed": False,
-                "should_show": True,
-                "setup_status": "error",
-                "error": str(exc),
-            })
-
-    def start_onboarding_setup(self, params=None) -> dict:
-        if not self._is_write_allowed():
-            return self._sanitize_for_json(self._write_blocked_response("start_onboarding_setup"))
-        p = params or {}
-        preset = str(p.get("preset") or "").strip().lower()
-        try:
-            selection = self._onboarding().get_company_universe_by_preset(preset, refresh_catalog=True)
-        except Exception as exc:
-            return self._sanitize_for_json({
-                "status": "error",
-                "job_id": None,
-                "message": str(exc),
-                "status_reason_code": "company_universe_unavailable",
-                "status_reason_message": str(exc),
-                "is_retry_allowed": True,
-            })
-
-        refresh_params: dict[str, Any] = {
-            "mode": "missing",
-            "company_ids": list(selection.company_ids),
-        }
-        for key in ("start_year", "end_year"):
-            if p.get(key) not in (None, ""):
-                refresh_params[key] = p.get(key)
-
-        try:
-            dispatch = self._refresh().request_refresh(refresh_params)
-        except Exception as exc:
-            return self._sanitize_for_json({
-                "status": "error",
-                "job_id": None,
-                "message": str(exc),
-                "status_reason_code": "desktop_refresh_error",
-                "status_reason_message": str(exc),
-                "is_retry_allowed": True,
-                "selection": selection.to_dict(),
-            })
-
-        if str(dispatch.get("status") or "").lower() in {"error", "already_running"}:
-            dispatch["selection"] = selection.to_dict()
-            return self._sanitize_for_json(dispatch)
-
-        job_id = dispatch.get("job_id")
-        self._onboarding().mark_setup_started(
-            selection,
-            refresh_job_id=str(job_id) if job_id else None,
-        )
-        if not job_id:
-            self._onboarding().mark_setup_completed(status=str(dispatch.get("status") or "success"))
-        self._svc().invalidate_read_caches()
-        self._clear_data_coverage_cache()
-        return self._sanitize_for_json({
-            **dispatch,
-            "selection": selection.to_dict(),
-        })
-
-    def complete_onboarding_setup(self, params=None) -> dict:
-        if not self._is_write_allowed():
-            return self._sanitize_for_json(self._write_blocked_response("complete_onboarding_setup"))
-        try:
-            status = str((params or {}).get("status") or "success")
-            return self._sanitize_for_json(self._onboarding().mark_setup_completed(status=status))
-        except Exception as exc:
-            return self._sanitize_for_json({"ok": False, "error": str(exc)})
-
-    def skip_onboarding_setup(self, params=None) -> dict:
-        if not self._is_write_allowed():
-            return self._sanitize_for_json(self._write_blocked_response("skip_onboarding_setup"))
-        try:
-            return self._sanitize_for_json(self._onboarding().skip_setup())
-        except Exception as exc:
-            return self._sanitize_for_json({"ok": False, "error": str(exc)})
-
     def get_market_cap_list(self, params=None) -> dict:
         try:
             from src.companies.market_cap import MarketCapService  # noqa: PLC0415
@@ -620,17 +532,10 @@ class RefreshBridgeMixin:
             })
 
     def _default_data_update_settings(self) -> dict[str, Any]:
-        preset = "top_200"
-        try:
-            state = self._onboarding().get_onboarding_state()
-            selected = str(state.get("selected_company_universe") or "").strip().lower()
-            if selected in self.DATA_UPDATE_PRESETS:
-                preset = selected
-        except Exception:
-            pass
+        # Presets no longer select companies (ADR 0010); "all" keeps legacy readers valid.
         current_year = datetime.now(timezone.utc).year
         return {
-            "universe_preset": preset,
+            "universe_preset": "all",
             "batch_size": 100,
             "retry_failed": True,
             "recompute_coverage": True,
@@ -968,28 +873,6 @@ class RefreshBridgeMixin:
         self._onboarding_service = None
         self._company_info_cache.clear()
         self._company_info_pending.clear()
-
-    def dev_reset_onboarding(self, params=None) -> dict:
-        if not self._is_write_allowed():
-            return self._sanitize_for_json(self._write_blocked_response("dev_reset_onboarding"))
-        try:
-            svc = self._onboarding()
-            blank: dict = {
-                "first_run_completed": False,
-                "should_show": True,
-                "selected_company_universe": None,
-                "company_universe_source": None,
-                "company_universe_source_date": None,
-                "setup_status": None,
-                "selected_company_count": 0,
-                "refresh_job_id": None,
-                "warning": None,
-            }
-            svc._write_state(blank)  # type: ignore[attr-defined]
-            svc._write_app_settings(blank)  # type: ignore[attr-defined]
-            return self._sanitize_for_json({"ok": True})
-        except Exception as exc:
-            return self._sanitize_for_json({"ok": False, "error": str(exc)})
 
     def dev_reset_universe(self, params=None) -> dict:
         if not self._is_write_allowed():
