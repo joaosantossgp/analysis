@@ -197,6 +197,10 @@ Single-context, with domain rules in `docs/CONTEXT.md` and ADRs in `docs/decisio
 
 ## 8. Validation
 
+- Before pushing or opening a PR: run
+  `.\.venv\Scripts\python.exe scripts/diagnostics/pre_pr_check.py` to execute
+  the fast CI contract mirror and changed-area checks (`--full-python` or
+  `--all` for full local parity).
 - Desktop UI TS/TSX edits: `npm --prefix apps/desktop-web run typecheck`.
 - Frontend behavior: targeted test, then `npm --prefix apps/desktop-web run
   test`, `typecheck`, and `build` when warranted.

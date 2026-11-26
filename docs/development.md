@@ -257,6 +257,13 @@ API adapter when touched:
 .\.venv\Scripts\python.exe -m pytest apps/api/tests -q
 ```
 
+Pre-PR check (fast CI contract mirror plus changed-area checks before `git push`):
+
+```powershell
+.\.venv\Scripts\python.exe scripts/diagnostics/pre_pr_check.py
+.\.venv\Scripts\python.exe scripts/diagnostics/pre_pr_check.py --full-python
+```
+
 Runtime diagnostics:
 
 ```powershell
