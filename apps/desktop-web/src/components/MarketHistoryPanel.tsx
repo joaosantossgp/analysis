@@ -518,7 +518,7 @@ function MarketActions({
         className="font-mono focus-visible:outline focus-visible:outline-1"
         style={marketActionButtonStyle(isUpdating)}
       >
-        {hasLocalData ? "Update data" : "Download history"}
+        {hasLocalData ? "Update market prices (external)" : "Download market prices (external)"}
       </button>
       <Button
         type="button"
