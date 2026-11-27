@@ -23,6 +23,10 @@ dev bootstrap on a background thread while the current app stays open; the
 status channel carries its progress (`install`). A data action acts on the dev
 data the requesting app resolved, so after a switch it is the active
 worktree's, and the app restarts on the active worktree.
+
+Agents reach the same channel from any worktree with `desktop.dev_control`:
+the supervisor leaves a record of itself (`register`) under the repository's
+git common dir, the same folder from every worktree.
 """
 
 from __future__ import annotations
@@ -58,6 +62,8 @@ DATA_ACTION_FILE = "data_action.json"  # outcome of the last dev data action
 # if a slow first start ever outlasts it.
 SWITCH_GRACE_SECONDS = 60.0
 INSTALL_OUTPUT_LINES = 40  # of a failed install command, shown in the dev panel
+# Under the git common dir: one `<pid>.json` record per running supervisor (`register`).
+REGISTRY_DIR = "cvmanalytics-dev-supervisors"
 
 Snapshot = dict[str, tuple[int, int]]
 
@@ -387,6 +393,8 @@ class DevSupervisor:
                 worktree_notice=self._worktree_notice,
                 worktree_notice_detail=self._notice_detail,
                 install=dict(self._install) if self._install else None,  # a copy: the install thread updates it
+                # Set until the switched-to app has run SWITCH_GRACE_SECONDS: until then a crash returns there.
+                switching_from=str(self._previous_root) if self._previous_root else None,
             )
         if status == self._published:
             return
@@ -510,6 +518,7 @@ def run(argv: Sequence[str], *, repo_root: Path | None = None) -> int:
         provision=dev_bootstrap.provision,
     )
     _report("[dev] Dev supervisor running: the app restarts when Python files under desktop/ or src/ change.")
+    record = register(root, control_dir)
     try:
         supervisor.start()
         while True:
@@ -521,8 +530,51 @@ def run(argv: Sequence[str], *, repo_root: Path | None = None) -> int:
         return 130
     finally:
         supervisor.shutdown()
+        if record is not None:
+            record.unlink(missing_ok=True)
         state_file.unlink(missing_ok=True)
         shutil.rmtree(control_dir, ignore_errors=True)
+
+
+# --- Registry: how `desktop.dev_control` finds the running supervisor ----------
+
+
+def registry_dir(repo_root: Path) -> Path:
+    """The folder supervisors of this repository register in, the same from every worktree. Raises OSError.
+
+    It sits in the git common dir, read from the files git keeps (no `git`
+    process): a linked worktree's `.git` file names its git dir, whose
+    `commondir` file leads to the main checkout's `.git`.
+    """
+    git = repo_root / ".git"
+    if git.is_file():
+        git_dir = repo_root / git.read_text(encoding="utf-8").strip().removeprefix("gitdir:").strip()
+        git = git_dir / (git_dir / "commondir").read_text(encoding="utf-8").strip()
+    return git.resolve() / REGISTRY_DIR
+
+
+def register(repo_root: Path, control_dir: Path) -> Path | None:
+    """Leave a record of this supervisor for `desktop.dev_control`; return its path, or None when it cannot be written.
+
+    The record carries the data path settings the app inherits, so the
+    command can tell the window's data mode.
+    """
+    release = os.environ.get("CVMANALYTICS_USE_RELEASE_DATA", "").strip().lower() in {"1", "true", "yes"}
+    try:
+        directory = registry_dir(repo_root)
+        directory.mkdir(exist_ok=True)
+        record = directory / f"{os.getpid()}.json"
+        _write_json(record, {
+            "pid": os.getpid(),
+            "control_dir": str(control_dir),
+            "launch_root": str(repo_root),
+            "cvm_data_dir": os.environ.get("CVM_DATA_DIR") or None,
+            "use_release_data": release,
+        })
+    except (OSError, ValueError) as error:  # dev mode still runs; only the agent command cannot find it
+        _report(f"[dev] Agents cannot find this dev mode (python -m desktop.dev_control): {error}")
+        return None
+    return record
 
 
 # --- Control directory: requests from the app, status from the supervisor -----

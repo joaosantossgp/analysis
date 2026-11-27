@@ -118,6 +118,7 @@ There is no root `package.json`. The active Node package is
 | `scripts/setup/` | Database/table setup and Windows/worktree bootstrap |
 | `scripts/dev/` | Dev mode tooling: isolated dev data for a data-sensitive worktree |
 | `apps/desktop-web/src/components/dev-panel/` | Dev panel (dev builds only): one file per section under `sections/`; bridge methods in `desktop/bridge_api/dev.py` |
+| `desktop/dev_control.py` | Agent command for the open dev mode window: `python -m desktop.dev_control status` / `switch` |
 | `scripts/diagnostics/` | Runtime doctor, smoke validation, read-path benchmarks, bridge method inventory, packaged candidate validation |
 | `scripts/qa/` | Consolidation, line-id, and workbook verification |
 | `scripts/release/` | Desktop dev launchers, MOTW tests, PR helper, publication decision module and the publication workflow glue that calls it (ADR 0011) |
