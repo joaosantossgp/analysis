@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import textwrap
 from pathlib import Path
+from urllib.parse import unquote
 
 import yaml
 
@@ -497,27 +498,87 @@ def test_pr_issue_guardrails_validates_closing_and_linked_references() -> None:
         11: {"labels": [{"name": "goal"}]},
         12: {"labels": [], "pull_request": {"url": "https://example.invalid/pr/12"}},
     }
+    doc_section = "\n\n## Documentation impact\n\n- None: internal test."
 
-    assert _run_pr_guardrail_script("No reference", issues)["failed"]
-    assert not _run_pr_guardrail_script("Closes #10", issues)["failed"]
-    assert not _run_pr_guardrail_script("Refs #11", issues)["failed"]
-    assert not _run_pr_guardrail_script("Part of #10", issues)["failed"]
+    assert _run_pr_guardrail_script("No reference" + doc_section, issues)["failed"]
+    assert not _run_pr_guardrail_script("Closes #10" + doc_section, issues)["failed"]
+    assert not _run_pr_guardrail_script("Refs #11" + doc_section, issues)["failed"]
+    assert not _run_pr_guardrail_script("Part of #10" + doc_section, issues)["failed"]
 
-    closing_goal = _run_pr_guardrail_script("Closes #11", issues)
+    missing_doc = _run_pr_guardrail_script("Closes #10", issues)
+    assert any("Documentation impact" in msg for msg in missing_doc["failed"])
+
+    comment_only_doc = _run_pr_guardrail_script(
+        "Closes #10\n\n## Documentation impact\n\n<!-- placeholder only -->\n\n## Test plan\n- ok",
+        issues,
+    )
+    assert any("Documentation impact" in msg for msg in comment_only_doc["failed"])
+
+    closing_goal = _run_pr_guardrail_script("Closes #11" + doc_section, issues)
     assert any("goal" in msg for msg in closing_goal["failed"])
 
-    closing_pr = _run_pr_guardrail_script("Closes #12", issues)
+    closing_pr = _run_pr_guardrail_script("Closes #12" + doc_section, issues)
     assert any("pull request" in msg for msg in closing_pr["failed"])
 
-    missing_ref = _run_pr_guardrail_script("Refs #999", issues)
+    missing_ref = _run_pr_guardrail_script("Refs #999" + doc_section, issues)
     assert any("#999 was not found" in msg for msg in missing_ref["failed"])
 
-    pr_ref = _run_pr_guardrail_script("Refs #12", issues)
+    pr_ref = _run_pr_guardrail_script("Refs #12" + doc_section, issues)
     assert any("pull request" in msg for msg in pr_ref["failed"])
 
-    dedup = _run_pr_guardrail_script("Closes #10\nRefs #10", issues)
+    dedup = _run_pr_guardrail_script("Closes #10\nRefs #10" + doc_section, issues)
     assert not dedup["failed"]
     assert dedup["lookups"] == [10]
+
+
+def test_canonical_docs_have_no_broken_local_links() -> None:
+    excluded_dirs = {"archive", "vendor", "releases", "superpowers"}
+    md_files = [ROOT / "AGENTS.md", ROOT / "README.md"]
+    for path in sorted((ROOT / "docs").rglob("*.md")):
+        if path.relative_to(ROOT / "docs").parts[0] not in excluded_dirs:
+            md_files.append(path)
+
+    link_re = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
+    broken: list[str] = []
+    for md in md_files:
+        in_fence = False
+        for lineno, line in enumerate(md.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+            if line.lstrip().startswith("```"):
+                in_fence = not in_fence
+                continue
+            if in_fence:
+                continue
+            for match in link_re.finditer(line):
+                raw = match.group(1).strip()
+                if not raw or raw.startswith(("http://", "https://", "mailto:", "#", "mdc:")):
+                    continue
+                target = unquote(raw.split("#", 1)[0].split("?", 1)[0]).strip()
+                if target and not (md.parent / target).resolve().exists():
+                    broken.append(f"{md.relative_to(ROOT)}:{lineno} -> {raw}")
+
+    assert not broken, "Broken local links in canonical docs:\n" + "\n".join(broken)
+
+
+def test_frontend_components_do_not_access_window_pywebview_directly() -> None:
+    src_root = ROOT / "apps/desktop-web/src"
+    bridge_root = src_root / "lib/bridge"
+    pattern = re.compile(r"\b(?:window|globalThis)\s*\??\.\s*pywebview\b")
+    violations: list[str] = []
+    for path in sorted(src_root.rglob("*")):
+        if path.suffix not in {".ts", ".tsx"}:
+            continue
+        if path.name.endswith((".test.ts", ".test.tsx")):
+            continue
+        if bridge_root in path.parents:
+            continue
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            stripped = line.lstrip()
+            if stripped.startswith(("//", "*")):
+                continue
+            if pattern.search(line):
+                violations.append(f"{path.relative_to(ROOT)}:{lineno}: {line.strip()}")
+
+    assert not violations, "Frontend code outside lib/bridge/ must use adapter.ts:\n" + "\n".join(violations)
 
 
 def test_issue_templates_apply_needs_triage_label() -> None:
