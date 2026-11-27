@@ -4,6 +4,7 @@ import { HashRouter, Navigate, Route, Routes, useNavigate, useLocation } from "r
 import { useCommandPalette } from "./components/command/useCommandPalette";
 import { StateBanner } from "./components/feedback/StateBanner";
 import { TerminalShell } from "./components/shell/TerminalShell";
+import { LazyDevPanel } from "./components/dev-panel";
 import { isExcelMappingWindow } from "./lib/windowMode";
 import { SETTINGS_REDIRECTS } from "./lib/settingsNav";
 import { useGlobalHotkeys } from "./lib/keyboard/useGlobalHotkeys";
@@ -164,6 +165,11 @@ function AppShellWithPalette() {
             primed={palette.primed}
             onClose={palette.close_}
           />
+        </Suspense>
+      ) : null}
+      {LazyDevPanel ? (
+        <Suspense fallback={null}>
+          <LazyDevPanel />
         </Suspense>
       ) : null}
     </>
