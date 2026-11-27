@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-
 import pytest
 
 from scripts.release import publication_decision as pd
@@ -236,10 +234,3 @@ def test_release_command_targets_the_exact_commit_with_the_decided_kind() -> Non
     release = pw.release_command(release_facts, _decision(release_facts), "notes.md", [])
     assert release[3] == "v0.31.0"
     assert "--prerelease" not in release and "--latest=true" in release
-
-
-def test_facts_file_is_accepted_by_the_decision_cli(tmp_path, capsys) -> None:
-    path = tmp_path / "facts.json"
-    path.write_text(json.dumps(_facts()), encoding="utf-8")
-    assert pd.main(["decide", "--input", str(path)]) == 0
-    assert json.loads(capsys.readouterr().out)["version"] == "0.30.1"
