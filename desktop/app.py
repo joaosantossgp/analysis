@@ -770,7 +770,10 @@ def _ensure_db_initialized() -> None:
         from src.platform.db import build_engine  # noqa: PLC0415
         from src.platform.settings import build_settings  # noqa: PLC0415
 
-        engine = build_engine(build_settings())
+        settings = build_settings()
+        # An explicit CVM_DATA_DIR gets no folders from _configure_bundled_data_paths.
+        settings.paths.db_path.parent.mkdir(parents=True, exist_ok=True)
+        engine = build_engine(settings)
         try:
             init_db_tables(engine)
         finally:
