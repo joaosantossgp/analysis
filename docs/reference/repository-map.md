@@ -119,7 +119,7 @@ There is no root `package.json`. The active Node package is
 | `scripts/dev/` | Dev mode tooling: isolated dev data for a data-sensitive worktree |
 | `scripts/diagnostics/` | Runtime doctor, smoke validation, read-path benchmarks, bridge method inventory, packaged candidate validation |
 | `scripts/qa/` | Consolidation, line-id, and workbook verification |
-| `scripts/release/` | Desktop dev launchers, MOTW tests, PR helper |
+| `scripts/release/` | Desktop dev launchers, MOTW tests, PR helper, publication decision module (ADR 0011, not yet called by a workflow) |
 | `scripts/governance/` | Repository contract tests and legacy worktree helpers |
 | `scripts/curation/` | Development-only GICS curation tools (structure extraction, Claude batch proposals); not app runtime, SDK installed separately |
 
