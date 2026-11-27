@@ -202,9 +202,11 @@ User data remains excluded from every publication.
 
 Verified implementation:
 
-- `desktop/updater.py` checks GitHub Releases, compares versions, downloads the
-  versioned ZIP and `.sha256`, validates checksum, extracts into
-  `%LOCALAPPDATA%\CVMAnalytics\versions\<version>\`, and spawns the helper.
+- `desktop/updater.py` lists GitHub Releases (`/releases`, newest 100; it no
+  longer reads `/releases/latest`), picks the publication for the user's update
+  channel (below), downloads the versioned ZIP and `.sha256`, validates
+  checksum, extracts into `%LOCALAPPDATA%\CVMAnalytics\versions\<version>\`, and
+  spawns the helper.
 - `desktop/update_helper.ps1` swaps only allowlisted bundle entries:
   `CVMAnalytics.exe` and `_internal`, in the folder of the running
   `CVMAnalytics.exe` (an extracted ZIP or the installer's
@@ -223,6 +225,46 @@ accepts the `git describe` form emitted after a tag:
 or malformed tags are ignored and must never be offered as updates even when a
 matching release asset exists. Keep parser and both updater-path regressions in
 sync when extending this contract.
+
+### Update channel and publication selection (ADR 0011, #626)
+
+- The update channel is `releases` (default, "Releases only") or `prereleases`
+  ("Pre-releases and releases"). It is stored in
+  `%LOCALAPPDATA%\CVMAnalytics\update_channel.json` (`{"channel": "..."}`),
+  next to `snooze.json`: outside the bundle and outside the financial database,
+  so an update or a data reset keeps it. A missing, unreadable or unknown value
+  means `releases`. The file is written to a temporary file and swapped in, so a
+  failed write keeps the previous choice.
+- Listing: GitHub Releases is read 100 publications per page, newest first,
+  until a page holds a publication the channel accepts, at most 5 pages per
+  check. A channel with nothing accepted in those pages reads as `no_release`.
+- Selection (`select_publication`): drafts and malformed tags are skipped;
+  `releases` accepts only publications GitHub marks as releases whose tag has no
+  `-rc.N` part (a legacy `-rc.N` tag without the prerelease flag counts as a
+  pre-release), `prereleases` accepts both. Versions compare numerically
+  (`-rc.N` sorts below the plain version). The offer is the newest accepted
+  publication that is newer than the installed version and has its versioned
+  ZIP. A version lower than or equal to
+  the installed one is never offered, so switching back to `releases` keeps the
+  current version until a newer release exists. When no newer publication has
+  its ZIP, the status is `asset_missing`.
+- Bridge: `get_update_channel` / `set_update_channel` (refused in read-only
+  mode). Changing the channel is an explicit user action: it drops the previous
+  channel's offer so it cannot be applied, then runs one check for the new
+  channel (the same check as `check_update({"force": true})`), logs it to
+  `update_error.log` and stores the result; a failed check is stored as
+  `check_failed`. `check_update` returns the last known status with `channel`,
+  `publication_kind` (`release` / `pre-release`), `checked_at`,
+  `current_version` and `latest_version`; `{"force": true}` runs a new check
+  (an explicit user action). The `get_app_status().update` payload carries the
+  same `channel` and `publication_kind` and never contacts GitHub because of a
+  channel change. Besides those user actions, the only check is the one at
+  startup.
+- Settings -> App shows the channel choice, the pre-release notice, the current
+  version and the last check. Installing stays on the Advanced -> Software
+  update card until the shell announcement (#627).
+- Unchanged: package asset names, checksum validation, staging, the allowlisted
+  swap and rollback.
 
 User data under `%USERPROFILE%\Documents\CVMAnalytics` must not be overwritten
 by update/install flows.

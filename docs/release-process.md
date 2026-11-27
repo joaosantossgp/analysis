@@ -117,6 +117,41 @@ and the notes it would have used. It creates no tag and no release and needs no
 approval. `assume_class` adds a PR with that shipping class so a dry run can
 exercise a publication when nothing classified has merged.
 
+## Testing a candidate
+
+The way to test a candidate before approving it is one command, run by the
+owner or by an agent on the owner's request (Windows, `gh` logged in):
+
+```powershell
+.\scripts\release\open-candidate.ps1 latest
+.\scripts\release\open-candidate.ps1 <run id>
+```
+
+`latest` is the newest Release Desktop run that built a candidate, including
+one waiting for approval and dry runs (labelled as such); pass the waiting
+run's id to be sure you test that one. The script
+([`open-candidate.ps1`](../scripts/release/open-candidate.ps1)):
+
+- downloads the run's `publication-candidate` artifact and refuses to open it
+  when the ZIP does not match its `.sha256` file or the version the run decided;
+- removes the previously extracted candidate, extracts this one to
+  `%TEMP%\CVMAnalytics-candidates\<version>` and launches `CVMAnalytics.exe`;
+- prints the run, version, kind, candidate commit (from the run's
+  `publication-decision`) and SHA-256 it opened.
+
+The candidate runs against the installed app's data
+(`%USERPROFILE%\Documents\CVMAnalytics`, or `CVMANALYTICS_DATA_DIR` when set),
+as the installed app would, so its startup schema and classification updates
+apply to that data as an update to that version would. It never touches the
+installed app's own files. The script refuses while any CVMAnalytics is running
+(close the installed app first: a second copy would hit the runtime lock and
+start in restricted mode) and in a terminal that sets `CVM_*` or `SQLITE_PATH`
+(for example after `dev-desktop.ps1`), which would point the candidate at other
+data. It stops with a clear error when the run does not exist, is not a
+Release Desktop run, has not built or built no candidate, or its candidate
+expired; re-run the workflow to build a new one. Then run the packaged checks
+in [`build-release.md`](build-release.md#release-validation).
+
 ## Approving a publication
 
 Only the owner approves. Before approving, the owner tests the exact candidate
@@ -160,8 +195,8 @@ it when approval is required.
 
 ADR 0011 is delivered in parts (goal #623). Still to land: the one-command
 candidate test (#630), promotion of a tested pre-release to a release and the
-time-based proposal (#631), the `Setup.exe` installer (#632), retention of old
-pre-releases (#634), and the first real publication `0.30.0` (#633). Until
+time-based proposal (#631), retention of old pre-releases (#634), and the
+first real publication `0.30.0` (#633). Until
 promotion lands, a release is published only directly, by a `release` or
 `hotfix` class.
 
