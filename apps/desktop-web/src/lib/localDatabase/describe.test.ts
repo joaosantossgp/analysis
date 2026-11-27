@@ -63,6 +63,11 @@ describe("describeLocalDatabaseState", () => {
     });
   });
 
+  it("uses the singular for one failure", () => {
+    const one = { ...S.partial, last_run: { ...S.partial.last_run!, failures: 1 } };
+    expect(describeLocalDatabaseState(one, online).headline).toBe("Completed with 1 failure");
+  });
+
   it("shows the failure reason when the data update failed", () => {
     expect(describeLocalDatabaseState(S.failed, online)).toMatchObject({
       short: "UPDATE FAILED",
