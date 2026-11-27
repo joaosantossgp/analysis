@@ -49,6 +49,15 @@ if __name__ == "__main__":
         print(str(exc), file=sys.stderr)
         raise SystemExit(1) from exc
 
+    # Source `--dev` runs under the dev supervisor, which starts this module
+    # again as its child. Decided before the runtime imports below so broken
+    # app code cannot take the supervisor down. The packaged app never loads it.
+    if not getattr(sys, "frozen", False):
+        from desktop import dev_supervisor
+
+        if dev_supervisor.should_supervise(sys.argv[1:], os.environ):
+            raise SystemExit(dev_supervisor.run(sys.argv[1:]))
+
 from desktop import lockfile
 import webview
 
@@ -1169,15 +1178,30 @@ def main() -> None:
 
     bridge.set_excel_mapping_window_opener(open_excel_mapping_window)
 
-    webview.create_window(
+    # Under the dev supervisor, reopen on the route and geometry the previous
+    # child saved. Every other launch keeps the fixed defaults.
+    dev_state_file, dev_route, dev_geometry = None, "", {}
+    if dev_mode and not _bundled():
+        from desktop import dev_supervisor  # noqa: PLC0415
+
+        dev_state_file = os.environ.get(dev_supervisor.STATE_FILE_ENV)
+    if dev_state_file:
+        dev_route, dev_geometry = dev_supervisor.load_window_state(Path(dev_state_file))
+
+    main_window = webview.create_window(
         "CVM Analytics",
-        url=url,
+        url=url + dev_route,
         js_api=bridge,
-        width=_WIDTH,
-        height=_HEIGHT,
         background_color=_BG,
         min_size=(800, 600),
+        **{"width": _WIDTH, "height": _HEIGHT, **dev_geometry},
     )
+    if dev_state_file:
+        dev_supervisor.watch_for_stop(
+            Path(dev_state_file),
+            main_window,
+            lambda: [window.destroy() for window in list(webview.windows)],
+        )
 
     threading.Thread(
         target=bridge._start_update_check,

@@ -138,6 +138,7 @@ The Status strip shows **BRIDGE · MOCK** in violet and Settings -> Diagnostics 
 | `CVM_OUTPUT_DIR` | `{data}/output` when injected by the launcher; otherwise `<repo>/src/output` | Override output directory |
 | `CVM_LOG_DIR` | `{data}/logs` when injected by the launcher; otherwise `{output}/logs` | Override log directory |
 | `CVM_CACHE_DIR` | `{data}/cache` | Override cache directory |
+| `CVMANALYTICS_DEV_STATE_FILE` | Set by the dev supervisor | Internal: path of the JSON file with the last route and window geometry; marks the process as a supervised child. Do not set by hand |
 | `VITE_MOCK_BRIDGE` | — | Browser preview fixtures via `npm run dev:mock`; inherited value removed from desktop-launched Vite |
 
 Source desktop injects output/log defaults only when `CVM_DATA_DIR` is absent.
@@ -152,6 +153,7 @@ inherited `VITE_MOCK_BRIDGE` from the spawned process environment. Keep mock
 configuration confined to `.env.mock` and the browser `dev:mock` command.
 
 - **F5 / browser reload** reloads the Vite frontend inside the pywebview window.
+  It does not restart Python; only a Python source change does (see below).
 - The Python backend and bridge stay alive — they run in the same process and are
   not affected by a page reload.
 - After reload, the frontend's `whenBridgeReady()` waits for the `pywebviewready`
@@ -165,6 +167,48 @@ the next `get_app_status` or `get_database_diagnostics` call (both are polled).
 
 Note: pywebview's DevTools can be opened with `--debug`. Press F12 after the
 window opens.
+
+## Auto-restart on Python changes (dev supervisor)
+
+`python -m desktop.app --dev` starts a dev supervisor
+([`desktop/dev_supervisor.py`](../desktop/dev_supervisor.py)), which runs the
+app as a child process. Source mode only: the packaged app and launches without
+`--dev` have no supervisor.
+
+- **Trigger.** The supervisor polls the `*.py` files under `desktop/` and `src/`
+  twice a second (standard library, no file-watcher dependency). After a change
+  it waits for one second without further changes, so a burst of saves causes
+  one restart.
+- **Restart.** The supervisor asks the child to stop by closing its stdin. The
+  child saves its route and window geometry, closes its windows, releases the
+  runtime lock and stops its Vite server. A child that does not exit within 10
+  seconds is killed with its process tree; the next start then recovers a stale
+  lock.
+- **Continuity.** The new child reopens on the last route with the same size
+  and position. The route is stored relative to the origin, so it survives a
+  different Vite dev port. Browser storage is tied to the origin and is not
+  carried over.
+- **Failed start.** If the changed code fails to start, the traceback stays in
+  the terminal, the supervisor reports the exit code and keeps running, and the
+  next Python change starts the app again. Press Ctrl+C in the terminal to quit
+  while no window is open.
+- **Ending dev mode.** Closing the main window (child exit code 0) ends the
+  supervisor.
+- **UI changes** under `apps/desktop-web` keep updating through Vite HMR without
+  a restart.
+
+Limits:
+
+- Only `*.py` files under `desktop/` and `src/` trigger a restart. Changes to
+  `requirements.txt`, `apps/api`, or data files do not.
+- A change to `desktop/dev_supervisor.py` or to the launcher block at the top of
+  `desktop/app.py` restarts the child, but the running supervisor keeps its old
+  code. Relaunch dev mode to pick it up.
+- Secondary windows (Excel Mapping) are not reopened. A maximized window comes
+  back at the same bounds as a normal window, and a minimized one comes back at
+  its last saved geometry.
+- Each restart starts a new Vite dev server; the port can change within
+  `5173`–`5199`.
 
 ## Concurrency and lock file
 
