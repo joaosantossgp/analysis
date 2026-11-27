@@ -16,7 +16,7 @@ function autoRestartNote(context: DevContext | undefined, applying: boolean): st
   if (context.auto_restart === null) return "Automatic restart: —";
   return context.auto_restart
     ? "Automatic restart is on: the app restarts when a Python file under desktop/ or src/ changes."
-    : "Automatic restart is off: the window stays as it is until you restart.";
+    : "Automatic restart is off: the window stays as it is until you restart. A new --dev launch turns it back on.";
 }
 
 function RestartSection() {

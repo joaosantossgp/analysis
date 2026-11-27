@@ -160,6 +160,7 @@ describe("dev panel restart controls and tools", () => {
 
     expect(html).not.toMatch(/<input[^>]*checked=""/);
     expect(html).toContain("Automatic restart is off");
+    expect(html).toContain("A new --dev launch turns it back on.");
     expect(html).toContain("2 changed Python files not loaded yet.");
   });
 

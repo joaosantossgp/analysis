@@ -27,6 +27,8 @@ class Harness:
         self.requests: list[dict[str, object]] = []
         self.queued_while_stopping: list[dict[str, object]] = []
         self.statuses: list[dict[str, object]] = []
+        self.child_exits_on_stop = True
+        self.start_error: OSError | None = None
         self.supervisor = sup.DevSupervisor(
             start_child=self._start,
             stop_child=self._stop,
@@ -38,15 +40,19 @@ class Harness:
         )
         self.supervisor.start()
 
-    def _stop(self, child: FakeChild) -> None:
+    def _stop(self, child: FakeChild) -> bool:
         self.stopped.append(child)
         self.requests += self.queued_while_stopping
+        return self.child_exits_on_stop
 
     def _take_requests(self) -> list[dict[str, object]]:
         taken, self.requests = self.requests, []
         return taken
 
     def _start(self) -> FakeChild:
+        if self.start_error is not None:
+            error, self.start_error = self.start_error, None
+            raise error
         child = FakeChild()
         self.started.append(child)
         return child
@@ -186,14 +192,82 @@ def test_stop_child_kills_the_process_tree_when_the_child_does_not_exit() -> Non
     proc.wait.side_effect = [subprocess.TimeoutExpired("app", sup.STOP_TIMEOUT_SECONDS), 1]
 
     with patch.object(sup.subprocess, "run") as run, patch.object(sup.os, "name", "nt"):
-        sup.stop_child(proc)
+        assert sup.stop_child(proc) is True
 
     run.assert_called_once_with(
         ["taskkill", "/PID", "4242", "/T", "/F"],
         check=False,
+        timeout=sup.STOP_TIMEOUT_SECONDS,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
+
+
+def test_stop_child_survives_a_taskkill_timeout_and_reports_whether_the_child_exited() -> None:
+    timeout = subprocess.TimeoutExpired("x", sup.STOP_TIMEOUT_SECONDS)
+    hung_taskkill = patch.object(sup.subprocess, "run", side_effect=subprocess.TimeoutExpired("taskkill", 10))
+
+    exited = Mock(pid=4242)
+    exited.wait.side_effect = [timeout, 1]
+    with hung_taskkill, patch.object(sup.os, "name", "nt"):
+        assert sup.stop_child(exited) is True
+
+    alive = Mock(pid=4242)
+    alive.wait.side_effect = [timeout, timeout]
+    with hung_taskkill, patch.object(sup.os, "name", "nt"):
+        assert sup.stop_child(alive) is False
+
+
+def test_child_that_survives_the_stop_gets_no_replacement_until_it_is_gone() -> None:
+    h = Harness()
+    h.child_exits_on_stop = False
+
+    h.requests.append({"action": "restart"})
+    assert h.supervisor.tick(0.0) is None
+
+    assert len(h.started) == 1, "no second app while the first still holds the lock and port"
+    assert any("did not stop" in message for message in h.messages)
+
+    assert h.supervisor.tick(1.0) is None
+    assert h.stopped == [h.started[0], h.started[0]], "the stop is retried on the next poll"
+    assert len(h.started) == 1
+
+    h.child_exits_on_stop = True
+    assert h.supervisor.tick(2.0) is None
+    assert len(h.started) == 2
+    assert h.supervisor.tick(3.0) is None
+    assert len(h.started) == 2, "one replacement only"
+
+
+def test_child_that_exits_late_after_a_failed_stop_is_replaced_and_does_not_end_dev_mode() -> None:
+    h = Harness()
+    h.child_exits_on_stop = False
+    h.requests.append({"action": "restart"})
+    h.supervisor.tick(0.0)
+
+    h.started[0].exit_code = 0  # the stop request was honoured late
+
+    assert h.supervisor.tick(1.0) is None
+    assert len(h.started) == 2
+    assert len(h.stopped) == 1, "an exited app is not stopped again"
+
+
+def test_failed_spawn_on_a_restart_request_keeps_dev_mode_running() -> None:
+    h = Harness()
+    h.start_error = OSError("no such interpreter")
+
+    h.requests.append({"action": "restart"})
+    assert h.supervisor.tick(0.0) is None
+
+    assert len(h.started) == 1
+    assert any("Could not start the app" in message and "no such interpreter" in message for message in h.messages)
+    assert h.supervisor.tick(5.0) is None
+    assert len(h.started) == 1, "no retry loop without a change or a request"
+
+    h.requests.append({"action": "restart"})
+    assert h.supervisor.tick(6.0) is None
+    assert len(h.started) == 2
+    assert h.stopped == [h.started[0]], "there was no child to stop after the failed spawn"
 
 
 def test_run_spawns_the_app_as_a_marked_child_and_returns_its_exit_code(tmp_path: Path) -> None:
@@ -413,11 +487,30 @@ def test_request_files_reach_the_supervisor_oldest_first_and_only_once(tmp_path:
     (tmp_path / "requests" / "0-broken.json").write_text("not json", encoding="utf-8")
     (tmp_path / "requests" / "1-list.json").write_text("[1]", encoding="utf-8")
 
-    assert sup.read_requests(tmp_path) == [
+    messages: list[str] = []
+    assert sup.read_requests(tmp_path, report=messages.append) == [
         {"action": "set_auto_restart", "enabled": False},
         {"action": "restart"},
     ]
     assert sup.read_requests(tmp_path) == []
+    assert len(messages) == 2 and all("Ignored" in message for message in messages)
+
+
+def test_oversized_or_deeply_nested_request_files_are_reported_and_ignored(tmp_path: Path) -> None:
+    requests = tmp_path / "requests"
+    requests.mkdir()
+    padding = "x" * (sup.MAX_REQUEST_BYTES + 1)
+    (requests / "0-big.json").write_text(f'{{"action": "restart", "pad": "{padding}"}}', encoding="utf-8")
+    (requests / "1-deep.json").write_text("[" * 50_000, encoding="utf-8")
+    sup.send_request(tmp_path, "restart")
+    messages: list[str] = []
+
+    assert sup.read_requests(tmp_path, report=messages.append) == [{"action": "restart"}]
+
+    assert len(messages) == 2
+    assert "0-big.json" in messages[0] and "64 KB" in messages[0]
+    assert "1-deep.json" in messages[1] and "recursion" in messages[1]
+    assert list(requests.iterdir()) == [], "bad requests are dropped, not retried"
 
 
 def test_status_file_round_trips_and_a_missing_one_reads_as_empty(tmp_path: Path) -> None:

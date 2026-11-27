@@ -36,6 +36,7 @@ WATCHED_DIRS = ("desktop", "src")
 POLL_SECONDS = 0.5
 QUIET_SECONDS = 1.0
 STOP_TIMEOUT_SECONDS = 10
+MAX_REQUEST_BYTES = 64 * 1024  # a request is a few dozen bytes
 
 Snapshot = dict[str, tuple[int, int]]
 
@@ -73,13 +74,13 @@ class DevSupervisor:
     Process handling is injected so the decisions run in tests without a
     process or a window. `tick` is one poll step. `read_requests` returns the
     requests the app queued since the last call; `publish_status` receives the
-    status whenever it changes.
+    status whenever it changes. `stop_child` returns whether the child exited.
     """
 
     def __init__(
         self,
         start_child: Callable[[], Any],
-        stop_child: Callable[[Any], None],
+        stop_child: Callable[[Any], bool],
         scan: Callable[[], Snapshot],
         report: Callable[[str], None] = _report,
         quiet_seconds: float = QUIET_SECONDS,
@@ -96,6 +97,7 @@ class DevSupervisor:
         self._published: dict[str, Any] | None = None
         self._auto_restart = True
         self._child: Any = None
+        self._stop_failed = False
         self._snapshot: Snapshot = {}
         self._changed: set[str] = set()
         self._last_change_at = 0.0
@@ -103,7 +105,7 @@ class DevSupervisor:
     def start(self) -> None:
         self._snapshot = self._scan()
         self._publish()
-        self._child = self._start_child()
+        self._start()
 
     def tick(self, now: float) -> int | None:
         """Run one poll step; return the exit code once dev mode should end."""
@@ -120,9 +122,11 @@ class DevSupervisor:
 
         if self._child is not None:
             exit_code = self._child.poll()
-            if exit_code == 0:
+            if exit_code is not None and self._stop_failed:
+                self._child = None  # the app that did not stop has exited after all
+            elif exit_code == 0:
                 return 0  # the user closed the window
-            if exit_code is not None:
+            elif exit_code is not None:
                 self._child = None
                 self._report(
                     f"[dev] The app stopped with exit code {exit_code}; the error and traceback are above.\n"
@@ -131,6 +135,8 @@ class DevSupervisor:
                 )
 
         restart_reason = self._apply(self._read_requests())
+        if restart_reason is None and self._stop_failed:
+            restart_reason = "The last restart did not finish"
 
         # Auto-restart off holds a running window still. With no window there
         # is no dev panel to restart from, so a change always starts the app.
@@ -145,15 +151,37 @@ class DevSupervisor:
             more = f" (+{len(names) - 3} more)" if len(names) > 3 else ""
             restart_reason = f"Python change in {', '.join(names[:3])}{more}"
         if restart_reason is not None:
-            self._changed = set()
-            self._report(f"[dev] {restart_reason}; restarting the app.")
-            if self._child is not None:
-                self._stop_child(self._child)
-            # The restart just done answers restart requests queued meanwhile; apply the rest.
-            self._apply([request for request in self._read_requests() if request.get("action") != "restart"])
-            self._child = self._start_child()
+            self._restart(restart_reason)
         self._publish()
         return None
+
+    def _restart(self, reason: str) -> None:
+        self._report(f"[dev] {reason}; restarting the app.")
+        if self._child is not None:
+            # A second app would fight the old one for the runtime lock and the port.
+            if not self._stop_child(self._child):
+                self._stop_failed = True
+                self._report(
+                    "[dev] The app did not stop, so no new app was started. Dev mode tries again on "
+                    "the next poll; if this repeats, close the window or end the process."
+                )
+                return
+            self._child = None
+        self._stop_failed = False
+        self._changed = set()
+        # The restart just done answers restart requests queued meanwhile; apply the rest.
+        self._apply([request for request in self._read_requests() if request.get("action") != "restart"])
+        self._start()
+
+    def _start(self) -> None:
+        try:
+            self._child = self._start_child()
+        except OSError as error:  # the child stays None, so the next change or restart request starts it
+            self._report(
+                f"[dev] Could not start the app: {error}\n"
+                "[dev] Dev mode is still running: save a Python file under desktop/ or src/ to "
+                "try again, or press Ctrl+C to quit."
+            )
 
     def _apply(self, requests: list[dict[str, Any]]) -> str | None:
         """Apply the app's requests; return the restart reason when one asks for a restart."""
@@ -185,11 +213,12 @@ class DevSupervisor:
         self._child = None
 
 
-def stop_child(proc: Any) -> None:
+def stop_child(proc: Any) -> bool:
     """Ask the child to close its window and exit; kill its tree if it does not.
 
     Closing stdin is the stop request (see `watch_for_stop`). A clean exit lets
     the child save its window state, release the runtime lock and stop Vite.
+    Returns whether the child exited. Never raises; each step is time-limited.
     """
     try:
         proc.stdin.close()
@@ -203,14 +232,19 @@ def stop_child(proc: Any) -> None:
             subprocess.run(
                 ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
                 check=False,
+                timeout=STOP_TIMEOUT_SECONDS,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
         else:
             proc.kill()
+    except (OSError, subprocess.SubprocessError):
+        pass  # the wait below tells whether the child is gone
+    try:
         proc.wait(timeout=STOP_TIMEOUT_SECONDS)
     except (OSError, subprocess.SubprocessError):
-        pass
+        return False
+    return True
 
 
 def run(argv: Sequence[str], *, repo_root: Path | None = None) -> int:
@@ -273,20 +307,28 @@ def send_request(control_dir: Path, action: str, **params: Any) -> None:
     _write_json(requests / name, {"action": action, **params})
 
 
-def read_requests(control_dir: Path) -> list[dict[str, Any]]:
-    """Supervisor side: take the queued requests, oldest first. Unreadable ones are dropped."""
+def read_requests(control_dir: Path, report: Callable[[str], None] = _report) -> list[dict[str, Any]]:
+    """Supervisor side: take the queued requests, oldest first. Unreadable ones are reported and dropped."""
     taken: list[dict[str, Any]] = []
     for path in sorted((control_dir / "requests").glob("*.json")):
+        request: Any
         try:
-            request = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            request = None
+            with path.open("rb") as file:
+                data = file.read(MAX_REQUEST_BYTES + 1)
+            if len(data) > MAX_REQUEST_BYTES:
+                raise ValueError(f"larger than {MAX_REQUEST_BYTES // 1024} KB")
+            request = json.loads(data)
+        except (OSError, ValueError, RecursionError) as error:  # RecursionError: deeply nested JSON
+            request = error
         try:
             path.unlink()
         except OSError:
             continue  # locked by the writer; taken on the next poll
         if isinstance(request, dict):
             taken.append(request)
+        else:
+            reason = request if isinstance(request, Exception) else "not a JSON object"
+            report(f"[dev] Ignored an unreadable request from the app ({path.name}): {reason}")
     return taken
 
 

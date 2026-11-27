@@ -246,7 +246,14 @@ app as a child process. Source mode only: the packaged app and launches without
 - **Hold still.** The [dev panel](#dev-panel) turns automatic restart off and
   on and restarts the app on demand. With automatic restart off, Python changes
   are counted but not loaded until you restart; a change after a failed start
-  still starts the app, because there is no window to restart from.
+  still starts the app, because there is no window to restart from. The
+  setting lasts across app restarts but not across dev sessions: every new
+  `--dev` launch starts with automatic restart on.
+- **Stop that fails.** If the old app is still running after the kill, the
+  supervisor starts no new app (it would fight the old one for the runtime lock
+  and port), says so in the terminal, and retries the stop on the next poll. A
+  new app that cannot be spawned at all is reported the same way; the next
+  Python change or restart request tries again.
 - **UI changes** under `apps/desktop-web` keep updating through Vite HMR without
   a restart.
 
@@ -299,8 +306,9 @@ to the app as `CVMANALYTICS_DEV_CONTROL_DIR`. The app queues requests as JSON
 files in `requests\` (`{"action": "restart"}`,
 `{"action": "set_auto_restart", "enabled": false}`); the supervisor takes them
 on each poll, oldest first, and publishes `status.json`
-(`auto_restart`, `pending_changes`). Unknown requests are reported in the
-terminal and ignored. Restart requests queued while a restart is under way are
+(`auto_restart`, `pending_changes`). Unknown requests, and request files that
+are not a JSON object, are larger than 64 KB or nest too deeply, are reported
+in the terminal and ignored. Restart requests queued while a restart is under way are
 answered by that restart. Later dev panel actions (worktree switch, data
 actions) are new actions on the same channel.
 
