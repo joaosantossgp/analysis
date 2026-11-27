@@ -115,3 +115,23 @@ or publish. This exception does not permit a new tag, retag, or substitution
 while the original immutable artifacts are still available.
 
 See [`build-release.md`](build-release.md) for the full checklist.
+
+## Publication Decision Module (Not Yet In Force)
+
+[ADR 0011](decisions/0011-build-once-publications-and-update-channels.md)
+replaces the gate above with build-once publications. Its rules live in one
+pure module, `scripts/release/publication_decision.py` (tests:
+`tests/test_publication_decision.py`):
+
+- `decide`: from the last publication, the PRs merged since with their
+  shipping classes, and the paths changed since, it answers whether to publish,
+  as a pre-release or a release, with which version, and whether the owner's
+  approval is required, with the PRs and risk paths behind the answer.
+- `promote`: from the dated publications and the blocking bugs, it answers
+  which pre-release to propose for promotion, if any.
+
+The risk areas are the `RISK_AREAS` list in that module and nowhere else. No
+workflow calls the module yet: it becomes the decision source when the
+publication workflow (#629) and the promotion workflows (#631) land. Until
+then the gate above stays the operating contract, and the module's answer
+authorizes nothing.
