@@ -168,6 +168,31 @@ def test_configure_bundled_data_paths_does_not_override_explicit_sqlite_path(
         assert Path(app.os.environ["SQLITE_PATH"]) == explicit_db
 
 
+def test_configure_bundled_data_paths_ignores_inherited_database_url(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    # #667: a user-level DATABASE_URL (dev/ingestion Postgres) must not move the
+    # packaged app off its local database; it bundles no Postgres driver.
+    exe_path = tmp_path / "CVMAnalytics.exe"
+    exe_path.write_text("", encoding="utf-8")
+
+    monkeypatch.setattr(app.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(app.sys, "_MEIPASS", str(tmp_path / "_internal"), raising=False)
+    monkeypatch.setattr(app.sys, "executable", str(exe_path))
+
+    env = {"USERPROFILE": str(tmp_path), "DATABASE_URL": "postgresql+psycopg://u:secret@host/db"}
+    with patch.dict(environ, env, clear=True):
+        app._configure_bundled_data_paths()
+
+        assert "DATABASE_URL" not in app.os.environ
+        data_root = tmp_path / "Documents" / "CVMAnalytics"
+        assert Path(app.os.environ["SQLITE_PATH"]) == data_root / "db" / "cvm_financials.db"
+        log = (data_root / "recovery.log").read_text(encoding="utf-8")
+        assert "ignored DATABASE_URL" in log
+        assert "secret" not in log
+
+
 @pytest.fixture
 def worktree_of_main(monkeypatch, tmp_path: Path) -> tuple[Path, Path]:
     """Source dev mode launched from a git worktree of `tmp_path / "main"`."""

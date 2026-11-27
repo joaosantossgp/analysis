@@ -186,6 +186,11 @@ def _configure_bundled_data_paths() -> None:
     for path in (user_root, db_dir, output_dir, logs_dir, cache_dir):
         path.mkdir(parents=True, exist_ok=True)
 
+    # The packaged app is local-first and bundles no Postgres driver (#667): a
+    # DATABASE_URL inherited from the user's environment must not replace the local DB.
+    if os.environ.pop("DATABASE_URL", None):
+        _log_recovery(user_root, "ignored DATABASE_URL: the packaged app always uses its local database")
+
     os.environ.setdefault("CVM_DATA_DIR", str(user_root))
     os.environ.setdefault("CVM_DB_DIR", str(db_dir))
     os.environ.setdefault("SQLITE_PATH", str(db_dir / "cvm_financials.db"))
