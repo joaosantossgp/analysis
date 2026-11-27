@@ -27,10 +27,9 @@ The ZIP root is flat: `CVMAnalytics.exe` and `_internal/` at the archive root.
 The installed app's updater downloads the versioned ZIP pair. `Setup.exe` is
 the per-user installer for first installs, built from the same bundle
 ([installer](build-release.md#installer)). The unversioned pairs hold the same
-bytes for download links that point at `releases/latest` (`README.md` and
-`apps/landing/index.html` link the ZIP today; the landing switches to
-`CVMAnalytics-Setup.exe` only after the first release that contains it, #653):
-a release becomes "latest", a pre-release never does. Versions are plain `MAJOR.MINOR.PATCH`; the
+bytes for the download links in `README.md` (ZIP) and `apps/landing/index.html`
+(installer), which point at `releases/latest`: a release becomes "latest", a
+pre-release never does. Versions are plain `MAJOR.MINOR.PATCH`; the
 first is `0.30.0`. The publication page lists the merged PRs it contains.
 
 ## What a merge publishes
