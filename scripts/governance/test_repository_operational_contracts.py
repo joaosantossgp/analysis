@@ -288,6 +288,7 @@ def test_release_and_ci_actions_are_full_sha_pinned() -> None:
         ".github/workflows/release-desktop.yml",
         ".github/workflows/promote-release.yml",
         ".github/workflows/promotion-proposal.yml",
+        ".github/workflows/prerelease-retention.yml",
         ".github/workflows/ci.yml",
         ".github/workflows/pr-issue-guardrails.yml",
     ):
@@ -361,6 +362,26 @@ def test_promotion_proposal_runs_daily_never_promotes_and_dry_runs_on_dispatch()
         assert command in run
     assert "${{" not in run
     assert "gh release" not in run and "promotion_workflow.py promote" not in run
+    step_env = next(step["env"] for step in job["steps"] if "run" in step)
+    assert step_env["DRY_RUN"] == "${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}"
+
+
+def test_pre_release_retention_prunes_after_publication_and_weekly_and_dry_runs_on_dispatch() -> None:
+    workflow = _workflow(".github/workflows/prerelease-retention.yml")
+    triggers = workflow["on"]
+
+    assert set(triggers) == {"workflow_run", "schedule", "workflow_dispatch"}
+    assert triggers["workflow_run"] == {"workflows": ["Release Desktop"], "types": ["completed"]}
+    dry_run = triggers["workflow_dispatch"]["inputs"]["dry_run"]
+    assert dry_run["type"] == "boolean" and dry_run["default"] is True
+    assert workflow["permissions"] == {"contents": "read"}
+    (job,) = workflow["jobs"].values()
+    assert job["permissions"] == {"contents": "write"} and "environment" not in job
+    run = _run_source(job)
+    assert "scripts/release/promotion_workflow.py prune" in run and "${{" not in run
+    # Only download files go: never a release, a tag or a promotion.
+    for forbidden in ("gh release delete ", "gh release edit", "git push", "git tag", "promotion_workflow.py promote"):
+        assert forbidden not in run, forbidden
     step_env = next(step["env"] for step in job["steps"] if "run" in step)
     assert step_env["DRY_RUN"] == "${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}"
 

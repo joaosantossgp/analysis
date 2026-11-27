@@ -43,6 +43,16 @@ start) up to, not including, `fixed_in` (null: not fixed).
 
 `promote` output: `propose`, `version`, `age_days`, `reason`,
 `oldest_unpromoted`, and `blocked` (pre-releases passed over, with bug numbers).
+
+`prune` input (#634):
+
+    {"publications": [{"version": "v0.30.1", "kind": "pre-release",
+                       "assets": ["CVMAnalytics-windows.zip", "..."]}]}
+
+`prune` output: `keep` (10), `kept` (the newest pre-releases, newest first), and
+`prune` (`version` and `assets` of each older pre-release that still has
+download files). Releases are never listed, so a promoted pre-release is never
+pruned; nothing here removes a tag.
 """
 from __future__ import annotations
 
@@ -60,6 +70,8 @@ KIND_BY_CLASS = {"pre": "pre-release", "release": "release", "hotfix": "release"
 FIRST_VERSION = (0, 30, 0)
 PROMOTION_TRIGGER_DAYS = 30
 PROMOTION_MIN_AGE_DAYS = 20
+# Pre-releases that keep their download files; the owner accepted 10 on 2026-11-26 (#634).
+RETENTION_KEEP = 10
 
 # The one list of risk areas. A changed path matching any pattern makes a
 # pre-release wait for the owner's approval. `*` also matches `/`. The first
@@ -260,9 +272,28 @@ def pick_promotion(publications: list[dict], blocking_bugs: list[dict], today: s
     return answer("blocking-bug-not-fixed", oldest=oldest, blocked=blocked)
 
 
+def pick_pruning(publications: list[dict], keep: int = RETENTION_KEEP) -> dict:
+    pre_releases = []
+    for pub in publications:
+        if pub["kind"] not in ("pre-release", "release"):
+            raise ValueError(f"unknown publication kind: {pub['kind']!r}")
+        if pub["kind"] == "pre-release":  # legacy -rc.N tags count too: they are on the releases page
+            pre_releases.append((_order(parse_version(pub["version"])), pub["version"], sorted(pub["assets"])))
+    pre_releases.sort(key=lambda item: item[0], reverse=True)
+    return {
+        "keep": keep,
+        "kept": [version for _, version, _ in pre_releases[:keep]],
+        "prune": [
+            {"version": version, "assets": assets}
+            for _, version, assets in pre_releases[keep:]
+            if assets  # already pruned: nothing to do, so a re-run is a no-op
+        ],
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Publication decision and promotion pick (ADR 0011).")
-    parser.add_argument("command", choices=("decide", "promote"))
+    parser.add_argument("command", choices=("decide", "promote", "prune"))
     parser.add_argument("--input", default="-", help="JSON file with the facts; '-' (default) reads stdin")
     args = parser.parse_args(argv)
     try:
@@ -271,8 +302,10 @@ def main(argv: list[str] | None = None) -> int:
         facts = json.loads(raw.decode("utf-8-sig"))
         if args.command == "decide":
             result = decide_publication(facts["last_publication"], facts["prs"], facts["changed_paths"])
-        else:
+        elif args.command == "promote":
             result = pick_promotion(facts["publications"], facts["blocking_bugs"], facts["today"])
+        else:
+            result = pick_pruning(facts["publications"])
     except (KeyError, TypeError, ValueError, AttributeError, OSError) as exc:
         print(f"invalid input: {exc!r}", file=sys.stderr)
         return 2

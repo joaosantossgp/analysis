@@ -189,6 +189,11 @@ SELECTION_CASES = [
         [_publication("v0.30.2", asset=False), *PLAIN[1:]], "0.30.1", "releases", None,
         id="missing-asset-and-nothing-else-newer",
     ),
+    # Retention (#634) removes the files of pre-releases older than the newest 10: never offered.
+    pytest.param(
+        [_publication("v0.30.12", prerelease=True), _publication("v0.30.1", prerelease=True, asset=False)],
+        "0.30.0", "prereleases", "v0.30.12", id="pruned-pre-release-never-offered",
+    ),
 ]
 
 

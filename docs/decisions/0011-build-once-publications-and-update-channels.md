@@ -1,10 +1,8 @@
 # 0011: Build-once publications and update channels
 
-Status: Accepted (2026-11-26). Being implemented under goal #623: shipping
-classes (#625), the decision module (#628) and the build-once publication
-workflow (#629) are in place and [`../release-process.md`](../release-process.md)
-describes the operating flow; promotion, installer, candidate test command,
-retention and the update channel are still to land.
+Status: Accepted (2026-11-26) and implemented (2026-11-27) under goal #623.
+The operating flow is [`../release-process.md`](../release-process.md); the
+first publication was `0.30.0` (#633).
 
 ## Context
 
@@ -92,5 +90,5 @@ Publishing terms used below are defined in [`../../GLOSSARY.md`](../../GLOSSARY.
   installer.
 - Triage must assign a shipping class to every issue, and the triage labels doc
   must define the four labels.
-- Old pre-releases need a retention rule so GitHub Releases does not accumulate
-  hundreds of entries. Needs validation: how many to keep.
+- Old pre-releases lose their download files beyond the newest 10, so GitHub
+  Releases stays usable; their tags and pages stay (#634).
