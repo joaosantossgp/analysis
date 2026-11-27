@@ -215,6 +215,29 @@ def test_release_docs_describe_build_once_publication_not_the_retired_gate() -> 
     assert "explicit" in release_process
 
 
+def test_candidate_test_command_verifies_before_launch_and_is_documented() -> None:
+    script = (ROOT / "scripts/release/open-candidate.ps1").read_text(encoding="utf-8")
+    uploads = {
+        step["with"]["name"]
+        for job in _release_workflow()["jobs"].values()
+        for step in job["steps"]
+        if step.get("uses", "").startswith("actions/upload-artifact@")
+    }
+
+    # The script reads the artifacts the release workflow actually uploads.
+    assert {"publication-candidate", "publication-decision"} <= uploads
+    assert '"publication-candidate", "publication-decision"' in script
+    assert "name=publication-candidate" in script  # how "latest" is resolved
+    assert "Refusing to open this candidate" in script
+    assert "Get-Process -Name CVMAnalytics" in script
+    assert "CVMAnalytics-candidates" in script
+    # Nothing is extracted or launched before the checksum matches.
+    assert script.index("Get-FileHash") < script.index("Expand-Archive") < script.index("Start-Process")
+    release_process = (ROOT / "docs/release-process.md").read_text(encoding="utf-8")
+    assert "## Testing a candidate" in release_process
+    assert "scripts/release/open-candidate.ps1" in release_process
+
+
 def test_release_and_ci_actions_are_full_sha_pinned() -> None:
     for relative_path in (
         ".github/workflows/release-desktop.yml",
