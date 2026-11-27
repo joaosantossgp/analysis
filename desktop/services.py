@@ -7,12 +7,9 @@ Extracted from cvm_pyqt_app.py — no PyQt6 dependencies.
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
-import threading
-import time
 from collections import defaultdict
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
@@ -21,12 +18,9 @@ from uuid import uuid4
 import pandas as pd
 
 from src.companies.identity import CompanyIdentityResolver
-from src.platform.contracts import RefreshPolicy, RefreshProgressUpdate, RefreshRequest
-from src.financials.read_service import resolve_refresh_year_range
-from src.refresh.local_database_state import COMPANY_STAGES
-from src.refresh.service import HeadlessRefreshService
 from src.platform.settings import AppSettings, build_settings
-from src.financials.utils import now_iso_seconds
+from src.refresh.batch_jobs import BatchRefreshJobManager
+from src.refresh.service import HeadlessRefreshService
 
 
 @dataclass
@@ -1255,16 +1249,11 @@ class IntelligentSelectorService:
         return [item.to_row() for item in top]
 
 
-class DesktopRefreshJobManager:
+class DesktopRefreshJobManager(BatchRefreshJobManager):
     """Local background refresh queue used by the pywebview bridge."""
 
-    VALID_MODES = {"full", "missing", "outdated", "failed"}
-    TERMINAL_STATES = {"success", "partial", "error", "cancelled", "interrupted"}
-    DEFAULT_START_YEAR = 2010
-    MAX_LOG_LINES = 200
-    MAX_STORED_JOBS = 50
-    # Progress-only updates are written at most this often; state changes always are.
-    SAVE_INTERVAL_SECONDS = 2.0
+    THREAD_NAME_PREFIX = "desktop-refresh"
+    DB_WORKER_HISTORY_LIMIT = 10
 
     def __init__(
         self,
@@ -1276,116 +1265,18 @@ class DesktopRefreshJobManager:
         autostart: bool = True,
         on_job_finished: Callable[[str], None] | None = None,
     ) -> None:
-        self.settings = settings or build_settings()
-        self.on_job_finished = on_job_finished
-        self._last_save_monotonic = 0.0
-        self.read_service = read_service
-        self._refresh_service = refresh_service
-        self.jobs_path = jobs_path or (self.settings.paths.data_dir / "refresh_jobs.json")
-        self.autostart = bool(autostart)
-        self._lock = threading.RLock()
-        self._threads: dict[str, threading.Thread] = {}
-        self._cancel_events: dict[str, threading.Event] = {}
-        self._jobs = self._load_jobs()
-        self._mark_unfinished_jobs_interrupted()
-
-    @property
-    def refresh_service(self) -> HeadlessRefreshService:
-        if self._refresh_service is None:
-            self._refresh_service = HeadlessRefreshService(settings=self.settings)
-        return self._refresh_service
+        resolved_settings = settings or build_settings()
+        super().__init__(
+            settings=resolved_settings,
+            read_service=read_service,
+            refresh_service=refresh_service,
+            jobs_path=jobs_path or (resolved_settings.paths.data_dir / "refresh_jobs.json"),
+            autostart=autostart,
+            on_job_finished=on_job_finished,
+        )
 
     def request_refresh(self, params: dict[str, Any] | None = None) -> dict[str, Any]:
-        p = dict(params or {})
-        mode = str(p.get("mode") or "missing").strip().lower()
-        if mode not in self.VALID_MODES:
-            return {
-                "status": "error",
-                "job_id": None,
-                "message": f"Modo de refresh invalido: {mode}",
-                "status_reason_code": "invalid_mode",
-                "is_retry_allowed": True,
-            }
-
-        try:
-            selection = self._resolve_batch_selection(p, mode=mode)
-            companies = list(selection.companies)
-            start_year, end_year = selection.start_year, selection.end_year
-        except Exception as exc:
-            return {
-                "status": "error",
-                "job_id": None,
-                "message": str(exc),
-                "status_reason_code": "invalid_request",
-                "is_retry_allowed": True,
-            }
-
-        if not companies:
-            now = self._now_iso()
-            return {
-                "status": "already_current",
-                "job_id": None,
-                "accepted_at": now,
-                "queued": 0,
-                "message": "Nenhuma empresa elegivel para refresh.",
-                "status_reason_code": "empty_scope",
-                "is_retry_allowed": False,
-            }
-
-        active_job = self._find_active_job()
-        if active_job is not None:
-            return {
-                "status": "already_running",
-                "job_id": active_job["job_id"],
-                "accepted_at": active_job.get("accepted_at") or "",
-                "queued": int(active_job.get("queued") or 0),
-                "message": "Ja existe um refresh em andamento.",
-                "status_reason_code": "already_running",
-                "is_retry_allowed": False,
-            }
-
-        job_id = uuid4().hex
-        now = self._now_iso()
-        job = {
-            "job_id": job_id,
-            "state": "queued",
-            "mode": mode,
-            "accepted_at": now,
-            "created_at": now,
-            "updated_at": now,
-            "started_at": None,
-            "finished_at": None,
-            "queued": len(companies),
-            "processed": 0,
-            "failures": 0,
-            "current_cvm": None,
-            "log_lines": ["Refresh enfileirado."],
-            "params": p,
-            "scope": p.get("scope"),
-            "request": {
-                "companies": [str(company) for company in companies],
-                "start_year": int(start_year),
-                "end_year": int(end_year),
-            },
-            "error": None,
-            "result": None,
-        }
-        with self._lock:
-            self._jobs[job_id] = job
-            self._save_jobs()
-
-        if self.autostart:
-            self._start_job(job_id)
-
-        return {
-            "status": "running" if self.autostart else "queued",
-            "job_id": job_id,
-            "accepted_at": now,
-            "queued": len(companies),
-            "message": "Refresh iniciado em background.",
-            "status_reason_code": "refresh_started",
-            "is_retry_allowed": False,
-        }
+        return self._enqueue_batch_refresh(params, raise_on_invalid=False)
 
     def record_failed_start(self, *, scope: str, error: str) -> str:
         """Records a run that failed before any company was queued, so the shell shows Failed (#580)."""
@@ -1451,13 +1342,9 @@ class DesktopRefreshJobManager:
             jobs = [self._public_job(job, include_result=include_result) for job in self._jobs.values()]
         # Single-company refresh jobs live in the refresh_jobs table (drained
         # by RefreshJobWorker), not in DesktopRefreshJobManager's JSON store.
-        # Surface them alongside batch jobs so UpdateBasePage / onboarding see
-        # all in-flight work.
         jobs.extend(self._synthesize_db_worker_jobs())
         jobs.sort(key=lambda row: str(row.get("updated_at") or ""), reverse=True)
         return {"items": jobs}
-
-    DB_WORKER_HISTORY_LIMIT = 10
 
     def _synthesize_db_worker_jobs(self) -> list[dict[str, Any]]:
         from src.refresh.job_projection import list_db_worker_jobs  # noqa: PLC0415
@@ -1493,332 +1380,3 @@ class DesktopRefreshJobManager:
         event.set()
         self._append_log(job_id, "Cancelamento solicitado.")
         return {"ok": True}
-
-    def _start_job(self, job_id: str) -> None:
-        cancel_event = threading.Event()
-        thread = threading.Thread(
-            target=self._run_job,
-            args=(job_id, cancel_event),
-            name=f"desktop-refresh-{job_id[:8]}",
-            daemon=True,
-        )
-        self._cancel_events[job_id] = cancel_event
-        self._threads[job_id] = thread
-        thread.start()
-
-    def _run_job(self, job_id: str, cancel_event: threading.Event) -> None:
-        self._update_job(
-            job_id,
-            state="running",
-            started_at=self._now_iso(),
-            log_line="Refresh em execucao.",
-        )
-        try:
-            job = self._jobs[job_id]
-            request_payload = job["request"]
-            mode = str(job.get("mode") or "missing")
-            request = RefreshRequest(
-                companies=tuple(str(item) for item in request_payload["companies"]),
-                start_year=int(request_payload["start_year"]),
-                end_year=int(request_payload["end_year"]),
-                policy=RefreshPolicy(
-                    skip_complete_company_years=mode != "full",
-                    # A data update honors its history range; the fast lane is
-                    # for other "missing" batches only.
-                    enable_fast_lane=mode == "missing" and job.get("scope") != "data_update",
-                    reuse_catalog_snapshot=job.get("scope") in {"data_update", "retry"},
-                    force_refresh=mode == "full",
-                ),
-            )
-            result = self.refresh_service.execute(
-                request,
-                progress_callback=lambda current, total, message: self._handle_progress(
-                    job_id,
-                    current=current,
-                    total=total,
-                    message=message,
-                ),
-                stage_callback=lambda update: self._handle_stage(job_id, update),
-                should_cancel=cancel_event.is_set,
-            )
-        except Exception as exc:
-            self._update_job(
-                job_id,
-                state="error",
-                finished_at=self._now_iso(),
-                error=f"{exc.__class__.__name__}: {exc}",
-                log_line=f"Falha no refresh: {exc}",
-            )
-            self._cleanup_job_runtime(job_id)
-            return
-
-        failures = int(result.error_count)
-        failed_codes = [str(row.cvm_code) for row in result.companies if row.status not in {"success", "no_data"}]
-        if failed_codes and not result.cancelled and job.get("scope") == "data_update" and not cancel_event.is_set():
-            # Retry failed companies once inside the run, so it never depends on a page being open.
-            self._update_job(job_id, log_line=f"Retrying {len(failed_codes)} failed companies once.")
-            try:
-                retry = self.refresh_service.execute(
-                    replace(request, companies=tuple(failed_codes)),
-                    stage_callback=lambda update: self._handle_stage(job_id, update),
-                    should_cancel=cancel_event.is_set,
-                )
-                failures = int(retry.error_count)
-            except Exception as exc:
-                self._append_log(job_id, f"Retry failed: {exc}")
-
-        processed = len(result.companies)
-        if result.cancelled:
-            state = "cancelled"
-        elif not failures:
-            state = "success"
-        elif failures < processed:
-            state = "partial"
-        else:
-            state = "error"
-        self._update_job(
-            job_id,
-            state=state,
-            processed=processed,
-            failures=failures,
-            finished_at=self._now_iso(),
-            result=result.to_dict(),
-            log_line="Refresh finalizado.",
-        )
-        self._cleanup_job_runtime(job_id)
-        if self.on_job_finished is not None:
-            try:
-                self.on_job_finished(job_id)
-            except Exception:
-                pass
-
-    def _resolve_batch_selection(self, params: dict[str, Any], *, mode: str):
-        from src.financials.read_service import resolve_refresh_batch_selection  # noqa: PLC0415
-
-        return resolve_refresh_batch_selection(
-            self._read_service(),
-            params,
-            mode=mode,
-            default_start_year=self.DEFAULT_START_YEAR,
-        )
-
-    def _cleanup_job_runtime(self, job_id: str) -> None:
-        self._threads.pop(job_id, None)
-        self._cancel_events.pop(job_id, None)
-
-    def _resolve_companies(self, params: dict[str, Any], *, mode: str) -> list[str]:
-        return list(self._resolve_batch_selection(params, mode=mode).companies)
-
-    def _read_service(self):
-        if self.read_service is None:
-            from src.financials.read_service import CVMReadService  # noqa: PLC0415
-
-            self.read_service = CVMReadService(settings=self.settings)
-        return self.read_service
-
-    def _filter_by_status(self, companies: list[str], status_filter: str) -> list[str]:
-        normalized = status_filter.strip().lower()
-        if not normalized or normalized in {"all", "todos"}:
-            return companies
-        failed_states = {"failed", "error", "dispatch_failed"}
-        statuses = {
-            int(item.cd_cvm): str(
-                item.tracking_state or item.last_status or item.latest_attempt_outcome or ""
-            ).strip().lower()
-            for item in self._read_service().list_refresh_status()
-        }
-        selected: list[str] = []
-        for raw_code in companies:
-            code = int(raw_code)
-            state = statuses.get(code, "")
-            if normalized == "failed":
-                if state in failed_states:
-                    selected.append(raw_code)
-            elif state == normalized:
-                selected.append(raw_code)
-        return selected
-
-    @staticmethod
-    def _filter_cvm_range(companies: list[str], raw_range: Any) -> list[str]:
-        if raw_range in (None, ""):
-            return companies
-        start: int | None = None
-        end: int | None = None
-        if isinstance(raw_range, dict):
-            start = raw_range.get("start") or raw_range.get("from")
-            end = raw_range.get("end") or raw_range.get("to")
-        elif isinstance(raw_range, (list, tuple)) and len(raw_range) >= 2:
-            start, end = raw_range[0], raw_range[1]
-        elif isinstance(raw_range, str) and "-" in raw_range:
-            left, right = raw_range.split("-", 1)
-            start, end = left.strip(), right.strip()
-        if start in (None, "") and end in (None, ""):
-            return companies
-        start_int = int(start) if start not in (None, "") else -1
-        end_int = int(end) if end not in (None, "") else 10**9
-        return [
-            raw_code
-            for raw_code in companies
-            if start_int <= int(raw_code) <= end_int
-        ]
-
-    @classmethod
-    def _resolve_year_range(cls, params: dict[str, Any]) -> tuple[int, int]:
-        return resolve_refresh_year_range(
-            params,
-            default_start_year=cls.DEFAULT_START_YEAR,
-        )
-
-    def _find_active_job(self) -> dict[str, Any] | None:
-        with self._lock:
-            for job in self._jobs.values():
-                if str(job.get("state")) in {"queued", "running"}:
-                    return self._public_job(job)
-        return None
-
-    def snapshot_jobs(self) -> list[dict[str, Any]]:
-        """Copies of every job, including stage progress, for state derivation."""
-        with self._lock:
-            return [dict(job) for job in self._jobs.values()]
-
-    def _handle_stage(self, job_id: str, update: RefreshProgressUpdate) -> None:
-        with self._lock:
-            job = self._jobs.get(job_id)
-            # Set once: the stage alternates per company, the ETA needs the whole phase (#578).
-            enters_companies = (
-                job is not None and update.stage in COMPANY_STAGES and not job.get("companies_started_at")
-            )
-        self._update_job(
-            job_id,
-            stage=update.stage,
-            companies_started_at=self._now_iso() if enters_companies else None,
-            progress_current=int(update.current),
-            progress_total=max(1, int(update.total)),
-            log_line=update.message,
-        )
-
-    def _handle_progress(
-        self,
-        job_id: str,
-        *,
-        current: int,
-        total: int,
-        message: str,
-    ) -> None:
-        current_cvm = self._extract_current_cvm(message)
-        self._update_job(
-            job_id,
-            processed=max(0, int(current) - 1),
-            progress_current=int(current),
-            progress_total=max(1, int(total)),
-            current_cvm=current_cvm,
-            log_line=message,
-        )
-
-    @staticmethod
-    def _extract_current_cvm(message: str) -> int | None:
-        for token in str(message or "").replace("=", " ").split():
-            if token.isdigit():
-                return int(token)
-        return None
-
-    def _update_job(self, job_id: str, **changes: Any) -> None:
-        log_line = changes.pop("log_line", None)
-        with self._lock:
-            job = self._jobs.get(job_id)
-            if job is None:
-                return
-            state_changed = "state" in changes and changes["state"] != job.get("state")
-            for key, value in changes.items():
-                if value is not None or key in {"current_cvm", "error", "finished_at"}:
-                    job[key] = value
-            job["updated_at"] = self._now_iso()
-            if log_line:
-                self._append_log_locked(job, str(log_line))
-            if state_changed or time.monotonic() - self._last_save_monotonic >= self.SAVE_INTERVAL_SECONDS:
-                self._save_jobs()
-
-    def _append_log(self, job_id: str, message: str) -> None:
-        with self._lock:
-            job = self._jobs.get(job_id)
-            if job is None:
-                return
-            self._append_log_locked(job, message)
-            job["updated_at"] = self._now_iso()
-            self._save_jobs()
-
-    def _append_log_locked(self, job: dict[str, Any], message: str) -> None:
-        log_lines = list(job.get("log_lines") or [])
-        log_lines.append(message)
-        job["log_lines"] = log_lines[-self.MAX_LOG_LINES :]
-
-    def _load_jobs(self) -> dict[str, dict[str, Any]]:
-        if not self.jobs_path.exists():
-            return {}
-        try:
-            payload = json.loads(self.jobs_path.read_text(encoding="utf-8"))
-        except Exception:
-            return {}
-        if isinstance(payload, dict) and isinstance(payload.get("jobs"), list):
-            jobs: dict[str, dict[str, Any]] = {}
-            changed = False
-            for job in payload["jobs"]:
-                if not isinstance(job, dict) or not job.get("job_id"):
-                    continue
-                normalized = self._persistable_job(job)
-                if normalized != job:
-                    changed = True
-                jobs[str(normalized.get("job_id"))] = normalized
-            if changed:
-                self._jobs = jobs
-                self._save_jobs()
-            return jobs
-        return {}
-
-    def _save_jobs(self) -> None:
-        self.jobs_path.parent.mkdir(parents=True, exist_ok=True)
-        ordered = sorted(
-            self._jobs.values(),
-            key=lambda row: str(row.get("created_at") or ""),
-            reverse=True,
-        )
-        active = [job for job in ordered if str(job.get("state")) not in self.TERMINAL_STATES]
-        finished = [job for job in ordered if str(job.get("state")) in self.TERMINAL_STATES]
-        kept = active + finished[: max(0, self.MAX_STORED_JOBS - len(active))]
-        for stale in ordered:
-            if stale not in kept:
-                self._jobs.pop(str(stale.get("job_id")), None)
-        jobs = [self._persistable_job(job) for job in kept]
-        self._last_save_monotonic = time.monotonic()
-        self.jobs_path.write_text(
-            json.dumps({"jobs": jobs}, ensure_ascii=True, indent=2, default=str),
-            encoding="utf-8",
-        )
-
-    def _persistable_job(self, job: dict[str, Any]) -> dict[str, Any]:
-        from src.refresh.job_projection import persistable_batch_job  # noqa: PLC0415
-
-        return persistable_batch_job(job, max_log_lines=self.MAX_LOG_LINES)
-
-    def _mark_unfinished_jobs_interrupted(self) -> None:
-        changed = False
-        for job in self._jobs.values():
-            if str(job.get("state")) in {"queued", "running"}:
-                job["state"] = "interrupted"
-                job["finished_at"] = self._now_iso()
-                job["updated_at"] = job["finished_at"]
-                job["error"] = "The app closed before the data update finished."
-                self._append_log_locked(job, job["error"])
-                changed = True
-        if changed:
-            self._save_jobs()
-
-    @staticmethod
-    def _public_job(job: dict[str, Any], *, include_result: bool = False) -> dict[str, Any]:
-        from src.refresh.job_projection import public_batch_job  # noqa: PLC0415
-
-        return public_batch_job(job, include_result=include_result)
-
-    @staticmethod
-    def _now_iso() -> str:
-        return now_iso_seconds()
