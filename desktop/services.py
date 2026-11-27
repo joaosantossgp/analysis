@@ -1460,118 +1460,28 @@ class DesktopRefreshJobManager:
     DB_WORKER_HISTORY_LIMIT = 10
 
     def _synthesize_db_worker_jobs(self) -> list[dict[str, Any]]:
-        try:
-            from src.refresh.jobs import (  # noqa: PLC0415
-                ensure_refresh_runtime_tables_for_connection,
-            )
-            from sqlalchemy import text  # noqa: PLC0415
+        from src.refresh.job_projection import list_db_worker_jobs  # noqa: PLC0415
 
+        try:
             engine = self._read_service().engine
-            with engine.connect() as conn:
-                ensure_refresh_runtime_tables_for_connection(conn)
-                active_rows = conn.execute(
-                    text(
-                        """
-                        SELECT *
-                        FROM refresh_jobs
-                        WHERE state IN ('queued', 'running')
-                        ORDER BY requested_at DESC, id ASC
-                        """
-                    )
-                ).mappings().all()
-                # Recent terminal rows so single-company runs show up in
-                # JobHistory next to batch jobs. Ordered by finished_at desc
-                # with requested_at fallback for rows missing finished_at.
-                terminal_rows = conn.execute(
-                    text(
-                        """
-                        SELECT *
-                        FROM refresh_jobs
-                        WHERE state NOT IN ('queued', 'running')
-                        ORDER BY COALESCE(finished_at, requested_at) DESC, id DESC
-                        LIMIT :limit
-                        """
-                    ),
-                    {"limit": int(self.DB_WORKER_HISTORY_LIMIT)},
-                ).mappings().all()
         except Exception:
             return []
-        return [
-            self._db_worker_job_to_public(dict(row))
-            for row in (*active_rows, *terminal_rows)
-        ]
+        return list_db_worker_jobs(engine, limit=int(self.DB_WORKER_HISTORY_LIMIT))
 
     def _lookup_db_worker_job(self, job_id: str) -> dict[str, Any] | None:
-        try:
-            from src.refresh.jobs import (  # noqa: PLC0415
-                ensure_refresh_runtime_tables_for_connection,
-            )
-            from sqlalchemy import text  # noqa: PLC0415
+        from src.refresh.job_projection import lookup_db_worker_job  # noqa: PLC0415
 
+        try:
             engine = self._read_service().engine
-            with engine.connect() as conn:
-                ensure_refresh_runtime_tables_for_connection(conn)
-                row = conn.execute(
-                    text(
-                        """
-                        SELECT *
-                        FROM refresh_jobs
-                        WHERE id = :id
-                        """
-                    ),
-                    {"id": str(job_id)},
-                ).mappings().fetchone()
         except Exception:
             return None
-        if row is None:
-            return None
-        return self._db_worker_job_to_public(dict(row))
+        return lookup_db_worker_job(engine, job_id)
 
     @staticmethod
     def _db_worker_job_to_public(row: dict[str, Any]) -> dict[str, Any]:
-        state = str(row.get("state") or "").strip().lower()
-        # Normalize DB-worker terminal states to the vocabulary used by the
-        # JSON-batch manager so the frontend (isTerminalRefreshJob) treats
-        # them uniformly.
-        if state in {"no_data"}:
-            state = "success"
-        elif state in {"error", "failed"}:
-            state = "error"
-        progress_total = int(row.get("progress_total") or 1) or 1
-        progress_current = int(row.get("progress_current") or 0)
-        message = row.get("progress_message") or row.get("error_message") or ""
-        log_lines: list[str] = []
-        if message:
-            log_lines.append(str(message))
-        return {
-            "job_id": str(row.get("id") or ""),
-            "state": state,
-            "status": state,
-            "mode": "single",
-            "stage": row.get("stage"),
-            "queued": 1,
-            "processed": 1 if state in {"success", "error", "cancelled"} else progress_current,
-            "failures": 1 if state == "error" else 0,
-            "current_cvm": int(row.get("cd_cvm")) if row.get("cd_cvm") is not None else None,
-            "log_lines": log_lines,
-            "accepted_at": row.get("requested_at"),
-            "started_at": row.get("started_at"),
-            "finished_at": row.get("finished_at"),
-            # Prefer finished_at for terminal rows so JobHistory sort
-            # surfaces the most recent run first; fall back to heartbeat
-            # (running), then started_at, then requested_at (queued).
-            "updated_at": (
-                row.get("finished_at")
-                or row.get("heartbeat_at")
-                or row.get("started_at")
-                or row.get("requested_at")
-            ),
-            "error": row.get("error_message"),
-            "result": None,
-            "source": "db_worker",
-            "progress_current": progress_current,
-            "progress_total": progress_total,
-        }
+        from src.refresh.job_projection import db_worker_row_to_public  # noqa: PLC0415
+
+        return db_worker_row_to_public(row)
 
     def cancel_job(self, params: dict[str, Any] | None = None) -> dict[str, Any]:
         job_id = str((params or {}).get("job_id") or "")
@@ -1886,10 +1796,9 @@ class DesktopRefreshJobManager:
         )
 
     def _persistable_job(self, job: dict[str, Any]) -> dict[str, Any]:
-        payload = dict(job)
-        payload["result"] = None
-        payload["log_lines"] = list(payload.get("log_lines") or [])[-self.MAX_LOG_LINES :]
-        return payload
+        from src.refresh.job_projection import persistable_batch_job  # noqa: PLC0415
+
+        return persistable_batch_job(job, max_log_lines=self.MAX_LOG_LINES)
 
     def _mark_unfinished_jobs_interrupted(self) -> None:
         changed = False
@@ -1906,27 +1815,9 @@ class DesktopRefreshJobManager:
 
     @staticmethod
     def _public_job(job: dict[str, Any], *, include_result: bool = False) -> dict[str, Any]:
-        payload = {
-            "job_id": job.get("job_id"),
-            "state": job.get("state"),
-            "status": job.get("state"),
-            "mode": job.get("mode"),
-            "stage": job.get("stage"),
-            "queued": int(job.get("queued") or 0),
-            "processed": int(job.get("processed") or 0),
-            "failures": int(job.get("failures") or 0),
-            "current_cvm": job.get("current_cvm"),
-            "log_lines": list(job.get("log_lines") or []),
-            "accepted_at": job.get("accepted_at"),
-            "started_at": job.get("started_at"),
-            "finished_at": job.get("finished_at"),
-            "updated_at": job.get("updated_at"),
-            "error": job.get("error"),
-            "result": None,
-        }
-        if include_result:
-            payload["result"] = job.get("result")
-        return payload
+        from src.refresh.job_projection import public_batch_job  # noqa: PLC0415
+
+        return public_batch_job(job, include_result=include_result)
 
     @staticmethod
     def _now_iso() -> str:
