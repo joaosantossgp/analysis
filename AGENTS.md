@@ -78,6 +78,14 @@ work, PRs deliver it.
 - **Issues:** `goal` (parent outcome with sub-issues), task (`enhancement`), or
   `bug`. Start at `needs-triage`; `/triage` moves to `ready-for-agent`,
   `ready-for-human`, `needs-info`, or `wontfix` (`docs/agents/triage-labels.md`).
+- **Shipping class (ADR 0011):** triage gives every task and bug one of
+  `ships:none` (docs, CI, tests, dev tooling: publishes nothing), `ships:pre`
+  (small/medium change: pre-release), `ships:release` (large implementation:
+  release), or `ships:hotfix` (breaks the current release: immediate release);
+  the owner can change it before merge. Only the ticket that makes a large
+  implementation reachable carries `ships:release`; earlier parts carry
+  `ships:none` and stay unreachable in the app. Goals get no class. The PR check
+  takes the highest class of the closed issues and fails when none has one.
 - **Branches & PRs:** `<type>/<issue>-<slug>` from `main` (e.g.
   `feat/452-companies-backend-sort`). One PR per issue by default, or batch
   related small issues into one PR. Use `Closes #n` for tasks/bugs and `Refs #n`
@@ -113,6 +121,9 @@ skills live in `.agents/skills/` (`docs/agents/skills.md`); external Superpowers
 skills are used when installed (fallback equivalents in `docs/agents/skills.md`).
 Where Superpowers and Matt Pocock overlap (TDD, review, debugging), prefer
 Superpowers — except `/ponytail-review` is always the single pre-PR review gate.
+For a part of a larger implementation, that review checks the PR template line
+that unfinished parts are unreachable in the app until the `ships:release`
+ticket lands.
 
 - **Fast Track** (`ready-for-agent` Low/Medium issue with closed scope):
   `using-git-worktrees` -> `ponytail` + `test-driven-development` ->
