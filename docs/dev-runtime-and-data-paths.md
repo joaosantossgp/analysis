@@ -371,7 +371,9 @@ supervisor's `switch_worktree` request in
   queues `{"action": "switch_worktree", "path": ...}` and returns once the
   supervisor publishes either the new `worktree` (`installing: false`; the
   window closes right after) or the `install` for it (`installing: true`). The
-  supervisor checks the request again.
+  supervisor checks the request again. Until a switched-to app has run 60
+  seconds, the status also names the worktree a crash returns to
+  (`switching_from`; null otherwise).
 
 Limits:
 
@@ -391,6 +393,59 @@ Limits:
 - Closing the window during an install ends dev mode without waiting for it; a
   `pip` or `npm` process already started may keep running until it finishes.
   The next switch completes the install, since its stamp was not written.
+
+### Agent command
+
+An agent working in a worktree asks which worktree the open window runs, or
+points the window at its worktree, with
+[`desktop/dev_control.py`](../desktop/dev_control.py). It uses only the standard
+library, so it needs no `.venv` in the worktree; run it from the worktree root:
+
+```powershell
+python -m desktop.dev_control status            # what the window runs; free to run anytime
+python -m desktop.dev_control switch            # switch the window to the worktree this runs from
+python -m desktop.dev_control switch wt-other   # or to a worktree by path, folder name or branch
+```
+
+Agents run `switch` only when the owner asks to see their work, never on their
+own ([`AGENTS.md`](../AGENTS.md#5-workflow), "Dev mode window").
+
+- **Finding dev mode.** The supervisor writes a record `<pid>.json` (its PID,
+  control directory, launch checkout, and the `CVM_DATA_DIR` and
+  `CVMANALYTICS_USE_RELEASE_DATA` the app inherits) into
+  `cvmanalytics-dev-supervisors\` under the repository's git common dir
+  (`<main checkout>\.git`, which every worktree reaches through its `.git`
+  file), and removes it when dev mode ends. The app keeps using
+  `CVMANALYTICS_DEV_CONTROL_DIR`. A record whose process is gone (dev mode was
+  killed) or whose control directory is gone is stale: the command removes it
+  and says so. With several dev modes running, `status` prints each and
+  `switch` asks for `--pid <pid>` (placed before `switch`).
+- **switch** sends the dev panel's request with the panel's refusals (unknown
+  or removed worktree, an install under way) and installs a worktree's own
+  dependencies the same way, printing each step ("Installing dependencies for
+  wt-x: Installing Python packages..."). It then waits until the switch is
+  confirmed: the app has run 60 seconds on the worktree (`switching_from`
+  clears), since a crash before that returns the window. A switch to the
+  worktree the window already runs sends nothing.
+- **status** prints the supervisor PID and launch checkout, the active worktree
+  and whether it is the checkout the command runs from, its branch, the data
+  mode as the dev panel names it (`shared`, `isolated`, `full-copy`, `custom`,
+  `installed-app`) with its path, whether a switch or install is in progress,
+  and the last switch notice with a failed install's command and output.
+- **Exit codes.** 0 once the window runs the worktree (or `status` printed). 1
+  with the reason on stderr when no dev mode is running or its record is stale,
+  the target is not a worktree of this repository, the supervisor refuses or
+  does not confirm within 15 seconds, the install fails (with its command, exit
+  code and the last 40 lines of its output), the app fails on the worktree and
+  the window returns, or dev mode ends meanwhile.
+
+Limits:
+
+- A dev mode started before this command existed writes no record: relaunch it.
+- A record whose PID was reused by another process passes for a running dev
+  mode; `switch` then fails unconfirmed after 15 seconds.
+- `switch` waits as long as an install reports progress; it has no overall time
+  limit.
 
 ## Dev panel
 

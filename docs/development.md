@@ -119,10 +119,22 @@ The dev panel's **Worktrees** section lists every git worktree and switches the
 open window to one of them: the window reopens on the same route running that
 worktree's code. A worktree whose `requirements.txt` and frontend lockfile match
 the environment dev mode was launched with runs on that environment, with no
-install; one whose dependencies differ is flagged and cannot be switched to yet.
-A failed switch returns to the previous worktree, and a removed worktree falls
-back to the launch checkout. See
-[worktree switch](dev-runtime-and-data-paths.md#worktree-switch).
+install; one whose dependencies differ is flagged, and switching to it installs
+its own dependencies first while the window stays open. A failed switch returns
+to the previous worktree, and a removed worktree falls back to the launch
+checkout. See [worktree switch](dev-runtime-and-data-paths.md#worktree-switch).
+
+Agents reach the open window from their worktree with a command (standard
+library only, run from the worktree root). `switch` is run only when the owner
+asks ([`AGENTS.md`](../AGENTS.md#5-workflow)); `status` anytime:
+
+```powershell
+python -m desktop.dev_control status   # active worktree, branch, data mode, switch or install under way
+python -m desktop.dev_control switch   # switch the window to this worktree (or pass a path, folder name or branch)
+```
+
+Both exit 1 with the reason when no dev mode is running. See
+[agent command](dev-runtime-and-data-paths.md#agent-command).
 
 With no path overrides or release-data opt-in, desktop dev uses the **shared
 dev data** of the main checkout, also when launched from a git worktree:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import threading
@@ -561,6 +562,55 @@ def test_run_gives_the_app_a_control_directory_and_removes_it_afterwards(tmp_pat
     assert not control_dirs[0].exists()
 
 
+# --- Registry for the agent command (#613) -------------------------------------
+
+
+def test_registry_dir_is_the_git_common_dir_seen_from_every_worktree(tmp_path: Path) -> None:
+    main, linked, relative = tmp_path / "analisys", tmp_path / "wt-a", tmp_path / "wt-b"
+    for root in (linked, relative):
+        git_dir = main / ".git" / "worktrees" / root.name
+        git_dir.mkdir(parents=True)
+        (git_dir / "commondir").write_text("../..\n", encoding="utf-8")
+        root.mkdir()
+    (linked / ".git").write_text(f"gitdir: {main / '.git' / 'worktrees' / 'wt-a'}\n", encoding="utf-8")
+    (relative / ".git").write_text("gitdir: ../analisys/.git/worktrees/wt-b\n", encoding="utf-8")
+
+    expected = (main / ".git").resolve() / sup.REGISTRY_DIR
+    assert [sup.registry_dir(root) for root in (main, linked, relative)] == [expected] * 3
+
+
+def test_run_registers_dev_mode_for_the_agent_command_and_removes_the_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / ".git").mkdir()
+    monkeypatch.setenv("CVM_DATA_DIR", str(tmp_path / "scratch"))
+    records: list[tuple[dict[str, object], str]] = []
+
+    class ClosedWindowChild:
+        stdin = Mock()
+
+        def poll(self) -> int:
+            return 0
+
+    def fake_popen(_command: list[str], **kwargs: object) -> ClosedWindowChild:
+        record = sup.registry_dir(tmp_path) / f"{os.getpid()}.json"
+        records.append((json.loads(record.read_text(encoding="utf-8")), kwargs["env"][sup.CONTROL_DIR_ENV]))  # type: ignore[index]
+        return ClosedWindowChild()
+
+    with patch.object(sup.subprocess, "Popen", fake_popen), patch.object(sup.time, "sleep"):
+        assert sup.run(["--dev"], repo_root=tmp_path) == 0
+
+    [(record, control_dir)] = records
+    assert record == {
+        "pid": os.getpid(),
+        "control_dir": control_dir,
+        "launch_root": str(tmp_path),
+        "cvm_data_dir": str(tmp_path / "scratch"),
+        "use_release_data": False,
+    }
+    assert list(sup.registry_dir(tmp_path).iterdir()) == [], "dev mode removes its record when it ends"
+
+
 # --- Worktree switch (#611) ----------------------------------------------------
 
 
@@ -847,6 +897,18 @@ def test_app_that_fails_soon_after_a_switch_returns_to_the_previous_worktree(tmp
     notice = h.statuses[-1]["worktree_notice"]
     assert "Switching to wt-feature failed: the app exited with code 1" in notice
     assert "back on analisys" in notice
+
+
+def test_status_names_the_worktree_a_switch_returns_to_until_the_app_has_run_long_enough(tmp_path: Path) -> None:
+    h = WorktreeHarness(tmp_path)
+    assert h.statuses[-1]["switching_from"] is None
+
+    h.switch(h.feature)
+    h.supervisor.tick(0.0)
+    assert h.statuses[-1]["switching_from"] == str(h.main)
+
+    h.supervisor.tick(sup.SWITCH_GRACE_SECONDS + 1)
+    assert h.statuses[-1]["switching_from"] is None
 
 
 def test_app_that_fails_long_after_a_switch_stays_on_that_worktree(tmp_path: Path) -> None:

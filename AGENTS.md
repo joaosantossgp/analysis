@@ -110,6 +110,12 @@ work, PRs deliver it.
   copy, shared downloads). Add `--full-copy` when the work changes the format,
   location or content of downloaded CVM files. Never isolate the main checkout
   (`docs/dev-runtime-and-data-paths.md`).
+- **Dev mode window:** the owner's open dev mode window is shared by every
+  chat. Run `python -m desktop.dev_control switch` from your worktree root only
+  when the owner asks to see your work ("show me", "mostra aí"), never on your
+  own. `python -m desktop.dev_control status` (which worktree, branch and data
+  mode the window runs) is free to run anytime. Both exit 1 with the reason
+  when no dev mode is running (`docs/dev-runtime-and-data-paths.md#agent-command`).
 - **Plans & status:** `docs/superpowers/` working files are git-ignored; the
   GitHub issue is the spec of record. Update `docs/STATUS.md` when version,
   release state, active work, or a major decision changes.
