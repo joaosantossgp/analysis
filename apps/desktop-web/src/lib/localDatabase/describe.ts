@@ -125,7 +125,7 @@ function describe(state: LocalDatabaseState | null | undefined): Omit<LocalDatab
         glyph: "◑",
         short: `${failures} FAILED`,
         tone: "warn",
-        headline: `Completed with ${failures} failures`,
+        headline: `Completed with ${failures} ${failures === 1 ? "failure" : "failures"}`,
         detail: `${Math.max(0, queued - failures)} of ${queued} companies updated${finished ? ` · ${finished}` : ""}`,
         percent: null,
       };
