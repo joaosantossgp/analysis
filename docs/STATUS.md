@@ -7,10 +7,16 @@ Keep detail in the owning contract or dated evidence. Last updated: 2026-11-26.
 
 - Runtime version: `0.30.0-rc.1` (`desktop/__version__.py`).
 - Latest stable: `v0.29.2` (2026-07-09); prerelease: `v0.30.0-rc.1` (2026-07-16).
-- Later source changes are not a new published release. Follow [build/release](build-release.md).
-- The release workflow is enabled and protected on the public repository (`main`
-  branch protection + `release-publication` required reviewer, verified
-  2026-11-25). See [remote publication protection](build-release.md#remote-publication-protection).
+- Later source changes are not a new published release yet.
+- Publishing follows [ADR 0011](decisions/0011-build-once-publications-and-update-channels.md):
+  since #629, a merge to `main` publishes by shipping class through the
+  build-once workflow, a low-risk pre-release with no approval and everything
+  else after the owner's approval in `release-publication`
+  ([release process](release-process.md)). The first publication, `0.30.0`, is
+  #633; promotion, installer, candidate test command and retention are #630-#632
+  and #634. Protection (`main` branch protection + `release-publication`
+  required reviewer) re-verified 2026-11-27; see
+  [remote publication protection](build-release.md#remote-publication-protection).
 
 ## Production and external writes
 
@@ -60,9 +66,9 @@ Keep detail in the owning contract or dated evidence. Last updated: 2026-11-26.
   44 min), against about 2 s in the dev runtime at the same point. Decision (#589): DMPL is
   not persisted; its never-filled export, mapping and API paths were removed.
 
-- Decided 2026-11-26, not yet implemented: a dev-mode goal (#607, tasks #608-#614:
-  auto-restart on Python changes, shared/isolated dev data, worktree switch, dev
-  panel) and a publishing goal, not yet filed as issues (plain version numbers,
+- Decided 2026-11-26: a dev-mode goal (#607, tasks #608-#614: auto-restart on
+  Python changes, shared/isolated dev data, worktree switch, dev panel; #608-#610
+  implemented, the dev panel shell in #610) and a publishing goal, not yet filed as issues (plain version numbers,
   update channels, shipping classes, build-once promotion, installer). Publishing
   decision: [ADR 0011](decisions/0011-build-once-publications-and-update-channels.md);
   vocabulary: [GLOSSARY.md](../GLOSSARY.md). The current release gate stays in

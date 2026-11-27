@@ -9,7 +9,6 @@
 
 import pythonnet
 from pathlib import Path
-from PyInstaller.utils.hooks import collect_submodules
 
 ROOT = Path(SPECPATH).parent  # repo root (spec está em desktop/, ROOT é um nível acima)
 VITE_DIST_DIR = ROOT / "apps" / "desktop-web" / "dist"
@@ -134,7 +133,7 @@ a = Analysis(
         "clr_loader.netfx",
         "clr_loader.hostfxr",
         "pythonnet",
-    ] + collect_submodules("trafilatura"),
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
