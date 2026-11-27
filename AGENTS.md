@@ -202,9 +202,11 @@ ticket lands.
   formulas, negatives in parentheses, opens without repair).
 - **Release/updater:** `desktop/__version__.py` is the runtime version source;
   publications stamp it at build time, with no version-bump commits. Merges
-  publish through `release-desktop.yml` by shipping class; never tag or create
-  a release by hand. Approve a waiting publication for the owner only after
-  their explicit OK in chat for that exact version (`docs/release-process.md`).
+  publish through `release-desktop.yml` by shipping class, and
+  `promote-release.yml` promotes a pre-release; never tag, create or promote a
+  release by hand. Approve a waiting publication or promotion for the owner only
+  after their explicit OK in chat for that exact version
+  (`docs/release-process.md`).
   Never bundle or overwrite user data (`docs/build-release.md`).
 - **Docs/research:** no app code edits; cite active paths/lines; mark gaps
   "Needs validation"; update canonical doc, archive contradictory ones, and

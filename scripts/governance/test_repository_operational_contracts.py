@@ -286,6 +286,8 @@ def test_candidate_test_command_verifies_before_launch_and_is_documented() -> No
 def test_release_and_ci_actions_are_full_sha_pinned() -> None:
     for relative_path in (
         ".github/workflows/release-desktop.yml",
+        ".github/workflows/promote-release.yml",
+        ".github/workflows/promotion-proposal.yml",
         ".github/workflows/ci.yml",
         ".github/workflows/pr-issue-guardrails.yml",
     ):
@@ -299,6 +301,76 @@ def test_release_and_ci_actions_are_full_sha_pinned() -> None:
         ]
         assert uses, relative_path
         assert all(re.fullmatch(r"[^@]+@[0-9a-f]{40}", action) for action in uses), relative_path
+
+
+def _workflow(relative_path: str) -> dict[str, object]:
+    workflow = yaml.safe_load((ROOT / relative_path).read_text(encoding="utf-8"))
+    workflow["on"] = workflow.pop("on", None) or workflow.pop(True)
+    return workflow
+
+
+def test_promotion_is_an_owner_dispatch_from_main_behind_release_publication() -> None:
+    workflow = _workflow(".github/workflows/promote-release.yml")
+    jobs = workflow["jobs"]
+
+    assert set(workflow["on"]) == {"workflow_dispatch"}
+    inputs = workflow["on"]["workflow_dispatch"]["inputs"]
+    assert set(inputs) == {"version"} and inputs["version"]["required"] is True
+    assert workflow["permissions"] == {"contents": "read"}
+    assert set(jobs) == {"check", "promote"}
+    assert jobs["check"]["permissions"] == {"contents": "read"} and "environment" not in jobs["check"]
+    assert jobs["promote"]["permissions"] == {"contents": "write"}
+    assert jobs["promote"]["environment"] == "release-publication"
+    assert jobs["promote"]["needs"] == "check"
+    assert jobs["promote"]["if"] == "github.ref == 'refs/heads/main'"
+    assert "${{ inputs.version }}" in jobs["promote"]["name"]  # the approval shows which version
+    # Never cancelled, and never in the publication group, whose newer runs cancel older ones.
+    assert workflow["concurrency"] == {"group": "release-promotion", "cancel-in-progress": False}
+
+
+def test_promotion_verifies_and_reuses_the_published_files_without_rebuilding() -> None:
+    jobs = _workflow(".github/workflows/promote-release.yml")["jobs"]
+
+    assert 'scripts/release/promotion_workflow.py verify --version "$VERSION"' in _run_source(jobs["check"])
+    assert 'scripts/release/promotion_workflow.py promote --version "$VERSION"' in _run_source(jobs["promote"])
+    for name, job in jobs.items():
+        assert "${{" not in _run_source(job), name
+        assert [step["env"]["VERSION"] for step in job["steps"] if "run" in step] == ["${{ inputs.version }}"], name
+        for forbidden in ("build_desktop.ps1", "Compress-Archive", "gh release create", "upload-artifact", "git tag", "git push"):
+            assert forbidden not in str(job), (name, forbidden)
+
+
+def test_promotion_proposal_runs_daily_never_promotes_and_dry_runs_on_dispatch() -> None:
+    workflow = _workflow(".github/workflows/promotion-proposal.yml")
+    triggers = workflow["on"]
+
+    assert set(triggers) == {"schedule", "workflow_dispatch"}
+    assert [entry["cron"].split()[2:] for entry in triggers["schedule"]] == [["*", "*", "*"]]
+    dry_run = triggers["workflow_dispatch"]["inputs"]["dry_run"]
+    assert dry_run["type"] == "boolean" and dry_run["default"] is True
+    assert workflow["permissions"] == {"contents": "read"}
+    (job,) = workflow["jobs"].values()
+    assert job["permissions"] == {"contents": "read", "issues": "write", "pull-requests": "read"}
+    assert "environment" not in job
+    run = _run_source(job)
+    for command in (
+        "scripts/release/promotion_workflow.py facts",
+        "scripts/release/publication_decision.py promote",
+        "scripts/release/promotion_workflow.py propose",
+    ):
+        assert command in run
+    assert "${{" not in run
+    assert "gh release" not in run and "promotion_workflow.py promote" not in run
+    step_env = next(step["env"] for step in job["steps"] if "run" in step)
+    assert step_env["DRY_RUN"] == "${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}"
+
+
+def test_release_docs_describe_promotion_and_blocking_bugs() -> None:
+    release_process = (ROOT / "docs/release-process.md").read_text(encoding="utf-8")
+    for text in ("promote-release.yml", "promotion-proposal.yml", "promotion-proposal", "30 days", "20 days"):
+        assert text in release_process, text
+    triage = (ROOT / "docs/agents/triage-labels.md").read_text(encoding="utf-8")
+    assert "priority:p0" in triage and "promotion" in triage
 
 
 def _run_pr_guardrail_script(body: str, issues: dict[int, dict[str, object]]) -> dict[str, object]:
