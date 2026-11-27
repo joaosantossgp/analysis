@@ -17,13 +17,19 @@ CVMAnalytics-windows-v<version>.zip
 CVMAnalytics-windows-v<version>.zip.sha256
 CVMAnalytics-windows.zip
 CVMAnalytics-windows.zip.sha256
+CVMAnalytics-Setup-v<version>.exe
+CVMAnalytics-Setup-v<version>.exe.sha256
+CVMAnalytics-Setup.exe
+CVMAnalytics-Setup.exe.sha256
 ```
 
 The ZIP root is flat: `CVMAnalytics.exe` and `_internal/` at the archive root.
-The installed app's updater downloads the versioned pair. The unversioned pair
-holds the same bytes for the download links in `README.md` and
-`apps/landing/index.html`, which point at `releases/latest`: a release becomes
-"latest", a pre-release never does. Versions are plain `MAJOR.MINOR.PATCH`; the
+The installed app's updater downloads the versioned ZIP pair. `Setup.exe` is
+the per-user installer for first installs, built from the same bundle
+([installer](build-release.md#installer)). The unversioned pairs hold the same
+bytes for the download links in `README.md` (ZIP) and `apps/landing/index.html`
+(installer), which point at `releases/latest`: a release becomes "latest", a
+pre-release never does. Versions are plain `MAJOR.MINOR.PATCH`; the
 first is `0.30.0`. The publication page lists the merged PRs it contains.
 
 ## What a merge publishes
@@ -66,8 +72,9 @@ successfully for a push to `main`:
 2. **Build** (`build` job, Windows, read-only). Checks out the exact candidate
    commit and runs `desktop/build_desktop.ps1 -Version <decided version>`, which
    stamps the version into the bundle. It verifies the stamped version and the
-   build commit, packages the flat ZIP and its `.sha256`, and keeps both as the
-   run's `publication-candidate` artifact. Nothing is committed to `main`.
+   build commit, packages the flat ZIP, builds and smoke-tests the installer from
+   the same bundle, and keeps both with their `.sha256` files as the run's
+   `publication-candidate` artifact. Nothing is committed to `main`.
 3. **Publish**, exactly one of:
    - `publish-automatic`: a pre-release that needs no approval publishes at once.
    - `publish-approved`: anything that needs approval waits in the
@@ -76,8 +83,8 @@ successfully for a push to `main`:
    - `rehearse-publication`: dry runs only (see below).
 
    The publish step (`publication_workflow.py publish`) downloads the candidate
-   built by this run, checks its SHA-256 against the `.sha256` file and against
-   the hash the build job recorded, and refuses to publish if anything changed
+   built by this run, checks the SHA-256 of the ZIP and the installer against
+   their `.sha256` files and against the hashes the build job recorded, and refuses to publish if anything changed
    since the decision: another publication appeared, the tag exists, or the
    commit is no longer on `main`. It then runs `gh release create v<version>
    --target <commit>`, which creates the tag on the exact commit together with

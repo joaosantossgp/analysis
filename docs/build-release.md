@@ -10,7 +10,9 @@ dist/CVMAnalytics/_internal/
 ```
 
 The bundle is produced by `desktop/build_desktop.ps1` and PyInstaller using
-`desktop/app.spec`.
+`desktop/app.spec`. Each publication ships it twice, from the same bundle: as a
+flat ZIP, which the in-app updater downloads, and as a per-user installer
+(`Setup.exe`, see [Installer](#installer)) for first installs.
 
 ## Local Build
 
@@ -52,13 +54,26 @@ build and integrity contract.
   `desktop/__version__.py` holds that version and `desktop/_build_info.py`
   holds the candidate commit. Nothing is committed to `main`; the source-tree
   version stays a dev fallback.
-- **One file, verified at publication.** The build job packages
-  `CVMAnalytics-windows-v<version>.zip` (flat root checked) and its `.sha256`,
-  keeps them as the run's `publication-candidate` artifact and records the
-  hash as a job output. The publish job downloads that artifact from the same
-  run, checks the hash against the `.sha256` file and the build job's output,
-  adds the unversioned `CVMAnalytics-windows.zip` pair, and publishes those
-  bytes. No publish job builds, packages from source, commits or pushes.
+- **One candidate, verified at publication.** The build job packages
+  `CVMAnalytics-windows-v<version>.zip` (flat root checked) and builds
+  `CVMAnalytics-Setup-v<version>.exe` from the same `dist\CVMAnalytics`
+  bundle, smoke-tests the installer, writes a `.sha256` for each, keeps all
+  four files as the run's `publication-candidate` artifact and records both
+  hashes as job outputs. The publish job downloads that artifact from the same
+  run, checks each hash against its `.sha256` file and the build job's output,
+  adds the unversioned pairs, and publishes those bytes. No publish job builds,
+  packages from source, commits or pushes. Published files:
+
+  ```text
+  CVMAnalytics-windows-v<version>.zip          updater package (installed apps look for this name)
+  CVMAnalytics-windows-v<version>.zip.sha256
+  CVMAnalytics-windows.zip                     same bytes, for README links
+  CVMAnalytics-windows.zip.sha256
+  CVMAnalytics-Setup-v<version>.exe            per-user installer
+  CVMAnalytics-Setup-v<version>.exe.sha256
+  CVMAnalytics-Setup.exe                       same bytes, for the landing page
+  CVMAnalytics-Setup.exe.sha256
+  ```
 - **Tag with the release.** `gh release create v<version> --target <commit>`
   creates the tag on the exact candidate commit together with the release, as a
   pre-release (`--latest=false`) or a release (`--latest=true`). A candidate
@@ -73,6 +88,49 @@ build and integrity contract.
 
 Flat-root means the ZIP root contains `CVMAnalytics.exe` and `_internal/`
 directly. A wrapper folder breaks the updater contract.
+
+### Installer
+
+`desktop/installer.iss` (Inno Setup 6) packs `dist\CVMAnalytics` into
+`CVMAnalytics-Setup-v<version>.exe`. The version is the publication version,
+passed in by the build job; the script does not hard-code it.
+
+- **Per-user, no admin.** `PrivilegesRequired=lowest`, installed to
+  `%LOCALAPPDATA%\Programs\CVMAnalytics` (fixed; the directory page is hidden).
+  It adds a Start menu shortcut and, only if the user ticks it, a desktop
+  shortcut.
+- **Install over an existing install.** A fixed `AppId` makes a newer
+  `Setup.exe` upgrade the same folder. It replaces `_internal` whole, as the
+  updater does. If the app is running, Setup asks the user to close it first.
+- **Uninstall leaves data.** The uninstaller removes what Setup installed plus
+  `_internal` and `CVMAnalytics.exe` (which in-app updates may have replaced),
+  then the folder if it is empty. It never touches
+  `%USERPROFILE%\Documents\CVMAnalytics` or `%LOCALAPPDATA%\CVMAnalytics`
+  (updater staging, rollback and log). A governance test in
+  `scripts/governance/test_repository_operational_contracts.py` enforces this.
+- **Updates.** An installed app updates itself through the in-app updater,
+  which swaps `CVMAnalytics.exe` and `_internal` in the folder of the running
+  exe, here `%LOCALAPPDATA%\Programs\CVMAnalytics`, which the user can write.
+  Users install once. Windows "Installed apps" keeps showing the version
+  `Setup.exe` installed, not the one a later in-app update brought.
+- **CI.** The build job uses the Inno Setup 6 preinstalled on the
+  `windows-latest` runner (its version goes to the job summary; it is not
+  pinned) and fails if it is missing. Before upload it smoke-tests the
+  installer: a silent install into a temporary folder, a second install over
+  it, a silent uninstall, and a check that the folder is gone and a file under
+  `Documents\CVMAnalytics` is still there.
+- **No code signing.** Windows SmartScreen warns on the first run of the
+  installer; see [troubleshooting](troubleshooting.md#windows-protected-your-pc-when-running-setup).
+
+Local build, after `desktop/build_desktop.ps1`, with Inno Setup 6 installed:
+
+```powershell
+& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=<version> desktop\installer.iss
+```
+
+The installer lands in `dist\`. To try it without touching a real install:
+`CVMAnalytics-Setup-v<version>.exe /VERYSILENT /DIR=<temp folder>`, then
+`<temp folder>\unins000.exe /VERYSILENT`.
 
 ### Remote publication protection
 
@@ -148,7 +206,9 @@ Verified implementation:
   versioned ZIP and `.sha256`, validates checksum, extracts into
   `%LOCALAPPDATA%\CVMAnalytics\versions\<version>\`, and spawns the helper.
 - `desktop/update_helper.ps1` swaps only allowlisted bundle entries:
-  `CVMAnalytics.exe` and `_internal`.
+  `CVMAnalytics.exe` and `_internal`, in the folder of the running
+  `CVMAnalytics.exe` (an extracted ZIP or the installer's
+  `%LOCALAPPDATA%\Programs\CVMAnalytics`).
 - The helper snapshots overwritten files to
   `%LOCALAPPDATA%\CVMAnalytics\update_rollback\<utc-ts>\`.
 - User data directories are denied by name and are not part of the bundle swap.
@@ -234,7 +294,7 @@ bytes, cold Parquet bytes, manifest row counts, hot/cold month lists, and mart
 rebuild row counts. Use this field when reviewing storage impact after a heavy
 import.
 
-Manual packaged validation, on the candidate ZIP of the publication run (the
+Manual packaged validation, on the candidate files of the publication run (the
 `publication-candidate` artifact), before approving:
 
 - clean launch from the extracted `CVMAnalytics.exe`;
@@ -245,7 +305,10 @@ Manual packaged validation, on the candidate ZIP of the publication run (the
 - update check handles no-network and latest-version states explicitly;
 - Excel export from the packaged app writes to output and opens without repair;
 - install/update over a previous version preserves user data;
-- update helper keeps ZIP root contract and rollback snapshot behavior.
+- update helper keeps ZIP root contract and rollback snapshot behavior;
+- when the installer changed: `Setup.exe` installs with no admin prompt, the
+  Start menu shortcut opens the app, the installed app updates in place, and
+  uninstalling leaves `Documents\CVMAnalytics`.
 
 ## What Does Not Publish
 
