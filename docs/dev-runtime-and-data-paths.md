@@ -190,7 +190,7 @@ The Status strip shows **BRIDGE · MOCK** in violet and Settings -> Diagnostics 
 | `CVM_CACHE_DIR` | `{data}/cache` | Override cache directory |
 | `CVMANALYTICS_DEV_STATE_FILE` | Set by the dev supervisor | Internal: path of the JSON file with the last route and window geometry; marks the process as a supervised child. Do not set by hand |
 | `CVMANALYTICS_DEV_CONTROL_DIR` | Set by the dev supervisor | Internal: the [dev panel](#dev-panel) request channel (requests in, `status.json` and `data_action.json` out). Do not set by hand |
-| `CVMANALYTICS_DEV_LAUNCH_ROOT` | Set by the dev supervisor | Internal: the checkout dev mode was launched from, whose environment runs every worktree ([worktree switch](#worktree-switch)). Do not set by hand |
+| `CVMANALYTICS_DEV_LAUNCH_ROOT` | Set by the dev supervisor | Internal: the checkout dev mode was launched from, whose environment runs every worktree whose manifests match it ([worktree switch](#worktree-switch)). Do not set by hand |
 | `VITE_MOCK_BRIDGE` | — | Browser preview fixtures via `npm run dev:mock`; inherited value removed from desktop-launched Vite |
 
 Source desktop injects output/log defaults only when `CVM_DATA_DIR` is absent.
@@ -287,51 +287,89 @@ and **Dependencies differ**. Code:
 supervisor's `switch_worktree` request in
 [`desktop/dev_supervisor.py`](../desktop/dev_supervisor.py).
 
-- **Environment.** Every worktree runs on the environment of the checkout dev
-  mode was launched from (the main checkout in normal use): its `.venv`
-  interpreter and its `apps\desktop-web\node_modules`. A worktree is switchable
-  when its `requirements.txt` and `apps\desktop-web\package-lock.json` have the
-  fingerprints stored in that environment's bootstrap stamps
-  (`.venv\.cvmanalytics-dev-bootstrap.json`,
-  `node_modules\.cvmanalytics-dev-bootstrap.json`). Otherwise the row says
-  "Dependencies differ", names the files, and its switch button is disabled:
-  "Needs its own dependencies; supported in a later version" (#612).
+- **Environment.** A worktree runs on the environment of the checkout dev mode
+  was launched from (the main checkout in normal use), its `.venv` interpreter
+  and its `apps\desktop-web\node_modules`, wherever its `requirements.txt` and
+  `apps\desktop-web\package-lock.json` have the fingerprints stored in that
+  environment's bootstrap stamps (`.venv\.cvmanalytics-dev-bootstrap.json`,
+  `node_modules\.cvmanalytics-dev-bootstrap.json`). A part whose manifest
+  differs runs on the worktree's own install instead: its own `.venv`, its own
+  `npm ci`. The row then says "Dependencies differ" and names the files; while
+  that own install is missing or stale (its stamps do not match its manifests)
+  the button reads **Install & switch** and the row says the switch installs
+  them first (about 1-2 minutes).
 - **Switch.** The supervisor stops the app and starts it again on the chosen
-  worktree, on the same route and window geometry, without installing anything:
-  - Python: the launch checkout's interpreter runs
-    `python -c "from desktop.app import main; main()" --dev` in the worktree.
-    The worktree's code is imported, and its own bootstrap, which would create a
-    `.venv` there, does not run, whatever version of it the branch has.
-  - Frontend: on the first switch, the launch checkout's `node_modules` is hard
-    linked file by file into the worktree's git-ignored
+  worktree, on the same route and window geometry:
+  - Python: `python -c "from desktop.app import main; main()" --dev` in the
+    worktree, with the launch checkout's interpreter, or with the worktree's
+    own `.venv\Scripts\python.exe` when its `requirements.txt` differs. The
+    worktree's code is imported, and its own bootstrap does not run, whatever
+    version of it the branch has.
+  - Frontend, matching lockfile: on the first switch, the launch checkout's
+    `node_modules` is hard linked file by file into the worktree's git-ignored
     `apps\desktop-web\node_modules` (Vite caches left out; a copy across
     volumes). Vite then runs from the worktree as from a normal install. Not a
     junction or `NODE_PATH`: Vite and its config resolve packages by walking up
     from the worktree, which `NODE_PATH` does not change, and `npm ci` empties a
     linked `node_modules` folder, so a junction would wipe the launch checkout's
-    copy. Deleting the worktree, or npm in it, removes only the worktree's own
-    link names; the launch checkout is only read. The linked stamp makes later
-    switches skip this step.
+    copy. Files rewritten in place, npm's hidden lockfile
+    (`node_modules\.package-lock.json`, which any npm command in the worktree
+    rewrites) and the bootstrap stamp, are copied instead of linked. Deleting
+    the worktree, or npm in it, removes only the worktree's own link names; the
+    launch checkout is only read. The linked stamp makes later switches skip
+    this step; a `node_modules` installed for another lockfile is deleted and
+    linked again, never mixed.
+  - Frontend, differing lockfile: the worktree's own `npm ci` (see below).
   - Dev data follows the worktree: shared dev data, or its own isolated dev
     data when it carries the marker.
   - Automatic restart then watches `desktop\` and `src\` of the active worktree
     only.
+- **Install.** A switch to a worktree whose own install is missing or stale
+  first installs it with the dev bootstrap
+  ([`dev_bootstrap.provision`](../desktop/dev_bootstrap.py)), on a background
+  thread of the supervisor, while the current window stays open and usable:
+  - `requirements.txt` differs: `python -m venv --copies <worktree>\.venv` (when
+    missing), then `pip install -r requirements.txt` with that interpreter.
+  - The lockfile differs: the worktree's `apps\desktop-web\node_modules` is
+    deleted name by name (it may hold the hard links above; deleting unlinks,
+    it never writes a file), then `npm ci` there.
+  - Each part writes the worktree's own bootstrap stamp when done, so a later
+    switch to the worktree with unchanged manifests installs nothing and is
+    immediate. The launch checkout is never written.
+  - Progress: the Worktrees section shows "Installing dependencies for
+    <worktree>" with the current step ("Creating Python environment",
+    "Installing Python packages", "Installing frontend packages") and the
+    elapsed time, read from the supervisor's status every second. The
+    terminal prints each step. Other switches are refused until it finishes.
+  - Done: the window closes and reopens on the worktree.
+  - Failed: the window stays on the worktree it was on. The Worktrees section
+    shows "Installing dependencies for <worktree> failed" with the failed
+    command, its exit code and the last 40 lines of its output; the terminal
+    prints the same. Switching again retries; the parts already installed are
+    skipped.
+  - Measured on the owner's machine (pip and npm caches warm): about 70 seconds
+    for a new `.venv` plus `npm ci`.
 - **Failed switch.** If the app exits with an error within 60 seconds of
   starting on the switched-to worktree, or cannot be spawned, the supervisor
-  returns to the previous worktree. The traceback stays in the terminal and the
-  Worktrees section says "Switching to <worktree> failed: …". A crash after
-  that is an ordinary [failed start](#auto-restart-on-python-changes-dev-supervisor).
+  returns to the previous worktree and its environment. The traceback stays in
+  the terminal and the Worktrees section says "Switching to <worktree> failed:
+  …". A crash after that is an ordinary
+  [failed start](#auto-restart-on-python-changes-dev-supervisor).
 - **Removed worktree.** When the active worktree's `.git` file disappears
   (`git worktree remove`), the supervisor falls back to the launch checkout and
   the Worktrees section says so.
 - **Start.** Every `--dev` launch starts on the checkout it was launched from.
-- **Channel.** `dev_list_worktrees` returns the rows plus the supervisor's last
-  `worktree_notice`. `dev_switch_worktree` refuses the packaged app, a missing
-  supervisor, an unknown or removed worktree, the window's own worktree and
-  differing dependencies; otherwise it queues
-  `{"action": "switch_worktree", "path": ...}` and returns once the supervisor
-  publishes the new `worktree` in `status.json` (the supervisor checks the
-  request again). The window closes right after.
+- **Channel.** `dev_list_worktrees` returns the rows (each with
+  `dependency_differences` and `installs_needed`) plus the supervisor's last
+  `worktree_notice`, its `notice_detail` (`command`, `exit_code`, `output` of a
+  failed install) and the `install` under way (`worktree`, `name`, `step`,
+  `started_at` in Unix seconds), or null. `dev_switch_worktree` refuses the
+  packaged app, a missing supervisor, an unknown or removed worktree, the
+  window's own worktree and a switch while an install runs; otherwise it
+  queues `{"action": "switch_worktree", "path": ...}` and returns once the
+  supervisor publishes either the new `worktree` (`installing: false`; the
+  window closes right after) or the `install` for it (`installing: true`). The
+  supervisor checks the request again.
 
 Limits:
 
@@ -343,11 +381,14 @@ Limits:
 - The 60-second rule is a time limit, not a signal from the app: a switched-to
   app that takes longer to fail stays on that worktree.
 - Dependencies are compared when you switch. A worktree whose manifests change
-  while the window runs it keeps running on the launch environment until you
-  switch away; the list then flags it.
+  while the window runs it keeps running on the environment it was switched
+  with until you switch again; the list then flags what a switch would install.
 - Hard links share file content: a tool that edits a package file in place
-  inside the worktree's `node_modules` (rather than replacing it, as npm does)
-  edits the launch checkout's copy too.
+  inside a linked `node_modules` (rather than replacing it, as npm does for
+  package files) edits the launch checkout's copy too.
+- Closing the window during an install ends dev mode without waiting for it; a
+  `pip` or `npm` process already started may keep running until it finishes.
+  The next switch completes the install, since its stamp was not written.
 
 ## Dev panel
 
@@ -362,7 +403,7 @@ is compiled only into Vite dev builds and its bridge methods refuse with
 | Section | Shows / does |
 |---|---|
 | Context | Worktree (and whether it is the main checkout), branch, commit, uncommitted changes, data mode with an "isolated data" indicator, data path. Missing git values stay `—` with the git error. |
-| Worktrees | Every git worktree with its branch and the Active, Isolated data and Dependencies differ flags; switches the window to a worktree with matching dependencies (see [worktree switch](#worktree-switch)). The list scrolls past about five rows. Switching is disabled without the dev supervisor. |
+| Worktrees | Every git worktree with its branch and the Active, Isolated data and Dependencies differ flags; switches the window to a worktree, installing its own dependencies first when they differ ("Install & switch", with the current step and elapsed time; a failed install shows its command and output). See [worktree switch](#worktree-switch). The list scrolls past about five rows. Switching is disabled without the dev supervisor. |
 | Restart | "Restart app" and the "Restart automatically" switch; how many Python changes the window has not loaded yet. Disabled when the app runs without the dev supervisor. |
 | Dev data | Size, path and backup of the database, the downloaded CVM files and everything; "Move to backup", "Restore backup" and "Delete" for each, and the outcome of the last action. See [dev data actions](#dev-data-actions). |
 | Tools | Link to the `/dev/data-ops` page (opening it from the panel sets its `cvm_dev_tools` flag). |
@@ -381,7 +422,9 @@ shared list. Bridge methods `dev_get_context`, `dev_restart`,
 `dev_delete_data` live in
 [`desktop/bridge_api/dev.py`](../desktop/bridge_api/dev.py); browser mock
 scenarios (`localStorage.cvm_mock_dev_context` = `isolated` or `error`;
-`localStorage.cvm_mock_dev_data` = `unavailable`) in
+`localStorage.cvm_mock_dev_data` = `unavailable`; a switch to the mock
+`612-own-dependencies` worktree simulates a 12-second install, and
+`localStorage.cvm_mock_dev_install` = `fail` makes it fail) in
 [`mock.dev.ts`](../apps/desktop-web/src/lib/bridge/mock.dev.ts).
 
 **Request channel.** The app cannot restart itself, so the bridge asks the dev
@@ -391,7 +434,8 @@ files in `requests\` (`{"action": "restart"}`,
 `{"action": "set_auto_restart", "enabled": false}`); the supervisor takes them
 on each poll, oldest first, and publishes `status.json`
 (`auto_restart`, `pending_changes`, and the active `worktree` with the last
-`worktree_notice`). Unknown requests, and request files that
+`worktree_notice`, its `worktree_notice_detail` and the dependency `install`
+under way). Unknown requests, and request files that
 are not a JSON object, are larger than 64 KB or nest too deeply, are reported
 in the terminal and ignored. Restart requests queued while a restart is under way are
 answered by that restart. A data action is

@@ -294,6 +294,24 @@ def test_installing_over_linked_frontend_dependencies_never_touches_the_source(
     assert bootstrap.pending_installs(worktree, [bootstrap.FRONTEND_MANIFEST]) == []
 
 
+def test_files_rewritten_in_place_are_copied_not_linked(tmp_path: Path) -> None:
+    env_root, worktree = _installed_environment(tmp_path)
+    hidden_lockfile = Path("apps", "desktop-web", "node_modules", ".package-lock.json")
+    (env_root / hidden_lockfile).write_text('{"packages": {}}\n', encoding="utf-8")
+    bootstrap.link_frontend_dependencies(env_root, worktree)
+    vite = Path("apps", "desktop-web", "node_modules", "vite", "bin", "vite.js")
+    if os.stat(worktree / vite).st_nlink < 2:
+        pytest.skip("hard links unsupported here: the worktree got copies")
+
+    # `npm install --package-lock-only` in the worktree rewrites npm's hidden lockfile in place.
+    (worktree / hidden_lockfile).write_text('{"packages": {"is-number": {}}}\n', encoding="utf-8")
+    (worktree / "apps" / "desktop-web" / "package-lock.json").write_text('{"tiny": 1}\n', encoding="utf-8")
+    bootstrap.write_frontend_stamp(worktree)
+
+    assert (env_root / hidden_lockfile).read_text(encoding="utf-8") == '{"packages": {}}\n'
+    assert bootstrap.dependency_differences(env_root, env_root) == [], "env_root's stamp still matches its lockfile"
+
+
 def test_linking_replaces_an_install_for_another_lockfile_instead_of_mixing(tmp_path: Path) -> None:
     env_root, worktree = _installed_environment(tmp_path)
     own = worktree / "apps" / "desktop-web" / "node_modules"

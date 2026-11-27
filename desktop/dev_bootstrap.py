@@ -299,9 +299,17 @@ def provision(checkout: Path, manifests: Sequence[str], progress: Callable[[str]
         ensure_dev_frontend(["--dev"], repo_root=checkout, progress=progress)
 
 
+# Rewritten in place (npm's hidden lockfile, by any npm command; the bootstrap
+# stamp), so a hard link would change `env_root`'s copy too: each checkout gets its own.
+_COPIED_NOT_LINKED = {".package-lock.json", _FRONTEND_STAMP}
+
+
 def _link_or_copy(source: str, target: str) -> None:
     if os.path.lexists(target):
         return  # the checkout's own file, or linked by an earlier switch
+    if os.path.basename(source) in _COPIED_NOT_LINKED:
+        shutil.copy2(source, target)
+        return
     try:
         os.link(source, target)
     except OSError:  # another volume, or links unsupported
@@ -316,7 +324,8 @@ def link_frontend_dependencies(env_root: Path, checkout: Path) -> None:
     Hard links, not a directory junction: `npm ci` empties a linked
     `node_modules` and a recursive delete can follow a junction, which would
     wipe `env_root`'s copy. Deleting `checkout` or running npm there only
-    removes its own names. `env_root` is only read. Call only when
+    removes its own names; the files npm and the bootstrap rewrite in place
+    are copies. `env_root` is only read. Call only when
     `dependency_differences` is empty. Raises OSError.
     """
     source = env_root / "apps" / "desktop-web" / "node_modules"
