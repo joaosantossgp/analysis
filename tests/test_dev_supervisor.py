@@ -43,13 +43,12 @@ class Harness:
         self.snapshot[name] = (mtime + 1, size)
 
 
-def test_supervises_only_source_dev_launches_that_are_not_already_children() -> None:
-    assert sup.should_supervise(["--dev"], frozen=False, environ={}) is True
-    assert sup.should_supervise(["--dev", "--debug"], frozen=False, environ={}) is True
-    assert sup.should_supervise([], frozen=False, environ={}) is False
-    assert sup.should_supervise(["--vite"], frozen=False, environ={}) is False
-    assert sup.should_supervise(["--dev"], frozen=True, environ={}) is False
-    assert sup.should_supervise(["--dev"], frozen=False, environ={sup.STATE_FILE_ENV: "x.json"}) is False
+def test_supervises_only_dev_launches_that_are_not_already_children() -> None:
+    assert sup.should_supervise(["--dev"], {}) is True
+    assert sup.should_supervise(["--dev", "--debug"], {}) is True
+    assert sup.should_supervise([], {}) is False
+    assert sup.should_supervise(["--vite"], {}) is False
+    assert sup.should_supervise(["--dev"], {sup.STATE_FILE_ENV: "x.json"}) is False
 
 
 def test_scan_sources_tracks_python_files_of_the_desktop_shell_and_core(tmp_path: Path) -> None:
@@ -277,3 +276,11 @@ def test_stop_request_saves_the_window_state_before_closing_the_windows(tmp_path
 
     assert events == ["closed with state saved: True"]
     assert thread.daemon, "a blocked stdin read must not keep the app process alive"
+
+
+def test_route_survives_when_no_geometry_was_ever_readable(tmp_path: Path) -> None:
+    state_file = tmp_path / "state.json"
+
+    sup.save_window_state(state_file, FakeWindow(route="/#/setores", geometry=(-32000, -32000, 160, 28)))
+
+    assert sup.load_window_state(state_file) == ("/#/setores", {})

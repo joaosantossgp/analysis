@@ -51,13 +51,12 @@ if __name__ == "__main__":
 
     # Source `--dev` runs under the dev supervisor, which starts this module
     # again as its child. Decided before the runtime imports below so broken
-    # app code cannot take the supervisor down.
-    from desktop import dev_supervisor
+    # app code cannot take the supervisor down. The packaged app never loads it.
+    if not getattr(sys, "frozen", False):
+        from desktop import dev_supervisor
 
-    if dev_supervisor.should_supervise(
-        sys.argv[1:], frozen=bool(getattr(sys, "frozen", False)), environ=os.environ
-    ):
-        raise SystemExit(dev_supervisor.run(sys.argv[1:]))
+        if dev_supervisor.should_supervise(sys.argv[1:], os.environ):
+            raise SystemExit(dev_supervisor.run(sys.argv[1:]))
 
 from desktop import lockfile
 import webview

@@ -35,9 +35,9 @@ Snapshot = dict[str, tuple[int, int]]
 _report = functools.partial(print, flush=True)
 
 
-def should_supervise(argv: Sequence[str], *, frozen: bool, environ: Mapping[str, str]) -> bool:
-    """Only a source `--dev` launch that is not already a supervised child."""
-    return "--dev" in argv and not frozen and STATE_FILE_ENV not in environ
+def should_supervise(argv: Sequence[str], environ: Mapping[str, str]) -> bool:
+    """Only a `--dev` launch that is not already a supervised child."""
+    return "--dev" in argv and STATE_FILE_ENV not in environ
 
 
 def scan_sources(repo_root: Path) -> Snapshot:
@@ -200,16 +200,16 @@ def load_window_state(path: Path) -> tuple[str, dict[str, int]]:
     """
     try:
         state = json.loads(path.read_text(encoding="utf-8"))
-        route = state.get("route")
-        geometry = state.get("geometry") or {}
-        geometry = {key: geometry[key] for key in _GEOMETRY_KEYS}
-    except (OSError, ValueError, AttributeError, KeyError, TypeError):
+        route, saved = state.get("route"), state.get("geometry")
+    except (OSError, ValueError, AttributeError):
         return "", {}
-    if not all(type(value) is int for value in geometry.values()):
-        geometry = {}
     if not (isinstance(route, str) and route.startswith("/")):
         route = ""
-    return (route, geometry) if route or geometry else ("", {})
+    try:
+        geometry = {key: saved[key] for key in _GEOMETRY_KEYS}
+    except (KeyError, TypeError):
+        return route, {}
+    return route, geometry if all(type(value) is int for value in geometry.values()) else {}
 
 
 def save_window_state(path: Path, window: Any) -> None:
