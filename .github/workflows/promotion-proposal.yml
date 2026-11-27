@@ -8,6 +8,8 @@ name: Promotion Proposal
 # owner's approval. Contract: docs/release-process.md.
 
 on:
+  push: # TEMPORARY: registers the new workflow so it can be dispatched on this branch; removed next commit
+    branches: [feat/631-promotion-workflows]
   schedule:
     - cron: "17 9 * * *"
   workflow_dispatch:
@@ -45,7 +47,7 @@ jobs:
       - name: Collect facts, pick, and update the proposal issue
         env:
           GH_TOKEN: ${{ github.token }}
-          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+          DRY_RUN: "true" # TEMPORARY, with the push trigger
         run: |
           set -euo pipefail
           python scripts/release/promotion_workflow.py facts > facts.json
