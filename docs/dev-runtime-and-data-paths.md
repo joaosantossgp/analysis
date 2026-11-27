@@ -317,8 +317,10 @@ supervisor's `switch_worktree` request in
     rewrites) and the bootstrap stamp, are copied instead of linked. Deleting
     the worktree, or npm in it, removes only the worktree's own link names; the
     launch checkout is only read. The linked stamp makes later switches skip
-    this step; a `node_modules` installed for another lockfile is deleted and
-    linked again, never mixed.
+    this step. A `node_modules` the bootstrap or a switch installed for another
+    lockfile (its stamp says so) is deleted and linked again, never mixed; one
+    from a plain `npm ci` (no stamp) is kept and only completed with links, as
+    an agent may be running Vite or tests from it.
   - Frontend, differing lockfile: the worktree's own `npm ci` (see below).
   - Dev data follows the worktree: shared dev data, or its own isolated dev
     data when it carries the marker.

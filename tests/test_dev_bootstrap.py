@@ -312,13 +312,26 @@ def test_files_rewritten_in_place_are_copied_not_linked(tmp_path: Path) -> None:
     assert bootstrap.dependency_differences(env_root, env_root) == [], "env_root's stamp still matches its lockfile"
 
 
-def test_linking_replaces_an_install_for_another_lockfile_instead_of_mixing(tmp_path: Path) -> None:
+def test_linking_replaces_a_bootstrap_install_for_another_lockfile_instead_of_mixing(tmp_path: Path) -> None:
     env_root, worktree = _installed_environment(tmp_path)
     own = worktree / "apps" / "desktop-web" / "node_modules"
     (own / "left-over").mkdir(parents=True)
     (own / "left-over" / "index.js").write_text("// from its own older install\n", encoding="utf-8")
+    bootstrap.frontend_stamp_path(worktree).write_text('{"lockfile_sha256": "older"}\n', encoding="utf-8")
 
     bootstrap.link_frontend_dependencies(env_root, worktree)
 
     assert not (own / "left-over").exists()
     assert (own / "vite" / "bin" / "vite.js").read_text(encoding="utf-8") == "// vite\n"
+
+
+def test_linking_keeps_a_plain_npm_install_of_the_worktree(tmp_path: Path) -> None:
+    env_root, worktree = _installed_environment(tmp_path)
+    own = worktree / "apps" / "desktop-web" / "node_modules"
+    (own / "vite" / "bin").mkdir(parents=True)
+    (own / "vite" / "bin" / "vite.js").write_text("// its own npm ci, maybe in use\n", encoding="utf-8")
+
+    bootstrap.link_frontend_dependencies(env_root, worktree)
+
+    assert (own / "vite" / "bin" / "vite.js").read_text(encoding="utf-8") == "// its own npm ci, maybe in use\n"
+    assert bootstrap.dependency_differences(worktree, worktree) == [bootstrap.PYTHON_MANIFEST]

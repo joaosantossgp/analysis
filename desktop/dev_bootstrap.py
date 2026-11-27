@@ -335,8 +335,10 @@ def link_frontend_dependencies(env_root: Path, checkout: Path) -> None:
     lockfile = checkout / "apps" / "desktop-web" / "package-lock.json"
     if _stamp_matches(frontend_stamp_path(checkout), {"lockfile_sha256": _fingerprint(lockfile)}):
         return  # installed for this lockfile already
-    # An install for another lockfile (its own, or an older link): replace it, never mix the two.
-    _remove_tree(target)
+    if frontend_stamp_path(checkout).exists():
+        # Installed by the bootstrap or a switch for another lockfile: replace it, never mix the two.
+        # A plain `npm ci` (no stamp) is kept: an agent may be running Vite or tests from it.
+        _remove_tree(target)
     # Vite's caches belong to each checkout's own dev server.
     shutil.copytree(source, target, ignore=shutil.ignore_patterns(".vite", ".vite-temp"),
                     copy_function=_link_or_copy, dirs_exist_ok=True)
