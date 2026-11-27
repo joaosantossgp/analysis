@@ -14,9 +14,11 @@ open cleanly.
 
 ## Download
 
-[Download the latest Windows build](https://github.com/joaosantossgp/analysis/releases/latest/download/CVMAnalytics-windows.zip)
+[Download the installer for Windows](https://github.com/joaosantossgp/analysis/releases/latest/download/CVMAnalytics-Setup.exe)
 
-- Checksum: [CVMAnalytics-windows.zip.sha256](https://github.com/joaosantossgp/analysis/releases/latest/download/CVMAnalytics-windows.zip.sha256)
+- Checksum: [CVMAnalytics-Setup.exe.sha256](https://github.com/joaosantossgp/analysis/releases/latest/download/CVMAnalytics-Setup.exe.sha256)
+- Portable ZIP (no installer): [CVMAnalytics-windows.zip](https://github.com/joaosantossgp/analysis/releases/latest/download/CVMAnalytics-windows.zip)
+  ([checksum](https://github.com/joaosantossgp/analysis/releases/latest/download/CVMAnalytics-windows.zip.sha256))
 - Distribution channel: [GitHub Releases](https://github.com/joaosantossgp/analysis/releases)
 - Public site: `apps/landing/` on GitHub Pages. It is a download/marketing
   surface only, not the product runtime.
@@ -50,12 +52,12 @@ modify Next.js routes for product work.
 
 For end users:
 
-1. Download `CVMAnalytics-windows.zip`.
-2. Extract it to a folder you control, for example
-   `Documents\Apps\CVMAnalytics`.
-3. Keep `CVMAnalytics.exe` and `_internal\` together.
-4. Run `CVMAnalytics.exe`.
-5. On Home, choose **Download CVM data**. The company list appears first and
+1. Download `CVMAnalytics-Setup.exe`.
+2. Run it. It installs for your Windows user only, with no administrator
+   rights, and adds CVM Analytics to the Start menu. Windows SmartScreen may
+   warn on the first run: see [troubleshooting](docs/troubleshooting.md).
+3. Open CVM Analytics from the Start menu. Later versions update in the app.
+4. On Home, choose **Download CVM data**. The company list appears first and
    statements fill in as each company is processed; the top-bar pill shows progress.
 
 Runtime data is stored outside the install folder:
