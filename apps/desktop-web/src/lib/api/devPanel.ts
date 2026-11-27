@@ -43,11 +43,14 @@ export async function fetchDevDataInfo(): Promise<DevDataInfo> {
   return response;
 }
 
-/** Resolves with the worktree name once the dev supervisor accepted; the window then reopens on it. */
-export async function switchDevWorktree(path: string): Promise<string> {
+/**
+ * Resolves once the dev supervisor accepted. The window then reopens on the
+ * worktree, right away or, with `installing`, after its dependencies install.
+ */
+export async function switchDevWorktree(path: string): Promise<{ worktree: string; installing: boolean }> {
   const response = await callBridge("dev_switch_worktree", { path });
   if (!response.ok) throw new Error(response.error);
-  return response.worktree;
+  return { worktree: response.worktree, installing: response.installing };
 }
 
 /**

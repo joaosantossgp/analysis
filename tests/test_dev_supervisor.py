@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import os
 import subprocess
+import threading
+import time
 from pathlib import Path
+from typing import Callable
 from unittest.mock import Mock, patch
 
 import pytest
@@ -561,15 +564,29 @@ def test_run_gives_the_app_a_control_directory_and_removes_it_afterwards(tmp_pat
 # --- Worktree switch (#611) ----------------------------------------------------
 
 
-def _worktree_entry(path: Path, differences: list[str] | None = None) -> dict[str, object]:
-    return {"name": path.name, "path": str(path), "dependency_differences": differences or []}
+def _worktree_entry(
+    path: Path, differences: list[str] | None = None, installs: list[str] | None = None
+) -> dict[str, object]:
+    """A `dev_data.list_worktrees` row; by default nothing of the differing environment is installed yet."""
+    differences = differences or []
+    return {
+        "name": path.name,
+        "path": str(path),
+        "dependency_differences": differences,
+        "installs_needed": differences if installs is None else installs,
+    }
 
 
 class WorktreeHarness(Harness):
     """A supervisor launched from the main checkout of a fake repository with worktrees.
 
     Each checkout has a real `desktop/app.py`, so the watch is the real scan of
-    the active worktree. `roots` records the worktree each started app ran.
+    the active worktree. `roots` records the worktree each started app ran, and
+    `environments` its manifests that run on the worktree's own install.
+
+    `wt-deps` needs its own dependencies. The fake install records its calls,
+    reports `install_steps`, waits for `release_install()` and then raises
+    `install_error` if set.
     """
 
     def __init__(self, tmp_path: Path) -> None:
@@ -585,10 +602,17 @@ class WorktreeHarness(Harness):
         ]
         self.list_error: Exception | None = None
         self.roots: list[Path] = []
+        self.environments: list[list[str]] = []
+        self.installs: list[tuple[Path, list[str]]] = []
+        self.install_steps = ["Creating Python environment"]
+        self.install_error: Exception | None = None
+        self._install_reached = threading.Event()
+        self._install_released = threading.Event()
         super().__init__(
             scan=lambda: sup.scan_sources(self.supervisor.active_root),
             list_worktrees=self._list,
             launch_root=self.main,
+            provision=self._provision,
         )
 
     def _list(self) -> list[dict[str, object]]:
@@ -596,9 +620,31 @@ class WorktreeHarness(Harness):
             raise self.list_error
         return [dict(entry) for entry in self.worktrees]
 
+    def _provision(self, root: Path, manifests: list[str], progress: Callable[[str], None]) -> None:
+        self.installs.append((root, manifests))
+        for step in self.install_steps:
+            progress(step)
+        self._install_reached.set()
+        assert self._install_released.wait(5), "the test never released the install"
+        if self.install_error is not None:
+            raise self.install_error
+
+    def wait_for_install_step(self) -> None:
+        assert self._install_reached.wait(5), "the install did not start"
+
+    def release_install(self, now: float) -> None:
+        """Let the install finish, then tick until the supervisor took its outcome."""
+        self._install_released.set()
+        deadline = time.monotonic() + 5
+        while self.statuses[-1].get("install") is not None:
+            assert time.monotonic() < deadline, "the supervisor did not take the install's outcome"
+            time.sleep(0.01)
+            self.supervisor.tick(now)
+
     def _start(self) -> FakeChild:
         child = super()._start()
         self.roots.append(self.supervisor.active_root)
+        self.environments.append(list(self.supervisor.active_differences))
         return child
 
     def switch(self, root: Path) -> None:
@@ -649,18 +695,119 @@ def test_switching_back_and_forth_restarts_each_time_on_the_chosen_worktree(tmp_
     assert h.statuses[-1]["worktree_notice"] is None
 
 
-def test_worktree_with_different_dependencies_is_refused(tmp_path: Path) -> None:
+def test_switch_to_a_worktree_with_other_dependencies_installs_them_while_the_window_stays_open(
+    tmp_path: Path,
+) -> None:
     h = WorktreeHarness(tmp_path)
 
     h.switch(h.deps)
     h.supervisor.tick(0.0)
+    h.wait_for_install_step()
+    h.supervisor.tick(1.0)
+
+    assert h.installs == [(h.deps, ["requirements.txt"])]
+    assert h.stopped == [], "the window stays on the previous worktree during the install"
+    status = h.statuses[-1]
+    assert status["worktree"] == str(h.main)
+    assert status["worktree_notice"] is None
+    install = status["install"]
+    assert (install["worktree"], install["name"], install["step"]) == (str(h.deps), "wt-deps", "Creating Python environment")
+    assert isinstance(install["started_at"], float)
+    assert any("wt-deps: Creating Python environment" in message for message in h.messages)
+
+    h.release_install(2.0)
+
+    assert h.roots == [h.main, h.deps]
+    assert h.environments == [[], ["requirements.txt"]], "the worktree runs on its own .venv"
+    assert h.stopped == [h.started[0]]
+    assert h.statuses[-1]["worktree"] == str(h.deps)
+    assert h.statuses[-1]["install"] is None
+
+
+def test_switch_to_a_worktree_whose_own_dependencies_are_installed_installs_nothing(tmp_path: Path) -> None:
+    h = WorktreeHarness(tmp_path)
+    h.worktrees[2] = _worktree_entry(h.deps, ["requirements.txt"], installs=[])
+
+    h.switch(h.deps)
+    h.supervisor.tick(0.0)
+
+    assert h.installs == []
+    assert h.roots == [h.main, h.deps]
+    assert h.environments == [[], ["requirements.txt"]]
+
+
+def test_failed_install_keeps_the_window_on_the_previous_worktree_and_shows_the_command(tmp_path: Path) -> None:
+    from desktop.dev_bootstrap import BootstrapError
+
+    h = WorktreeHarness(tmp_path)
+    output = "".join(f"Collecting package-{n}\n" for n in range(100)) + "ERROR: No matching distribution found for nope\n"
+    h.install_error = BootstrapError(["C:/wt-deps/.venv/Scripts/python.exe", "-m", "pip", "install"], 1, output)
+
+    h.switch(h.deps)
+    h.supervisor.tick(0.0)
+    h.release_install(1.0)
 
     assert h.roots == [h.main]
     assert h.stopped == []
-    notice = h.statuses[-1]["worktree_notice"]
-    assert "wt-deps needs its own dependencies (requirements.txt differ)" in notice
-    assert "supported in a later version" in notice
-    assert any("refused" in message for message in h.messages)
+    status = h.statuses[-1]
+    assert status["worktree"] == str(h.main)
+    assert status["worktree_notice"] == "Installing dependencies for wt-deps failed; the window stays on analisys."
+    detail = status["worktree_notice_detail"]
+    assert detail["command"] == "C:/wt-deps/.venv/Scripts/python.exe -m pip install"
+    assert detail["exit_code"] == 1
+    assert detail["output"].endswith("ERROR: No matching distribution found for nope")
+    assert len(detail["output"].splitlines()) == sup.INSTALL_OUTPUT_LINES
+    assert any("Command: C:/wt-deps/.venv/Scripts/python.exe -m pip install" in message for message in h.messages)
+
+    h.switch(h.feature)
+    h.supervisor.tick(2.0)
+    assert h.statuses[-1]["worktree_notice_detail"] is None, "the next switch clears the failed command"
+
+
+def test_failed_install_without_a_command_shows_the_error(tmp_path: Path) -> None:
+    h = WorktreeHarness(tmp_path)
+    h.install_error = FileNotFoundError("requirements.txt is missing")
+
+    h.switch(h.deps)
+    h.supervisor.tick(0.0)
+    h.release_install(1.0)
+
+    assert h.statuses[-1]["worktree_notice_detail"] == {
+        "command": None,
+        "exit_code": None,
+        "output": "requirements.txt is missing",
+    }
+
+
+def test_switch_requests_during_an_install_are_refused(tmp_path: Path) -> None:
+    h = WorktreeHarness(tmp_path)
+    h.switch(h.deps)
+    h.supervisor.tick(0.0)
+
+    h.switch(h.feature)
+    h.supervisor.tick(1.0)
+
+    assert "Dependencies for wt-deps are still installing" in h.statuses[-1]["worktree_notice"]
+    assert h.statuses[-1]["install"]["name"] == "wt-deps"
+    h.release_install(2.0)
+    assert h.roots == [h.main, h.deps], "the install's switch still happens"
+
+
+def test_app_that_fails_after_an_install_returns_to_the_previous_worktree_and_environment(tmp_path: Path) -> None:
+    h = WorktreeHarness(tmp_path)
+    h.switch(h.feature)
+    h.supervisor.tick(0.0)
+    h.supervisor.tick(sup.SWITCH_GRACE_SECONDS + 1)  # wt-feature is confirmed
+
+    h.switch(h.deps)
+    h.supervisor.tick(sup.SWITCH_GRACE_SECONDS + 2)
+    h.release_install(sup.SWITCH_GRACE_SECONDS + 3)
+    h.started[-1].exit_code = 1
+    h.supervisor.tick(sup.SWITCH_GRACE_SECONDS + 4)
+
+    assert h.roots == [h.main, h.feature, h.deps, h.feature]
+    assert h.environments == [[], [], ["requirements.txt"], []]
+    assert "Switching to wt-deps failed" in h.statuses[-1]["worktree_notice"]
 
 
 def test_switch_to_an_unknown_or_unlistable_worktree_is_refused(tmp_path: Path) -> None:
@@ -781,6 +928,92 @@ def test_run_starts_another_worktree_on_the_launch_environment_without_its_boots
     assert spawned[1]["command"] == [sup.sys.executable, "-c", "from desktop.app import main; main()", "--dev"]
     assert linked == [(launch, feature)]
     assert spawned[1]["env"][sup.LAUNCH_ROOT_ENV] == str(launch)  # type: ignore[index]
+
+
+def _files(root: Path) -> dict[str, bytes]:
+    return {path.relative_to(root).as_posix(): path.read_bytes() for path in root.rglob("*") if path.is_file()}
+
+
+def test_run_installs_a_worktree_environment_once_and_never_modifies_the_launch_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from desktop import dev_bootstrap, dev_data
+
+    launch, deps = tmp_path / "analisys", tmp_path / "wt-deps"
+    for root in (launch, deps):
+        (root / ".git").mkdir(parents=True)
+        (root / "apps" / "desktop-web").mkdir(parents=True)
+        (root / "requirements.txt").write_text("pywebview\n", encoding="utf-8")
+        (root / "apps" / "desktop-web" / "package-lock.json").write_text("{}\n", encoding="utf-8")
+    # The launch checkout's installed environment.
+    dev_bootstrap.venv_python(launch).parent.mkdir(parents=True)
+    dev_bootstrap.venv_python(launch).write_text("python\n", encoding="utf-8")
+    dev_bootstrap.write_python_stamp(launch, dev_bootstrap.python_stamp(launch, dev_bootstrap._source_python()))
+    vite = Path("apps", "desktop-web", "node_modules", "vite", "bin", "vite.js")
+    (launch / vite).parent.mkdir(parents=True)
+    (launch / vite).write_text("// vite 1\n", encoding="utf-8")
+    dev_bootstrap.write_frontend_stamp(launch)
+    # An earlier switch (#611) hard linked it into the worktree; then the worktree's manifests changed.
+    dev_bootstrap.link_frontend_dependencies(launch, deps)
+    (deps / "requirements.txt").write_text("pywebview\ntiny-package\n", encoding="utf-8")
+    (deps / "apps" / "desktop-web" / "package-lock.json").write_text('{"tiny": 1}\n', encoding="utf-8")
+    launch_before = _files(launch)
+
+    porcelain = "".join(f"worktree {root.as_posix()}\nHEAD 1\ndetached\n\n" for root in (launch, deps))
+    monkeypatch.setattr(dev_data, "_git_worktree_list", lambda _root: porcelain)
+    monkeypatch.setattr(dev_bootstrap, "_node_version", lambda: (22, 0, 0))
+    installs: list[list[str]] = []
+
+    def fake_install(command: list[str], *, cwd: Path | None = None) -> None:
+        installs.append([str(part) for part in command])
+        if command[1:3] == ["-m", "venv"]:
+            dev_bootstrap.venv_python(deps).parent.mkdir(parents=True)
+            dev_bootstrap.venv_python(deps).write_text("python\n", encoding="utf-8")
+        elif command[-1] == "ci":  # writes package files in place: through a hard link, the launch copy too
+            (deps / vite).parent.mkdir(parents=True, exist_ok=True)
+            (deps / vite).write_text("// vite 2\n", encoding="utf-8")
+
+    monkeypatch.setattr(dev_bootstrap, "_run_checked", fake_install)
+    plan = [deps, launch, deps]  # where the app started n-th asks to switch to
+    spawned: list[dict[str, object]] = []
+
+    class Child:
+        def __init__(self, command: list[str], **kwargs: object) -> None:
+            spawned.append({"command": command, **kwargs})
+            self.stdin = Mock()
+            self.number = len(spawned) - 1
+            self.asked = False
+
+        def poll(self) -> int | None:
+            if self.number == len(plan):
+                return 0  # the last window is closed: dev mode ends
+            if not self.asked:
+                self.asked = True
+                control_dir = Path(spawned[0]["env"][sup.CONTROL_DIR_ENV])  # type: ignore[index]
+                sup.send_request(control_dir, "switch_worktree", path=str(plan[self.number]))
+            return None
+
+        def wait(self, timeout: float) -> int:
+            return 0
+
+    with patch.object(sup.subprocess, "Popen", Child), patch.object(sup.time, "sleep"):
+        assert sup.run(["--dev"], repo_root=launch) == 0
+
+    deps_python = str(dev_bootstrap.venv_python(deps))
+    assert [(call["command"][0], call["cwd"]) for call in spawned] == [  # type: ignore[index]
+        (sup.sys.executable, str(launch)),
+        (deps_python, str(deps)),
+        (sup.sys.executable, str(launch)),
+        (deps_python, str(deps)),
+    ], "the worktree runs on its own interpreter"
+    assert spawned[1]["command"][1:3] == ["-c", "from desktop.app import main; main()"]  # type: ignore[index]
+    assert installs == [
+        [dev_bootstrap._source_python(), "-m", "venv", "--copies", str(deps / ".venv")],
+        [deps_python, "-m", "pip", "install", "-r", str(deps / "requirements.txt")],
+        ["npm.cmd" if dev_bootstrap._is_windows() else "npm", "ci"],
+    ], "the second switch to the worktree installs nothing"
+    assert _files(launch) == launch_before, "a switch never modifies the launch checkout's environment"
+    assert (deps / vite).read_text(encoding="utf-8") == "// vite 2\n"
 
 
 # --- Dev data actions (dev panel, #614) ----------------------------------------
@@ -934,13 +1167,13 @@ def test_switch_and_data_action_in_one_batch_both_happen_in_one_restart(tmp_path
 
 def test_refused_switch_does_not_drop_a_data_action_of_the_same_batch(tmp_path: Path) -> None:
     h = WorktreeHarness(tmp_path)
-    h.requests += [DATA_ACTION, {"action": "switch_worktree", "path": str(h.deps)}]
+    h.requests += [DATA_ACTION, {"action": "switch_worktree", "path": str(tmp_path / "gone")}]
 
     h.supervisor.tick(0.0)
 
     assert h.data_actions == [(DATA_ACTION, 1, 1)]
     assert h.roots == [h.main, h.main]
-    assert "needs its own dependencies" in h.statuses[-1]["worktree_notice"]
+    assert "not a worktree of this repository" in h.statuses[-1]["worktree_notice"]
 
 
 def test_data_action_waiting_on_a_stuck_app_survives_a_switch(tmp_path: Path) -> None:

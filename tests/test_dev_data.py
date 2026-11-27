@@ -218,6 +218,7 @@ def test_worktree_list_flags_dependencies_and_isolated_data_and_drops_removed_wo
         ("review", "review", False, False),
     ], "a worktree whose folder is gone is not listed"
     assert [w["dependency_differences"] for w in listed] == [[], [], ["requirements.txt"]]
+    assert [w["installs_needed"] for w in listed] == [[], [], ["requirements.txt"]], "review has no .venv of its own"
     assert listed[1]["path"] == str(feature)
 
     # The environment's own checkout never differs, even with a changed manifest.

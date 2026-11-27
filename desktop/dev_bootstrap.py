@@ -9,7 +9,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Sequence
+from typing import Callable, Sequence
 
 
 _MINIMUM_PYTHON = (3, 11)
@@ -17,6 +17,13 @@ _PYTHON_STAMP = ".cvmanalytics-dev-bootstrap.json"
 _FRONTEND_STAMP = ".cvmanalytics-dev-bootstrap.json"
 _REPAIR_FLAG = "--repair-dev-environment"
 _REBUILD_FLAG = "--rebuild-dev-environment"
+# Dependency manifests, as `dependency_differences` names them.
+PYTHON_MANIFEST = "requirements.txt"
+FRONTEND_MANIFEST = "apps/desktop-web/package-lock.json"
+
+
+def _no_progress(_step: str) -> None:
+    pass
 
 
 class BootstrapError(RuntimeError):
@@ -136,8 +143,13 @@ def _stamp_matches(path: Path, expected: dict[str, object]) -> bool:
     return _read_stamp(path) == expected
 
 
-def ensure_source_environment(argv: Sequence[str], *, repo_root: Path | None = None) -> list[str]:
-    """Create/synchronize `.venv` from root requirements when its stamp is stale."""
+def ensure_source_environment(
+    argv: Sequence[str], *, repo_root: Path | None = None, progress: Callable[[str], None] = _no_progress
+) -> list[str]:
+    """Create/synchronize `.venv` from root requirements when its stamp is stale.
+
+    `progress` receives the name of each install step as it starts.
+    """
     root = repo_root or repository_root()
     _validate_python_version()
     repair, rebuild = _bootstrap_flags(argv)
@@ -153,6 +165,7 @@ def ensure_source_environment(argv: Sequence[str], *, repo_root: Path | None = N
         return _strip_bootstrap_flags(argv)
 
     if not target_python.exists():
+        progress("Creating Python environment")
         _run_checked([source_python, "-m", "venv", "--copies", str(venv_dir)])
     if not target_python.exists():
         raise BootstrapError(
@@ -161,6 +174,7 @@ def ensure_source_environment(argv: Sequence[str], *, repo_root: Path | None = N
             f"The virtual-environment interpreter was not created at {target_python}.",
         )
 
+    progress("Installing Python packages")
     _run_checked([str(target_python), "-m", "pip", "install", "-r", str(root / "requirements.txt")])
     write_python_stamp(root, expected_stamp)
     return _strip_bootstrap_flags(argv)
@@ -184,8 +198,15 @@ def _node_version() -> tuple[int, int, int]:
     return major, minor, patch
 
 
-def ensure_dev_frontend(argv: Sequence[str], *, repo_root: Path | None = None) -> None:
-    """Synchronize Vite dependencies from the committed lockfile for `--dev`."""
+def ensure_dev_frontend(
+    argv: Sequence[str], *, repo_root: Path | None = None, progress: Callable[[str], None] = _no_progress
+) -> None:
+    """Synchronize Vite dependencies from the committed lockfile for `--dev`.
+
+    The old `node_modules` is deleted first, name by name: it may hold hard
+    links into another checkout's install (`link_frontend_dependencies`), whose
+    files an install writing in place would change. `npm ci` deletes it too.
+    """
     if "--dev" not in argv:
         return
     root = repo_root or repository_root()
@@ -198,8 +219,22 @@ def ensure_dev_frontend(argv: Sequence[str], *, repo_root: Path | None = None) -
     expected = {"lockfile_sha256": _fingerprint(lockfile)}
     if not repair and _stamp_matches(frontend_stamp_path(root), expected):
         return
+    progress("Installing frontend packages")
+    node_modules = frontend / "node_modules"
+    try:
+        _remove_tree(node_modules)
+    except OSError as exc:
+        raise BootstrapError(["shutil.rmtree", str(node_modules)], 1, str(exc)) from exc
     _run_checked(["npm.cmd" if _is_windows() else "npm", "ci"], cwd=frontend)
     write_frontend_stamp(root)
+
+
+def _remove_tree(path: Path) -> None:
+    """Delete a folder by unlinking its names; never writes or changes a file. Raises OSError."""
+    try:
+        shutil.rmtree(path)  # does not follow symlinks or junctions inside it
+    except FileNotFoundError:
+        pass
 
 
 def dependency_differences(env_root: Path, checkout: Path) -> list[str]:
@@ -210,16 +245,15 @@ def dependency_differences(env_root: Path, checkout: Path) -> list[str]:
     stamp counts as a difference. Empty: `checkout` can run on `env_root`'s
     `.venv` and `node_modules` without an install.
     """
-    lockfile = Path("apps", "desktop-web", "package-lock.json")
     checks = (
-        ("requirements.txt", Path("requirements.txt"), python_stamp_path(env_root), "requirements_sha256"),
-        (lockfile.as_posix(), lockfile, frontend_stamp_path(env_root), "lockfile_sha256"),
+        (PYTHON_MANIFEST, python_stamp_path(env_root), "requirements_sha256"),
+        (FRONTEND_MANIFEST, frontend_stamp_path(env_root), "lockfile_sha256"),
     )
     differences = []
-    for name, manifest, stamp_path, key in checks:
+    for name, stamp_path, key in checks:
         installed = (_read_stamp(stamp_path) or {}).get(key)
         try:
-            same = installed is not None and _fingerprint(checkout / manifest) == installed
+            same = installed is not None and _fingerprint(checkout / name) == installed
         except OSError:
             same = False
         if not same:
@@ -227,9 +261,55 @@ def dependency_differences(env_root: Path, checkout: Path) -> list[str]:
     return differences
 
 
+def pending_installs(checkout: Path, differences: Sequence[str]) -> list[str]:
+    """The manifests in `differences` that `checkout`'s own environment is not installed for.
+
+    `differences` are `dependency_differences` of `checkout`: the parts that
+    cannot run on the launch environment. Each is current in `checkout`'s own
+    `.venv` / `node_modules` when that one's bootstrap stamp matches the
+    manifest, as `ensure_source_environment` and `ensure_dev_frontend` check.
+    Empty: a switch to `checkout` installs nothing.
+    """
+    pending = []
+    for name in differences:
+        try:
+            if name == PYTHON_MANIFEST:
+                expected = python_stamp(checkout, _source_python())
+                current = venv_python(checkout).exists() and _stamp_matches(python_stamp_path(checkout), expected)
+            else:
+                expected = {"lockfile_sha256": _fingerprint(checkout / FRONTEND_MANIFEST)}
+                current = _stamp_matches(frontend_stamp_path(checkout), expected)
+        except OSError:  # missing manifest: the install reports it
+            current = False
+        if not current:
+            pending.append(name)
+    return pending
+
+
+def provision(checkout: Path, manifests: Sequence[str], progress: Callable[[str], None] = _no_progress) -> None:
+    """Install `checkout`'s own environment for `manifests` with the regular bootstrap.
+
+    `requirements.txt`: its own `.venv`. The frontend lockfile: `npm ci` in its
+    `apps/desktop-web`. Only `checkout` is written; parts its stamps show as
+    current are skipped. Raises BootstrapError, or OSError for a missing manifest.
+    """
+    if PYTHON_MANIFEST in manifests:
+        ensure_source_environment([], repo_root=checkout, progress=progress)
+    if FRONTEND_MANIFEST in manifests:
+        ensure_dev_frontend(["--dev"], repo_root=checkout, progress=progress)
+
+
+# Rewritten in place (npm's hidden lockfile, by any npm command; the bootstrap
+# stamp), so a hard link would change `env_root`'s copy too: each checkout gets its own.
+_COPIED_NOT_LINKED = {".package-lock.json", _FRONTEND_STAMP}
+
+
 def _link_or_copy(source: str, target: str) -> None:
     if os.path.lexists(target):
         return  # the checkout's own file, or linked by an earlier switch
+    if os.path.basename(source) in _COPIED_NOT_LINKED:
+        shutil.copy2(source, target)
+        return
     try:
         os.link(source, target)
     except OSError:  # another volume, or links unsupported
@@ -244,7 +324,8 @@ def link_frontend_dependencies(env_root: Path, checkout: Path) -> None:
     Hard links, not a directory junction: `npm ci` empties a linked
     `node_modules` and a recursive delete can follow a junction, which would
     wipe `env_root`'s copy. Deleting `checkout` or running npm there only
-    removes its own names. `env_root` is only read. Call only when
+    removes its own names; the files npm and the bootstrap rewrite in place
+    are copies. `env_root` is only read. Call only when
     `dependency_differences` is empty. Raises OSError.
     """
     source = env_root / "apps" / "desktop-web" / "node_modules"
@@ -254,6 +335,10 @@ def link_frontend_dependencies(env_root: Path, checkout: Path) -> None:
     lockfile = checkout / "apps" / "desktop-web" / "package-lock.json"
     if _stamp_matches(frontend_stamp_path(checkout), {"lockfile_sha256": _fingerprint(lockfile)}):
         return  # installed for this lockfile already
+    if frontend_stamp_path(checkout).exists():
+        # Installed by the bootstrap or a switch for another lockfile: replace it, never mix the two.
+        # A plain `npm ci` (no stamp) is kept: an agent may be running Vite or tests from it.
+        _remove_tree(target)
     # Vite's caches belong to each checkout's own dev server.
     shutil.copytree(source, target, ignore=shutil.ignore_patterns(".vite", ".vite-temp"),
                     copy_function=_link_or_copy, dirs_exist_ok=True)
