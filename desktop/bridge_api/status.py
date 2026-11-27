@@ -72,18 +72,19 @@ class StatusBridgeMixin:
                 "channel": get_update_channel(),
             })
         channel = str((params or {}).get("channel") or "")
-        try:
-            set_update_channel(channel)
-        except ValueError:
-            return self._sanitize_for_json({
-                "ok": False, "error": "invalid_channel", "channel": get_update_channel(),
-            })
-        except OSError as exc:
-            return self._sanitize_for_json({
-                "ok": False, "error": str(exc), "channel": get_update_channel(),
-            })
-        # What was found for the previous channel must not stay installable.
+        # One lock for the write and the reset, so a check finishing now cannot
+        # store an offer for the previous channel (see _get_software_update_status).
         with self._update_lock:
+            try:
+                set_update_channel(channel)
+            except ValueError:
+                return self._sanitize_for_json({
+                    "ok": False, "error": "invalid_channel", "channel": get_update_channel(),
+                })
+            except OSError as exc:
+                return self._sanitize_for_json({
+                    "ok": False, "error": str(exc), "channel": get_update_channel(),
+                })
             self._update_info = None
             self._latest_update_status = None
         return self._sanitize_for_json({"ok": True, "channel": channel})
@@ -1199,9 +1200,7 @@ class StatusBridgeMixin:
 
             checker = UpdateChecker()
             status = checker.get_latest_release_status(__version__)
-            if status.get("channel") not in (None, get_update_channel()):
-                # The channel changed while GitHub answered: check the new one instead.
-                return self._get_software_update_status(force=True)
+            update_info = None
             if status.get("update_available") and status.get("zip_url"):
                 update_info = {
                     "version": status.get("latest_version"),
@@ -1210,9 +1209,14 @@ class StatusBridgeMixin:
                     "sha256_url": status.get("sha256_url"),
                     "publication_kind": status.get("publication_kind"),
                 }
-                with self._update_lock:
+            with self._update_lock:
+                stale = status.get("channel") not in (None, get_update_channel())
+                if update_info and not stale:
                     self._update_info = update_info
-            elif status.get("status") == "check_failed" and cached_info:
+            if stale:
+                # The channel changed while GitHub answered: check the new one instead.
+                return self._get_software_update_status(force=True)
+            if status.get("status") == "check_failed" and cached_info:
                 status = {
                     **status,
                     "status": "available_cached",

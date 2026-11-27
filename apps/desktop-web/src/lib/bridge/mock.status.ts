@@ -90,10 +90,12 @@ const MOCK_APP_STATUS: AppStatusPayload = {
   },
   database: MOCK_DB_DIAGNOSTICS,
   update: {
-    current_version: "0.29.1",
-    latest_version: "0.29.1",
+    current_version: "0.29.2",
+    latest_version: "0.29.2",
     update_available: false,
     status: "up_to_date",
+    channel: "releases",
+    publication_kind: "release",
     apply_supported: false,
   },
   diagnostics: {
