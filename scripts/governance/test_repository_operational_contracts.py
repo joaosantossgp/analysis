@@ -494,7 +494,7 @@ def _run_pr_guardrail_script(body: str, issues: dict[int, dict[str, object]]) ->
 
 def test_pr_issue_guardrails_validates_closing_and_linked_references() -> None:
     issues = {
-        10: {"labels": [{"name": "enhancement"}]},
+        10: {"labels": [{"name": "enhancement"}, {"name": "ships:none"}]},
         11: {"labels": [{"name": "goal"}]},
         12: {"labels": [], "pull_request": {"url": "https://example.invalid/pr/12"}},
     }
@@ -502,8 +502,8 @@ def test_pr_issue_guardrails_validates_closing_and_linked_references() -> None:
 
     assert _run_pr_guardrail_script("No reference" + doc_section, issues)["failed"]
     assert not _run_pr_guardrail_script("Closes #10" + doc_section, issues)["failed"]
-    assert not _run_pr_guardrail_script("Refs #11" + doc_section, issues)["failed"]
-    assert not _run_pr_guardrail_script("Part of #10" + doc_section, issues)["failed"]
+    assert not _run_pr_guardrail_script("Closes #10\nRefs #11" + doc_section, issues)["failed"]
+    assert not _run_pr_guardrail_script("Closes #10\nPart of #11" + doc_section, issues)["failed"]
 
     missing_doc = _run_pr_guardrail_script("Closes #10", issues)
     assert any("Documentation impact" in msg for msg in missing_doc["failed"])
@@ -529,6 +529,42 @@ def test_pr_issue_guardrails_validates_closing_and_linked_references() -> None:
     dedup = _run_pr_guardrail_script("Closes #10\nRefs #10" + doc_section, issues)
     assert not dedup["failed"]
     assert dedup["lookups"] == [10]
+
+
+def test_pr_issue_guardrails_resolves_shipping_class_from_closed_issues() -> None:
+    def issue(*labels: str) -> dict[str, object]:
+        return {"labels": [{"name": name} for name in labels]}
+
+    issues = {
+        20: issue("enhancement", "ships:none"),
+        21: issue("enhancement", "ships:pre"),
+        22: issue("enhancement", "ships:release"),
+        23: issue("bug", "ships:hotfix"),
+        24: issue("enhancement"),
+        25: {"labels": ["ships:pre"]},  # API may return plain label strings
+        30: issue("goal", "ships:release"),
+    }
+    doc_section = "\n\n## Documentation impact\n\n- None: internal test."
+
+    def resolved(body: str) -> str:
+        result = _run_pr_guardrail_script(body + doc_section, issues)
+        assert not result["failed"], result["failed"]
+        line = next(msg for msg in result["info"] if "Shipping class" in msg)
+        return line.split("Shipping class: ", 1)[1].split(" ", 1)[0]
+
+    assert resolved("Closes #20") == "none"
+    assert resolved("Closes #25") == "pre"
+    assert resolved("Closes #20\nCloses #21") == "pre"
+    assert resolved("Closes #21\nFixes #22") == "release"
+    assert resolved("Closes #22\nResolves #23\nCloses #20") == "hotfix"
+    # An unclassified closed issue does not fail when another closed issue has a class.
+    assert resolved("Closes #24\nCloses #21") == "pre"
+    # Goals referenced with Refs are never counted, even when labelled.
+    assert resolved("Closes #20\nRefs #30") == "none"
+
+    for body in ("Closes #24", "Refs #30", "Part of #20"):
+        failed = _run_pr_guardrail_script(body + doc_section, issues)["failed"]
+        assert any("ships:none" in msg and "ships:hotfix" in msg for msg in failed), (body, failed)
 
 
 def test_canonical_docs_have_no_broken_local_links() -> None:
@@ -589,6 +625,27 @@ def test_issue_templates_apply_needs_triage_label() -> None:
     ):
         template = yaml.safe_load((ROOT / relative_path).read_text(encoding="utf-8"))
         assert "needs-triage" in (template.get("labels") or []), relative_path
+
+
+def test_task_and_bug_templates_ask_for_shipping_class() -> None:
+    expected = {"none", "pre", "release", "hotfix"}
+    for relative_path in (".github/ISSUE_TEMPLATE/bug.yml", ".github/ISSUE_TEMPLATE/task.yml"):
+        template = yaml.safe_load((ROOT / relative_path).read_text(encoding="utf-8"))
+        fields = [item for item in template["body"] if item.get("id") == "shipping_class"]
+        assert len(fields) == 1, relative_path
+        assert fields[0]["type"] == "dropdown", relative_path
+        options = " ".join(fields[0]["attributes"]["options"])
+        assert all(f"ships:{name}" in options for name in expected), relative_path
+
+
+def test_pr_template_and_review_step_name_unreachable_unfinished_parts() -> None:
+    template = (ROOT / ".github/PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
+    assert "unreachable" in template.lower()
+    agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    assert "unreachable" in agents.lower()
+    for name in ("ships:none", "ships:pre", "ships:release", "ships:hotfix"):
+        assert name in agents
+        assert name in (ROOT / "docs/agents/triage-labels.md").read_text(encoding="utf-8")
 
 
 def test_agent_ignore_and_context_configs_exclude_high_noise_roots() -> None:
