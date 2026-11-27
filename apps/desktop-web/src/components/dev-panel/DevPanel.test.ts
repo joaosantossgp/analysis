@@ -177,7 +177,7 @@ describe("dev panel restart controls and tools", () => {
   });
 
   it("builds the panel from one file per section", () => {
-    expect(DEV_PANEL_SECTIONS.map((section) => section.id)).toEqual(["context", "restart", "tools"]);
+    expect(DEV_PANEL_SECTIONS.map((section) => section.id)).toEqual(["context", "worktrees", "restart", "tools"]);
   });
 });
 

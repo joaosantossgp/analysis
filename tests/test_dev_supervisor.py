@@ -5,6 +5,8 @@ import subprocess
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import pytest
+
 from desktop import dev_supervisor as sup
 
 
@@ -19,7 +21,7 @@ class FakeChild:
 class Harness:
     """A supervisor wired to fakes: no process, no window, no real clock."""
 
-    def __init__(self) -> None:
+    def __init__(self, **options: object) -> None:
         self.snapshot: dict[str, tuple[int, int]] = {"desktop/app.py": (1, 10)}
         self.started: list[FakeChild] = []
         self.stopped: list[FakeChild] = []
@@ -32,11 +34,12 @@ class Harness:
         self.supervisor = sup.DevSupervisor(
             start_child=self._start,
             stop_child=self._stop,
-            scan=lambda: dict(self.snapshot),
+            scan=options.pop("scan", lambda: dict(self.snapshot)),
             report=self.messages.append,
             quiet_seconds=1.0,
             read_requests=self._take_requests,
             publish_status=self.statuses.append,
+            **options,
         )
         self.supervisor.start()
 
@@ -179,7 +182,7 @@ def test_stop_child_closes_stdin_and_waits_for_a_clean_exit() -> None:
     proc = Mock(pid=4242)
 
     with patch.object(sup.subprocess, "run") as run:
-        sup.stop_child(proc)
+        assert sup.stop_child(proc) is True
 
     proc.stdin.close.assert_called_once_with()
     proc.wait.assert_called_once_with(timeout=sup.STOP_TIMEOUT_SECONDS)
@@ -534,7 +537,7 @@ def test_run_gives_the_app_a_control_directory_and_removes_it_afterwards(tmp_pat
 
     def fake_popen(_command: list[str], **kwargs: object) -> ClosedWindowChild:
         control_dir = Path(kwargs["env"][sup.CONTROL_DIR_ENV])  # type: ignore[index]
-        assert sup.read_status(control_dir) == {"auto_restart": True, "pending_changes": 0}
+        assert sup.read_status(control_dir).items() >= {"auto_restart": True, "pending_changes": 0}.items()
         control_dirs.append(control_dir)
         return ClosedWindowChild()
 
@@ -543,3 +546,228 @@ def test_run_gives_the_app_a_control_directory_and_removes_it_afterwards(tmp_pat
 
     assert len(control_dirs) == 1
     assert not control_dirs[0].exists()
+
+
+# --- Worktree switch (#611) ----------------------------------------------------
+
+
+def _worktree_entry(path: Path, differences: list[str] | None = None) -> dict[str, object]:
+    return {"name": path.name, "path": str(path), "dependency_differences": differences or []}
+
+
+class WorktreeHarness(Harness):
+    """A supervisor launched from the main checkout of a fake repository with worktrees.
+
+    Each checkout has a real `desktop/app.py`, so the watch is the real scan of
+    the active worktree. `roots` records the worktree each started app ran.
+    """
+
+    def __init__(self, tmp_path: Path) -> None:
+        self.main, self.feature, self.deps = tmp_path / "analisys", tmp_path / "wt-feature", tmp_path / "wt-deps"
+        for root in (self.main, self.feature, self.deps):
+            (root / "desktop").mkdir(parents=True)
+            (root / "desktop" / "app.py").write_text("x = 1\n", encoding="utf-8")
+            (root / ".git").write_text("gitdir: elsewhere\n", encoding="utf-8")
+        self.worktrees = [
+            _worktree_entry(self.main),
+            _worktree_entry(self.feature),
+            _worktree_entry(self.deps, ["requirements.txt"]),
+        ]
+        self.list_error: Exception | None = None
+        self.roots: list[Path] = []
+        super().__init__(
+            scan=lambda: sup.scan_sources(self.supervisor.active_root),
+            list_worktrees=self._list,
+            launch_root=self.main,
+        )
+
+    def _list(self) -> list[dict[str, object]]:
+        if self.list_error is not None:
+            raise self.list_error
+        return [dict(entry) for entry in self.worktrees]
+
+    def _start(self) -> FakeChild:
+        child = super()._start()
+        self.roots.append(self.supervisor.active_root)
+        return child
+
+    def switch(self, root: Path) -> None:
+        self.requests.append({"action": "switch_worktree", "path": str(root)})
+
+    def edit(self, root: Path) -> None:
+        (root / "desktop" / "app.py").write_text("x = 22222\n", encoding="utf-8")
+
+
+def test_dev_mode_starts_on_the_checkout_it_was_launched_from(tmp_path: Path) -> None:
+    h = WorktreeHarness(tmp_path)
+
+    assert h.roots == [h.main]
+    assert h.statuses[-1]["worktree"] == str(h.main)
+    assert h.statuses[-1]["worktree_notice"] is None
+
+
+def test_switch_reopens_the_app_on_the_chosen_worktree_and_watches_its_sources(tmp_path: Path) -> None:
+    h = WorktreeHarness(tmp_path)
+
+    h.switch(h.feature)
+    assert h.supervisor.tick(0.0) is None
+
+    assert h.roots == [h.main, h.feature]
+    assert h.stopped == [h.started[0]]
+    assert h.statuses[-1]["worktree"] == str(h.feature)
+    assert any("Switching to worktree wt-feature" in message for message in h.messages)
+
+    h.edit(h.main)
+    h.supervisor.tick(1.0)
+    h.supervisor.tick(3.0)
+    assert len(h.started) == 2, "the checkout the window left is no longer watched"
+
+    h.edit(h.feature)
+    h.supervisor.tick(4.0)
+    h.supervisor.tick(6.0)
+    assert h.roots == [h.main, h.feature, h.feature], "a change in the active worktree restarts it"
+
+
+def test_switching_back_and_forth_restarts_each_time_on_the_chosen_worktree(tmp_path: Path) -> None:
+    h = WorktreeHarness(tmp_path)
+
+    for now, root in enumerate((h.feature, h.main, h.feature)):
+        h.switch(root)
+        h.supervisor.tick(float(now))
+
+    assert h.roots == [h.main, h.feature, h.main, h.feature]
+    assert h.statuses[-1]["worktree_notice"] is None
+
+
+def test_worktree_with_different_dependencies_is_refused(tmp_path: Path) -> None:
+    h = WorktreeHarness(tmp_path)
+
+    h.switch(h.deps)
+    h.supervisor.tick(0.0)
+
+    assert h.roots == [h.main]
+    assert h.stopped == []
+    notice = h.statuses[-1]["worktree_notice"]
+    assert "wt-deps needs its own dependencies (requirements.txt differ)" in notice
+    assert "supported in a later version" in notice
+    assert any("refused" in message for message in h.messages)
+
+
+def test_switch_to_an_unknown_or_unlistable_worktree_is_refused(tmp_path: Path) -> None:
+    h = WorktreeHarness(tmp_path)
+
+    h.switch(tmp_path / "gone")
+    h.supervisor.tick(0.0)
+    assert "not a worktree of this repository" in h.statuses[-1]["worktree_notice"]
+
+    h.list_error = subprocess.CalledProcessError(128, "git")
+    h.switch(h.feature)
+    h.supervisor.tick(1.0)
+    assert "Could not list the worktrees" in h.statuses[-1]["worktree_notice"]
+    assert h.roots == [h.main]
+
+
+def test_switch_request_is_ignored_without_worktree_support() -> None:
+    h = Harness()
+
+    h.requests.append({"action": "switch_worktree", "path": "C:/elsewhere"})
+    h.supervisor.tick(0.0)
+
+    assert len(h.started) == 1
+    assert any("Ignored" in message for message in h.messages)
+
+
+def test_app_that_fails_soon_after_a_switch_returns_to_the_previous_worktree(tmp_path: Path) -> None:
+    h = WorktreeHarness(tmp_path)
+    h.switch(h.feature)
+    h.supervisor.tick(0.0)
+
+    h.started[1].exit_code = 1
+    h.supervisor.tick(5.0)
+
+    assert h.roots == [h.main, h.feature, h.main]
+    assert h.statuses[-1]["worktree"] == str(h.main)
+    notice = h.statuses[-1]["worktree_notice"]
+    assert "Switching to wt-feature failed: the app exited with code 1" in notice
+    assert "back on analisys" in notice
+
+
+def test_app_that_fails_long_after_a_switch_stays_on_that_worktree(tmp_path: Path) -> None:
+    h = WorktreeHarness(tmp_path)
+    h.switch(h.feature)
+    h.supervisor.tick(0.0)
+    h.supervisor.tick(sup.SWITCH_GRACE_SECONDS + 1)
+
+    h.started[1].exit_code = 1
+    h.supervisor.tick(sup.SWITCH_GRACE_SECONDS + 2)
+
+    assert h.roots == [h.main, h.feature], "a later crash is an ordinary failed start"
+    assert h.statuses[-1]["worktree"] == str(h.feature)
+    assert any("exit code 1" in message for message in h.messages)
+
+
+def test_switch_that_cannot_spawn_the_app_returns_to_the_previous_worktree(tmp_path: Path) -> None:
+    h = WorktreeHarness(tmp_path)
+
+    h.start_error = OSError("node_modules missing")
+    h.switch(h.feature)
+    h.supervisor.tick(0.0)
+
+    assert h.roots == [h.main, h.main]
+    assert h.statuses[-1]["worktree"] == str(h.main)
+    assert "could not start the app: node_modules missing" in h.statuses[-1]["worktree_notice"]
+
+
+def test_removed_active_worktree_falls_back_to_the_launch_checkout(tmp_path: Path) -> None:
+    h = WorktreeHarness(tmp_path)
+    h.switch(h.feature)
+    h.supervisor.tick(0.0)
+
+    (h.feature / ".git").unlink()  # `git worktree remove` on a folder the app still holds
+    h.supervisor.tick(1.0)
+
+    assert h.roots == [h.main, h.feature, h.main]
+    assert h.stopped == [h.started[0], h.started[1]]
+    assert h.statuses[-1]["worktree"] == str(h.main)
+    assert h.statuses[-1]["worktree_notice"] == "Worktree wt-feature was removed; the window is back on analisys."
+
+
+def test_run_starts_another_worktree_on_the_launch_environment_without_its_bootstrap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from desktop import dev_bootstrap, dev_data
+
+    launch, feature = tmp_path / "analisys", tmp_path / "wt-feature"
+    for root in (launch, feature):
+        (root / ".git").mkdir(parents=True)
+    monkeypatch.setattr(
+        dev_data, "list_worktrees", lambda _root, env_root: [_worktree_entry(launch), _worktree_entry(feature)]
+    )
+    linked: list[tuple[Path, Path]] = []
+    monkeypatch.setattr(dev_bootstrap, "link_frontend_dependencies", lambda env, checkout: linked.append((env, checkout)))
+    spawned: list[dict[str, object]] = []
+
+    class Child:
+        def __init__(self, command: list[str], **kwargs: object) -> None:
+            spawned.append({"command": command, **kwargs})
+            self.stdin = Mock()
+            self.first = len(spawned) == 1
+
+        def poll(self) -> int | None:
+            if not self.first:
+                return 0  # the switched-to window is closed: dev mode ends
+            control_dir = Path(spawned[0]["env"][sup.CONTROL_DIR_ENV])  # type: ignore[index]
+            sup.send_request(control_dir, "switch_worktree", path=str(feature))
+            return None
+
+        def wait(self, timeout: float) -> int:
+            return 0
+
+    with patch.object(sup.subprocess, "Popen", Child), patch.object(sup.time, "sleep"):
+        assert sup.run(["--dev"], repo_root=launch) == 0
+
+    assert [call["cwd"] for call in spawned] == [str(launch), str(feature)]
+    assert spawned[0]["command"] == [sup.sys.executable, "-m", "desktop.app", "--dev"]
+    assert spawned[1]["command"] == [sup.sys.executable, "-c", "from desktop.app import main; main()", "--dev"]
+    assert linked == [(launch, feature)]
+    assert spawned[1]["env"][sup.LAUNCH_ROOT_ENV] == str(launch)  # type: ignore[index]

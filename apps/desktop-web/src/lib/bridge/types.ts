@@ -1,5 +1,11 @@
 import type { LocalDatabaseState } from "./types.localDatabase";
-import type { DevAutoRestartResponse, DevContextResponse, DevRestartResponse } from "./types.dev";
+import type {
+  DevAutoRestartResponse,
+  DevContextResponse,
+  DevRestartResponse,
+  DevSwitchWorktreeResponse,
+  DevWorktreesResponse,
+} from "./types.dev";
 import type {
   EnergyKPIHealthResponse,
   EnergyKPICatalogParams,
@@ -387,6 +393,8 @@ export interface BridgeApi {
   dev_get_context(params?: Record<string, unknown>): Promise<DevContextResponse>;
   dev_restart(params?: Record<string, unknown>): Promise<DevRestartResponse>;
   dev_set_auto_restart(params: { enabled: boolean }): Promise<DevAutoRestartResponse>;
+  dev_list_worktrees(params?: Record<string, unknown>): Promise<DevWorktreesResponse>;
+  dev_switch_worktree(params: { path: string }): Promise<DevSwitchWorktreeResponse>;
   // Energy KPI — country-level macro layer
   get_kpi_catalog(params?: EnergyKPICatalogParams): Promise<EnergyKPICatalogResponse>;
   get_country_kpi_series(params: CountryKPISeriesParams): Promise<CountryKPISeriesResponse>;

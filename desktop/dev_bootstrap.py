@@ -202,6 +202,63 @@ def ensure_dev_frontend(argv: Sequence[str], *, repo_root: Path | None = None) -
     write_frontend_stamp(root)
 
 
+def dependency_differences(env_root: Path, checkout: Path) -> list[str]:
+    """Manifests of `checkout` that differ from what `env_root`'s environment was installed from.
+
+    Compares `checkout`'s `requirements.txt` and frontend lockfile with the
+    fingerprints stored in `env_root`'s bootstrap stamps. A missing manifest or
+    stamp counts as a difference. Empty: `checkout` can run on `env_root`'s
+    `.venv` and `node_modules` without an install.
+    """
+    lockfile = Path("apps", "desktop-web", "package-lock.json")
+    checks = (
+        ("requirements.txt", Path("requirements.txt"), python_stamp_path(env_root), "requirements_sha256"),
+        (lockfile.as_posix(), lockfile, frontend_stamp_path(env_root), "lockfile_sha256"),
+    )
+    differences = []
+    for name, manifest, stamp_path, key in checks:
+        installed = (_read_stamp(stamp_path) or {}).get(key)
+        try:
+            same = installed is not None and _fingerprint(checkout / manifest) == installed
+        except OSError:
+            same = False
+        if not same:
+            differences.append(name)
+    return differences
+
+
+def _link_or_copy(source: str, target: str) -> None:
+    if os.path.lexists(target):
+        return  # the checkout's own file, or linked by an earlier switch
+    try:
+        os.link(source, target)
+    except OSError:  # another volume, or links unsupported
+        shutil.copy2(source, target)
+
+
+def link_frontend_dependencies(env_root: Path, checkout: Path) -> None:
+    """Give `checkout` the frontend dependencies `env_root` installed, without an install.
+
+    Hard links every file of `env_root`'s `node_modules` into `checkout`'s
+    (git-ignored) one, so Vite runs from `checkout` as from a normal install.
+    Hard links, not a directory junction: `npm ci` empties a linked
+    `node_modules` and a recursive delete can follow a junction, which would
+    wipe `env_root`'s copy. Deleting `checkout` or running npm there only
+    removes its own names. `env_root` is only read. Call only when
+    `dependency_differences` is empty. Raises OSError.
+    """
+    source = env_root / "apps" / "desktop-web" / "node_modules"
+    if not source.is_dir():
+        raise OSError(f"{source} does not exist; run dev mode from {env_root} once to install it.")
+    target = frontend_stamp_path(checkout).parent
+    lockfile = checkout / "apps" / "desktop-web" / "package-lock.json"
+    if _stamp_matches(frontend_stamp_path(checkout), {"lockfile_sha256": _fingerprint(lockfile)}):
+        return  # installed for this lockfile already
+    # Vite's caches belong to each checkout's own dev server.
+    shutil.copytree(source, target, ignore=shutil.ignore_patterns(".vite", ".vite-temp"),
+                    copy_function=_link_or_copy, dirs_exist_ok=True)
+
+
 def in_project_venv(repo_root: Path, executable: str) -> bool:
     target = venv_python(repo_root)
     return os.path.normcase(os.path.abspath(executable)) == os.path.normcase(os.path.abspath(target))
