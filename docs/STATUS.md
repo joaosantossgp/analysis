@@ -68,11 +68,17 @@ Keep detail in the owning contract or dated evidence. Last updated: 2026-11-26.
 
 - Decided 2026-11-26: a dev-mode goal (#607, tasks #608-#614: auto-restart on
   Python changes, shared/isolated dev data, worktree switch, dev panel; #608-#610
-  implemented, the dev panel shell in #610, dev data actions in #614, worktree switch in #611-#612) and a publishing goal, not yet filed as issues (plain version numbers,
-  update channels, shipping classes, build-once promotion, installer). Publishing
-  decision: [ADR 0011](decisions/0011-build-once-publications-and-update-channels.md);
-  vocabulary: [GLOSSARY.md](../GLOSSARY.md). The current release gate stays in
-  force until ADR 0011 is implemented.
+  implemented, the dev panel shell in #610, dev data actions in #614, worktree switch in #611-#612).
+- Publishing goal #623 delivered 2026-11-27: shipping classes, build-once
+  publications, update channels, shell update notice, candidate test command,
+  promotion, `Setup.exe` and pre-release retention (newest 10 keep their files).
+  [ADR 0011](decisions/0011-build-once-publications-and-update-channels.md) is
+  implemented; vocabulary: [GLOSSARY.md](../GLOSSARY.md). The packaged checks of
+  the first publications (#633) found and fixed: the packaged app using an
+  inherited `DATABASE_URL` (#667), the in-app update helper never starting on
+  Windows 11 25H2 (#671; `v0.29.2` and `0.30.0`-`0.30.1` installs need
+  `Setup.exe` once, see [troubleshooting](troubleshooting.md)), and two UI copy
+  and layout defects (#669, #673).
 
 ## Validation and historical evidence
 
