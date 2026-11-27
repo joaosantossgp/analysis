@@ -17,13 +17,20 @@ CVMAnalytics-windows-v<version>.zip
 CVMAnalytics-windows-v<version>.zip.sha256
 CVMAnalytics-windows.zip
 CVMAnalytics-windows.zip.sha256
+CVMAnalytics-Setup-v<version>.exe
+CVMAnalytics-Setup-v<version>.exe.sha256
+CVMAnalytics-Setup.exe
+CVMAnalytics-Setup.exe.sha256
 ```
 
 The ZIP root is flat: `CVMAnalytics.exe` and `_internal/` at the archive root.
-The installed app's updater downloads the versioned pair. The unversioned pair
-holds the same bytes for the download links in `README.md` and
-`apps/landing/index.html`, which point at `releases/latest`: a release becomes
-"latest", a pre-release never does. Versions are plain `MAJOR.MINOR.PATCH`; the
+The installed app's updater downloads the versioned ZIP pair. `Setup.exe` is
+the per-user installer for first installs, built from the same bundle
+([installer](build-release.md#installer)). The unversioned pairs hold the same
+bytes for download links that point at `releases/latest` (`README.md` and
+`apps/landing/index.html` link the ZIP today; the landing switches to
+`CVMAnalytics-Setup.exe` only after the first release that contains it, #653):
+a release becomes "latest", a pre-release never does. Versions are plain `MAJOR.MINOR.PATCH`; the
 first is `0.30.0`. The publication page lists the merged PRs it contains.
 
 ## What a merge publishes
@@ -66,8 +73,9 @@ successfully for a push to `main`:
 2. **Build** (`build` job, Windows, read-only). Checks out the exact candidate
    commit and runs `desktop/build_desktop.ps1 -Version <decided version>`, which
    stamps the version into the bundle. It verifies the stamped version and the
-   build commit, packages the flat ZIP and its `.sha256`, and keeps both as the
-   run's `publication-candidate` artifact. Nothing is committed to `main`.
+   build commit, packages the flat ZIP, builds and smoke-tests the installer from
+   the same bundle, and keeps both with their `.sha256` files as the run's
+   `publication-candidate` artifact. Nothing is committed to `main`.
 3. **Publish**, exactly one of:
    - `publish-automatic`: a pre-release that needs no approval publishes at once.
    - `publish-approved`: anything that needs approval waits in the
@@ -76,8 +84,8 @@ successfully for a push to `main`:
    - `rehearse-publication`: dry runs only (see below).
 
    The publish step (`publication_workflow.py publish`) downloads the candidate
-   built by this run, checks its SHA-256 against the `.sha256` file and against
-   the hash the build job recorded, and refuses to publish if anything changed
+   built by this run, checks the SHA-256 of the ZIP and the installer against
+   their `.sha256` files and against the hashes the build job recorded, and refuses to publish if anything changed
    since the decision: another publication appeared, the tag exists, or the
    commit is no longer on `main`. It then runs `gh release create v<version>
    --target <commit>`, which creates the tag on the exact commit together with
@@ -110,6 +118,41 @@ and the notes it would have used. It creates no tag and no release and needs no
 approval. `assume_class` adds a PR with that shipping class so a dry run can
 exercise a publication when nothing classified has merged.
 
+## Testing a candidate
+
+The way to test a candidate before approving it is one command, run by the
+owner or by an agent on the owner's request (Windows, `gh` logged in):
+
+```powershell
+.\scripts\release\open-candidate.ps1 latest
+.\scripts\release\open-candidate.ps1 <run id>
+```
+
+`latest` is the newest Release Desktop run that built a candidate, including
+one waiting for approval and dry runs (labelled as such); pass the waiting
+run's id to be sure you test that one. The script
+([`open-candidate.ps1`](../scripts/release/open-candidate.ps1)):
+
+- downloads the run's `publication-candidate` artifact and refuses to open it
+  when the ZIP does not match its `.sha256` file or the version the run decided;
+- removes the previously extracted candidate, extracts this one to
+  `%TEMP%\CVMAnalytics-candidates\<version>` and launches `CVMAnalytics.exe`;
+- prints the run, version, kind, candidate commit (from the run's
+  `publication-decision`) and SHA-256 it opened.
+
+The candidate runs against the installed app's data
+(`%USERPROFILE%\Documents\CVMAnalytics`, or `CVMANALYTICS_DATA_DIR` when set),
+as the installed app would, so its startup schema and classification updates
+apply to that data as an update to that version would. It never touches the
+installed app's own files. The script refuses while any CVMAnalytics is running
+(close the installed app first: a second copy would hit the runtime lock and
+start in restricted mode) and in a terminal that sets `CVM_*` or `SQLITE_PATH`
+(for example after `dev-desktop.ps1`), which would point the candidate at other
+data. It stops with a clear error when the run does not exist, is not a
+Release Desktop run, has not built or built no candidate, or its candidate
+expired; re-run the workflow to build a new one. Then run the packaged checks
+in [`build-release.md`](build-release.md#release-validation).
+
 ## Approving a publication
 
 Only the owner approves. Before approving, the owner tests the exact candidate
@@ -138,6 +181,64 @@ Green CI is not approval. There are two ways to approve:
   On the owner's explicit rejection, post `state=rejected` the same way. Report
   the run URL and the result afterwards.
 
+## Promotion
+
+A pre-release that has been in use becomes a release by **promotion**: the same
+GitHub release, tag and files are marked as a release and as "latest", with no
+rebuild and no new number. Installed apps on "releases only" are then offered
+it. Every promotion waits for the owner's approval.
+
+**The 30-day / 20-day rule.** When the oldest unpromoted pre-release (one newer
+than the latest release) is 30 days old, the newest pre-release that is at least
+20 days old is proposed. Younger pre-releases wait for the next cycle. If the
+chosen pre-release has a blocking bug, the first newer pre-release without one is
+proposed instead, even if it is younger than 20 days; if every newer one is
+blocked too, nothing is proposed. Legacy `-rc.N` pre-releases are never proposed
+or promoted. The rule lives in `publication_decision.py promote`
+(`PROMOTION_TRIGGER_DAYS`, `PROMOTION_MIN_AGE_DAYS`). Blocking bugs are issues
+labelled `bug` and `priority:p0`; how they block is in
+[triage labels](agents/triage-labels.md#blocking-bugs).
+
+**The proposal.** `.github/workflows/promotion-proposal.yml` runs daily and on
+dispatch. `scripts/release/promotion_workflow.py facts` collects the
+publications from the releases API, with the PRs listed in each publication's
+notes, and the blocking bugs; `publication_decision.py promote` picks; and
+`promotion_workflow.py propose` keeps one open issue labelled
+`promotion-proposal` (created if missing), titled `Promotion proposed:
+v<version>`. The issue names the version, its age, the oldest unpromoted
+pre-release, any pre-release passed over for a blocking bug, and the PRs it
+carries since the latest release. When the proposed version changes, the
+workflow comments on the issue; when nothing is proposed, it closes the issue
+with a comment saying why. It never promotes: its token can write issues and
+nothing else. A dispatch defaults to `dry_run`, which prints the proposal and
+the issue changes without making them; a run that changes issues must come from
+`main`.
+
+**Promoting.** The owner dispatches `.github/workflows/promote-release.yml` from
+`main` with the version, whether or not it was proposed, at any time. An agent
+may dispatch it when the owner asks for that version; dispatching is not
+approval.
+
+```powershell
+gh workflow run promote-release.yml --repo joaosantossgp/analysis --ref main -f version=<version>
+```
+
+1. `check` (read-only) refuses a version that is not a published pre-release, a
+   legacy `-rc.N` tag, or a version lower than or equal to the latest release.
+   It downloads the publication's files, checks the versioned ZIP against its
+   `.sha256` and that `CVMAnalytics-windows.zip` holds the same bytes. Its job
+   summary is the approval request.
+2. `promote` waits in the `release-publication` environment. After approval it
+   repeats every check, runs `gh release edit v<version> --prerelease=false
+   --latest`, and confirms that `releases/latest` now reads back that tag.
+
+Approve or reject as for a publication (above), with
+`--workflow promote-release.yml` in the agent commands; the waiting job's name
+shows the version. Rejecting ends the run and changes nothing. Promotion has its
+own concurrency group, so a publication run never cancels a pending promotion.
+The next daily proposal run closes the proposal issue once the version is
+promoted.
+
 ## Remote protection
 
 The approval rests on remote configuration that this workflow does not change:
@@ -146,17 +247,13 @@ required), and `release-publication` allows deployments from protected
 branches only, with owner `joaosantossgp` as required reviewer and no admin
 bypass. Exact settings, read-back date and solo-maintainer limits:
 [remote publication protection](build-release.md#remote-publication-protection).
-Do not weaken these, rename the environment, or let a publish job run outside
-it when approval is required.
+Do not weaken these, rename the environment, or let a publish or promote job run
+outside it when approval is required.
 
 ## Not yet in place
 
-ADR 0011 is delivered in parts (goal #623). Still to land: the one-command
-candidate test (#630), promotion of a tested pre-release to a release and the
-time-based proposal (#631), the `Setup.exe` installer (#632), retention of old
-pre-releases (#634), and the first real publication `0.30.0` (#633). Until
-promotion lands, a release is published only directly, by a `release` or
-`hotfix` class.
+ADR 0011 is delivered in parts (goal #623). Still to land: retention of old
+pre-releases (#634) and the first real publication `0.30.0` (#633).
 
 ## Publication decision module
 
@@ -169,5 +266,5 @@ its docstring):
   approval is required, with the PRs and risk paths behind the answer. The
   publication workflow calls it.
 - `promote`: from the dated publications and the blocking bugs, it answers
-  which pre-release to propose for promotion, if any. Nothing calls it until
-  #631.
+  which pre-release to propose for promotion, if any. The promotion proposal
+  workflow calls it.

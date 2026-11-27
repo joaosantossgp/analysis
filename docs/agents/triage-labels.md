@@ -40,3 +40,22 @@ merge publishes ([ADR 0011](../decisions/0011-build-once-publications-and-update
   (`hotfix` > `release` > `pre` > `none`) and fails when no closed issue has
   one. Goals referenced with `Refs #n` are not counted. After relabelling an
   issue, edit or push to the PR to re-run the check.
+
+## Blocking bugs
+
+A bug labelled both `bug` and `priority:p0` is a **blocking bug** for promotion
+([release process](../release-process.md#promotion)): the scheduled proposal
+never proposes a pre-release that has one, and proposes the first newer
+pre-release that fixes it instead.
+
+- **Open:** blocks every pre-release until it is closed.
+- **Closed by a PR** (`Closes #n`): fixed in the earliest publication whose tag
+  contains that PR's merge commit. Until such a publication exists, it still
+  blocks.
+- **First affected version:** a line `Version: 0.30.2` in the bug body (or a
+  `### Version` heading with the version below it) says where the bug starts.
+  Without it, every publication before the fix counts as affected.
+- **Closed by hand** (no closing PR or commit) or **closed as not planned:**
+  blocks nothing.
+- Other priorities never affect promotion. Reserve `priority:p0` on a bug for
+  one that must not reach every installed app.

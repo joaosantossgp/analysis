@@ -10,7 +10,9 @@ dist/CVMAnalytics/_internal/
 ```
 
 The bundle is produced by `desktop/build_desktop.ps1` and PyInstaller using
-`desktop/app.spec`.
+`desktop/app.spec`. Each publication ships it twice, from the same bundle: as a
+flat ZIP, which the in-app updater downloads, and as a per-user installer
+(`Setup.exe`, see [Installer](#installer)) for first installs.
 
 ## Local Build
 
@@ -52,13 +54,26 @@ build and integrity contract.
   `desktop/__version__.py` holds that version and `desktop/_build_info.py`
   holds the candidate commit. Nothing is committed to `main`; the source-tree
   version stays a dev fallback.
-- **One file, verified at publication.** The build job packages
-  `CVMAnalytics-windows-v<version>.zip` (flat root checked) and its `.sha256`,
-  keeps them as the run's `publication-candidate` artifact and records the
-  hash as a job output. The publish job downloads that artifact from the same
-  run, checks the hash against the `.sha256` file and the build job's output,
-  adds the unversioned `CVMAnalytics-windows.zip` pair, and publishes those
-  bytes. No publish job builds, packages from source, commits or pushes.
+- **One candidate, verified at publication.** The build job packages
+  `CVMAnalytics-windows-v<version>.zip` (flat root checked) and builds
+  `CVMAnalytics-Setup-v<version>.exe` from the same `dist\CVMAnalytics`
+  bundle, smoke-tests the installer, writes a `.sha256` for each, keeps all
+  four files as the run's `publication-candidate` artifact and records both
+  hashes as job outputs. The publish job downloads that artifact from the same
+  run, checks each hash against its `.sha256` file and the build job's output,
+  adds the unversioned pairs, and publishes those bytes. No publish job builds,
+  packages from source, commits or pushes. Published files:
+
+  ```text
+  CVMAnalytics-windows-v<version>.zip          updater package (installed apps look for this name)
+  CVMAnalytics-windows-v<version>.zip.sha256
+  CVMAnalytics-windows.zip                     same bytes, for README links
+  CVMAnalytics-windows.zip.sha256
+  CVMAnalytics-Setup-v<version>.exe            per-user installer
+  CVMAnalytics-Setup-v<version>.exe.sha256
+  CVMAnalytics-Setup.exe                       same bytes, for the landing page
+  CVMAnalytics-Setup.exe.sha256
+  ```
 - **Tag with the release.** `gh release create v<version> --target <commit>`
   creates the tag on the exact candidate commit together with the release, as a
   pre-release (`--latest=false`) or a release (`--latest=true`). A candidate
@@ -74,9 +89,55 @@ build and integrity contract.
 Flat-root means the ZIP root contains `CVMAnalytics.exe` and `_internal/`
 directly. A wrapper folder breaks the updater contract.
 
+### Installer
+
+`desktop/installer.iss` (Inno Setup 6) packs `dist\CVMAnalytics` into
+`CVMAnalytics-Setup-v<version>.exe`. The version is the publication version,
+passed in by the build job; the script does not hard-code it.
+
+- **Per-user, no admin.** `PrivilegesRequired=lowest`, installed to
+  `%LOCALAPPDATA%\Programs\CVMAnalytics` (fixed; the directory page is hidden).
+  It adds a Start menu shortcut and, only if the user ticks it, a desktop
+  shortcut.
+- **Install over an existing install.** A fixed `AppId` makes a newer
+  `Setup.exe` upgrade the same folder. It replaces `_internal` whole, as the
+  updater does. If the app is running, Setup asks the user to close it first.
+- **Uninstall leaves data.** The uninstaller removes what Setup installed plus
+  `_internal` and `CVMAnalytics.exe` (which in-app updates may have replaced),
+  then the folder if it is empty. It never touches
+  `%USERPROFILE%\Documents\CVMAnalytics` or `%LOCALAPPDATA%\CVMAnalytics`
+  (updater staging, rollback and log). A governance test in
+  `scripts/governance/test_repository_operational_contracts.py` enforces this.
+- **Updates.** An installed app updates itself through the in-app updater,
+  which swaps `CVMAnalytics.exe` and `_internal` in the folder of the running
+  exe, here `%LOCALAPPDATA%\Programs\CVMAnalytics`, which the user can write.
+  Users install once. Windows "Installed apps" keeps showing the version
+  `Setup.exe` installed, not the one a later in-app update brought.
+- **CI.** The build job uses the Inno Setup 6 preinstalled on the
+  `windows-latest` runner (its version goes to the job summary; it is not
+  pinned) and fails if it is missing. Before upload it smoke-tests the
+  installer: a silent install into a temporary folder, a second install over
+  it, a silent uninstall, and a check that the folder is gone and a file under
+  `Documents\CVMAnalytics` is still there.
+- **No code signing.** Windows SmartScreen warns on the first run of the
+  installer; see [troubleshooting](troubleshooting.md#windows-protected-your-pc-when-running-setup).
+
+Local build, after `desktop/build_desktop.ps1`, with Inno Setup 6 installed:
+
+```powershell
+& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=<version> desktop\installer.iss
+```
+
+The installer lands in `dist\`. To try it without touching a real install:
+`CVMAnalytics-Setup-v<version>.exe /VERYSILENT /DIR=<temp folder>`, then
+`<temp folder>\unins000.exe /VERYSILENT`.
+
 ### Remote publication protection
 
-`publish-approved` names the `release-publication` environment. The reviewer
+`publish-approved` in `release-desktop.yml` and `promote` in
+`promote-release.yml` (promotion, see
+[release process](release-process.md#promotion)) name the
+`release-publication` environment. The reviewer
 and branch protections are remote configuration, separate from the workflow's
 commit and checksum checks.
 
@@ -144,11 +205,15 @@ User data remains excluded from every publication.
 
 Verified implementation:
 
-- `desktop/updater.py` checks GitHub Releases, compares versions, downloads the
-  versioned ZIP and `.sha256`, validates checksum, extracts into
-  `%LOCALAPPDATA%\CVMAnalytics\versions\<version>\`, and spawns the helper.
+- `desktop/updater.py` lists GitHub Releases (`/releases`, newest 100; it no
+  longer reads `/releases/latest`), picks the publication for the user's update
+  channel (below), downloads the versioned ZIP and `.sha256`, validates
+  checksum, extracts into `%LOCALAPPDATA%\CVMAnalytics\versions\<version>\`, and
+  spawns the helper.
 - `desktop/update_helper.ps1` swaps only allowlisted bundle entries:
-  `CVMAnalytics.exe` and `_internal`.
+  `CVMAnalytics.exe` and `_internal`, in the folder of the running
+  `CVMAnalytics.exe` (an extracted ZIP or the installer's
+  `%LOCALAPPDATA%\Programs\CVMAnalytics`).
 - The helper snapshots overwritten files to
   `%LOCALAPPDATA%\CVMAnalytics\update_rollback\<utc-ts>\`.
 - User data directories are denied by name and are not part of the bundle swap.
@@ -163,6 +228,71 @@ accepts the `git describe` form emitted after a tag:
 or malformed tags are ignored and must never be offered as updates even when a
 matching release asset exists. Keep parser and both updater-path regressions in
 sync when extending this contract.
+
+### Update channel and publication selection (ADR 0011, #626)
+
+- The update channel is `releases` (default, "Releases only") or `prereleases`
+  ("Pre-releases and releases"). It is stored in
+  `%LOCALAPPDATA%\CVMAnalytics\update_channel.json` (`{"channel": "..."}`),
+  next to `snooze.json`: outside the bundle and outside the financial database,
+  so an update or a data reset keeps it. A missing, unreadable or unknown value
+  means `releases`. The file is written to a temporary file and swapped in, so a
+  failed write keeps the previous choice.
+- Listing: GitHub Releases is read 100 publications per page, newest first,
+  until a page holds a publication the channel accepts, at most 5 pages per
+  check. A channel with nothing accepted in those pages reads as `no_release`.
+- Selection (`select_publication`): drafts and malformed tags are skipped;
+  `releases` accepts only publications GitHub marks as releases whose tag has no
+  `-rc.N` part (a legacy `-rc.N` tag without the prerelease flag counts as a
+  pre-release), `prereleases` accepts both. Versions compare numerically
+  (`-rc.N` sorts below the plain version). The offer is the newest accepted
+  publication that is newer than the installed version and has its versioned
+  ZIP. A version lower than or equal to
+  the installed one is never offered, so switching back to `releases` keeps the
+  current version until a newer release exists. When no newer publication has
+  its ZIP, the status is `asset_missing`.
+- Bridge: `get_update_channel` / `set_update_channel` (refused in read-only
+  mode). Changing the channel is an explicit user action: it drops the previous
+  channel's offer so it cannot be applied, then runs one check for the new
+  channel (the same check as `check_update({"force": true})`), logs it to
+  `update_error.log` and stores the result; a failed check is stored as
+  `check_failed`. `check_update` returns the last known status with `channel`,
+  `publication_kind` (`release` / `pre-release`), `checked_at`,
+  `current_version` and `latest_version`; `{"force": true}` runs a new check
+  (an explicit user action). The `get_app_status().update` payload carries the
+  same `channel` and `publication_kind` and never contacts GitHub because of a
+  channel change. Besides those user actions, the only check is the one at
+  startup.
+- Settings -> App shows the channel choice, the pre-release notice, the current
+  version and the last check.
+- Unchanged: package asset names, checksum validation, staging, the allowlisted
+  swap and rollback.
+
+### Shell update announcement (ADR 0011, #627)
+
+- When the stored check offers an update (`check_update().available`), the top
+  bar shows an `Update <version>` pill next to the Data pill on every screen,
+  marked `pre-release` for a pre-release. It opens a compact panel (closes on
+  Escape, a click outside or its close button) with the version, the kind, the
+  installed version, the publication page link, **Update now** and **Later**.
+- The shell reads only the stored check (`check_update` without `force`), every
+  5 s until the startup check has a result, then once a minute; it never
+  contacts GitHub. A failed, offline, not-yet-run, up-to-date or postponed check
+  shows nothing in the shell; Settings -> App and Advanced -> Software update keep
+  the detailed status.
+- Nothing is downloaded before **Update now**. It runs the same `apply_update`
+  flow as the diagnostics card (shared `useUpdateApply` hook): the pill shows
+  `Updating N%`, the panel shows the step (download, checksum, files, restart),
+  and the helper restarts the app into the new version. A failure before the
+  swap shows `Update failed` with the updater's error; the installed version
+  keeps running and **Update now** retries.
+- **Later** calls `snooze_update`: the offered tag is postponed for 7 days in
+  `snooze.json`, and the stored status becomes `snoozed` with nothing to apply,
+  as the next startup check reports it. A newer publication is offered again
+  at the next startup.
+- Mock preview: `localStorage.setItem("cvm_mock_update", "release_available")`
+  (or `prereleases`, `offline`, `snoozed`) before reload; the mock install
+  steps through download progress and always ends in a simulated failure.
 
 User data under `%USERPROFILE%\Documents\CVMAnalytics` must not be overwritten
 by update/install flows.
@@ -234,7 +364,7 @@ bytes, cold Parquet bytes, manifest row counts, hot/cold month lists, and mart
 rebuild row counts. Use this field when reviewing storage impact after a heavy
 import.
 
-Manual packaged validation, on the candidate ZIP of the publication run (the
+Manual packaged validation, on the candidate files of the publication run (the
 `publication-candidate` artifact), before approving:
 
 - clean launch from the extracted `CVMAnalytics.exe`;
@@ -245,7 +375,10 @@ Manual packaged validation, on the candidate ZIP of the publication run (the
 - update check handles no-network and latest-version states explicitly;
 - Excel export from the packaged app writes to output and opens without repair;
 - install/update over a previous version preserves user data;
-- update helper keeps ZIP root contract and rollback snapshot behavior.
+- update helper keeps ZIP root contract and rollback snapshot behavior;
+- when the installer changed: `Setup.exe` installs with no admin prompt, the
+  Start menu shortcut opens the app, the installed app updates in place, and
+  uninstalling leaves `Documents\CVMAnalytics`.
 
 ## What Does Not Publish
 

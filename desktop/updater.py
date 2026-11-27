@@ -2,7 +2,8 @@
 Desktop auto-updater — checks GitHub Releases, downloads, validates, and stages updates.
 
 Flow:
-  UpdateChecker.check_for_update()  — background thread on startup
+  UpdateChecker.get_latest_release_status() — background thread on startup;
+    lists publications and offers the newest one the update channel accepts
   UpdateChecker.download_and_stage() — triggered by user action via bridge
   UpdateChecker.spawn_helper_and_exit() — spawns update_helper.ps1, then app exits
 """
@@ -28,8 +29,16 @@ GITHUB_REPO = "joaosantossgp/analisys"
 _API_BASE = "https://api.github.com"
 _APPDATA_DIR = Path(os.environ.get("LOCALAPPDATA", tempfile.gettempdir())) / "CVMAnalytics"
 _SNOOZE_FILE = _APPDATA_DIR / "snooze.json"
+# The update channel is a local preference next to the snooze file: outside the
+# bundle and outside the financial database, so updates and data resets keep it.
+_CHANNEL_FILE = _APPDATA_DIR / "update_channel.json"
+CHANNEL_RELEASES = "releases"
+CHANNEL_PRERELEASES = "prereleases"
+UPDATE_CHANNELS = (CHANNEL_RELEASES, CHANNEL_PRERELEASES)
 _VERSIONS_DIR = _APPDATA_DIR / "versions"
 _SNOOZE_DAYS = 7
+_RELEASES_PER_PAGE = 100  # GitHub's maximum
+_MAX_RELEASE_PAGES = 5  # bounds one check to five listing requests
 _VERSION_NUMBER = r"(?:0|[1-9][0-9]*)"
 # `git describe` appends this suffix only for commits after a tag, so zero is invalid.
 _GIT_DESCRIBE_DISTANCE = r"(?:[1-9][0-9]*)"
@@ -69,13 +78,93 @@ def _parse_version(tag: str) -> tuple[int, ...]:
     return (0,)
 
 
-class UpdateChecker:
-    def get_latest_release_status(self, current_version: str) -> dict:
-        """Return a non-destructive GitHub release status for diagnostics UI.
+def get_update_channel() -> str:
+    """The stored update channel; a missing or unreadable file means releases only."""
+    try:
+        channel = json.loads(_CHANNEL_FILE.read_text(encoding="utf-8")).get("channel")
+    except Exception:
+        return CHANNEL_RELEASES
+    return channel if channel in UPDATE_CHANNELS else CHANNEL_RELEASES
 
-        This does not download, stage, or apply anything. The existing
-        `check_for_update` / `download_and_stage` contract remains unchanged.
+
+def set_update_channel(channel: str) -> None:
+    if channel not in UPDATE_CHANNELS:
+        raise ValueError("invalid_channel")
+    _APPDATA_DIR.mkdir(parents=True, exist_ok=True)
+    # Swap in a complete file so a crash mid-write keeps the previous choice.
+    tmp = _CHANNEL_FILE.with_name(f"{_CHANNEL_FILE.name}.tmp")
+    tmp.write_text(json.dumps({"channel": channel}), encoding="utf-8")
+    os.replace(tmp, _CHANNEL_FILE)
+
+
+def _channel_version(publication, channel: str) -> tuple[int, ...] | None:
+    """The parsed version of a publication the channel accepts, else None."""
+    if not isinstance(publication, dict) or publication.get("draft"):
+        return None
+    version = _parse_version(str(publication.get("tag_name") or ""))
+    if version == (0,):
+        return None
+    # A legacy -rc.N tag is a pre-release even when GitHub's flag was not set.
+    if channel != CHANNEL_PRERELEASES and (publication.get("prerelease") or _is_rc(version)):
+        return None
+    return version
+
+
+def _is_rc(version: tuple[int, ...]) -> bool:
+    return version[3] == 0  # _parse_version puts 0 there for an -rc.N tag
+
+
+def select_publication(
+    publications: list, current_version: str, channel: str
+) -> dict | None:
+    """Pick the publication to show for a channel from a GitHub Releases listing.
+
+    "releases" accepts releases only (no prerelease flag and no -rc.N tag);
+    "prereleases" accepts both. Drafts and malformed tags are ignored. The
+    result is the newest accepted publication that is newer than the current
+    version and has its package; when no newer
+    one has the package, the newest newer one (so the caller can report the
+    missing asset); otherwise the newest accepted one, flagged `newer: False`.
+    Download URLs are only returned for a newer publication.
+    """
+    local = _parse_version(current_version)
+    accepted = []
+    for publication in publications:
+        version = _channel_version(publication, channel)
+        if version is None:
+            continue
+        tag = str(publication.get("tag_name") or "")
+        zip_url, sha256_url = UpdateChecker._find_asset_urls(
+            publication.get("assets") or [], tag
+        )
+        accepted.append((version, tag, zip_url, sha256_url, publication))
+    if not accepted:
+        return None
+    accepted.sort(key=lambda item: item[0], reverse=True)
+    newer = [item for item in accepted if item[0] > local]
+    with_package = [item for item in newer if item[2]]
+    version, tag, zip_url, sha256_url, publication = (with_package or newer or accepted)[0]
+    is_newer = version > local
+    return {
+        "tag": tag,
+        "version": tag.lstrip("v"),
+        "kind": "pre-release" if publication.get("prerelease") or _is_rc(version) else "release",
+        "newer": is_newer,
+        "release_url": publication.get("html_url") or None,
+        "zip_url": zip_url if is_newer else None,
+        "sha256_url": sha256_url if is_newer else None,
+    }
+
+
+class UpdateChecker:
+    def get_latest_release_status(
+        self, current_version: str, channel: str | None = None
+    ) -> dict:
+        """Return a non-destructive update status for the user's update channel.
+
+        This does not download, stage, or apply anything.
         """
+        channel = channel or get_update_channel()
         checked_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
         base = {
             "current_version": current_version,
@@ -91,14 +180,11 @@ class UpdateChecker:
             "status": "unknown",
             "error": None,
             "can_apply": False,
+            "channel": channel,
+            "publication_kind": None,
         }
         try:
-            resp = requests.get(
-                f"{_API_BASE}/repos/{GITHUB_REPO}/releases/latest",
-                headers={"Accept": "application/vnd.github+json"},
-                timeout=10,
-            )
-            resp.raise_for_status()
+            publications = self._fetch_publications(channel)
         except Exception as exc:
             return {
                 **base,
@@ -106,90 +192,70 @@ class UpdateChecker:
                 "error": f"Could not check GitHub Releases: {exc}",
             }
 
-        data = resp.json()
-        tag = str(data.get("tag_name") or "")
-        if not tag:
+        selected = select_publication(publications, current_version, channel)
+        if not selected:
             return {
                 **base,
                 "status": "no_release",
-                "error": "Latest GitHub Release did not include a tag.",
+                "error": "GitHub Releases lists no publication for this update channel.",
             }
 
-        latest_version = tag.lstrip("v")
-        release_url = data.get("html_url") or None
-        zip_url, sha256_url = self._find_asset_urls(data.get("assets", []), tag)
-        zip_name = f"CVMAnalytics-windows-v{latest_version}.zip"
-        sha256_name = f"{zip_name}.sha256"
-        remote_ver = _parse_version(tag)
-        local_ver = _parse_version(current_version)
-        update_available = remote_ver > local_ver and bool(zip_url)
-        snoozed = self.is_snoozed(tag) if remote_ver > local_ver else False
+        tag = selected["tag"]
+        zip_url = selected["zip_url"]
+        sha256_url = selected["sha256_url"]
+        zip_name = f"CVMAnalytics-windows-v{selected['version']}.zip"
 
         status = "up_to_date"
         error = None
-        can_apply = False
-        if remote_ver > local_ver and not zip_url:
+        if selected["newer"] and not zip_url:
             status = "asset_missing"
-            error = f"Latest release {tag} does not include {zip_name}."
-        elif snoozed:
+            error = f"Publication {tag} does not include {zip_name}."
+        elif selected["newer"] and self.is_snoozed(tag):
             status = "snoozed"
-        elif update_available:
+        elif selected["newer"]:
             status = "available"
-            can_apply = bool(zip_url)
 
         return {
             **base,
-            "latest_version": latest_version,
+            "latest_version": selected["version"],
             "latest_tag": tag,
-            "update_available": bool(update_available and not snoozed),
-            "release_url": release_url,
+            "update_available": status == "available",
+            "release_url": selected["release_url"],
             "zip_url": zip_url,
             "sha256_url": sha256_url,
             "asset_name": zip_name if zip_url else None,
-            "sha256_asset_name": sha256_name if sha256_url else None,
+            "sha256_asset_name": f"{zip_name}.sha256" if sha256_url else None,
             "status": status,
             "error": error,
-            "can_apply": can_apply and not snoozed,
+            "can_apply": status == "available",
+            "publication_kind": selected["kind"],
         }
 
-    def check_for_update(self, current_version: str) -> dict | None:
+    def check_for_update(
+        self, current_version: str, channel: str | None = None
+    ) -> dict | None:
         """
-        Query GitHub for the latest release and return update info if a newer
-        version is available and not snoozed. Returns None on network error or
+        Return update info if the user's update channel has a newer publication
+        with its package that is not snoozed. Returns None on network error or
         if already up to date.
         """
+        channel = channel or get_update_channel()
         try:
-            resp = requests.get(
-                f"{_API_BASE}/repos/{GITHUB_REPO}/releases/latest",
-                headers={"Accept": "application/vnd.github+json"},
-                timeout=10,
-            )
-            resp.raise_for_status()
+            publications = self._fetch_publications(channel)
         except Exception:
             return None
 
-        data = resp.json()
-        tag = data.get("tag_name", "")
-        if not tag:
+        selected = select_publication(publications, current_version, channel)
+        if not selected or not selected["newer"] or not selected["zip_url"]:
             return None
-
-        remote_ver = _parse_version(tag)
-        local_ver = _parse_version(current_version)
-        if remote_ver <= local_ver:
-            return None
-
-        if self.is_snoozed(tag):
-            return None
-
-        zip_url, sha256_url = self._find_asset_urls(data.get("assets", []), tag)
-        if not zip_url:
+        if self.is_snoozed(selected["tag"]):
             return None
 
         return {
-            "version": tag.lstrip("v"),
-            "tag": tag,
-            "zip_url": zip_url,
-            "sha256_url": sha256_url,
+            "version": selected["version"],
+            "tag": selected["tag"],
+            "zip_url": selected["zip_url"],
+            "sha256_url": selected["sha256_url"],
         }
 
     def is_snoozed(self, tag: str) -> bool:
@@ -311,6 +377,33 @@ class UpdateChecker:
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _fetch_publications(channel: str) -> list:
+        """List publications page by page until one the channel accepts appears.
+
+        GitHub lists the newest publications first, so the first page holding an
+        accepted publication decides the selection. At most _MAX_RELEASE_PAGES
+        pages are read; beyond them the channel reads as having no publication.
+        """
+        publications: list = []
+        for page in range(1, _MAX_RELEASE_PAGES + 1):
+            resp = requests.get(
+                f"{_API_BASE}/repos/{GITHUB_REPO}/releases",
+                params={"per_page": _RELEASES_PER_PAGE, "page": page},
+                headers={"Accept": "application/vnd.github+json"},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            listed = resp.json()
+            if not isinstance(listed, list):
+                raise ValueError("unexpected GitHub Releases response")
+            publications.extend(listed)
+            if len(listed) < _RELEASES_PER_PAGE or any(
+                _channel_version(item, channel) for item in listed
+            ):
+                break
+        return publications
 
     @staticmethod
     def _find_asset_urls(

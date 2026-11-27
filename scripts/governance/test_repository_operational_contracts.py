@@ -139,9 +139,12 @@ def test_release_workflow_builds_once_with_the_decided_version_and_never_rebuild
     assert jobs["build"]["env"]["RELEASE_VERSION"] == "${{ needs.decide.outputs.version }}"
     assert "CVMAnalytics-windows-v$env:RELEASE_VERSION.zip" in build
     assert "$roots -contains 'CVMAnalytics.exe' -and $roots -contains '_internal'" in build
+    assert '"/DAppVersion=$env:RELEASE_VERSION"' in build and "desktop\\installer.iss" in build
+    assert build.index("build_desktop.ps1") < build.index("Compress-Archive") < build.index("installer.iss")
     for name, job in jobs.items():
         if name != "build":
-            assert "build_desktop.ps1" not in str(job) and "Compress-Archive" not in str(job), name
+            for builder in ("build_desktop.ps1", "Compress-Archive", "installer.iss", "ISCC"):
+                assert builder not in str(job), (name, builder)
         assert "git commit" not in str(job) and "git push" not in str(job), name
         assert "softprops/action-gh-release" not in str(job), name
 
@@ -154,6 +157,7 @@ def test_release_workflow_publishes_the_built_candidate_with_one_shared_step_lis
         assert jobs[name]["steps"] == steps, name
         assert jobs[name]["needs"] == ["decide", "build"], name
         assert jobs[name]["env"]["EXPECTED_SHA256"] == "${{ needs.build.outputs.zip_sha256 }}", name
+        assert jobs[name]["env"]["EXPECTED_SETUP_SHA256"] == "${{ needs.build.outputs.setup_sha256 }}", name
     downloads = [step["with"] for step in steps if step.get("uses", "").startswith("actions/download-artifact@")]
     # Same run only (no run-id), so no older or foreign artifact can be substituted.
     assert downloads == [
@@ -163,6 +167,47 @@ def test_release_workflow_publishes_the_built_candidate_with_one_shared_step_lis
     publish = _run_source(jobs["publish-automatic"])
     assert "publication_workflow.py publish" in publish
     assert '--expected-sha256 "$EXPECTED_SHA256"' in publish
+    assert '--expected-setup-sha256 "$EXPECTED_SETUP_SHA256"' in publish
+
+
+def test_release_workflow_keeps_the_smoke_tested_installer_in_the_candidate() -> None:
+    build = _release_workflow()["jobs"]["build"]
+    steps = {step.get("id"): step for step in build["steps"]}
+
+    assert build["outputs"]["setup_sha256"] == "${{ steps.installer.outputs.setup_sha256 }}"
+    assert "setup_sha256=$hash" in steps["installer"]["run"]
+    smoke = _run_source(build)
+    for check in ("/VERYSILENT", "unins000.exe", "Documents\\CVMAnalytics", "Uninstall left $dir behind."):
+        assert check in smoke, check
+    upload = next(step for step in build["steps"] if step.get("uses", "").startswith("actions/upload-artifact@"))
+    assert upload["with"]["name"] == "publication-candidate"
+    assert upload["with"]["path"].splitlines() == [
+        f"CVMAnalytics-{name}-v${{{{ needs.decide.outputs.version }}}}.{ext}"
+        for name, extensions in (("windows", ("zip", "zip.sha256")), ("Setup", ("exe", "exe.sha256")))
+        for ext in extensions
+    ]
+
+
+def test_installer_is_per_user_and_its_uninstaller_never_touches_user_data() -> None:
+    script = (ROOT / "desktop/installer.iss").read_text(encoding="utf-8")
+    directives = dict(
+        line.split("=", 1) for line in script.splitlines() if re.match(r"^[A-Za-z]+=", line)
+    )
+
+    assert directives["PrivilegesRequired"] == "lowest"
+    assert "PrivilegesRequiredOverridesAllowed" not in directives  # never an elevated all-users install
+    assert directives["DefaultDirName"] == "{localappdata}\\Programs\\CVMAnalytics"
+    assert directives["AppVersion"] == "{#AppVersion}"
+    assert directives["OutputBaseFilename"] == "CVMAnalytics-Setup-v{#AppVersion}"
+    assert re.search(r'^Source: "\.\.\\dist\\CVMAnalytics\\\*"; DestDir: "\{app\}"', script, re.M)
+    assert re.search(r'^Name: "\{autoprograms\}\\CVM Analytics"', script, re.M)
+    assert re.search(r'^Name: "desktopicon";.*Flags: unchecked$', script, re.M)
+    # Deletions are limited to the two bundle entries the updater swaps, inside {app}.
+    deletions = re.findall(r'^Type: \w+; Name: "([^"]+)"', script, re.M)
+    assert set(deletions) == {"{app}\\_internal", "{app}\\CVMAnalytics.exe"}
+    lowered = "\n".join(line for line in script.lower().splitlines() if not line.startswith(";"))
+    for user_data in ("{userdocs}", "{commondocs}", "documents\\cvmanalytics", "{localappdata}\\cvmanalytics"):
+        assert user_data not in lowered, user_data
 
 
 def test_release_workflow_keeps_write_access_on_the_publish_jobs_and_approval_in_release_publication() -> None:
@@ -215,9 +260,34 @@ def test_release_docs_describe_build_once_publication_not_the_retired_gate() -> 
     assert "explicit" in release_process
 
 
+def test_candidate_test_command_verifies_before_launch_and_is_documented() -> None:
+    script = (ROOT / "scripts/release/open-candidate.ps1").read_text(encoding="utf-8")
+    uploads = {
+        step["with"]["name"]
+        for job in _release_workflow()["jobs"].values()
+        for step in job["steps"]
+        if step.get("uses", "").startswith("actions/upload-artifact@")
+    }
+
+    # The script reads the artifacts the release workflow actually uploads.
+    assert {"publication-candidate", "publication-decision"} <= uploads
+    assert '"publication-candidate", "publication-decision"' in script
+    assert "name=publication-candidate" in script  # how "latest" is resolved
+    assert "Refusing to open this candidate" in script
+    assert "Get-Process -Name CVMAnalytics" in script
+    assert "CVMAnalytics-candidates" in script
+    # Nothing is extracted or launched before the checksum matches.
+    assert script.index("Get-FileHash") < script.index("Expand-Archive") < script.index("Start-Process")
+    release_process = (ROOT / "docs/release-process.md").read_text(encoding="utf-8")
+    assert "## Testing a candidate" in release_process
+    assert "scripts/release/open-candidate.ps1" in release_process
+
+
 def test_release_and_ci_actions_are_full_sha_pinned() -> None:
     for relative_path in (
         ".github/workflows/release-desktop.yml",
+        ".github/workflows/promote-release.yml",
+        ".github/workflows/promotion-proposal.yml",
         ".github/workflows/ci.yml",
         ".github/workflows/pr-issue-guardrails.yml",
     ):
@@ -231,6 +301,76 @@ def test_release_and_ci_actions_are_full_sha_pinned() -> None:
         ]
         assert uses, relative_path
         assert all(re.fullmatch(r"[^@]+@[0-9a-f]{40}", action) for action in uses), relative_path
+
+
+def _workflow(relative_path: str) -> dict[str, object]:
+    workflow = yaml.safe_load((ROOT / relative_path).read_text(encoding="utf-8"))
+    workflow["on"] = workflow.pop("on", None) or workflow.pop(True)
+    return workflow
+
+
+def test_promotion_is_an_owner_dispatch_from_main_behind_release_publication() -> None:
+    workflow = _workflow(".github/workflows/promote-release.yml")
+    jobs = workflow["jobs"]
+
+    assert set(workflow["on"]) == {"workflow_dispatch"}
+    inputs = workflow["on"]["workflow_dispatch"]["inputs"]
+    assert set(inputs) == {"version"} and inputs["version"]["required"] is True
+    assert workflow["permissions"] == {"contents": "read"}
+    assert set(jobs) == {"check", "promote"}
+    assert jobs["check"]["permissions"] == {"contents": "read"} and "environment" not in jobs["check"]
+    assert jobs["promote"]["permissions"] == {"contents": "write"}
+    assert jobs["promote"]["environment"] == "release-publication"
+    assert jobs["promote"]["needs"] == "check"
+    assert jobs["promote"]["if"] == "github.ref == 'refs/heads/main'"
+    assert "${{ inputs.version }}" in jobs["promote"]["name"]  # the approval shows which version
+    # Never cancelled, and never in the publication group, whose newer runs cancel older ones.
+    assert workflow["concurrency"] == {"group": "release-promotion", "cancel-in-progress": False}
+
+
+def test_promotion_verifies_and_reuses_the_published_files_without_rebuilding() -> None:
+    jobs = _workflow(".github/workflows/promote-release.yml")["jobs"]
+
+    assert 'scripts/release/promotion_workflow.py verify --version "$VERSION"' in _run_source(jobs["check"])
+    assert 'scripts/release/promotion_workflow.py promote --version "$VERSION"' in _run_source(jobs["promote"])
+    for name, job in jobs.items():
+        assert "${{" not in _run_source(job), name
+        assert [step["env"]["VERSION"] for step in job["steps"] if "run" in step] == ["${{ inputs.version }}"], name
+        for forbidden in ("build_desktop.ps1", "Compress-Archive", "gh release create", "upload-artifact", "git tag", "git push"):
+            assert forbidden not in str(job), (name, forbidden)
+
+
+def test_promotion_proposal_runs_daily_never_promotes_and_dry_runs_on_dispatch() -> None:
+    workflow = _workflow(".github/workflows/promotion-proposal.yml")
+    triggers = workflow["on"]
+
+    assert set(triggers) == {"schedule", "workflow_dispatch"}
+    assert [entry["cron"].split()[2:] for entry in triggers["schedule"]] == [["*", "*", "*"]]
+    dry_run = triggers["workflow_dispatch"]["inputs"]["dry_run"]
+    assert dry_run["type"] == "boolean" and dry_run["default"] is True
+    assert workflow["permissions"] == {"contents": "read"}
+    (job,) = workflow["jobs"].values()
+    assert job["permissions"] == {"contents": "read", "issues": "write", "pull-requests": "read"}
+    assert "environment" not in job
+    run = _run_source(job)
+    for command in (
+        "scripts/release/promotion_workflow.py facts",
+        "scripts/release/publication_decision.py promote",
+        "scripts/release/promotion_workflow.py propose",
+    ):
+        assert command in run
+    assert "${{" not in run
+    assert "gh release" not in run and "promotion_workflow.py promote" not in run
+    step_env = next(step["env"] for step in job["steps"] if "run" in step)
+    assert step_env["DRY_RUN"] == "${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}"
+
+
+def test_release_docs_describe_promotion_and_blocking_bugs() -> None:
+    release_process = (ROOT / "docs/release-process.md").read_text(encoding="utf-8")
+    for text in ("promote-release.yml", "promotion-proposal.yml", "promotion-proposal", "30 days", "20 days"):
+        assert text in release_process, text
+    triage = (ROOT / "docs/agents/triage-labels.md").read_text(encoding="utf-8")
+    assert "priority:p0" in triage and "promotion" in triage
 
 
 def _run_pr_guardrail_script(body: str, issues: dict[int, dict[str, object]]) -> dict[str, object]:

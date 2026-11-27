@@ -1,8 +1,10 @@
-import { callBridge, getBridgeMode } from "../bridge/adapter";
+import { callBridge, getBridgeMode, whenBridgeReady } from "../bridge/adapter";
 import type {
   AppStatusPayload,
   LocalPathInfo,
   OpenStatusPathResult,
+  UpdateChannel,
+  UpdateCheckResult,
   UpdateProgressStatus,
 } from "../bridge/types";
 
@@ -44,11 +46,44 @@ export async function openStatusPath(
   return response;
 }
 
-export async function triggerCheckUpdate(): Promise<{ available: boolean; version?: string; zip_url?: string; error?: string }> {
+export const UPDATE_CHECK_KEY = ["update-check"] as const;
+
+/**
+ * Stored result of the last update check (startup, "Check now" or a channel
+ * change). Never contacts GitHub, so the shell may read and poll it. Waits for
+ * pywebview's injection first; null in browser preview.
+ */
+export async function fetchStoredUpdateCheck(): Promise<UpdateCheckResult | null> {
+  if ((await whenBridgeReady()) === "browser") return null;
+  return callBridge("check_update", { force: false });
+}
+
+/** Last known update status; `force` asks GitHub again (an explicit refresh). */
+export async function triggerCheckUpdate(params?: { force?: boolean }): Promise<UpdateCheckResult> {
   if (getBridgeMode() === "browser") {
     return { available: false, error: "Unavailable in browser preview mode." };
   }
-  return callBridge("check_update", {});
+  return callBridge("check_update", { force: params?.force ?? false });
+}
+
+export type UpdateChannelResult =
+  | { mode: "desktop"; channel: UpdateChannel }
+  | { mode: "browser"; channel: UpdateChannel; reason: string };
+
+export async function fetchUpdateChannel(): Promise<UpdateChannelResult> {
+  if (getBridgeMode() === "browser") {
+    return { mode: "browser", channel: "releases", reason: BROWSER_REASON };
+  }
+  const { channel } = await callBridge("get_update_channel", {});
+  return { mode: "desktop", channel };
+}
+
+export async function saveUpdateChannel(channel: UpdateChannel): Promise<UpdateChannel> {
+  const response = await callBridge("set_update_channel", { channel });
+  if (!response.ok) {
+    throw new Error(response.error || "The update channel was not saved.");
+  }
+  return response.channel;
 }
 
 export async function triggerApplyUpdate(): Promise<{ started: boolean; error?: string }> {

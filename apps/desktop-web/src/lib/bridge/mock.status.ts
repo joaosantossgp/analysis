@@ -6,6 +6,9 @@ import type {
   DatabaseDiagnostics,
   SettingsHealthSummary,
   StorageInventory,
+  UpdateChannel,
+  UpdateCheckResult,
+  UpdateProgressStatus,
 } from "./types";
 import { mockLocalDatabaseState } from "./mockLocalDatabase";
 import { MOCK_COUNTRY_KPI_VALUES } from "./mockEnergyFixtures";
@@ -88,10 +91,12 @@ const MOCK_APP_STATUS: AppStatusPayload = {
   },
   database: MOCK_DB_DIAGNOSTICS,
   update: {
-    current_version: "0.29.1",
-    latest_version: "0.29.1",
+    current_version: "0.29.2",
+    latest_version: "0.29.2",
     update_available: false,
     status: "up_to_date",
+    channel: "releases",
+    publication_kind: "release",
     apply_supported: false,
   },
   diagnostics: {
@@ -509,7 +514,111 @@ MOCK_SETTINGS_HEALTH.storage_inventory = {
 // Data update settings
 // ---------------------------------------------------------------------------
 
+/**
+ * Update check fixtures: an installed 0.29.2 against the publications that
+ * exist today (release 0.29.2, pre-release 0.30.0-rc.1), an offline check, a
+ * newer release and a postponed one. By default the mock answers by channel;
+ * pick a fixture for the shell announcement with
+ * `localStorage.setItem("cvm_mock_update", "release_available")` and reload.
+ */
+export const MOCK_UPDATE_SCENARIO_KEY = "cvm_mock_update";
+
+const MOCK_RELEASE_AVAILABLE: UpdateCheckResult = {
+  available: true,
+  version: "0.30.1",
+  zip_url: "[mock] CVMAnalytics-windows-v0.30.1.zip",
+  status: "available",
+  error: null,
+  channel: "releases",
+  publication_kind: "release",
+  checked_at: NOW,
+  current_version: "0.29.2",
+  latest_version: "0.30.1",
+  release_url: "https://github.com/joaosantossgp/analisys/releases",
+};
+
+export const MOCK_UPDATE_CHECKS: Record<UpdateChannel | "offline" | "release_available" | "snoozed", UpdateCheckResult> = {
+  releases: {
+    available: false,
+    status: "up_to_date",
+    error: null,
+    channel: "releases",
+    publication_kind: "release",
+    checked_at: NOW,
+    current_version: "0.29.2",
+    latest_version: "0.29.2",
+    release_url: null,
+  },
+  prereleases: {
+    available: true,
+    version: "0.30.0-rc.1",
+    zip_url: "[mock] CVMAnalytics-windows-v0.30.0-rc.1.zip",
+    status: "available",
+    error: null,
+    channel: "prereleases",
+    publication_kind: "pre-release",
+    checked_at: NOW,
+    current_version: "0.29.2",
+    latest_version: "0.30.0-rc.1",
+    release_url: null,
+  },
+  offline: {
+    available: false,
+    status: "check_failed",
+    error: "Could not check GitHub Releases: [mock] no network",
+    channel: "releases",
+    publication_kind: null,
+    checked_at: NOW,
+    current_version: "0.29.2",
+    latest_version: null,
+    release_url: null,
+  },
+  release_available: MOCK_RELEASE_AVAILABLE,
+  snoozed: postponeCheck(MOCK_RELEASE_AVAILABLE),
+};
+
+/** What check_update answers after "Later": the offer stays known, nothing to apply. */
+function postponeCheck(check: UpdateCheckResult): UpdateCheckResult {
+  return { ...check, available: false, version: undefined, zip_url: undefined, status: "snoozed" };
+}
+
+export const MOCK_UPDATE_PROGRESS: Record<"idle" | "downloading" | "error", UpdateProgressStatus> = {
+  idle: { status: "idle", percent: 0, error: null },
+  downloading: { status: "downloading", percent: 42, error: null },
+  error: {
+    status: "error",
+    percent: 0,
+    error: "[mock] Simulated failure before the swap: mock mode never replaces the app.",
+  },
+};
+
+// One step per get_update_progress poll after "Update now"; mock mode always ends in the error.
+const MOCK_APPLY_STEPS: UpdateProgressStatus[] = [
+  { status: "downloading", percent: 0, error: null },
+  { status: "downloading", percent: 18, error: null },
+  MOCK_UPDATE_PROGRESS.downloading,
+  { status: "downloading", percent: 71, error: null },
+  { status: "validating", percent: 90, error: null },
+  MOCK_UPDATE_PROGRESS.error,
+];
+
+function mockUpdateScenario(): keyof typeof MOCK_UPDATE_CHECKS | null {
+  try {
+    const key = globalThis.localStorage?.getItem(MOCK_UPDATE_SCENARIO_KEY) ?? null;
+    return key && key in MOCK_UPDATE_CHECKS ? (key as keyof typeof MOCK_UPDATE_CHECKS) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function createMockStatusMethods(): Partial<BridgeApi> {
+  let mockUpdateChannel: UpdateChannel = "releases";
+  let postponed = false;
+  let applyStep: number | null = null;
+  const currentCheck = (): UpdateCheckResult => {
+    const check = MOCK_UPDATE_CHECKS[mockUpdateScenario() ?? mockUpdateChannel];
+    return postponed && check.available ? postponeCheck(check) : check;
+  };
   return {
     ping: async () => ({ pong: true, ts: Date.now() / 1000 }),
 
@@ -575,13 +684,36 @@ export function createMockStatusMethods(): Partial<BridgeApi> {
       };
     },
 
-    check_update: async () => ({ available: false, version: "0.29.1" }),
+    check_update: async () => currentCheck(),
 
-    apply_update: async () => ({ started: false, error: "[mock] Software update not available in mock mode" }),
+    get_update_channel: async () => ({ channel: mockUpdateChannel }),
 
-    get_update_progress: async () => ({ status: "idle", percent: 0, error: null }),
+    set_update_channel: async ({ channel }) => {
+      if (channel !== "releases" && channel !== "prereleases") {
+        return { ok: false, error: "invalid_channel", channel: mockUpdateChannel };
+      }
+      mockUpdateChannel = channel;
+      return { ok: true, channel };
+    },
 
-    snooze_update: async () => ({ ok: true }),
+    apply_update: async () => {
+      if (!currentCheck().available) return { started: false, error: "no_update_available" };
+      applyStep = 0;
+      return { started: true };
+    },
+
+    get_update_progress: async () => {
+      if (applyStep === null) return MOCK_UPDATE_PROGRESS.idle;
+      const step = MOCK_APPLY_STEPS[applyStep];
+      applyStep = Math.min(applyStep + 1, MOCK_APPLY_STEPS.length - 1);
+      return step;
+    },
+
+    snooze_update: async () => {
+      if (!currentCheck().available) return { ok: false, error: "no_update_info" };
+      postponed = true;
+      return { ok: true };
+    },
 
     open_status_path: async () => ({
       ok: false,

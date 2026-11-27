@@ -14,6 +14,7 @@ import { describeLocalDatabaseState, LOCAL_DATABASE_TONE_COLOR } from "@/lib/loc
 import { OPEN_DATA_PANEL_EVENT } from "@/lib/localDatabase/panel";
 
 import { DataAction } from "./DataAction";
+import { ShellPopover } from "./ShellPopover";
 
 const MAX_LISTED_FAILURES = 5;
 
@@ -25,7 +26,6 @@ export function DataIndicator() {
   const query = useLocalDatabaseState();
   const online = useOnline();
   const [open, setOpen] = useState(false);
-  const panelRef = useRef<HTMLDivElement>(null);
   const state = query.isError
     ? ({ state: "unknown", error: String(query.error) } as LocalDatabaseState)
     : query.data;
@@ -44,16 +44,6 @@ export function DataIndicator() {
     window.addEventListener(OPEN_DATA_PANEL_EVENT, onOpen);
     return () => window.removeEventListener(OPEN_DATA_PANEL_EVENT, onOpen);
   }, []);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    panelRef.current?.focus();
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
 
   // Browser preview has no local database to describe.
   if (state === null) return null;
@@ -77,51 +67,9 @@ export function DataIndicator() {
         {d.short}
       </button>
       {open && state ? (
-        <>
-          <button
-            type="button"
-            tabIndex={-1}
-            aria-label="Close Data panel"
-            onClick={() => setOpen(false)}
-            style={{ position: "fixed", inset: 0, background: "transparent", cursor: "default", zIndex: "var(--z-drawer)" as unknown as number }}
-          />
-          <div
-            id="data-panel"
-            ref={panelRef}
-            role="dialog"
-            aria-label="Local database"
-            tabIndex={-1}
-            style={{
-              position: "fixed",
-              top: "calc(36px + 32px + 8px)",
-              right: 16,
-              width: "min(360px, calc(100vw - 32px))",
-              maxHeight: "calc(100vh - 116px)",
-              overflow: "auto",
-              background: "var(--color-surface-2)",
-              border: "1px solid var(--color-border-default)",
-              borderRadius: "var(--radius-md)",
-              boxShadow: "var(--shadow-overlay)",
-              zIndex: "var(--z-overlay)" as unknown as number,
-            }}
-          >
-            <div className="flex items-center justify-between px-3 py-2" style={{ borderBottom: "1px solid var(--color-border-subtle)" }}>
-              <h2 className="text-sm font-semibold" style={{ color: "var(--color-text-primary)" }}>Local database</h2>
-              <button
-                type="button"
-                aria-label="Close Data panel"
-                onClick={() => setOpen(false)}
-                className="rounded-sm px-1.5 text-sm hover:bg-[var(--color-surface-3)]"
-                style={{ color: "var(--color-text-tertiary)" }}
-              >
-                ×
-              </button>
-            </div>
-            <div className="p-3">
-              <DataPanelBody state={state} online={online} />
-            </div>
-          </div>
-        </>
+        <ShellPopover id="data-panel" title="Local database" closeLabel="Close Data panel" onClose={() => setOpen(false)}>
+          <DataPanelBody state={state} online={online} />
+        </ShellPopover>
       ) : null}
     </>
   );

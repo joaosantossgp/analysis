@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import hashlib
+import subprocess
+from pathlib import Path
+
 import pytest
 
 from scripts.release import publication_decision as pd
@@ -185,6 +189,9 @@ def _blockers(**over: object) -> list[str]:
         "actual_sha256": "f" * 64,
         "declared_sha256": "f" * 64,
         "expected_sha256": "f" * 64,
+        "setup_actual_sha256": "e" * 64,
+        "setup_declared_sha256": "e" * 64,
+        "setup_expected_sha256": "e" * 64,
         "dry_run": False,
     }
     return pw.publish_blockers(**(args | over))
@@ -200,6 +207,9 @@ def test_a_current_verified_candidate_has_no_blockers() -> None:
         {"actual_sha256": "0" * 64},  # not the file the build job produced
         {"declared_sha256": "0" * 64},
         {"expected_sha256": ""},
+        {"setup_actual_sha256": "0" * 64},  # the installer is not the file the build job produced
+        {"setup_declared_sha256": "0" * 64},
+        {"setup_expected_sha256": ""},
         {"releases": [_release("v0.30.1"), _release("v0.30.0")]},  # something was published since the decision
         {"tag_exists": True},
         {"on_main": False},
@@ -220,6 +230,7 @@ def test_dry_run_skips_only_the_main_branch_checks() -> None:
     dry = _facts(dry_run=True)
     assert _blockers(facts=dry, dry_run=True, on_main=False, ref="refs/heads/feature") == []
     assert _blockers(facts=dry, dry_run=True, actual_sha256="0" * 64)
+    assert _blockers(facts=dry, dry_run=True, setup_actual_sha256="0" * 64)
 
 
 def test_release_command_targets_the_exact_commit_with_the_decided_kind() -> None:
@@ -234,3 +245,74 @@ def test_release_command_targets_the_exact_commit_with_the_decided_kind() -> Non
     release = pw.release_command(release_facts, _decision(release_facts), "notes.md", [])
     assert release[3] == "v0.31.0"
     assert "--prerelease" not in release and "--latest=true" in release
+
+
+# --- Publish step, dry run (verifies and lists the files, creates nothing) -----
+
+_CANDIDATE = {"CVMAnalytics-windows-v0.30.1.zip": b"zip bytes", "CVMAnalytics-Setup-v0.30.1.exe": b"setup bytes"}
+
+
+def _sha(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _publish_dry_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, **expected: str) -> tuple[int, list[str]]:
+    """Exit code of `publish` in a dry run and the names of the files it would attach."""
+    for name, data in _CANDIDATE.items():
+        (tmp_path / name).write_bytes(data)
+        (tmp_path / f"{name}.sha256").write_text(f"{_sha(data)}  {name}", encoding="utf-8")
+    monkeypatch.setenv("DRY_RUN", "true")
+    monkeypatch.setattr(pw, "_releases", lambda repo: [_release("v0.30.0")])
+    monkeypatch.setattr(pw, "_gh_api", lambda *args, **kwargs: [])  # no tag v0.30.1 yet
+    monkeypatch.setattr(pw.subprocess, "run", lambda command, **kwargs: subprocess.CompletedProcess(command, 0))
+    attached: list[str] = []
+    release_command = pw.release_command
+
+    def recording_release_command(facts: dict, decision: dict, notes_file: str, files: list[str]) -> list[str]:
+        attached.extend(Path(path).name for path in files)
+        return release_command(facts, decision, notes_file, files)
+
+    monkeypatch.setattr(pw, "release_command", recording_release_command)
+    facts = _facts(dry_run=True)
+    code = pw.publish(
+        facts,
+        _decision(facts),
+        tmp_path,
+        expected.get("zip", _sha(b"zip bytes")),
+        expected.get("setup", _sha(b"setup bytes")),
+    )
+    return code, attached
+
+
+def test_publish_verifies_and_attaches_the_installer_and_its_unversioned_alias(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, attached = _publish_dry_run(tmp_path, monkeypatch)
+
+    assert code == 0
+    out = capsys.readouterr().out
+    assert f"Verified installer CVMAnalytics-Setup-v0.30.1.exe sha256 {_sha(b'setup bytes')}" in out
+    assert "Dry run: stopping before the tag and the release" in out
+    assert attached == [
+        "CVMAnalytics-windows-v0.30.1.zip",  # updater package: name and bytes unchanged
+        "CVMAnalytics-windows-v0.30.1.zip.sha256",
+        "CVMAnalytics-windows.zip",
+        "CVMAnalytics-windows.zip.sha256",
+        "CVMAnalytics-Setup-v0.30.1.exe",
+        "CVMAnalytics-Setup-v0.30.1.exe.sha256",
+        "CVMAnalytics-Setup.exe",
+        "CVMAnalytics-Setup.exe.sha256",
+    ]
+    for versioned, alias in (("CVMAnalytics-windows-v0.30.1.zip", "CVMAnalytics-windows.zip"), ("CVMAnalytics-Setup-v0.30.1.exe", "CVMAnalytics-Setup.exe")):
+        assert (tmp_path / alias).read_bytes() == (tmp_path / versioned).read_bytes()
+        assert (tmp_path / f"{alias}.sha256").read_text(encoding="utf-8") == f"{_sha(_CANDIDATE[versioned])}  {alias}"
+
+
+def test_publish_refuses_an_installer_that_is_not_the_built_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, attached = _publish_dry_run(tmp_path, monkeypatch, setup="0" * 64)
+
+    assert (code, attached) == (1, [])
+    assert "the installer is not the file the build job produced" in capsys.readouterr().err
+    assert not (tmp_path / "CVMAnalytics-Setup.exe").exists()
