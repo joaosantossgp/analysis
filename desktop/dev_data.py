@@ -57,6 +57,7 @@ def _git_worktree_list(repo_root: Path) -> str:
     """`git worktree list --porcelain`. Raises OSError, ValueError (undecodable path) or SubprocessError."""
     return subprocess.run(
         ["git", "-C", str(repo_root), "worktree", "list", "--porcelain"],
+        stdin=subprocess.DEVNULL,  # The supervisor reserves app stdin for its stop signal.
         capture_output=True,
         text=True,
         encoding="utf-8",

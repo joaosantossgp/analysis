@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 import threading
 import time
@@ -45,6 +46,14 @@ def control_dir(checkout: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
 
 
 # --- git status parsing --------------------------------------------------------
+
+
+@pytest.mark.parametrize("git_read", [dev_bridge._git_status, dev_data._git_worktree_list])
+def test_git_reads_do_not_inherit_the_supervisor_stop_pipe(git_read, tmp_path, monkeypatch):
+    run = Mock()
+    monkeypatch.setattr(subprocess, "run", run)
+    git_read(tmp_path)
+    assert run.call_args.kwargs.get("stdin") == subprocess.DEVNULL
 
 
 def test_git_status_parsing_reads_branch_commit_and_dirty_state() -> None:
