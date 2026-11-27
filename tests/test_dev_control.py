@@ -240,8 +240,13 @@ def test_switch_prints_the_install_progress_then_switches(
         progress("Creating Python environment")
         assert released.wait(5), "the test never released the install"
 
+    def release_once_the_step_was_published(d: FakeDevMode) -> None:
+        # The command read this status before its sleep, so it printed the step already.
+        if (dev_supervisor.read_status(d.control_dir).get("install") or {}).get("step") == "Creating Python environment":
+            released.set()
+
     dev = FakeDevMode(repo, tmp_path, monkeypatch, provision)
-    dev.on_tick = lambda d: released.set() if d.now >= 50 else None
+    dev.on_tick = release_once_the_step_was_published
 
     code, out, err = _run(repo, capsys, "switch", "wt-deps")
 
@@ -307,13 +312,18 @@ def test_unknown_target_is_refused_without_a_request(
 def test_switch_fails_when_the_supervisor_does_not_confirm(
     repo: dict[str, Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    FakeDevMode(repo, tmp_path, monkeypatch)
+    dev_mode = FakeDevMode(repo, tmp_path, monkeypatch)
     monkeypatch.setattr(dev_control.time, "sleep", lambda _seconds: None)  # the supervisor never polls
     monkeypatch.setattr(dev_control, "CONFIRM_TIMEOUT_SECONDS", 0.0)
 
     code, _out, err = _run(repo, capsys, "switch", "wt-other")
-
     assert (code, err) == (1, "error: The dev supervisor did not confirm the switch.\n")
+
+    # The same failure twice leaves the notice unchanged; the timeout still shows it.
+    notice = "Switching to wt-other failed: could not start the app: node missing. The window is back on analisys."
+    dev_supervisor.write_status(dev_mode.control_dir, {"worktree": str(repo["main"]), "worktree_notice": notice})
+    code, _out, err = _run(repo, capsys, "switch", "wt-other")
+    assert (code, err) == (1, f"error: The dev supervisor did not confirm the switch. Its last notice: {notice}\n")
 
 
 def test_switch_fails_when_dev_mode_ends_before_it_is_done(

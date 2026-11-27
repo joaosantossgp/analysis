@@ -256,7 +256,9 @@ def _wait_for_switch(record: dict[str, Any], name: str, path: Path, notice_befor
             # Refused, install failed, the app failed on the worktree, or the worktree was removed.
             raise ControlError(_notice(state) or f"The window did not switch to {name}.")
         elif time.monotonic() >= deadline:
-            raise ControlError("The dev supervisor did not confirm the switch.")
+            # Also reached when the switch failed with the same notice as the last one.
+            last = _notice(state)
+            raise ControlError("The dev supervisor did not confirm the switch." + (f" Its last notice: {last}" if last else ""))
         if line and line != shown:
             _say(line)
             shown = line
