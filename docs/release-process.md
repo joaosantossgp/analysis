@@ -173,6 +173,64 @@ Green CI is not approval. There are two ways to approve:
   On the owner's explicit rejection, post `state=rejected` the same way. Report
   the run URL and the result afterwards.
 
+## Promotion
+
+A pre-release that has been in use becomes a release by **promotion**: the same
+GitHub release, tag and files are marked as a release and as "latest", with no
+rebuild and no new number. Installed apps on "releases only" are then offered
+it. Every promotion waits for the owner's approval.
+
+**The 30-day / 20-day rule.** When the oldest unpromoted pre-release (one newer
+than the latest release) is 30 days old, the newest pre-release that is at least
+20 days old is proposed. Younger pre-releases wait for the next cycle. If the
+chosen pre-release has a blocking bug, the first newer pre-release without one is
+proposed instead, even if it is younger than 20 days; if every newer one is
+blocked too, nothing is proposed. Legacy `-rc.N` pre-releases are never proposed
+or promoted. The rule lives in `publication_decision.py promote`
+(`PROMOTION_TRIGGER_DAYS`, `PROMOTION_MIN_AGE_DAYS`). Blocking bugs are issues
+labelled `bug` and `priority:p0`; how they block is in
+[triage labels](agents/triage-labels.md#blocking-bugs).
+
+**The proposal.** `.github/workflows/promotion-proposal.yml` runs daily and on
+dispatch. `scripts/release/promotion_workflow.py facts` collects the
+publications from the releases API, with the PRs listed in each publication's
+notes, and the blocking bugs; `publication_decision.py promote` picks; and
+`promotion_workflow.py propose` keeps one open issue labelled
+`promotion-proposal` (created if missing), titled `Promotion proposed:
+v<version>`. The issue names the version, its age, the oldest unpromoted
+pre-release, any pre-release passed over for a blocking bug, and the PRs it
+carries since the latest release. When the proposed version changes, the
+workflow comments on the issue; when nothing is proposed, it closes the issue
+with a comment saying why. It never promotes: its token can write issues and
+nothing else. A dispatch defaults to `dry_run`, which prints the proposal and
+the issue changes without making them; a run that changes issues must come from
+`main`.
+
+**Promoting.** The owner dispatches `.github/workflows/promote-release.yml` from
+`main` with the version, whether or not it was proposed, at any time. An agent
+may dispatch it when the owner asks for that version; dispatching is not
+approval.
+
+```powershell
+gh workflow run promote-release.yml --repo joaosantossgp/analysis --ref main -f version=<version>
+```
+
+1. `check` (read-only) refuses a version that is not a published pre-release, a
+   legacy `-rc.N` tag, or a version lower than or equal to the latest release.
+   It downloads the publication's files, checks the versioned ZIP against its
+   `.sha256` and that `CVMAnalytics-windows.zip` holds the same bytes. Its job
+   summary is the approval request.
+2. `promote` waits in the `release-publication` environment. After approval it
+   repeats every check, runs `gh release edit v<version> --prerelease=false
+   --latest`, and confirms that `releases/latest` now reads back that tag.
+
+Approve or reject as for a publication (above), with
+`--workflow promote-release.yml` in the agent commands; the waiting job's name
+shows the version. Rejecting ends the run and changes nothing. Promotion has its
+own concurrency group, so a publication run never cancels a pending promotion.
+The next daily proposal run closes the proposal issue once the version is
+promoted.
+
 ## Remote protection
 
 The approval rests on remote configuration that this workflow does not change:
@@ -181,17 +239,14 @@ required), and `release-publication` allows deployments from protected
 branches only, with owner `joaosantossgp` as required reviewer and no admin
 bypass. Exact settings, read-back date and solo-maintainer limits:
 [remote publication protection](build-release.md#remote-publication-protection).
-Do not weaken these, rename the environment, or let a publish job run outside
-it when approval is required.
+Do not weaken these, rename the environment, or let a publish or promote job run
+outside it when approval is required.
 
 ## Not yet in place
 
 ADR 0011 is delivered in parts (goal #623). Still to land: the one-command
-candidate test (#630), promotion of a tested pre-release to a release and the
-time-based proposal (#631), the `Setup.exe` installer (#632), retention of old
-pre-releases (#634), and the first real publication `0.30.0` (#633). Until
-promotion lands, a release is published only directly, by a `release` or
-`hotfix` class.
+candidate test (#630), the `Setup.exe` installer (#632), retention of old
+pre-releases (#634), and the first real publication `0.30.0` (#633).
 
 ## Publication decision module
 
@@ -204,5 +259,5 @@ its docstring):
   approval is required, with the PRs and risk paths behind the answer. The
   publication workflow calls it.
 - `promote`: from the dated publications and the blocking bugs, it answers
-  which pre-release to propose for promotion, if any. Nothing calls it until
-  #631.
+  which pre-release to propose for promotion, if any. The promotion proposal
+  workflow calls it.

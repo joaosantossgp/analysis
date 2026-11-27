@@ -1,0 +1,53 @@
+name: Promotion Proposal
+
+# Time-based promotion proposal (ADR 0011, issue #631). Daily, it asks the
+# decision module (publication_decision.py promote) which pre-release, if any,
+# to propose as a release, and keeps one issue labelled promotion-proposal in
+# step: opened or updated with the proposal, closed with a comment when nothing
+# is proposed. It never promotes: promotion is promote-release.yml, behind the
+# owner's approval. Contract: docs/release-process.md.
+
+on:
+  schedule:
+    - cron: "17 9 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Print the proposal and the issue changes without creating, editing or closing issues."
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: promotion-proposal
+  cancel-in-progress: false
+
+jobs:
+  propose:
+    name: Propose a promotion
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # tags, to find the first publication that contains a bug's fix
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+
+      - name: Collect facts, pick, and update the proposal issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          python scripts/release/promotion_workflow.py facts > facts.json
+          python scripts/release/publication_decision.py promote --input facts.json > pick.json
+          python scripts/release/promotion_workflow.py propose --facts facts.json --pick pick.json
