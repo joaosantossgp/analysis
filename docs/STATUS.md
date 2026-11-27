@@ -1,21 +1,25 @@
 # Project Status
 
 Current snapshot, updated when release state, active work or a major decision changes.
-Keep detail in the owning contract or dated evidence. Last updated: 2026-11-26.
+Keep detail in the owning contract or dated evidence. Last updated: 2026-11-27.
 
 ## Version and releases
 
-- Runtime version: `0.30.0-rc.1` (`desktop/__version__.py`).
-- Latest stable: `v0.29.2` (2026-07-09); prerelease: `v0.30.0-rc.1` (2026-07-16).
-- Later source changes are not a new published release yet.
-- Publishing follows [ADR 0011](decisions/0011-build-once-publications-and-update-channels.md):
-  since #629, a merge to `main` publishes by shipping class through the
-  build-once workflow, a low-risk pre-release with no approval and everything
-  else after the owner's approval in `release-publication`
-  ([release process](release-process.md)). The first publication, `0.30.0`, is
-  #633; promotion, installer, candidate test command and retention are #630-#632
-  and #634. Protection (`main` branch protection + `release-publication`
-  required reviewer) re-verified 2026-11-27; see
+- Latest release: `v0.30.3` (2026-11-27, promoted from the pre-release of the
+  same day; ships `CVMAnalytics-Setup.exe`). Pre-releases on 2026-11-27:
+  `v0.30.0` (first publication under ADR 0011, owner-approved after packaged
+  checks), `v0.30.1` (no approval: no risk paths), `v0.30.2` (owner-approved:
+  updater fix #671), `v0.30.3` (no approval). Previous release `v0.29.2`
+  (2026-07-09). Packaged evidence: #633.
+- The version is stamped into each publication at build time;
+  `desktop/__version__.py` is the source-tree fallback only.
+- Publishing follows [ADR 0011](decisions/0011-build-once-publications-and-update-channels.md)
+  and the [release process](release-process.md): a merge to `main` publishes by
+  shipping class through the build-once workflow, a low-risk pre-release with no
+  approval and everything else after the owner's approval in
+  `release-publication`; promotion, `Setup.exe` and pre-release retention are in
+  place. Protection (`main` branch protection + `release-publication` required
+  reviewer) re-verified 2026-11-27; see
   [remote publication protection](build-release.md#remote-publication-protection).
 
 ## Production and external writes
