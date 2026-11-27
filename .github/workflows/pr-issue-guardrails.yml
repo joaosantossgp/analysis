@@ -1,8 +1,9 @@
 name: PR Issue Guardrails
 
-# Every PR references at least one issue. A PR may close several task or bug
-# issues. Goal issues are closed by hand when their sub-issues are done, so a PR
-# references them with `Refs #n` / `Part of #n`, never a closing keyword.
+# Every PR references at least one issue and declares its documentation impact.
+# A PR may close several task or bug issues. Goal issues are closed by hand when
+# their sub-issues are done, so a PR references them with `Refs #n` / `Part of #n`,
+# never a closing keyword.
 # Reads the PR body and issue labels only; never checks out PR code.
 
 on:
@@ -33,6 +34,15 @@ jobs:
 
             if (closing.size + linked.size === 0) {
               core.setFailed("Reference at least one issue in the PR body: `Closes #n` for tasks/bugs, `Refs #n` for goals or related issues.");
+              return;
+            }
+
+            const docImpactMatch = body.match(/(?:^|\r?\n)##\s+Documentation impact[ \t]*(?:\r?\n|$)([\s\S]*?)(?=\r?\n##\s+|$)/i);
+            const docImpactText = docImpactMatch
+              ? docImpactMatch[1].replace(/<!--[\s\S]*?-->/g, "").trim()
+              : "";
+            if (!docImpactText) {
+              core.setFailed("Include a non-empty `## Documentation impact` section naming updated owner docs or explaining why no documentation update is needed.");
               return;
             }
 
