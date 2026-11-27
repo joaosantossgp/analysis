@@ -103,6 +103,7 @@ describe("UpdatePanelBody", () => {
   it("says what failed, that the current version keeps running, and offers a retry", () => {
     const html = renderPanel({ progress: P.error, error: P.error.error });
     expect(html).toContain('role="alert"');
+    expect(html).toMatch(/role="alert" class="[^"]*\[overflow-wrap:anywhere\]/); // long URLs wrap inside the panel (#673)
     expect(html).toContain("Update failed: [mock] Simulated failure before the swap");
     expect(html).toContain("keeps running");
     expect(html).toContain(">Try again<");
