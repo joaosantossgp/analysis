@@ -100,6 +100,11 @@ without a restart. Closing the window ends dev mode. See
 [auto-restart](dev-runtime-and-data-paths.md#auto-restart-on-python-changes-dev-supervisor)
 for the details and limits.
 
+The floating dot at the bottom right opens the **dev panel** (also
+`Ctrl+Shift+D`): which worktree, branch, commit and dev data the window runs, a
+restart button and an automatic-restart switch. See
+[dev panel](dev-runtime-and-data-paths.md#dev-panel).
+
 With no path overrides or release-data opt-in, desktop dev uses the **shared
 dev data** of the main checkout, also when launched from a git worktree:
 

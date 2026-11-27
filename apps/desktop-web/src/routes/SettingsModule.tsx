@@ -3,6 +3,7 @@ import { Link, NavLink } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { PageHeader } from "@/components/PageHeader";
+import { UpdateChannelPanel } from "@/components/settings/UpdateChannelPanel";
 import { StateBanner } from "@/components/feedback/StateBanner";
 import { Panel } from "@/components/surface/Panel";
 import { Button } from "@/components/ui/Button";
@@ -124,7 +125,10 @@ export function SettingsModule({ section }: SettingsModuleProps) {
               initialView={section === "imports" ? "imports" : section === "indicator-sources" ? "indicators" : "sources"}
             />
           ) : section === "app" ? (
-            <SettingsApp loading={loading} summary={summary} />
+            <>
+              <UpdateChannelPanel bridgeReady={bridgeReady} />
+              <SettingsApp loading={loading} summary={summary} />
+            </>
           ) : (
             <SettingsNestedPage intro={<DiagnosticsIntro summary={summary} />}>
               <AdvancedEvidence summary={summary} />

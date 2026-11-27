@@ -1,4 +1,5 @@
 import type { LocalDatabaseState } from "./types.localDatabase";
+import type { DevAutoRestartResponse, DevContextResponse, DevRestartResponse } from "./types.dev";
 import type {
   EnergyKPIHealthResponse,
   EnergyKPICatalogParams,
@@ -259,6 +260,9 @@ import type {
   StorageInventory,
   StorageScanStatus,
   UpdateProgressStatus,
+  UpdateChannel,
+  UpdateCheckResult,
+  SetUpdateChannelResult,
 } from "./types.status";
 
 export type * from "./types.companies";
@@ -372,7 +376,9 @@ export interface BridgeApi {
     params: Record<string, unknown>,
   ): Promise<{ ok: boolean; error?: string; classification?: CompanyClassification }>;
   get_sub_sector_detail(params: Record<string, unknown>): Promise<SectorDetailResponse>;
-  check_update(params?: Record<string, unknown>): Promise<{ available: boolean; version?: string; zip_url?: string; status?: string; error?: string }>;
+  check_update(params?: Record<string, unknown>): Promise<UpdateCheckResult>;
+  get_update_channel(params?: Record<string, unknown>): Promise<{ channel: UpdateChannel }>;
+  set_update_channel(params: { channel: string }): Promise<SetUpdateChannelResult>;
   apply_update(params?: Record<string, unknown>): Promise<{ started: boolean; error?: string }>;
   get_update_progress(params?: Record<string, unknown>): Promise<UpdateProgressStatus>;
   snooze_update(params?: Record<string, unknown>): Promise<{ ok: boolean; error?: string }>;
@@ -382,6 +388,10 @@ export interface BridgeApi {
   dev_simulate_refresh(params: { mode: "success" | "partial" | "fail" | "slow" }): Promise<{ ok: boolean; mode: string; job_id?: string; error?: string }>;
   dev_start_small_setup(params?: { count?: number }): Promise<{ status: string; job_id?: string; message?: string }>;
   dev_get_raw_state(params?: Record<string, unknown>): Promise<{ app_settings?: Array<{ key: string; value: string | null; updated_at: string | null }>; refresh_jobs?: Array<Record<string, unknown>>; error?: string }>;
+  // Dev panel: dev mode only, refused in the packaged app (types.dev.ts)
+  dev_get_context(params?: Record<string, unknown>): Promise<DevContextResponse>;
+  dev_restart(params?: Record<string, unknown>): Promise<DevRestartResponse>;
+  dev_set_auto_restart(params: { enabled: boolean }): Promise<DevAutoRestartResponse>;
   // Energy KPI — country-level macro layer
   get_kpi_catalog(params?: EnergyKPICatalogParams): Promise<EnergyKPICatalogResponse>;
   get_country_kpi_series(params: CountryKPISeriesParams): Promise<CountryKPISeriesResponse>;

@@ -20,20 +20,84 @@ class StatusUpdatesMixin:
             logger.exception("startup update check failed")
 
     def check_update(self, params=None) -> dict:
+        """Last known update status. `force` runs a new check against GitHub."""
+        from desktop.__version__ import __version__  # noqa: PLC0415
+        from desktop.updater import get_update_channel  # noqa: PLC0415
+
+        if self._truthy((params or {}).get("force", False)):
+            self._get_software_update_status(force=True)
         with self._update_lock:
             info = self._update_info
             status = dict(self._latest_update_status or {})
-        if not info:
+        result = {
+            "available": False,
+            "status": status.get("status") or "not_checked",
+            "error": status.get("error"),
+            "channel": status.get("channel") or get_update_channel(),
+            "publication_kind": status.get("publication_kind"),
+            "checked_at": status.get("checked_at"),
+            "current_version": status.get("current_version") or __version__,
+            "latest_version": status.get("latest_version"),
+            "release_url": status.get("release_url"),
+        }
+        if info:
+            result.update(available=True, version=info["version"], zip_url=info["zip_url"])
+        return self._sanitize_for_json(result)
+
+    def get_update_channel(self, params=None) -> dict:
+        from desktop.updater import get_update_channel  # noqa: PLC0415
+
+        return self._sanitize_for_json({"channel": get_update_channel()})
+
+    def set_update_channel(self, params=None) -> dict:
+        """Store the update channel, then check GitHub once for it.
+
+        Choosing a channel is an explicit user action, so it runs the same check
+        as "Check now" and stores the result; later status reads (get_app_status,
+        check_update) reuse it and never contact GitHub because of the change.
+        """
+        from desktop.__version__ import __version__  # noqa: PLC0415
+        from desktop.updater import _log as _update_log  # noqa: PLC0415
+        from desktop.updater import get_update_channel, set_update_channel  # noqa: PLC0415
+
+        if not self._is_write_allowed():
             return self._sanitize_for_json({
-                "available": False,
-                "status": status.get("status") or "not_checked",
-                "error": status.get("error"),
+                **self._write_blocked_response("set_update_channel"),
+                "channel": get_update_channel(),
             })
-        return self._sanitize_for_json({
-            "available": True,
-            "version": info["version"],
-            "zip_url": info["zip_url"],
-        })
+        channel = str((params or {}).get("channel") or "")
+        # One lock for the write and the reset, so a check finishing now cannot
+        # store an offer for the previous channel (see _get_software_update_status).
+        with self._update_lock:
+            try:
+                set_update_channel(channel)
+            except ValueError:
+                return self._sanitize_for_json({
+                    "ok": False, "error": "invalid_channel", "channel": get_update_channel(),
+                })
+            except OSError as exc:
+                return self._sanitize_for_json({
+                    "ok": False, "error": str(exc), "channel": get_update_channel(),
+                })
+            self._update_info = None
+            # Never None: an empty cache makes the next status read call GitHub.
+            # Reads during the check below see the new channel as not checked yet.
+            self._latest_update_status = {
+                "current_version": __version__,
+                "latest_version": None,
+                "latest_tag": None,
+                "update_available": False,
+                "release_url": None,
+                "checked_at": None,
+                "status": "unknown",
+                "error": None,
+                "can_apply": False,
+                "channel": channel,
+                "publication_kind": None,
+            }
+        status = self._get_software_update_status(force=True)
+        _update_log(f"update channel set to {channel}; check result: {status.get('status')}")
+        return self._sanitize_for_json({"ok": True, "channel": channel})
 
     def apply_update(self, params=None) -> dict:
         if not self._is_write_allowed():
@@ -111,25 +175,33 @@ class StatusUpdatesMixin:
             })
         try:
             from desktop.__version__ import __version__  # noqa: PLC0415
-            from desktop.updater import UpdateChecker  # noqa: PLC0415
+            from desktop.updater import UpdateChecker, get_update_channel  # noqa: PLC0415
 
             checker = UpdateChecker()
             status = checker.get_latest_release_status(__version__)
+            update_info = None
             if status.get("update_available") and status.get("zip_url"):
                 update_info = {
                     "version": status.get("latest_version"),
                     "tag": status.get("latest_tag"),
                     "zip_url": status.get("zip_url"),
                     "sha256_url": status.get("sha256_url"),
+                    "publication_kind": status.get("publication_kind"),
                 }
-                with self._update_lock:
+            with self._update_lock:
+                stale = status.get("channel") not in (None, get_update_channel())
+                if update_info and not stale:
                     self._update_info = update_info
-            elif status.get("status") == "check_failed" and cached_info:
+            if stale:
+                # The channel changed while GitHub answered: check the new one instead.
+                return self._get_software_update_status(force=True)
+            if status.get("status") == "check_failed" and cached_info:
                 status = {
                     **status,
                     "status": "available_cached",
                     "latest_version": cached_info.get("version"),
                     "latest_tag": cached_info.get("tag"),
+                    "publication_kind": cached_info.get("publication_kind"),
                     "zip_url": cached_info.get("zip_url"),
                     "sha256_url": cached_info.get("sha256_url"),
                     "update_available": True,
@@ -144,7 +216,7 @@ class StatusUpdatesMixin:
                 "apply_supported": True,
             })
         except Exception as exc:
-            return self._sanitize_for_json({
+            status = {
                 "current_version": None,
                 "latest_version": None,
                 "latest_tag": None,
@@ -153,6 +225,12 @@ class StatusUpdatesMixin:
                 "checked_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                 "status": "check_failed",
                 "error": f"Could not check GitHub Releases: {exc}",
+            }
+            # Stored like any failed check, so later reads do not retry GitHub.
+            with self._update_lock:
+                self._latest_update_status = dict(status)
+            return self._sanitize_for_json({
+                **status,
                 "progress": progress,
                 "apply_supported": True,
             })
