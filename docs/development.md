@@ -57,10 +57,18 @@ python -m venv .venv
 ```
 
 On non-Windows hosts, use `.venv/bin/python` in place of
-`.\.venv\Scripts\python.exe`. Commands run from the repository root. For isolated
-fixture tests, remove any inherited production `DATABASE_URL`, `SQLITE_PATH` or
-`CVM_*` path overrides from the test process; do not point tests at user data.
-Do not clear these settings globally or change the user's configured database.
+`.\.venv\Scripts\python.exe`. Commands run from the repository root.
+
+Every pytest run is isolated from user data by the root `conftest.py`: inside the
+test process only, it removes inherited `DATABASE_URL`, `SQLITE_PATH`, `CVM_*` and
+`CVMANALYTICS_*` overrides and points `USERPROFILE`, `HOME` and `LOCALAPPDATA` at a
+per-session temp folder, so default data paths never resolve to the installed
+app's `Documents\CVMAnalytics` or `%LOCALAPPDATA%\CVMAnalytics`. The run fails if
+a test opens, creates or removes a file under those real folders. A test that
+needs specific paths sets them itself (`monkeypatch.setenv`, or
+`build_settings(project_root=tmp_path)`); API tests against Postgres use
+`API_TEST_DATABASE_URL`. Do not clear these settings globally or change the
+user's configured database.
 
 ## Isolated Worktree Bootstrap
 
