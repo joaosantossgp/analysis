@@ -257,7 +257,10 @@ def _git(*args: str) -> str:
 
 
 def _gh_api(path: str, jq: str, paginate: bool = True) -> list:
-    """One JSON value per output line of `gh api --jq`."""
+    """One JSON value per output line of `gh api --jq`.
+
+    `--jq` prints strings raw, so the filter must yield numbers or objects.
+    """
     out = _run("gh", "api", path, *(["--paginate"] if paginate else []), "--jq", jq)
     return [json.loads(line) for line in out.splitlines() if line.strip()]
 
@@ -341,7 +344,10 @@ def publish(facts: dict, decision: dict, package_dir: Path, expected_sha256: str
         facts=facts,
         decision=decision,
         releases=releases,
-        tag_exists=f"refs/tags/{tag}" in _gh_api(f"repos/{repo}/git/matching-refs/tags/{tag}", ".[].ref"),
+        tag_exists=any(  # matching-refs matches by prefix: v0.30.0 also returns v0.30.0-rc.1
+            ref["ref"] == f"refs/tags/{tag}"
+            for ref in _gh_api(f"repos/{repo}/git/matching-refs/tags/{tag}", ".[] | {ref}")
+        ),
         on_main=subprocess.run(
             ["git", "merge-base", "--is-ancestor", facts["candidate_sha"], "origin/main"]
         ).returncode == 0,
