@@ -112,7 +112,7 @@ work, PRs deliver it.
   (`docs/dev-runtime-and-data-paths.md`).
 - **Dev mode window:** the owner's open dev mode window is shared by every
   chat. Run `python -m desktop.dev_control switch` from your worktree root only
-  when the owner asks to see your work ("show me", "mostra aí"), never on your
+  when the owner asks to see your work (for example "show me"), never on your
   own. `python -m desktop.dev_control status` (which worktree, branch and data
   mode the window runs) is free to run anytime. Both exit 1 with the reason
   when no dev mode is running (`docs/dev-runtime-and-data-paths.md#agent-command`).
