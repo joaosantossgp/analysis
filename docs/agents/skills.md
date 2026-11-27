@@ -62,12 +62,12 @@ rules override duplicate skill templates. In particular:
   Ponytail simplification advice.
 - Issue tracking and triage are configured in `docs/agents/issue-tracker.md`
   and `docs/agents/triage-labels.md`; do not run upstream setup automatically.
-- The [PR template](../../.github/PULL_REQUEST_TEMPLATE.md) documentation-impact
-  contract also applies when using the vendored `pr` skill: include a
-  **Documentation impact** section naming the updated owner docs or explaining
-  why no update is needed. Use the
-  [Documentation Gate](../PRODUCT_DEVELOPMENT_CHECKLIST.md#12-documentation-gate)
-  to select those owners.
+- [`.github/PULL_REQUEST_TEMPLATE.md`](../../.github/PULL_REQUEST_TEMPLATE.md)
+  is the canonical default PR body (`Summary`, `Closes/Refs`, `Documentation
+  impact`, `Test plan`, `Notes`). Use the vendored `pr` skill's visuals or
+  `Merge Danger` section only as optional add-ons for complex or high-risk PRs,
+  always preserving the **Documentation impact** section per the
+  [Documentation Gate](../PRODUCT_DEVELOPMENT_CHECKLIST.md#12-documentation-gate).
 
 Keep upstream files byte-exact. Record project adaptations in `AGENTS.md` or
 this document, not inside downloaded skills. Installing these files does not
