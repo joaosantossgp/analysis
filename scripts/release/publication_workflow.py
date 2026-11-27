@@ -8,7 +8,8 @@ that module needs, reports its answer, and publishes the built candidate.
     python scripts/release/publication_decision.py decide --input facts.json > decision.json
     python scripts/release/publication_workflow.py report --facts facts.json --decision decision.json
     python scripts/release/publication_workflow.py publish --facts facts.json --decision decision.json \
-        --package-dir candidate --expected-sha256 <hash from the build job>
+        --package-dir candidate --expected-sha256 <ZIP hash from the build job> \
+        --expected-setup-sha256 <installer hash from the build job>
 
 `facts` and `publish` call `git` and `gh` (GH_TOKEN, GITHUB_REPOSITORY and
 GITHUB_REF come from the workflow). DRY_RUN=true collects the facts for the
@@ -204,16 +205,23 @@ def publish_blockers(
     actual_sha256: str,
     declared_sha256: str,
     expected_sha256: str,
+    setup_actual_sha256: str,
+    setup_declared_sha256: str,
+    setup_expected_sha256: str,
     dry_run: bool,
 ) -> list[str]:
     """Every reason the candidate must not be published now. Empty means publish."""
     blockers = []
     if not decision["publish"]:
         blockers.append("the decision says there is nothing to publish")
-    if actual_sha256 != declared_sha256:
-        blockers.append("the ZIP does not match its .sha256 file")
-    if actual_sha256 != expected_sha256:
-        blockers.append("the ZIP is not the file the build job produced")
+    for name, actual, declared, expected in (
+        ("ZIP", actual_sha256, declared_sha256, expected_sha256),
+        ("installer", setup_actual_sha256, setup_declared_sha256, setup_expected_sha256),
+    ):
+        if actual != declared:
+            blockers.append(f"the {name} does not match its .sha256 file")
+        if actual != expected:
+            blockers.append(f"the {name} is not the file the build job produced")
     current = last_publication(releases)
     if current != facts["last_publication"]:
         blockers.append(
@@ -331,13 +339,18 @@ def collect_facts() -> dict:
     }
 
 
-def publish(facts: dict, decision: dict, package_dir: Path, expected_sha256: str) -> int:
+def _declared_sha256(path: Path) -> str:
+    return path.with_name(f"{path.name}.sha256").read_text(encoding="utf-8-sig").split()[0].lower()
+
+
+def publish(facts: dict, decision: dict, package_dir: Path, expected_sha256: str, expected_setup_sha256: str) -> int:
     repo = facts["repository"]
     dry_run = _flag("DRY_RUN")
     tag = f"v{decision['version']}"
     package = package_dir / f"CVMAnalytics-windows-{tag}.zip"
-    checksum = package_dir / f"{package.name}.sha256"
+    setup = package_dir / f"CVMAnalytics-Setup-{tag}.exe"
     actual = hashlib.sha256(package.read_bytes()).hexdigest()
+    setup_actual = hashlib.sha256(setup.read_bytes()).hexdigest()
     releases = _releases(repo)
 
     blockers = publish_blockers(
@@ -353,24 +366,34 @@ def publish(facts: dict, decision: dict, package_dir: Path, expected_sha256: str
         ).returncode == 0,
         ref=os.environ.get("GITHUB_REF", ""),
         actual_sha256=actual,
-        declared_sha256=checksum.read_text(encoding="utf-8-sig").split()[0].lower(),
+        declared_sha256=_declared_sha256(package),
         expected_sha256=expected_sha256.strip().lower(),
+        setup_actual_sha256=setup_actual,
+        setup_declared_sha256=_declared_sha256(setup),
+        setup_expected_sha256=expected_setup_sha256.strip().lower(),
         dry_run=dry_run,
     )
     if blockers:
         print("Not published:\n- " + "\n- ".join(blockers), file=sys.stderr)
         return 1
 
-    # Unversioned aliases: same bytes under the fixed names older installs and the landing page use.
-    alias = package_dir / "CVMAnalytics-windows.zip"
-    shutil.copyfile(package, alias)
-    alias_checksum = package_dir / f"{alias.name}.sha256"
-    alias_checksum.write_text(f"{actual}  {alias.name}", encoding="utf-8")
+    # Unversioned aliases: same bytes under the fixed names that older installs,
+    # README.md and the landing page (releases/latest/download/...) use.
+    files: list[str] = []
+    for versioned, alias_name, sha256 in (
+        (package, "CVMAnalytics-windows.zip", actual),
+        (setup, "CVMAnalytics-Setup.exe", setup_actual),
+    ):
+        alias = package_dir / alias_name
+        shutil.copyfile(versioned, alias)
+        alias.with_name(f"{alias_name}.sha256").write_text(f"{sha256}  {alias_name}", encoding="utf-8")
+        files += [str(versioned), f"{versioned}.sha256", str(alias), f"{alias}.sha256"]
     notes = package_dir / "publication-notes.md"
     notes.write_text(render_notes(facts, decision), encoding="utf-8")
-    command = release_command(facts, decision, str(notes), [str(package), str(checksum), str(alias), str(alias_checksum)])
+    command = release_command(facts, decision, str(notes), files)
 
     print(f"Verified candidate {package.name} sha256 {actual}")
+    print(f"Verified installer {setup.name} sha256 {setup_actual}")
     if dry_run:
         print("Dry run: stopping before the tag and the release. Would run:\n  " + " ".join(command))
         print("\n" + notes.read_text(encoding="utf-8"))
@@ -395,6 +418,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--decision")
     parser.add_argument("--package-dir")
     parser.add_argument("--expected-sha256", default="")
+    parser.add_argument("--expected-setup-sha256", default="")
     args = parser.parse_args(argv)
 
     if args.command == "facts":
@@ -402,7 +426,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     facts, decision = _load(args.facts), _load(args.decision)
     if args.command == "publish":
-        return publish(facts, decision, Path(args.package_dir), args.expected_sha256)
+        return publish(facts, decision, Path(args.package_dir), args.expected_sha256, args.expected_setup_sha256)
 
     summary = render_summary(facts, decision)
     outputs = job_outputs(facts, decision)

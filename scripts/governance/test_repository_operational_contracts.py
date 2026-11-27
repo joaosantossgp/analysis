@@ -139,9 +139,12 @@ def test_release_workflow_builds_once_with_the_decided_version_and_never_rebuild
     assert jobs["build"]["env"]["RELEASE_VERSION"] == "${{ needs.decide.outputs.version }}"
     assert "CVMAnalytics-windows-v$env:RELEASE_VERSION.zip" in build
     assert "$roots -contains 'CVMAnalytics.exe' -and $roots -contains '_internal'" in build
+    assert '"/DAppVersion=$env:RELEASE_VERSION"' in build and "desktop\\installer.iss" in build
+    assert build.index("build_desktop.ps1") < build.index("Compress-Archive") < build.index("installer.iss")
     for name, job in jobs.items():
         if name != "build":
-            assert "build_desktop.ps1" not in str(job) and "Compress-Archive" not in str(job), name
+            for builder in ("build_desktop.ps1", "Compress-Archive", "installer.iss", "ISCC"):
+                assert builder not in str(job), (name, builder)
         assert "git commit" not in str(job) and "git push" not in str(job), name
         assert "softprops/action-gh-release" not in str(job), name
 
@@ -154,6 +157,7 @@ def test_release_workflow_publishes_the_built_candidate_with_one_shared_step_lis
         assert jobs[name]["steps"] == steps, name
         assert jobs[name]["needs"] == ["decide", "build"], name
         assert jobs[name]["env"]["EXPECTED_SHA256"] == "${{ needs.build.outputs.zip_sha256 }}", name
+        assert jobs[name]["env"]["EXPECTED_SETUP_SHA256"] == "${{ needs.build.outputs.setup_sha256 }}", name
     downloads = [step["with"] for step in steps if step.get("uses", "").startswith("actions/download-artifact@")]
     # Same run only (no run-id), so no older or foreign artifact can be substituted.
     assert downloads == [
@@ -163,6 +167,47 @@ def test_release_workflow_publishes_the_built_candidate_with_one_shared_step_lis
     publish = _run_source(jobs["publish-automatic"])
     assert "publication_workflow.py publish" in publish
     assert '--expected-sha256 "$EXPECTED_SHA256"' in publish
+    assert '--expected-setup-sha256 "$EXPECTED_SETUP_SHA256"' in publish
+
+
+def test_release_workflow_keeps_the_smoke_tested_installer_in_the_candidate() -> None:
+    build = _release_workflow()["jobs"]["build"]
+    steps = {step.get("id"): step for step in build["steps"]}
+
+    assert build["outputs"]["setup_sha256"] == "${{ steps.installer.outputs.setup_sha256 }}"
+    assert "setup_sha256=$hash" in steps["installer"]["run"]
+    smoke = _run_source(build)
+    for check in ("/VERYSILENT", "unins000.exe", "Documents\\CVMAnalytics", "Uninstall left $dir behind."):
+        assert check in smoke, check
+    upload = next(step for step in build["steps"] if step.get("uses", "").startswith("actions/upload-artifact@"))
+    assert upload["with"]["name"] == "publication-candidate"
+    assert upload["with"]["path"].splitlines() == [
+        f"CVMAnalytics-{name}-v${{{{ needs.decide.outputs.version }}}}.{ext}"
+        for name, extensions in (("windows", ("zip", "zip.sha256")), ("Setup", ("exe", "exe.sha256")))
+        for ext in extensions
+    ]
+
+
+def test_installer_is_per_user_and_its_uninstaller_never_touches_user_data() -> None:
+    script = (ROOT / "desktop/installer.iss").read_text(encoding="utf-8")
+    directives = dict(
+        line.split("=", 1) for line in script.splitlines() if re.match(r"^[A-Za-z]+=", line)
+    )
+
+    assert directives["PrivilegesRequired"] == "lowest"
+    assert "PrivilegesRequiredOverridesAllowed" not in directives  # never an elevated all-users install
+    assert directives["DefaultDirName"] == "{localappdata}\\Programs\\CVMAnalytics"
+    assert directives["AppVersion"] == "{#AppVersion}"
+    assert directives["OutputBaseFilename"] == "CVMAnalytics-Setup-v{#AppVersion}"
+    assert re.search(r'^Source: "\.\.\\dist\\CVMAnalytics\\\*"; DestDir: "\{app\}"', script, re.M)
+    assert re.search(r'^Name: "\{autoprograms\}\\CVM Analytics"', script, re.M)
+    assert re.search(r'^Name: "desktopicon";.*Flags: unchecked$', script, re.M)
+    # Deletions are limited to the two bundle entries the updater swaps, inside {app}.
+    deletions = re.findall(r'^Type: \w+; Name: "([^"]+)"', script, re.M)
+    assert set(deletions) == {"{app}\\_internal", "{app}\\CVMAnalytics.exe"}
+    lowered = "\n".join(line for line in script.lower().splitlines() if not line.startswith(";"))
+    for user_data in ("{userdocs}", "{commondocs}", "documents\\cvmanalytics", "{localappdata}\\cvmanalytics"):
+        assert user_data not in lowered, user_data
 
 
 def test_release_workflow_keeps_write_access_on_the_publish_jobs_and_approval_in_release_publication() -> None:
