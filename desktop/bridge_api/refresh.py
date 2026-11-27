@@ -23,10 +23,9 @@ logger = logging.getLogger("desktop.bridge")
 class RefreshBridgeMixin:
     @staticmethod
     def _persistable_refresh_job(job: dict[str, Any]) -> dict[str, Any]:
-        payload = dict(job)
-        payload["result"] = None
-        payload["log_lines"] = list(payload.get("log_lines") or [])[-200:]
-        return payload
+        from src.refresh.job_projection import persistable_batch_job  # noqa: PLC0415
+
+        return persistable_batch_job(job)
 
     @staticmethod
     def _public_refresh_job(
@@ -34,65 +33,15 @@ class RefreshBridgeMixin:
         *,
         include_result: bool = False,
     ) -> dict[str, Any]:
-        payload = {
-            "job_id": job.get("job_id"),
-            "state": job.get("state"),
-            "status": job.get("state"),
-            "mode": job.get("mode"),
-            "stage": job.get("stage"),
-            "queued": int(job.get("queued") or 0),
-            "processed": int(job.get("processed") or 0),
-            "failures": int(job.get("failures") or 0),
-            "current_cvm": job.get("current_cvm"),
-            "log_lines": list(job.get("log_lines") or []),
-            "accepted_at": job.get("accepted_at"),
-            "started_at": job.get("started_at"),
-            "finished_at": job.get("finished_at"),
-            "updated_at": job.get("updated_at"),
-            "error": job.get("error"),
-            "result": None,
-        }
-        if include_result:
-            payload["result"] = job.get("result")
-        return payload
+        from src.refresh.job_projection import public_batch_job  # noqa: PLC0415
+
+        return public_batch_job(job, include_result=include_result)
 
     @staticmethod
     def _db_worker_refresh_job_to_public(row: dict[str, Any]) -> dict[str, Any]:
-        state = str(row.get("state") or "").strip().lower()
-        if state in {"no_data"}:
-            state = "success"
-        elif state in {"error", "failed"}:
-            state = "error"
-        progress_total = int(row.get("progress_total") or 1) or 1
-        progress_current = int(row.get("progress_current") or 0)
-        message = row.get("progress_message") or row.get("error_message") or ""
-        log_lines = [str(message)] if message else []
-        return {
-            "job_id": str(row.get("id") or ""),
-            "state": state,
-            "status": state,
-            "mode": "single",
-            "stage": row.get("stage"),
-            "queued": 1,
-            "processed": 1 if state in {"success", "error", "cancelled"} else progress_current,
-            "failures": 1 if state == "error" else 0,
-            "current_cvm": int(row.get("cd_cvm")) if row.get("cd_cvm") is not None else None,
-            "log_lines": log_lines,
-            "accepted_at": row.get("requested_at"),
-            "started_at": row.get("started_at"),
-            "finished_at": row.get("finished_at"),
-            "updated_at": (
-                row.get("finished_at")
-                or row.get("heartbeat_at")
-                or row.get("started_at")
-                or row.get("requested_at")
-            ),
-            "error": row.get("error_message"),
-            "result": None,
-            "source": "db_worker",
-            "progress_current": progress_current,
-            "progress_total": progress_total,
-        }
+        from src.refresh.job_projection import db_worker_row_to_public  # noqa: PLC0415
+
+        return db_worker_row_to_public(row)
 
     @staticmethod
     def _refresh_jobs_path() -> Path:
@@ -146,50 +95,13 @@ class RefreshBridgeMixin:
         limit: int = 10,
     ) -> list[dict[str, Any]]:
         from src.platform.settings import get_settings  # noqa: PLC0415
+        from src.refresh.job_projection import list_db_worker_jobs_sqlite  # noqa: PLC0415
 
-        db_path = get_settings().paths.db_path
-        if not db_path.exists():
-            return []
-        try:
-            with sqlite3.connect(str(db_path)) as conn:
-                conn.row_factory = sqlite3.Row
-                cur = conn.cursor()
-                exists = cur.execute(
-                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='refresh_jobs'"
-                ).fetchone()
-                if not exists:
-                    return []
-                if job_id:
-                    row = cur.execute(
-                        """
-                        SELECT *
-                        FROM refresh_jobs
-                        WHERE id = ?
-                        """,
-                        (str(job_id),),
-                    ).fetchone()
-                    return [dict(row)] if row is not None else []
-                active_rows = cur.execute(
-                    """
-                    SELECT *
-                    FROM refresh_jobs
-                    WHERE state IN ('queued', 'running')
-                    ORDER BY requested_at DESC, id ASC
-                    """
-                ).fetchall()
-                terminal_rows = cur.execute(
-                    """
-                    SELECT *
-                    FROM refresh_jobs
-                    WHERE state NOT IN ('queued', 'running')
-                    ORDER BY COALESCE(finished_at, requested_at) DESC, id DESC
-                    LIMIT ?
-                    """,
-                    (int(limit),),
-                ).fetchall()
-                return [dict(row) for row in (*active_rows, *terminal_rows)]
-        except Exception:
-            return []
+        return list_db_worker_jobs_sqlite(
+            get_settings().paths.db_path,
+            job_id=job_id,
+            limit=limit,
+        )
 
     def _get_refresh_status_light(self, params: dict[str, Any]) -> dict[str, Any]:
         job_id = params.get("job_id")
@@ -205,7 +117,7 @@ class RefreshBridgeMixin:
                 return self._public_refresh_job(job, include_result=True)
             db_rows = self._db_worker_refresh_rows(job_id=str(job_id))
             if db_rows:
-                return self._db_worker_refresh_job_to_public(db_rows[0])
+                return db_rows[0]
             return {
                 "state": "not_found",
                 "job_id": str(job_id),
@@ -219,10 +131,7 @@ class RefreshBridgeMixin:
             self._public_refresh_job(job, include_result=include_result)
             for job in jobs.values()
         ]
-        items.extend(
-            self._db_worker_refresh_job_to_public(row)
-            for row in self._db_worker_refresh_rows(limit=10)
-        )
+        items.extend(self._db_worker_refresh_rows(limit=10))
         items.sort(key=lambda row: str(row.get("updated_at") or ""), reverse=True)
         return {"items": items}
 
