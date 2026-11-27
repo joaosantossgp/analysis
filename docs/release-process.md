@@ -250,10 +250,23 @@ bypass. Exact settings, read-back date and solo-maintainer limits:
 Do not weaken these, rename the environment, or let a publish or promote job run
 outside it when approval is required.
 
-## Not yet in place
+## Pre-release retention
 
-ADR 0011 is delivered in parts (goal #623). Still to land: retention of old
-pre-releases (#634) and the first real publication `0.30.0` (#633).
+Only the newest 10 pre-releases keep their download files (owner, 2026-11-26).
+`.github/workflows/prerelease-retention.yml` runs after every Release Desktop
+run and weekly: `scripts/release/promotion_workflow.py prune` lists the
+publications, `publication_decision.py` (`pick_pruning`, `RETENTION_KEEP`)
+picks the pre-releases older than the newest 10 that still have files, and the
+job removes those files with `gh release delete-asset`. Releases are never
+touched, so a promoted pre-release keeps its files; tags and release pages
+stay, and legacy `-rc.N` pre-releases count like any other. The job summary
+lists what was kept and removed; a second run finds nothing to remove. A manual
+dispatch defaults to `dry_run`, which lists the files without removing them, and
+a run that removes files must come from `main`.
+
+An installed app never sees a pruned pre-release as its update: the updater
+offers the newest newer publication that has its package, and the kept
+pre-releases are always newer than the pruned ones.
 
 ## Publication decision module
 
