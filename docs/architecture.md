@@ -123,7 +123,10 @@ but their owning workspaces are Companies and Settings, respectively.
 
 Developer surfaces are outside primary navigation: `/dev/data-ops` requires a
 DEV build and `localStorage.cvm_dev_tools = "1"`
-([page gate](../apps/desktop-web/src/routes/DevDataOpsPage.tsx#L14));
+([page gate](../apps/desktop-web/src/routes/DevDataOpsPage.tsx#L15)), which
+the dev panel's link sets. The [dev panel](dev-runtime-and-data-paths.md#dev-panel)
+is mounted at the app shell in DEV builds only
+([shell mount](../apps/desktop-web/src/components/dev-panel/index.ts));
 `/dev/design-system` is registered only in DEV builds
 ([route registration](../apps/desktop-web/src/App.tsx#L159)).
 

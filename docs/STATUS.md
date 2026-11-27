@@ -60,9 +60,9 @@ Keep detail in the owning contract or dated evidence. Last updated: 2026-11-26.
   44 min), against about 2 s in the dev runtime at the same point. Decision (#589): DMPL is
   not persisted; its never-filled export, mapping and API paths were removed.
 
-- Decided 2026-11-26, not yet implemented: a dev-mode goal (#607, tasks #608-#614:
-  auto-restart on Python changes, shared/isolated dev data, worktree switch, dev
-  panel) and a publishing goal, not yet filed as issues (plain version numbers,
+- Decided 2026-11-26: a dev-mode goal (#607, tasks #608-#614: auto-restart on
+  Python changes, shared/isolated dev data, worktree switch, dev panel; #608-#610
+  implemented, the dev panel shell in #610) and a publishing goal, not yet filed as issues (plain version numbers,
   update channels, shipping classes, build-once promotion, installer). Publishing
   decision: [ADR 0011](decisions/0011-build-once-publications-and-update-channels.md);
   vocabulary: [GLOSSARY.md](../GLOSSARY.md). The current release gate stays in

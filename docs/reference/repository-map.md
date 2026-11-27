@@ -117,6 +117,7 @@ There is no root `package.json`. The active Node package is
 | `scripts/data/` | Refresh, backfill, catalog seed, identity/GICS import, canonical dictionaries, energy stores and marts, storage budget and managed-ingestion checks |
 | `scripts/setup/` | Database/table setup and Windows/worktree bootstrap |
 | `scripts/dev/` | Dev mode tooling: isolated dev data for a data-sensitive worktree |
+| `apps/desktop-web/src/components/dev-panel/` | Dev panel (dev builds only): one file per section under `sections/`; bridge methods in `desktop/bridge_api/dev.py` |
 | `scripts/diagnostics/` | Runtime doctor, smoke validation, read-path benchmarks, bridge method inventory, packaged candidate validation |
 | `scripts/qa/` | Consolidation, line-id, and workbook verification |
 | `scripts/release/` | Desktop dev launchers, MOTW tests, PR helper, publication decision module (ADR 0011, not yet called by a workflow) |

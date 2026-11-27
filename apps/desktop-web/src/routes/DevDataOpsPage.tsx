@@ -11,7 +11,8 @@ import {
 } from "../lib/api/devTools";
 
 // Gate: must be a Vite dev build AND the flag must be set in localStorage.
-const IS_ALLOWED =
+// Read on render: the dev panel sets the flag right before navigating here.
+const isAllowed = () =>
   import.meta.env.DEV &&
   typeof window !== "undefined" &&
   window.localStorage?.getItem("cvm_dev_tools") === "1";
@@ -299,7 +300,7 @@ function JobInspector() {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export function DevDataOpsPage() {
-  if (!IS_ALLOWED) return <Blocked />;
+  if (!isAllowed()) return <Blocked />;
 
   return (
     <div className="mx-auto max-w-4xl space-y-5 px-5 py-8">

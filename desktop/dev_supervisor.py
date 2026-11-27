@@ -5,13 +5,20 @@ supervisor runs the app as a child process, restarts it when a Python source of
 the desktop shell or core changes, and stays alive when the new code fails to
 start. It imports the standard library only, so broken app code cannot take it
 down.
+
+The app talks back through a control directory (`CONTROL_DIR_ENV`): it queues
+requests as JSON files under `requests/` (`send_request`) and reads the
+supervisor's `status.json` (`read_status`). The dev panel's restart button and
+auto-restart switch use this channel.
 """
 
 from __future__ import annotations
 
 import functools
+import itertools
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -23,6 +30,8 @@ from typing import Any, Callable, Mapping, Sequence
 # Path of the JSON file that carries the last route and window geometry from
 # one child to the next. Its presence also marks a process as a supervised child.
 STATE_FILE_ENV = "CVMANALYTICS_DEV_STATE_FILE"
+# Directory the supervisor shares with its child: requests in, status out.
+CONTROL_DIR_ENV = "CVMANALYTICS_DEV_CONTROL_DIR"
 WATCHED_DIRS = ("desktop", "src")
 POLL_SECONDS = 0.5
 QUIET_SECONDS = 1.0
@@ -62,7 +71,9 @@ class DevSupervisor:
     """Decides when the app child starts, restarts, and when dev mode ends.
 
     Process handling is injected so the decisions run in tests without a
-    process or a window. `tick` is one poll step.
+    process or a window. `tick` is one poll step. `read_requests` returns the
+    requests the app queued since the last call; `publish_status` receives the
+    status whenever it changes.
     """
 
     def __init__(
@@ -72,12 +83,18 @@ class DevSupervisor:
         scan: Callable[[], Snapshot],
         report: Callable[[str], None] = _report,
         quiet_seconds: float = QUIET_SECONDS,
+        read_requests: Callable[[], list[dict[str, Any]]] = list,
+        publish_status: Callable[[dict[str, Any]], None] = lambda status: None,
     ) -> None:
         self._start_child = start_child
         self._stop_child = stop_child
         self._scan = scan
         self._report = report
         self._quiet_seconds = quiet_seconds
+        self._read_requests = read_requests
+        self._publish_status = publish_status
+        self._published: dict[str, Any] | None = None
+        self._auto_restart = True
         self._child: Any = None
         self._snapshot: Snapshot = {}
         self._changed: set[str] = set()
@@ -85,6 +102,7 @@ class DevSupervisor:
 
     def start(self) -> None:
         self._snapshot = self._scan()
+        self._publish()
         self._child = self._start_child()
 
     def tick(self, now: float) -> int | None:
@@ -112,15 +130,54 @@ class DevSupervisor:
                     "start the app again, or press Ctrl+C to quit."
                 )
 
-        if self._changed and now - self._last_change_at >= self._quiet_seconds:
+        restart_reason = self._apply(self._read_requests())
+
+        # Auto-restart off holds a running window still. With no window there
+        # is no dev panel to restart from, so a change always starts the app.
+        change_restarts = self._auto_restart or self._child is None
+        if (
+            restart_reason is None
+            and change_restarts
+            and self._changed
+            and now - self._last_change_at >= self._quiet_seconds
+        ):
             names = sorted(self._changed)
-            self._changed = set()
             more = f" (+{len(names) - 3} more)" if len(names) > 3 else ""
-            self._report(f"[dev] Python change in {', '.join(names[:3])}{more}; restarting the app.")
+            restart_reason = f"Python change in {', '.join(names[:3])}{more}"
+        if restart_reason is not None:
+            self._changed = set()
+            self._report(f"[dev] {restart_reason}; restarting the app.")
             if self._child is not None:
                 self._stop_child(self._child)
+            # The restart just done answers restart requests queued meanwhile; apply the rest.
+            self._apply([request for request in self._read_requests() if request.get("action") != "restart"])
             self._child = self._start_child()
+        self._publish()
         return None
+
+    def _apply(self, requests: list[dict[str, Any]]) -> str | None:
+        """Apply the app's requests; return the restart reason when one asks for a restart."""
+        restart_reason = None
+        for request in requests:
+            action = request.get("action")
+            if action == "restart":
+                restart_reason = "Restart requested from the app"
+            elif action == "set_auto_restart" and isinstance(request.get("enabled"), bool):
+                self._auto_restart = request["enabled"]
+                self._report(f"[dev] Automatic restart turned {'on' if self._auto_restart else 'off'}.")
+            else:
+                self._report(f"[dev] Ignored an unknown request from the app: {request!r}")
+        return restart_reason
+
+    def _publish(self) -> None:
+        status = {"auto_restart": self._auto_restart, "pending_changes": len(self._changed)}
+        if status == self._published:
+            return
+        try:
+            self._publish_status(status)
+        except OSError:
+            return  # retried on the next tick
+        self._published = status
 
     def shutdown(self) -> None:
         if self._child is not None and self._child.poll() is None:
@@ -160,7 +217,8 @@ def run(argv: Sequence[str], *, repo_root: Path | None = None) -> int:
     """Supervise `python -m desktop.app <argv>` until the window is closed."""
     root = repo_root or Path(__file__).resolve().parent.parent
     state_file = Path(tempfile.gettempdir()) / f"cvmanalytics-dev-state-{os.getpid()}.json"
-    environment = {**os.environ, STATE_FILE_ENV: str(state_file)}
+    control_dir = Path(tempfile.mkdtemp(prefix="cvmanalytics-dev-"))
+    environment = {**os.environ, STATE_FILE_ENV: str(state_file), CONTROL_DIR_ENV: str(control_dir)}
 
     def start_child() -> Any:
         return subprocess.Popen(
@@ -170,7 +228,13 @@ def run(argv: Sequence[str], *, repo_root: Path | None = None) -> int:
             stdin=subprocess.PIPE,
         )
 
-    supervisor = DevSupervisor(start_child, stop_child, lambda: scan_sources(root))
+    supervisor = DevSupervisor(
+        start_child,
+        stop_child,
+        lambda: scan_sources(root),
+        read_requests=lambda: read_requests(control_dir),
+        publish_status=lambda status: write_status(control_dir, status),
+    )
     _report("[dev] Dev supervisor running: the app restarts when Python files under desktop/ or src/ change.")
     try:
         supervisor.start()
@@ -184,6 +248,60 @@ def run(argv: Sequence[str], *, repo_root: Path | None = None) -> int:
     finally:
         supervisor.shutdown()
         state_file.unlink(missing_ok=True)
+        shutil.rmtree(control_dir, ignore_errors=True)
+
+
+# --- Control directory: requests from the app, status from the supervisor -----
+
+
+def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    """Write through a rename so the other process never reads half a file."""
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(payload), encoding="utf-8")
+    os.replace(temporary, path)
+
+
+_request_numbers = itertools.count()
+
+
+def send_request(control_dir: Path, action: str, **params: Any) -> None:
+    """App side: queue `{"action": action, **params}` for the supervisor. Raises OSError."""
+    requests = control_dir / "requests"
+    requests.mkdir(parents=True, exist_ok=True)
+    # The clock is coarse on Windows: the counter keeps names unique and in order.
+    name = f"{time.time_ns():020d}-{os.getpid()}-{next(_request_numbers):06d}.json"
+    _write_json(requests / name, {"action": action, **params})
+
+
+def read_requests(control_dir: Path) -> list[dict[str, Any]]:
+    """Supervisor side: take the queued requests, oldest first. Unreadable ones are dropped."""
+    taken: list[dict[str, Any]] = []
+    for path in sorted((control_dir / "requests").glob("*.json")):
+        try:
+            request = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            request = None
+        try:
+            path.unlink()
+        except OSError:
+            continue  # locked by the writer; taken on the next poll
+        if isinstance(request, dict):
+            taken.append(request)
+    return taken
+
+
+def write_status(control_dir: Path, status: dict[str, Any]) -> None:
+    """Supervisor side: publish the status the app shows. Raises OSError."""
+    _write_json(control_dir / "status.json", status)
+
+
+def read_status(control_dir: Path) -> dict[str, Any]:
+    """App side: the supervisor's last published status, or `{}`."""
+    try:
+        status = json.loads((control_dir / "status.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return status if isinstance(status, dict) else {}
 
 
 # --- Child side: continuity across restarts -----------------------------------

@@ -187,6 +187,7 @@ The Status strip shows **BRIDGE · MOCK** in violet and Settings -> Diagnostics 
 | `CVM_LOG_DIR` | `{data}/logs` when injected by the launcher; otherwise `{output}/logs` | Override log directory |
 | `CVM_CACHE_DIR` | `{data}/cache` | Override cache directory |
 | `CVMANALYTICS_DEV_STATE_FILE` | Set by the dev supervisor | Internal: path of the JSON file with the last route and window geometry; marks the process as a supervised child. Do not set by hand |
+| `CVMANALYTICS_DEV_CONTROL_DIR` | Set by the dev supervisor | Internal: the [dev panel](#dev-panel) request channel (requests in, `status.json` out). Do not set by hand |
 | `VITE_MOCK_BRIDGE` | — | Browser preview fixtures via `npm run dev:mock`; inherited value removed from desktop-launched Vite |
 
 Source desktop injects output/log defaults only when `CVM_DATA_DIR` is absent.
@@ -242,6 +243,10 @@ app as a child process. Source mode only: the packaged app and launches without
   while no window is open.
 - **Ending dev mode.** Closing the main window (child exit code 0) ends the
   supervisor.
+- **Hold still.** The [dev panel](#dev-panel) turns automatic restart off and
+  on and restarts the app on demand. With automatic restart off, Python changes
+  are counted but not loaded until you restart; a change after a failed start
+  still starts the app, because there is no window to restart from.
 - **UI changes** under `apps/desktop-web` keep updating through Vite HMR without
   a restart.
 
@@ -257,6 +262,47 @@ Limits:
   its last saved geometry.
 - Each restart starts a new Vite dev server; the port can change within
   `5173`–`5199`.
+
+## Dev panel
+
+In dev mode a small floating dot sits at the bottom right of the window. Click
+it or press `Ctrl+Shift+D` to open the dev panel; press Escape, `Ctrl+Shift+D`
+or the close control to close it. Drag the dot anywhere; its position is kept
+for the next launch. The packaged app has no dot, panel or shortcut: the panel
+is compiled only into Vite dev builds and its bridge methods refuse with
+`status_reason_code: "dev_mode_only"` when the app is frozen.
+(`Ctrl+Alt+D` still opens `/dev/design-system`.)
+
+| Section | Shows / does |
+|---|---|
+| Context | Worktree (and whether it is the main checkout), branch, commit, uncommitted changes, data mode with an "isolated data" indicator, data path. Missing git values stay `—` with the git error. |
+| Restart | "Restart app" and the "Restart automatically" switch; how many Python changes the window has not loaded yet. Disabled when the app runs without the dev supervisor. |
+| Tools | Link to the `/dev/data-ops` page (opening it from the panel sets its `cvm_dev_tools` flag). |
+
+Data modes: `shared`, `isolated`, `full-copy` (see
+[isolated dev data](#isolated-dev-data-data-sensitive-worktree)),
+`installed-app` (`CVMANALYTICS_USE_RELEASE_DATA=1`) and `custom` (an explicit
+`CVM_DATA_DIR`).
+
+Code: one file per section in
+[`apps/desktop-web/src/components/dev-panel/sections/`](../apps/desktop-web/src/components/dev-panel/sections/);
+a new `*Section.tsx` file that exports `section` is picked up without editing a
+shared list. Bridge methods `dev_get_context`, `dev_restart` and
+`dev_set_auto_restart` live in
+[`desktop/bridge_api/dev.py`](../desktop/bridge_api/dev.py); browser mock
+scenarios (`localStorage.cvm_mock_dev_context` = `isolated` or `error`) in
+[`mock.dev.ts`](../apps/desktop-web/src/lib/bridge/mock.dev.ts).
+
+**Request channel.** The app cannot restart itself, so the bridge asks the dev
+supervisor. The supervisor creates a temporary control directory and passes it
+to the app as `CVMANALYTICS_DEV_CONTROL_DIR`. The app queues requests as JSON
+files in `requests\` (`{"action": "restart"}`,
+`{"action": "set_auto_restart", "enabled": false}`); the supervisor takes them
+on each poll, oldest first, and publishes `status.json`
+(`auto_restart`, `pending_changes`). Unknown requests are reported in the
+terminal and ignored. Restart requests queued while a restart is under way are
+answered by that restart. Later dev panel actions (worktree switch, data
+actions) are new actions on the same channel.
 
 ## Concurrency and lock file
 
