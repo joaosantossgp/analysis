@@ -251,16 +251,12 @@ class DevSupervisor:
 
     def _switch(self, path: str) -> str | None:
         """Point the child at another worktree; return the restart reason, or None when refused."""
-        entry, refusal = None, None
+        entry = None
         try:
             entry = next((w for w in self._list_worktrees() if Path(w["path"]) == Path(path)), None)
+            refusal = switch_refusal(entry, path)
         except (OSError, ValueError, subprocess.SubprocessError) as error:
             refusal = f"Could not list the worktrees: {error}"
-        if refusal is None and entry is None:
-            refusal = f"{path} is not a worktree of this repository (it may have been removed)."
-        elif refusal is None and entry["dependency_differences"]:
-            differing = " and ".join(entry["dependency_differences"])
-            refusal = f"{entry['name']} needs its own dependencies ({differing} differ); supported in a later version."
         if refusal is not None:
             self._worktree_notice = refusal
             self._report(f"[dev] Worktree switch refused: {refusal}")
@@ -310,6 +306,16 @@ class DevSupervisor:
         if self._child is not None and self._child.poll() is None:
             self._stop_child(self._child)
         self._child = None
+
+
+def switch_refusal(entry: dict[str, Any] | None, path: str) -> str | None:
+    """Why the window cannot switch to `path`, whose `dev_data.list_worktrees` row is `entry`; None when it can."""
+    if entry is None:
+        return f"{path} is not a worktree of this repository (it may have been removed)."
+    if entry["dependency_differences"]:
+        differing = " and ".join(entry["dependency_differences"])
+        return f"{entry['name']} needs its own dependencies ({differing} differ); supported in a later version."
+    return None
 
 
 def stop_child(proc: Any) -> bool:

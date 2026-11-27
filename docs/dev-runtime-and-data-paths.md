@@ -188,6 +188,7 @@ The Status strip shows **BRIDGE · MOCK** in violet and Settings -> Diagnostics 
 | `CVM_CACHE_DIR` | `{data}/cache` | Override cache directory |
 | `CVMANALYTICS_DEV_STATE_FILE` | Set by the dev supervisor | Internal: path of the JSON file with the last route and window geometry; marks the process as a supervised child. Do not set by hand |
 | `CVMANALYTICS_DEV_CONTROL_DIR` | Set by the dev supervisor | Internal: the [dev panel](#dev-panel) request channel (requests in, `status.json` out). Do not set by hand |
+| `CVMANALYTICS_DEV_LAUNCH_ROOT` | Set by the dev supervisor | Internal: the checkout dev mode was launched from, whose environment runs every worktree ([worktree switch](#worktree-switch)). Do not set by hand |
 | `VITE_MOCK_BRIDGE` | — | Browser preview fixtures via `npm run dev:mock`; inherited value removed from desktop-launched Vite |
 
 Source desktop injects output/log defaults only when `CVM_DATA_DIR` is absent.
@@ -270,6 +271,82 @@ Limits:
 - Each restart starts a new Vite dev server; the port can change within
   `5173`–`5199`.
 
+## Worktree switch
+
+The [dev panel](#dev-panel)'s **Worktrees** section lists every git worktree of
+the repository, main checkout first. The list comes from
+`git worktree list --porcelain`, so worktrees created by any tool appear; a
+worktree removed on disk is left out. Each row shows the folder name, the branch
+(or "Detached HEAD") and the flags **Active** (the window runs it),
+**Isolated data** (a [data-sensitive worktree](#isolated-dev-data-data-sensitive-worktree))
+and **Dependencies differ**. Code:
+[`dev_data.list_worktrees`](../desktop/dev_data.py),
+[`dev_bootstrap.dependency_differences`](../desktop/dev_bootstrap.py) and the
+supervisor's `switch_worktree` request in
+[`desktop/dev_supervisor.py`](../desktop/dev_supervisor.py).
+
+- **Environment.** Every worktree runs on the environment of the checkout dev
+  mode was launched from (the main checkout in normal use): its `.venv`
+  interpreter and its `apps\desktop-web\node_modules`. A worktree is switchable
+  when its `requirements.txt` and `apps\desktop-web\package-lock.json` have the
+  fingerprints stored in that environment's bootstrap stamps
+  (`.venv\.cvmanalytics-dev-bootstrap.json`,
+  `node_modules\.cvmanalytics-dev-bootstrap.json`). Otherwise the row says
+  "Dependencies differ", names the files, and its switch button is disabled:
+  "Needs its own dependencies; supported in a later version" (#612).
+- **Switch.** The supervisor stops the app and starts it again on the chosen
+  worktree, on the same route and window geometry, without installing anything:
+  - Python: the launch checkout's interpreter runs
+    `python -c "from desktop.app import main; main()" --dev` in the worktree.
+    The worktree's code is imported, and its own bootstrap, which would create a
+    `.venv` there, does not run, whatever version of it the branch has.
+  - Frontend: on the first switch, the launch checkout's `node_modules` is hard
+    linked file by file into the worktree's git-ignored
+    `apps\desktop-web\node_modules` (Vite caches left out; a copy across
+    volumes). Vite then runs from the worktree as from a normal install. Not a
+    junction or `NODE_PATH`: Vite and its config resolve packages by walking up
+    from the worktree, which `NODE_PATH` does not change, and `npm ci` empties a
+    linked `node_modules` folder, so a junction would wipe the launch checkout's
+    copy. Deleting the worktree, or npm in it, removes only the worktree's own
+    link names; the launch checkout is only read. The linked stamp makes later
+    switches skip this step.
+  - Dev data follows the worktree: shared dev data, or its own isolated dev
+    data when it carries the marker.
+  - Automatic restart then watches `desktop\` and `src\` of the active worktree
+    only.
+- **Failed switch.** If the app exits with an error within 60 seconds of
+  starting on the switched-to worktree, or cannot be spawned, the supervisor
+  returns to the previous worktree. The traceback stays in the terminal and the
+  Worktrees section says "Switching to <worktree> failed: …". A crash after
+  that is an ordinary [failed start](#auto-restart-on-python-changes-dev-supervisor).
+- **Removed worktree.** When the active worktree's `.git` file disappears
+  (`git worktree remove`), the supervisor falls back to the launch checkout and
+  the Worktrees section says so.
+- **Start.** Every `--dev` launch starts on the checkout it was launched from.
+- **Channel.** `dev_list_worktrees` returns the rows plus the supervisor's last
+  `worktree_notice`. `dev_switch_worktree` refuses the packaged app, a missing
+  supervisor, an unknown or removed worktree, the window's own worktree and
+  differing dependencies; otherwise it queues
+  `{"action": "switch_worktree", "path": ...}` and returns once the supervisor
+  publishes the new `worktree` in `status.json` (the supervisor checks the
+  request again). The window closes right after.
+
+Limits:
+
+- A worktree whose branch predates the Worktrees section has no way to switch
+  back from its window: close the window and run dev mode again.
+- Dev mode launched from a worktree (not the normal case) runs every other
+  checkout, the main checkout included, on that worktree's environment, and
+  links its `node_modules` into them.
+- The 60-second rule is a time limit, not a signal from the app: a switched-to
+  app that takes longer to fail stays on that worktree.
+- Dependencies are compared when you switch. A worktree whose manifests change
+  while the window runs it keeps running on the launch environment until you
+  switch away; the list then flags it.
+- Hard links share file content: a tool that edits a package file in place
+  inside the worktree's `node_modules` (rather than replacing it, as npm does)
+  edits the launch checkout's copy too.
+
 ## Dev panel
 
 In dev mode a small floating dot sits at the bottom right of the window. Click
@@ -283,6 +360,7 @@ is compiled only into Vite dev builds and its bridge methods refuse with
 | Section | Shows / does |
 |---|---|
 | Context | Worktree (and whether it is the main checkout), branch, commit, uncommitted changes, data mode with an "isolated data" indicator, data path. Missing git values stay `—` with the git error. |
+| Worktrees | Every git worktree with its branch and the Active, Isolated data and Dependencies differ flags; switches the window to a worktree with matching dependencies (see [worktree switch](#worktree-switch)). The list scrolls past about five rows. Switching is disabled without the dev supervisor. |
 | Restart | "Restart app" and the "Restart automatically" switch; how many Python changes the window has not loaded yet. Disabled when the app runs without the dev supervisor. |
 | Tools | Link to the `/dev/data-ops` page (opening it from the panel sets its `cvm_dev_tools` flag). |
 

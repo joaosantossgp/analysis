@@ -228,16 +228,11 @@ class DevBridgeMixin:
         except Exception as exc:
             return {"ok": False, "error": f"Could not list the worktrees: {exc}"}
         entry = next((w for w in worktrees if _same_path(Path(w["path"]), Path(path))), None)
-        if entry is None:
-            return {"ok": False, "error": f"{path} is not a worktree of this repository (it may have been removed)."}
-        if _same_path(Path(entry["path"]), repo_root):
-            return {"ok": False, "error": f"The window already runs {entry['name']}."}
-        if entry["dependency_differences"]:
-            differing = " and ".join(entry["dependency_differences"])
-            return {
-                "ok": False,
-                "error": f"{entry['name']} needs its own dependencies ({differing} differ); supported in a later version.",
-            }
+        refusal = dev_supervisor.switch_refusal(entry, path)  # the supervisor checks the same again
+        if refusal is None and _same_path(Path(entry["path"]), repo_root):
+            refusal = f"The window already runs {entry['name']}."
+        if refusal is not None:
+            return {"ok": False, "error": refusal}
 
         notice_before = dev_supervisor.read_status(control_dir).get("worktree_notice")
         failure = self._dev_request("switch_worktree", path=entry["path"])
