@@ -40,3 +40,16 @@ body:
       description: Workflow step and owning workspace (see docs/PRODUCT_DIRECTION.md), source class, links, and anything out of scope.
     validations:
       required: false
+  - type: dropdown
+    id: shipping_class
+    attributes:
+      label: Shipping class
+      description: What merging this task publishes (docs/agents/triage-labels.md). Triage applies the matching `ships:*` label; the owner can change it. Only the task that makes a large implementation reachable is `ships:release`; earlier parts are `ships:none`.
+      options:
+        - Not sure (triage decides)
+        - "ships:none - docs, CI, tests, dev tooling: publishes nothing"
+        - "ships:pre - small or medium functionality or fix: pre-release"
+        - "ships:release - makes a large implementation reachable: release"
+        - "ships:hotfix - fixes a bug breaking the current release: immediate release"
+    validations:
+      required: true

@@ -4,6 +4,8 @@ name: PR Issue Guardrails
 # A PR may close several task or bug issues. Goal issues are closed by hand when
 # their sub-issues are done, so a PR references them with `Refs #n` / `Part of #n`,
 # never a closing keyword.
+# Every PR resolves a shipping class (ADR 0011) from the `ships:*` labels of the
+# issues it closes; label edits on an issue take effect on the PR's next event.
 # Reads the PR body and issue labels only; never checks out PR code.
 
 on:
@@ -54,6 +56,10 @@ jobs:
               return data;
             };
 
+            // Shipping class (ADR 0011): highest `ships:*` label among closed issues; Refs goals never count.
+            const classOrder = ["none", "pre", "release", "hotfix"];
+            let shippingRank = -1;
+
             for (const number of new Set([...closing, ...linked])) {
               let issue;
               try {
@@ -72,7 +78,16 @@ jobs:
                   core.setFailed(`#${number} is a goal. Use \`Refs #${number}\`; close the goal by hand when its sub-issues are done.`);
                   return;
                 }
+                for (const label of labels.filter((name) => name.startsWith("ships:"))) {
+                  shippingRank = Math.max(shippingRank, classOrder.indexOf(label.slice("ships:".length)));
+                }
               }
             }
 
+            if (shippingRank < 0) {
+              core.setFailed("No shipping class: none of the issues this PR closes (`Closes #n`) carries `ships:none`, `ships:pre`, `ships:release` or `ships:hotfix`. Label the task or bug issue (see docs/agents/triage-labels.md); goals referenced with `Refs #n` do not count.");
+              return;
+            }
+
             core.info(`Closes: ${[...closing].join(", ") || "none"}; refs: ${[...linked].join(", ") || "none"}.`);
+            core.info(`Shipping class: ${classOrder[shippingRank]} (highest of hotfix > release > pre > none across closed issues).`);

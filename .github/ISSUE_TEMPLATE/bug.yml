@@ -30,3 +30,16 @@ body:
       description: Error text, logs (output/logs/ or the Documents data root), screenshots.
     validations:
       required: false
+  - type: dropdown
+    id: shipping_class
+    attributes:
+      label: Shipping class
+      description: What merging the fix publishes (docs/agents/triage-labels.md). Triage applies the matching `ships:*` label; the owner can change it.
+      options:
+        - Not sure (triage decides)
+        - "ships:none - dev tooling, CI or tests only: publishes nothing"
+        - "ships:pre - fix ships in the next pre-release"
+        - "ships:release - fix completes a large implementation: release"
+        - "ships:hotfix - breaks the current release: immediate release"
+    validations:
+      required: true
