@@ -15,6 +15,7 @@ from desktop.bridge_api.refresh import RefreshBridgeMixin
 from desktop.bridge_api.status import StatusBridgeMixin
 from desktop.bridge_api.distribution import DistributionBridgeMixin
 from desktop.bridge_api.coverage import CoverageBridgeMixin
+from desktop.bridge_api.dev import DevBridgeMixin
 
 
 class CVMBridge(
@@ -26,5 +27,6 @@ class CVMBridge(
     NewsBridgeMixin,
     DistributionBridgeMixin,
     CoverageBridgeMixin,
+    DevBridgeMixin,
 ):
     pass

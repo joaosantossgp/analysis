@@ -15,6 +15,7 @@ Key local paths:
 %LOCALAPPDATA%\CVMAnalytics\versions
 %LOCALAPPDATA%\CVMAnalytics\update_rollback
 %LOCALAPPDATA%\CVMAnalytics\update_error.log
+%LOCALAPPDATA%\CVMAnalytics\update_channel.json
 ```
 
 ## Common Problems
@@ -34,6 +35,7 @@ Key local paths:
 | Excel export fails | Check output directory permissions, open-file locks, and exporter tests |
 | Packaged app launches old version | Check Settings -> Diagnostics build provenance and release ZIP layout |
 | Updater fails | Inspect `%LOCALAPPDATA%\CVMAnalytics\update_error.log` and rollback directory |
+| A pre-release is not offered | Settings -> App -> Update channel must be "Pre-releases and releases"; then Check now |
 
 ## Safe Diagnostics
 
