@@ -3,8 +3,9 @@
 Source-mode dev tooling only; the packaged app never runs this module. The
 supervisor runs the app as a child process, restarts it when a Python source of
 the desktop shell or core changes, and stays alive when the new code fails to
-start. It imports the standard library only, so broken app code cannot take it
-down.
+start. It imports the standard library, plus the stdlib-only `dev_data` and
+`dev_bootstrap` modules once at launch, so later edits to app code cannot take
+it down.
 
 The app talks back through a control directory (`CONTROL_DIR_ENV`): it queues
 requests as JSON files under `requests/` (`send_request`) and reads the
@@ -12,6 +13,13 @@ supervisor's `status.json` (`read_status`). The dev panel's restart button and
 auto-restart switch use this channel, and so do its dev data actions: the
 supervisor runs them between stopping and starting the app and leaves the
 outcome in `data_action.json` (`read_data_action`).
+
+Worktree switch: the child runs the code of the active worktree. Every worktree
+runs on the environment of the checkout dev mode was launched from (its `.venv`
+and `node_modules`), so a worktree is switchable when its dependency manifests
+match that environment (`dev_data.list_worktrees`). A data action acts on the
+dev data the requesting app resolved, so after a switch it is the active
+worktree's, and the app restarts on the active worktree.
 """
 
 from __future__ import annotations
@@ -34,12 +42,18 @@ from typing import Any, Callable, Mapping, Sequence
 STATE_FILE_ENV = "CVMANALYTICS_DEV_STATE_FILE"
 # Directory the supervisor shares with its child: requests in, status out.
 CONTROL_DIR_ENV = "CVMANALYTICS_DEV_CONTROL_DIR"
+# The checkout dev mode was launched from; its installed environment runs every worktree.
+LAUNCH_ROOT_ENV = "CVMANALYTICS_DEV_LAUNCH_ROOT"
 WATCHED_DIRS = ("desktop", "src")
 POLL_SECONDS = 0.5
 QUIET_SECONDS = 1.0
 STOP_TIMEOUT_SECONDS = 10
 MAX_REQUEST_BYTES = 64 * 1024  # a request is a few dozen bytes
 DATA_ACTION_FILE = "data_action.json"  # outcome of the last dev data action
+# shortcut: a switched-to app that exits with an error this soon after it started
+# counts as a failed switch (the child sends no "window is up" signal); add one
+# if a slow first start ever outlasts it.
+SWITCH_GRACE_SECONDS = 60.0
 
 Snapshot = dict[str, tuple[int, int]]
 
@@ -79,6 +93,10 @@ class DevSupervisor:
     requests the app queued since the last call; `publish_status` receives the
     status whenever it changes. `stop_child` returns whether the child exited.
     `run_data_action` performs a dev data action and returns the message to report.
+
+    With a `launch_root`, `active_root` is the worktree whose code
+    `start_child` runs and `scan` watches. `list_worktrees` returns the
+    `dev_data.list_worktrees` entries a switch request is checked against.
     """
 
     def __init__(
@@ -91,6 +109,8 @@ class DevSupervisor:
         read_requests: Callable[[], list[dict[str, Any]]] = list,
         publish_status: Callable[[dict[str, Any]], None] = lambda status: None,
         run_data_action: Callable[[dict[str, Any]], str] = lambda request: "Data actions are not available.",
+        list_worktrees: Callable[[], list[dict[str, Any]]] = list,
+        launch_root: Path | None = None,
     ) -> None:
         self._start_child = start_child
         self._stop_child = stop_child
@@ -108,6 +128,13 @@ class DevSupervisor:
         self._snapshot: Snapshot = {}
         self._changed: set[str] = set()
         self._last_change_at = 0.0
+        self._list_worktrees = list_worktrees
+        self._launch_root = launch_root
+        self.active_root = launch_root
+        self._previous_root: Path | None = None  # set until a switch is confirmed
+        self._worktree_notice: str | None = None
+        self._now = 0.0
+        self._started_at = 0.0
 
     def start(self) -> None:
         self._snapshot = self._scan()
@@ -116,6 +143,7 @@ class DevSupervisor:
 
     def tick(self, now: float) -> int | None:
         """Run one poll step; return the exit code once dev mode should end."""
+        self._now = now
         snapshot = self._scan()
         changed = {
             name
@@ -127,21 +155,37 @@ class DevSupervisor:
             self._changed |= changed
             self._last_change_at = now
 
+        restart_reason = None
         if self._child is not None:
             exit_code = self._child.poll()
             if exit_code is not None and self._stop_failed:
                 self._child = None  # the app that did not stop has exited after all
             elif exit_code == 0:
                 return 0  # the user closed the window
+            elif exit_code is not None and self._switch_pending():
+                self._child = None
+                restart_reason = self._return_from_failed_switch(
+                    f"the app exited with code {exit_code} (traceback in the terminal)"
+                )
             elif exit_code is not None:
                 self._child = None
+                self._previous_root = None
                 self._report(
                     f"[dev] The app stopped with exit code {exit_code}; the error and traceback are above.\n"
                     "[dev] Dev mode is still running: save a Python file under desktop/ or src/ to "
                     "start the app again, or press Ctrl+C to quit."
                 )
+            elif self._previous_root is not None and not self._switch_pending():
+                self._previous_root = None  # the switched-to app is up: the switch is done
 
-        restart_reason = self._apply(self._read_requests())
+        if self._active_worktree_removed():
+            removed = self.active_root
+            self._previous_root = None
+            self._enter(self._launch_root)
+            self._worktree_notice = f"Worktree {removed.name} was removed; the window is back on {self.active_root.name}."
+            restart_reason = f"Worktree {removed.name} was removed"
+
+        restart_reason = self._apply(self._read_requests()) or restart_reason
         if restart_reason is None and self._stop_failed:
             restart_reason = "The last restart did not finish"
 
@@ -184,7 +228,13 @@ class DevSupervisor:
     def _start(self) -> None:
         try:
             self._child = self._start_child()
+            self._started_at = self._now
         except OSError as error:  # the child stays None, so the next change or restart request starts it
+            if self._previous_root is not None:
+                self._return_from_failed_switch(f"could not start the app: {error}")
+                self._report(f"[dev] {self._worktree_notice}")
+                self._start()  # on the previous worktree; no further fallback
+                return
             self._report(
                 f"[dev] Could not start the app: {error}\n"
                 "[dev] Dev mode is still running: save a Python file under desktop/ or src/ to "
@@ -204,6 +254,8 @@ class DevSupervisor:
             elif action == "set_auto_restart" and isinstance(request.get("enabled"), bool):
                 self._auto_restart = request["enabled"]
                 self._report(f"[dev] Automatic restart turned {'on' if self._auto_restart else 'off'}.")
+            elif action == "switch_worktree" and isinstance(request.get("path"), str) and self._launch_root:
+                restart_reason = self._switch(request["path"]) or restart_reason
             else:
                 self._report(f"[dev] Ignored an unknown request from the app: {request!r}")
         return restart_reason
@@ -217,8 +269,53 @@ class DevSupervisor:
             except Exception as error:  # the app is started again whatever happens
                 self._report(f"[dev] Data action failed: {error}")
 
+    # --- Worktree switch ---------------------------------------------------------
+
+    def _switch(self, path: str) -> str | None:
+        """Point the child at another worktree; return the restart reason, or None when refused."""
+        entry = None
+        try:
+            entry = next((w for w in self._list_worktrees() if Path(w["path"]) == Path(path)), None)
+            refusal = switch_refusal(entry, path)
+        except (OSError, ValueError, subprocess.SubprocessError) as error:
+            refusal = f"Could not list the worktrees: {error}"
+        if refusal is not None:
+            self._worktree_notice = refusal
+            self._report(f"[dev] Worktree switch refused: {refusal}")
+            return None
+        target = Path(entry["path"])
+        if target != self.active_root:
+            self._previous_root = self.active_root
+        self._started_at = self._now  # the old app's age must not confirm the switch
+        self._enter(target)
+        self._worktree_notice = None
+        self._publish()  # lets the app confirm the switch before it is stopped
+        return f"Switching to worktree {target.name}"
+
+    def _enter(self, root: Path) -> None:
+        """Make `root` the active worktree; its sources become the watched ones."""
+        self.active_root = root
+        self._snapshot, self._changed = self._scan(), set()
+
+    def _switch_pending(self) -> bool:
+        return self._previous_root is not None and self._now - self._started_at < SWITCH_GRACE_SECONDS
+
+    def _return_from_failed_switch(self, reason: str) -> str:
+        failed, previous = self.active_root, self._previous_root
+        self._previous_root = None
+        self._enter(previous)
+        self._worktree_notice = f"Switching to {failed.name} failed: {reason}. The window is back on {previous.name}."
+        return f"Switching to {failed.name} failed; returning to {previous.name}"
+
+    def _active_worktree_removed(self) -> bool:
+        if self.active_root is None or self.active_root == self._launch_root:
+            return False
+        return not (self.active_root / ".git").exists()  # `git worktree remove` deletes it first
+
     def _publish(self) -> None:
         status = {"auto_restart": self._auto_restart, "pending_changes": len(self._changed)}
+        if self.active_root is not None:
+            status.update(worktree=str(self.active_root), worktree_notice=self._worktree_notice)
         if status == self._published:
             return
         try:
@@ -231,6 +328,16 @@ class DevSupervisor:
         if self._child is not None and self._child.poll() is None:
             self._stop_child(self._child)
         self._child = None
+
+
+def switch_refusal(entry: dict[str, Any] | None, path: str) -> str | None:
+    """Why the window cannot switch to `path`, whose `dev_data.list_worktrees` row is `entry`; None when it can."""
+    if entry is None:
+        return f"{path} is not a worktree of this repository (it may have been removed)."
+    if entry["dependency_differences"]:
+        differing = " and ".join(entry["dependency_differences"])
+        return f"{entry['name']} needs its own dependencies ({differing} differ); supported in a later version."
+    return None
 
 
 def stop_child(proc: Any) -> bool:
@@ -272,23 +379,35 @@ def run(argv: Sequence[str], *, repo_root: Path | None = None) -> int:
     root = repo_root or Path(__file__).resolve().parent.parent
     state_file = Path(tempfile.gettempdir()) / f"cvmanalytics-dev-state-{os.getpid()}.json"
     control_dir = Path(tempfile.mkdtemp(prefix="cvmanalytics-dev-"))
-    environment = {**os.environ, STATE_FILE_ENV: str(state_file), CONTROL_DIR_ENV: str(control_dir)}
+    environment = {
+        **os.environ,
+        STATE_FILE_ENV: str(state_file),
+        CONTROL_DIR_ENV: str(control_dir),
+        LAUNCH_ROOT_ENV: str(root),
+    }
+    # Imported now, not on the first switch, so a later edit cannot break the supervisor.
+    from desktop import dev_bootstrap, dev_data  # noqa: PLC0415 - stdlib-only dev modules
 
     def start_child() -> Any:
-        return subprocess.Popen(
-            [sys.executable, "-m", "desktop.app", *argv],
-            cwd=str(root),
-            env=environment,
-            stdin=subprocess.PIPE,
-        )
+        checkout = supervisor.active_root
+        command = [sys.executable, "-m", "desktop.app", *argv]
+        if checkout != root:
+            # Another worktree runs on this checkout's environment: no install. Calling
+            # main() skips that worktree's own bootstrap (any version of it), which
+            # would provision a .venv and node_modules of its own.
+            dev_bootstrap.link_frontend_dependencies(root, checkout)
+            command = [sys.executable, "-c", "from desktop.app import main; main()", *argv]
+        return subprocess.Popen(command, cwd=str(checkout), env=environment, stdin=subprocess.PIPE)
 
     supervisor = DevSupervisor(
         start_child,
         stop_child,
-        lambda: scan_sources(root),
+        lambda: scan_sources(supervisor.active_root),
         read_requests=lambda: read_requests(control_dir),
         publish_status=lambda status: write_status(control_dir, status),
         run_data_action=lambda request: run_data_action(request, control_dir, state_file),
+        list_worktrees=lambda: dev_data.list_worktrees(root, env_root=root),
+        launch_root=root,
     )
     _report("[dev] Dev supervisor running: the app restarts when Python files under desktop/ or src/ change.")
     try:

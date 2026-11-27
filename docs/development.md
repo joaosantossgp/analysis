@@ -107,6 +107,15 @@ database, the downloaded CVM files or everything to a backup, restore it, or
 delete it). See
 [dev panel](dev-runtime-and-data-paths.md#dev-panel).
 
+The dev panel's **Worktrees** section lists every git worktree and switches the
+open window to one of them: the window reopens on the same route running that
+worktree's code. A worktree whose `requirements.txt` and frontend lockfile match
+the environment dev mode was launched with runs on that environment, with no
+install; one whose dependencies differ is flagged and cannot be switched to yet.
+A failed switch returns to the previous worktree, and a removed worktree falls
+back to the launch checkout. See
+[worktree switch](dev-runtime-and-data-paths.md#worktree-switch).
+
 With no path overrides or release-data opt-in, desktop dev uses the **shared
 dev data** of the main checkout, also when launched from a git worktree:
 

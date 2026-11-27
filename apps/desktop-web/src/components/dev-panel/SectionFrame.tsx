@@ -7,6 +7,18 @@ type Props = {
   children: ReactNode;
 };
 
+/** Small outlined label next to a value, e.g. "Main checkout" or "Isolated data". */
+export function Tag({ color, children }: { color: string; children: ReactNode }) {
+  return (
+    <span
+      className="ml-2 inline-flex items-center gap-1 rounded-sm border px-1 font-mono text-2xs uppercase tracking-wider"
+      style={{ borderColor: color, color }}
+    >
+      {children}
+    </span>
+  );
+}
+
 /** Shared frame of a dev panel section: title row, then the section body. */
 export function SectionFrame({ title, action, children }: Props) {
   return (

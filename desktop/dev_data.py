@@ -20,6 +20,9 @@ import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
+
+from desktop.dev_bootstrap import dependency_differences
 
 MARKER_NAME = ".dev-data-isolated"
 SHARED = "shared"
@@ -50,20 +53,67 @@ def parse_main_checkout(porcelain: str) -> Path | None:
     return None
 
 
+def _git_worktree_list(repo_root: Path) -> str:
+    """`git worktree list --porcelain`. Raises OSError, ValueError (undecodable path) or SubprocessError."""
+    return subprocess.run(
+        ["git", "-C", str(repo_root), "worktree", "list", "--porcelain"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=10,
+        check=True,
+    ).stdout
+
+
 def main_checkout(repo_root: Path) -> Path:
     """The main checkout of `repo_root`; `repo_root` itself when git cannot answer."""
     try:
-        listing = subprocess.run(
-            ["git", "-C", str(repo_root), "worktree", "list", "--porcelain"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            timeout=10,
-            check=True,
-        ).stdout
-    except (OSError, ValueError, subprocess.SubprocessError):  # ValueError: undecodable path
+        listing = _git_worktree_list(repo_root)
+    except (OSError, ValueError, subprocess.SubprocessError):
         return repo_root
     return parse_main_checkout(listing) or repo_root
+
+
+def parse_worktrees(porcelain: str) -> list[dict[str, Any]]:
+    """Entries of `git worktree list --porcelain`, main checkout first.
+
+    Each entry has `path`, `branch` (None on a detached HEAD) and `prunable`
+    (git lost the folder: the worktree was removed on disk).
+    """
+    entries: list[dict[str, Any]] = []
+    for line in porcelain.splitlines():
+        if line.startswith("worktree "):
+            entries.append({"path": Path(line.removeprefix("worktree ")), "branch": None, "prunable": False})
+        elif entries and line.startswith("branch "):
+            entries[-1]["branch"] = line.removeprefix("branch ").removeprefix("refs/heads/")
+        elif entries and line.split(" ", 1)[0] == "prunable":
+            entries[-1]["prunable"] = True
+    return entries
+
+
+def list_worktrees(repo_root: Path, env_root: Path) -> list[dict[str, Any]]:
+    """Every worktree of the repository that still exists on disk, main checkout first.
+
+    `env_root` is the checkout whose installed environment (`.venv`,
+    `node_modules`) runs the other worktrees' code; its own entry never differs.
+    Raises like `_git_worktree_list`.
+    """
+    entries = [entry for entry in parse_worktrees(_git_worktree_list(repo_root)) if not entry["prunable"]]
+    entries = [entry for entry in entries if entry["path"].is_dir()]
+    main = entries[0]["path"] if entries else repo_root
+    return [
+        {
+            "name": entry["path"].name,
+            "path": str(entry["path"]),
+            "branch": entry["branch"],
+            "is_main_checkout": entry["path"] == main,
+            "isolated_data": resolve(entry["path"], main=main).mode != SHARED,
+            "dependency_differences": (
+                [] if _same_checkout(entry["path"], env_root) else dependency_differences(env_root, entry["path"])
+            ),
+        }
+        for entry in entries
+    ]
 
 
 def _same_checkout(left: Path, right: Path) -> bool:

@@ -38,6 +38,38 @@ export type DevContextResponse = DevContext | DevFailure;
 export type DevRestartResponse = { ok: true } | DevFailure;
 export type DevAutoRestartResponse = { ok: true; auto_restart: boolean } | DevFailure;
 
+/** One git worktree of the repository, as the dev panel's worktree switch lists it. */
+export interface DevWorktree {
+  /** Folder name. */
+  name: string;
+  path: string;
+  /** null on a detached HEAD. */
+  branch: string | null;
+  is_main_checkout: boolean;
+  /** The worktree this window runs. */
+  active: boolean;
+  /** A data-sensitive worktree: it runs on isolated dev data. */
+  isolated_data: boolean;
+  /**
+   * Dependency manifests (`requirements.txt`, `apps/desktop-web/package-lock.json`)
+   * that differ from the environment dev mode runs on. Empty: switchable without an install.
+   */
+  dependency_differences: string[];
+}
+
+export interface DevWorktreeList {
+  ok: true;
+  /** Main checkout first, in git's order. Worktrees removed on disk are left out. */
+  worktrees: DevWorktree[];
+  /** False when the app runs without the dev supervisor: no switching. */
+  supervised: boolean;
+  /** Why the last switch did not happen, or why the window fell back; null when there is nothing to report. */
+  notice: string | null;
+}
+
+export type DevWorktreesResponse = DevWorktreeList | DevFailure;
+export type DevSwitchWorktreeResponse = { ok: true; worktree: string } | DevFailure;
+
 /** Dev data a data action works on: the database, the downloaded CVM files, or the whole data root. */
 export type DevDataTarget = "db" | "input" | "all";
 export type DevDataOperation = "backup" | "restore" | "delete";
