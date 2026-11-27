@@ -16,10 +16,16 @@ Proposal (`.github/workflows/promotion-proposal.yml`, daily; it never promotes):
     python scripts/release/publication_decision.py promote --input facts.json > pick.json
     python scripts/release/promotion_workflow.py propose --facts facts.json --pick pick.json
 
+Retention (`.github/workflows/prerelease-retention.yml`, after each Release
+Desktop run and weekly, issue #634): the newest 10 pre-releases keep their
+download files; older pre-releases lose them, and their tags and pages stay.
+
+    python scripts/release/promotion_workflow.py prune
+
 Commands call `gh` and `git` (GH_TOKEN, GITHUB_REPOSITORY and GITHUB_REF come
-from the workflow). A promotion, and a proposal run without DRY_RUN=true, refuse
-any ref but `main`. DRY_RUN=true makes `propose` print the issue changes instead
-of making them.
+from the workflow). A promotion, and a proposal or retention run without
+DRY_RUN=true, refuse any ref but `main`. DRY_RUN=true makes `propose` print the
+issue changes, and `prune` the files it would remove, instead of making them.
 """
 from __future__ import annotations
 
@@ -106,6 +112,7 @@ def publications(releases: list[dict]) -> list[dict]:
             "kind": "pre-release" if release.get("prerelease") else "release",
             "published_at": release["published_at"],
             "prs": notes_prs(release.get("body")),
+            "assets": list(release.get("assets") or []),
         })
     return found
 
@@ -295,7 +302,7 @@ def render_summary(pick: dict, actions: list[dict], text: str, dry_run: bool) ->
 def _releases(repo: str) -> list[dict]:
     return pw._gh_api(
         f"repos/{repo}/releases?per_page=100",
-        ".[] | {id, tag_name, draft, prerelease, published_at, html_url, body}",
+        ".[] | {id, tag_name, draft, prerelease, published_at, html_url, body, assets: [.assets[].name]}",
     )
 
 
@@ -398,6 +405,36 @@ def propose(facts: dict, pick: dict) -> int:
     return 0
 
 
+def render_pruning(plan: dict, dry_run: bool) -> str:
+    verb = "Would remove" if dry_run else "Removing"
+    lines = [
+        f"## {'Dry run: ' if dry_run else ''}Pre-release retention",
+        "",
+        f"The newest {plan['keep']} pre-releases keep their download files: {', '.join(plan['kept']) or 'none'}.",
+        "Releases, tags and release pages are never touched.",
+        "",
+    ]
+    lines += [f"- {verb} {len(entry['assets'])} files from {entry['version']}: {', '.join(entry['assets'])}" for entry in plan["prune"]]
+    if not plan["prune"]:
+        lines.append("Nothing to remove.")
+    return "\n".join(lines) + "\n"
+
+
+def prune() -> int:
+    repo = os.environ["GITHUB_REPOSITORY"]
+    dry_run = pw._flag("DRY_RUN")
+    if not dry_run and os.environ.get("GITHUB_REF") != pw.MAIN_REF:
+        raise SystemExit(f"a retention run that removes files must come from {pw.MAIN_REF}; use a dry run elsewhere")
+    plan = pd.pick_pruning(publications(_releases(repo)))
+    _report(render_pruning(plan, dry_run))
+    if not dry_run:
+        for entry in plan["prune"]:
+            for asset in entry["assets"]:
+                pw._run("gh", "release", "delete-asset", entry["version"], asset, "--repo", repo, "--yes")
+                print(f"Removed {asset} from {entry['version']}")
+    return 0
+
+
 def verify(version: str, folder: Path) -> tuple[str | None, list[str]]:
     repo = os.environ["GITHUB_REPOSITORY"]
     releases = _releases(repo)
@@ -432,7 +469,7 @@ def promote(version: str) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Promotion workflow glue (ADR 0011).")
-    parser.add_argument("command", choices=("verify", "promote", "facts", "propose"))
+    parser.add_argument("command", choices=("verify", "promote", "facts", "propose", "prune"))
     parser.add_argument("--version", default="")
     parser.add_argument("--facts")
     parser.add_argument("--pick")
@@ -446,6 +483,8 @@ def main(argv: list[str] | None = None) -> int:
             return propose(pw._load(args.facts), pw._load(args.pick))
         if args.command == "promote":
             return promote(args.version)
+        if args.command == "prune":
+            return prune()
         with tempfile.TemporaryDirectory() as folder:
             return 1 if verify(args.version, Path(folder))[1] else 0
     except subprocess.CalledProcessError as exc:  # gh or git failed: show why, the output was captured

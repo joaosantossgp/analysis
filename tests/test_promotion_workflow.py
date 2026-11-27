@@ -36,8 +36,8 @@ def test_publications_map_releases_for_the_pick_with_the_prs_of_their_notes() ->
     ]
     assert w.publications(releases) == [
         {"version": "v0.30.2", "kind": "pre-release", "published_at": "2026-11-10T08:00:00Z",
-         "prs": [{"number": 650, "title": "Channel setting"}, {"number": 651, "title": "Fix: pill"}]},
-        {"version": "v0.29.2", "kind": "release", "published_at": "2026-07-09T13:21:01Z", "prs": []},
+         "prs": [{"number": 650, "title": "Channel setting"}, {"number": 651, "title": "Fix: pill"}], "assets": []},
+        {"version": "v0.29.2", "kind": "release", "published_at": "2026-07-09T13:21:01Z", "prs": [], "assets": []},
     ]  # fmt: skip
     assert w.latest_release(releases) == "v0.29.2"
     assert w.latest_release([_release("v0.30.1")]) is None
@@ -374,3 +374,59 @@ def test_promotion_stops_before_editing_when_the_package_does_not_verify(monkeyp
 
 def test_promotion_fails_when_the_latest_release_does_not_read_back(monkeypatch: pytest.MonkeyPatch) -> None:
     assert _promote(monkeypatch, latest_after="v0.30.1")[0] == 1
+
+
+# --- Retention (#634) ------------------------------------------------------------
+
+FILES = ["CVMAnalytics-windows.zip", "CVMAnalytics-windows.zip.sha256"]
+
+
+def _prune(monkeypatch: pytest.MonkeyPatch, releases: list[dict], *, dry_run: bool, ref: str = "refs/heads/main") -> tuple[int, list]:
+    calls: list[tuple[str, ...]] = []
+    monkeypatch.setenv("GITHUB_REPOSITORY", "o/r")
+    monkeypatch.setenv("DRY_RUN", str(dry_run).lower())
+    monkeypatch.setenv("GITHUB_REF", ref)
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", "")
+
+    def fake_gh_api(path: str, jq: str, paginate: bool = True) -> list:
+        assert path == "repos/o/r/releases?per_page=100" and "assets: [.assets[].name]" in jq
+        return releases
+
+    monkeypatch.setattr(pw, "_gh_api", fake_gh_api)
+    monkeypatch.setattr(pw, "_run", lambda *command: calls.append(command) or "")
+    return w.prune(), calls
+
+
+def _listing() -> list[dict]:
+    pre = [{**_release(f"v0.30.{n}"), "assets": FILES} for n in range(1, 13)]
+    return [*pre, {**_release("v0.29.2", prerelease=False), "assets": FILES}, {**_release("v0.31.0", draft=True), "assets": FILES}]
+
+
+def test_retention_removes_only_the_files_of_pre_releases_older_than_the_newest_ten(monkeypatch: pytest.MonkeyPatch) -> None:
+    code, calls = _prune(monkeypatch, _listing(), dry_run=False)
+    assert code == 0
+    assert calls == [
+        ("gh", "release", "delete-asset", tag, name, "--repo", "o/r", "--yes")
+        for tag in ("v0.30.2", "v0.30.1")
+        for name in FILES
+    ]
+
+
+def test_a_retention_dry_run_lists_the_files_and_removes_nothing(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture) -> None:
+    code, calls = _prune(monkeypatch, _listing(), dry_run=True, ref="refs/heads/feat/634")
+    assert (code, calls) == (0, [])
+    out = capsys.readouterr().out
+    assert out.startswith("## Dry run: Pre-release retention")
+    assert "- Would remove 2 files from v0.30.2: CVMAnalytics-windows.zip, CVMAnalytics-windows.zip.sha256" in out
+    assert "v0.29.2" not in out
+
+
+def test_a_retention_run_with_nothing_to_remove_says_so(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture) -> None:
+    releases = [{**_release("v0.30.0"), "assets": FILES}, {**_release("v0.30.1"), "assets": []}]
+    assert _prune(monkeypatch, releases, dry_run=False) == (0, [])
+    assert "Nothing to remove." in capsys.readouterr().out
+
+
+def test_a_retention_run_that_removes_files_must_come_from_main(monkeypatch: pytest.MonkeyPatch) -> None:
+    with pytest.raises(SystemExit):
+        _prune(monkeypatch, _listing(), dry_run=False, ref="refs/heads/feat/634")

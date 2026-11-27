@@ -1,0 +1,49 @@
+name: Pre-release Retention
+
+# Pre-release retention (ADR 0011, issue #634). After every Release Desktop run
+# and weekly, the newest 10 pre-releases keep their download files and older
+# pre-releases lose them. Releases, tags and release pages are never touched,
+# so a promoted pre-release is never pruned. The rule is
+# publication_decision.py pick_pruning; a manual run is a dry run by default.
+# Contract: docs/release-process.md.
+
+on:
+  workflow_run:
+    workflows: ["Release Desktop"]
+    types: [completed]
+  schedule:
+    - cron: "41 10 * * 1"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "List the files that would be removed without removing them."
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prerelease-retention
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    name: Remove download files of old pre-releases
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+
+      - name: Keep the newest 10 pre-releases' files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: python scripts/release/promotion_workflow.py prune

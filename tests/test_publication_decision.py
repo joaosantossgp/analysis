@@ -368,6 +368,50 @@ def test_promotion_pick_rejects_malformed_publications(publications) -> None:
         pd.pick_promotion(publications, [], TODAY)
 
 
+# --- Retention (#634) ------------------------------------------------------------
+
+FILES = ["CVMAnalytics-windows.zip", "CVMAnalytics-windows.zip.sha256"]
+
+
+def _pre(n: int, *, assets: list[str] | None = None) -> dict:
+    return {"version": f"v0.30.{n}", "kind": "pre-release", "assets": FILES if assets is None else assets}
+
+
+def test_the_newest_ten_pre_releases_keep_their_files() -> None:
+    plan = pd.pick_pruning([_pre(n) for n in range(1, 11)])
+    assert plan == {"keep": 10, "kept": [f"v0.30.{n}" for n in range(10, 0, -1)], "prune": []}
+
+
+def test_older_pre_releases_lose_their_files_newest_first_by_version_not_listing_order() -> None:
+    listing = [_pre(n) for n in (3, 12, 1, 9, 2, 11, 10, 8, 7, 6, 5, 4)]
+    plan = pd.pick_pruning(listing)
+    assert plan["kept"] == [f"v0.30.{n}" for n in range(12, 2, -1)]
+    assert plan["prune"] == [{"version": "v0.30.2", "assets": sorted(FILES)}, {"version": "v0.30.1", "assets": sorted(FILES)}]
+
+
+def test_releases_are_never_pruned_and_do_not_count_toward_the_ten() -> None:
+    releases = [{"version": "v0.29.2", "kind": "release", "assets": FILES}, {"version": "v0.30.0", "kind": "release", "assets": FILES}]
+    plan = pd.pick_pruning(releases + [_pre(n) for n in range(1, 12)])
+    assert plan["kept"] == [f"v0.30.{n}" for n in range(11, 1, -1)]
+    assert [entry["version"] for entry in plan["prune"]] == ["v0.30.1"]
+
+
+def test_legacy_rc_pre_releases_count_and_are_pruned_first() -> None:
+    plan = pd.pick_pruning([{"version": "v0.30.0-rc.1", "kind": "pre-release", "assets": FILES}] + [_pre(n) for n in range(0, 10)])
+    assert plan["kept"][-1] == "v0.30.0"
+    assert plan["prune"] == [{"version": "v0.30.0-rc.1", "assets": sorted(FILES)}]
+
+
+def test_a_pre_release_already_pruned_is_not_listed_again() -> None:
+    plan = pd.pick_pruning([_pre(n, assets=[] if n == 1 else None) for n in range(1, 13)])
+    assert [entry["version"] for entry in plan["prune"]] == ["v0.30.2"]
+
+
+def test_pruning_rejects_an_unknown_kind() -> None:
+    with pytest.raises(ValueError, match="unknown publication kind"):
+        pd.pick_pruning([{"version": "v0.30.1", "kind": "draft", "assets": []}])
+
+
 # --- Command line --------------------------------------------------------------
 
 def _run_cli(monkeypatch, capsys, command: str, payload: object) -> tuple[int, str, str]:
@@ -428,6 +472,7 @@ def test_cli_promote_prints_json(monkeypatch, capsys) -> None:
         ("decide", {"last_publication": "garbage", "prs": [{"number": 1, "class": "pre"}], "changed_paths": []}),
         ("decide", ["not", "an", "object"]),
         ("promote", {"publications": [], "blocking_bugs": []}),
+        ("prune", {"publications": [{"version": "v0.30.1", "kind": "pre-release"}]}),
     ],
 )
 def test_cli_rejects_invalid_input_without_a_decision(monkeypatch, capsys, command, payload) -> None:
