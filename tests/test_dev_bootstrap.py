@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -210,3 +211,96 @@ def test_linking_frontend_dependencies_needs_installed_ones(tmp_path: Path) -> N
 
     with pytest.raises(OSError, match="run dev mode from"):
         bootstrap.link_frontend_dependencies(env_root, worktree)
+
+
+# --- A worktree's own environment, installed by a worktree switch (#612) -------
+
+BOTH = [bootstrap.PYTHON_MANIFEST, bootstrap.FRONTEND_MANIFEST]
+
+
+def _fake_installs(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
+    """Record install commands; creating a venv creates its interpreter."""
+    commands: list[list[str]] = []
+
+    def fake_run(command: list[str], **_kwargs: object) -> None:
+        commands.append([str(part) for part in command])
+        if command[1:3] == ["-m", "venv"]:
+            python = bootstrap.venv_python(Path(command[-1]).parent)
+            python.parent.mkdir(parents=True)
+            python.write_text("", encoding="utf-8")
+
+    monkeypatch.setattr(bootstrap, "_run_checked", fake_run)
+    monkeypatch.setattr(bootstrap, "_node_version", lambda: (22, 0, 0))
+    return commands
+
+
+def test_pending_installs_reuse_the_worktree_s_own_bootstrap_stamps(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _env_root, worktree = _installed_environment(tmp_path)
+    commands = _fake_installs(monkeypatch)
+    assert bootstrap.pending_installs(worktree, BOTH) == BOTH, "nothing of its own is installed yet"
+
+    bootstrap.provision(worktree, BOTH)
+    assert bootstrap.pending_installs(worktree, BOTH) == [], "unchanged manifests: a second switch installs nothing"
+    assert len(commands) == 3
+
+    (worktree / "requirements.txt").write_text("pywebview>=5\n", encoding="utf-8")
+    assert bootstrap.pending_installs(worktree, BOTH) == [bootstrap.PYTHON_MANIFEST]
+    assert bootstrap.pending_installs(worktree, [bootstrap.FRONTEND_MANIFEST]) == [], "only the differing parts count"
+
+
+def test_provision_installs_only_the_given_parts_and_reports_each_step(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _env_root, worktree = _installed_environment(tmp_path)
+    commands = _fake_installs(monkeypatch)
+    steps: list[str] = []
+
+    bootstrap.provision(worktree, [bootstrap.FRONTEND_MANIFEST], steps.append)
+    assert commands == [["npm.cmd" if bootstrap._is_windows() else "npm", "ci"]]
+    assert steps == ["Installing frontend packages"]
+
+    bootstrap.provision(worktree, BOTH, steps.append)
+    assert steps[1:] == ["Creating Python environment", "Installing Python packages"], "the frontend is current"
+    assert commands[1][1:] == ["-m", "venv", "--copies", str(worktree / ".venv")]
+    assert commands[2] == [
+        str(bootstrap.venv_python(worktree)), "-m", "pip", "install", "-r", str(worktree / "requirements.txt")
+    ]
+
+
+def test_installing_over_linked_frontend_dependencies_never_touches_the_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    env_root, worktree = _installed_environment(tmp_path)
+    bootstrap.link_frontend_dependencies(env_root, worktree)
+    vite = Path("apps", "desktop-web", "node_modules", "vite", "bin", "vite.js")
+    if os.stat(worktree / vite).st_nlink < 2:
+        pytest.skip("hard links unsupported here: the worktree got copies")
+    (worktree / "apps" / "desktop-web" / "package-lock.json").write_text('{"tiny": 1}\n', encoding="utf-8")
+    source_before = {path: path.read_bytes() for path in (env_root / "apps").rglob("*") if path.is_file()}
+
+    def npm_ci_writing_in_place(command: list[str], *, cwd: Path) -> None:
+        (cwd / "node_modules" / "vite" / "bin").mkdir(parents=True, exist_ok=True)
+        (cwd / "node_modules" / "vite" / "bin" / "vite.js").write_text("// vite 2\n", encoding="utf-8")
+
+    monkeypatch.setattr(bootstrap, "_run_checked", npm_ci_writing_in_place)
+    monkeypatch.setattr(bootstrap, "_node_version", lambda: (22, 0, 0))
+
+    bootstrap.ensure_dev_frontend(["--dev"], repo_root=worktree)
+
+    assert (worktree / vite).read_text(encoding="utf-8") == "// vite 2\n"
+    assert {path: path.read_bytes() for path in (env_root / "apps").rglob("*") if path.is_file()} == source_before
+    assert bootstrap.pending_installs(worktree, [bootstrap.FRONTEND_MANIFEST]) == []
+
+
+def test_linking_replaces_an_install_for_another_lockfile_instead_of_mixing(tmp_path: Path) -> None:
+    env_root, worktree = _installed_environment(tmp_path)
+    own = worktree / "apps" / "desktop-web" / "node_modules"
+    (own / "left-over").mkdir(parents=True)
+    (own / "left-over" / "index.js").write_text("// from its own older install\n", encoding="utf-8")
+
+    bootstrap.link_frontend_dependencies(env_root, worktree)
+
+    assert not (own / "left-over").exists()
+    assert (own / "vite" / "bin" / "vite.js").read_text(encoding="utf-8") == "// vite\n"

@@ -52,9 +52,32 @@ export interface DevWorktree {
   isolated_data: boolean;
   /**
    * Dependency manifests (`requirements.txt`, `apps/desktop-web/package-lock.json`)
-   * that differ from the environment dev mode runs on. Empty: switchable without an install.
+   * that differ from the environment dev mode runs on. The worktree runs those
+   * parts on its own install (its `.venv`, its `node_modules`).
    */
   dependency_differences: string[];
+  /** Those of `dependency_differences` a switch installs first (about 1-2 minutes). Empty: no install. */
+  installs_needed: string[];
+}
+
+/** A dependency install under way for a worktree switch, published by the dev supervisor. */
+export interface DevInstallProgress {
+  /** Path and folder name of the worktree being installed. */
+  worktree: string;
+  name: string;
+  /** Current step, e.g. "Installing Python packages". */
+  step: string;
+  /** Unix time in seconds when the install started. */
+  started_at: number;
+}
+
+/** The failed command behind a notice, when an install failed. */
+export interface DevNoticeDetail {
+  /** null when the failure was not a command (e.g. a missing manifest). */
+  command: string | null;
+  exit_code: number | null;
+  /** The last lines of the command's output, or the error. */
+  output: string;
 }
 
 export interface DevWorktreeList {
@@ -65,10 +88,14 @@ export interface DevWorktreeList {
   supervised: boolean;
   /** Why the last switch did not happen, or why the window fell back; null when there is nothing to report. */
   notice: string | null;
+  notice_detail: DevNoticeDetail | null;
+  /** null when no install runs. */
+  install: DevInstallProgress | null;
 }
 
 export type DevWorktreesResponse = DevWorktreeList | DevFailure;
-export type DevSwitchWorktreeResponse = { ok: true; worktree: string } | DevFailure;
+/** `installing`: the window stays open while the worktree's dependencies install, then reopens on it. */
+export type DevSwitchWorktreeResponse = { ok: true; worktree: string; installing: boolean } | DevFailure;
 
 /** Dev data a data action works on: the database, the downloaded CVM files, or the whole data root. */
 export type DevDataTarget = "db" | "input" | "all";

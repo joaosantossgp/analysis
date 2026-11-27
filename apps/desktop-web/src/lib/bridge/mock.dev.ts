@@ -6,6 +6,8 @@ import type {
   DevDataOperation,
   DevDataTarget,
   DevDataTargetInfo,
+  DevInstallProgress,
+  DevNoticeDetail,
   DevWorktree,
 } from "./types.dev";
 
@@ -77,6 +79,8 @@ export function createMockDevMethods(): Pick<BridgeApi, "dev_get_context" | "dev
 
 const WORKTREES = "C:\\Projects\\analisys\\.claude\\worktrees";
 
+const OWN_DEPENDENCIES = ["requirements.txt", "apps/desktop-web/package-lock.json"];
+
 /** Mock worktrees: the main checkout, a data-sensitive one, one that needs its own dependencies, a detached one. */
 export const MOCK_DEV_WORKTREES: DevWorktree[] = [
   {
@@ -87,6 +91,7 @@ export const MOCK_DEV_WORKTREES: DevWorktree[] = [
     active: true,
     isolated_data: false,
     dependency_differences: [],
+    installs_needed: [],
   },
   {
     name: "610-dev-panel",
@@ -96,6 +101,7 @@ export const MOCK_DEV_WORKTREES: DevWorktree[] = [
     active: false,
     isolated_data: true,
     dependency_differences: [],
+    installs_needed: [],
   },
   {
     name: "612-own-dependencies",
@@ -104,7 +110,8 @@ export const MOCK_DEV_WORKTREES: DevWorktree[] = [
     is_main_checkout: false,
     active: false,
     isolated_data: false,
-    dependency_differences: ["apps/desktop-web/package-lock.json"],
+    dependency_differences: OWN_DEPENDENCIES,
+    installs_needed: OWN_DEPENDENCIES,
   },
   {
     name: "review-pr-640",
@@ -114,25 +121,83 @@ export const MOCK_DEV_WORKTREES: DevWorktree[] = [
     active: false,
     isolated_data: false,
     dependency_differences: [],
+    installs_needed: [],
   },
 ];
 
-/** Same scenarios as the dev context: the `isolated` scenario runs `610-dev-panel`. */
+/** `localStorage.setItem("cvm_mock_dev_install", "fail")` makes the simulated install fail. */
+export const MOCK_DEV_INSTALL_SCENARIO_KEY = "cvm_mock_dev_install";
+
+/** Simulated install: each step starts this many seconds in; done at the last entry. */
+export const MOCK_INSTALL_STEPS: Array<[number, string | null]> = [
+  [0, "Creating Python environment"],
+  [3, "Installing Python packages"],
+  [8, "Installing frontend packages"],
+  [12, null],
+];
+
+const MOCK_INSTALL_FAILURE = {
+  command: "npm.cmd ci",
+  exit_code: 1,
+  output: "npm ERR! code ETARGET\nnpm ERR! notarget No matching version found for left-pad@99.0.0.",
+};
+
+/**
+ * Same scenarios as the dev context: the `isolated` scenario runs `610-dev-panel`.
+ * A switch to a worktree with installs simulates the install by the clock (`MOCK_INSTALL_STEPS`).
+ */
 export function createMockDevWorktreeMethods(): Pick<BridgeApi, "dev_list_worktrees" | "dev_switch_worktree"> {
   let active: string | null = null;
+  const installed = new Set<string>();
+  let install: DevInstallProgress | null = null;
+  let notice: string | null = null;
+  let noticeDetail: DevNoticeDetail | null = null;
+
+  /** Moves the simulated install on by the clock; at the end it switches, or fails. */
+  function advance(current: string) {
+    if (!install) return;
+    const elapsed = Date.now() / 1000 - install.started_at;
+    const [, step] = MOCK_INSTALL_STEPS.filter(([at]) => elapsed >= at).at(-1)!;
+    if (step) {
+      install = { ...install, step };
+      return;
+    }
+    const failed = typeof window !== "undefined" && window.localStorage?.getItem(MOCK_DEV_INSTALL_SCENARIO_KEY) === "fail";
+    const from = MOCK_DEV_WORKTREES.find((worktree) => worktree.path === current)?.name;
+    if (failed) {
+      notice = `Installing dependencies for ${install.name} failed; the window stays on ${from}.`;
+      noticeDetail = MOCK_INSTALL_FAILURE;
+    } else {
+      installed.add(install.worktree);
+      active = install.worktree; // no window to reopen in mock mode: the list shows the switch instead
+    }
+    install = null;
+  }
+
   return {
     async dev_list_worktrees() {
       const key = scenario();
       if (key === "error") return { ok: false, error: "Mock failure: git could not list the worktrees." };
+      advance(active ?? MOCK_DEV_CONTEXTS[key].worktree_path);
       const current = active ?? MOCK_DEV_CONTEXTS[key].worktree_path;
-      const worktrees = MOCK_DEV_WORKTREES.map((worktree) => ({ ...worktree, active: worktree.path === current }));
-      return { ok: true, worktrees, supervised: true, notice: null };
+      const worktrees = MOCK_DEV_WORKTREES.map((worktree) => ({
+        ...worktree,
+        active: worktree.path === current,
+        installs_needed: installed.has(worktree.path) ? [] : worktree.installs_needed,
+      }));
+      return { ok: true, worktrees, supervised: true, notice, notice_detail: noticeDetail, install };
     },
     async dev_switch_worktree({ path }) {
       const worktree = MOCK_DEV_WORKTREES.find((candidate) => candidate.path === path);
       if (!worktree) return { ok: false, error: `${path} is not a worktree of this repository (it may have been removed).` };
-      active = path; // no window to reopen in mock mode: the list shows the switch instead
-      return { ok: true, worktree: worktree.name };
+      if (install) return { ok: false, error: `Dependencies for ${install.name} are still installing; switch again once they are ready.` };
+      notice = noticeDetail = null;
+      if (worktree.installs_needed.length > 0 && !installed.has(path)) {
+        install = { worktree: path, name: worktree.name, step: MOCK_INSTALL_STEPS[0][1]!, started_at: Date.now() / 1000 };
+        return { ok: true, worktree: worktree.name, installing: true };
+      }
+      active = path;
+      return { ok: true, worktree: worktree.name, installing: false };
     },
   };
 }

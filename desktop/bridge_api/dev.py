@@ -61,6 +61,11 @@ def _same_path(left: Path, right: Path) -> bool:
     return os.path.normcase(left.resolve()) == os.path.normcase(right.resolve())
 
 
+def _dict_or_none(value: Any) -> dict[str, Any] | None:
+    """A JSON object read from the supervisor's status file, or None."""
+    return value if isinstance(value, dict) else None
+
+
 class DevBridgeMixin:
     @staticmethod
     def _dev_refusal() -> dict[str, Any] | None:
@@ -272,6 +277,8 @@ class DevBridgeMixin:
                 ],
                 "supervised": control_dir is not None,
                 "notice": status.get("worktree_notice"),
+                "notice_detail": _dict_or_none(status.get("worktree_notice_detail")),
+                "install": _dict_or_none(status.get("install")),
             }
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
@@ -279,8 +286,11 @@ class DevBridgeMixin:
     def dev_switch_worktree(self, params=None) -> dict:
         """Ask the dev supervisor to reopen the window on another worktree.
 
-        Returns once the supervisor accepted; the window closes right after and
-        reopens running that worktree's code on the same route.
+        Returns once the supervisor accepted. Without an install, the window
+        closes right after and reopens running that worktree's code on the same
+        route. With one (`installing: true`), the window stays open while the
+        supervisor installs the worktree's own dependencies; `dev_list_worktrees`
+        reports the progress, and the window reopens on the worktree when done.
         """
         refusal = self._dev_refusal()
         if refusal:
@@ -299,13 +309,15 @@ class DevBridgeMixin:
         except Exception as exc:
             return {"ok": False, "error": f"Could not list the worktrees: {exc}"}
         entry = next((w for w in worktrees if _same_path(Path(w["path"]), Path(path))), None)
-        refusal = dev_supervisor.switch_refusal(entry, path)  # the supervisor checks the same again
+        status = dev_supervisor.read_status(control_dir)
+        # The supervisor checks the same again.
+        refusal = dev_supervisor.switch_refusal(entry, path, _dict_or_none(status.get("install")))
         if refusal is None and _same_path(Path(entry["path"]), repo_root):
             refusal = f"The window already runs {entry['name']}."
         if refusal is not None:
             return {"ok": False, "error": refusal}
 
-        notice_before = dev_supervisor.read_status(control_dir).get("worktree_notice")
+        notice_before = status.get("worktree_notice")
         failure = self._dev_request("switch_worktree", path=entry["path"])
         if failure:
             return failure
@@ -313,7 +325,10 @@ class DevBridgeMixin:
         while True:
             status = dev_supervisor.read_status(control_dir)
             if status.get("worktree") and _same_path(Path(status["worktree"]), Path(entry["path"])):
-                return {"ok": True, "worktree": entry["name"]}
+                return {"ok": True, "worktree": entry["name"], "installing": False}
+            install = _dict_or_none(status.get("install"))
+            if install and isinstance(install.get("worktree"), str) and _same_path(Path(install["worktree"]), Path(entry["path"])):
+                return {"ok": True, "worktree": entry["name"], "installing": True}
             if status.get("worktree_notice") != notice_before:  # the supervisor refused
                 return {"ok": False, "error": status.get("worktree_notice") or "The dev supervisor refused the switch."}
             if time.monotonic() >= deadline:

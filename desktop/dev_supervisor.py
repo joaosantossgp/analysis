@@ -14,11 +14,14 @@ auto-restart switch use this channel, and so do its dev data actions: the
 supervisor runs them between stopping and starting the app and leaves the
 outcome in `data_action.json` (`read_data_action`).
 
-Worktree switch: the child runs the code of the active worktree. Every worktree
-runs on the environment of the checkout dev mode was launched from (its `.venv`
-and `node_modules`), so a worktree is switchable when its dependency manifests
-match that environment (`dev_data.list_worktrees`). A data action acts on the
-dev data the requesting app resolved, so after a switch it is the active
+Worktree switch: the child runs the code of the active worktree, on the
+environment of the checkout dev mode was launched from (its `.venv` and
+`node_modules`) wherever the worktree's dependency manifests match it
+(`dev_data.list_worktrees`). A part whose manifest differs runs on the
+worktree's own install instead, which the switch provisions first with the
+dev bootstrap on a background thread while the current app stays open; the
+status channel carries its progress (`install`). A data action acts on the dev
+data the requesting app resolved, so after a switch it is the active
 worktree's, and the app restarts on the active worktree.
 """
 
@@ -42,7 +45,7 @@ from typing import Any, Callable, Mapping, Sequence
 STATE_FILE_ENV = "CVMANALYTICS_DEV_STATE_FILE"
 # Directory the supervisor shares with its child: requests in, status out.
 CONTROL_DIR_ENV = "CVMANALYTICS_DEV_CONTROL_DIR"
-# The checkout dev mode was launched from; its installed environment runs every worktree.
+# The checkout dev mode was launched from; its installed environment runs every worktree that matches it.
 LAUNCH_ROOT_ENV = "CVMANALYTICS_DEV_LAUNCH_ROOT"
 WATCHED_DIRS = ("desktop", "src")
 POLL_SECONDS = 0.5
@@ -54,6 +57,7 @@ DATA_ACTION_FILE = "data_action.json"  # outcome of the last dev data action
 # counts as a failed switch (the child sends no "window is up" signal); add one
 # if a slow first start ever outlasts it.
 SWITCH_GRACE_SECONDS = 60.0
+INSTALL_OUTPUT_LINES = 40  # of a failed install command, shown in the dev panel
 
 Snapshot = dict[str, tuple[int, int]]
 
@@ -95,8 +99,12 @@ class DevSupervisor:
     `run_data_action` performs a dev data action and returns the message to report.
 
     With a `launch_root`, `active_root` is the worktree whose code
-    `start_child` runs and `scan` watches. `list_worktrees` returns the
-    `dev_data.list_worktrees` entries a switch request is checked against.
+    `start_child` runs and `scan` watches, and `active_differences` its
+    manifests that differ from the launch environment, which it runs on its
+    own install of. `list_worktrees` returns the `dev_data.list_worktrees`
+    entries a switch request is checked against. `provision(root, manifests,
+    progress)` installs a worktree's own environment (`dev_bootstrap.provision`);
+    it runs on a background thread and raises on failure.
     """
 
     def __init__(
@@ -111,6 +119,7 @@ class DevSupervisor:
         run_data_action: Callable[[dict[str, Any]], str] = lambda request: "Data actions are not available.",
         list_worktrees: Callable[[], list[dict[str, Any]]] = list,
         launch_root: Path | None = None,
+        provision: Callable[[Path, list[str], Callable[[str], None]], None] | None = None,
     ) -> None:
         self._start_child = start_child
         self._stop_child = stop_child
@@ -131,8 +140,14 @@ class DevSupervisor:
         self._list_worktrees = list_worktrees
         self._launch_root = launch_root
         self.active_root = launch_root
+        self.active_differences: list[str] = []
         self._previous_root: Path | None = None  # set until a switch is confirmed
+        self._previous_differences: list[str] = []
         self._worktree_notice: str | None = None
+        self._notice_detail: dict[str, Any] | None = None  # the failed command of a failed install
+        self._provision = provision or _no_provision
+        self._install: dict[str, Any] | None = None  # progress of the install under way, published
+        self._install_job: tuple[Path, list[str], list[Exception | None]] | None = None
         self._now = 0.0
         self._started_at = 0.0
 
@@ -182,9 +197,10 @@ class DevSupervisor:
             removed = self.active_root
             self._previous_root = None
             self._enter(self._launch_root)
-            self._worktree_notice = f"Worktree {removed.name} was removed; the window is back on {self.active_root.name}."
+            self._notify(f"Worktree {removed.name} was removed; the window is back on {self.active_root.name}.")
             restart_reason = f"Worktree {removed.name} was removed"
 
+        restart_reason = self._finish_install() or restart_reason
         restart_reason = self._apply(self._read_requests()) or restart_reason
         if restart_reason is None and self._stop_failed:
             restart_reason = "The last restart did not finish"
@@ -272,29 +288,80 @@ class DevSupervisor:
     # --- Worktree switch ---------------------------------------------------------
 
     def _switch(self, path: str) -> str | None:
-        """Point the child at another worktree; return the restart reason, or None when refused."""
+        """Point the child at another worktree; return the restart reason, or None when refused or installing."""
         entry = None
         try:
             entry = next((w for w in self._list_worktrees() if Path(w["path"]) == Path(path)), None)
-            refusal = switch_refusal(entry, path)
+            refusal = switch_refusal(entry, path, self._install)
         except (OSError, ValueError, subprocess.SubprocessError) as error:
             refusal = f"Could not list the worktrees: {error}"
         if refusal is not None:
-            self._worktree_notice = refusal
+            self._notify(refusal)
             self._report(f"[dev] Worktree switch refused: {refusal}")
             return None
-        target = Path(entry["path"])
+        self._notify(None)
+        if entry.get("installs_needed"):
+            self._begin_install(entry)
+            return None
+        return self._go_to(Path(entry["path"]), entry["dependency_differences"])
+
+    def _go_to(self, target: Path, differences: list[str]) -> str:
+        """Make `target` the active worktree; return the restart reason that reopens the app on it."""
         if target != self.active_root:
-            self._previous_root = self.active_root
+            self._previous_root, self._previous_differences = self.active_root, self.active_differences
         self._started_at = self._now  # the old app's age must not confirm the switch
-        self._enter(target)
-        self._worktree_notice = None
+        self._enter(target, differences)
         self._publish()  # lets the app confirm the switch before it is stopped
         return f"Switching to worktree {target.name}"
 
-    def _enter(self, root: Path) -> None:
+    def _begin_install(self, entry: dict[str, Any]) -> None:
+        """Install the worktree's own environment on a background thread; the current app stays open."""
+        target, name, manifests = Path(entry["path"]), entry["name"], list(entry["installs_needed"])
+        progress = {"worktree": str(target), "name": name, "step": "Preparing the install", "started_at": time.time()}
+        outcome: list[Exception | None] = []
+
+        def step(text: str) -> None:
+            progress["step"] = text  # published by the next tick
+            self._report(f"[dev] {name}: {text}...")
+
+        def install() -> None:
+            try:
+                self._provision(target, manifests, step)
+            except Exception as error:  # reported by `_finish_install`
+                outcome.append(error)
+            else:
+                outcome.append(None)
+
+        self._install = progress
+        self._install_job = (target, list(entry["dependency_differences"]), outcome)
+        self._report(
+            f"[dev] Worktree {name} needs its own dependencies ({' and '.join(manifests)}); installing them. "
+            f"The window stays on {self.active_root.name} until they are ready."
+        )
+        threading.Thread(target=install, name="dev-worktree-install", daemon=True).start()
+        self._publish()  # lets the app confirm the switch and show the progress
+
+    def _finish_install(self) -> str | None:
+        """Once the install is done: switch to its worktree, or report why not. None while it runs."""
+        if self._install_job is None or not self._install_job[2]:
+            return None
+        (target, differences, (error,)), name = self._install_job, self._install["name"]
+        self._install = self._install_job = None
+        if error is None:
+            return self._go_to(target, differences)
+        detail = install_failure(error)
+        self._notify(f"Installing dependencies for {name} failed; the window stays on {self.active_root.name}.", detail)
+        command = f"Command: {detail['command']} (exit code {detail['exit_code']})\n" if detail["command"] else ""
+        self._report(f"[dev] {self._worktree_notice}\n{command}{detail['output']}")
+        return None
+
+    def _notify(self, message: str | None, detail: dict[str, Any] | None = None) -> None:
+        """Set what the Worktrees section says about the last switch."""
+        self._worktree_notice, self._notice_detail = message, detail
+
+    def _enter(self, root: Path, differences: list[str] | None = None) -> None:
         """Make `root` the active worktree; its sources become the watched ones."""
-        self.active_root = root
+        self.active_root, self.active_differences = root, list(differences or [])
         self._snapshot, self._changed = self._scan(), set()
 
     def _switch_pending(self) -> bool:
@@ -303,8 +370,8 @@ class DevSupervisor:
     def _return_from_failed_switch(self, reason: str) -> str:
         failed, previous = self.active_root, self._previous_root
         self._previous_root = None
-        self._enter(previous)
-        self._worktree_notice = f"Switching to {failed.name} failed: {reason}. The window is back on {previous.name}."
+        self._enter(previous, self._previous_differences)
+        self._notify(f"Switching to {failed.name} failed: {reason}. The window is back on {previous.name}.")
         return f"Switching to {failed.name} failed; returning to {previous.name}"
 
     def _active_worktree_removed(self) -> bool:
@@ -315,7 +382,12 @@ class DevSupervisor:
     def _publish(self) -> None:
         status = {"auto_restart": self._auto_restart, "pending_changes": len(self._changed)}
         if self.active_root is not None:
-            status.update(worktree=str(self.active_root), worktree_notice=self._worktree_notice)
+            status.update(
+                worktree=str(self.active_root),
+                worktree_notice=self._worktree_notice,
+                worktree_notice_detail=self._notice_detail,
+                install=dict(self._install) if self._install else None,  # a copy: the install thread updates it
+            )
         if status == self._published:
             return
         try:
@@ -330,14 +402,33 @@ class DevSupervisor:
         self._child = None
 
 
-def switch_refusal(entry: dict[str, Any] | None, path: str) -> str | None:
-    """Why the window cannot switch to `path`, whose `dev_data.list_worktrees` row is `entry`; None when it can."""
+def _no_provision(_root: Path, _manifests: list[str], _progress: Callable[[str], None]) -> None:
+    raise OSError("Installing a worktree's dependencies is not available.")
+
+
+def switch_refusal(entry: dict[str, Any] | None, path: str, install: dict[str, Any] | None = None) -> str | None:
+    """Why the window cannot switch to `path`; None when it can.
+
+    `entry` is the `dev_data.list_worktrees` row of `path`, and `install` the
+    published progress of a dependency install under way, if any.
+    """
+    if install:
+        return f"Dependencies for {install.get('name')} are still installing; switch again once they are ready."
     if entry is None:
         return f"{path} is not a worktree of this repository (it may have been removed)."
-    if entry["dependency_differences"]:
-        differing = " and ".join(entry["dependency_differences"])
-        return f"{entry['name']} needs its own dependencies ({differing} differ); supported in a later version."
     return None
+
+
+def install_failure(error: Exception) -> dict[str, Any]:
+    """What the dev panel shows of a failed install: the command, its exit code and the end of its output."""
+    command = getattr(error, "command", None)  # a dev_bootstrap.BootstrapError
+    output = getattr(error, "output", None)
+    lines = (output if isinstance(output, str) else str(error)).strip().splitlines()
+    return {
+        "command": subprocess.list2cmdline(command) if command else None,
+        "exit_code": getattr(error, "returncode", None) if command else None,
+        "output": "\n".join(lines[-INSTALL_OUTPUT_LINES:]) or "(no output)",
+    }
 
 
 def stop_child(proc: Any) -> bool:
@@ -385,6 +476,9 @@ def run(argv: Sequence[str], *, repo_root: Path | None = None) -> int:
         CONTROL_DIR_ENV: str(control_dir),
         LAUNCH_ROOT_ENV: str(root),
     }
+    # The interpreter worktree environments are created from, as this process
+    # stamps them, so the app reads their stamps the same way (`pending_installs`).
+    environment.setdefault("CVMANALYTICS_DEV_BOOTSTRAP_BASE_PYTHON", sys.executable)
     # Imported now, not on the first switch, so a later edit cannot break the supervisor.
     from desktop import dev_bootstrap, dev_data  # noqa: PLC0415 - stdlib-only dev modules
 
@@ -392,11 +486,16 @@ def run(argv: Sequence[str], *, repo_root: Path | None = None) -> int:
         checkout = supervisor.active_root
         command = [sys.executable, "-m", "desktop.app", *argv]
         if checkout != root:
-            # Another worktree runs on this checkout's environment: no install. Calling
-            # main() skips that worktree's own bootstrap (any version of it), which
-            # would provision a .venv and node_modules of its own.
-            dev_bootstrap.link_frontend_dependencies(root, checkout)
-            command = [sys.executable, "-c", "from desktop.app import main; main()", *argv]
+            # Another worktree runs on this checkout's environment, except the parts whose
+            # manifests differ: the switch installed those in the worktree. Calling main()
+            # skips that worktree's own bootstrap (any version of it).
+            differences = supervisor.active_differences
+            python = sys.executable
+            if dev_bootstrap.PYTHON_MANIFEST in differences:
+                python = str(dev_bootstrap.venv_python(checkout))
+            if dev_bootstrap.FRONTEND_MANIFEST not in differences:
+                dev_bootstrap.link_frontend_dependencies(root, checkout)
+            command = [python, "-c", "from desktop.app import main; main()", *argv]
         return subprocess.Popen(command, cwd=str(checkout), env=environment, stdin=subprocess.PIPE)
 
     supervisor = DevSupervisor(
@@ -408,6 +507,7 @@ def run(argv: Sequence[str], *, repo_root: Path | None = None) -> int:
         run_data_action=lambda request: run_data_action(request, control_dir, state_file),
         list_worktrees=lambda: dev_data.list_worktrees(root, env_root=root),
         launch_root=root,
+        provision=dev_bootstrap.provision,
     )
     _report("[dev] Dev supervisor running: the app restarts when Python files under desktop/ or src/ change.")
     try:

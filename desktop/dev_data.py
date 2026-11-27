@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from desktop.dev_bootstrap import dependency_differences
+from desktop.dev_bootstrap import dependency_differences, pending_installs
 
 MARKER_NAME = ".dev-data-isolated"
 SHARED = "shared"
@@ -96,24 +96,29 @@ def list_worktrees(repo_root: Path, env_root: Path) -> list[dict[str, Any]]:
 
     `env_root` is the checkout whose installed environment (`.venv`,
     `node_modules`) runs the other worktrees' code; its own entry never differs.
-    Raises like `_git_worktree_list`.
+    `dependency_differences` are the manifests a worktree runs on its own
+    install of instead, and `installs_needed` those a switch to it must install
+    first. Raises like `_git_worktree_list`.
     """
     entries = [entry for entry in parse_worktrees(_git_worktree_list(repo_root)) if not entry["prunable"]]
     entries = [entry for entry in entries if entry["path"].is_dir()]
     main = entries[0]["path"] if entries else repo_root
-    return [
-        {
-            "name": entry["path"].name,
-            "path": str(entry["path"]),
-            "branch": entry["branch"],
-            "is_main_checkout": entry["path"] == main,
-            "isolated_data": resolve(entry["path"], main=main).mode != SHARED,
-            "dependency_differences": (
-                [] if _same_checkout(entry["path"], env_root) else dependency_differences(env_root, entry["path"])
-            ),
-        }
-        for entry in entries
-    ]
+    rows = []
+    for entry in entries:
+        path = entry["path"]
+        differences = [] if _same_checkout(path, env_root) else dependency_differences(env_root, path)
+        rows.append(
+            {
+                "name": path.name,
+                "path": str(path),
+                "branch": entry["branch"],
+                "is_main_checkout": path == main,
+                "isolated_data": resolve(path, main=main).mode != SHARED,
+                "dependency_differences": differences,
+                "installs_needed": pending_installs(path, differences),
+            }
+        )
+    return rows
 
 
 def _same_checkout(left: Path, right: Path) -> bool:

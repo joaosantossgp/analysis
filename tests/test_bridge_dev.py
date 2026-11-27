@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import sys
+import threading
+import time
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -285,7 +287,7 @@ def test_worktree_list_marks_the_window_and_flags_different_dependencies(
 
     assert result["ok"] is True
     assert result["supervised"] is True
-    assert result["notice"] is None
+    assert (result["notice"], result["notice_detail"], result["install"]) == (None, None, None)
     rows = [(w["name"], w["is_main_checkout"], w["active"], w["dependency_differences"]) for w in result["worktrees"]]
     assert rows == [
         ("main", True, False, []),
@@ -300,8 +302,10 @@ def test_worktree_list_marks_the_window_and_flags_different_dependencies(
         "is_main_checkout": False,
         "isolated_data": False,
         "dependency_differences": [],
+        "installs_needed": [],
         "active": False,
     }
+    assert result["worktrees"][3]["installs_needed"] == ["requirements.txt"]
 
 
 def test_worktree_list_compares_with_the_environment_dev_mode_was_launched_with(
@@ -335,9 +339,10 @@ def test_worktree_list_without_a_supervisor_or_git(worktrees: dict[str, Path], m
     assert "git worktree list" in result["error"]
 
 
-def test_switch_returns_once_the_supervisor_accepted(
-    worktrees: dict[str, Path], control_dir: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def _real_supervisor(
+    worktrees: dict[str, Path], control_dir: Path, provision: object = None
+) -> dev_supervisor.DevSupervisor:
+    """A dev supervisor on the control directory, launched from the main checkout; no process."""
     main = worktrees["main"]
     supervisor = dev_supervisor.DevSupervisor(
         start_child=lambda: Mock(**{"poll.return_value": None}),
@@ -348,23 +353,67 @@ def test_switch_returns_once_the_supervisor_accepted(
         publish_status=lambda status: dev_supervisor.write_status(control_dir, status),
         list_worktrees=lambda: dev_data.list_worktrees(main, env_root=main),
         launch_root=main,
+        provision=provision,
     )
     supervisor.start()
+    return supervisor
+
+
+def test_switch_returns_once_the_supervisor_accepted(
+    worktrees: dict[str, Path], control_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    supervisor = _real_supervisor(worktrees, control_dir)
     monkeypatch.setattr(dev_bridge.time, "sleep", lambda _seconds: supervisor.tick(0.0))
 
-    assert CVMBridge().dev_switch_worktree({"path": str(worktrees["other"])}) == {"ok": True, "worktree": "wt-other"}
+    assert CVMBridge().dev_switch_worktree({"path": str(worktrees["other"])}) == {
+        "ok": True,
+        "worktree": "wt-other",
+        "installing": False,
+    }
     assert supervisor.active_root == worktrees["other"]
 
 
-def test_switch_refuses_a_worktree_that_needs_its_own_dependencies(
-    worktrees: dict[str, Path], control_dir: Path
+def test_switch_to_a_worktree_with_other_dependencies_returns_once_its_install_started(
+    worktrees: dict[str, Path], control_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    result = CVMBridge().dev_switch_worktree({"path": str(worktrees["deps"])})
+    released = threading.Event()
 
-    assert result["ok"] is False
-    assert "wt-deps needs its own dependencies (requirements.txt differ)" in result["error"]
-    assert "supported in a later version" in result["error"]
-    assert dev_supervisor.read_requests(control_dir) == []
+    def provision(_root: Path, _manifests: list[str], progress) -> None:
+        progress("Installing Python packages")
+        released.wait(5)
+
+    supervisor = _real_supervisor(worktrees, control_dir, provision)
+    monkeypatch.setattr(dev_bridge.time, "sleep", lambda _seconds: supervisor.tick(0.0))
+
+    assert CVMBridge().dev_switch_worktree({"path": str(worktrees["deps"])}) == {
+        "ok": True,
+        "worktree": "wt-deps",
+        "installing": True,
+    }
+    assert supervisor.active_root == worktrees["main"], "the window stays where it is during the install"
+    install = CVMBridge().dev_list_worktrees()["install"]
+    assert (install["name"], install["worktree"]) == ("wt-deps", str(worktrees["deps"]))
+    assert isinstance(install["step"], str) and isinstance(install["started_at"], float)
+
+    refused = CVMBridge().dev_switch_worktree({"path": str(worktrees["other"])})
+    assert refused == {"ok": False, "error": "Dependencies for wt-deps are still installing; switch again once they are ready."}
+
+    released.set()
+    deadline = time.monotonic() + 5
+    while supervisor.active_root != worktrees["deps"]:
+        assert time.monotonic() < deadline, "the supervisor did not switch after the install"
+        supervisor.tick(1.0)
+    assert CVMBridge().dev_list_worktrees()["install"] is None
+
+
+def test_worktree_list_shows_the_command_of_a_failed_install(worktrees: dict[str, Path], control_dir: Path) -> None:
+    notice = "Installing dependencies for wt-deps failed; the window stays on main."
+    detail = {"command": "npm.cmd ci", "exit_code": 1, "output": "npm ERR! code ETARGET"}
+    dev_supervisor.write_status(control_dir, {"worktree_notice": notice, "worktree_notice_detail": detail, "install": None})
+
+    result = CVMBridge().dev_list_worktrees()
+
+    assert (result["notice"], result["notice_detail"], result["install"]) == (notice, detail, None)
 
 
 @pytest.mark.parametrize(
