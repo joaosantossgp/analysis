@@ -315,3 +315,17 @@ def test_later_postpones_the_offer_in_status_reads_and_at_the_next_start(online)
 
 def test_later_without_an_offer_is_refused(online):
     assert CVMBridge().snooze_update() == {"ok": False, "error": "no_update_info"}
+
+
+def test_dev_mode_uses_git_instead_of_checking_publications(monkeypatch, online):
+    monkeypatch.setattr("sys.argv", ["desktop.app", "--dev"])
+    bridge = CVMBridge()
+    bridge._start_update_check()
+    for force in (False, True):
+        check = bridge.check_update({"force": force})
+        assert check["status"] == "managed_by_git"
+        assert not check["available"]
+    assert not bridge._get_software_update_status()["apply_supported"]
+    assert not bridge.set_update_channel({"channel": "prereleases"})["ok"]
+    assert not bridge.apply_update().get("started")
+    assert not online

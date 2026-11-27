@@ -105,6 +105,9 @@ export function UpdateChannelView({
   onCheck,
   onRetry,
 }: UpdateChannelViewProps) {
+  if (check?.status === "managed_by_git") {
+    return <Panel title="Software updates">Dev mode runs the current Git checkout.</Panel>;
+  }
   const locked = Boolean(browserReason) || saving;
 
   return (

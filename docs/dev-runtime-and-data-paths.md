@@ -201,6 +201,11 @@ Source desktop injects output/log defaults only when `CVM_DATA_DIR` is absent.
 The isolated launcher script sets this variable explicitly. See
 [Data Paths](development.md#data-paths) for override precedence and examples.
 
+Source `--dev` ignores an inherited `DATABASE_URL` and uses the SQLite database
+selected by its local data paths. The dev window runs the current Git checkout.
+Use Git to bring in newer commits. Published binary updates apply to installed
+apps. CVM data updates remain available from the Data panel.
+
 ## F5 / reload behavior in dev mode
 
 In `--dev` mode, the app starts its own Vite server on the first free loopback
