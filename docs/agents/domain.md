@@ -6,8 +6,8 @@ layout, so the locations below differ from the skill defaults.
 
 ## Before exploring, read these
 
-- **`GLOSSARY.md`** at the repo root, if it exists. There is none yet; create it
-  there when `/domain-modeling` resolves terms.
+- **`GLOSSARY.md`** at the repo root: the project vocabulary. Add terms there
+  when `/domain-modeling` resolves them.
 - **`docs/CONTEXT.md`**: financial pipeline domain rules (statements, periods,
   `LINE_ID_BASE`, QA, coverage, freshness). It is not a glossary; do not rename
   it to `GLOSSARY.md`.
