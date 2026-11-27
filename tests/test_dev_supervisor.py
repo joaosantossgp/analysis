@@ -5,6 +5,8 @@ import subprocess
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import pytest
+
 from desktop import dev_supervisor as sup
 
 
@@ -29,6 +31,9 @@ class Harness:
         self.statuses: list[dict[str, object]] = []
         self.child_exits_on_stop = True
         self.start_error: OSError | None = None
+        # (request, apps started so far, apps stopped so far) at the moment each data action ran.
+        self.data_actions: list[tuple[dict[str, object], int, int]] = []
+        self.data_action_error: Exception | None = None
         self.supervisor = sup.DevSupervisor(
             start_child=self._start,
             stop_child=self._stop,
@@ -37,8 +42,15 @@ class Harness:
             quiet_seconds=1.0,
             read_requests=self._take_requests,
             publish_status=self.statuses.append,
+            run_data_action=self._run_data_action,
         )
         self.supervisor.start()
+
+    def _run_data_action(self, request: dict[str, object]) -> str:
+        self.data_actions.append((request, len(self.started), len(self.stopped)))
+        if self.data_action_error is not None:
+            raise self.data_action_error
+        return f"Moved {request['target']} to backup."
 
     def _stop(self, child: FakeChild) -> bool:
         self.stopped.append(child)
@@ -179,7 +191,7 @@ def test_stop_child_closes_stdin_and_waits_for_a_clean_exit() -> None:
     proc = Mock(pid=4242)
 
     with patch.object(sup.subprocess, "run") as run:
-        sup.stop_child(proc)
+        assert sup.stop_child(proc) is True
 
     proc.stdin.close.assert_called_once_with()
     proc.wait.assert_called_once_with(timeout=sup.STOP_TIMEOUT_SECONDS)
@@ -543,3 +555,124 @@ def test_run_gives_the_app_a_control_directory_and_removes_it_afterwards(tmp_pat
 
     assert len(control_dirs) == 1
     assert not control_dirs[0].exists()
+
+
+# --- Dev data actions (dev panel, #614) ----------------------------------------
+
+DATA_ACTION = {"action": "data_action", "operation": "backup", "target": "db"}
+
+
+def test_data_action_runs_with_the_app_stopped_then_the_app_starts_again() -> None:
+    h = Harness()
+
+    h.requests.append(DATA_ACTION)
+    assert h.supervisor.tick(0.0) is None
+
+    assert h.data_actions == [(DATA_ACTION, 1, 1)], "the app was stopped and not yet started again"
+    assert h.stopped == [h.started[0]]
+    assert len(h.started) == 2
+    assert "[dev] Moved db to backup." in h.messages
+    assert h.supervisor.tick(1.0) is None
+    assert len(h.data_actions) == 1, "a data action runs once"
+
+
+def test_data_action_waits_while_the_app_does_not_stop() -> None:
+    h = Harness()
+    h.child_exits_on_stop = False
+
+    h.requests.append(DATA_ACTION)
+    h.supervisor.tick(0.0)
+    assert h.data_actions == [], "never touch data while the app may hold a database handle"
+
+    h.child_exits_on_stop = True
+    h.supervisor.tick(1.0)
+    assert h.data_actions == [(DATA_ACTION, 1, 2)]
+    assert len(h.started) == 2
+
+
+def test_data_action_sent_while_the_app_is_stopping_still_runs_before_the_start() -> None:
+    h = Harness()
+    h.queued_while_stopping = [DATA_ACTION]
+
+    h.requests.append({"action": "restart"})
+    h.supervisor.tick(0.0)
+
+    assert h.data_actions == [(DATA_ACTION, 1, 1)]
+    assert len(h.started) == 2
+
+
+def test_data_action_after_a_failed_start_runs_without_a_stop() -> None:
+    h = Harness()
+    h.started[0].exit_code = 1
+    h.supervisor.tick(0.0)
+
+    h.requests.append(DATA_ACTION)
+    h.supervisor.tick(1.0)
+
+    assert h.data_actions == [(DATA_ACTION, 1, 0)]
+    assert len(h.started) == 2
+
+
+def test_a_crashing_data_action_is_reported_and_the_app_starts_again() -> None:
+    h = Harness()
+    h.data_action_error = RuntimeError("disk on fire")
+
+    h.requests.append(DATA_ACTION)
+    assert h.supervisor.tick(0.0) is None
+
+    assert any("Data action failed: disk on fire" in message for message in h.messages)
+    assert len(h.started) == 2
+
+
+def test_run_data_action_leaves_the_outcome_and_opens_the_reset_app_on_its_start_page(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from desktop import dev_data_actions
+
+    state_file = tmp_path / "state.json"
+    sup.save_window_state(state_file, FakeWindow())
+    outcome = {"operation": "backup", "target": "db", "ok": True, "message": "Moved Database to backup (x)."}
+    monkeypatch.setattr(dev_data_actions, "perform", lambda request: outcome)
+
+    assert sup.read_data_action(tmp_path) is None
+    assert sup.run_data_action(DATA_ACTION, tmp_path, state_file) == "Moved Database to backup (x)."
+
+    assert sup.read_data_action(tmp_path) == {**outcome, "finished_at": sup.read_data_action(tmp_path)["finished_at"]}
+    assert sup.load_window_state(state_file) == ("", {"x": 40, "y": 60, "width": 1400, "height": 900})
+
+
+@pytest.mark.parametrize(
+    "outcome",
+    [
+        {"operation": "restore", "target": "db", "ok": True, "message": "Restored."},
+        {"operation": "backup", "target": "input", "ok": True, "message": "Moved downloads."},
+        {"operation": "delete", "target": "db", "ok": False, "message": "Data action failed: locked."},
+    ],
+)
+def test_run_data_action_keeps_the_route_when_the_database_is_still_there(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, outcome: dict[str, object]
+) -> None:
+    from desktop import dev_data_actions
+
+    state_file = tmp_path / "state.json"
+    sup.save_window_state(state_file, FakeWindow())
+    monkeypatch.setattr(dev_data_actions, "perform", lambda request: outcome)
+
+    sup.run_data_action(DATA_ACTION, tmp_path, state_file)
+
+    assert sup.load_window_state(state_file)[0] == "/#/empresas/4170"
+    assert sup.read_data_action(tmp_path)["ok"] is outcome["ok"]
+
+
+def test_run_data_action_reports_a_broken_data_actions_module(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from desktop import dev_data_actions
+
+    def broken(_request: dict[str, object]) -> dict[str, object]:
+        raise ImportError("dev_data_actions has a syntax error")
+
+    monkeypatch.setattr(dev_data_actions, "perform", broken)
+
+    message = sup.run_data_action(DATA_ACTION, tmp_path, tmp_path / "state.json")
+
+    assert message == "Data action failed: dev_data_actions has a syntax error"
+    assert sup.read_data_action(tmp_path)["ok"] is False

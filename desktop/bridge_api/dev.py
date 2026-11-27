@@ -2,8 +2,8 @@
 
 Source dev mode only: every method refuses in the packaged app, and the dev
 modules are imported after that check so the packaged app never loads them.
-Requests that need the app stopped (restart today; worktree switch and data
-actions later) go to the dev supervisor through `desktop.dev_supervisor`.
+Requests that need the app stopped (restart, dev data actions; worktree switch
+later) go to the dev supervisor through `desktop.dev_supervisor`.
 
 Vocabulary: `GLOSSARY.md`, "Development".
 """
@@ -166,3 +166,74 @@ class DevBridgeMixin:
             if time.monotonic() >= deadline:
                 return {"ok": False, "error": "The dev supervisor did not confirm the change."}
             time.sleep(_CONFIRM_POLL_SECONDS)
+
+    # --- Dev data actions: move to backup, restore backup, delete permanently ---
+
+    @staticmethod
+    def _dev_data_state() -> tuple[Any, str | None]:
+        """This window's dev data, and why data actions are unavailable for it (None when allowed)."""
+        from desktop import dev_data, dev_data_actions  # noqa: PLC0415
+
+        dev = dev_data.resolve(_repo_root())
+        return dev, dev_data_actions.refusal(dev, os.environ)
+
+    def dev_get_data_info(self, params=None) -> dict:
+        """Size and backup of each data target, or why data actions are unavailable here."""
+        refusal = self._dev_refusal()
+        if refusal:
+            return refusal
+        try:
+            from desktop import dev_data_actions, dev_supervisor  # noqa: PLC0415
+
+            dev, reason = self._dev_data_state()
+            control_dir = self._dev_control_dir()
+            return {
+                "ok": True,
+                "unavailable_reason": reason,
+                "supervised": control_dir is not None,
+                "targets": [] if reason else dev_data_actions.describe(dev),
+                "last_action": dev_supervisor.read_data_action(control_dir) if control_dir else None,
+            }
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def _dev_data_action(self, operation: str, params: dict | None) -> dict:
+        """Check the action, then hand it to the dev supervisor; the window closes right after."""
+        refusal = self._dev_refusal()
+        if refusal:
+            return refusal
+        target = (params or {}).get("target")
+        try:
+            from desktop import dev_data_actions  # noqa: PLC0415
+
+            dev, reason = self._dev_data_state()
+            if reason:
+                return {"ok": False, "status": "blocked", "status_reason_code": "dev_data_actions_unavailable", "error": reason}
+            problem = dev_data_actions.check(dev, operation, target, own_pid=os.getpid())
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+        if problem:
+            return {"ok": False, "error": problem}
+        if operation == "delete" and (params or {}).get("confirm") != target:
+            return {"ok": False, "error": f"Type {target} to confirm the permanent delete."}
+        failure = self._dev_request(
+            "data_action",
+            operation=operation,
+            target=target,
+            mode=dev.mode,
+            data_root=str(dev.data_root),
+            shared_root=str(dev.shared_root),
+        )
+        return failure or {"ok": True}
+
+    def dev_move_data_to_backup(self, params=None) -> dict:
+        """Move a data target (`db`, `input`, `all`) to its single backup slot."""
+        return self._dev_data_action("backup", params)
+
+    def dev_restore_data_backup(self, params=None) -> dict:
+        """Replace a data target with its backup; current data is removed."""
+        return self._dev_data_action("restore", params)
+
+    def dev_delete_data(self, params=None) -> dict:
+        """Delete a data target permanently; `confirm` must repeat the target."""
+        return self._dev_data_action("delete", params)

@@ -102,7 +102,9 @@ for the details and limits.
 
 The floating dot at the bottom right opens the **dev panel** (also
 `Ctrl+Shift+D`): which worktree, branch, commit and dev data the window runs, a
-restart button and an automatic-restart switch. See
+restart button, an automatic-restart switch, and dev data actions (move the
+database, the downloaded CVM files or everything to a backup, restore it, or
+delete it). See
 [dev panel](dev-runtime-and-data-paths.md#dev-panel).
 
 With no path overrides or release-data opt-in, desktop dev uses the **shared

@@ -63,7 +63,9 @@ therefore opens with the companies and statements already downloaded. When git
 cannot list the worktrees, the checkout uses its own `data\dev-runtime`.
 
 This root persists across launches and accepts updates separately from the release
-database. Existing path overrides can still redirect individual files.
+database. Existing path overrides can still redirect individual files. The dev
+panel keeps its dev data backups next to it, in `data\dev-runtime.backup\`
+(see [dev data actions](#dev-data-actions)).
 
 ### Isolated dev data (data-sensitive worktree)
 
@@ -187,7 +189,7 @@ The Status strip shows **BRIDGE · MOCK** in violet and Settings -> Diagnostics 
 | `CVM_LOG_DIR` | `{data}/logs` when injected by the launcher; otherwise `{output}/logs` | Override log directory |
 | `CVM_CACHE_DIR` | `{data}/cache` | Override cache directory |
 | `CVMANALYTICS_DEV_STATE_FILE` | Set by the dev supervisor | Internal: path of the JSON file with the last route and window geometry; marks the process as a supervised child. Do not set by hand |
-| `CVMANALYTICS_DEV_CONTROL_DIR` | Set by the dev supervisor | Internal: the [dev panel](#dev-panel) request channel (requests in, `status.json` out). Do not set by hand |
+| `CVMANALYTICS_DEV_CONTROL_DIR` | Set by the dev supervisor | Internal: the [dev panel](#dev-panel) request channel (requests in, `status.json` and `data_action.json` out). Do not set by hand |
 | `VITE_MOCK_BRIDGE` | — | Browser preview fixtures via `npm run dev:mock`; inherited value removed from desktop-launched Vite |
 
 Source desktop injects output/log defaults only when `CVM_DATA_DIR` is absent.
@@ -284,6 +286,7 @@ is compiled only into Vite dev builds and its bridge methods refuse with
 |---|---|
 | Context | Worktree (and whether it is the main checkout), branch, commit, uncommitted changes, data mode with an "isolated data" indicator, data path. Missing git values stay `—` with the git error. |
 | Restart | "Restart app" and the "Restart automatically" switch; how many Python changes the window has not loaded yet. Disabled when the app runs without the dev supervisor. |
+| Dev data | Size, path and backup of the database, the downloaded CVM files and everything; "Move to backup", "Restore backup" and "Delete" for each, and the outcome of the last action. See [dev data actions](#dev-data-actions). |
 | Tools | Link to the `/dev/data-ops` page (opening it from the panel sets its `cvm_dev_tools` flag). |
 
 Data modes: `shared`, `isolated`, `full-copy` (see
@@ -294,10 +297,12 @@ Data modes: `shared`, `isolated`, `full-copy` (see
 Code: one file per section in
 [`apps/desktop-web/src/components/dev-panel/sections/`](../apps/desktop-web/src/components/dev-panel/sections/);
 a new `*Section.tsx` file that exports `section` is picked up without editing a
-shared list. Bridge methods `dev_get_context`, `dev_restart` and
-`dev_set_auto_restart` live in
+shared list. Bridge methods `dev_get_context`, `dev_restart`,
+`dev_set_auto_restart`, `dev_get_data_info`, `dev_move_data_to_backup`,
+`dev_restore_data_backup` and `dev_delete_data` live in
 [`desktop/bridge_api/dev.py`](../desktop/bridge_api/dev.py); browser mock
-scenarios (`localStorage.cvm_mock_dev_context` = `isolated` or `error`) in
+scenarios (`localStorage.cvm_mock_dev_context` = `isolated` or `error`;
+`localStorage.cvm_mock_dev_data` = `unavailable`) in
 [`mock.dev.ts`](../apps/desktop-web/src/lib/bridge/mock.dev.ts).
 
 **Request channel.** The app cannot restart itself, so the bridge asks the dev
@@ -309,8 +314,64 @@ on each poll, oldest first, and publishes `status.json`
 (`auto_restart`, `pending_changes`). Unknown requests, and request files that
 are not a JSON object, are larger than 64 KB or nest too deeply, are reported
 in the terminal and ignored. Restart requests queued while a restart is under way are
-answered by that restart. Later dev panel actions (worktree switch, data
-actions) are new actions on the same channel.
+answered by that restart. A data action is
+`{"action": "data_action", "operation": "backup" | "restore" | "delete", "target": "db" | "input" | "all", "mode", "data_root", "shared_root"}`;
+its outcome goes to `data_action.json` in the same directory. Later dev panel
+actions (worktree switch) are new actions on the same channel.
+
+### Dev data actions
+
+The "Dev data" section resets dev data to test the first-run download again,
+restores the previous state, or frees disk space. Code:
+[`desktop/dev_data_actions.py`](../desktop/dev_data_actions.py) (file
+operations and refusals), the `data_action` request in
+[`desktop/dev_supervisor.py`](../desktop/dev_supervisor.py), and
+[`DevDataSection.tsx`](../apps/desktop-web/src/components/dev-panel/sections/DevDataSection.tsx).
+
+| Target | Shared dev data | Isolated dev data | Full copy |
+|---|---|---|---|
+| Database | `<main>\data\dev-runtime\db` | `<worktree>\data\dev-runtime\db` | `<worktree>\data\dev-runtime\db` |
+| Downloaded CVM files | `<main>\data\dev-runtime\input` | `<main>\data\dev-runtime\input` (shared folder) | `<worktree>\data\dev-runtime\input` |
+| Everything | `<main>\data\dev-runtime` | `<worktree>\data\dev-runtime` (downloads stay shared) | `<worktree>\data\dev-runtime` |
+
+| Action | Does |
+|---|---|
+| Move to backup | Renames the target into its **dev data backup** slot, `<data root>.backup\<target>` next to the data root that holds it (for example `<main>\data\dev-runtime.backup\db`). One slot per target: a newer backup deletes the older one. |
+| Restore backup | Renames the backup back into place; current data of that target is deleted. |
+| Delete | Deletes current data of the target after the target name (`db`, `input`, `all`) is typed again. The backup is kept. |
+
+- **App stopped.** The bridge checks the action and queues it; the dev
+  supervisor stops the app, performs the action, then starts the app again, so
+  no database handle is open. After the database is moved or deleted
+  (`db` or `all`), the app reopens on its start page, the empty first-run
+  state; otherwise on the last route.
+- **Confirmation.** Each action asks first and states the target, its path and
+  size, the backup path and size, what is lost, and, for shared dev data, that
+  the action affects every worktree that uses it.
+- **Atomic, rolled back.** Every step is a rename on one volume. Before a
+  rename replaces something, the old data is renamed aside (`.trash-*` in the
+  backup folder) and removed only after the main rename succeeded; when the
+  main rename fails, the aside data is renamed back and the result says
+  "Nothing was changed". A locked file (`PermissionError`) is retried twice,
+  half a second apart. If removing the aside data fails, the action still
+  succeeded and the result names the folder to delete by hand.
+- **Outcome.** The terminal and the section's "Last action" line show what
+  happened; a failure is shown as an error with its reason.
+- **Refused** (section shows the reason; bridge returns
+  `status_reason_code: "dev_data_actions_unavailable"`; the supervisor checks
+  again): installed-app data (`CVMANALYTICS_USE_RELEASE_DATA`), a custom
+  `CVM_DATA_DIR`, a data root that is, contains or lies inside
+  `%USERPROFILE%\Documents\CVMAnalytics`, `CVMANALYTICS_DATA_DIR` or
+  `%LOCALAPPDATA%\CVMAnalytics`, any folder other than
+  `<git checkout>\data\dev-runtime`, and the packaged app (`dev_mode_only`).
+- **In use.** An action is refused while another live process holds the
+  `runtime.lock` of the data root holding the target (for example the main
+  checkout's dev mode window, for shared dev data). Dev mode windows of other
+  data-sensitive worktrees still read the shared downloads without holding
+  that lock; close them before acting on downloaded CVM files.
+- Per-path overrides (`CVM_DB_DIR`, `SQLITE_PATH`, `CVM_INPUT_DIR`) are not
+  followed: the targets are always derived from the data root.
+- `data\dev-runtime.backup\` is git-ignored.
 
 ## Concurrency and lock file
 
