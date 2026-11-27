@@ -25,7 +25,7 @@ from typing import Callable
 
 import requests
 
-GITHUB_REPO = "joaosantossgp/analisys"
+GITHUB_REPO = "joaosantossgp/analysis"
 _API_BASE = "https://api.github.com"
 _APPDATA_DIR = Path(os.environ.get("LOCALAPPDATA", tempfile.gettempdir())) / "CVMAnalytics"
 _SNOOZE_FILE = _APPDATA_DIR / "snooze.json"

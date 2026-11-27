@@ -280,7 +280,8 @@ def test_status_lists_publications_instead_of_reading_latest(monkeypatch):
     updater.UpdateChecker().get_latest_release_status("0.29.2", "prereleases")
 
     assert len(calls) == 1
-    assert calls[0].endswith(f"/repos/{updater.GITHUB_REPO}/releases")
+    # Literal slug: installed apps keep the repository name they were built with (#658).
+    assert calls[0] == "https://api.github.com/repos/joaosantossgp/analysis/releases"
 
 
 def test_status_reports_channel_kind_and_last_check(monkeypatch):
