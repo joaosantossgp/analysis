@@ -76,7 +76,10 @@ directly. A wrapper folder breaks the updater contract.
 
 ### Remote publication protection
 
-`publish-approved` names the `release-publication` environment. The reviewer
+`publish-approved` in `release-desktop.yml` and `promote` in
+`promote-release.yml` (promotion, see
+[release process](release-process.md#promotion)) name the
+`release-publication` environment. The reviewer
 and branch protections are remote configuration, separate from the workflow's
 commit and checksum checks.
 
