@@ -185,7 +185,7 @@ export function UpdatePanelBody({ check, progress, error, postponing, postponeEr
       )}
 
       {error ? (
-        <p role="alert" className="text-xs" style={{ color: "var(--color-state-err)" }}>
+        <p role="alert" className="text-xs [overflow-wrap:anywhere]" style={{ color: "var(--color-state-err)" }}>
           <span className="block">Update failed: {error}</span>
           <span className="block">
             Version <span className="font-mono">{current}</span> keeps running.
@@ -193,7 +193,7 @@ export function UpdatePanelBody({ check, progress, error, postponing, postponeEr
         </p>
       ) : null}
       {postponeError ? (
-        <p role="alert" className="text-xs" style={{ color: "var(--color-state-err)" }}>
+        <p role="alert" className="text-xs [overflow-wrap:anywhere]" style={{ color: "var(--color-state-err)" }}>
           Could not postpone the update: {postponeError}
         </p>
       ) : null}
