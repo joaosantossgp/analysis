@@ -5,7 +5,9 @@ from os import environ
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from desktop import app
+import pytest
+
+from desktop import app, dev_data, lockfile
 
 
 def test_stop_vite_dev_server_uses_taskkill_for_the_windows_process_tree(
@@ -50,7 +52,7 @@ def test_stop_vite_dev_server_kills_after_non_windows_wait_timeout(
     proc.kill.assert_called_once_with()
 
 
-def test_configure_dev_data_paths_defaults_to_isolated_project_root(
+def test_configure_dev_data_paths_defaults_to_the_checkout_dev_data_root(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -142,3 +144,124 @@ def test_configure_bundled_data_paths_does_not_override_explicit_sqlite_path(
         app._configure_bundled_data_paths()
 
         assert Path(app.os.environ["SQLITE_PATH"]) == explicit_db
+
+
+@pytest.fixture
+def worktree_of_main(monkeypatch, tmp_path: Path) -> tuple[Path, Path]:
+    """Source dev mode launched from a git worktree of `tmp_path / "main"`."""
+    main = tmp_path / "main"
+    worktree = main / ".claude" / "worktrees" / "feature"
+    worktree.mkdir(parents=True)
+    monkeypatch.setattr(app.sys, "frozen", False, raising=False)
+    monkeypatch.setattr(app, "_repo_root", lambda: worktree)
+    monkeypatch.setattr(dev_data, "main_checkout", lambda _repo_root: main)
+    return main, worktree
+
+
+def test_worktree_dev_mode_uses_shared_dev_data(worktree_of_main, tmp_path: Path) -> None:
+    main, _ = worktree_of_main
+    shared_root = main / "data" / "dev-runtime"
+
+    with patch.dict(environ, {"USERPROFILE": str(tmp_path)}, clear=True):
+        app._configure_bundled_data_paths()
+
+        assert Path(app.os.environ["CVM_DATA_DIR"]) == shared_root
+        assert Path(app.os.environ["SQLITE_PATH"]) == shared_root / "db" / "cvm_financials.db"
+        assert "CVM_INPUT_DIR" not in app.os.environ
+
+
+def test_data_sensitive_worktree_uses_isolated_dev_data_and_shared_downloads(
+    worktree_of_main,
+    tmp_path: Path,
+) -> None:
+    main, worktree = worktree_of_main
+    (worktree / dev_data.MARKER_NAME).write_text("isolated\n", encoding="utf-8")
+    own_root = worktree / "data" / "dev-runtime"
+
+    with patch.dict(environ, {"USERPROFILE": str(tmp_path)}, clear=True):
+        app._configure_bundled_data_paths()
+
+        assert Path(app.os.environ["CVM_DATA_DIR"]) == own_root
+        assert Path(app.os.environ["SQLITE_PATH"]) == own_root / "db" / "cvm_financials.db"
+        assert Path(app.os.environ["CVM_INPUT_DIR"]) == main / "data" / "dev-runtime" / "input"
+
+
+def test_full_copy_worktree_shares_nothing(worktree_of_main, tmp_path: Path) -> None:
+    _, worktree = worktree_of_main
+    (worktree / dev_data.MARKER_NAME).write_text("full-copy\n", encoding="utf-8")
+
+    with patch.dict(environ, {"USERPROFILE": str(tmp_path)}, clear=True):
+        app._configure_bundled_data_paths()
+
+        assert Path(app.os.environ["CVM_DATA_DIR"]) == worktree / "data" / "dev-runtime"
+        assert "CVM_INPUT_DIR" not in app.os.environ
+
+
+def test_explicit_path_overrides_win_over_worktree_dev_data(worktree_of_main, tmp_path: Path) -> None:
+    _, worktree = worktree_of_main
+    (worktree / dev_data.MARKER_NAME).write_text("isolated\n", encoding="utf-8")
+    explicit_data = tmp_path / "explicit"
+    explicit_db = tmp_path / "custom.db"
+
+    with patch.dict(environ, {"USERPROFILE": str(tmp_path), "CVM_DATA_DIR": str(explicit_data)}, clear=True):
+        app._configure_bundled_data_paths()
+
+        assert Path(app.os.environ["CVM_DATA_DIR"]) == explicit_data
+        assert "CVM_INPUT_DIR" not in app.os.environ
+
+    with patch.dict(
+        environ,
+        {"USERPROFILE": str(tmp_path), "SQLITE_PATH": str(explicit_db), "CVM_INPUT_DIR": str(tmp_path / "in")},
+        clear=True,
+    ):
+        app._configure_bundled_data_paths()
+
+        assert Path(app.os.environ["SQLITE_PATH"]) == explicit_db
+        assert Path(app.os.environ["CVM_INPUT_DIR"]) == tmp_path / "in"
+
+
+def test_installed_app_data_mode_wins_over_worktree_dev_data(worktree_of_main, tmp_path: Path) -> None:
+    _, worktree = worktree_of_main
+    (worktree / dev_data.MARKER_NAME).write_text("isolated\n", encoding="utf-8")
+
+    with patch.dict(
+        environ,
+        {"USERPROFILE": str(tmp_path), "CVMANALYTICS_USE_RELEASE_DATA": "1"},
+        clear=True,
+    ):
+        app._configure_bundled_data_paths()
+
+        assert Path(app.os.environ["CVM_DATA_DIR"]) == tmp_path / "Documents" / "CVMAnalytics"
+        assert app.os.environ["CVMANALYTICS_USE_RELEASE_DATA"] == "1"
+        assert "CVM_INPUT_DIR" not in app.os.environ
+
+
+def test_runtime_lock_follows_shared_dev_data(worktree_of_main, monkeypatch, tmp_path: Path) -> None:
+    main, _ = worktree_of_main
+    shared_root = main / "data" / "dev-runtime"
+    monkeypatch.setattr(lockfile, "_lock_path", None)
+    monkeypatch.setattr(lockfile, "_lock_owned", False)
+    monkeypatch.setattr(lockfile, "_conflict_info", None)
+    monkeypatch.setattr(lockfile, "_stale_recovered", False)
+
+    with patch.dict(environ, {"USERPROFILE": str(tmp_path)}, clear=True):
+        app._configure_bundled_data_paths()
+        assert app._runtime_lock_dir() == shared_root
+
+        # Dev mode already running from the main checkout holds the same lock.
+        (shared_root / "runtime.lock").write_text('{"pid": 1, "runtime_mode": "dev"}', encoding="utf-8")
+        with patch.object(lockfile, "_pid_alive", return_value=True):
+            result = lockfile.acquire(app._runtime_lock_dir())
+
+    assert result["owned"] is False
+    assert result["conflict"]["pid"] == 1
+
+
+def test_runtime_lock_of_a_data_sensitive_worktree_is_its_own(worktree_of_main, tmp_path: Path) -> None:
+    _, worktree = worktree_of_main
+    (worktree / dev_data.MARKER_NAME).write_text("isolated\n", encoding="utf-8")
+
+    with patch.dict(environ, {"USERPROFILE": str(tmp_path)}, clear=True):
+        app._configure_bundled_data_paths()
+
+        assert app._runtime_lock_dir() == worktree / "data" / "dev-runtime"

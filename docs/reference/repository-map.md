@@ -116,6 +116,7 @@ There is no root `package.json`. The active Node package is
 |---|---|
 | `scripts/data/` | Refresh, backfill, catalog seed, identity/GICS import, canonical dictionaries, energy stores and marts, storage budget and managed-ingestion checks |
 | `scripts/setup/` | Database/table setup and Windows/worktree bootstrap |
+| `scripts/dev/` | Dev mode tooling: isolated dev data for a data-sensitive worktree |
 | `scripts/diagnostics/` | Runtime doctor, smoke validation, read-path benchmarks, bridge method inventory, packaged candidate validation |
 | `scripts/qa/` | Consolidation, line-id, and workbook verification |
 | `scripts/release/` | Desktop dev launchers, MOTW tests, PR helper |
