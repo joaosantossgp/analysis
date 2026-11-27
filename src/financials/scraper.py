@@ -522,7 +522,12 @@ class CVMScraper:
         if result.empty:
             return result
         periods = sorted([c for c in result.columns if c not in metadata], key=self._period_sort_key)
-        return result[metadata + periods]
+        # Detach audit attrs around column projection so pandas does not deep-copy them.
+        saved_attrs = dict(result.attrs)
+        result.attrs.clear()
+        ordered = result[metadata + periods]
+        ordered.attrs.update(saved_attrs)
+        return ordered
 
     def _create_period_label(self, row, report_type):
         if report_type in ['BPA', 'BPP']:
@@ -658,15 +663,24 @@ class CVMScraper:
         final = {}
         if self.standardizer:
             for s, df in reports.items():
-                # Enrich only the table; restore the original audit evidence below.
-                final[s] = self.standardizer.enrich(_pd().DataFrame(df, copy=True), s, tipo, (self.report_type=="consolidated"))
-        else: final = reports
+                # Detach audit attrs before copying so pandas does not deep-copy large evidence lists.
+                saved_attrs = dict(df.attrs)
+                df.attrs.clear()
+                try:
+                    enriched = self.standardizer.enrich(_pd().DataFrame(df, copy=True), s, tipo, (self.report_type=="consolidated"))
+                finally:
+                    df.attrs.update(saved_attrs)
+                enriched.attrs.update(saved_attrs)
+                final[s] = enriched
+        else:
+            final = reports
 
-        for statement, report in final.items():
-            report.attrs.update(reports[statement].attrs)
-
-        from src.companies.identity import CompanyIdentityResolver
-        identity = CompanyIdentityResolver().resolve(int(cvm))
+        resolver = getattr(self, "_identity_resolver", None)
+        if resolver is None:
+            from src.companies.identity import CompanyIdentityResolver
+            resolver = CompanyIdentityResolver()
+            self._identity_resolver = resolver
+        identity = resolver.resolve(int(cvm))
         ticker_b3 = None
         if identity and identity.ticker_b3:
             ticker_b3 = identity.ticker_b3.strip().upper()

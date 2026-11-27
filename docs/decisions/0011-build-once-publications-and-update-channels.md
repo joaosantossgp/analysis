@@ -1,7 +1,10 @@
 # 0011: Build-once publications and update channels
 
-Status: Accepted (2026-11-26). Not yet implemented; until it is, the gate in
-[`../release-process.md`](../release-process.md) remains the operating contract.
+Status: Accepted (2026-11-26). Being implemented under goal #623: shipping
+classes (#625), the decision module (#628) and the build-once publication
+workflow (#629) are in place and [`../release-process.md`](../release-process.md)
+describes the operating flow; promotion, installer, candidate test command,
+retention and the update channel are still to land.
 
 ## Context
 

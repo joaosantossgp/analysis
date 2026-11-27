@@ -9,7 +9,6 @@
 
 import pythonnet
 from pathlib import Path
-from PyInstaller.utils.hooks import collect_submodules
 
 ROOT = Path(SPECPATH).parent  # repo root (spec está em desktop/, ROOT é um nível acima)
 VITE_DIST_DIR = ROOT / "apps" / "desktop-web" / "dist"
@@ -81,6 +80,9 @@ a = Analysis(
         "desktop.bridge_api.energy",
         "desktop.bridge_api.refresh",
         "desktop.bridge_api.status",
+        "desktop.bridge_api.status_updates",
+        "desktop.bridge_api.status_settings_health",
+        "desktop.bridge_api.status_diagnostics",
         "desktop.bridge_api.distribution",
         "src.companies.gics_manual_mapping",
         "src.companies.market_cap",
@@ -131,7 +133,7 @@ a = Analysis(
         "clr_loader.netfx",
         "clr_loader.hostfxr",
         "pythonnet",
-    ] + collect_submodules("trafilatura"),
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
