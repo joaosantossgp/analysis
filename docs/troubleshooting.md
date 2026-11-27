@@ -36,6 +36,7 @@ Key local paths:
 | Excel export fails | Check output directory permissions, open-file locks, and exporter tests |
 | Packaged app launches old version | Check Settings -> Diagnostics build provenance and release ZIP layout |
 | Updater fails | The top-bar Update pill reads "Update failed" and its panel shows the error; the installed version keeps running. Inspect `%LOCALAPPDATA%\CVMAnalytics\update_error.log` and rollback directory |
+| "Update now" closes the app and nothing is updated (versions up to 0.30.1) | Their updater starts its helper in a way Windows 11 25H2 does not run (#671); the old version stays installed and `update_error.log` ends at `helper spawned`. Reopen the app, then install the new version once with `Setup.exe` (it installs over the existing folder and keeps your data). Later versions update in the app |
 | No Update pill although a newer publication exists | The pill shows only an offer from the last check: check Settings -> App (failed, offline or postponed checks show nothing in the top bar; "Later" postpones that version for 7 days), then Check now |
 | A pre-release is not offered | Settings -> App -> Update channel must be "Pre-releases and releases"; then Check now |
 | "Windows protected your PC" when running `Setup.exe` | Expected for the unsigned installer; see [below](#windows-protected-your-pc-when-running-setup) |

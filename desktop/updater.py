@@ -364,8 +364,11 @@ class UpdateChecker:
                     str(staged_path),
                     str(current_dir),
                 ],
+                # Not DETACHED_PROCESS: powershell.exe started that way exits without
+                # running the script on Windows 11 25H2 (#671). Without a console window
+                # and in its own process group, it still outlives the app.
                 creationflags=(
-                    subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+                    subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
                 ),
                 close_fds=True,
             )
