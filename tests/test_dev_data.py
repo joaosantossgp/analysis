@@ -161,3 +161,65 @@ def test_isolate_keeps_an_existing_own_database_unless_forced(tmp_path: Path) ->
 
     dev_data.isolate(worktree, force=True, main=main)
     assert _companies(own_db) == [("PETROBRAS",)]
+
+
+# --- Worktree list (#611) ------------------------------------------------------
+
+
+def test_worktree_list_parsing_keeps_git_order_branches_and_removed_folders() -> None:
+    porcelain = (
+        "worktree C:/repo\nHEAD 3579045\nbranch refs/heads/main\n\n"
+        "worktree C:/repo/.claude/worktrees/feature\nHEAD 6d83df4\nbranch refs/heads/feat/611-x\n"
+        "locked claude agent (pid 16112)\n\n"
+        "worktree C:/repo/.claude/worktrees/review\nHEAD 91c8249\ndetached\n\n"
+        "worktree C:/temp/gone\nHEAD 4f1271f\nbranch refs/heads/old\nprunable gitdir file points to non-existent location\n"
+    )
+
+    assert dev_data.parse_worktrees(porcelain) == [
+        {"path": Path("C:/repo"), "branch": "main", "prunable": False},
+        {"path": Path("C:/repo/.claude/worktrees/feature"), "branch": "feat/611-x", "prunable": False},
+        {"path": Path("C:/repo/.claude/worktrees/review"), "branch": None, "prunable": False},
+        {"path": Path("C:/temp/gone"), "branch": "old", "prunable": True},
+    ]
+    assert dev_data.parse_worktrees("") == []
+
+
+def _write_manifests(checkout: Path, requirements: str = "pywebview\n", lockfile: str = "{}\n") -> None:
+    (checkout / "apps" / "desktop-web").mkdir(parents=True, exist_ok=True)
+    (checkout / "requirements.txt").write_text(requirements, encoding="utf-8")
+    (checkout / "apps" / "desktop-web" / "package-lock.json").write_text(lockfile, encoding="utf-8")
+
+
+def test_worktree_list_flags_dependencies_and_isolated_data_and_drops_removed_worktrees(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from desktop import dev_bootstrap
+
+    main, feature = _checkouts(tmp_path)
+    review = main / ".claude" / "worktrees" / "review"
+    review.mkdir()
+    for checkout in (main, feature, review):
+        _write_manifests(checkout)
+    _write_manifests(review, requirements="pywebview\nnew-package\n")
+    dev_bootstrap.write_python_stamp(main, dev_bootstrap.python_stamp(main, "python"))
+    dev_bootstrap.write_frontend_stamp(main)
+    (feature / dev_data.MARKER_NAME).write_text("isolated\n", encoding="utf-8")
+    porcelain = "".join(
+        f"worktree {path.as_posix()}\nHEAD 1\nbranch refs/heads/{branch}\n\n"
+        for path, branch in ((main, "main"), (feature, "feat/611"), (review, "review"), (tmp_path / "gone", "old"))
+    )
+    monkeypatch.setattr(dev_data, "_git_worktree_list", lambda _root: porcelain)
+
+    listed = dev_data.list_worktrees(feature, env_root=main)
+
+    assert [(w["name"], w["branch"], w["is_main_checkout"], w["isolated_data"]) for w in listed] == [
+        ("main", "main", True, False),
+        ("feature", "feat/611", False, True),
+        ("review", "review", False, False),
+    ], "a worktree whose folder is gone is not listed"
+    assert [w["dependency_differences"] for w in listed] == [[], [], ["requirements.txt"]]
+    assert listed[1]["path"] == str(feature)
+
+    # The environment's own checkout never differs, even with a changed manifest.
+    _write_manifests(main, lockfile='{"changed": true}\n')
+    assert dev_data.list_worktrees(feature, env_root=main)[0]["dependency_differences"] == []

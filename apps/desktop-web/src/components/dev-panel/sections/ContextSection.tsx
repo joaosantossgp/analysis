@@ -4,7 +4,7 @@ import { StateBanner } from "@/components/feedback/StateBanner";
 import { Button } from "@/components/ui/Button";
 import type { DevContext, DevDataMode } from "@/lib/bridge/types.dev";
 
-import { SectionFrame } from "../SectionFrame";
+import { SectionFrame, Tag } from "../SectionFrame";
 import type { DevPanelSection } from "../sections";
 import { useDevContext } from "../useDevContext";
 
@@ -33,17 +33,6 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
         {children}
       </dd>
     </>
-  );
-}
-
-function Tag({ color, children }: { color: string; children: ReactNode }) {
-  return (
-    <span
-      className="ml-2 inline-flex items-center gap-1 rounded-sm border px-1 font-mono text-2xs uppercase tracking-wider"
-      style={{ borderColor: color, color }}
-    >
-      {children}
-    </span>
   );
 }
 

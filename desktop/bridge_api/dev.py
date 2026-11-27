@@ -2,8 +2,8 @@
 
 Source dev mode only: every method refuses in the packaged app, and the dev
 modules are imported after that check so the packaged app never loads them.
-Requests that need the app stopped (restart, dev data actions; worktree switch
-later) go to the dev supervisor through `desktop.dev_supervisor`.
+Requests that need the app stopped (restart, dev data actions, worktree
+switch) go to the dev supervisor through `desktop.dev_supervisor`.
 
 Vocabulary: `GLOSSARY.md`, "Development".
 """
@@ -237,3 +237,85 @@ class DevBridgeMixin:
     def dev_delete_data(self, params=None) -> dict:
         """Delete a data target permanently; `confirm` must repeat the target."""
         return self._dev_data_action("delete", params)
+
+    # --- Worktree switch (#611) -------------------------------------------------
+
+    @staticmethod
+    def _dev_worktrees(repo_root: Path) -> list[dict[str, Any]]:
+        """`dev_data.list_worktrees`, compared with the environment that runs the worktrees.
+
+        Under the dev supervisor that is the checkout dev mode was launched
+        from; without one, the main checkout.
+        """
+        from desktop import dev_data, dev_supervisor  # noqa: PLC0415
+
+        launch_root = os.environ.get(dev_supervisor.LAUNCH_ROOT_ENV)
+        env_root = Path(launch_root) if launch_root else dev_data.main_checkout(repo_root)
+        return dev_data.list_worktrees(repo_root, env_root=env_root)
+
+    def dev_list_worktrees(self, params=None) -> dict:
+        """Every git worktree, main checkout first, with what a switch to it needs."""
+        refusal = self._dev_refusal()
+        if refusal:
+            return refusal
+        try:
+            from desktop import dev_supervisor  # noqa: PLC0415
+
+            repo_root = _repo_root()
+            control_dir = self._dev_control_dir()
+            status = dev_supervisor.read_status(control_dir) if control_dir else {}
+            return {
+                "ok": True,
+                "worktrees": [
+                    {**worktree, "active": _same_path(Path(worktree["path"]), repo_root)}
+                    for worktree in self._dev_worktrees(repo_root)
+                ],
+                "supervised": control_dir is not None,
+                "notice": status.get("worktree_notice"),
+            }
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def dev_switch_worktree(self, params=None) -> dict:
+        """Ask the dev supervisor to reopen the window on another worktree.
+
+        Returns once the supervisor accepted; the window closes right after and
+        reopens running that worktree's code on the same route.
+        """
+        refusal = self._dev_refusal()
+        if refusal:
+            return refusal
+        path = (params or {}).get("path")
+        if not isinstance(path, str) or not path:
+            return {"ok": False, "error": "`path` must be the folder of a worktree."}
+        control_dir = self._dev_control_dir()
+        if control_dir is None:
+            return {"ok": False, "error": _NO_SUPERVISOR}
+        from desktop import dev_supervisor  # noqa: PLC0415
+
+        repo_root = _repo_root()
+        try:
+            worktrees = self._dev_worktrees(repo_root)
+        except Exception as exc:
+            return {"ok": False, "error": f"Could not list the worktrees: {exc}"}
+        entry = next((w for w in worktrees if _same_path(Path(w["path"]), Path(path))), None)
+        refusal = dev_supervisor.switch_refusal(entry, path)  # the supervisor checks the same again
+        if refusal is None and _same_path(Path(entry["path"]), repo_root):
+            refusal = f"The window already runs {entry['name']}."
+        if refusal is not None:
+            return {"ok": False, "error": refusal}
+
+        notice_before = dev_supervisor.read_status(control_dir).get("worktree_notice")
+        failure = self._dev_request("switch_worktree", path=entry["path"])
+        if failure:
+            return failure
+        deadline = time.monotonic() + CONFIRM_TIMEOUT_SECONDS
+        while True:
+            status = dev_supervisor.read_status(control_dir)
+            if status.get("worktree") and _same_path(Path(status["worktree"]), Path(entry["path"])):
+                return {"ok": True, "worktree": entry["name"]}
+            if status.get("worktree_notice") != notice_before:  # the supervisor refused
+                return {"ok": False, "error": status.get("worktree_notice") or "The dev supervisor refused the switch."}
+            if time.monotonic() >= deadline:
+                return {"ok": False, "error": "The dev supervisor did not confirm the switch."}
+            time.sleep(_CONFIRM_POLL_SECONDS)

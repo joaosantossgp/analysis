@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 import sys
 from pathlib import Path
 
@@ -130,3 +131,82 @@ def test_frozen_runtime_bypasses_development_bootstrap(monkeypatch: pytest.Monke
 def test_root_manifest_declares_direct_numpy_runtime_dependency() -> None:
     requirements = Path("requirements.txt").read_text(encoding="utf-8")
     assert any(line.startswith("numpy") for line in requirements.splitlines())
+
+
+# --- Running another worktree on an installed environment (#611) --------------
+
+
+def _installed_environment(tmp_path: Path) -> tuple[Path, Path]:
+    """An environment checkout with stamped `.venv` and `node_modules`, and a worktree with the same manifests."""
+    env_root, worktree = tmp_path / "main", tmp_path / "worktree"
+    for checkout in (env_root, worktree):
+        checkout.mkdir()
+        _write_bootstrap_inputs(checkout)
+    bootstrap.write_python_stamp(env_root, bootstrap.python_stamp(env_root, "python"))
+    package = env_root / "apps" / "desktop-web" / "node_modules" / "vite"
+    (package / "bin").mkdir(parents=True)
+    (package / "bin" / "vite.js").write_text("// vite\n", encoding="utf-8")
+    (package.parent / ".vite" / "deps").mkdir(parents=True)
+    (package.parent / ".vite" / "deps" / "react.js").write_text("// cache\n", encoding="utf-8")
+    bootstrap.write_frontend_stamp(env_root)
+    return env_root, worktree
+
+
+def test_dependency_match_compares_manifests_with_the_installed_fingerprints(tmp_path: Path) -> None:
+    env_root, worktree = _installed_environment(tmp_path)
+    assert bootstrap.dependency_differences(env_root, worktree) == []
+
+    (worktree / "requirements.txt").write_text("pywebview>=5\n", encoding="utf-8")
+    assert bootstrap.dependency_differences(env_root, worktree) == ["requirements.txt"]
+
+    (worktree / "apps" / "desktop-web" / "package-lock.json").unlink()
+    assert bootstrap.dependency_differences(env_root, worktree) == [
+        "requirements.txt",
+        "apps/desktop-web/package-lock.json",
+    ], "a missing manifest is a difference"
+
+
+def test_dependency_match_needs_an_installed_environment(tmp_path: Path) -> None:
+    env_root, worktree = _installed_environment(tmp_path)
+    bootstrap.python_stamp_path(env_root).unlink()
+    bootstrap.frontend_stamp_path(env_root).unlink()
+
+    assert bootstrap.dependency_differences(env_root, worktree) == [
+        "requirements.txt",
+        "apps/desktop-web/package-lock.json",
+    ]
+
+
+def test_linked_frontend_dependencies_run_from_the_worktree_and_never_touch_the_source(tmp_path: Path) -> None:
+    env_root, worktree = _installed_environment(tmp_path)
+    source = env_root / "apps" / "desktop-web" / "node_modules"
+    target = worktree / "apps" / "desktop-web" / "node_modules"
+
+    bootstrap.link_frontend_dependencies(env_root, worktree)
+
+    assert (target / "vite" / "bin" / "vite.js").read_text(encoding="utf-8") == "// vite\n"
+    assert not (target / ".vite").exists(), "Vite's cache belongs to each checkout's own dev server"
+    assert bootstrap.dependency_differences(worktree, worktree) == [
+        "requirements.txt"
+    ], "the worktree's node_modules now counts as installed for its lockfile"
+
+    # npm ci in the worktree, or deleting the worktree, only removes its own names.
+    shutil.rmtree(target)
+    assert (source / "vite" / "bin" / "vite.js").read_text(encoding="utf-8") == "// vite\n"
+
+
+def test_linking_frontend_dependencies_again_is_a_no_op(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    env_root, worktree = _installed_environment(tmp_path)
+    bootstrap.link_frontend_dependencies(env_root, worktree)
+    monkeypatch.setattr(bootstrap.shutil, "copytree", lambda *_a, **_k: pytest.fail("already installed"))
+
+    bootstrap.link_frontend_dependencies(env_root, worktree)
+
+
+def test_linking_frontend_dependencies_needs_installed_ones(tmp_path: Path) -> None:
+    env_root, worktree = tmp_path / "main", tmp_path / "worktree"
+    worktree.mkdir()
+    _write_bootstrap_inputs(worktree)
+
+    with pytest.raises(OSError, match="run dev mode from"):
+        bootstrap.link_frontend_dependencies(env_root, worktree)

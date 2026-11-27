@@ -6,6 +6,8 @@ import type {
   DevDataInfoResponse,
   DevDataTarget,
   DevRestartResponse,
+  DevSwitchWorktreeResponse,
+  DevWorktreesResponse,
 } from "./types.dev";
 import type {
   EnergyKPIHealthResponse,
@@ -399,6 +401,8 @@ export interface BridgeApi {
   dev_get_context(params?: Record<string, unknown>): Promise<DevContextResponse>;
   dev_restart(params?: Record<string, unknown>): Promise<DevRestartResponse>;
   dev_set_auto_restart(params: { enabled: boolean }): Promise<DevAutoRestartResponse>;
+  dev_list_worktrees(params?: Record<string, unknown>): Promise<DevWorktreesResponse>;
+  dev_switch_worktree(params: { path: string }): Promise<DevSwitchWorktreeResponse>;
   dev_get_data_info(params?: Record<string, unknown>): Promise<DevDataInfoResponse>;
   dev_move_data_to_backup(params: { target: DevDataTarget }): Promise<DevDataActionResponse>;
   dev_restore_data_backup(params: { target: DevDataTarget }): Promise<DevDataActionResponse>;
