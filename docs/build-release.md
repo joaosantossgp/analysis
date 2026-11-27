@@ -32,58 +32,60 @@ The desktop bundle includes the Vite static SPA, Python code/dependencies,
 `update_helper.ps1`, and approved import assets such as canonical accounts and
 GICS/ticker mapping CSVs. It must not bundle a user database.
 
-## GitHub Release Workflow
+## Publication Workflow
 
-`.github/workflows/release-desktop.yml` is a manual, three-phase release gate.
-It does not run on tag push. All phases must be dispatched from `main` with a
-full 40-character `candidate_sha`, a supported version, and an already-existing
-matching `v<version>` tag.
+`.github/workflows/release-desktop.yml` builds and publishes every
+publication. The flow, the approval rule and how an agent approves for the
+owner are in [`release-process.md`](release-process.md); this section is the
+build and integrity contract.
 
-1. **Candidate phase** resolves the annotated or lightweight tag to its peeled
-   commit target, verifies that it is the exact candidate SHA and is reachable
-   from `origin/main`, and requires the latest `CI` `push/main` run for that
-   exact SHA to be `completed/success`. The Windows builder checks out that SHA,
-   verifies observed `HEAD` before and after the build, verifies the injected
-   runtime version and build provenance, then builds only once. It uploads two
-   immutable GitHub Actions artifacts: the versioned ZIP/checksum package and
-   `candidate-evidence.json`, which records the candidate SHA, tag target,
-   observed builder SHA, exact-CI run, package artifact ID, ZIP checksum, and
-   the separately recorded trusted-`main` workflow-source SHA. A candidate
-   replacement may therefore be dispatched from later `main` while the builder
-   still checks out the historical candidate SHA.
-2. **Attest phase** runs from trusted `main` and checks out the exact candidate
-   SHA. It re-verifies the successful candidate run, including its trusted-main
-   workflow-source SHA, immutable artifacts, and checksum before producing five
-   named evidence artifacts. Operator summaries remain explicitly manual
-   evidence; the workflow attests their provenance and candidate binding, not
-   the underlying observation.
-3. **Publish phase** accepts the trusted attest run ID, not arbitrary artifact
-   IDs. It resolves the five exact artifact names from that run and rejects any
-   mismatch in workflow name/path, dispatch event, successful conclusion,
-   `main` ref, candidate SHA, workflow-source SHA, Actions metadata, or
-   declared producer fields.
-   At preflight and again in the final job it re-resolves the tag and latest
-   exact-SHA CI. The final job downloads the saved candidate and verified
-   evidence, verifies identity and checksum, then publishes those bytes without
-   rebuilding or retagging.
+- **Trigger.** A successful `CI` run for a push to `main` (`workflow_run`), or a
+  manual `workflow_dispatch` (dry run by default). The decision comes from
+  `scripts/release/publication_decision.py decide`, fed by
+  `scripts/release/publication_workflow.py facts`; class `none` builds nothing.
+- **Exact commit, green CI.** The candidate is the newest first-parent `main`
+  commit after the last publication whose latest `push`/`main` CI run is
+  `completed/success`. The Windows builder checks out that commit and verifies
+  `HEAD` before and after the build.
+- **Build once, version stamped at build time.** The builder runs
+  `desktop/build_desktop.ps1 -Version <decided version>` and fails unless
+  `desktop/__version__.py` holds that version and `desktop/_build_info.py`
+  holds the candidate commit. Nothing is committed to `main`; the source-tree
+  version stays a dev fallback.
+- **One file, verified at publication.** The build job packages
+  `CVMAnalytics-windows-v<version>.zip` (flat root checked) and its `.sha256`,
+  keeps them as the run's `publication-candidate` artifact and records the
+  hash as a job output. The publish job downloads that artifact from the same
+  run, checks the hash against the `.sha256` file and the build job's output,
+  adds the unversioned `CVMAnalytics-windows.zip` pair, and publishes those
+  bytes. No publish job builds, packages from source, commits or pushes.
+- **Tag with the release.** `gh release create v<version> --target <commit>`
+  creates the tag on the exact candidate commit together with the release, as a
+  pre-release (`--latest=false`) or a release (`--latest=true`). A candidate
+  that is rejected, superseded or cancelled leaves no tag. The last publication
+  is read from published releases, never from bare tags.
+- **Least privilege.** The workflow default is `contents: read`. Only
+  `publish-automatic` (a pre-release outside the risk areas) and
+  `publish-approved` (everything else, in the `release-publication`
+  environment) have `contents: write`. Dispatch inputs reach scripts as
+  environment variables, never as interpolated shell code, and every action is
+  pinned to a full commit SHA.
 
-Only the final `Publish verified candidate` job has `contents: write`; every
-other release job has read-only repository permissions. Stable `X.Y.Z` remains
-a normal release and `X.Y.Z-rc.N` remains a prerelease. A stable release must
-therefore use the approved same-SHA candidate evidence or a separately approved
-new candidate; the workflow never promotes a different SHA by tag movement.
+Flat-root means the ZIP root contains `CVMAnalytics.exe` and `_internal/`
+directly. A wrapper folder breaks the updater contract.
 
 ### Remote publication protection
 
-The final job names the `release-publication` environment. The reviewer and
-branch protections are remote configuration, separate from the workflow's SHA,
-artifact and checksum checks.
+`publish-approved` names the `release-publication` environment. The reviewer
+and branch protections are remote configuration, separate from the workflow's
+commit and checksum checks.
 
 After the [2026-11-16 audit](research/2026-11-16-documentation-architecture-governance-audit.md#1-high-documented-remote-release-protections-are-not-established)
 identified private-repository plan limits, the owner authorized making
 `joaosantossgp/analysis` public on GitHub Free and enabling remote controls
 ([#512](https://github.com/joaosantossgp/analysis/issues/512)). API read-back on
-2026-11-25 confirmed:
+2026-11-25 confirmed the following, and a read-back on 2026-11-27 (#629)
+matched it:
 
 - **`main` branch protection:** `main` is the only protected branch in the
   repository (`protected: true`, `enforce_admins: true`,
@@ -99,146 +101,44 @@ identified private-repository plan limits, the owner authorized making
 
 **Scope and limits:** because `joaosantossgp` is the sole repository owner and
 `prevent_self_review` is `false`, these controls prevent direct pushes to
-`main`, enforce required CI/guardrail checks, restrict publication jobs to
-`main`, and require an explicit manual deployment approval click; they do not
-provide two-person separation of duties. Re-read the remote configuration before
-release work, do not treat green CI as publication authorization, and preserve
-the existing workflow checks and environment.
-
-### Artifact-expiry recovery
-
-An expired candidate, candidate-evidence, or attestation artifact cannot be
-repaired or published. The recovery exception is a fresh candidate cycle for
-the **same version/SHA only after artifact expiry**. It creates **new immutable
-artifacts and run IDs**, must **revalidate the latest successful exact-SHA CI**,
-and must **repeat package/manual/conditional attestations and #440 approval**.
-It publishes only the replacement candidate; the workflow does not claim to
-create a new `push/main` CI run for an unchanged historical SHA.
-If `main` has advanced, dispatch the replacement from trusted `main`; its
-workflow-source SHA is recorded separately and the replacement build still
-verifies and checks out the requested historical candidate SHA.
-The expired run IDs remain **superseded evidence** in the release record and
-cannot be supplied to publish. This exception does not allow rebuilding,
-retagging, or substituting artifacts for a candidate whose artifacts remain
-available.
-
-Flat-root means the ZIP root contains `CVMAnalytics.exe` and `_internal/`
-directly. A wrapper folder breaks the updater contract.
+`main`, enforce required CI/guardrail checks, restrict approved publications to
+`main`, and require an explicit approval by the owner, given in GitHub or
+through an agent acting on the owner's explicit OK in chat; they do not provide
+two-person separation of duties. A low-risk pre-release publishes with no
+approval by design (ADR 0011), from the `publish-automatic` job, which still
+runs only for green `main` commits. Re-read the remote configuration before
+release work, do not treat green CI as approval, and do not weaken these
+controls.
 
 ## Version Sources
 
-- `desktop/__version__.py` is the runtime version source.
-- `desktop/build_desktop.ps1` may derive a version from `git describe` for local
-  builds unless `-Version` is supplied.
-- The release workflow supplies the exact version and aborts if the bundled
-  version differs.
+- `desktop/__version__.py` is the runtime version source of a packaged bundle.
+- Publications get their version from the decision module, which computes the
+  next plain `MAJOR.MINOR.PATCH` from the last publication and the shipping
+  class; the workflow passes it to `desktop/build_desktop.ps1 -Version` and
+  aborts if the bundled version differs. There are no version-bump commits.
+- Local builds without `-Version` derive a version from `git describe`.
 - `desktop/_build_info.py` is generated build provenance written by the desktop
   build. It is useful for packaged-app diagnostics, but it is not authoritative
   checkout state and may be stale in a source tree until a package build runs.
 
-## Release Evidence Hierarchy
+## Publication Record
 
-When release evidence conflicts, use this hierarchy:
+What proves what a publication contains:
 
-1. **Immutable candidate evidence** — verify the full candidate SHA, peeled tag
-   target, observed Windows-builder SHA, exact `push/main` CI run, immutable
-   package artifact ID, and ZIP checksum in `candidate-evidence.json`. The
-   publish phase must re-check every value before it creates a release.
-2. **Release tag and commit** — verify the checkout with `git describe --tags
-   --exact-match HEAD`, `git tag --points-at HEAD`, and `git rev-parse HEAD`.
-   The tag target must equal the immutable candidate SHA; no tag is created or
-   moved by the release workflow.
-3. **Bundled runtime version** — verify `desktop/__version__.py` in the source
-   tree or packaged bundle. The release workflow passes the exact version into
-   `desktop/build_desktop.ps1 -Version <version>` and fails if the bundled
-   runtime version does not match the release input.
-4. **Generated build provenance** — inspect `desktop/_build_info.py` or
-   Settings -> Diagnostics in the packaged app for generated build commit and
-   build timestamp. Treat this as artifact provenance, not as proof of the
-   current checkout.
-5. **Manual and conditional evidence** — use the verified trusted-attest run,
-   expected artifact identities, ZIP/content SHA-256 values, and
-   `manual-evidence.json` to prove local-data checks, packaged validation, and
-   every required conditional check. A protected-environment approval is not
-   evidence that a manual check ran.
-6. **Packaged validation evidence** — use the release workflow logs, release
-   notes, and manual packaged-app validation records to prove the built artifact
-   launched correctly, used the expected data root, handled offline/update
-   states, preserved user data, and exported Excel files that open without
-   repair.
+1. **The release page:** tag `v<version>`, the target commit, the kind
+   (pre-release or release) and the merged PRs it contains.
+2. **The publication run** of `release-desktop.yml`: the decision (`facts.json`
+   and `decision.json` in the `publication-decision` artifact), the job summary
+   with risk areas and PRs, the build log, the candidate hash, and, when
+   approval was required, the `release-publication` deployment approval.
+3. **The bundled version and provenance:** `desktop/__version__.py` and
+   `desktop/_build_info.py` in the bundle, shown in Settings -> Diagnostics.
+4. **Packaged validation:** the owner's test of the candidate before approval,
+   recorded in the approval comment or the chat. An approval is a decision, not
+   evidence that a particular check ran.
 
-Each release record should identify tag, commit, bundled runtime version, build
-timestamp when available, validation environment, and the results of packaged
-launch, updater/offline, and Excel-open checks. It must also identify the
-candidate run/artifact IDs and ZIP checksum, and bind its manual/conditional
-evidence to those values. User data remains excluded from release artifacts.
-
-### Evidence attestation contract
-
-Dispatch **attest** from the trusted `main` branch with the candidate run ID
-and the operator's manual/conditional summaries. GitHub dispatch accepts a
-branch or tag ref rather than an arbitrary commit SHA, so this remains valid
-when `main` advances after the candidate, provided the candidate is still an
-ancestor of current `main`. Attest checks out and binds the exact candidate,
-then writes one named, immutable Actions artifact per record, each containing
-exactly one UTF-8 JSON file named `release-evidence-attestation.json`. Publish
-accepts only the successful attest run ID. It resolves the five expected
-artifact names from that run, then records their IDs, ZIP SHA-256 values, and
-JSON-content SHA-256 values. It rejects expired, malformed, multi-file,
-mismatched, or untrusted producer records.
-
-Every record has this candidate binding:
-
-```json
-{
-  "schema_version": 1,
-  "attestation_type": "manual-local-data",
-  "candidate": {
-    "candidate_sha": "<40 lowercase hex>",
-    "tag_target_sha": "<same SHA>",
-    "workflow_source_sha": "<trusted main candidate workflow SHA; may differ from candidate>",
-    "candidate_run_id": "<candidate Actions run ID>",
-    "package_artifact_id": "<candidate package artifact ID>",
-    "zip_checksum": "<64 lowercase hex>"
-  },
-  "producer": {
-    "workflow_run_id": "<attestation producer run ID>",
-    "phase": "attest",
-    "workflow_name": "Release Desktop",
-    "workflow_path": ".github/workflows/release-desktop.yml",
-    "head_ref": "main",
-    "workflow_source_sha": "<trusted main workflow SHA; may differ from candidate>"
-  },
-  "result": { "manual": true, "summary": "<operator record>" }
-}
-```
-
-The two required manual `attestation_type` values are `manual-local-data` and
-`manual-packaged`. They preserve the manual nature of source-data and packaged
-checks: a valid record proves candidate binding and provenance, not that the
-workflow independently reproduced every substantive observation.
-
-The three conditional values are `conditional-api`, `conditional-ccee`, and
-`conditional-strict-backup`. Each additionally requires a typed decision:
-
-```json
-{
-  "decision": {
-    "status": "required",
-    "basis": {
-      "type": "candidate-diff",
-      "candidate_sha": "<same SHA>",
-      "tag_target_sha": "<same SHA>",
-      "summary": "<reviewed changed-path/policy explanation>"
-    }
-  }
-}
-```
-
-`status` is exactly `required` or `not-required`; basis `type` is exactly
-`candidate-diff` or `release-policy`. A required conditional record also needs
-the manual `result` object. These typed, candidate-bound attestations replace
-free-form applicability strings.
+User data remains excluded from every publication.
 
 ## Updater Contract
 
@@ -269,7 +169,9 @@ by update/install flows.
 
 ## Release Validation
 
-Before publishing:
+CI runs the automated checks on every candidate commit before it is built. The
+checks below are for the owner's test of a candidate before approving it, and
+for local runs when a change touches their area:
 
 ```powershell
 npm --prefix apps/desktop-web run typecheck
@@ -304,7 +206,7 @@ registration and bounded read plan before release validation can pass in strict
 mode. Planned registrations validate their contracts but do not require
 manifests until a real importer exists.
 
-For releases that touch CCEE hourly ingestion or the managed hot/cold store,
+For publications that touch CCEE hourly ingestion or the managed hot/cold store,
 run a sandbox ingestion smoke test with a real CCEE hourly snapshot:
 
 ```powershell
@@ -332,9 +234,10 @@ bytes, cold Parquet bytes, manifest row counts, hot/cold month lists, and mart
 rebuild row counts. Use this field when reviewing storage impact after a heavy
 import.
 
-Manual packaged validation:
+Manual packaged validation, on the candidate ZIP of the publication run (the
+`publication-candidate` artifact), before approving:
 
-- clean launch from `dist/CVMAnalytics/CVMAnalytics.exe`;
+- clean launch from the extracted `CVMAnalytics.exe`;
 - app uses `%USERPROFILE%\Documents\CVMAnalytics`, not install-local data;
 - Settings -> Diagnostics shows expected version/build/data paths;
 - empty database state is understandable and non-crashing;
@@ -344,10 +247,10 @@ Manual packaged validation:
 - install/update over a previous version preserves user data;
 - update helper keeps ZIP root contract and rollback snapshot behavior.
 
-## What Does Not Require A Release
+## What Does Not Publish
 
-Do not cut a release merely to test ordinary UI/docs/data workflow changes.
-Use dev modes from [development.md](development.md).
-
-Release only when installed users need the change or when packaging/updater
-behavior changes.
+Publications follow the shipping class of merged work
+([`release-process.md`](release-process.md#what-a-merge-publishes)): docs, CI,
+tests and dev tooling carry `ships:none` and publish nothing. To try a UI, docs
+or data workflow change, use dev modes from [development.md](development.md),
+not a publication. To try the publication workflow itself, use its dry run.

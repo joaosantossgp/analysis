@@ -119,7 +119,7 @@ There is no root `package.json`. The active Node package is
 | `scripts/dev/` | Dev mode tooling: isolated dev data for a data-sensitive worktree |
 | `scripts/diagnostics/` | Runtime doctor, smoke validation, read-path benchmarks, bridge method inventory, packaged candidate validation |
 | `scripts/qa/` | Consolidation, line-id, and workbook verification |
-| `scripts/release/` | Desktop dev launchers, MOTW tests, PR helper, publication decision module (ADR 0011, not yet called by a workflow) |
+| `scripts/release/` | Desktop dev launchers, MOTW tests, PR helper, publication decision module and the publication workflow glue that calls it (ADR 0011) |
 | `scripts/governance/` | Repository contract tests and legacy worktree helpers |
 | `scripts/curation/` | Development-only GICS curation tools (structure extraction, Claude batch proposals); not app runtime, SDK installed separately |
 
@@ -131,7 +131,7 @@ There is no root `package.json`. The active Node package is
 | Workflow | Purpose |
 |---|---|
 | `ci.yml` | Governance contracts, Python compile/tests, coverage, Vite typecheck/build |
-| `release-desktop.yml` | Windows desktop build and GitHub Release publication (candidate/attest/publish phases) |
+| `release-desktop.yml` | Build-once publication after green `main` CI: decision, one Windows candidate, pre-release or release (approval in `release-publication` when required), dry run by dispatch |
 | `deploy-landing.yml` | GitHub Pages deploy for `apps/landing` |
 | `refresh.yml` | Manual CVM refresh into the external PostgreSQL (schedule disabled) |
 | `backfill_historico.yml` | Manual historical backfill (quarterly gap-fill schedule disabled) |

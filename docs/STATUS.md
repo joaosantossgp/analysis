@@ -7,10 +7,16 @@ Keep detail in the owning contract or dated evidence. Last updated: 2026-11-26.
 
 - Runtime version: `0.30.0-rc.1` (`desktop/__version__.py`).
 - Latest stable: `v0.29.2` (2026-07-09); prerelease: `v0.30.0-rc.1` (2026-07-16).
-- Later source changes are not a new published release. Follow [build/release](build-release.md).
-- The release workflow is enabled and protected on the public repository (`main`
-  branch protection + `release-publication` required reviewer, verified
-  2026-11-25). See [remote publication protection](build-release.md#remote-publication-protection).
+- Later source changes are not a new published release yet.
+- Publishing follows [ADR 0011](decisions/0011-build-once-publications-and-update-channels.md):
+  since #629, a merge to `main` publishes by shipping class through the
+  build-once workflow, a low-risk pre-release with no approval and everything
+  else after the owner's approval in `release-publication`
+  ([release process](release-process.md)). The first publication, `0.30.0`, is
+  #633; promotion, installer, candidate test command and retention are #630-#632
+  and #634. Protection (`main` branch protection + `release-publication`
+  required reviewer) re-verified 2026-11-27; see
+  [remote publication protection](build-release.md#remote-publication-protection).
 
 ## Production and external writes
 

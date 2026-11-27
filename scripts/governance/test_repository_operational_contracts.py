@@ -89,333 +89,130 @@ def _release_workflow() -> dict[str, object]:
     workflow = yaml.safe_load(
         (ROOT / ".github/workflows/release-desktop.yml").read_text(encoding="utf-8")
     )
-    return workflow.get("on", workflow.get(True))["workflow_dispatch"] | {
-        "jobs": workflow["jobs"],
-        "permissions": workflow["permissions"],
-    }
-
-
-def _job_step(job: dict[str, object], name: str) -> dict[str, object]:
-    steps = [step for step in job["steps"] if step.get("name") == name]
-    assert len(steps) == 1, f"expected one {name!r} step"
-    return steps[0]
+    workflow["on"] = workflow.pop("on", None) or workflow.pop(True)
+    return workflow
 
 
 def _run_source(job: dict[str, object]) -> str:
     return "\n".join(str(step.get("run", "")) for step in job.get("steps", []))
 
 
-_THROW_GUARD = re.compile(
-    r"if\s*\((?P<condition>[^\n{}()]*(?:\([^\n{}()]*\)[^\n{}()]*)*)\)\s*\{\s*throw\b",
-    re.MULTILINE,
-)
-_PS_COMPARISON = re.compile(
-    r"(?P<left>(?:\[string\])?\$[\w:]+(?:\.\w+)*)\s*"
-    r"(?P<operator>-ne|-eq)\s*"
-    r'(?P<right>"[^"]*"|\d+|(?:\[string\])?\$[\w:]+(?:\.\w+)*)'
-)
+PUBLISH_JOBS = ("publish-automatic", "publish-approved", "rehearse-publication")
 
 
-def _throw_guard(script: str, required_member: str) -> str:
-    executable_source = re.sub(r"(?m)^\s*#.*$", "", script)
-    executable_source = re.sub(r"'[^']*'", "'literal'", executable_source)
-    guards = [
-        match.group("condition")
-        for match in _THROW_GUARD.finditer(executable_source)
-        if required_member in match.group("condition")
+def test_release_workflow_runs_after_green_main_ci_and_offers_a_dry_run() -> None:
+    workflow = _release_workflow()
+    triggers = workflow["on"]
+
+    assert set(triggers) == {"workflow_run", "workflow_dispatch"}
+    assert triggers["workflow_run"] == {"workflows": ["CI"], "types": ["completed"], "branches": ["main"]}
+    inputs = triggers["workflow_dispatch"]["inputs"]
+    assert set(inputs) == {"dry_run", "assume_class"}
+    assert inputs["dry_run"]["type"] == "boolean" and inputs["dry_run"]["default"] is True
+    decide_if = workflow["jobs"]["decide"]["if"]
+    for condition in (
+        "github.event.workflow_run.conclusion == 'success'",
+        "github.event.workflow_run.event == 'push'",
+        "github.event.workflow_run.head_branch == 'main'",
+    ):
+        assert condition in decide_if
+
+
+def test_release_workflow_asks_the_decision_module_before_building() -> None:
+    jobs = _release_workflow()["jobs"]
+    decide = _run_source(jobs["decide"])
+
+    assert "scripts/release/publication_workflow.py facts" in decide
+    assert "scripts/release/publication_decision.py decide" in decide
+    assert "scripts/release/publication_workflow.py report" in decide
+    assert jobs["build"]["needs"] == "decide"
+    assert jobs["build"]["if"] == "needs.decide.outputs.publish == 'true'"
+    assert jobs["build"]["steps"][0]["with"]["ref"] == "${{ needs.decide.outputs.candidate_sha }}"
+
+
+def test_release_workflow_builds_once_with_the_decided_version_and_never_rebuilds() -> None:
+    jobs = _release_workflow()["jobs"]
+    build = _run_source(jobs["build"])
+
+    assert set(jobs) == {"decide", "build", *PUBLISH_JOBS}
+    assert ".\\desktop\\build_desktop.ps1 -Version $env:RELEASE_VERSION" in build
+    assert jobs["build"]["env"]["RELEASE_VERSION"] == "${{ needs.decide.outputs.version }}"
+    assert "CVMAnalytics-windows-v$env:RELEASE_VERSION.zip" in build
+    assert "$roots -contains 'CVMAnalytics.exe' -and $roots -contains '_internal'" in build
+    for name, job in jobs.items():
+        if name != "build":
+            assert "build_desktop.ps1" not in str(job) and "Compress-Archive" not in str(job), name
+        assert "git commit" not in str(job) and "git push" not in str(job), name
+        assert "softprops/action-gh-release" not in str(job), name
+
+
+def test_release_workflow_publishes_the_built_candidate_with_one_shared_step_list() -> None:
+    jobs = _release_workflow()["jobs"]
+    steps = jobs["publish-automatic"]["steps"]
+
+    for name in PUBLISH_JOBS:
+        assert jobs[name]["steps"] == steps, name
+        assert jobs[name]["needs"] == ["decide", "build"], name
+        assert jobs[name]["env"]["EXPECTED_SHA256"] == "${{ needs.build.outputs.zip_sha256 }}", name
+    downloads = [step["with"] for step in steps if step.get("uses", "").startswith("actions/download-artifact@")]
+    # Same run only (no run-id), so no older or foreign artifact can be substituted.
+    assert downloads == [
+        {"name": "publication-decision", "path": "decision"},
+        {"name": "publication-candidate", "path": "candidate"},
     ]
-    assert len(guards) == 1, f"expected one executable throw guard for {required_member}"
-    return guards[0]
+    publish = _run_source(jobs["publish-automatic"])
+    assert "publication_workflow.py publish" in publish
+    assert '--expected-sha256 "$EXPECTED_SHA256"' in publish
 
 
-def _guard_rejects(guard: str, fixture: dict[str, str]) -> bool:
-    comparisons = list(_PS_COMPARISON.finditer(guard))
-    assert comparisons, f"no supported PowerShell comparisons in guard: {guard}"
-    assert "-and" not in guard, f"reject guard must not weaken mismatches with -and: {guard}"
-    assert all(match.group("operator") == "-ne" for match in comparisons)
-    assert guard.count("-or") >= len(comparisons) - 1
-
-    def value(token: str) -> str:
-        token = token.removeprefix("[string]")
-        if token.startswith('"'):
-            return token[1:-1]
-        if token.isdecimal():
-            return token
-        return fixture[token]
-
-    return any(value(match.group("left")) != value(match.group("right")) for match in comparisons)
-
-
-def test_release_workflow_has_exact_phase_graph_and_final_only_publish_authority() -> None:
+def test_release_workflow_keeps_write_access_on_the_publish_jobs_and_approval_in_release_publication() -> None:
     workflow = _release_workflow()
     jobs = workflow["jobs"]
 
-    assert set(jobs) == {
-        "resolve-candidate",
-        "build-windows",
-        "attest-evidence",
-        "publish-preflight",
-        "final-publish",
-    }
-    assert workflow["inputs"]["phase"]["options"] == ["candidate", "attest", "publish"]
-    assert jobs["resolve-candidate"]["if"] == "inputs.phase == 'candidate'"
-    assert jobs["build-windows"]["if"] == "inputs.phase == 'candidate'"
-    assert jobs["build-windows"]["needs"] == "resolve-candidate"
-    assert jobs["attest-evidence"]["if"] == "inputs.phase == 'attest'"
-    assert jobs["publish-preflight"]["if"] == "inputs.phase == 'publish'"
-    assert jobs["final-publish"]["if"] == "inputs.phase == 'publish'"
-    assert jobs["final-publish"]["needs"] == "publish-preflight"
-    assert workflow["permissions"] == {"contents": "read", "actions": "read"}
-    assert jobs["final-publish"]["permissions"] == {
-        "contents": "write",
-        "actions": "read",
-    }
-    assert jobs["final-publish"]["environment"] == "release-publication"
-    assert sum(job.get("permissions", {}).get("contents") == "write" for job in jobs.values()) == 1
-    assert sum("environment" in job for job in jobs.values()) == 1
+    assert workflow["permissions"] == {"contents": "read"}
+    writers = {name for name, job in jobs.items() if job.get("permissions", {}).get("contents") == "write"}
+    assert writers == {"publish-automatic", "publish-approved"}
+    assert {name for name, job in jobs.items() if "environment" in job} == {"publish-approved"}
+    assert jobs["publish-approved"]["environment"] == "release-publication"
+    assert jobs["publish-approved"]["if"] == (
+        "needs.decide.outputs.dry_run == 'false' && needs.decide.outputs.approval_required == 'true'"
+    )
+    assert jobs["publish-automatic"]["if"] == (
+        "needs.decide.outputs.dry_run == 'false' && needs.decide.outputs.approval_required == 'false'"
+    )
+    assert jobs["rehearse-publication"]["if"] == "needs.decide.outputs.dry_run == 'true'"
+    assert jobs["rehearse-publication"]["permissions"] == {"contents": "read"}
+    assert "${{ needs.decide.outputs.version }}" in jobs["publish-approved"]["name"]
+    assert "${{ needs.decide.outputs.kind }}" in jobs["publish-approved"]["name"]
+
+
+def test_release_workflow_collapses_and_supersedes_runs_with_one_cancelling_group() -> None:
+    concurrency = _release_workflow()["concurrency"]
+
+    assert concurrency["cancel-in-progress"] is True
+    assert "&& 'release-publication'" in concurrency["group"]
+    assert "format('release-publication-noop-{0}', github.run_id)" in concurrency["group"]
+    assert "!inputs.dry_run" in concurrency["group"]
 
 
 def test_release_workflow_transports_dispatch_values_as_environment_data_not_shell_code() -> None:
-    workflow = _release_workflow()
-    jobs = workflow["jobs"]
-    dispatch_expressions = "${{ inputs."
+    jobs = _release_workflow()["jobs"]
 
-    assert all(dispatch_expressions not in _run_source(job) for job in jobs.values())
-    assert jobs["resolve-candidate"]["env"] == {
-        "RELEASE_VERSION": "${{ inputs.version }}",
-        "CANDIDATE_SHA": "${{ inputs.candidate_sha }}",
-    }
-    assert jobs["publish-preflight"]["env"] == {
-        "RELEASE_VERSION": "${{ inputs.version }}",
-        "CANDIDATE_SHA": "${{ inputs.candidate_sha }}",
-        "CANDIDATE_RUN_ID": "${{ inputs.candidate_run_id }}",
-        "ATTESTATION_RUN_ID": "${{ inputs.attestation_run_id }}",
-    }
-    attest_env = jobs["attest-evidence"]["env"]
-    assert attest_env["RELEASE_VERSION"] == "${{ inputs.version }}"
-    assert attest_env["CANDIDATE_SHA"] == "${{ inputs.candidate_sha }}"
-    assert attest_env["CANDIDATE_RUN_ID"] == "${{ inputs.candidate_run_id }}"
-    assert all(value.startswith("${{ inputs.") for value in attest_env.values())
+    assert all("${{" not in _run_source(job) for job in jobs.values())
+    decide_env = next(step["env"] for step in jobs["decide"]["steps"] if step.get("id") == "decide")
+    assert decide_env["ASSUME_CLASS"] == "${{ inputs.assume_class }}"
 
 
-def test_release_workflow_power_shell_reject_guards_fail_closed_for_provenance_fixtures() -> None:
-    workflow = _release_workflow()
-    jobs = workflow["jobs"]
-    resolve = _job_step(jobs["resolve-candidate"], "Resolve exact tag target and latest exact-SHA main CI")["run"]
-    attest = _job_step(jobs["attest-evidence"], "Verify candidate binding and write trusted attestations")["run"]
-    publish = _job_step(jobs["publish-preflight"], "Fetch and verify candidate-bound evidence attestations")["run"]
-    final = _job_step(jobs["final-publish"], "Verify the same candidate artifact, tag, and latest CI after approval")["run"]
-
-    tag_guard = _throw_guard(resolve, "$tagTargetSha")
-    assert _guard_rejects(tag_guard, {"$tagTargetSha": "drift", "$candidateSha": "candidate"})
-
-    trusted_run_fixture = {
-        "$attestationRun.name": "Release Desktop",
-        "$attestationRun.path": ".github/workflows/release-desktop.yml",
-        "$attestationRun.event": "workflow_dispatch",
-        "$attestationRun.conclusion": "success",
-        "$attestationRun.head_branch": "main",
-        "$attestationRun.head_sha": "candidate",
-        "$candidateSha": "candidate",
-    }
-    trusted_run_guard = _throw_guard(publish, "$attestationRun.name")
-    for field, rejected_value in (
-        ("$attestationRun.conclusion", "failed"),
-        ("$attestationRun.conclusion", "cancelled"),
-        ("$attestationRun.name", "Untrusted workflow"),
-        ("$attestationRun.path", ".github/workflows/untrusted.yml"),
-        ("$attestationRun.head_branch", "release"),
-    ):
-        fixture = trusted_run_fixture | {field: rejected_value}
-        assert _guard_rejects(trusted_run_guard, fixture)
-    assert "$attestationWorkflowSourceSha -notmatch '^[0-9a-f]{40}$'" in publish
-
-    producer_fixture = {
-        "$producerRun.name": "Release Desktop",
-        "$producerRun.path": ".github/workflows/release-desktop.yml",
-        "$producerRun.event": "workflow_dispatch",
-        "$producerRun.conclusion": "success",
-        "$producerRun.head_branch": "main",
-        "$producerRun.head_sha": "candidate",
-        "$candidateSha": "candidate",
-    }
-    producer_guard = _throw_guard(publish, "$producerRun.name")
-    assert producer_guard.startswith("$RequireTrustedProducer -and (")
-    producer_guard = producer_guard.removeprefix("$RequireTrustedProducer -and (").removesuffix(")")
-    assert "Read-ActionArtifactJson $item.id \"release-evidence-attestation.json\"" in publish
-    assert _guard_rejects(producer_guard, producer_fixture | {"$producerRun.conclusion": "failed"})
-    assert _guard_rejects(producer_guard, producer_fixture | {"$producerRun.path": ".github/workflows/other.yml"})
-
-    artifact_count_guard = _throw_guard(publish, "$matches.Count")
-    assert _guard_rejects(artifact_count_guard, {"$matches.Count": "0"})
-    assert "Where-Object { $_.name -eq $Name -and -not $_.expired }" in publish
-    assert "Resolve-AttestationArtifact \"release-attestation-manual-local-data-$attestationRunId\"" in publish
-
-    package_guard = _throw_guard(publish, "$candidatePayload.package_artifact.id")
-    assert _guard_rejects(
-        package_guard,
-        {
-            "$candidatePayload.schema_version": "1",
-            "$candidatePayload.candidate.candidate_sha": "candidate",
-            "$candidatePayload.candidate.tag_target_sha": "candidate",
-            "$candidatePayload.candidate.workflow_source_sha": "trusted-main-source",
-            "$candidatePayload.candidate.candidate_run_id": "run",
-            "$candidatePayload.candidate.observed_build_sha": "candidate",
-            "$candidatePayload.package_artifact.id": "wrong-artifact",
-            "$candidateSha": "candidate",
-            "$candidateRunId": "run",
-            "$candidateWorkflowSourceSha": "trusted-main-source",
-            "$env:CANDIDATE_PACKAGE_ARTIFACT_ID": "package-artifact",
-        },
-    )
-
-    checksum_guard = _throw_guard(final, "$checksum -ne $actual")
-    assert _guard_rejects(
-        checksum_guard,
-        {
-            "$checksum": "declared-checksum",
-            "$actual": "actual-checksum",
-            "$evidence.package_artifact.checksum": "actual-checksum",
-        },
-    )
-    assert "$candidatePayload.package_artifact.checksum -notmatch '^[0-9a-f]{64}$'" in attest
-
-
-def test_release_workflow_attest_remains_candidate_bound_after_main_advances() -> None:
-    workflow = _release_workflow()
-    jobs = workflow["jobs"]
-    attest = _job_step(jobs["attest-evidence"], "Verify candidate binding and write trusted attestations")["run"]
-    publish = _job_step(jobs["publish-preflight"], "Fetch and verify candidate-bound evidence attestations")["run"]
-
-    dispatch_guard = _throw_guard(attest, "$env:GITHUB_REF")
-    assert _guard_rejects(
-        dispatch_guard,
-        {"$env:GITHUB_REF": "refs/heads/untrusted"},
-    )
-    assert "$env:GITHUB_SHA.Trim().ToLowerInvariant() -ne $candidateSha" not in dispatch_guard
-    assert "git merge-base --is-ancestor $candidateSha origin/main" in attest
-    assert "$workflowSourceSha = $env:GITHUB_SHA.Trim().ToLowerInvariant()" in attest
-    assert "workflow_source_sha = $workflowSourceSha" in attest
-    assert "$attestationRun.head_sha -ne $candidateSha" not in publish
-    assert "$payload.producer.workflow_source_sha -ne $WorkflowSourceSha" in publish
-    assert "$payload.candidate.package_artifact_id -ne $PackageArtifactId" in publish
-
-
-def test_release_workflow_recovery_carries_historical_candidate_identity_through_publish() -> None:
-    workflow = _release_workflow()
-    jobs = workflow["jobs"]
-    resolve = _job_step(jobs["resolve-candidate"], "Resolve exact tag target and latest exact-SHA main CI")["run"]
-    candidate_evidence = _job_step(jobs["build-windows"], "Write candidate evidence")["run"]
-    attest = _job_step(jobs["attest-evidence"], "Verify candidate binding and write trusted attestations")["run"]
-    publish_verify = _job_step(jobs["publish-preflight"], "Re-resolve exact candidate, CI, and candidate artifact identities")["run"]
-    publish = _job_step(jobs["publish-preflight"], "Fetch and verify candidate-bound evidence attestations")["run"]
-    final = _job_step(jobs["final-publish"], "Verify the same candidate artifact, tag, and latest CI after approval")["run"]
-    publication_evidence = _job_step(jobs["final-publish"], "Write publication evidence bound to the verified candidate")["run"]
-
-    candidate_ref_guard = _throw_guard(resolve, "$env:GITHUB_REF")
-    assert _guard_rejects(candidate_ref_guard, {"$env:GITHUB_REF": "refs/heads/untrusted"})
-    assert "$candidateWorkflowSourceSha = $env:GITHUB_SHA.Trim().ToLowerInvariant()" in resolve
-    assert "workflow_source_sha=$candidateWorkflowSourceSha" in resolve
-    assert 'workflow_source_sha = "${{ needs.resolve-candidate.outputs.workflow_source_sha }}"' in candidate_evidence
-
-    candidate_run_guard = _throw_guard(attest, "$candidateRun.name")
-    assert "$candidateRun.head_sha -ne $candidateSha" not in candidate_run_guard
-    assert "$candidateWorkflowSourceSha = $candidateRun.head_sha.Trim().ToLowerInvariant()" in attest
-    candidate_binding_guard = _throw_guard(attest, "$candidatePayload.candidate.workflow_source_sha")
-    assert _guard_rejects(
-        candidate_binding_guard,
-        {
-            "$candidatePayload.schema_version": "1",
-            "$candidatePayload.candidate.candidate_sha": "historical-candidate",
-            "$candidatePayload.candidate.tag_target_sha": "historical-candidate",
-            "$candidatePayload.candidate.candidate_run_id": "replacement-run",
-            "$candidatePayload.candidate.observed_build_sha": "historical-candidate",
-            "$candidatePayload.candidate.workflow_source_sha": "substituted-main-source",
-            "$candidatePayload.package_artifact.id": "package-artifact",
-            "$candidatePayload.package_artifact.checksum": "a" * 64,
-            "$candidateSha": "historical-candidate",
-            "$candidateRunId": "replacement-run",
-            "$candidateWorkflowSourceSha": "trusted-later-main-source",
-            "$package[0].id": "package-artifact",
-        },
-    )
-
-    publish_candidate_guard = _throw_guard(publish_verify, "$candidateRun.name")
-    assert "$candidateRun.head_sha -ne $candidateSha" not in publish_candidate_guard
-    assert "$candidateWorkflowSourceSha = $candidateRun.head_sha.Trim().ToLowerInvariant()" in publish_verify
-    assert "$candidatePayload.candidate.workflow_source_sha -ne $candidateWorkflowSourceSha" in publish
-    assert "workflow_source_sha = $candidateWorkflowSourceSha" in publish
-    assert "$verified.candidate.workflow_source_sha -ne $evidence.candidate.workflow_source_sha" in final
-    assert "candidate_workflow_source_sha = $verified.candidate.workflow_source_sha" in publication_evidence
-
-
-def test_release_workflow_keeps_candidate_evidence_and_publish_preflight_immutable() -> None:
-    workflow = _release_workflow()
-    jobs = workflow["jobs"]
-    evidence_step = _job_step(jobs["build-windows"], "Write candidate evidence")["run"]
-    preflight = jobs["publish-preflight"]
-    final_publish = jobs["final-publish"]
-
-    assert all(token in evidence_step for token in (
-        "schema_version",
-        "candidate_sha",
-        "tag_target_sha",
-        "candidate_run_id",
-        "package_artifact",
-        "zip_sha256",
-        "observed_build_sha",
-    ))
-    assert "verified-release-evidence.json" in _run_source(preflight)
-    assert "Get-FileHash" in _run_source(preflight)
-    assert all(
-        "build_desktop.ps1" not in str(step)
-        and "Compress-Archive" not in str(step)
-        and "softprops/action-gh-release" not in str(step)
-        for step in preflight["steps"]
-    )
-    assert any("softprops/action-gh-release" in step.get("uses", "") for step in final_publish["steps"])
-
-
-def test_release_workflow_expiry_recovery_requires_a_fresh_superseding_candidate_cycle() -> None:
-    workflow = _release_workflow()
-    jobs = workflow["jobs"]
-    attest = _run_source(jobs["attest-evidence"])
-    publish = _run_source(jobs["publish-preflight"])
+def test_release_docs_describe_build_once_publication_not_the_retired_gate() -> None:
+    for relative_path in ("docs/release-process.md", "docs/build-release.md"):
+        document = (ROOT / relative_path).read_text(encoding="utf-8")
+        assert "release-publication" in document, relative_path
+        assert "publication_decision.py" in document, relative_path
+        for retired in ("attest", "candidate_run_id", "#440"):
+            assert retired not in document, (relative_path, retired)
     release_process = (ROOT / "docs/release-process.md").read_text(encoding="utf-8")
-    build_release = (ROOT / "docs/build-release.md").read_text(encoding="utf-8")
-
-    assert "-not $_.expired" in attest
-    assert "-not $_.expired" in publish
-    for document in (release_process, build_release):
-        document = re.sub(r"\s+", " ", document.replace("**", " "))
-        assert "same version/SHA only after artifact expiry" in document
-        assert "new immutable artifacts and run IDs" in document
-        assert "superseded evidence" in document
-        assert "revalidate the latest successful exact-SHA CI" in document
-        assert "repeat package/manual/conditional attestations and #440 approval" in document
-
-
-def test_release_workflow_preserves_updater_version_grammar() -> None:
-    workflow = _release_workflow()
-    jobs = workflow["jobs"]
-    version_number = r"(?:0|[1-9][0-9]*)"
-    version_pattern = rf"^{version_number}\.{version_number}\.{version_number}(?:-rc\.{version_number})?$"
-    powershell_pattern = (
-        "'^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)"
-        "(?:-rc\\.(?:0|[1-9][0-9]*))?$'"
-    )
-    validation_steps = (
-        _job_step(jobs["resolve-candidate"], "Resolve exact tag target and latest exact-SHA main CI"),
-        _job_step(jobs["attest-evidence"], "Verify candidate binding and write trusted attestations"),
-        _job_step(jobs["publish-preflight"], "Re-resolve exact candidate, CI, and candidate artifact identities"),
-        _job_step(jobs["final-publish"], "Verify the same candidate artifact, tag, and latest CI after approval"),
-    )
-
-    assert all(powershell_pattern in step["run"] for step in validation_steps)
-    assert re.fullmatch(version_pattern, "0.0.0")
-    assert re.fullmatch(version_pattern, "1.2.3-rc.12")
-    for invalid in ("01.2.3", "1.02.3", "1.2.03", "1.2.3-rc.01", "1.2.3-beta"):
-        assert not re.fullmatch(version_pattern, invalid)
+    assert "pending_deployments" in release_process
+    assert "explicit" in release_process
 
 
 def test_release_and_ci_actions_are_full_sha_pinned() -> None:
@@ -434,26 +231,6 @@ def test_release_and_ci_actions_are_full_sha_pinned() -> None:
         ]
         assert uses, relative_path
         assert all(re.fullmatch(r"[^@]+@[0-9a-f]{40}", action) for action in uses), relative_path
-
-
-def test_release_workflow_keeps_publish_write_only_and_never_rebuilds_or_retags() -> None:
-    workflow = _release_workflow()
-    final_publish = workflow["jobs"]["final-publish"]
-    final_steps = final_publish["steps"]
-    final_source = _run_source(final_publish)
-
-    assert set(workflow) == {"inputs", "jobs", "permissions"}
-    assert [step["name"] for step in final_steps if step.get("uses", "").startswith("actions/download-artifact@")] == [
-        "Download immutable candidate package",
-        "Download immutable candidate evidence",
-        "Download verified manual evidence binding",
-    ]
-    assert _job_step(final_publish, "Publish GitHub Release from verified candidate only")["uses"].startswith(
-        "softprops/action-gh-release@"
-    )
-    assert "build_desktop.ps1" not in final_source
-    assert "Compress-Archive" not in final_source
-    assert "git tag " not in final_source
 
 
 def _run_pr_guardrail_script(body: str, issues: dict[int, dict[str, object]]) -> dict[str, object]:

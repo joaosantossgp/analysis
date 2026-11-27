@@ -1,9 +1,9 @@
 """Publication decision for CVMAnalytics (ADR 0011, goal #623, issue #628).
 
 Pure rules, no network and no git: the caller collects the facts and passes
-them in as JSON. Nothing calls this module yet. The publication workflow
-(#629) and the promotion workflows (#631) will; until they land, the gate in
-`docs/release-process.md` is the operating contract.
+them in as JSON. The publication workflow (`.github/workflows/release-desktop.yml`
+through `publication_workflow.py`) calls `decide`; the promotion workflows
+(#631) will call `promote`. Contract: `docs/release-process.md`.
 
 Command line (JSON on stdin or `--input FILE`, JSON on stdout, exit 2 with a
 message on stderr when the input is invalid):
@@ -69,6 +69,7 @@ RISK_AREAS: dict[str, tuple[str, ...]] = {
         "desktop/app.spec",
         "desktop/build_desktop.ps1",
         ".github/workflows/release-desktop.yml",
+        "scripts/release/publication_workflow.py",
     ),
     "dependency manifests": (
         "requirements.txt",
