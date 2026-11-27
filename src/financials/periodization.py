@@ -4,10 +4,49 @@ from __future__ import annotations
 import calendar
 import hashlib
 import json
+import math
 
 import pandas as pd
 
 from src.financials.utils import normalize_account_name
+
+_QUARTER_END_DAYS = {3: 31, 6: 30, 9: 30, 12: 31}
+
+
+def _clean_observation_value(value):
+    if value is None or value is pd.NA or value is pd.NaT:
+        return None
+    if isinstance(value, float):
+        return None if math.isnan(value) else value
+    if isinstance(value, pd.Timestamp):
+        return value.isoformat()[:10]
+    if isinstance(value, (str, int, bool)):
+        return value
+    return None if pd.isna(value) else value
+
+
+def _parse_ymd_fast(raw, cache: dict[object, tuple[int, int, int] | None]) -> tuple[int, int, int] | None:
+    if raw in cache:
+        return cache[raw]
+    parsed: tuple[int, int, int] | None = None
+    if isinstance(raw, str):
+        s = raw.strip()
+        if len(s) >= 10 and s[4] == "-" and s[7] == "-":
+            y_s, m_s, d_s = s[:4], s[5:7], s[8:10]
+            if y_s.isdigit() and m_s.isdigit() and d_s.isdigit():
+                y, m, d = int(y_s), int(m_s), int(d_s)
+                if 1 <= m <= 12 and 1 <= d <= calendar.monthrange(y, m)[1]:
+                    parsed = (y, m, d)
+        if parsed is None and s:
+            ts = pd.to_datetime(s, errors="coerce")
+            if not pd.isna(ts):
+                parsed = (ts.year, ts.month, ts.day)
+    elif raw is not None:
+        ts = pd.to_datetime(raw, errors="coerce")
+        if not pd.isna(ts):
+            parsed = (ts.year, ts.month, ts.day)
+    cache[raw] = parsed
+    return parsed
 
 
 def is_per_share(statement: str, code: object) -> bool:
@@ -25,9 +64,10 @@ def observation_unit(row: dict, statement: str) -> str:
 
 def source_observations(frame: pd.DataFrame, statement: str) -> list[dict]:
     observations = []
-    for raw in frame.to_dict("records"):
-        row = {key: (None if pd.isna(value) else value.isoformat()[:10] if isinstance(value, pd.Timestamp) else value)
-               for key, value in raw.items()}
+    cols = list(frame.columns)
+    col_lists = [frame[col].tolist() for col in cols]
+    for values in zip(*col_lists):
+        row = {key: _clean_observation_value(val) for key, val in zip(cols, values)}
         row["STATEMENT_TYPE"] = statement
         row.setdefault("RAW_VL_CONTA", str(row.get("VL_CONTA")))
         row["UNIT"] = observation_unit(row, statement)
@@ -44,16 +84,18 @@ def build_statement(frame: pd.DataFrame, statement: str, tolerance: float) -> tu
     stock = statement in {"BPA", "BPP"}
     all_line_sources: dict[str, list[dict]] = {}
     for observation in observations:
-        all_line_sources.setdefault(str(observation['LINE_ID_BASE']), []).append(observation)
+        all_line_sources.setdefault(str(observation["LINE_ID_BASE"]), []).append(observation)
     # Duration is kept until selection; YTD and standalone are never pivoted together.
     grouped: dict[tuple[str, int], list[dict]] = {}
     periods: dict[int, set[str]] = {}
+    date_cache: dict[object, tuple[int, int, int] | None] = {}
+    date_key = "DT_REFER" if stock else "DT_FIM_EXERC"
     for obs in observations:
-        end = pd.to_datetime(obs.get("DT_REFER") if stock else obs.get("DT_FIM_EXERC"), errors="coerce")
-        if pd.isna(end):
+        ymd = _parse_ymd_fast(obs.get(date_key), date_cache)
+        if ymd is None:
             continue
-        year, month = end.year, end.month
-        if month not in {3, 6, 9, 12} or end.day != calendar.monthrange(year, month)[1]:
+        year, month, day = ymd
+        if _QUARTER_END_DAYS.get(month) != day:
             continue
         label = str(year) if month == 12 else f"{month // 3}Q{year % 100:02}"
         grouped.setdefault((str(obs["LINE_ID_BASE"]), year), []).append(obs)
@@ -61,19 +103,62 @@ def build_statement(frame: pd.DataFrame, statement: str, tolerance: float) -> tu
         if month == 12 and not stock:
             periods[year].add(f"4Q{year % 100:02}")
 
+    # Compute normalized names and line-level identity ambiguity once per line_id
+    # instead of re-scanning all_line_sources on every (line_id, year) iteration.
+    norm_cache: dict[str, str] = {}
+
+    def _norm(raw_text: object) -> str:
+        key = str(raw_text or "")
+        cached = norm_cache.get(key)
+        if cached is None:
+            cached = normalize_account_name(key)
+            norm_cache[key] = cached
+        return cached
+
+    ambiguous_by_line: dict[str, bool] = {}
+    for line_id, line_sources in all_line_sources.items():
+        identities = {
+            (
+                str(s.get("CD_CONTA")),
+                _norm(s.get("DS_CONTA")),
+                s.get("REPORT_TYPE"),
+                s.get("GRUPO_DFP"),
+                s["UNIT"],
+            )
+            for s in line_sources
+        }
+        ambiguous_by_line[line_id] = len(identities) > 1
+
+    sorted_periods_by_year = {year: sorted(p_set) for year, p_set in periods.items()}
+
     by_line: dict[str, dict] = {}
     for (line_id, year), sources in grouped.items():
         first = sources[0]
-        result = by_line.setdefault(line_id, {
-            "LINE_ID_BASE": line_id, "CD_CONTA": first.get("CD_CONTA"),
-            "DS_CONTA": first.get("DS_CONTA"),
-            "DS_CONTA_norm": normalize_account_name(str(first.get("DS_CONTA") or "")),
-            "QA_CONFLICT": False,
-        })
-        identities = {(str(s.get("CD_CONTA")), normalize_account_name(str(s.get("DS_CONTA") or "")),
-                       s.get("REPORT_TYPE"), s.get("GRUPO_DFP"), s["UNIT"]) for s in all_line_sources[line_id]}
-        ambiguous_identity = len(identities) > 1
+        result = by_line.get(line_id)
+        if result is None:
+            result = {
+                "LINE_ID_BASE": line_id,
+                "CD_CONTA": first.get("CD_CONTA"),
+                "DS_CONTA": first.get("DS_CONTA"),
+                "DS_CONTA_norm": _norm(first.get("DS_CONTA")),
+                "QA_CONFLICT": False,
+            }
+            by_line[line_id] = result
+        ambiguous_identity = ambiguous_by_line[line_id]
         nonadditive = is_per_share(statement, first.get("CD_CONTA"))
+
+        # Pre-index this (line_id, year)'s observations by duration key.
+        if stock:
+            indexed_stock: dict[str, list[dict]] = {}
+            for s in sources:
+                indexed_stock.setdefault(str(s.get("DT_REFER"))[:10], []).append(s)
+        else:
+            indexed_flow: dict[tuple[str, str], list[dict]] = {}
+            for s in sources:
+                indexed_flow.setdefault(
+                    (str(s.get("DT_INI_EXERC"))[:10], str(s.get("DT_FIM_EXERC"))[:10]),
+                    [],
+                ).append(s)
 
         def event(kind, period, inputs, **details):
             events.append(dict(
@@ -87,8 +172,9 @@ def build_statement(frame: pd.DataFrame, statement: str, tolerance: float) -> tu
             ))
 
         def candidates(start, end):
-            return [s for s in sources if str(s.get("DT_REFER") if stock else s.get("DT_FIM_EXERC"))[:10] == end
-                    and (stock or str(s.get("DT_INI_EXERC"))[:10] == start)]
+            if stock:
+                return indexed_stock.get(end, [])
+            return indexed_flow.get((start, end), [])
 
         def select(matches):
             unique = {s["observation_id"]: s for s in matches}
@@ -100,11 +186,11 @@ def build_statement(frame: pd.DataFrame, statement: str, tolerance: float) -> tu
             chosen = next(iter(unique.values()))
             return chosen if chosen.get("VL_CONTA") is not None else None
 
-        for period in sorted(periods[year]):
+        for period in sorted_periods_by_year[year]:
             annual = period.isdigit()
             quarter = 4 if annual else int(period[0])
             end_month = 3 * quarter
-            end = f"{year}-{end_month:02}-{calendar.monthrange(year, end_month)[1]}"
+            end = f"{year}-{end_month:02}-{_QUARTER_END_DAYS[end_month]}"
             start = f"{year}-01-01" if annual or stock else f"{year}-{end_month - 2:02}-01"
             direct = candidates(start, end)
             inputs, value, status, formula = direct, float("nan"), "unavailable", None
@@ -126,7 +212,7 @@ def build_statement(frame: pd.DataFrame, statement: str, tolerance: float) -> tu
             else:
                 current = candidates(f"{year}-01-01", end)
                 prev_month = end_month - 3
-                previous = candidates(f"{year}-01-01", f"{year}-{prev_month:02}-{calendar.monthrange(year, prev_month)[1]}")
+                previous = candidates(f"{year}-01-01", f"{year}-{prev_month:02}-{_QUARTER_END_DAYS[prev_month]}")
                 inputs = current + previous
                 current_row, previous_row = select(current), select(previous)
                 if not current:

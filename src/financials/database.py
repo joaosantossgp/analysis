@@ -1,11 +1,12 @@
 import os
 import re
+import math
 import time
 import logging
 import json
 from datetime import datetime, timezone
 import pandas as pd
-from sqlalchemy import create_engine, inspect, text, Engine
+from sqlalchemy import create_engine, event, inspect, text, Engine
 from sqlalchemy.exc import OperationalError
 
 from src.companies.gics_manual_mapping import resolve_gics_classification
@@ -320,10 +321,23 @@ class CVMDatabase:
             )
         abs_path = os.path.abspath(db_path)
         os.makedirs(os.path.dirname(abs_path), exist_ok=True)
-        return create_engine(
+        engine = create_engine(
             f"sqlite:///{abs_path}",
             connect_args={"check_same_thread": False},
         )
+
+        @event.listens_for(engine, "connect")
+        def _configure_sqlite_connection(dbapi_connection, _connection_record) -> None:
+            cursor = dbapi_connection.cursor()
+            try:
+                cursor.execute("PRAGMA busy_timeout = 5000")
+                cursor.execute("PRAGMA synchronous = NORMAL")
+                cursor.execute("PRAGMA temp_store = MEMORY")
+                cursor.execute("PRAGMA cache_size = -64000")
+            finally:
+                cursor.close()
+
+        return engine
 
     def _init_db(self):
         """Creates the necessary tables if they don't exist."""
@@ -341,8 +355,11 @@ class CVMDatabase:
 
         # Resolve ticker_b3 and cnpj if not provided
         if not ticker_b3 or not cnpj:
-            from src.companies.identity import CompanyIdentityResolver
-            resolver = CompanyIdentityResolver()
+            resolver = getattr(self, "_identity_resolver", None)
+            if resolver is None:
+                from src.companies.identity import CompanyIdentityResolver
+                resolver = CompanyIdentityResolver()
+                self._identity_resolver = resolver
             identity = resolver.resolve(int(cvm_code))
             if identity:
                 if not ticker_b3 and identity.ticker_b3:
@@ -414,6 +431,9 @@ class CVMDatabase:
 
     def _to_sql_with_retry(self, table_name: str, df: pd.DataFrame, conn) -> None:
         """Retry writes for transient SQLite lock errors without masking final failures."""
+        if isinstance(df, pd.DataFrame):
+            self._bulk_insert_with_retry(table_name, df, conn)
+            return
         dialect = self._engine.dialect.name
         max_retries = SQLITE_WRITE_MAX_RETRIES if dialect == "sqlite" else 1
         chunksize = self._resolve_to_sql_chunksize(df)
@@ -429,6 +449,53 @@ class CVMDatabase:
                     method='multi',
                     chunksize=chunksize,
                 )
+                return
+            except OperationalError as exc:
+                if attempt >= max_retries:
+                    raise
+                sleep_s = SQLITE_WRITE_BACKOFF_SECONDS * attempt
+                logger.warning(
+                    "Transient DB write failure for table=%s attempt=%s/%s error=%s",
+                    table_name,
+                    attempt,
+                    max_retries,
+                    exc,
+                )
+                time.sleep(sleep_s)
+
+    @staticmethod
+    def _clean_db_scalar(value):
+        if value is None or value is pd.NA or value is pd.NaT:
+            return None
+        if isinstance(value, float):
+            return None if math.isnan(value) else value
+        if isinstance(value, (str, int, bool)):
+            return value
+        return None if pd.isna(value) else value
+
+    def _bulk_insert_with_retry(self, table_name: str, df: pd.DataFrame, conn) -> None:
+        """Insert DataFrame rows via one parameterized executemany (avoids pandas multi-row SQL compilation)."""
+        if df.empty:
+            return
+        cols = list(df.columns)
+        quoted_cols = ", ".join(f'"{col}"' for col in cols)
+        placeholders = ", ".join(f":c{idx}" for idx in range(len(cols)))
+        stmt = text(f"INSERT INTO {table_name} ({quoted_cols}) VALUES ({placeholders})")
+        col_keys = [f"c{idx}" for idx in range(len(cols))]
+        col_lists = [df[col].tolist() for col in cols]
+        clean = self._clean_db_scalar
+        records = [
+            {k: clean(v) for k, v in zip(col_keys, row_vals)}
+            for row_vals in zip(*col_lists)
+        ]
+
+        dialect = self._engine.dialect.name
+        max_retries = SQLITE_WRITE_MAX_RETRIES if dialect == "sqlite" else 1
+        attempt = 0
+        while True:
+            attempt += 1
+            try:
+                conn.execute(stmt, records)
                 return
             except OperationalError as exc:
                 if attempt >= max_retries:
@@ -591,14 +658,20 @@ class CVMDatabase:
                 if not value_vars:
                     continue
 
-                # Audit attrs are persisted above; do not copy them through tabular reshaping.
-                df_long = pd.DataFrame(df_wide, copy=True).melt(
-                    id_vars=id_vars,
-                    value_vars=value_vars,
-                    var_name='PERIOD_LABEL',
-                    value_name='VL_CONTA',
-                )
-                if not df_wide.attrs.get('value_lineage'):
+                # Audit attrs are persisted above; detach around melt so pandas does not deep-copy them.
+                value_lineage = df_wide.attrs.get('value_lineage')
+                saved_attrs = dict(df_wide.attrs)
+                df_wide.attrs.clear()
+                try:
+                    df_long = pd.DataFrame(df_wide, copy=True).melt(
+                        id_vars=id_vars,
+                        value_vars=value_vars,
+                        var_name='PERIOD_LABEL',
+                        value_name='VL_CONTA',
+                    )
+                finally:
+                    df_wide.attrs.update(saved_attrs)
+                if not value_lineage:
                     df_long = df_long.dropna(subset=['VL_CONTA'])
 
                 if df_long.empty:
