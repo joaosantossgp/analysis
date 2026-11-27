@@ -82,7 +82,9 @@ Keep detail in the owning contract or dated evidence. Last updated: 2026-11-27.
   inherited `DATABASE_URL` (#667), the in-app update helper never starting on
   Windows 11 25H2 (#671; `v0.29.2` and `0.30.0`-`0.30.1` installs need
   `Setup.exe` once, see [troubleshooting](troubleshooting.md)), and two UI copy
-  and layout defects (#669, #673).
+  and layout defects (#669, #673). The landing page points to `Setup.exe`
+  (#653) but is offline: GitHub Pages is not enabled for the repository and
+  `deploy-landing.yml` has failed since 2026-10-29 (#677, owner decision).
 
 ## Validation and historical evidence
 
