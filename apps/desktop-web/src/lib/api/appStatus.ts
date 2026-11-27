@@ -1,4 +1,4 @@
-import { callBridge, getBridgeMode } from "../bridge/adapter";
+import { callBridge, getBridgeMode, whenBridgeReady } from "../bridge/adapter";
 import type {
   AppStatusPayload,
   LocalPathInfo,
@@ -44,6 +44,18 @@ export async function openStatusPath(
     throw new Error(response.error || `Could not open ${kind} path.`);
   }
   return response;
+}
+
+export const UPDATE_CHECK_KEY = ["update-check"] as const;
+
+/**
+ * Stored result of the last update check (startup, "Check now" or a channel
+ * change). Never contacts GitHub, so the shell may read and poll it. Waits for
+ * pywebview's injection first; null in browser preview.
+ */
+export async function fetchStoredUpdateCheck(): Promise<UpdateCheckResult | null> {
+  if ((await whenBridgeReady()) === "browser") return null;
+  return callBridge("check_update", { force: false });
 }
 
 /** Last known update status; `force` asks GitHub again (an explicit refresh). */

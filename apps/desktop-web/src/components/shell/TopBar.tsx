@@ -5,10 +5,12 @@ import { Kbd } from "@/components/ui/Kbd";
 
 import { DataIndicator } from "./DataIndicator";
 import { ModuleNav } from "./ModuleNav";
+import { UpdateIndicator } from "./UpdateIndicator";
 
 /**
  * Persistent top app bar. Brand mark + ModuleNav + right cluster (command
- * bar trigger placeholder, bridge pill, UTC clock). 36px tall.
+ * bar trigger placeholder, software update pill when an update is offered,
+ * Data pill, bridge pill, UTC clock). 36px tall.
  *
  * The command bar trigger is a placeholder button — UX-2 will wire the
  * Ctrl+K palette behind it.
@@ -105,6 +107,8 @@ export function TopBar({ onOpenPalette }: Props) {
             <Kbd>Ctrl K</Kbd>
           </span>
         </button>
+
+        <UpdateIndicator />
 
         <DataIndicator />
 

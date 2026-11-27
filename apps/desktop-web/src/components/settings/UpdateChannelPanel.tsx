@@ -4,7 +4,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { StateBanner } from "@/components/feedback/StateBanner";
 import { Panel } from "@/components/surface/Panel";
 import { Button } from "@/components/ui/Button";
-import { fetchUpdateChannel, saveUpdateChannel, triggerCheckUpdate } from "@/lib/api/appStatus";
+import {
+  fetchStoredUpdateCheck,
+  fetchUpdateChannel,
+  saveUpdateChannel,
+  triggerCheckUpdate,
+  UPDATE_CHECK_KEY,
+} from "@/lib/api/appStatus";
 import type { UpdateChannel, UpdateCheckResult } from "@/lib/bridge/types";
 
 const CHANNEL_OPTIONS: Array<{ value: UpdateChannel; label: string; description: string }> = [
@@ -46,21 +52,21 @@ export function UpdateChannelPanel({ bridgeReady }: { bridgeReady: boolean }) {
   const desktop = channelQuery.data?.mode === "desktop";
   // Reads the status of the last check (startup or "Check now"); it does not contact GitHub.
   const checkQuery = useQuery({
-    queryKey: ["update-check"],
-    queryFn: () => triggerCheckUpdate(),
+    queryKey: UPDATE_CHECK_KEY,
+    queryFn: fetchStoredUpdateCheck,
     enabled: desktop,
     refetchOnWindowFocus: false,
   });
   const check = useMutation({
     mutationFn: () => triggerCheckUpdate({ force: true }),
-    onSuccess: (result) => queryClient.setQueryData(["update-check"], result),
+    onSuccess: (result) => queryClient.setQueryData(UPDATE_CHECK_KEY, result),
   });
   const save = useMutation({
     mutationFn: saveUpdateChannel,
     onSuccess: (channel) => {
       queryClient.setQueryData(["update-channel"], { mode: "desktop", channel });
       // Saving already checked the new channel: read that stored result, do not ask GitHub again.
-      void queryClient.invalidateQueries({ queryKey: ["update-check"] });
+      void queryClient.invalidateQueries({ queryKey: UPDATE_CHECK_KEY });
     },
   });
   const failure = channelQuery.error ?? checkQuery.error ?? check.error;
@@ -183,7 +189,7 @@ export function UpdateChannelView({
             ) : null}
             {check.available ? (
               <p className="text-xs leading-5 text-zinc-400">
-                Install it from{" "}
+                Install it with Update in the top bar, or from{" "}
                 <Link to="/settings/diagnostics" className="text-cyan-200 underline-offset-2 hover:underline">
                   Advanced &gt; Software update
                 </Link>

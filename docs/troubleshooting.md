@@ -34,7 +34,8 @@ Key local paths:
 | News content unavailable | Only metadata/feed summary may be stored; the app does not bypass paywalls |
 | Excel export fails | Check output directory permissions, open-file locks, and exporter tests |
 | Packaged app launches old version | Check Settings -> Diagnostics build provenance and release ZIP layout |
-| Updater fails | Inspect `%LOCALAPPDATA%\CVMAnalytics\update_error.log` and rollback directory |
+| Updater fails | The top-bar Update pill reads "Update failed" and its panel shows the error; the installed version keeps running. Inspect `%LOCALAPPDATA%\CVMAnalytics\update_error.log` and rollback directory |
+| No Update pill although a newer publication exists | The pill shows only an offer from the last check: check Settings -> App (failed, offline or postponed checks show nothing in the top bar; "Later" postpones that version for 7 days), then Check now |
 | A pre-release is not offered | Settings -> App -> Update channel must be "Pre-releases and releases"; then Check now |
 
 ## Safe Diagnostics

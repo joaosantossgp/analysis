@@ -201,10 +201,35 @@ sync when extending this contract.
   channel change. Besides those user actions, the only check is the one at
   startup.
 - Settings -> App shows the channel choice, the pre-release notice, the current
-  version and the last check. Installing stays on the Advanced -> Software
-  update card until the shell announcement (#627).
+  version and the last check.
 - Unchanged: package asset names, checksum validation, staging, the allowlisted
   swap and rollback.
+
+### Shell update announcement (ADR 0011, #627)
+
+- When the stored check offers an update (`check_update().available`), the top
+  bar shows an `Update <version>` pill next to the Data pill on every screen,
+  marked `pre-release` for a pre-release. It opens a compact panel (closes on
+  Escape, a click outside or its close button) with the version, the kind, the
+  installed version, the publication page link, **Update now** and **Later**.
+- The shell reads only the stored check (`check_update` without `force`), every
+  5 s until the startup check has a result, then once a minute; it never
+  contacts GitHub. A failed, offline, not-yet-run, up-to-date or postponed check
+  shows nothing in the shell; Settings -> App and Advanced -> Software update keep
+  the detailed status.
+- Nothing is downloaded before **Update now**. It runs the same `apply_update`
+  flow as the diagnostics card (shared `useUpdateApply` hook): the pill shows
+  `Updating N%`, the panel shows the step (download, checksum, files, restart),
+  and the helper restarts the app into the new version. A failure before the
+  swap shows `Update failed` with the updater's error; the installed version
+  keeps running and **Update now** retries.
+- **Later** calls `snooze_update`: the offered tag is postponed for 7 days in
+  `snooze.json`, and the stored status becomes `snoozed` with nothing to apply,
+  as the next startup check reports it. A newer publication is offered again
+  at the next startup.
+- Mock preview: `localStorage.setItem("cvm_mock_update", "release_available")`
+  (or `prereleases`, `offline`, `snoozed`) before reload; the mock install
+  steps through download progress and always ends in a simulated failure.
 
 User data under `%USERPROFILE%\Documents\CVMAnalytics` must not be overwritten
 by update/install flows.
