@@ -92,6 +92,14 @@ launcher removes inherited `VITE_MOCK_BRIDGE` from the Vite process environment;
 it does not reuse an existing preview server. See
 [`_start_vite_dev_server()`](../desktop/app.py#L999).
 
+`--dev` runs under a **dev supervisor** ([`desktop/dev_supervisor.py`](../desktop/dev_supervisor.py)):
+a long-lived parent process that runs the app as a child and restarts it when a
+Python file under `desktop/` or `src/` changes. The window reopens on the same
+route with the same size and position. UI changes still update through Vite
+without a restart. Closing the window ends dev mode. See
+[auto-restart](dev-runtime-and-data-paths.md#auto-restart-on-python-changes-dev-supervisor)
+for the details and limits.
+
 With no path overrides or release-data opt-in, desktop dev uses:
 
 ```text
@@ -136,7 +144,7 @@ startup initialization can still write metadata. See
 
 | Flag | Effect |
 |---|---|
-| `--dev` | Starts its own Vite server on the first free loopback port in `5173`–`5199` |
+| `--dev` | Runs under the dev supervisor (auto-restart on Python changes); starts its own Vite server on the first free loopback port in `5173`–`5199` |
 | `--debug` | Opens DevTools in the active mode |
 | (none) | Serves `apps/desktop-web/dist` or `_internal/desktop-web` |
 | `--repair-dev-environment` | Reinstalls declared dependencies in `.venv` (use with `--dev`) |
