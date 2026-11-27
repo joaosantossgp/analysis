@@ -100,15 +100,27 @@ without a restart. Closing the window ends dev mode. See
 [auto-restart](dev-runtime-and-data-paths.md#auto-restart-on-python-changes-dev-supervisor)
 for the details and limits.
 
-With no path overrides or release-data opt-in, desktop dev uses:
+With no path overrides or release-data opt-in, desktop dev uses the **shared
+dev data** of the main checkout, also when launched from a git worktree:
 
 ```text
-<repo>\data\dev-runtime
+<main checkout>\data\dev-runtime
 ```
 
 This data persists across launches and accepts updates. The packaged app defaults
 to `%USERPROFILE%\Documents\CVMAnalytics`. See [Data Paths](#data-paths) for
 overrides and output/log locations.
+
+A **data-sensitive worktree** (its issue touches database schema, migrations,
+ingestion, refresh or reset) runs on **isolated dev data** instead:
+
+```powershell
+.\.venv\Scripts\python.exe scripts/dev/isolate_dev_data.py
+```
+
+The script copies the dev databases into the worktree and writes a git-ignored
+marker; downloaded CVM files stay shared unless `--full-copy` is passed. See
+[isolated dev data](dev-runtime-and-data-paths.md#isolated-dev-data-data-sensitive-worktree).
 
 ### Custom Data Dev
 
@@ -319,7 +331,10 @@ The desktop launcher sets path defaults in
 [`src/platform/settings.py:147`](../src/platform/settings.py#L147).
 
 Without an explicit `CVM_DATA_DIR`, the source desktop launcher sets the dev or
-release-data root plus `{data}/output` and `{data}/logs`. The packaged launcher
+release-data root plus `{data}/output` and `{data}/logs`. The dev root is the
+main checkout's `data\dev-runtime` (shared dev data), or the worktree's own
+`data\dev-runtime` when the worktree carries the `.dev-data-isolated` marker
+([`desktop/dev_data.py`](../desktop/dev_data.py)). The packaged launcher
 also supplies these output/log defaults. Existing per-path overrides are retained.
 
 With an explicit `CVM_DATA_DIR`, source desktop skips that default injection.
@@ -347,6 +362,7 @@ Important environment variables:
 | `CVM_OUTPUT_DIR` | Output directory override |
 | `CVM_LOG_DIR` | Log directory override |
 | `CVM_CACHE_DIR` | Cache directory override |
+| `CVM_INPUT_DIR` | Downloaded CVM files override; set by the launcher to the shared folder in a data-sensitive worktree |
 | `VITE_MOCK_BRIDGE` | Browser mock-preview flag; inherited value removed from desktop-launched Vite |
 
 See [dev-runtime-and-data-paths.md](dev-runtime-and-data-paths.md) for detailed

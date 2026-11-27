@@ -40,24 +40,69 @@ which configures both source and packaged launches with different defaults.
 Override with `CVMANALYTICS_DATA_DIR` env var to redirect the release app to a
 different location (useful for staging or operator installs).
 
-## Data directory — dev mode (default: isolated writable data)
+## Data directory — dev mode (default: shared dev data)
 
 Without path overrides or release-data opt-in, `python -m desktop.app --dev`
-uses an isolated project data root:
+uses the **shared dev data** of the main checkout, also when it is launched from
+a git worktree:
 
 ```
-<repo>\data\dev-runtime\
+<main checkout>\data\dev-runtime\
 ├── db\
 │   └── cvm_financials.db
 │   └── energy_kpis.db
+├── input\                     ← downloaded CVM files (about 2 GB)
 ├── output\
 ├── logs\
 ├── cache\
 └── raw\
 ```
 
+The main checkout is the first entry of `git worktree list`. A new worktree
+therefore opens with the companies and statements already downloaded. When git
+cannot list the worktrees, the checkout uses its own `data\dev-runtime`.
+
 This root persists across launches and accepts updates separately from the release
 database. Existing path overrides can still redirect individual files.
+
+### Isolated dev data (data-sensitive worktree)
+
+A worktree whose work could alter or break shared dev data runs on **isolated
+dev data**. The agent decides this from the rule in
+[`AGENTS.md`](../AGENTS.md#5-workflow) ("Dev data in worktrees"); there is no UI
+toggle. From the worktree:
+
+```powershell
+.\.venv\Scripts\python.exe scripts/dev/isolate_dev_data.py              # own databases, shared downloads
+.\.venv\Scripts\python.exe scripts/dev/isolate_dev_data.py --full-copy  # own copy of everything
+```
+
+The script ([`scripts/dev/isolate_dev_data.py`](../scripts/dev/isolate_dev_data.py),
+logic in [`desktop/dev_data.py`](../desktop/dev_data.py)):
+
+- only reads shared dev data, and copies every database under `db\` with the
+  WAL-safe copy, so it is safe while dev mode is open on shared dev data;
+- writes the git-ignored marker `.dev-data-isolated` at the worktree root
+  (content `isolated` or `full-copy`) after the copy succeeded;
+- refuses to run on the main checkout, and refuses to replace dev data the
+  worktree already holds unless `--force` is passed.
+
+| Marker | Data root | Databases | Downloaded CVM files (`input\`) |
+|---|---|---|---|
+| none | `<main checkout>\data\dev-runtime` | shared | shared |
+| `isolated` | `<worktree>\data\dev-runtime` | own copy | shared (`CVM_INPUT_DIR` points at the shared folder) |
+| `full-copy` | `<worktree>\data\dev-runtime` | own copy | own copy |
+
+Output, logs and cache follow the data root. Dev mode reads the marker when the
+app starts; restart it after running the script. Delete the marker to return to
+shared dev data (the worktree's own copy stays on disk until deleted by hand).
+A marker on the main checkout is ignored. With `isolated`, a refresh still
+writes downloaded files into the shared folder; use `--full-copy` when the work
+changes those files.
+
+`scripts/release/dev-desktop.ps1` sets `CVM_DATA_DIR` to `data\dev-runtime` of
+the checkout it runs in. That is an explicit override: from a worktree it uses
+the worktree's own folder and ignores the marker.
 
 `CVM_DATA_DIR` takes precedence over default and release-data root selection.
 It does not redirect every output path; see the
@@ -65,18 +110,20 @@ It does not redirect every output path; see the
 
 ## Dev commands
 
-### Default dev (isolated writable data)
+### Default dev (shared dev data)
 
 ```powershell
-# From repo root
+# From the main checkout or any git worktree
 python -m desktop.app --dev
 
-# Or use the convenience script
+# Or use the convenience script (pins this checkout's own data\dev-runtime)
 .\scripts\release\dev-desktop.ps1
 .\scripts\release\dev-desktop.ps1 --debug    # opens DevTools
 ```
 
-Data lives in `<repo>\data\dev-runtime`. Updates and exports are enabled.
+Data lives in `<main checkout>\data\dev-runtime` unless the worktree is
+[data-sensitive](#isolated-dev-data-data-sensitive-worktree). Updates and
+exports are enabled.
 
 ### Dev with custom data directory
 
@@ -85,8 +132,8 @@ $env:CVM_DATA_DIR = "C:\path\to\your\test-data"
 python -m desktop.app --dev
 ```
 
-Use this for isolated dev data, destructive experiments, or fixtures that must
-not touch the shared Documents database.
+Use this for throwaway data, destructive experiments, or fixtures that must
+not touch shared dev data or the Documents database.
 
 ### Vite-only (browser preview, no bridge)
 
@@ -128,7 +175,8 @@ The Status strip shows **BRIDGE · MOCK** in violet and Settings -> Diagnostics 
 
 | Variable | Default (desktop dev) | Purpose |
 |----------|---------------|---------|
-| `CVM_DATA_DIR` | `<repo>\data\dev-runtime` | Root data directory in dev; packaged release uses `%USERPROFILE%\Documents\CVMAnalytics` |
+| `CVM_DATA_DIR` | `<main checkout>\data\dev-runtime`; `<worktree>\data\dev-runtime` in a data-sensitive worktree | Root data directory in dev; packaged release uses `%USERPROFILE%\Documents\CVMAnalytics` |
+| `CVM_INPUT_DIR` | `{data}/input`; the shared folder when the worktree marker is `isolated` | Downloaded CVM files (`raw`, `processed`) |
 | `CVMANALYTICS_USE_RELEASE_DATA` | Unset | Set to `1` for explicit release-data dev; `CVM_DATA_DIR` still takes precedence |
 | `CVMANALYTICS_ALLOW_RELEASE_DATA_WRITES` | — | Set to `1` to allow destructive bridge calls in dev+release-data mode (normally blocked) |
 | `CVMANALYTICS_CONCURRENT_LOCK_DETECTED` | — | Set on a data-directory lock conflict; blocks guarded writes in release-data dev |
@@ -216,6 +264,12 @@ At startup, `desktop/app.py` acquires a JSON lock file at
 `{data_dir}/runtime.lock`. The lock stores the PID, runtime mode, start time,
 and app version of the owning process. On graceful exit the file is deleted.
 
+The lock follows the effective data root, not the launching checkout. Two dev
+mode processes on shared dev data (for example one from the main checkout and
+one from a worktree) therefore meet at
+`<main checkout>\data\dev-runtime\runtime.lock` and the second one records the
+conflict. A data-sensitive worktree locks its own data root.
+
 **Stale lock recovery**: if a lock file exists but the recorded PID is no longer
 alive, the lock is taken over automatically and the event is logged.
 
@@ -228,8 +282,9 @@ launcher records the conflict:
   `start_data_update` and `reset_local_database` return a blocked response,
   even when release-data writes were requested.
 - This bridge restriction is not a database-wide read-only guarantee. The current
-  guard exempts packaged and isolated dev modes, and startup initialization still
-  runs. Stop the other process before using shared data for writes.
+  guard exempts the packaged app and dev mode on dev data (shared or isolated),
+  and startup initialization still runs. Stop the other process before using
+  shared data for writes.
 - Settings -> Diagnostics reports the lock and write-mode status.
 
 Implementation: [launcher](../desktop/app.py#L1182) and
@@ -260,7 +315,9 @@ database errors can still prevent writes.
 
 **Settings -> Diagnostics** (`/settings/diagnostics`; `/status` redirects there)
 shows the active data directory and database path
-under "Runtime diagnostics". When `CVMANALYTICS_USE_RELEASE_DATA=1` is active:
+under "Runtime diagnostics". This is the effective data root: the main
+checkout's folder on shared dev data, the worktree's own folder on isolated dev
+data. When `CVMANALYTICS_USE_RELEASE_DATA=1` is active:
 
 - The **Mode** field shows `vite dev (release data)`.
 - An amber warning banner appears in the Runtime card.
@@ -285,16 +342,17 @@ does not clear `CVM_DATA_DIR` or per-path overrides; use a shell without them an
 check Settings -> Diagnostics to confirm the paths. Guarded bridge writes are
 blocked by default. See [shared-data dev](development.md#dev-with-installed-app-data).
 
-### Run dev against isolated data
+### Run dev against an explicit data directory
 
 ```powershell
 $env:CVM_DATA_DIR = "$PWD\data"
 python -m desktop.app --dev
 ```
 
-Safe for resets. Data under `{repo}/data/` is not shared with the release app.
+Safe for resets. Data under `{repo}/data/` is not shared with the release app
+or with other worktrees.
 
-### Reset explicit isolated dev database
+### Reset the database of an explicit data directory
 
 Delete `{repo}/data/db/cvm_financials.db`. The app will re-initialize schema on
 next start.
@@ -450,6 +508,10 @@ Press F5 inside the pywebview window while running `--dev`.
   that directory may not exist yet.
 - **The lock is not a database-wide write barrier.** A detected conflict blocks
   guarded writes in release-data dev. It does not provide the same protection
-  for packaged or isolated dev mode. Stop the other process before shared writes.
+  for the packaged app or for dev mode on shared or isolated dev data. Stop the
+  other process before shared writes.
+- **Isolated dev data still shares downloaded CVM files.** A refresh in a
+  data-sensitive worktree writes into the shared `input\` folder; use
+  `--full-copy` for work that changes those files.
 - Mock fixture data does not reflect live database state. It is fixed at file
   creation time. Do not use `npm run dev:mock` to validate data-layer behavior.

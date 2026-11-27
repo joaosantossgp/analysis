@@ -102,6 +102,14 @@ work, PRs deliver it.
   batch related tasks into one PR or serialize merges to avoid `update-branch` +
   re-CI cascades. `dispatching-parallel-agents` is for independent sub-tasks
   within one session, not separate issues.
+- **Dev data in worktrees:** dev mode in any worktree uses the shared dev data
+  of the main checkout (`<main checkout>/data/dev-runtime`). Before running dev
+  mode or data scripts in a worktree whose issue touches database schema,
+  migrations, ingestion, refresh or reset, isolate it:
+  `.\.venv\Scripts\python.exe scripts/dev/isolate_dev_data.py` (own database
+  copy, shared downloads). Add `--full-copy` when the work changes the format,
+  location or content of downloaded CVM files. Never isolate the main checkout
+  (`docs/dev-runtime-and-data-paths.md`).
 - **Plans & status:** `docs/superpowers/` working files are git-ignored; the
   GitHub issue is the spec of record. Update `docs/STATUS.md` when version,
   release state, active work, or a major decision changes.
