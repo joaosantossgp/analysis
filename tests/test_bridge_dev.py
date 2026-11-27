@@ -1,7 +1,8 @@
-"""Dev bridge contract: dev context, restart and auto-restart (dev panel, #610)."""
+"""Dev bridge contract: dev context, restart, auto-restart (#610) and dev data actions (#614)."""
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -237,3 +238,138 @@ def test_dev_methods_refuse_in_the_packaged_app(control_dir: Path, monkeypatch: 
         assert result["status_reason_code"] == "dev_mode_only"
         assert result["error"]
     assert dev_supervisor.read_requests(control_dir) == [], "a refused call reaches no supervisor"
+
+
+# --- dev data actions (#614) ---------------------------------------------------
+
+
+@pytest.fixture
+def shared_data(checkout: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Shared dev data of a main checkout that is a git checkout; the profile is a temp folder."""
+    main = checkout.parent / "main"
+    (main / ".git").mkdir()
+    shared = main / "data" / "dev-runtime"
+    (shared / "db").mkdir(parents=True)
+    (shared / "db" / "cvm_financials.db").write_bytes(b"x" * 2048)
+    (shared / "input").mkdir()
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "profile"))
+    monkeypatch.delenv("CVMANALYTICS_DATA_DIR", raising=False)
+    return shared
+
+
+ACTIONS = ("dev_move_data_to_backup", "dev_restore_data_backup", "dev_delete_data")
+
+
+def test_data_info_lists_the_targets_with_sizes_and_backups(shared_data: Path, control_dir: Path) -> None:
+    result = CVMBridge().dev_get_data_info()
+
+    assert result["ok"] is True
+    assert result["unavailable_reason"] is None
+    assert result["supervised"] is True
+    assert result["last_action"] is None
+    assert [t["target"] for t in result["targets"]] == ["db", "input", "all"]
+    db = result["targets"][0]
+    assert (db["path"], db["size_bytes"], db["shared"], db["backup_exists"]) == (str(shared_data / "db"), 2048, True, False)
+
+
+def test_data_info_reports_the_last_data_action_of_the_session(shared_data: Path, control_dir: Path) -> None:
+    outcome = {"operation": "backup", "target": "db", "ok": False, "message": "Data action failed: locked.",
+               "finished_at": "2026-11-27 10:00:00"}
+    (control_dir / dev_supervisor.DATA_ACTION_FILE).write_text(json.dumps(outcome), encoding="utf-8")
+
+    assert CVMBridge().dev_get_data_info()["last_action"] == outcome
+
+
+def test_move_to_backup_hands_the_resolved_dev_data_to_the_supervisor(shared_data: Path, control_dir: Path) -> None:
+    assert CVMBridge().dev_move_data_to_backup({"target": "db"}) == {"ok": True}
+
+    assert dev_supervisor.read_requests(control_dir) == [
+        {
+            "action": "data_action",
+            "operation": "backup",
+            "target": "db",
+            "mode": "shared",
+            "data_root": str(shared_data),
+            "shared_root": str(shared_data),
+        }
+    ]
+    assert (shared_data / "db" / "cvm_financials.db").exists(), "the bridge never touches data itself"
+
+
+def test_delete_needs_the_target_typed_again(shared_data: Path, control_dir: Path) -> None:
+    for params in ({"target": "db"}, {"target": "db", "confirm": "all"}):
+        result = CVMBridge().dev_delete_data(params)
+        assert result["ok"] is False
+        assert "Type db to confirm" in result["error"]
+    assert dev_supervisor.read_requests(control_dir) == []
+
+    assert CVMBridge().dev_delete_data({"target": "db", "confirm": "db"}) == {"ok": True}
+    assert dev_supervisor.read_requests(control_dir)[0]["operation"] == "delete"
+
+
+@pytest.mark.parametrize(
+    ("method", "params", "expected"),
+    [
+        ("dev_restore_data_backup", {"target": "db"}, "no Database backup"),
+        ("dev_move_data_to_backup", {"target": "logs"}, "Unknown data target"),
+        ("dev_move_data_to_backup", None, "Unknown data target"),
+    ],
+)
+def test_actions_that_cannot_run_fail_before_the_window_closes(
+    shared_data: Path, control_dir: Path, method: str, params: dict | None, expected: str
+) -> None:
+    result = getattr(CVMBridge(), method)(params)
+
+    assert result["ok"] is False
+    assert expected in result["error"]
+    assert dev_supervisor.read_requests(control_dir) == []
+
+
+def test_data_actions_fail_plainly_without_a_supervisor(shared_data: Path) -> None:
+    result = CVMBridge().dev_move_data_to_backup({"target": "db"})
+
+    assert result["ok"] is False
+    assert "supervisor" in result["error"]
+    assert CVMBridge().dev_get_data_info()["supervised"] is False
+
+
+@pytest.mark.parametrize("variable", ["CVMANALYTICS_USE_RELEASE_DATA", "CVM_DATA_DIR"])
+def test_data_actions_refuse_installed_app_and_custom_data(
+    shared_data: Path, control_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, variable: str
+) -> None:
+    monkeypatch.setenv(variable, str(tmp_path / "custom") if variable == "CVM_DATA_DIR" else "1")
+    bridge = CVMBridge()
+
+    info = bridge.dev_get_data_info()
+    assert info["ok"] is True
+    assert variable in info["unavailable_reason"]
+    assert info["targets"] == [], "no sizes or paths of data the panel may not act on"
+    for method in ACTIONS:
+        result = getattr(bridge, method)({"target": "db", "confirm": "db"})
+        assert result["status"] == "blocked"
+        assert result["status_reason_code"] == "dev_data_actions_unavailable"
+    assert dev_supervisor.read_requests(control_dir) == []
+
+
+def test_data_actions_refuse_when_the_main_checkout_lies_inside_installed_app_data(
+    checkout: Path, control_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    documents_checkout = tmp_path / "profile" / "Documents" / "CVMAnalytics"
+    (documents_checkout / ".git").mkdir(parents=True)
+    monkeypatch.setattr(dev_data, "main_checkout", lambda _root: documents_checkout)
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "profile"))
+
+    assert "installed-app data" in CVMBridge().dev_get_data_info()["unavailable_reason"]
+    assert CVMBridge().dev_move_data_to_backup({"target": "all"})["status"] == "blocked"
+    assert dev_supervisor.read_requests(control_dir) == []
+
+
+def test_data_methods_refuse_in_the_packaged_app(shared_data: Path, control_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    bridge = CVMBridge()
+
+    results = [bridge.dev_get_data_info()] + [getattr(bridge, m)({"target": "db", "confirm": "db"}) for m in ACTIONS]
+    for result in results:
+        assert result["ok"] is False
+        assert result["status_reason_code"] == "dev_mode_only"
+    assert dev_supervisor.read_requests(control_dir) == []

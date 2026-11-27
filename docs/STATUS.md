@@ -68,7 +68,7 @@ Keep detail in the owning contract or dated evidence. Last updated: 2026-11-26.
 
 - Decided 2026-11-26: a dev-mode goal (#607, tasks #608-#614: auto-restart on
   Python changes, shared/isolated dev data, worktree switch, dev panel; #608-#610
-  implemented, the dev panel shell in #610) and a publishing goal, not yet filed as issues (plain version numbers,
+  implemented, the dev panel shell in #610, dev data actions in #614) and a publishing goal, not yet filed as issues (plain version numbers,
   update channels, shipping classes, build-once promotion, installer). Publishing
   decision: [ADR 0011](decisions/0011-build-once-publications-and-update-channels.md);
   vocabulary: [GLOSSARY.md](../GLOSSARY.md). The current release gate stays in

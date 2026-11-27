@@ -37,3 +37,45 @@ export interface DevFailure {
 export type DevContextResponse = DevContext | DevFailure;
 export type DevRestartResponse = { ok: true } | DevFailure;
 export type DevAutoRestartResponse = { ok: true; auto_restart: boolean } | DevFailure;
+
+/** Dev data a data action works on: the database, the downloaded CVM files, or the whole data root. */
+export type DevDataTarget = "db" | "input" | "all";
+export type DevDataOperation = "backup" | "restore" | "delete";
+
+export interface DevDataTargetInfo {
+  target: DevDataTarget;
+  path: string;
+  exists: boolean;
+  /** null when the folder does not exist. */
+  size_bytes: number | null;
+  /** Shared dev data: other worktrees use this folder too. */
+  shared: boolean;
+  /** The single backup slot of this target (`<data root>.backup/<target>`). */
+  backup_path: string;
+  backup_exists: boolean;
+  backup_size_bytes: number | null;
+}
+
+/** Outcome of the last data action of this dev session, written by the dev supervisor. */
+export interface DevDataActionOutcome {
+  operation: DevDataOperation;
+  target: DevDataTarget;
+  ok: boolean;
+  message: string;
+  finished_at: string;
+}
+
+export interface DevDataInfo {
+  ok: true;
+  /** Why data actions are unavailable (installed-app data, custom CVM_DATA_DIR); null when allowed. */
+  unavailable_reason: string | null;
+  /** False when the app runs without the dev supervisor, which performs the actions. */
+  supervised: boolean;
+  /** Empty when data actions are unavailable. */
+  targets: DevDataTargetInfo[];
+  last_action: DevDataActionOutcome | null;
+}
+
+export type DevDataInfoResponse = DevDataInfo | DevFailure;
+/** Accepted: the dev supervisor stops the app, performs the action and starts it again. */
+export type DevDataActionResponse = { ok: true } | DevFailure;

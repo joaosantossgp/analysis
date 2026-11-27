@@ -23,6 +23,8 @@ data/metadata/b3_companies_cache.json
 
 # Desktop runtime state (written at runtime, not source)
 /data/dev-runtime/
+# Dev data backups of the dev panel; see desktop/dev_data_actions.py
+/data/dev-runtime.backup/
 # Marks a data-sensitive worktree (isolated dev data); see desktop/dev_data.py
 /.dev-data-isolated
 data/onboarding_state.json
