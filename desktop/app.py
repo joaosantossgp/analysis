@@ -986,8 +986,12 @@ def _background_local_metadata_enrichment() -> None:
     try:
         # Wait for UI to initialize
         time.sleep(2.0)
-        
-        db_path = _user_data_root() / "db" / "cvm_financials.db"
+
+        from src.platform.settings import build_settings  # noqa: PLC0415
+
+        # The active data root set by _configure_bundled_data_paths, as the rest of the app uses (#664).
+        paths = build_settings().paths
+        db_path = paths.db_path
         if not db_path.exists():
             return
             
@@ -1038,7 +1042,7 @@ def _background_local_metadata_enrichment() -> None:
         from src.companies.cnpj import validate_cnpj
         
         # Explicit 10s timeout
-        catalog = CompanyCatalogService(timeout=10, snapshot_path=_user_data_root() / "metadata" / "cvm_company_catalog.json")
+        catalog = CompanyCatalogService(timeout=10, snapshot_path=paths.metadata_dir / "cvm_company_catalog.json")
         # Read local evidence only; missing evidence leaves the success timestamp unchanged.
         catalog.list_entries()
         

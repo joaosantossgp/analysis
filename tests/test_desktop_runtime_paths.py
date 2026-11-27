@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import sqlite3
+from contextlib import closing
 from os import environ
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -265,3 +267,75 @@ def test_runtime_lock_of_a_data_sensitive_worktree_is_its_own(worktree_of_main, 
         app._configure_bundled_data_paths()
 
         assert app._runtime_lock_dir() == worktree / "data" / "dev-runtime"
+
+
+_CATALOG_CSV = (
+    "CD_CVM;DENOM_SOCIAL;DENOM_COMERC;CNPJ_CIA;SETOR_ATIV;SIT\n"
+    "9512;PETROBRAS;PETROBRAS;33.000.167/0001-01;Petroleo;ATIVO\n"
+)
+
+
+def _seed_enrichment_data(data_root: Path) -> Path:
+    """A company missing its CNPJ plus local catalog evidence that has it."""
+    db_path = data_root / "db" / "cvm_financials.db"
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    with closing(sqlite3.connect(db_path)) as conn, conn:
+        conn.execute("CREATE TABLE companies (cd_cvm INTEGER PRIMARY KEY, cnpj TEXT)")
+        conn.execute("INSERT INTO companies VALUES (9512, NULL)")
+    snapshot = data_root / "metadata" / "cvm_company_catalog.json"
+    snapshot.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"schema_version": 1, "source_url": "fixture", "downloaded_at": "2026-01-01T00:00:00+00:00", "csv": _CATALOG_CSV}
+    snapshot.write_text(json.dumps(payload), encoding="utf-8")
+    return db_path
+
+
+def _enriched_cnpj(db_path: Path) -> str | None:
+    with closing(sqlite3.connect(db_path)) as conn:
+        return conn.execute("SELECT cnpj FROM companies WHERE cd_cvm = 9512").fetchone()[0]
+
+
+def _run_local_metadata_enrichment() -> None:
+    with patch.object(lockfile, "get_status", return_value={"status": "locked_by_self"}), patch("time.sleep"):
+        app._background_local_metadata_enrichment()
+
+
+@pytest.mark.parametrize("explicit_data_dir", [False, True], ids=["shared-dev-data", "cvm-data-dir"])
+def test_local_metadata_enrichment_in_source_mode_uses_the_active_dev_database(
+    worktree_of_main, tmp_path: Path, explicit_data_dir: bool
+) -> None:
+    # #664: a dev run must never write the installed app's Documents\CVMAnalytics database.
+    profile = tmp_path / "profile"
+    installed_root = profile / "Documents" / "CVMAnalytics"
+    installed_db = _seed_enrichment_data(installed_root)
+    installed_bytes = installed_db.read_bytes()
+    env = {"USERPROFILE": str(profile)}
+    if explicit_data_dir:
+        env["CVM_DATA_DIR"] = str(tmp_path / "explicit-data")
+
+    with patch.dict(environ, env, clear=True):
+        app._configure_bundled_data_paths()
+        active_root = Path(app.os.environ["CVM_DATA_DIR"])
+        assert installed_root not in (active_root, *active_root.parents)
+        active_db = _seed_enrichment_data(active_root)
+        _run_local_metadata_enrichment()
+
+    assert _enriched_cnpj(active_db) == "33000167000101"
+    assert installed_db.read_bytes() == installed_bytes
+
+
+def test_local_metadata_enrichment_in_the_packaged_app_uses_the_documents_database(
+    monkeypatch, tmp_path: Path
+) -> None:
+    exe_path = tmp_path / "CVMAnalytics.exe"
+    exe_path.write_text("", encoding="utf-8")
+    monkeypatch.setattr(app.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(app.sys, "_MEIPASS", str(tmp_path / "_internal"), raising=False)
+    monkeypatch.setattr(app.sys, "executable", str(exe_path))
+    profile = tmp_path / "profile"
+    installed_db = _seed_enrichment_data(profile / "Documents" / "CVMAnalytics")
+
+    with patch.dict(environ, {"USERPROFILE": str(profile)}, clear=True):
+        app._configure_bundled_data_paths()
+        _run_local_metadata_enrichment()
+
+    assert _enriched_cnpj(installed_db) == "33000167000101"
