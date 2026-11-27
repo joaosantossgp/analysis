@@ -50,7 +50,14 @@ class StatusUpdatesMixin:
         return self._sanitize_for_json({"channel": get_update_channel()})
 
     def set_update_channel(self, params=None) -> dict:
-        """Store the update channel. Does not contact GitHub: the caller checks next."""
+        """Store the update channel, then check GitHub once for it.
+
+        Choosing a channel is an explicit user action, so it runs the same check
+        as "Check now" and stores the result; later status reads (get_app_status,
+        check_update) reuse it and never contact GitHub because of the change.
+        """
+        from desktop.__version__ import __version__  # noqa: PLC0415
+        from desktop.updater import _log as _update_log  # noqa: PLC0415
         from desktop.updater import get_update_channel, set_update_channel  # noqa: PLC0415
 
         if not self._is_write_allowed():
@@ -73,7 +80,23 @@ class StatusUpdatesMixin:
                     "ok": False, "error": str(exc), "channel": get_update_channel(),
                 })
             self._update_info = None
-            self._latest_update_status = None
+            # Never None: an empty cache makes the next status read call GitHub.
+            # Reads during the check below see the new channel as not checked yet.
+            self._latest_update_status = {
+                "current_version": __version__,
+                "latest_version": None,
+                "latest_tag": None,
+                "update_available": False,
+                "release_url": None,
+                "checked_at": None,
+                "status": "unknown",
+                "error": None,
+                "can_apply": False,
+                "channel": channel,
+                "publication_kind": None,
+            }
+        status = self._get_software_update_status(force=True)
+        _update_log(f"update channel set to {channel}; check result: {status.get('status')}")
         return self._sanitize_for_json({"ok": True, "channel": channel})
 
     def apply_update(self, params=None) -> dict:
@@ -193,7 +216,7 @@ class StatusUpdatesMixin:
                 "apply_supported": True,
             })
         except Exception as exc:
-            return self._sanitize_for_json({
+            status = {
                 "current_version": None,
                 "latest_version": None,
                 "latest_tag": None,
@@ -202,6 +225,12 @@ class StatusUpdatesMixin:
                 "checked_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                 "status": "check_failed",
                 "error": f"Could not check GitHub Releases: {exc}",
+            }
+            # Stored like any failed check, so later reads do not retry GitHub.
+            with self._update_lock:
+                self._latest_update_status = dict(status)
+            return self._sanitize_for_json({
+                **status,
                 "progress": progress,
                 "apply_supported": True,
             })

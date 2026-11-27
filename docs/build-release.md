@@ -273,22 +273,32 @@ sync when extending this contract.
   `%LOCALAPPDATA%\CVMAnalytics\update_channel.json` (`{"channel": "..."}`),
   next to `snooze.json`: outside the bundle and outside the financial database,
   so an update or a data reset keeps it. A missing, unreadable or unknown value
-  means `releases`.
+  means `releases`. The file is written to a temporary file and swapped in, so a
+  failed write keeps the previous choice.
+- Listing: GitHub Releases is read 100 publications per page, newest first,
+  until a page holds a publication the channel accepts, at most 5 pages per
+  check. A channel with nothing accepted in those pages reads as `no_release`.
 - Selection (`select_publication`): drafts and malformed tags are skipped;
-  `releases` accepts only publications GitHub marks as releases, `prereleases`
-  accepts both. Versions compare numerically (`-rc.N` sorts below the plain
-  version). The offer is the newest accepted publication that is newer than the
-  installed version and has its versioned ZIP. A version lower than or equal to
+  `releases` accepts only publications GitHub marks as releases whose tag has no
+  `-rc.N` part (a legacy `-rc.N` tag without the prerelease flag counts as a
+  pre-release), `prereleases` accepts both. Versions compare numerically
+  (`-rc.N` sorts below the plain version). The offer is the newest accepted
+  publication that is newer than the installed version and has its versioned
+  ZIP. A version lower than or equal to
   the installed one is never offered, so switching back to `releases` keeps the
   current version until a newer release exists. When no newer publication has
   its ZIP, the status is `asset_missing`.
 - Bridge: `get_update_channel` / `set_update_channel` (refused in read-only
-  mode; changing the channel drops the previous channel's offer so it cannot be
-  applied). `check_update` returns the last known status with `channel`,
+  mode). Changing the channel is an explicit user action: it drops the previous
+  channel's offer so it cannot be applied, then runs one check for the new
+  channel (the same check as `check_update({"force": true})`), logs it to
+  `update_error.log` and stores the result; a failed check is stored as
+  `check_failed`. `check_update` returns the last known status with `channel`,
   `publication_kind` (`release` / `pre-release`), `checked_at`,
   `current_version` and `latest_version`; `{"force": true}` runs a new check
   (an explicit user action). The `get_app_status().update` payload carries the
-  same `channel` and `publication_kind`. The only automatic check is the one at
+  same `channel` and `publication_kind` and never contacts GitHub because of a
+  channel change. Besides those user actions, the only check is the one at
   startup.
 - Settings -> App shows the channel choice, the pre-release notice, the current
   version and the last check. Installing stays on the Advanced -> Software

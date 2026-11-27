@@ -37,6 +37,8 @@ CHANNEL_PRERELEASES = "prereleases"
 UPDATE_CHANNELS = (CHANNEL_RELEASES, CHANNEL_PRERELEASES)
 _VERSIONS_DIR = _APPDATA_DIR / "versions"
 _SNOOZE_DAYS = 7
+_RELEASES_PER_PAGE = 100  # GitHub's maximum
+_MAX_RELEASE_PAGES = 5  # bounds one check to five listing requests
 _VERSION_NUMBER = r"(?:0|[1-9][0-9]*)"
 # `git describe` appends this suffix only for commits after a tag, so zero is invalid.
 _GIT_DESCRIBE_DISTANCE = r"(?:[1-9][0-9]*)"
@@ -89,7 +91,27 @@ def set_update_channel(channel: str) -> None:
     if channel not in UPDATE_CHANNELS:
         raise ValueError("invalid_channel")
     _APPDATA_DIR.mkdir(parents=True, exist_ok=True)
-    _CHANNEL_FILE.write_text(json.dumps({"channel": channel}), encoding="utf-8")
+    # Swap in a complete file so a crash mid-write keeps the previous choice.
+    tmp = _CHANNEL_FILE.with_name(f"{_CHANNEL_FILE.name}.tmp")
+    tmp.write_text(json.dumps({"channel": channel}), encoding="utf-8")
+    os.replace(tmp, _CHANNEL_FILE)
+
+
+def _channel_version(publication, channel: str) -> tuple[int, ...] | None:
+    """The parsed version of a publication the channel accepts, else None."""
+    if not isinstance(publication, dict) or publication.get("draft"):
+        return None
+    version = _parse_version(str(publication.get("tag_name") or ""))
+    if version == (0,):
+        return None
+    # A legacy -rc.N tag is a pre-release even when GitHub's flag was not set.
+    if channel != CHANNEL_PRERELEASES and (publication.get("prerelease") or _is_rc(version)):
+        return None
+    return version
+
+
+def _is_rc(version: tuple[int, ...]) -> bool:
+    return version[3] == 0  # _parse_version puts 0 there for an -rc.N tag
 
 
 def select_publication(
@@ -97,9 +119,10 @@ def select_publication(
 ) -> dict | None:
     """Pick the publication to show for a channel from a GitHub Releases listing.
 
-    "releases" accepts releases only; "prereleases" accepts both. Drafts and
-    malformed tags are ignored. The result is the newest accepted publication
-    that is newer than the current version and has its package; when no newer
+    "releases" accepts releases only (no prerelease flag and no -rc.N tag);
+    "prereleases" accepts both. Drafts and malformed tags are ignored. The
+    result is the newest accepted publication that is newer than the current
+    version and has its package; when no newer
     one has the package, the newest newer one (so the caller can report the
     missing asset); otherwise the newest accepted one, flagged `newer: False`.
     Download URLs are only returned for a newer publication.
@@ -107,14 +130,10 @@ def select_publication(
     local = _parse_version(current_version)
     accepted = []
     for publication in publications:
-        if not isinstance(publication, dict) or publication.get("draft"):
-            continue
-        if publication.get("prerelease") and channel != CHANNEL_PRERELEASES:
+        version = _channel_version(publication, channel)
+        if version is None:
             continue
         tag = str(publication.get("tag_name") or "")
-        version = _parse_version(tag)
-        if version == (0,):
-            continue
         zip_url, sha256_url = UpdateChecker._find_asset_urls(
             publication.get("assets") or [], tag
         )
@@ -129,7 +148,7 @@ def select_publication(
     return {
         "tag": tag,
         "version": tag.lstrip("v"),
-        "kind": "pre-release" if publication.get("prerelease") else "release",
+        "kind": "pre-release" if publication.get("prerelease") or _is_rc(version) else "release",
         "newer": is_newer,
         "release_url": publication.get("html_url") or None,
         "zip_url": zip_url if is_newer else None,
@@ -165,7 +184,7 @@ class UpdateChecker:
             "publication_kind": None,
         }
         try:
-            publications = self._fetch_publications()
+            publications = self._fetch_publications(channel)
         except Exception as exc:
             return {
                 **base,
@@ -220,14 +239,13 @@ class UpdateChecker:
         with its package that is not snoozed. Returns None on network error or
         if already up to date.
         """
+        channel = channel or get_update_channel()
         try:
-            publications = self._fetch_publications()
+            publications = self._fetch_publications(channel)
         except Exception:
             return None
 
-        selected = select_publication(
-            publications, current_version, channel or get_update_channel()
-        )
+        selected = select_publication(publications, current_version, channel)
         if not selected or not selected["newer"] or not selected["zip_url"]:
             return None
         if self.is_snoozed(selected["tag"]):
@@ -361,19 +379,30 @@ class UpdateChecker:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _fetch_publications() -> list:
-        # shortcut: reads one page (the 100 newest publications); paginate if a
-        # channel could ever have no publication among them.
-        resp = requests.get(
-            f"{_API_BASE}/repos/{GITHUB_REPO}/releases",
-            params={"per_page": 100},
-            headers={"Accept": "application/vnd.github+json"},
-            timeout=10,
-        )
-        resp.raise_for_status()
-        publications = resp.json()
-        if not isinstance(publications, list):
-            raise ValueError("unexpected GitHub Releases response")
+    def _fetch_publications(channel: str) -> list:
+        """List publications page by page until one the channel accepts appears.
+
+        GitHub lists the newest publications first, so the first page holding an
+        accepted publication decides the selection. At most _MAX_RELEASE_PAGES
+        pages are read; beyond them the channel reads as having no publication.
+        """
+        publications: list = []
+        for page in range(1, _MAX_RELEASE_PAGES + 1):
+            resp = requests.get(
+                f"{_API_BASE}/repos/{GITHUB_REPO}/releases",
+                params={"per_page": _RELEASES_PER_PAGE, "page": page},
+                headers={"Accept": "application/vnd.github+json"},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            listed = resp.json()
+            if not isinstance(listed, list):
+                raise ValueError("unexpected GitHub Releases response")
+            publications.extend(listed)
+            if len(listed) < _RELEASES_PER_PAGE or any(
+                _channel_version(item, channel) for item in listed
+            ):
+                break
         return publications
 
     @staticmethod

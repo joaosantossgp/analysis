@@ -59,8 +59,8 @@ export function UpdateChannelPanel({ bridgeReady }: { bridgeReady: boolean }) {
     mutationFn: saveUpdateChannel,
     onSuccess: (channel) => {
       queryClient.setQueryData(["update-channel"], { mode: "desktop", channel });
-      // The saved channel has no check yet: run one so the status below matches the choice.
-      check.mutate();
+      // Saving already checked the new channel: read that stored result, do not ask GitHub again.
+      void queryClient.invalidateQueries({ queryKey: ["update-check"] });
     },
   });
   const failure = channelQuery.error ?? checkQuery.error ?? check.error;
@@ -72,7 +72,7 @@ export function UpdateChannelPanel({ bridgeReady }: { bridgeReady: boolean }) {
       browserReason={channelQuery.data?.mode === "browser" ? channelQuery.data.reason : null}
       channel={channelQuery.data?.channel ?? null}
       check={checkQuery.data ?? null}
-      checking={checkQuery.isLoading || check.isPending}
+      checking={checkQuery.isLoading || check.isPending || save.isPending}
       saving={save.isPending}
       saveError={save.error ? errorMessage(save.error) : null}
       onChange={(channel) => save.mutate(channel)}

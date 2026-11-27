@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from desktop import updater
@@ -48,6 +50,29 @@ def _serve(monkeypatch, publications):
 
     monkeypatch.setattr(updater.requests, "get", _get)
     return calls
+
+
+def _serve_pages(monkeypatch, pages):
+    """Serve GitHub's paginated listing: `pages[n - 1]` for `?page=n`, then empty pages."""
+    requested = []
+
+    class Response:
+        def __init__(self, body):
+            self.body = body
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self.body
+
+    def _get(url, *args, params=None, **kwargs):
+        page = params["page"]
+        requested.append(page)
+        return Response(pages[page - 1] if page <= len(pages) else [])
+
+    monkeypatch.setattr(updater.requests, "get", _get)
+    return requested
 
 
 def _offline(monkeypatch):
@@ -146,6 +171,15 @@ SELECTION_CASES = [
     pytest.param(
         [_publication("v0.31.0", draft=True), *PUBLISHED], "0.29.2", "releases", None, id="draft-ignored",
     ),
+    # A legacy -rc.N tag published without GitHub's prerelease flag is still a pre-release.
+    pytest.param(
+        [_publication("v0.30.0-rc.2"), *PUBLISHED], "0.29.2", "releases", None,
+        id="releases-only-ignores-unflagged-rc-tag",
+    ),
+    pytest.param(
+        [_publication("v0.30.0-rc.2"), *PUBLISHED], "0.29.2", "prereleases", "v0.30.0-rc.2",
+        id="pre-release-channel-gets-unflagged-rc-tag",
+    ),
     # Missing package: fall back to the newest publication that has one.
     pytest.param(
         [_publication("v0.30.2", asset=False), *PLAIN[1:]], "0.30.0", "releases", "v0.30.1",
@@ -199,6 +233,45 @@ def test_selected_publication_carries_kind_and_versioned_package():
         "zip_url": "https://example.test/CVMAnalytics-windows-v0.30.0-rc.1.zip",
         "sha256_url": "https://example.test/CVMAnalytics-windows-v0.30.0-rc.1.zip.sha256",
     }
+
+
+def test_unflagged_rc_tag_is_labelled_pre_release():
+    selected = updater.select_publication([_publication("v0.30.0-rc.2")], "0.29.2", "prereleases")
+
+    assert selected["kind"] == "pre-release"
+
+
+# A full first page of pre-releases (some legacy -rc.N tags without the flag) above the releases.
+PAGE_OF_PRE_RELEASES = [_publication(f"v0.31.0-rc.{n}", prerelease=n % 2 == 0) for n in range(1, 101)]
+
+
+def test_listing_reads_the_next_page_when_the_first_has_no_release_for_the_channel(monkeypatch):
+    requested = _serve_pages(monkeypatch, [PAGE_OF_PRE_RELEASES, [_publication("v0.30.1"), _publication("v0.30.0")]])
+
+    status = updater.UpdateChecker().get_latest_release_status("0.30.0", "releases")
+
+    assert requested == [1, 2]
+    assert status["status"] == "available"
+    assert status["latest_tag"] == "v0.30.1"
+    assert status["publication_kind"] == "release"
+
+
+def test_listing_stops_at_the_first_page_that_decides_the_channel(monkeypatch):
+    requested = _serve_pages(monkeypatch, [PAGE_OF_PRE_RELEASES, [_publication("v0.30.1")]])
+
+    status = updater.UpdateChecker().get_latest_release_status("0.30.0", "prereleases")
+
+    assert requested == [1]
+    assert status["latest_tag"] == "v0.31.0-rc.100"
+
+
+def test_listing_reads_at_most_five_pages(monkeypatch):
+    requested = _serve_pages(monkeypatch, [PAGE_OF_PRE_RELEASES] * 6 + [[_publication("v0.30.1")]])
+
+    status = updater.UpdateChecker().get_latest_release_status("0.30.0", "releases")
+
+    assert requested == [1, 2, 3, 4, 5]
+    assert status["status"] == "no_release"
 
 
 def test_status_lists_publications_instead_of_reading_latest(monkeypatch):
@@ -330,6 +403,21 @@ def test_unreadable_update_channel_file_means_releases_only(tmp_path, content):
     (tmp_path / "update_channel.json").write_text(content, encoding="utf-8")
 
     assert updater.get_update_channel() == "releases"
+
+
+def test_failed_channel_write_keeps_the_previous_choice(monkeypatch):
+    updater.set_update_channel("prereleases")
+    write_text = Path.write_text
+
+    def _crash_mid_write(self, data, *args, **kwargs):
+        write_text(self, data[:3], *args, **kwargs)
+        raise OSError("disk full")
+
+    monkeypatch.setattr(Path, "write_text", _crash_mid_write)
+    with pytest.raises(OSError):
+        updater.set_update_channel("releases")
+
+    assert updater.get_update_channel() == "prereleases"
 
 
 def test_unknown_update_channel_is_rejected_and_not_stored(tmp_path):

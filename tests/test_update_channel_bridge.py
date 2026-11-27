@@ -31,14 +31,22 @@ def _installed_0_29_2(tmp_path, monkeypatch):
     monkeypatch.setattr(updater, "_APPDATA_DIR", appdata)
     monkeypatch.setattr(updater, "_CHANNEL_FILE", appdata / "update_channel.json")
     monkeypatch.setattr(updater, "_SNOOZE_FILE", appdata / "snooze.json")
+    monkeypatch.setattr(updater, "_UPDATE_LOG", appdata / "update_error.log")
     monkeypatch.setattr("desktop.__version__.__version__", "0.29.2")
     monkeypatch.delenv("CVMANALYTICS_USE_RELEASE_DATA", raising=False)
     monkeypatch.delenv("CVMANALYTICS_CONCURRENT_LOCK_DETECTED", raising=False)
+
+    def _no_network(*args, **kwargs):
+        raise updater.requests.ConnectionError("tests never call GitHub")
+
+    monkeypatch.setattr(updater.requests, "get", _no_network)
     return appdata
 
 
 @pytest.fixture
 def online(monkeypatch):
+    calls = []
+
     class Response:
         def raise_for_status(self):
             return None
@@ -46,15 +54,24 @@ def online(monkeypatch):
         def json(self):
             return PUBLISHED
 
-    monkeypatch.setattr(updater.requests, "get", lambda *args, **kwargs: Response())
+    def _get(url, *args, **kwargs):
+        calls.append(url)
+        return Response()
+
+    monkeypatch.setattr(updater.requests, "get", _get)
+    return calls
 
 
 @pytest.fixture
 def offline(monkeypatch):
-    def _get(*args, **kwargs):
+    calls = []
+
+    def _get(url, *args, **kwargs):
+        calls.append(url)
         raise updater.requests.ConnectionError("no network")
 
     monkeypatch.setattr(updater.requests, "get", _get)
+    return calls
 
 
 def test_channel_defaults_to_releases_only():
@@ -152,10 +169,69 @@ def test_switching_back_to_releases_only_drops_the_offered_pre_release(online):
 
     bridge.set_update_channel({"channel": "releases"})
 
-    # Nothing is offered or installable until the new channel has been checked.
+    # Saving the channel checked it: releases only has nothing newer to offer.
     assert bridge.check_update()["available"] is False
+    assert bridge.check_update()["status"] == "up_to_date"
     assert bridge.apply_update() == {"error": "no_update_available"}
-    assert bridge.check_update({"force": True})["status"] == "up_to_date"
+
+
+def test_changing_the_channel_checks_once_and_status_reads_reuse_the_result(online):
+    bridge = CVMBridge()
+
+    assert bridge.set_update_channel({"channel": "prereleases"}) == {"ok": True, "channel": "prereleases"}
+    assert len(online) == 1
+
+    # get_app_status polls with force=False: it must not contact GitHub after a channel change.
+    status = bridge._get_software_update_status()
+    assert status["channel"] == "prereleases"
+    assert status["status"] == "available"
+    assert bridge.check_update()["available"] is True
+    assert len(online) == 1
+
+
+def test_failed_check_after_a_channel_change_is_stored_as_check_failed(offline):
+    bridge = CVMBridge()
+
+    assert bridge.set_update_channel({"channel": "prereleases"})["ok"] is True
+    assert len(offline) == 1
+
+    status = bridge._get_software_update_status()
+    assert status["status"] == "check_failed"
+    assert status["channel"] == "prereleases"
+    assert "Could not check GitHub Releases" in status["error"]
+    assert len(offline) == 1
+
+
+def test_unexpected_check_failure_after_a_channel_change_is_stored(monkeypatch):
+    calls = []
+
+    def _broken(self, current_version):
+        calls.append(current_version)
+        raise RuntimeError("bad listing")
+
+    monkeypatch.setattr(updater.UpdateChecker, "get_latest_release_status", _broken)
+    bridge = CVMBridge()
+
+    assert bridge.set_update_channel({"channel": "prereleases"})["ok"] is True
+
+    assert bridge._get_software_update_status()["status"] == "check_failed"
+    assert bridge.check_update()["status"] == "check_failed"
+    assert len(calls) == 1
+
+
+def test_channel_write_failure_keeps_the_previous_channel_and_its_offer(online, monkeypatch):
+    bridge = CVMBridge()
+    bridge.set_update_channel({"channel": "prereleases"})
+
+    def _disk_full(channel):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(updater, "set_update_channel", _disk_full)
+    result = bridge.set_update_channel({"channel": "releases"})
+
+    assert result == {"ok": False, "error": "disk full", "channel": "prereleases"}
+    assert len(online) == 1  # a channel that was not saved is not checked
+    assert bridge.check_update()["available"] is True
 
 
 def test_switching_back_while_offline_never_reuses_the_cached_pre_release(online, monkeypatch):
