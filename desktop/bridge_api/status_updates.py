@@ -158,9 +158,19 @@ class StatusUpdatesMixin:
         try:
             from desktop.updater import UpdateChecker  # noqa: PLC0415
             UpdateChecker().snooze(info["tag"])
-            return self._sanitize_for_json({"ok": True})
         except Exception as exc:
             return self._sanitize_for_json({"ok": False, "error": str(exc)})
+        # Status reads now answer like the next startup check will: postponed, nothing to apply.
+        with self._update_lock:
+            if self._update_info is info:
+                self._update_info = None
+                self._latest_update_status = {
+                    **(self._latest_update_status or {}),
+                    "status": "snoozed",
+                    "update_available": False,
+                    "can_apply": False,
+                }
+        return self._sanitize_for_json({"ok": True})
 
     def _get_software_update_status(self, *, force: bool = False) -> dict:
         with self._update_lock:

@@ -292,3 +292,26 @@ def test_offline_check_on_the_same_channel_keeps_the_cached_offer(online, monkey
     assert status["channel"] == "prereleases"
     assert status["publication_kind"] == "pre-release"
     assert status["latest_version"] == "0.30.0-rc.1"
+
+
+def test_later_postpones_the_offer_in_status_reads_and_at_the_next_start(online):
+    bridge = CVMBridge()
+    bridge.set_update_channel({"channel": "prereleases"})
+    assert bridge.check_update()["available"] is True
+
+    assert bridge.snooze_update() == {"ok": True}
+
+    # The shell and the diagnostics card read the cache: the offer is gone without a new GitHub call.
+    result = bridge.check_update()
+    assert result["available"] is False
+    assert result["status"] == "snoozed"
+    assert result["latest_version"] == "0.30.0-rc.1"
+    assert bridge._get_software_update_status()["status"] == "snoozed"
+    assert bridge.apply_update() == {"error": "no_update_available"}
+    assert len(online) == 1
+    # A new app process checks at startup and keeps the snooze for that version.
+    assert CVMBridge().check_update({"force": True})["status"] == "snoozed"
+
+
+def test_later_without_an_offer_is_refused(online):
+    assert CVMBridge().snooze_update() == {"ok": False, "error": "no_update_info"}
