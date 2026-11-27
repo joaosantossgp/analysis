@@ -61,7 +61,7 @@ def main_checkout(repo_root: Path) -> Path:
             timeout=10,
             check=True,
         ).stdout
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, ValueError, subprocess.SubprocessError):  # ValueError: undecodable path
         return repo_root
     return parse_main_checkout(listing) or repo_root
 
@@ -107,6 +107,10 @@ def isolate(
             f"{repo_root} is the main checkout (or git could not list its worktrees). "
             "The main checkout owns shared dev data and cannot be isolated; run this from a git worktree."
         )
+    # Imported here because the launcher module pulls in the whole app runtime,
+    # and before anything is deleted so a wrong interpreter fails with data intact.
+    from desktop.app import _wal_safe_copy_sqlite  # noqa: PLC0415
+
     mode = FULL_COPY if full_copy else ISOLATED
     shared_root, own_root = dev_data_root(main), dev_data_root(repo_root)
     source, target = (shared_root, own_root) if full_copy else (shared_root / "db", own_root / "db")
@@ -120,8 +124,6 @@ def isolate(
         shutil.rmtree(target)
 
     if source.is_dir():
-        # Imported here: the launcher module pulls in the whole app runtime.
-        from desktop.app import _wal_safe_copy_sqlite  # noqa: PLC0415
 
         def copy_file(src: str, dst: str) -> None:
             if src.endswith(".db"):
