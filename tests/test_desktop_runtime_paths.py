@@ -90,6 +90,26 @@ def test_configure_dev_data_paths_provisions_sqlite_parent(
             ).fetchone() == ("companies",)
 
 
+def test_ensure_db_initialized_creates_db_in_an_empty_explicit_data_dir(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    # A fresh CVM_DATA_DIR has no db/ folder, and SQLite cannot create a file there.
+    explicit_data = tmp_path / "fresh"
+    explicit_data.mkdir()
+    monkeypatch.setattr(app.sys, "frozen", False, raising=False)
+
+    with patch.dict(environ, {"USERPROFILE": str(tmp_path), "CVM_DATA_DIR": str(explicit_data)}, clear=True):
+        app._configure_bundled_data_paths()
+        app._ensure_db_initialized()
+
+    with sqlite3.connect(str(explicit_data / "db" / "cvm_financials.db")) as conn:
+        assert conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'companies'"
+        ).fetchone() == ("companies",)
+    assert not (explicit_data / "recovery.log").exists()
+
+
 def test_configure_dev_data_paths_preserves_explicit_data_dir(
     monkeypatch,
     tmp_path: Path,
