@@ -79,8 +79,10 @@ def test_configure_dev_data_paths_provisions_sqlite_parent(
     monkeypatch.setattr(app.sys, "frozen", False, raising=False)
     monkeypatch.setattr(app, "_repo_root", lambda: tmp_path / "repo")
 
-    with patch.dict(environ, {"USERPROFILE": str(tmp_path)}, clear=True):
+    monkeypatch.setattr(app.sys, "argv", ["desktop.app", "--dev"])
+    with patch.dict(environ, {"DATABASE_URL": "postgresql://example.invalid/db", "USERPROFILE": str(tmp_path)}, clear=True):
         app._configure_bundled_data_paths()
+        assert "DATABASE_URL" not in environ
         app._ensure_db_initialized()
 
         db_path = Path(app.os.environ["SQLITE_PATH"])

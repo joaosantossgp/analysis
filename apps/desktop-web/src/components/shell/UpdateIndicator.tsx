@@ -15,6 +15,7 @@ import { ShellPopover } from "./ShellPopover";
  */
 export function updateCheckPollInterval(check: UpdateCheckResult | null | undefined): number | false {
   if (check === null) return false; // browser preview: no bridge, nothing to announce
+  if (check?.status === "managed_by_git") return false;
   if (!check || check.status === "not_checked" || check.status === "unknown") return 5_000;
   return 60_000;
 }

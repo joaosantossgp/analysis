@@ -65,6 +65,13 @@ describe("mock bridge update channel", () => {
 });
 
 describe("Update channel in Settings", () => {
+  it("explains how the dev build is updated", () => {
+    const html = render({ check: { available: false, status: "managed_by_git" } });
+    expect(html).toContain("current Git checkout");
+    expect(html).not.toContain("Check now");
+    expect(html).not.toContain('type="radio"');
+  });
+
   it("shows both choices with releases only selected, the notice, the version and the last check", () => {
     const html = render({});
 

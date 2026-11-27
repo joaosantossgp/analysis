@@ -146,6 +146,8 @@ def _legacy_install_data_root() -> Path | None:
 
 def _configure_bundled_data_paths() -> None:
     if not _bundled():
+        if "--dev" in sys.argv:
+            os.environ.pop("DATABASE_URL", None)
         if not os.environ.get("CVM_DATA_DIR"):
             use_release_data = os.environ.get("CVMANALYTICS_USE_RELEASE_DATA", "").strip().lower() in {"1", "true", "yes"}
             if use_release_data:

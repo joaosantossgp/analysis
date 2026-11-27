@@ -121,11 +121,13 @@ export function StatusPage() {
 
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
             <DatabaseCard database={status.database} />
-            <UpdateCard
+            {status.update?.status === "managed_by_git" ? (
+              <Card title="Software update" eyebrow="Development">Dev mode runs the current Git checkout.</Card>
+            ) : <UpdateCard
               update={status.update}
               checking={statusQuery.isFetching}
               onCheckUpdates={() => setForceCheckCount((value) => value + 1)}
-            />
+            />}
           </div>
 
           <EnergyMartMaintenanceCard
@@ -176,14 +178,14 @@ function PageHeader({
             <StatusPill tone={runtime?.bridge_status === "ready" ? "good" : "warn"}>
               {loading ? "Connecting bridge" : `Bridge ${runtime?.bridge_status ?? "unknown"}`}
             </StatusPill>
-            <button
+            {status?.update?.status !== "managed_by_git" && <button
               type="button"
               disabled={checking}
               onClick={onCheckUpdates}
               className="rounded-md border border-cyan-700/70 bg-cyan-500/10 px-3 py-1.5 text-xs font-medium text-cyan-100 hover:bg-cyan-500/15 disabled:cursor-not-allowed disabled:border-zinc-800 disabled:bg-zinc-900 disabled:text-zinc-600 font-mono"
             >
               {checking ? "Checking releases..." : "Check software update"}
-            </button>
+            </button>}
           </div>
         }
       />

@@ -8,6 +8,9 @@ from datetime import datetime, timezone
 logger = logging.getLogger("desktop.bridge")
 
 class StatusUpdatesMixin:
+    def _updates_managed_by_git(self) -> bool:
+        return self._runtime_mode() in {"vite-dev", "vite-dev-release-data"}
+
     def _start_update_check(self) -> None:
         """Called from a daemon thread in app.py after window creation.
 
@@ -24,6 +27,8 @@ class StatusUpdatesMixin:
         from desktop.__version__ import __version__  # noqa: PLC0415
         from desktop.updater import get_update_channel  # noqa: PLC0415
 
+        if self._updates_managed_by_git():
+            return {"available": False, "status": "managed_by_git"}
         if self._truthy((params or {}).get("force", False)):
             self._get_software_update_status(force=True)
         with self._update_lock:
@@ -60,6 +65,8 @@ class StatusUpdatesMixin:
         from desktop.updater import _log as _update_log  # noqa: PLC0415
         from desktop.updater import get_update_channel, set_update_channel  # noqa: PLC0415
 
+        if self._updates_managed_by_git():
+            return {"ok": False, "error": "managed_by_git", "channel": get_update_channel()}
         if not self._is_write_allowed():
             return self._sanitize_for_json({
                 **self._write_blocked_response("set_update_channel"),
@@ -100,6 +107,8 @@ class StatusUpdatesMixin:
         return self._sanitize_for_json({"ok": True, "channel": channel})
 
     def apply_update(self, params=None) -> dict:
+        if self._updates_managed_by_git():
+            return {"error": "managed_by_git"}
         if not self._is_write_allowed():
             return self._sanitize_for_json(self._write_blocked_response("apply_update"))
         with self._update_lock:
@@ -173,6 +182,11 @@ class StatusUpdatesMixin:
         return self._sanitize_for_json({"ok": True})
 
     def _get_software_update_status(self, *, force: bool = False) -> dict:
+        if self._updates_managed_by_git():
+            return {
+                "status": "managed_by_git", "current_version": None, "latest_version": None,
+                "update_available": False, "apply_supported": False, "can_apply": False,
+            }
         with self._update_lock:
             cached_status = dict(self._latest_update_status or {})
             cached_info = dict(self._update_info or {})
