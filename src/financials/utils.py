@@ -31,6 +31,10 @@ def current_reporting_year_cap(now: datetime | None = None) -> int:
     return moment.year
 
 
+_DASH_RE = re.compile(r"[‐‑‒–—―]")
+_WS_RE = re.compile(r"\s+")
+
+
 def normalize_account_name(text: Union[str, float, None]) -> str:
     """
     Normalizes account description for stable matching.
@@ -59,33 +63,25 @@ def normalize_account_name(text: Union[str, float, None]) -> str:
         >>> normalize_account_name("Fluxo\\xa0de\\xa0Caixa")
         'fluxo de caixa'
     """
-    if pd.isna(text):
+    if text is None:
         return ""
-    
-    # Convert to string
-    text = str(text)
-    
+    if not isinstance(text, str):
+        if pd.isna(text):
+            return ""
+        text = str(text)
+
     # Lowercase
     text = text.lower()
-    
-    # Remove accents using NFD normalization
-    # NFD separates base characters from combining marks (accents)
-    text = unicodedata.normalize('NFD', text)
-    text = ''.join(char for char in text if unicodedata.category(char) != 'Mn')
-    
-    # Replace NBSP (U+00A0) with regular space — \xa0 e \u00A0 são o mesmo codepoint
-    text = text.replace('\xa0', ' ')
-    
-    # Standardize various hyphens and dashes to single dash
-    text = re.sub(r'[‐‑‒–—―]', '-', text)
-    
-    # Collapse multiple spaces to single space
-    text = re.sub(r'\s+', ' ', text)
-    
-    # Trim leading/trailing whitespace
-    text = text.strip()
-    
-    return text
+
+    # Remove accents using NFD normalization (skip when pure ASCII)
+    if not text.isascii():
+        text = unicodedata.normalize("NFD", text)
+        text = "".join(char for char in text if unicodedata.category(char) != "Mn")
+        text = text.replace("\xa0", " ")
+        text = _DASH_RE.sub("-", text)
+
+    # Collapse multiple spaces to single space and trim
+    return _WS_RE.sub(" ", text).strip()
 
 
 def generate_line_id_base(row: pd.Series, statement_type: str) -> str:
