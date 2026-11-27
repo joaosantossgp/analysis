@@ -5,7 +5,9 @@
 Closes #
 
 <!-- Use `Closes #n` for each task or bug this PR finishes (several are fine).
-Use `Refs #n` for a goal or a related issue. -->
+Use `Refs #n` for a goal or a related issue. The PR check takes the shipping
+class from the `ships:*` labels of the closed issues (highest wins) and fails
+when none has one. -->
 
 ## Documentation impact
 
@@ -20,6 +22,8 @@ docs/PRODUCT_DEVELOPMENT_CHECKLIST.md#12-documentation-gate. -->
 - [ ] `pytest tests/` (desktop/core edits)
 - [ ] `pytest apps/api/tests/` (API edits)
 - [ ] Verified in the real desktop runtime (UI/runtime edits)
+- [ ] Unfinished parts of a larger implementation are unreachable in the app
+      until the `ships:release` ticket lands (or N/A: nothing unfinished)
 
 ## Notes
 

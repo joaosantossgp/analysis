@@ -10,9 +10,11 @@ Uso:
   python -m desktop.app --diagnose-runtime  # write diagnostics log and exit
 
 Dev data path:
-  By default, --dev mode uses an isolated writable project path
-  (data/dev-runtime). The packaged release continues to use Documents.
-  Set CVM_DATA_DIR=<path> to use an arbitrary or isolated data directory.
+  By default, a source run uses the shared dev data of the main checkout
+  (<main checkout>/data/dev-runtime), also when launched from a git worktree.
+  A data-sensitive worktree uses isolated dev data (see desktop/dev_data.py).
+  The packaged release continues to use Documents.
+  Set CVM_DATA_DIR=<path> to use an arbitrary data directory.
 
 Phase 5B (v0.15.0): the packaged desktop runtime is Vite only. The legacy
 web runtime is no longer bundled. The updater, bundle layout, and user-data
@@ -135,11 +137,6 @@ def _user_data_root() -> Path:
     return Path(base) / _USER_DATA_DIR_NAME
 
 
-def _dev_data_root() -> Path:
-    """Writable, isolated development data root; never used by packaged builds."""
-    return _repo_root() / "data" / "dev-runtime"
-
-
 def _legacy_install_data_root() -> Path | None:
     """Pre-Phase-0 location of the runtime DB: <exe-dir>/data."""
     if not _bundled():
@@ -151,7 +148,16 @@ def _configure_bundled_data_paths() -> None:
     if not _bundled():
         if not os.environ.get("CVM_DATA_DIR"):
             use_release_data = os.environ.get("CVMANALYTICS_USE_RELEASE_DATA", "").strip().lower() in {"1", "true", "yes"}
-            user_root = _user_data_root() if use_release_data else _dev_data_root()
+            if use_release_data:
+                user_root = _user_data_root()
+            else:
+                from desktop import dev_data  # noqa: PLC0415 - source-mode dev tooling
+
+                dev = dev_data.resolve(_repo_root())
+                user_root = dev.data_root
+                if dev.mode == dev_data.ISOLATED:
+                    # Isolated dev data owns its databases; downloaded CVM files stay shared.
+                    os.environ.setdefault("CVM_INPUT_DIR", str(dev.shared_root / "input"))
             db_dir = user_root / "db"
             output_dir = user_root / "output"
             logs_dir = user_root / "logs"
@@ -187,6 +193,17 @@ def _configure_bundled_data_paths() -> None:
     os.environ.setdefault("CVM_OUTPUT_DIR", str(output_dir))
     os.environ.setdefault("CVM_LOG_DIR", str(logs_dir))
     os.environ.setdefault("CVM_CACHE_DIR", str(cache_dir))
+
+
+def _runtime_lock_dir() -> Path:
+    """The runtime lock lives in the effective data root, not the launching checkout.
+
+    Must run after _configure_bundled_data_paths. Two source runs on shared dev
+    data therefore meet at the same lock file.
+    """
+    if "CVM_DATA_DIR" in os.environ:
+        return Path(os.environ["CVM_DATA_DIR"])
+    return _user_data_root() if _bundled() else _repo_root() / "data"
 
 
 def _migrate_legacy_db_once() -> None:
@@ -1080,11 +1097,7 @@ def main() -> None:
         from desktop.__version__ import __version__ as _lock_ver  # noqa: PLC0415
     except Exception:
         _lock_ver = None
-    _lock_data_dir = (
-        Path(os.environ["CVM_DATA_DIR"])
-        if "CVM_DATA_DIR" in os.environ
-        else (_user_data_root() if _bundled() else _repo_root() / "data")
-    )
+    _lock_data_dir = _runtime_lock_dir()
     _lock_result = lockfile.acquire(_lock_data_dir, app_version=_lock_ver)
     if not _lock_result.get("owned"):
         _conflict = _lock_result.get("conflict") or {}

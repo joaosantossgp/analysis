@@ -23,6 +23,8 @@ data/metadata/b3_companies_cache.json
 
 # Desktop runtime state (written at runtime, not source)
 /data/dev-runtime/
+# Marks a data-sensitive worktree (isolated dev data); see desktop/dev_data.py
+/.dev-data-isolated
 data/onboarding_state.json
 data/refresh_jobs.json
 data/runtime.lock

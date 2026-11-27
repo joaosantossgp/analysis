@@ -8,7 +8,7 @@ startup and deleted on graceful shutdown.
 Lock file schema:
   {
     "pid": int,
-    "runtime_mode": str,  # "release" | "dev-isolated" | "dev-release-data" | "dev-static"
+    "runtime_mode": str,  # "release" | "dev" | "dev-release-data" | "dev-static"
     "started_at": str,    # ISO 8601 UTC
     "data_dir": str,
     "db_path": str,
@@ -69,7 +69,7 @@ def _runtime_mode_label() -> str:
     if use_release:
         return "dev-release-data"
     if "--dev" in argv:
-        return "dev-isolated"
+        return "dev"  # shared or isolated dev data: "data_dir" says which
     return "dev-static"
 
 
