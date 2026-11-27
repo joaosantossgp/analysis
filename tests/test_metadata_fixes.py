@@ -380,19 +380,18 @@ class TestDatabaseLifecycleAndMigrations:
 
 class TestRefreshGatingAndLocking:
     @pytest.fixture
-    def setup_temp_db(self, tmp_path):
+    def setup_temp_db(self, tmp_path, monkeypatch):
         db_dir = tmp_path / "db"
         db_dir.mkdir(parents=True, exist_ok=True)
         db_path = db_dir / "cvm_financials.db"
+        monkeypatch.setenv("SQLITE_PATH", str(db_path))  # the enrichment reads the active settings (#664)
         engine = create_engine(f"sqlite:///{db_path}")
         init_db_tables(engine)
         return db_path, engine
 
-    @patch("desktop.app._user_data_root")
     @patch("desktop.lockfile.get_status")
     @patch("sqlite3.connect")
-    def test_refresh_skips_when_lock_not_owned(self, mock_connect, mock_get_status, mock_user_data_root, tmp_path):
-        mock_user_data_root.return_value = tmp_path
+    def test_refresh_skips_when_lock_not_owned(self, mock_connect, mock_get_status):
         # Lock status says locked by other
         mock_get_status.return_value = {"status": "locked_by_other", "pid": 1234}
         
@@ -402,12 +401,10 @@ class TestRefreshGatingAndLocking:
         # SQLite connect should not be called since we exit immediately on lock check
         mock_connect.assert_not_called()
 
-    @patch("desktop.app._user_data_root")
     @patch("desktop.lockfile.get_status")
     @patch("src.companies.catalog.CompanyCatalogService.list_entries")
-    def test_refresh_skips_when_no_companies_require_enrichment(self, mock_list_entries, mock_get_status, mock_user_data_root, setup_temp_db):
+    def test_refresh_skips_when_no_companies_require_enrichment(self, mock_list_entries, mock_get_status, setup_temp_db):
         db_path, engine = setup_temp_db
-        mock_user_data_root.return_value = db_path.parent.parent
         mock_get_status.return_value = {"status": "locked_by_self"}
         
         # Seed database with a company that already has a CNPJ (no enrichment needed)
@@ -428,12 +425,10 @@ class TestRefreshGatingAndLocking:
         # Catalog fetch list_entries should NOT be called since no companies are missing CNPJs
         mock_list_entries.assert_not_called()
 
-    @patch("desktop.app._user_data_root")
     @patch("desktop.lockfile.get_status")
     @patch("src.companies.catalog.CompanyCatalogService.list_entries")
-    def test_refresh_skips_when_ttl_is_still_valid(self, mock_list_entries, mock_get_status, mock_user_data_root, setup_temp_db):
+    def test_refresh_skips_when_ttl_is_still_valid(self, mock_list_entries, mock_get_status, setup_temp_db):
         db_path, engine = setup_temp_db
-        mock_user_data_root.return_value = db_path.parent.parent
         mock_get_status.return_value = {"status": "locked_by_self"}
         
         # Seed database with a company missing CNPJ
@@ -457,13 +452,11 @@ class TestRefreshGatingAndLocking:
         # Catalog fetch should NOT be called since TTL is still valid (7 days not expired)
         mock_list_entries.assert_not_called()
 
-    @patch("desktop.app._user_data_root")
     @patch("desktop.lockfile.get_status")
     @patch("src.companies.catalog.CompanyCatalogService.list_entries")
     @patch("src.companies.catalog.CompanyCatalogService.lookup_company")
-    def test_refresh_updates_timestamp_on_success(self, mock_lookup, mock_list_entries, mock_get_status, mock_user_data_root, setup_temp_db):
+    def test_refresh_updates_timestamp_on_success(self, mock_lookup, mock_list_entries, mock_get_status, setup_temp_db):
         db_path, engine = setup_temp_db
-        mock_user_data_root.return_value = db_path.parent.parent
         mock_get_status.return_value = {"status": "locked_by_self"}
         
         from src.companies.catalog import CompanyCatalogEntry
@@ -494,12 +487,10 @@ class TestRefreshGatingAndLocking:
             sett = conn.execute(text("SELECT value FROM app_settings WHERE key = 'metadata_last_successful_refresh'")).fetchone()
             assert sett is not None  # Successfully persisted refresh timestamp!
 
-    @patch("desktop.app._user_data_root")
     @patch("desktop.lockfile.get_status")
     @patch("src.companies.catalog.CompanyCatalogService.list_entries")
-    def test_refresh_does_not_update_timestamp_on_failure(self, mock_list_entries, mock_get_status, mock_user_data_root, setup_temp_db):
+    def test_refresh_does_not_update_timestamp_on_failure(self, mock_list_entries, mock_get_status, setup_temp_db):
         db_path, engine = setup_temp_db
-        mock_user_data_root.return_value = db_path.parent.parent
         mock_get_status.return_value = {"status": "locked_by_self"}
         
         # Mock network failure
@@ -519,16 +510,14 @@ class TestRefreshGatingAndLocking:
             sett = conn.execute(text("SELECT value FROM app_settings WHERE key = 'metadata_last_successful_refresh'")).fetchone()
             assert sett is None
 
-    @patch("desktop.app._user_data_root")
     @patch("desktop.lockfile.get_status")
-    def test_concurrent_refresh_in_same_process_prevented(self, mock_get_status, mock_user_data_root, tmp_path):
+    def test_concurrent_refresh_in_same_process_prevented(self, mock_get_status):
         # We test that when _refresh_in_progress is True, a second call returns immediately
         import desktop.app
         desktop.app._refresh_in_progress = True
         
         try:
             mock_get_status.return_value = {"status": "locked_by_self"}
-            mock_user_data_root.return_value = tmp_path
             
             with patch("sqlite3.connect") as mock_connect:
                 from desktop.app import _background_local_metadata_enrichment

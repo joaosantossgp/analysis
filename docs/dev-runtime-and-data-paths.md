@@ -36,6 +36,10 @@ runtime data under:
 This path is resolved by `_user_data_root()` in `desktop/app.py` and injected as
 `CVM_DATA_DIR` (and related `CVM_*` vars) by `_configure_bundled_data_paths()`,
 which configures both source and packaged launches with different defaults.
+Startup work (database initialization, classification sync, local CNPJ
+enrichment) then reads its paths from `build_settings()`, never from
+`_user_data_root()` directly, so a source run only touches its active data root
+and never the installed app's database.
 
 Override with `CVMANALYTICS_DATA_DIR` env var to redirect the release app to a
 different location (useful for staging or operator installs).
