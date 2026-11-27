@@ -431,3 +431,24 @@ def test_unknown_update_channel_is_rejected_and_not_stored(tmp_path):
         updater.set_update_channel("nightly")
 
     assert not (tmp_path / "update_channel.json").exists()
+
+
+def test_update_helper_starts_without_a_console_and_outlives_the_app(monkeypatch, tmp_path):
+    # #671: powershell.exe started with DETACHED_PROCESS exits without running the
+    # helper on Windows 11 25H2, so the app closed and nothing was updated.
+    flags = {"DETACHED_PROCESS": 0x8, "CREATE_NEW_PROCESS_GROUP": 0x200, "CREATE_NO_WINDOW": 0x08000000}
+    for name, value in flags.items():
+        monkeypatch.setattr(updater.subprocess, name, value, raising=False)  # Windows-only constants
+    helper = tmp_path / "update_helper.ps1"
+    helper.write_text("", encoding="utf-8")
+    monkeypatch.setattr(updater.UpdateChecker, "_get_helper_path", staticmethod(lambda: helper))
+    monkeypatch.setattr(updater.UpdateChecker, "_current_exe_dir", staticmethod(lambda: tmp_path))
+    monkeypatch.setattr(updater, "_log", lambda message: None)
+    calls = []
+    monkeypatch.setattr(updater.subprocess, "Popen", lambda args, **kwargs: calls.append((args, kwargs)))
+
+    updater.UpdateChecker().spawn_helper_and_exit(tmp_path / "staged")
+
+    (args, kwargs), = calls
+    assert args[:2] == ["powershell.exe", "-NonInteractive"] and str(helper) in args
+    assert kwargs["creationflags"] == flags["CREATE_NO_WINDOW"] | flags["CREATE_NEW_PROCESS_GROUP"]
