@@ -2,6 +2,9 @@ import type { LocalDatabaseState } from "./types.localDatabase";
 import type {
   DevAutoRestartResponse,
   DevContextResponse,
+  DevDataActionResponse,
+  DevDataInfoResponse,
+  DevDataTarget,
   DevRestartResponse,
   DevSwitchWorktreeResponse,
   DevWorktreesResponse,
@@ -266,6 +269,9 @@ import type {
   StorageInventory,
   StorageScanStatus,
   UpdateProgressStatus,
+  UpdateChannel,
+  UpdateCheckResult,
+  SetUpdateChannelResult,
 } from "./types.status";
 
 export type * from "./types.companies";
@@ -379,7 +385,9 @@ export interface BridgeApi {
     params: Record<string, unknown>,
   ): Promise<{ ok: boolean; error?: string; classification?: CompanyClassification }>;
   get_sub_sector_detail(params: Record<string, unknown>): Promise<SectorDetailResponse>;
-  check_update(params?: Record<string, unknown>): Promise<{ available: boolean; version?: string; zip_url?: string; status?: string; error?: string }>;
+  check_update(params?: Record<string, unknown>): Promise<UpdateCheckResult>;
+  get_update_channel(params?: Record<string, unknown>): Promise<{ channel: UpdateChannel }>;
+  set_update_channel(params: { channel: string }): Promise<SetUpdateChannelResult>;
   apply_update(params?: Record<string, unknown>): Promise<{ started: boolean; error?: string }>;
   get_update_progress(params?: Record<string, unknown>): Promise<UpdateProgressStatus>;
   snooze_update(params?: Record<string, unknown>): Promise<{ ok: boolean; error?: string }>;
@@ -395,6 +403,11 @@ export interface BridgeApi {
   dev_set_auto_restart(params: { enabled: boolean }): Promise<DevAutoRestartResponse>;
   dev_list_worktrees(params?: Record<string, unknown>): Promise<DevWorktreesResponse>;
   dev_switch_worktree(params: { path: string }): Promise<DevSwitchWorktreeResponse>;
+  dev_get_data_info(params?: Record<string, unknown>): Promise<DevDataInfoResponse>;
+  dev_move_data_to_backup(params: { target: DevDataTarget }): Promise<DevDataActionResponse>;
+  dev_restore_data_backup(params: { target: DevDataTarget }): Promise<DevDataActionResponse>;
+  /** `confirm` must repeat the target. */
+  dev_delete_data(params: { target: DevDataTarget; confirm: string }): Promise<DevDataActionResponse>;
   // Energy KPI — country-level macro layer
   get_kpi_catalog(params?: EnergyKPICatalogParams): Promise<EnergyKPICatalogResponse>;
   get_country_kpi_series(params: CountryKPISeriesParams): Promise<CountryKPISeriesResponse>;

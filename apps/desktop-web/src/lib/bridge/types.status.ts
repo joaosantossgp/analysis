@@ -87,7 +87,30 @@ export type UpdateProgressStatus = {
   error: string | null;
 };
 
+/** Which publications the installed app accepts as updates (ADR 0011). */
+export type UpdateChannel = "releases" | "prereleases";
+export type UpdatePublicationKind = "release" | "pre-release";
+
+/** `check_update`: last known update status, or a new check when called with `force`. */
+export type UpdateCheckResult = {
+  available: boolean;
+  version?: string;
+  zip_url?: string;
+  status?: UpdateStatus["status"] | "not_checked";
+  error?: string | null;
+  channel?: UpdateChannel;
+  publication_kind?: UpdatePublicationKind | null;
+  checked_at?: string | null;
+  current_version?: string | null;
+  latest_version?: string | null;
+  release_url?: string | null;
+};
+
+export type SetUpdateChannelResult = { ok: boolean; channel: UpdateChannel; error?: string };
+
 export type UpdateStatus = {
+  channel?: UpdateChannel | null;
+  publication_kind?: UpdatePublicationKind | null;
   current_version: string | null;
   latest_version: string | null;
   latest_tag?: string | null;

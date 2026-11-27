@@ -1,13 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import {
-  fetchAppStatus,
-  openStatusPath,
-  type StatusPathKind,
-  triggerApplyUpdate,
-  fetchUpdateProgress,
-} from "@/lib/api/appStatus";
+import { updateProgressLabel, useUpdateApply } from "@/hooks/useUpdateApply";
+import { fetchAppStatus, openStatusPath, type StatusPathKind } from "@/lib/api/appStatus";
 import { fetchEnergyMartStatus, startEnergyMartRebuild, type EnergyMartStatusResult } from "@/lib/api/energyKpis";
 import { PageHeader as UnifiedPageHeader } from "@/components/PageHeader";
 import { whenBridgeReady } from "@/lib/bridge/adapter";
@@ -19,7 +14,6 @@ import type {
   LocalPathInfo,
   LockStatusPayload,
   UpdateStatus,
-  UpdateProgressStatus,
   EnergyMartStatusResponse,
 } from "@/lib/bridge/types";
 
@@ -507,69 +501,11 @@ function UpdateCard({
 }) {
   const tone = updateTone(update);
   const [showConfirm, setShowConfirm] = useState(false);
-  const [localError, setLocalError] = useState<string | null>(null);
-  const [progress, setProgress] = useState<UpdateProgressStatus | null>(update?.progress ?? null);
-  const [isApplying, setIsApplying] = useState(false);
+  const { progress, applying: isApplying, error: localError, start } = useUpdateApply(Boolean(update));
 
-  // Sync initial/updated progress from props
-  useEffect(() => {
-    if (update?.progress) {
-      setProgress(update.progress);
-    }
-  }, [update?.progress]);
-
-  // Poll update progress if status is downloading or swapping
-  useEffect(() => {
-    let intervalId: any = null;
-    const currentStatus = progress?.status;
-    const active = currentStatus === "downloading" || currentStatus === "swapping";
-
-    if (active) {
-      setIsApplying(true);
-      intervalId = setInterval(async () => {
-        try {
-          const prog = await fetchUpdateProgress();
-          setProgress(prog);
-          if (prog.status === "error") {
-            setLocalError(prog.error || "Error during update");
-            setIsApplying(false);
-            clearInterval(intervalId);
-          } else if (prog.status === "idle" || prog.status === "success") {
-            setIsApplying(false);
-            clearInterval(intervalId);
-          }
-        } catch (err) {
-          setLocalError(err instanceof Error ? err.message : String(err));
-          setIsApplying(false);
-          clearInterval(intervalId);
-        }
-      }, 1000);
-    } else {
-      setIsApplying(false);
-    }
-
-    return () => {
-      if (intervalId) clearInterval(intervalId);
-    };
-  }, [progress?.status]);
-
-  const handleApplyUpdate = async () => {
-    setLocalError(null);
+  const handleApplyUpdate = () => {
     setShowConfirm(false);
-    setIsApplying(true);
-    setProgress({ status: "downloading", percent: 0, error: null });
-    try {
-      const result = await triggerApplyUpdate();
-      if (!result.started) {
-        setLocalError(result.error || "Could not start the update.");
-        setIsApplying(false);
-        setProgress(null);
-      }
-    } catch (err) {
-      setLocalError(err instanceof Error ? err.message : String(err));
-      setIsApplying(false);
-      setProgress(null);
-    }
+    start();
   };
 
   const hasUpdate = update?.update_available;
@@ -653,13 +589,7 @@ function UpdateCard({
           {isApplying && (
             <div className="mt-4 rounded border border-cyan-500/20 bg-cyan-950/40 p-4 space-y-3">
               <div className="flex justify-between items-center text-xs">
-                <span className="font-semibold text-cyan-200 capitalize">
-                  {progress?.status === "downloading"
-                    ? "Downloading update..."
-                    : progress?.status === "swapping"
-                      ? "Replacing files..."
-                      : "Preparing..."}
-                </span>
+                <span className="font-semibold text-cyan-200">{updateProgressLabel(progress)}</span>
                 <span className="font-mono text-cyan-100 font-bold">{progress?.percent ?? 0}%</span>
               </div>
               <div className="w-full bg-zinc-800 rounded-full h-1.5 overflow-hidden">

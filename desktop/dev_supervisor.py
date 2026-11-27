@@ -10,12 +10,16 @@ it down.
 The app talks back through a control directory (`CONTROL_DIR_ENV`): it queues
 requests as JSON files under `requests/` (`send_request`) and reads the
 supervisor's `status.json` (`read_status`). The dev panel's restart button and
-auto-restart switch use this channel.
+auto-restart switch use this channel, and so do its dev data actions: the
+supervisor runs them between stopping and starting the app and leaves the
+outcome in `data_action.json` (`read_data_action`).
 
 Worktree switch: the child runs the code of the active worktree. Every worktree
 runs on the environment of the checkout dev mode was launched from (its `.venv`
 and `node_modules`), so a worktree is switchable when its dependency manifests
-match that environment (`dev_data.list_worktrees`).
+match that environment (`dev_data.list_worktrees`). A data action acts on the
+dev data the requesting app resolved, so after a switch it is the active
+worktree's, and the app restarts on the active worktree.
 """
 
 from __future__ import annotations
@@ -45,6 +49,7 @@ POLL_SECONDS = 0.5
 QUIET_SECONDS = 1.0
 STOP_TIMEOUT_SECONDS = 10
 MAX_REQUEST_BYTES = 64 * 1024  # a request is a few dozen bytes
+DATA_ACTION_FILE = "data_action.json"  # outcome of the last dev data action
 # shortcut: a switched-to app that exits with an error this soon after it started
 # counts as a failed switch (the child sends no "window is up" signal); add one
 # if a slow first start ever outlasts it.
@@ -87,6 +92,7 @@ class DevSupervisor:
     process or a window. `tick` is one poll step. `read_requests` returns the
     requests the app queued since the last call; `publish_status` receives the
     status whenever it changes. `stop_child` returns whether the child exited.
+    `run_data_action` performs a dev data action and returns the message to report.
 
     With a `launch_root`, `active_root` is the worktree whose code
     `start_child` runs and `scan` watches. `list_worktrees` returns the
@@ -102,6 +108,7 @@ class DevSupervisor:
         quiet_seconds: float = QUIET_SECONDS,
         read_requests: Callable[[], list[dict[str, Any]]] = list,
         publish_status: Callable[[dict[str, Any]], None] = lambda status: None,
+        run_data_action: Callable[[dict[str, Any]], str] = lambda request: "Data actions are not available.",
         list_worktrees: Callable[[], list[dict[str, Any]]] = list,
         launch_root: Path | None = None,
     ) -> None:
@@ -112,6 +119,8 @@ class DevSupervisor:
         self._quiet_seconds = quiet_seconds
         self._read_requests = read_requests
         self._publish_status = publish_status
+        self._run_data_action = run_data_action
+        self._data_actions: list[dict[str, Any]] = []
         self._published: dict[str, Any] | None = None
         self._auto_restart = True
         self._child: Any = None
@@ -213,6 +222,7 @@ class DevSupervisor:
         self._changed = set()
         # The restart just done answers restart requests queued meanwhile; apply the rest.
         self._apply([request for request in self._read_requests() if request.get("action") != "restart"])
+        self._run_data_actions()
         self._start()
 
     def _start(self) -> None:
@@ -238,6 +248,9 @@ class DevSupervisor:
             action = request.get("action")
             if action == "restart":
                 restart_reason = "Restart requested from the app"
+            elif action == "data_action":
+                self._data_actions.append(request)  # run once the app is stopped (`_restart`)
+                restart_reason = "Data action requested from the app"
             elif action == "set_auto_restart" and isinstance(request.get("enabled"), bool):
                 self._auto_restart = request["enabled"]
                 self._report(f"[dev] Automatic restart turned {'on' if self._auto_restart else 'off'}.")
@@ -246,6 +259,15 @@ class DevSupervisor:
             else:
                 self._report(f"[dev] Ignored an unknown request from the app: {request!r}")
         return restart_reason
+
+    def _run_data_actions(self) -> None:
+        """Run the queued dev data actions; the app is stopped, so no database handle is open."""
+        queued, self._data_actions = self._data_actions, []
+        for request in queued:
+            try:
+                self._report(f"[dev] {self._run_data_action(request)}")
+            except Exception as error:  # the app is started again whatever happens
+                self._report(f"[dev] Data action failed: {error}")
 
     # --- Worktree switch ---------------------------------------------------------
 
@@ -383,6 +405,7 @@ def run(argv: Sequence[str], *, repo_root: Path | None = None) -> int:
         lambda: scan_sources(supervisor.active_root),
         read_requests=lambda: read_requests(control_dir),
         publish_status=lambda status: write_status(control_dir, status),
+        run_data_action=lambda request: run_data_action(request, control_dir, state_file),
         list_worktrees=lambda: dev_data.list_worktrees(root, env_root=root),
         launch_root=root,
     )
@@ -447,6 +470,39 @@ def read_requests(control_dir: Path, report: Callable[[str], None] = _report) ->
             reason = request if isinstance(request, Exception) else "not a JSON object"
             report(f"[dev] Ignored an unreadable request from the app ({path.name}): {reason}")
     return taken
+
+
+def run_data_action(request: dict[str, Any], control_dir: Path, state_file: Path) -> str:
+    """Supervisor side: perform a dev data action with the app stopped; leave the outcome for the next app."""
+    try:
+        # Imported here: a broken module fails the data action, not dev mode.
+        from desktop import dev_data_actions  # noqa: PLC0415
+
+        result = dev_data_actions.perform(request)
+    except Exception as error:
+        result = {"operation": request.get("operation"), "target": request.get("target"), "ok": False,
+                  "message": f"Data action failed: {error}"}
+    if result["ok"] and result["operation"] != "restore" and result["target"] != "input":
+        # The database is gone: open on the start page, where the app shows its empty first-run state.
+        _route, geometry = load_window_state(state_file)
+        try:
+            state_file.write_text(json.dumps({"route": "", "geometry": geometry}), encoding="utf-8")
+        except OSError:
+            pass
+    try:
+        _write_json(control_dir / DATA_ACTION_FILE, {**result, "finished_at": time.strftime("%Y-%m-%d %H:%M:%S")})
+    except OSError:
+        pass  # the terminal still has the message
+    return result["message"]
+
+
+def read_data_action(control_dir: Path) -> dict[str, Any] | None:
+    """App side: the outcome of the last dev data action of this dev session, or None."""
+    try:
+        outcome = json.loads((control_dir / DATA_ACTION_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return outcome if isinstance(outcome, dict) else None
 
 
 def write_status(control_dir: Path, status: dict[str, Any]) -> None:
