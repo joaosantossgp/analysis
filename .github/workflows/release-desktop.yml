@@ -4,8 +4,9 @@ name: Release Desktop
 # main, the decision module (scripts/release/publication_decision.py) decides
 # from the shipping classes and changed paths since the last publication whether
 # to publish, as a pre-release or a release, with which version, and whether the
-# owner must approve. One candidate is built from the exact commit and that same
-# file is published: with no approval for a low-risk pre-release, otherwise after
+# owner must approve. One candidate (the updater's ZIP and the Setup.exe
+# installer, both from one bundle) is built from the exact commit and those same
+# files are published: with no approval for a low-risk pre-release, otherwise after
 # the owner approves in the release-publication environment. The tag is created
 # with the release, so a rejected or superseded candidate leaves no tag.
 # Contract: docs/release-process.md.
@@ -103,6 +104,7 @@ jobs:
     runs-on: windows-latest
     outputs:
       zip_sha256: ${{ steps.package.outputs.zip_sha256 }}
+      setup_sha256: ${{ steps.installer.outputs.setup_sha256 }}
     env:
       RELEASE_VERSION: ${{ needs.decide.outputs.version }}
       CANDIDATE_SHA: ${{ needs.decide.outputs.candidate_sha }}
@@ -168,6 +170,47 @@ jobs:
           "zip_sha256=$hash" >> $env:GITHUB_OUTPUT
           "Candidate ``$zip`` sha256 ``$hash``" >> $env:GITHUB_STEP_SUMMARY
 
+      - name: Build the installer from the same bundle
+        id: installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          # Inno Setup 6 is preinstalled on windows-latest; its version is logged, not pinned.
+          $iscc = @((Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source, "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe") |
+            Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+          if (-not $iscc) { throw "Inno Setup 6 (ISCC.exe) is not installed on this runner." }
+          "Inno Setup ``$((Get-Item $iscc).VersionInfo.ProductVersion)``" >> $env:GITHUB_STEP_SUMMARY
+          & $iscc "/DAppVersion=$env:RELEASE_VERSION" "/O$PWD" desktop\installer.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed (exit $LASTEXITCODE)." }
+          $setup = "CVMAnalytics-Setup-v$env:RELEASE_VERSION.exe"
+          $hash = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $setup" | Out-File -FilePath "$setup.sha256" -Encoding utf8 -NoNewline
+          "setup_sha256=$hash" >> $env:GITHUB_OUTPUT
+          "Installer ``$setup`` sha256 ``$hash``" >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Smoke-test the installer (install twice, uninstall, user data untouched)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $setup = "CVMAnalytics-Setup-v$env:RELEASE_VERSION.exe"
+          $dir = Join-Path $env:RUNNER_TEMP "CVMAnalytics-install"
+          $sentinel = Join-Path $env:USERPROFILE "Documents\CVMAnalytics\installer-smoke.txt"
+          New-Item -ItemType File -Force -Path $sentinel | Out-Null
+          foreach ($pass in "install", "install over it") {
+            $p = Start-Process ".\$setup" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/DIR=`"$dir`"" -Wait -PassThru
+            if ($p.ExitCode -ne 0) { throw "Silent $pass failed (exit $($p.ExitCode))." }
+          }
+          foreach ($entry in "CVMAnalytics.exe", "_internal\desktop-web\index.html", "unins000.exe") {
+            if (-not (Test-Path (Join-Path $dir $entry))) { throw "The install folder lacks $entry." }
+          }
+          $p = Start-Process (Join-Path $dir "unins000.exe") -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Silent uninstall failed (exit $($p.ExitCode))." }
+          # The uninstaller hands off to a copy of itself in %TEMP%, so wait for the folder to go.
+          for ($i = 0; $i -lt 60 -and (Test-Path $dir); $i++) { Start-Sleep -Seconds 2 }
+          if (Test-Path $dir) { throw "Uninstall left $dir behind." }
+          if (-not (Test-Path $sentinel)) { throw "Uninstall removed user data under Documents\CVMAnalytics." }
+          Remove-Item $sentinel
+
       - name: Keep the candidate with the run
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -176,6 +219,8 @@ jobs:
           path: |
             CVMAnalytics-windows-v${{ needs.decide.outputs.version }}.zip
             CVMAnalytics-windows-v${{ needs.decide.outputs.version }}.zip.sha256
+            CVMAnalytics-Setup-v${{ needs.decide.outputs.version }}.exe
+            CVMAnalytics-Setup-v${{ needs.decide.outputs.version }}.exe.sha256
 
   # The three jobs below run the same steps; exactly one runs per candidate.
   publish-automatic:
@@ -189,6 +234,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       DRY_RUN: ${{ needs.decide.outputs.dry_run }}
       EXPECTED_SHA256: ${{ needs.build.outputs.zip_sha256 }}
+      EXPECTED_SETUP_SHA256: ${{ needs.build.outputs.setup_sha256 }}
     steps: &publish_steps
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -216,6 +262,7 @@ jobs:
           python scripts/release/publication_workflow.py publish
           --facts decision/facts.json --decision decision/decision.json
           --package-dir candidate --expected-sha256 "$EXPECTED_SHA256"
+          --expected-setup-sha256 "$EXPECTED_SETUP_SHA256"
 
   publish-approved:
     name: Publish ${{ needs.decide.outputs.version }} (${{ needs.decide.outputs.kind }}) after the owner's approval

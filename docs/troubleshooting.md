@@ -12,6 +12,7 @@ Key local paths:
 %USERPROFILE%\Documents\CVMAnalytics\output
 %USERPROFILE%\Documents\CVMAnalytics\logs
 %USERPROFILE%\Documents\CVMAnalytics\cache
+%LOCALAPPDATA%\Programs\CVMAnalytics          (app installed by Setup.exe)
 %LOCALAPPDATA%\CVMAnalytics\versions
 %LOCALAPPDATA%\CVMAnalytics\update_rollback
 %LOCALAPPDATA%\CVMAnalytics\update_error.log
@@ -37,6 +38,23 @@ Key local paths:
 | Updater fails | The top-bar Update pill reads "Update failed" and its panel shows the error; the installed version keeps running. Inspect `%LOCALAPPDATA%\CVMAnalytics\update_error.log` and rollback directory |
 | No Update pill although a newer publication exists | The pill shows only an offer from the last check: check Settings -> App (failed, offline or postponed checks show nothing in the top bar; "Later" postpones that version for 7 days), then Check now |
 | A pre-release is not offered | Settings -> App -> Update channel must be "Pre-releases and releases"; then Check now |
+| "Windows protected your PC" when running `Setup.exe` | Expected for the unsigned installer; see [below](#windows-protected-your-pc-when-running-setup) |
+| Setup says CVM Analytics is running | Close the app, or let Setup close it, then continue |
+
+## "Windows protected your PC" when running Setup
+
+`CVMAnalytics-Setup.exe` is not code-signed, so Microsoft Defender SmartScreen
+shows "Windows protected your PC" the first time it runs, and the download may
+be flagged as "not commonly downloaded" in the browser. To install:
+
+1. Check that the file came from the project's
+   [GitHub Releases](https://github.com/joaosantossgp/analysis/releases) and,
+   if you want, that its SHA-256 matches `CVMAnalytics-Setup.exe.sha256`:
+   `Get-FileHash .\CVMAnalytics-Setup.exe -Algorithm SHA256`.
+2. In the SmartScreen dialog, click **More info**, then **Run anyway**.
+
+The installer needs no administrator rights. Updates after installation go
+through the in-app updater, not through `Setup.exe`.
 
 ## Safe Diagnostics
 
