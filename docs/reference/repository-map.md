@@ -104,7 +104,7 @@ approval from a folder name; use the document's status and owning code.
 | `AGENTS.md` | AI agent operating contract |
 | `requirements.txt` | Root Python dependencies |
 | `main.py` | Headless CLI refresh entrypoint |
-| `pytest.ini`, `conftest.py` | pytest discovery/config |
+| `pytest.ini`, `conftest.py` | pytest discovery/config; `conftest.py` also keeps every test run out of user data (`docs/development.md`) |
 | `railway.toml` | Deployment config for `apps/api`, not the desktop UI |
 
 There is no root `package.json`. The active Node package is
