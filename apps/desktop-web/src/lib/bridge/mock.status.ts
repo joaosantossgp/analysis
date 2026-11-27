@@ -6,6 +6,8 @@ import type {
   DatabaseDiagnostics,
   SettingsHealthSummary,
   StorageInventory,
+  UpdateChannel,
+  UpdateCheckResult,
 } from "./types";
 import { mockLocalDatabaseState } from "./mockLocalDatabase";
 import { MOCK_COUNTRY_KPI_VALUES } from "./mockEnergyFixtures";
@@ -509,7 +511,50 @@ MOCK_SETTINGS_HEALTH.storage_inventory = {
 // Data update settings
 // ---------------------------------------------------------------------------
 
+/**
+ * Update check fixtures: an installed 0.29.2 against the publications that
+ * exist today (release 0.29.2, pre-release 0.30.0-rc.1), plus an offline check.
+ */
+export const MOCK_UPDATE_CHECKS: Record<UpdateChannel | "offline", UpdateCheckResult> = {
+  releases: {
+    available: false,
+    status: "up_to_date",
+    error: null,
+    channel: "releases",
+    publication_kind: "release",
+    checked_at: NOW,
+    current_version: "0.29.2",
+    latest_version: "0.29.2",
+    release_url: null,
+  },
+  prereleases: {
+    available: true,
+    version: "0.30.0-rc.1",
+    zip_url: "[mock] CVMAnalytics-windows-v0.30.0-rc.1.zip",
+    status: "available",
+    error: null,
+    channel: "prereleases",
+    publication_kind: "pre-release",
+    checked_at: NOW,
+    current_version: "0.29.2",
+    latest_version: "0.30.0-rc.1",
+    release_url: null,
+  },
+  offline: {
+    available: false,
+    status: "check_failed",
+    error: "Could not check GitHub Releases: [mock] no network",
+    channel: "releases",
+    publication_kind: null,
+    checked_at: NOW,
+    current_version: "0.29.2",
+    latest_version: null,
+    release_url: null,
+  },
+};
+
 export function createMockStatusMethods(): Partial<BridgeApi> {
+  let mockUpdateChannel: UpdateChannel = "releases";
   return {
     ping: async () => ({ pong: true, ts: Date.now() / 1000 }),
 
@@ -575,7 +620,17 @@ export function createMockStatusMethods(): Partial<BridgeApi> {
       };
     },
 
-    check_update: async () => ({ available: false, version: "0.29.1" }),
+    check_update: async () => MOCK_UPDATE_CHECKS[mockUpdateChannel],
+
+    get_update_channel: async () => ({ channel: mockUpdateChannel }),
+
+    set_update_channel: async ({ channel }) => {
+      if (channel !== "releases" && channel !== "prereleases") {
+        return { ok: false, error: "invalid_channel", channel: mockUpdateChannel };
+      }
+      mockUpdateChannel = channel;
+      return { ok: true, channel };
+    },
 
     apply_update: async () => ({ started: false, error: "[mock] Software update not available in mock mode" }),
 

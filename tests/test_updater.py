@@ -3,6 +3,83 @@ import pytest
 from desktop import updater
 
 
+@pytest.fixture(autouse=True)
+def _isolated_appdata(tmp_path, monkeypatch):
+    """Never read or write the real %LOCALAPPDATA%\\CVMAnalytics preferences."""
+    monkeypatch.setattr(updater, "_APPDATA_DIR", tmp_path)
+    monkeypatch.setattr(updater, "_CHANNEL_FILE", tmp_path / "update_channel.json")
+    monkeypatch.setattr(updater, "_SNOOZE_FILE", tmp_path / "snooze.json")
+
+
+def _publication(tag, *, prerelease=False, asset=True, draft=False):
+    version = tag.lstrip("v")
+    zip_name = f"CVMAnalytics-windows-v{version}.zip"
+    assets = [
+        {"name": zip_name, "browser_download_url": f"https://example.test/{zip_name}"},
+        {
+            "name": f"{zip_name}.sha256",
+            "browser_download_url": f"https://example.test/{zip_name}.sha256",
+        },
+        # Unversioned copies exist on every published release and are never the package.
+        {"name": "CVMAnalytics-windows.zip", "browser_download_url": "https://example.test/latest.zip"},
+    ]
+    return {
+        "tag_name": tag,
+        "prerelease": prerelease,
+        "draft": draft,
+        "html_url": f"https://example.test/releases/{tag}",
+        "assets": assets if asset else assets[2:],
+    }
+
+
+def _serve(monkeypatch, publications):
+    calls = []
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return publications
+
+    def _get(url, *args, **kwargs):
+        calls.append(url)
+        return Response()
+
+    monkeypatch.setattr(updater.requests, "get", _get)
+    return calls
+
+
+def _offline(monkeypatch):
+    def _get(*args, **kwargs):
+        raise updater.requests.ConnectionError("no network")
+
+    monkeypatch.setattr(updater.requests, "get", _get)
+
+
+# What GitHub lists today: one legacy pre-release above the last release.
+PUBLISHED = [
+    _publication("v0.30.0-rc.1", prerelease=True),
+    _publication("v0.29.2"),
+    _publication("v0.29.1"),
+]
+# The same list after plain-number publications start (ADR 0011); 0.30.1 was promoted.
+PLAIN = [
+    _publication("v0.30.2", prerelease=True),
+    _publication("v0.30.1"),
+    _publication("v0.30.0"),
+    *PUBLISHED,
+]
+MALFORMED = [
+    _publication("v0.31.0-rc.foo"),
+    _publication("v01.31.0"),
+    _publication("v0.31.0-0-gdeadbeef"),
+    _publication("nightly", prerelease=True),
+    {"tag_name": None, "assets": []},
+    "not a publication",
+]
+
+
 def test_parse_version_orders_release_candidate_before_stable_release():
     assert updater._parse_version("0.30.0-rc.1") < updater._parse_version("0.30.0")
 
@@ -37,157 +114,226 @@ def test_parse_version_keeps_git_describe_suffix_out_of_release_ordering():
     assert updater._parse_version("v0.30.0-4-gad7eaf") == updater._parse_version("0.30.0")
 
 
-def test_latest_release_status_offers_stable_release_to_release_candidate(monkeypatch):
-    class Response:
-        def raise_for_status(self):
-            return None
+# (publications, installed version, channel) -> tag offered as an update, or None.
+SELECTION_CASES = [
+    # Channel filtering against what is published today.
+    pytest.param(PUBLISHED, "0.29.2", "releases", None, id="releases-only-ignores-pre-release"),
+    pytest.param(PUBLISHED, "0.29.2", "prereleases", "v0.30.0-rc.1", id="pre-release-channel-gets-pre-release"),
+    pytest.param(PUBLISHED, "0.29.1", "releases", "v0.29.2", id="releases-only-gets-newest-release"),
+    pytest.param(PUBLISHED, "0.29.1", "prereleases", "v0.30.0-rc.1", id="pre-release-channel-gets-newest-of-both"),
+    pytest.param(PUBLISHED, "0.30.0-rc.1", "prereleases", None, id="already-on-newest"),
+    # No downgrade after switching back to "releases only".
+    pytest.param(PUBLISHED, "0.30.0-rc.1", "releases", None, id="no-downgrade-from-rc-to-older-release"),
+    pytest.param(PLAIN, "0.30.2", "releases", None, id="no-downgrade-from-plain-pre-release"),
+    # -rc.N and plain versions mixed.
+    pytest.param(PLAIN, "0.29.2", "releases", "v0.30.1", id="old-release-install-gets-plain-release"),
+    pytest.param(PLAIN, "0.29.2", "prereleases", "v0.30.2", id="old-release-install-gets-plain-pre-release"),
+    pytest.param(PLAIN, "0.30.0-rc.1", "releases", "v0.30.1", id="rc-install-gets-plain-release"),
+    pytest.param(PLAIN, "0.30.0-rc.1", "prereleases", "v0.30.2", id="rc-install-gets-plain-pre-release"),
+    pytest.param(PLAIN, "0.30.1", "prereleases", "v0.30.2", id="release-install-on-pre-release-channel"),
+    pytest.param(PLAIN, "0.30.1", "releases", None, id="release-install-up-to-date"),
+    pytest.param(PLAIN, "v0.30.1-4-gad7eaf", "releases", None, id="git-describe-build-of-newest-release"),
+    # Versions compare as numbers and the listing order does not matter.
+    pytest.param(
+        [_publication("v0.9.0"), _publication("v0.30.0"), _publication("v0.10.0")],
+        "0.8.0", "releases", "v0.30.0", id="numeric-not-alphabetical",
+    ),
+    pytest.param(list(reversed(PLAIN)), "0.29.2", "prereleases", "v0.30.2", id="unsorted-listing"),
+    # Malformed tags are never offered.
+    pytest.param(MALFORMED + PUBLISHED, "0.29.1", "prereleases", "v0.30.0-rc.1", id="malformed-ignored-next-to-valid"),
+    pytest.param(MALFORMED, "0.29.1", "prereleases", None, id="only-malformed"),
+    pytest.param([], "0.29.1", "prereleases", None, id="nothing-published"),
+    pytest.param(
+        [_publication("v0.31.0", draft=True), *PUBLISHED], "0.29.2", "releases", None, id="draft-ignored",
+    ),
+    # Missing package: fall back to the newest publication that has one.
+    pytest.param(
+        [_publication("v0.30.2", asset=False), *PLAIN[1:]], "0.30.0", "releases", "v0.30.1",
+        id="missing-asset-falls-back-to-older-newer-publication",
+    ),
+    pytest.param(
+        [_publication("v0.30.2", asset=False), *PLAIN[1:]], "0.30.1", "releases", None,
+        id="missing-asset-and-nothing-else-newer",
+    ),
+]
 
-        def json(self):
-            return {
-                "tag_name": "v0.30.0",
-                "assets": [
-                    {
-                        "name": "CVMAnalytics-windows-v0.30.0.zip",
-                        "browser_download_url": "https://example.test/v0.30.0.zip",
-                    },
-                    {
-                        "name": "CVMAnalytics-windows-v0.30.0.zip.sha256",
-                        "browser_download_url": "https://example.test/v0.30.0.zip.sha256",
-                    },
-                ],
-            }
 
-    monkeypatch.setattr(updater.requests, "get", lambda *args, **kwargs: Response())
-    monkeypatch.setattr(updater.UpdateChecker, "is_snoozed", lambda self, tag: False)
-
-    status = updater.UpdateChecker().get_latest_release_status("0.30.0-rc.1")
-
-    assert status["status"] == "available"
-    assert status["update_available"] is True
-    assert status["can_apply"] is True
+def _offered_tag(selected):
+    if selected and selected["newer"] and selected["zip_url"]:
+        return selected["tag"]
+    return None
 
 
-def test_check_for_update_offers_stable_release_to_release_candidate(monkeypatch):
-    class Response:
-        def raise_for_status(self):
-            return None
+@pytest.mark.parametrize(("publications", "current", "channel", "expected"), SELECTION_CASES)
+def test_select_publication_offers_newest_acceptable_for_channel(
+    publications, current, channel, expected
+):
+    assert _offered_tag(updater.select_publication(publications, current, channel)) == expected
 
-        def json(self):
-            return {
-                "tag_name": "v0.30.0",
-                "assets": [
-                    {
-                        "name": "CVMAnalytics-windows-v0.30.0.zip",
-                        "browser_download_url": "https://example.test/v0.30.0.zip",
-                    },
-                    {
-                        "name": "CVMAnalytics-windows-v0.30.0.zip.sha256",
-                        "browser_download_url": "https://example.test/v0.30.0.zip.sha256",
-                    },
-                ],
-            }
 
-    monkeypatch.setattr(updater.requests, "get", lambda *args, **kwargs: Response())
-    monkeypatch.setattr(updater.UpdateChecker, "is_snoozed", lambda self, tag: False)
+@pytest.mark.parametrize(("publications", "current", "channel", "expected"), SELECTION_CASES)
+def test_both_updater_paths_offer_the_selected_publication(
+    monkeypatch, publications, current, channel, expected
+):
+    _serve(monkeypatch, publications)
+    checker = updater.UpdateChecker()
 
-    update = updater.UpdateChecker().check_for_update("0.30.0-rc.1")
+    status = checker.get_latest_release_status(current, channel)
+    update = checker.check_for_update(current, channel)
 
-    assert update == {
-        "version": "0.30.0",
-        "tag": "v0.30.0",
-        "zip_url": "https://example.test/v0.30.0.zip",
-        "sha256_url": "https://example.test/v0.30.0.zip.sha256",
+    assert status["update_available"] is (expected is not None)
+    assert status["can_apply"] is (expected is not None)
+    assert (status["latest_tag"] if status["update_available"] else None) == expected
+    assert (update or {}).get("tag") == expected
+
+
+def test_selected_publication_carries_kind_and_versioned_package():
+    selected = updater.select_publication(PUBLISHED, "0.29.2", "prereleases")
+
+    assert selected == {
+        "tag": "v0.30.0-rc.1",
+        "version": "0.30.0-rc.1",
+        "kind": "pre-release",
+        "newer": True,
+        "release_url": "https://example.test/releases/v0.30.0-rc.1",
+        "zip_url": "https://example.test/CVMAnalytics-windows-v0.30.0-rc.1.zip",
+        "sha256_url": "https://example.test/CVMAnalytics-windows-v0.30.0-rc.1.zip.sha256",
     }
 
 
-def test_latest_release_status_does_not_offer_release_candidate_to_stable(monkeypatch):
-    class Response:
-        def raise_for_status(self):
-            return None
+def test_status_lists_publications_instead_of_reading_latest(monkeypatch):
+    calls = _serve(monkeypatch, PUBLISHED)
 
-        def json(self):
-            return {
-                "tag_name": "v0.30.0-rc.2",
-                "assets": [
-                    {
-                        "name": "CVMAnalytics-windows-v0.30.0-rc.2.zip",
-                        "browser_download_url": "https://example.test/v0.30.0-rc.2.zip",
-                    },
-                ],
-            }
+    updater.UpdateChecker().get_latest_release_status("0.29.2", "prereleases")
 
-    monkeypatch.setattr(updater.requests, "get", lambda *args, **kwargs: Response())
+    assert len(calls) == 1
+    assert calls[0].endswith(f"/repos/{updater.GITHUB_REPO}/releases")
 
-    status = updater.UpdateChecker().get_latest_release_status("0.30.0")
+
+def test_status_reports_channel_kind_and_last_check(monkeypatch):
+    _serve(monkeypatch, PUBLISHED)
+
+    status = updater.UpdateChecker().get_latest_release_status("0.29.2", "prereleases")
+
+    assert status["status"] == "available"
+    assert status["channel"] == "prereleases"
+    assert status["publication_kind"] == "pre-release"
+    assert status["latest_version"] == "0.30.0-rc.1"
+    assert status["asset_name"] == "CVMAnalytics-windows-v0.30.0-rc.1.zip"
+    assert status["sha256_asset_name"] == "CVMAnalytics-windows-v0.30.0-rc.1.zip.sha256"
+    assert status["checked_at"]
+
+
+def test_status_up_to_date_names_the_newest_release_of_the_channel(monkeypatch):
+    _serve(monkeypatch, PUBLISHED)
+
+    status = updater.UpdateChecker().get_latest_release_status("0.30.0-rc.1", "releases")
 
     assert status["status"] == "up_to_date"
+    assert status["latest_version"] == "0.29.2"
+    assert status["publication_kind"] == "release"
+    assert status["zip_url"] is None  # nothing to apply: an older release is never a download
+
+
+def test_status_uses_the_stored_channel_by_default(monkeypatch):
+    _serve(monkeypatch, PUBLISHED)
+    checker = updater.UpdateChecker()
+
+    assert checker.get_latest_release_status("0.29.2")["channel"] == "releases"
+    assert checker.check_for_update("0.29.2") is None
+
+    updater.set_update_channel("prereleases")
+
+    assert checker.get_latest_release_status("0.29.2")["latest_tag"] == "v0.30.0-rc.1"
+    assert checker.check_for_update("0.29.2") == {
+        "version": "0.30.0-rc.1",
+        "tag": "v0.30.0-rc.1",
+        "zip_url": "https://example.test/CVMAnalytics-windows-v0.30.0-rc.1.zip",
+        "sha256_url": "https://example.test/CVMAnalytics-windows-v0.30.0-rc.1.zip.sha256",
+    }
+
+
+def test_status_reports_missing_asset_when_no_newer_publication_has_the_package(monkeypatch):
+    _serve(monkeypatch, [_publication("v0.30.2", asset=False), *PLAIN[1:]])
+
+    status = updater.UpdateChecker().get_latest_release_status("0.30.1", "releases")
+
+    assert status["status"] == "asset_missing"
+    assert status["latest_tag"] == "v0.30.2"
+    assert "CVMAnalytics-windows-v0.30.2.zip" in status["error"]
     assert status["update_available"] is False
     assert status["can_apply"] is False
 
 
-@pytest.mark.parametrize(
-    ("tag", "current_version"),
-    [
-        ("v0.30.0-rc.foo", "0.30.0-rc.1"),
-        ("v0.30.0-rc.01", "0.30.0-rc.0"),
-        ("v0.30.0-rc.01-4-gad7eaf", "0.30.0-rc.0"),
-        ("v0.30.0-0-gdeadbeef", "0.30.0-rc.1"),
-    ],
-)
-def test_latest_release_status_does_not_offer_malformed_tag(
-    monkeypatch, tag, current_version
-):
-    class Response:
-        def raise_for_status(self):
-            return None
+def test_status_reports_no_publication_when_nothing_valid_is_listed(monkeypatch):
+    _serve(monkeypatch, MALFORMED)
 
-        def json(self):
-            return {
-                "tag_name": tag,
-                "assets": [
-                    {
-                        "name": f"CVMAnalytics-windows-v{tag.lstrip('v')}.zip",
-                        "browser_download_url": f"https://example.test/{tag}.zip",
-                    },
-                ],
-            }
+    status = updater.UpdateChecker().get_latest_release_status("0.29.1", "prereleases")
 
-    monkeypatch.setattr(updater.requests, "get", lambda *args, **kwargs: Response())
-
-    status = updater.UpdateChecker().get_latest_release_status(current_version)
-
-    assert status["status"] == "up_to_date"
+    assert status["status"] == "no_release"
+    assert status["latest_version"] is None
     assert status["update_available"] is False
-    assert status["can_apply"] is False
 
 
-@pytest.mark.parametrize(
-    ("tag", "current_version"),
-    [
-        ("v0.30.0-rc.foo", "0.30.0-rc.1"),
-        ("v0.30.0-rc.01", "0.30.0-rc.0"),
-        ("v0.30.0-rc.01-4-gad7eaf", "0.30.0-rc.0"),
-        ("v0.30.0-0-gdeadbeef", "0.30.0-rc.1"),
-    ],
-)
-def test_check_for_update_does_not_offer_malformed_tag(
-    monkeypatch, tag, current_version
-):
-    class Response:
-        def raise_for_status(self):
-            return None
+def test_offline_check_fails_visibly_and_keeps_the_channel(monkeypatch):
+    _offline(monkeypatch)
+    checker = updater.UpdateChecker()
 
-        def json(self):
-            return {
-                "tag_name": tag,
-                "assets": [
-                    {
-                        "name": f"CVMAnalytics-windows-v{tag.lstrip('v')}.zip",
-                        "browser_download_url": f"https://example.test/{tag}.zip",
-                    },
-                ],
-            }
+    status = checker.get_latest_release_status("0.29.2", "prereleases")
 
-    monkeypatch.setattr(updater.requests, "get", lambda *args, **kwargs: Response())
+    assert status["status"] == "check_failed"
+    assert "Could not check GitHub Releases" in status["error"]
+    assert status["channel"] == "prereleases"
+    assert status["update_available"] is False
+    assert status["checked_at"]
+    assert checker.check_for_update("0.29.2", "prereleases") is None
 
-    assert updater.UpdateChecker().check_for_update(current_version) is None
+
+def test_unexpected_listing_payload_is_a_failed_check(monkeypatch):
+    _serve(monkeypatch, {"message": "API rate limit exceeded"})
+
+    status = updater.UpdateChecker().get_latest_release_status("0.29.2", "releases")
+
+    assert status["status"] == "check_failed"
+    assert updater.UpdateChecker().check_for_update("0.29.2", "releases") is None
+
+
+def test_snoozed_publication_is_not_offered(monkeypatch):
+    _serve(monkeypatch, PUBLISHED)
+    checker = updater.UpdateChecker()
+    checker.snooze("v0.29.2")
+
+    status = checker.get_latest_release_status("0.29.1", "releases")
+
+    assert status["status"] == "snoozed"
+    assert status["update_available"] is False
+    assert checker.check_for_update("0.29.1", "releases") is None
+
+
+def test_update_channel_defaults_to_releases_only():
+    assert updater.get_update_channel() == "releases"
+
+
+def test_update_channel_round_trips_through_its_own_file(tmp_path):
+    updater.set_update_channel("prereleases")
+
+    assert updater.get_update_channel() == "prereleases"
+    assert (tmp_path / "update_channel.json").is_file()
+
+    updater.set_update_channel("releases")
+
+    assert updater.get_update_channel() == "releases"
+
+
+@pytest.mark.parametrize("content", ["", "not json", "[]", '{"channel": "nightly"}', '{"channel": 1}'])
+def test_unreadable_update_channel_file_means_releases_only(tmp_path, content):
+    (tmp_path / "update_channel.json").write_text(content, encoding="utf-8")
+
+    assert updater.get_update_channel() == "releases"
+
+
+def test_unknown_update_channel_is_rejected_and_not_stored(tmp_path):
+    with pytest.raises(ValueError):
+        updater.set_update_channel("nightly")
+
+    assert not (tmp_path / "update_channel.json").exists()

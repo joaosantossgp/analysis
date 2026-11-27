@@ -33,20 +33,60 @@ class StatusBridgeMixin:
             logger.exception("startup update check failed")
 
     def check_update(self, params=None) -> dict:
+        """Last known update status. `force` runs a new check against GitHub."""
+        from desktop.__version__ import __version__  # noqa: PLC0415
+        from desktop.updater import get_update_channel  # noqa: PLC0415
+
+        if self._truthy((params or {}).get("force", False)):
+            self._get_software_update_status(force=True)
         with self._update_lock:
             info = self._update_info
             status = dict(self._latest_update_status or {})
-        if not info:
+        result = {
+            "available": False,
+            "status": status.get("status") or "not_checked",
+            "error": status.get("error"),
+            "channel": status.get("channel") or get_update_channel(),
+            "publication_kind": status.get("publication_kind"),
+            "checked_at": status.get("checked_at"),
+            "current_version": status.get("current_version") or __version__,
+            "latest_version": status.get("latest_version"),
+            "release_url": status.get("release_url"),
+        }
+        if info:
+            result.update(available=True, version=info["version"], zip_url=info["zip_url"])
+        return self._sanitize_for_json(result)
+
+    def get_update_channel(self, params=None) -> dict:
+        from desktop.updater import get_update_channel  # noqa: PLC0415
+
+        return self._sanitize_for_json({"channel": get_update_channel()})
+
+    def set_update_channel(self, params=None) -> dict:
+        """Store the update channel. Does not contact GitHub: the caller checks next."""
+        from desktop.updater import get_update_channel, set_update_channel  # noqa: PLC0415
+
+        if not self._is_write_allowed():
             return self._sanitize_for_json({
-                "available": False,
-                "status": status.get("status") or "not_checked",
-                "error": status.get("error"),
+                **self._write_blocked_response("set_update_channel"),
+                "channel": get_update_channel(),
             })
-        return self._sanitize_for_json({
-            "available": True,
-            "version": info["version"],
-            "zip_url": info["zip_url"],
-        })
+        channel = str((params or {}).get("channel") or "")
+        try:
+            set_update_channel(channel)
+        except ValueError:
+            return self._sanitize_for_json({
+                "ok": False, "error": "invalid_channel", "channel": get_update_channel(),
+            })
+        except OSError as exc:
+            return self._sanitize_for_json({
+                "ok": False, "error": str(exc), "channel": get_update_channel(),
+            })
+        # What was found for the previous channel must not stay installable.
+        with self._update_lock:
+            self._update_info = None
+            self._latest_update_status = None
+        return self._sanitize_for_json({"ok": True, "channel": channel})
 
     def apply_update(self, params=None) -> dict:
         if not self._is_write_allowed():
@@ -1155,16 +1195,20 @@ class StatusBridgeMixin:
             })
         try:
             from desktop.__version__ import __version__  # noqa: PLC0415
-            from desktop.updater import UpdateChecker  # noqa: PLC0415
+            from desktop.updater import UpdateChecker, get_update_channel  # noqa: PLC0415
 
             checker = UpdateChecker()
             status = checker.get_latest_release_status(__version__)
+            if status.get("channel") not in (None, get_update_channel()):
+                # The channel changed while GitHub answered: check the new one instead.
+                return self._get_software_update_status(force=True)
             if status.get("update_available") and status.get("zip_url"):
                 update_info = {
                     "version": status.get("latest_version"),
                     "tag": status.get("latest_tag"),
                     "zip_url": status.get("zip_url"),
                     "sha256_url": status.get("sha256_url"),
+                    "publication_kind": status.get("publication_kind"),
                 }
                 with self._update_lock:
                     self._update_info = update_info
@@ -1174,6 +1218,7 @@ class StatusBridgeMixin:
                     "status": "available_cached",
                     "latest_version": cached_info.get("version"),
                     "latest_tag": cached_info.get("tag"),
+                    "publication_kind": cached_info.get("publication_kind"),
                     "zip_url": cached_info.get("zip_url"),
                     "sha256_url": cached_info.get("sha256_url"),
                     "update_available": True,
