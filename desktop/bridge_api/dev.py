@@ -30,6 +30,7 @@ def _repo_root() -> Path:
 def _git_status(repo_root: Path) -> str:
     return subprocess.run(
         ["git", "-C", str(repo_root), "status", "--porcelain=v2", "--branch"],
+        stdin=subprocess.DEVNULL,  # The supervisor reserves app stdin for its stop signal.
         capture_output=True,
         text=True,
         encoding="utf-8",
