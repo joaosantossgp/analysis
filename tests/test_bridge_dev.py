@@ -1,14 +1,15 @@
-"""Dev bridge contract: dev context, restart, auto-restart (#610) and dev data actions (#614)."""
+"""Dev bridge contract: dev context, restart, auto-restart (#610), worktree switch (#611) and dev data actions (#614)."""
 
 from __future__ import annotations
 
 import json
 import sys
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
-from desktop import dev_data, dev_supervisor
+from desktop import dev_bootstrap, dev_data, dev_supervisor
 from desktop.bridge import CVMBridge
 from desktop.bridge_api import dev as dev_bridge
 
@@ -184,7 +185,7 @@ def test_set_auto_restart_returns_the_state_the_supervisor_confirmed(
 ) -> None:
     supervisor = dev_supervisor.DevSupervisor(
         start_child=lambda: None,
-        stop_child=lambda _child: None,
+        stop_child=lambda _child: True,
         scan=dict,
         report=lambda _message: None,
         read_requests=lambda: dev_supervisor.read_requests(control_dir),
@@ -238,6 +239,195 @@ def test_dev_methods_refuse_in_the_packaged_app(control_dir: Path, monkeypatch: 
         assert result["status_reason_code"] == "dev_mode_only"
         assert result["error"]
     assert dev_supervisor.read_requests(control_dir) == [], "a refused call reaches no supervisor"
+
+
+# --- dev_list_worktrees / dev_switch_worktree (#611) ---------------------------
+
+
+def _write_manifests(checkout: Path, requirements: str = "pywebview\n") -> None:
+    (checkout / "apps" / "desktop-web").mkdir(parents=True, exist_ok=True)
+    (checkout / "requirements.txt").write_text(requirements, encoding="utf-8")
+    (checkout / "apps" / "desktop-web" / "package-lock.json").write_text("{}\n", encoding="utf-8")
+    (checkout / ".git").write_text("gitdir: elsewhere\n", encoding="utf-8")
+
+
+def _install_environment(checkout: Path) -> None:
+    dev_bootstrap.write_python_stamp(checkout, dev_bootstrap.python_stamp(checkout, "python"))
+    dev_bootstrap.write_frontend_stamp(checkout)
+
+
+@pytest.fixture
+def worktrees(checkout: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Path]:
+    """The window runs `wt-610`; the main checkout has the installed environment.
+
+    `wt-other` has the same dependencies, `wt-deps` a different requirements.txt.
+    """
+    roots = {
+        "main": checkout.parent / "main",
+        "window": checkout,
+        "other": checkout.parent / "wt-other",
+        "deps": checkout.parent / "wt-deps",
+    }
+    for root in roots.values():
+        _write_manifests(root)
+    _write_manifests(roots["deps"], requirements="pywebview\nnew-package\n")
+    _install_environment(roots["main"])
+    porcelain = "".join(f"worktree {root.as_posix()}\nHEAD 1\ndetached\n\n" for root in roots.values())
+    monkeypatch.setattr(dev_data, "_git_worktree_list", lambda _root: porcelain)
+    monkeypatch.delenv(dev_supervisor.LAUNCH_ROOT_ENV, raising=False)
+    return roots
+
+
+def test_worktree_list_marks_the_window_and_flags_different_dependencies(
+    worktrees: dict[str, Path], control_dir: Path
+) -> None:
+    result = CVMBridge().dev_list_worktrees()
+
+    assert result["ok"] is True
+    assert result["supervised"] is True
+    assert result["notice"] is None
+    rows = [(w["name"], w["is_main_checkout"], w["active"], w["dependency_differences"]) for w in result["worktrees"]]
+    assert rows == [
+        ("main", True, False, []),
+        ("wt-610", False, True, []),
+        ("wt-other", False, False, []),
+        ("wt-deps", False, False, ["requirements.txt"]),
+    ]
+    assert result["worktrees"][2] == {
+        "name": "wt-other",
+        "path": str(worktrees["other"]),
+        "branch": None,
+        "is_main_checkout": False,
+        "isolated_data": False,
+        "dependency_differences": [],
+        "active": False,
+    }
+
+
+def test_worktree_list_compares_with_the_environment_dev_mode_was_launched_with(
+    worktrees: dict[str, Path], control_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _install_environment(worktrees["deps"])
+    monkeypatch.setenv(dev_supervisor.LAUNCH_ROOT_ENV, str(worktrees["deps"]))
+
+    differences = {w["name"]: w["dependency_differences"] for w in CVMBridge().dev_list_worktrees()["worktrees"]}
+
+    assert differences == {"main": ["requirements.txt"], "wt-610": ["requirements.txt"],
+                           "wt-other": ["requirements.txt"], "wt-deps": []}
+
+
+def test_worktree_list_shows_why_the_last_switch_did_not_happen(worktrees: dict[str, Path], control_dir: Path) -> None:
+    notice = "Worktree wt-other was removed; the window is back on main."
+    dev_supervisor.write_status(control_dir, {"auto_restart": True, "pending_changes": 0, "worktree_notice": notice})
+
+    assert CVMBridge().dev_list_worktrees()["notice"] == notice
+
+
+def test_worktree_list_without_a_supervisor_or_git(worktrees: dict[str, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    assert CVMBridge().dev_list_worktrees()["supervised"] is False
+
+    def git_fails(_root: Path) -> str:
+        raise dev_bridge.subprocess.CalledProcessError(128, "git worktree list")
+
+    monkeypatch.setattr(dev_data, "_git_worktree_list", git_fails)
+    result = CVMBridge().dev_list_worktrees()
+    assert result["ok"] is False
+    assert "git worktree list" in result["error"]
+
+
+def test_switch_returns_once_the_supervisor_accepted(
+    worktrees: dict[str, Path], control_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    main = worktrees["main"]
+    supervisor = dev_supervisor.DevSupervisor(
+        start_child=lambda: Mock(**{"poll.return_value": None}),
+        stop_child=lambda _child: True,
+        scan=dict,
+        report=lambda _message: None,
+        read_requests=lambda: dev_supervisor.read_requests(control_dir),
+        publish_status=lambda status: dev_supervisor.write_status(control_dir, status),
+        list_worktrees=lambda: dev_data.list_worktrees(main, env_root=main),
+        launch_root=main,
+    )
+    supervisor.start()
+    monkeypatch.setattr(dev_bridge.time, "sleep", lambda _seconds: supervisor.tick(0.0))
+
+    assert CVMBridge().dev_switch_worktree({"path": str(worktrees["other"])}) == {"ok": True, "worktree": "wt-other"}
+    assert supervisor.active_root == worktrees["other"]
+
+
+def test_switch_refuses_a_worktree_that_needs_its_own_dependencies(
+    worktrees: dict[str, Path], control_dir: Path
+) -> None:
+    result = CVMBridge().dev_switch_worktree({"path": str(worktrees["deps"])})
+
+    assert result["ok"] is False
+    assert "wt-deps needs its own dependencies (requirements.txt differ)" in result["error"]
+    assert "supported in a later version" in result["error"]
+    assert dev_supervisor.read_requests(control_dir) == []
+
+
+@pytest.mark.parametrize(
+    ("params", "message"),
+    [
+        (None, "`path`"),
+        ({"path": 3}, "`path`"),
+        ({"path": "C:/nowhere"}, "not a worktree of this repository"),
+        ("window", "already runs wt-610"),
+    ],
+)
+def test_switch_refuses_what_is_not_another_worktree(
+    worktrees: dict[str, Path], control_dir: Path, params: object, message: str
+) -> None:
+    if params == "window":
+        params = {"path": str(worktrees["window"])}
+
+    result = CVMBridge().dev_switch_worktree(params)
+
+    assert result["ok"] is False
+    assert message in result["error"]
+    assert dev_supervisor.read_requests(control_dir) == []
+
+
+def test_switch_reports_a_refusal_from_the_supervisor(
+    worktrees: dict[str, Path], control_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    refusal = "wt-other is not a worktree of this repository (it may have been removed)."
+
+    def supervisor_refuses(_seconds: float) -> None:
+        dev_supervisor.write_status(control_dir, {"worktree": str(worktrees["window"]), "worktree_notice": refusal})
+
+    monkeypatch.setattr(dev_bridge.time, "sleep", supervisor_refuses)
+
+    assert CVMBridge().dev_switch_worktree({"path": str(worktrees["other"])}) == {"ok": False, "error": refusal}
+
+
+def test_switch_fails_plainly_without_a_supervisor_or_its_confirmation(
+    worktrees: dict[str, Path], control_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(dev_bridge.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(dev_bridge, "CONFIRM_TIMEOUT_SECONDS", 0.0)
+    result = CVMBridge().dev_switch_worktree({"path": str(worktrees["other"])})
+    assert result == {"ok": False, "error": "The dev supervisor did not confirm the switch."}
+
+    monkeypatch.delenv(dev_supervisor.CONTROL_DIR_ENV)
+    result = CVMBridge().dev_switch_worktree({"path": str(worktrees["other"])})
+    assert result["ok"] is False
+    assert "supervisor is not running" in result["error"]
+
+
+def test_worktree_methods_refuse_in_the_packaged_app(
+    worktrees: dict[str, Path], control_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(dev_data, "_git_worktree_list", lambda _root: pytest.fail("the packaged app must not run git"))
+    bridge = CVMBridge()
+
+    for result in (bridge.dev_list_worktrees(), bridge.dev_switch_worktree({"path": str(worktrees["other"])})):
+        assert result["ok"] is False
+        assert result["status"] == "blocked"
+        assert result["status_reason_code"] == "dev_mode_only"
+    assert dev_supervisor.read_requests(control_dir) == []
 
 
 # --- dev data actions (#614) ---------------------------------------------------
@@ -294,6 +484,21 @@ def test_move_to_backup_hands_the_resolved_dev_data_to_the_supervisor(shared_dat
         }
     ]
     assert (shared_data / "db" / "cvm_financials.db").exists(), "the bridge never touches data itself"
+
+
+def test_data_action_of_a_window_on_an_isolated_worktree_targets_that_worktree(
+    shared_data: Path, checkout: Path, control_dir: Path
+) -> None:
+    """After a worktree switch the window runs that worktree's code, so its data is the one acted on."""
+    (checkout / ".git").write_text("gitdir: elsewhere\n", encoding="utf-8")
+    (checkout / dev_data.MARKER_NAME).write_text("isolated\n", encoding="utf-8")
+    (checkout / "data" / "dev-runtime" / "db").mkdir(parents=True)
+
+    assert CVMBridge().dev_move_data_to_backup({"target": "db"}) == {"ok": True}
+
+    request = dev_supervisor.read_requests(control_dir)[0]
+    assert (request["mode"], request["data_root"], request["shared_root"]) == (
+        "isolated", str(checkout / "data" / "dev-runtime"), str(shared_data))
 
 
 def test_delete_needs_the_target_typed_again(shared_data: Path, control_dir: Path) -> None:

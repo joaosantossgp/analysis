@@ -23,8 +23,8 @@ Copy-Item -Path $ZipPath -Destination $workZip -Force
 $zoneContent = @"
 [ZoneTransfer]
 ZoneId=3
-ReferrerUrl=https://github.com/joaosantossgp/analisys/releases/tag/v0.3.1
-HostUrl=https://github.com/joaosantossgp/analisys/releases/download/v0.3.1/CVMAnalytics-windows-v0.3.1.zip
+ReferrerUrl=https://github.com/joaosantossgp/analysis/releases/tag/v0.3.1
+HostUrl=https://github.com/joaosantossgp/analysis/releases/download/v0.3.1/CVMAnalytics-windows-v0.3.1.zip
 "@
 Set-Content -Path "${workZip}:Zone.Identifier" -Value $zoneContent -Encoding utf8
 

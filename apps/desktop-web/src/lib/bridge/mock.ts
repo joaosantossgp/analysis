@@ -16,7 +16,7 @@ if (!import.meta.env.DEV) {
 import type { BridgeApi } from "./types";
 import { createMockCompaniesMethods } from "./mock.companies";
 import { createMockCoverageMethods } from "./mock.coverage";
-import { createMockDevDataMethods, createMockDevMethods } from "./mock.dev";
+import { createMockDevDataMethods, createMockDevMethods, createMockDevWorktreeMethods } from "./mock.dev";
 import { createMockDistributionMethods } from "./mock.distribution";
 import { createMockEnergyMethods } from "./mock.energy";
 import { createMockExcelMethods } from "./mock.excel";
@@ -35,6 +35,7 @@ export function createMockBridge(): Partial<BridgeApi> {
     ...createMockDistributionMethods(),
     ...createMockCoverageMethods(),
     ...createMockDevMethods(),
+    ...createMockDevWorktreeMethods(),
     ...createMockDevDataMethods(),
   };
 }

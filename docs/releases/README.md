@@ -3,7 +3,7 @@
 This directory holds per-version release notes for the CVMAnalytics desktop product.
 
 The latest local release note in this directory is `v0.29.2`. The packaged
-Windows desktop EXE distributed via [GitHub Releases](https://github.com/joaosantossgp/analisys/releases)
+Windows desktop EXE distributed via [GitHub Releases](https://github.com/joaosantossgp/analysis/releases)
 is the authoritative distribution channel — this directory is a **partial**
 local copy of the per-version notes, not the source of truth.
 
@@ -63,7 +63,7 @@ Tagged releases that exist on GitHub but do **not** have a local `.md` file unde
 - `v0.13.0` — Phase 3I statement export scope + updater UI
 - `v0.25.1` — tag present, local release note absent
 
-For these versions, the authoritative notes are on the corresponding [GitHub Release](https://github.com/joaosantossgp/analisys/releases) page. This directory is **milestone-only coverage** rather than a full release log. Backfilling from `git tag --format='%(contents)' <tag>` is an open decision — see `docs/reference/repository-map.md`.
+For these versions, the authoritative notes are on the corresponding [GitHub Release](https://github.com/joaosantossgp/analysis/releases) page. This directory is **milestone-only coverage** rather than a full release log. Backfilling from `git tag --format='%(contents)' <tag>` is an open decision — see `docs/reference/repository-map.md`.
 
 ## Conventions
 

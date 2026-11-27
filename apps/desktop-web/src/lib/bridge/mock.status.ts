@@ -534,7 +534,7 @@ const MOCK_RELEASE_AVAILABLE: UpdateCheckResult = {
   checked_at: NOW,
   current_version: "0.29.2",
   latest_version: "0.30.1",
-  release_url: "https://github.com/joaosantossgp/analisys/releases",
+  release_url: "https://github.com/joaosantossgp/analysis/releases",
 };
 
 export const MOCK_UPDATE_CHECKS: Record<UpdateChannel | "offline" | "release_available" | "snoozed", UpdateCheckResult> = {

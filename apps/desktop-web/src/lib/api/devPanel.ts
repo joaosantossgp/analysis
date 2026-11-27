@@ -1,5 +1,5 @@
 import { callBridge, whenBridgeReady } from "../bridge/adapter";
-import type { DevContext, DevDataInfo, DevDataOperation, DevDataTarget } from "../bridge/types.dev";
+import type { DevContext, DevDataInfo, DevDataOperation, DevDataTarget, DevWorktreeList } from "../bridge/types.dev";
 
 /** Typed facade for the dev panel. Every call throws with the bridge's own message on failure. */
 
@@ -25,6 +25,15 @@ export async function setDevAutoRestart(enabled: boolean): Promise<boolean> {
   return response.auto_restart;
 }
 
+export const DEV_WORKTREES_QUERY_KEY = ["dev", "worktrees"] as const;
+
+export async function fetchDevWorktrees(): Promise<DevWorktreeList> {
+  await whenBridgeReady();
+  const response = await callBridge("dev_list_worktrees", {});
+  if (!response.ok) throw new Error(response.error);
+  return response;
+}
+
 export const DEV_DATA_QUERY_KEY = ["dev", "data"] as const;
 
 export async function fetchDevDataInfo(): Promise<DevDataInfo> {
@@ -32,6 +41,13 @@ export async function fetchDevDataInfo(): Promise<DevDataInfo> {
   const response = await callBridge("dev_get_data_info", {});
   if (!response.ok) throw new Error(response.error);
   return response;
+}
+
+/** Resolves with the worktree name once the dev supervisor accepted; the window then reopens on it. */
+export async function switchDevWorktree(path: string): Promise<string> {
+  const response = await callBridge("dev_switch_worktree", { path });
+  if (!response.ok) throw new Error(response.error);
+  return response.worktree;
 }
 
 /**
